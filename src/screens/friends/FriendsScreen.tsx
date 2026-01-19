@@ -122,26 +122,17 @@ export default function FriendsScreen() {
   const handleRemoveFriend = async (friendUid: string) => {
     if (!uid) return;
 
-    Alert.alert(
-      "Remove Friend",
-      "Are you sure you want to remove this friend?",
-      [
-        { text: "Cancel", onPress: () => {}, style: "cancel" },
-        {
-          text: "Remove",
-          onPress: async () => {
-            try {
-              await removeFriend(uid, friendUid);
-              Alert.alert("Success", "Friend removed");
-              await loadData();
-            } catch {
-              Alert.alert("Error", "Failed to remove friend");
-            }
-          },
-          style: "destructive",
-        },
-      ],
-    );
+    // Confirm removal
+    const confirmed = confirm("Are you sure you want to remove this friend?");
+    if (!confirmed) return;
+
+    try {
+      await removeFriend(uid, friendUid);
+      await loadData();
+      Alert.alert("Success", "Friend removed");
+    } catch (error) {
+      Alert.alert("Error", "Failed to remove friend");
+    }
   };
 
   // Get request preview (show username or initials of other user)
@@ -280,9 +271,11 @@ export default function FriendsScreen() {
                           </View>
                           <Button
                             mode="text"
-                            onPress={() =>
-                              friendUid && handleRemoveFriend(friendUid)
-                            }
+                            onPress={() => {
+                              if (friendUid) {
+                                handleRemoveFriend(friendUid);
+                              }
+                            }}
                             compact
                           >
                             Remove
