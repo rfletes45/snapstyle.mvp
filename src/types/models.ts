@@ -54,6 +54,8 @@ export interface Message {
   content: string; // text content or storage path
   createdAt: number;
   expiresAt: number;
+  read: boolean;
+  readAt?: number;
   openedAt?: number;
   openedBy?: string;
 }

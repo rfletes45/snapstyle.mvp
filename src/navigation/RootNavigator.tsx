@@ -16,6 +16,7 @@ import ProfileSetupScreen from "@/screens/auth/ProfileSetupScreen";
 
 // App screens
 import ChatListScreen from "@/screens/chat/ChatListScreen";
+import ChatScreen from "@/screens/chat/ChatScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
 import GamesScreen from "@/screens/games/GamesScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
@@ -35,6 +36,34 @@ function AuthStack() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
       <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ChatStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: "#FFFC00",
+        },
+        headerTintColor: "#000",
+        headerTitleStyle: {
+          fontWeight: "bold",
+          fontSize: 18,
+        },
+      }}
+    >
+      <Stack.Screen
+        name="ChatList"
+        component={ChatListScreen}
+        options={{ title: "Chats" }}
+      />
+      <Stack.Screen
+        name="ChatDetail"
+        component={ChatScreen}
+        options={{ title: "Chat" }}
+      />
     </Stack.Navigator>
   );
 }
@@ -77,7 +106,7 @@ function AppTabs() {
         },
       })}
     >
-      <Tab.Screen name="Chats" component={ChatListScreen} />
+      <Tab.Screen name="Chats" component={ChatStack} />
       <Tab.Screen name="Stories" component={StoriesScreen} />
       <Tab.Screen name="Games" component={GamesScreen} />
       <Tab.Screen name="Friends" component={FriendsScreen} />
