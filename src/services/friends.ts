@@ -115,7 +115,6 @@ export async function getPendingRequests(
       requestsRef,
       where("to", "==", uid),
       where("status", "==", "pending"),
-      orderBy("createdAt", "desc"),
     );
 
     // Get requests FROM the user
@@ -123,7 +122,6 @@ export async function getPendingRequests(
       requestsRef,
       where("from", "==", uid),
       where("status", "==", "pending"),
-      orderBy("createdAt", "desc"),
     );
 
     const [toSnapshot, fromSnapshot] = await Promise.all([
@@ -146,6 +144,9 @@ export async function getPendingRequests(
         ...doc.data(),
       } as FriendRequest);
     });
+
+    // Sort by creation date (newest first) in memory
+    requests.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     return requests;
   } catch (error) {
