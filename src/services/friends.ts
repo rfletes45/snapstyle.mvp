@@ -478,3 +478,24 @@ export async function updateStreak(
     throw error;
   }
 }
+
+/**
+ * Get username for a user by their UID
+ * @param uid User ID
+ * @returns Username or undefined if not found
+ */
+export async function getUsernameByUid(uid: string): Promise<string | undefined> {
+  try {
+    const db = getFirestoreInstance();
+    const userDocRef = doc(db, "Users", uid);
+    const userDoc = await getDoc(userDocRef);
+    
+    if (userDoc.exists()) {
+      return userDoc.data().username;
+    }
+    return undefined;
+  } catch (error) {
+    console.error("Error getting username:", error);
+    return undefined;
+  }
+}

@@ -18,8 +18,13 @@ import {
   cancelFriendRequest,
   getFriends,
   removeFriend,
+  getUsernameByUid,
 } from "@/services/friends";
 import { Friend, FriendRequest } from "@/types/models";
+
+interface RequestWithUsername extends FriendRequest {
+  otherUserUsername?: string;
+}
 
 export default function FriendsScreen() {
   const { currentFirebaseUser } = useAuth();
@@ -28,7 +33,7 @@ export default function FriendsScreen() {
 
   // State management
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<RequestWithUsername[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
@@ -46,8 +51,21 @@ export default function FriendsScreen() {
         getPendingRequests(uid),
       ]);
 
+      // Fetch usernames for each request
+      const requestsWithUsernames = await Promise.all(
+        requestsData.map(async (request) => {
+          // Determine whose username to fetch (the other person in the request)
+          const otherUserId = request.from === uid ? request.to : request.from;
+          const username = await getUsernameByUid(otherUserId);
+          return {
+            ...request,
+            otherUserUsername: username,
+          };
+        })
+      );
+
       setFriends(friendsData);
-      setPendingRequests(requestsData);
+      setPendingRequests(requestsWithUsernames);
     } catch (error) {
       console.error("Error loading friends data:", error);
       Alert.alert("Error", "Failed to load friends. Please try again.");
@@ -310,12 +328,20 @@ export default function FriendsScreen() {
                         <View style={styles.avatar}>
                           <Text style={styles.avatarText}>⏳</Text>
                         </View>
-                        <Text
-                          variant="bodySmall"
-                          style={styles.sentRequestText}
-                        >
-                          Pending Request
-                        </Text>
+                        <View style={styles.sentRequestInfo}>
+                          <Text
+                            variant="bodySmall"
+                            style={styles.sentRequestText}
+                          >
+                            {request.otherUserUsername || "Loading..."}
+                          </Text>
+                          <Text
+                            variant="labelSmall"
+                            style={styles.sentRequestSubtext}
+                          >
+                            Pending Request
+                          </Text>
+                        </View>
                         <Button
                           mode="text"
                           onPress={() => handleCancelRequest(request.id)}
@@ -549,9 +575,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  sentRequestText: {
+  sentRequestInfo: {
     flex: 1,
     marginLeft: 12,
+  },
+
+  sentRequestText: {
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 2,
+  },
+
+  sentRequestSubtext: {
     color: "#999",
   },
 
