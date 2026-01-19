@@ -28,7 +28,9 @@ export default function LoginScreen({ navigation }: any) {
 
     try {
       // Sign in with Firebase Authentication
+      console.log("LoginScreen: Attempting to log in with", email);
       await login(email.trim(), password);
+      console.log("LoginScreen: Login successful");
       // Navigation will happen automatically via AuthContext when user state updates
     } catch (err: any) {
       console.error("Login error:", err);

@@ -41,6 +41,7 @@ export default function SignupScreen({ navigation }: any) {
       // Create user with Firebase Authentication
       await signUp(email.trim(), password);
       // After signup, navigate to profile setup
+      // User stays logged in so they can complete their profile
       navigation.navigate("ProfileSetup");
     } catch (err: any) {
       console.error("Signup error:", err);

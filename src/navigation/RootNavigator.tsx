@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ActivityIndicator, View } from "react-native";
 
 import { useAuth } from "@/store/AuthContext";
+import { useUser } from "@/store/UserContext";
 
 // Auth screens
 import WelcomeScreen from "@/screens/auth/WelcomeScreen";
@@ -87,6 +88,7 @@ function AppTabs() {
 
 export default function RootNavigator() {
   const { currentFirebaseUser, loading } = useAuth();
+  const { profile } = useUser();
 
   // Show loading screen while auth state is being determined
   if (loading) {
@@ -96,6 +98,13 @@ export default function RootNavigator() {
       </View>
     );
   }
+
+  // Determine which navigator to show:
+  // 1. If not logged in → show AuthStack (Welcome, Login, Signup)
+  // 2. If logged in but no profile → show ProfileSetup only
+  // 3. If logged in with profile → show AppTabs
+  const isLoggedIn = !!currentFirebaseUser;
+  const hasProfile = !!profile?.username;
 
   // For web, we need a linking configuration
   const linking = {
@@ -117,7 +126,19 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer linking={linking}>
-      {currentFirebaseUser ? <AppTabs /> : <AuthStack />}
+      {isLoggedIn && hasProfile ? (
+        <AppTabs />
+      ) : isLoggedIn && !hasProfile ? (
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+        </Stack.Navigator>
+      ) : (
+        <AuthStack />
+      )}
     </NavigationContainer>
   );
 }

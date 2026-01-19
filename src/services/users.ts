@@ -24,7 +24,10 @@ export async function checkUsernameAvailable(
   const usernamesRef = collection(db, "Usernames");
 
   try {
-    const q = query(usernamesRef, where("username", "==", username.toLowerCase()));
+    const q = query(
+      usernamesRef,
+      where("username", "==", username.toLowerCase()),
+    );
     const snapshot = await getDocs(q);
     return snapshot.empty; // true if no documents found (available)
   } catch (error) {
@@ -57,11 +60,7 @@ export async function reserveUsername(
     }
 
     // Create username document (for uniqueness constraint)
-    const usernameDocRef = doc(
-      db,
-      "Usernames",
-      normalizedUsername,
-    );
+    const usernameDocRef = doc(db, "Usernames", normalizedUsername);
     batch.set(usernameDocRef, {
       username: normalizedUsername,
       uid,
@@ -133,7 +132,6 @@ export async function createUserProfile(
     },
     createdAt: now,
     lastActive: now,
-    expoPushToken: undefined,
   };
 
   try {
@@ -194,10 +192,10 @@ export async function setupNewUser(
       throw new Error("Username already taken");
     }
 
-    // Create user profile
+    // Create user profile first
     const user = await createUserProfile(uid, username, displayName, baseColor);
 
-    // Reserve the username
+    // Then reserve the username (separate operation)
     const reserved = await reserveUsername(username, uid);
     if (!reserved) {
       throw new Error("Failed to reserve username");
@@ -206,6 +204,6 @@ export async function setupNewUser(
     return user;
   } catch (error) {
     console.error("Error setting up new user:", error);
-    return null;
+    throw error;
   }
 }

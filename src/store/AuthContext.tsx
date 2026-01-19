@@ -20,6 +20,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const auth = getAuthInstance();
       const unsubscribe = auth.onAuthStateChanged(
         (user: any) => {
+          console.log(
+            "AuthContext: User state changed",
+            user?.email || "logged out",
+          );
           setCurrentFirebaseUser(user);
           setLoading(false);
         },

@@ -9,6 +9,7 @@
 ## What Was Built
 
 ### 1. **Auth Service** (`src/services/auth.ts`)
+
 Firebase authentication functions using the Firebase JS SDK:
 
 - **`signUp(email, password)`** - Create new Firebase user
@@ -27,6 +28,7 @@ Firebase authentication functions using the Firebase JS SDK:
   - Returns user object or null
 
 ### 2. **Users Service** (`src/services/users.ts`)
+
 Firestore user management with atomic transactions:
 
 - **`checkUsernameAvailable(username)`** - Real-time availability check
@@ -58,9 +60,11 @@ Firestore user management with atomic transactions:
   - All-or-nothing transaction
 
 ### 3. **ProfileSetupScreen** (`src/screens/auth/ProfileSetupScreen.tsx`)
+
 Complete profile creation UI with real-time validation:
 
 **Features:**
+
 - Avatar preview showing selected color
 - 6 color options for avatar customization
 - Username input with:
@@ -75,6 +79,7 @@ Complete profile creation UI with real-time validation:
 - Error messages for all validation states
 
 **Flow:**
+
 ```
 User enters username
   ↓ (typing stops)
@@ -93,9 +98,11 @@ Tap "Continue"
 ```
 
 ### 4. **LoginScreen** (`src/screens/auth/LoginScreen.tsx`)
+
 Updated with real Firebase authentication:
 
 **Features:**
+
 - Email input with validation
 - Password input
 - Firebase error handling:
@@ -106,9 +113,11 @@ Updated with real Firebase authentication:
 - "Don't have an account? Sign up" link
 
 ### 5. **SignupScreen** (`src/screens/auth/SignupScreen.tsx`)
+
 Updated with real Firebase authentication:
 
 **Features:**
+
 - Email input with validation (`isValidEmail`)
 - Password input with validation (`isValidPassword` - min 6 chars)
 - Confirm password with matching validation
@@ -126,6 +135,7 @@ Updated with real Firebase authentication:
 Two collections will be created automatically:
 
 ### **Users** Collection
+
 ```javascript
 Users/{uid} = {
   uid: string,
@@ -142,6 +152,7 @@ Users/{uid} = {
 ```
 
 ### **Usernames** Collection
+
 ```javascript
 Usernames/{username_lowercase} = {
   username: string (lowercase),
@@ -168,7 +179,7 @@ service cloud.firestore {
       allow create: if request.auth.uid == uid && request.auth.uid == resource.data.uid;
       allow update: if request.auth.uid == uid;
     }
-    
+
     // Usernames are read-only (reserved by setupNewUser)
     match /Usernames/{document=**} {
       allow read: if true;
@@ -184,6 +195,7 @@ service cloud.firestore {
 ## Authentication Flow
 
 ### Sign Up
+
 ```
 Welcome Screen
   ↓ (tap "Create Account")
@@ -208,6 +220,7 @@ RootNavigator detects user has profile → navigates to AppTabs
 ```
 
 ### Sign In
+
 ```
 Welcome Screen
   ↓ (tap "Sign In")
@@ -223,6 +236,7 @@ RootNavigator detects user profile → navigates to AppTabs
 ```
 
 ### Sign Out
+
 ```
 Profile Screen (tap "Sign Out")
   ↓
@@ -249,6 +263,7 @@ RootNavigator detects no user → navigates back to AuthStack
 ## Testing Checklist
 
 ### Test Sign Up Flow
+
 - [ ] Navigate to "Create Account"
 - [ ] Try email validation (invalid email shows error)
 - [ ] Try weak password (< 6 chars shows error)
@@ -260,13 +275,14 @@ RootNavigator detects no user → navigates back to AuthStack
 - [ ] Taken username → shows ✗ and disables button
 - [ ] Display name required → validation error
 - [ ] Select avatar color → preview updates
-- [ ] Tap Continue → 
+- [ ] Tap Continue →
   - [ ] Loading spinner shows
   - [ ] Firestore Users doc created
   - [ ] Firestore Usernames doc created
   - [ ] Auto-navigates to AppTabs
 
 ### Test Login Flow
+
 - [ ] Navigate to "Sign In"
 - [ ] Invalid email → shows error
 - [ ] Non-existent email → "No account found..."
@@ -274,6 +290,7 @@ RootNavigator detects no user → navigates back to AuthStack
 - [ ] Valid credentials → auto-navigate to AppTabs
 
 ### Test Auth State
+
 - [ ] Reload app → user should still be logged in (Auth persists)
 - [ ] Sign Out from Profile → navigate to Welcome screen
 - [ ] Try going back to Profile while logged out → can't access
@@ -283,12 +300,14 @@ RootNavigator detects no user → navigates back to AuthStack
 ## What's Next (Phase 2+)
 
 ### Phase 2: Friends System
+
 - Add friend button to Profile screen
 - Friend requests (send/accept/decline)
 - Friends list with streak tracking
 - Remove friend
 
 ### Phase 3: Chat + Messaging
+
 - 1:1 direct messages
 - Message persistence in Firestore
 - Photo message support
@@ -296,6 +315,7 @@ RootNavigator detects no user → navigates back to AuthStack
 - Typing indicators (optional)
 
 ### Phase 4: Photo Snaps
+
 - Camera integration (Expo Camera)
 - Photo capture and preview
 - Send photo to friend
@@ -303,27 +323,32 @@ RootNavigator detects no user → navigates back to AuthStack
 - Delete snaps
 
 ### Phase 5: Stories
+
 - 24-hour story posts
 - Story view tracking
 - Firestore TTL delete after 24h
 - Story reactions
 
 ### Phase 6: Games
+
 - Build arcade games
 - Leaderboard with scores
 - Cloud Functions for computing streaks
 
 ### Phase 7: Cosmetics & Awards
+
 - Avatar customization (hats, glasses, etc.)
 - Achievement system
 - Cosmetic marketplace
 
 ### Phase 8: Streaks & Notifications
+
 - Streak tracking (messages, snaps)
 - Firebase Cloud Messaging (FCM)
 - Push notifications
 
 ### Phase 9: Safety & Admin
+
 - User reports
 - Block/mute features
 - Content moderation
@@ -334,15 +359,18 @@ RootNavigator detects no user → navigates back to AuthStack
 ## Files Created/Modified
 
 **Created:**
+
 - `src/services/auth.ts` (49 lines)
 - `src/services/users.ts` (224 lines)
 
 **Modified:**
+
 - `src/screens/auth/ProfileSetupScreen.tsx` - Complete rewrite with validation and Firestore integration
 - `src/screens/auth/LoginScreen.tsx` - Updated with auth service and error handling
 - `src/screens/auth/SignupScreen.tsx` - Updated with auth service and error handling
 
 **Total Changes:**
+
 - 5 files changed
 - 581 insertions
 - 40 deletions
@@ -381,12 +409,14 @@ RootNavigator detects no user → navigates back to AuthStack
 ## Security Notes
 
 ⚠️ **Firebase Security Rules NOT YET CONFIGURED**
+
 - App works without rules in development
 - MUST add rules before production
 - Rules should restrict Users to self-access
 - Usernames should be read-only (reserved once)
 
 ✅ **Firebase Credentials Protected**
+
 - Local config in `.gitignore`
 - Safe to push to GitHub
 
@@ -422,6 +452,7 @@ Press 'w' in terminal
 ## Summary
 
 **Phase 1 delivers:**
+
 - ✅ Full Firebase Authentication (signup/login/logout)
 - ✅ Firestore user profiles with schema
 - ✅ Real-time username availability checking

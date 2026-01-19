@@ -5,10 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import { isValidUsername, isValidDisplayName } from "@/utils/validators";
-import {
-  checkUsernameAvailable,
-  setupNewUser,
-} from "@/services/users";
+import { checkUsernameAvailable, setupNewUser } from "@/services/users";
 
 const AVATAR_COLORS = [
   "#FFFC00",
@@ -64,7 +61,9 @@ export default function ProfileSetupScreen({ navigation }: any) {
     }
 
     if (!isValidUsername(username)) {
-      setError("Username must be 3-20 characters, alphanumeric and underscores only");
+      setError(
+        "Username must be 3-20 characters, alphanumeric and underscores only",
+      );
       return;
     }
 
@@ -107,18 +106,15 @@ export default function ProfileSetupScreen({ navigation }: any) {
         return;
       }
 
-      // Update avatar colors
-      if (currentFirebaseUser.email) {
-        await refreshProfile();
-      }
+      // Refresh user profile in context
+      await refreshProfile();
 
       // Auto-navigate to app (navigation happens through RootNavigator when user is fully set up)
       // The app will detect that the user has a profile and navigate to AppTabs
+      setLoading(false);
     } catch (err: any) {
       console.error("Profile setup error:", err);
-      setError(
-        err.message || "Failed to set up profile. Please try again.",
-      );
+      setError(err.message || "Failed to set up profile. Please try again.");
       setLoading(false);
     }
   };
@@ -126,9 +122,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Set Up Your Profile</Text>
-      <Text style={styles.subtitle}>
-        Complete your profile to get started
-      </Text>
+      <Text style={styles.subtitle}>Complete your profile to get started</Text>
 
       {/* Avatar Preview */}
       <View style={styles.avatarSection}>
@@ -165,11 +159,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
               disabled={loading}
             >
               {selectedColorIndex === index && (
-                <MaterialCommunityIcons
-                  name="check"
-                  size={20}
-                  color="#000"
-                />
+                <MaterialCommunityIcons name="check" size={20} color="#000" />
               )}
             </Button>
           ))}
