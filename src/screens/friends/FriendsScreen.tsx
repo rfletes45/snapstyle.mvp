@@ -40,7 +40,7 @@ interface FriendWithProfile extends Friend {
   };
 }
 
-export default function FriendsScreen() {
+export default function FriendsScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   useUser(); // Ensure user context is available
   const uid = currentFirebaseUser?.uid;
@@ -361,17 +361,34 @@ export default function FriendsScreen() {
                               )}
                             </View>
                           </View>
-                          <Button
-                            mode="text"
-                            onPress={() => {
-                              if (friendUid) {
-                                handleRemoveFriend(friendUid);
-                              }
-                            }}
-                            compact
-                          >
-                            Remove
-                          </Button>
+                          <View style={styles.buttonGroup}>
+                            <Button
+                              mode="contained"
+                              onPress={() => {
+                                if (friendUid) {
+                                  navigation.navigate("Chats", {
+                                    screen: "ChatDetail",
+                                    params: { friendUid },
+                                  });
+                                }
+                              }}
+                              compact
+                              style={styles.messageButton}
+                            >
+                              Message
+                            </Button>
+                            <Button
+                              mode="text"
+                              onPress={() => {
+                                if (friendUid) {
+                                  handleRemoveFriend(friendUid);
+                                }
+                              }}
+                              compact
+                            >
+                              Remove
+                            </Button>
+                          </View>
                         </View>
                       </Card.Content>
                     </Card>
@@ -647,6 +664,16 @@ const styles = StyleSheet.create({
   streakText: {
     fontSize: 10,
     color: "#fff",
+  },
+
+  buttonGroup: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+
+  messageButton: {
+    marginRight: 4,
   },
 
   sentRequestHeader: {

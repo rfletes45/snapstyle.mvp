@@ -113,10 +113,7 @@ export default function ChatListScreen({ navigation }: any) {
       <FlatList
         data={filteredChats}
         renderItem={({ item: chat }) => (
-          <Card
-            style={styles.chatCard}
-            onPress={() => handleChatPress(chat)}
-          >
+          <Card style={styles.chatCard} onPress={() => handleChatPress(chat)}>
             <Card.Content style={styles.chatContent}>
               <View style={styles.chatHeader}>
                 <View
@@ -130,9 +127,8 @@ export default function ChatListScreen({ navigation }: any) {
                   ]}
                 >
                   <Text style={styles.avatarText}>
-                    {chat.otherUserProfile?.username
-                      ?.charAt(0)
-                      .toUpperCase() || "?"}
+                    {chat.otherUserProfile?.username?.charAt(0).toUpperCase() ||
+                      "?"}
                   </Text>
                 </View>
 

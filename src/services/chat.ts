@@ -77,7 +77,9 @@ export async function sendMessage(
       content,
       type: "text" as const,
       createdAt: Timestamp.now(),
-      expiresAt: Timestamp.fromMillis(new Date().getTime() + 24 * 60 * 60 * 1000), // 24 hours
+      expiresAt: Timestamp.fromMillis(
+        new Date().getTime() + 24 * 60 * 60 * 1000,
+      ), // 24 hours
       read: false,
       readAt: null,
     };
@@ -117,17 +119,19 @@ export async function getUserChats(uid: string): Promise<Chat[]> {
     const q = query(
       chatsRef,
       where("members", "array-contains", uid),
-      orderBy("lastMessageAt", "desc"),
     );
 
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({
+    const chats = snapshot.docs.map((doc) => ({
       id: doc.id,
       members: doc.data().members,
       createdAt: doc.data().createdAt?.toMillis?.() || 0,
       lastMessageText: doc.data().lastMessageText,
       lastMessageAt: doc.data().lastMessageAt?.toMillis?.() || 0,
     }));
+
+    // Sort by lastMessageAt descending (newest first)
+    return chats.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
   } catch (error) {
     console.error("Error getting user chats:", error);
     throw error;
@@ -152,7 +156,8 @@ export async function getChatMessages(chatId: string): Promise<Message[]> {
       type: doc.data().type || "text",
       content: doc.data().content,
       createdAt: doc.data().createdAt?.toMillis?.() || 0,
-      expiresAt: doc.data().expiresAt?.toMillis?.() || Date.now() + 24 * 60 * 60 * 1000,
+      expiresAt:
+        doc.data().expiresAt?.toMillis?.() || Date.now() + 24 * 60 * 60 * 1000,
       read: doc.data().read || false,
       readAt: doc.data().readAt?.toMillis?.() || undefined,
     }));
@@ -184,7 +189,9 @@ export function subscribeToChat(
         type: doc.data().type || "text",
         content: doc.data().content,
         createdAt: doc.data().createdAt?.toMillis?.() || 0,
-        expiresAt: doc.data().expiresAt?.toMillis?.() || Date.now() + 24 * 60 * 60 * 1000,
+        expiresAt:
+          doc.data().expiresAt?.toMillis?.() ||
+          Date.now() + 24 * 60 * 60 * 1000,
         read: doc.data().read || false,
         readAt: doc.data().readAt?.toMillis?.() || undefined,
       }));
