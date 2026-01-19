@@ -9,7 +9,9 @@ This checklist ensures you understand what Phase 2 will deliver.
 ## What Phase 2 Will Build
 
 ### Overview
+
 Phase 2 implements the **Friends System** with:
+
 - Add friends by username
 - Friend requests (send, accept, decline)
 - Friends list with status
@@ -48,6 +50,7 @@ Phase 2 implements the **Friends System** with:
 Phase 2 will create these new Firestore collections:
 
 ### 1. **Friends Collection**
+
 ```
 Friends/
 ├── {friendshipId1}/
@@ -63,12 +66,14 @@ Friends/
 ```
 
 **Purpose:** Store confirmed friendships and streak data
-**Key fields:** 
+**Key fields:**
+
 - Stores both UIDs so we can query "get my friends"
 - Streak tracking requires daily message tracking
 - blockedBy allows one-sided blocking
 
 ### 2. **FriendRequests Collection**
+
 ```
 FriendRequests/
 ├── {requestId1}/
@@ -83,6 +88,7 @@ FriendRequests/
 
 **Purpose:** Track pending/responded friend requests
 **Key fields:**
+
 - status allows filtering (pending requests)
 - respondedAt helps with notification/history
 
@@ -96,20 +102,20 @@ service cloud.firestore {
     match /Users/{uid} {
       allow read, write: if request.auth.uid == uid;
     }
-    
+
     // Usernames
     match /Usernames/{username} {
       allow read, write: if request.auth != null;
     }
-    
+
     // Friends - authenticated users can read their friends
     match /Friends/{friendId} {
-      allow read: if request.auth != null && 
+      allow read: if request.auth != null &&
                      (request.auth.uid in resource.data.users);
       allow create, update, delete: if request.auth != null &&
                                        (request.auth.uid in resource.data.users);
     }
-    
+
     // Friend Requests - users can read/write their own requests
     match /FriendRequests/{requestId} {
       allow read: if request.auth != null &&
@@ -132,43 +138,50 @@ service cloud.firestore {
 ### `src/services/friends.ts`
 
 **Functions:**
+
 ```typescript
 // Get all friends for current user
-export async function getFriends(uid: string): Promise<Friend[]>
+export async function getFriends(uid: string): Promise<Friend[]>;
 
 // Get a specific friend relationship
-export async function getFriend(uid1: string, uid2: string): Promise<Friend | null>
+export async function getFriend(
+  uid1: string,
+  uid2: string,
+): Promise<Friend | null>;
 
 // Add friend (sends friend request)
 export async function sendFriendRequest(
   fromUid: string,
-  toUsername: string    // Find by username, then send request
-): Promise<boolean>
+  toUsername: string, // Find by username, then send request
+): Promise<boolean>;
 
 // Get pending friend requests
-export async function getPendingRequests(uid: string): Promise<FriendRequest[]>
+export async function getPendingRequests(uid: string): Promise<FriendRequest[]>;
 
 // Accept friend request
-export async function acceptFriendRequest(requestId: string): Promise<boolean>
+export async function acceptFriendRequest(requestId: string): Promise<boolean>;
 
 // Decline friend request
-export async function declineFriendRequest(requestId: string): Promise<boolean>
+export async function declineFriendRequest(requestId: string): Promise<boolean>;
 
 // Remove friend
-export async function removeFriend(uid1: string, uid2: string): Promise<boolean>
+export async function removeFriend(
+  uid1: string,
+  uid2: string,
+): Promise<boolean>;
 
 // Block/unblock friend
 export async function toggleBlockFriend(
   blockerUid: string,
   blockedUid: string,
-  block: boolean
-): Promise<boolean>
+  block: boolean,
+): Promise<boolean>;
 
 // Update streak (called when message sent)
 export async function updateStreak(
   friendshipId: string,
-  senderUid: string
-): Promise<boolean>
+  senderUid: string,
+): Promise<boolean>;
 ```
 
 ---
@@ -176,9 +189,11 @@ export async function updateStreak(
 ## Screens to Create/Update (Phase 2)
 
 ### 1. **FriendsScreen** (MAIN - New Content)
+
 Location: `src/screens/friends/FriendsScreen.tsx`
 
 **Tabs/Sections:**
+
 - **Friends List** (default tab)
   - Search bar to find friends
   - List of all friends with streak count
@@ -200,15 +215,18 @@ Location: `src/screens/friends/FriendsScreen.tsx`
   - Success confirmation
 
 **UI Components:**
+
 - Friend list item: [Avatar Color] Username - "🔥 15 streak" (red text if active)
 - Request item: Username - "Sent 2 days ago" / "New request"
 - Search result: Username - "Send Request" button
 - Empty states: "No friends yet", "No pending requests"
 
 ### 2. **FriendDetailsModal** (NEW - Optional for Phase 2)
+
 Location: `src/screens/friends/FriendDetailsModal.tsx`
 
 **Shows:**
+
 - Friend's avatar (color)
 - Username
 - Display name
@@ -227,19 +245,19 @@ Update `src/types/models.ts`:
 
 export interface FriendRequest {
   id: string;
-  from: string;              // Sender UID
-  to: string;                // Receiver UID
+  from: string; // Sender UID
+  to: string; // Receiver UID
   status: "pending" | "accepted" | "declined";
   createdAt: number;
   respondedAt?: number;
 }
 
 export interface Friend {
-  id: string;                // Friendship document ID
-  users: [string, string];   // [uid1, uid2]
+  id: string; // Friendship document ID
+  users: [string, string]; // [uid1, uid2]
   createdAt: number;
   streakCount: number;
-  streakUpdatedDay: string;  // "YYYY-MM-DD"
+  streakUpdatedDay: string; // "YYYY-MM-DD"
   lastSentDay_uid1?: string;
   lastSentDay_uid2?: string;
   blockedBy?: string | null;
@@ -251,6 +269,7 @@ export interface Friend {
 ## Expected User Flow (Phase 2)
 
 ### Adding a Friend
+
 ```
 Friends Screen
   ↓ (tap "Add Friend")
@@ -267,6 +286,7 @@ Friendship Created!
 ```
 
 ### Accepting Friend Request
+
 ```
 Friends Screen → Requests Tab
   ↓ (shows pending requests)
@@ -279,6 +299,7 @@ john_doe appears in Friends List
 ```
 
 ### Friends List
+
 ```
 Friends List shows:
 
@@ -323,6 +344,7 @@ Tap friend → Opens Friend Details (or chat in Phase 3)
 ## Dependency Check
 
 **Phase 2 depends on Phase 1:**
+
 - ✅ Firebase Authentication working
 - ✅ User profiles created
 - ✅ Usernames reserved in Firestore
@@ -330,6 +352,7 @@ Tap friend → Opens Friend Details (or chat in Phase 3)
 - ✅ UserContext with profile loading
 
 **Phase 2 does NOT need:**
+
 - ❌ Chat/Messages
 - ❌ Stories
 - ❌ Photos/Camera
@@ -341,16 +364,19 @@ Tap friend → Opens Friend Details (or chat in Phase 3)
 ## Phase 2 Deliverables
 
 **Code Files (New):**
+
 - `src/services/friends.ts` - All friend operations
 - `src/screens/friends/FriendsScreen.tsx` - Main friends screen
 - `src/screens/friends/FriendDetailsModal.tsx` (optional) - Friend details
 
 **Code Updates:**
+
 - `src/types/models.ts` - Add FriendRequest, Friend types
 - `src/screens/profile/ProfileScreen.tsx` (optional) - Add "View Profile" button for others
 - Firestore security rules - Add Friends + FriendRequests rules
 
 **Documentation:**
+
 - `PHASE_2_COMPLETE.md` - Phase 2 summary
 
 ---
@@ -366,13 +392,14 @@ Tap friend → Opens Friend Details (or chat in Phase 3)
 ✅ Security rules protect data  
 ✅ TypeScript: 0 errors  
 ✅ ESLint: 0 errors, 0 warnings  
-✅ All features tested manually  
+✅ All features tested manually
 
 ---
 
 ## Ready for Phase 2?
 
 When all Phase 1 features work:
+
 - ✅ Create account
 - ✅ Customize profile (username, display name, avatar)
 - ✅ Log in with existing account
@@ -384,6 +411,7 @@ When all Phase 1 features work:
 ---
 
 **Next:** I'll implement Phase 2 with:
+
 1. Firestore collections + security rules
 2. `friends.ts` service with all logic
 3. `FriendsScreen.tsx` with full UI

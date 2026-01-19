@@ -23,7 +23,9 @@ export default function ProfileScreen() {
   const { profile, refreshProfile } = useUser();
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editDisplayName, setEditDisplayName] = useState(profile?.displayName || "");
+  const [editDisplayName, setEditDisplayName] = useState(
+    profile?.displayName || "",
+  );
   const [selectedColorIndex, setSelectedColorIndex] = useState(
     AVATAR_COLORS.indexOf(profile?.avatarConfig?.baseColor || "#FFFC00"),
   );
@@ -207,7 +209,9 @@ export default function ProfileScreen() {
                 setIsEditing(false);
                 setEditDisplayName(profile.displayName);
                 setSelectedColorIndex(
-                  AVATAR_COLORS.indexOf(profile.avatarConfig?.baseColor || "#FFFC00"),
+                  AVATAR_COLORS.indexOf(
+                    profile.avatarConfig?.baseColor || "#FFFC00",
+                  ),
                 );
                 setError("");
               }}

@@ -23,6 +23,7 @@ export interface FriendRequest {
   to: string;
   status: "pending" | "accepted" | "declined";
   createdAt: number;
+  respondedAt: number | null;
 }
 
 // Friend relationship

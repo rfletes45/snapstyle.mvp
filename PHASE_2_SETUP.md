@@ -24,21 +24,21 @@ service cloud.firestore {
     match /Users/{uid} {
       allow read, write: if request.auth.uid == uid;
     }
-    
+
     // Usernames - all authenticated users can read/write (for availability checks)
     match /Usernames/{username} {
       allow read, write: if request.auth != null;
     }
-    
+
     // Friends - users can read/write if they're part of the friendship
     match /Friends/{friendId} {
-      allow read: if request.auth != null && 
+      allow read: if request.auth != null &&
                      (request.auth.uid in resource.data.users);
       allow create: if request.auth != null;
       allow update, delete: if request.auth != null &&
                                (request.auth.uid in resource.data.users);
     }
-    
+
     // FriendRequests - users can read/write their own requests
     match /FriendRequests/{requestId} {
       allow read: if request.auth != null &&
@@ -64,6 +64,7 @@ service cloud.firestore {
 The `Friend` and `FriendRequest` types are already defined in `src/types/models.ts` from the Phase 0 bootstrap, so no changes needed there.
 
 **Verify** these types exist:
+
 - `Friend` - Friendship with users, streak, dates
 - `FriendRequest` - Request with from/to/status
 
@@ -90,6 +91,7 @@ This will replace the placeholder with full UI.
 ## Step 5: Test Complete Phase 2
 
 Once implemented, test the full flow:
+
 - Create 2 accounts
 - Add friend by username
 - Accept/decline requests
