@@ -32,13 +32,21 @@ interface RequestWithUsername extends FriendRequest {
   };
 }
 
+interface FriendWithProfile extends Friend {
+  otherUserProfile?: {
+    username: string;
+    displayName: string;
+    avatarConfig: AvatarConfig;
+  };
+}
+
 export default function FriendsScreen() {
   const { currentFirebaseUser } = useAuth();
   useUser(); // Ensure user context is available
   const uid = currentFirebaseUser?.uid;
 
   // State management
-  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friends, setFriends] = useState<FriendWithProfile[]>([]);
   const [pendingRequests, setPendingRequests] = useState<RequestWithUsername[]>(
     [],
   );
@@ -79,7 +87,27 @@ export default function FriendsScreen() {
         }),
       );
 
-      setFriends(friendsData);
+      // Fetch user profiles for friends
+      const friendsWithProfiles = await Promise.all(
+        friendsData.map(async (friend) => {
+          const friendUid = friend.users.find((u) => u !== uid);
+          if (!friendUid) return friend;
+
+          const profile = await getUserProfileByUid(friendUid);
+          return {
+            ...friend,
+            otherUserProfile: profile
+              ? {
+                  username: profile.username,
+                  displayName: profile.displayName,
+                  avatarConfig: profile.avatarConfig,
+                }
+              : undefined,
+          };
+        }),
+      );
+
+      setFriends(friendsWithProfiles);
       setPendingRequests(requestsWithProfiles);
     } catch (error) {
       console.error("Error loading friends data:", error);
@@ -248,8 +276,7 @@ export default function FriendsScreen() {
                             variant="bodyMedium"
                             style={styles.requestUsername}
                           >
-                            {request.otherUserProfile?.username ||
-                              "Loading..."}
+                            {request.otherUserProfile?.username || "Loading..."}
                           </Text>
                           <Text
                             variant="bodySmall"
@@ -298,15 +325,29 @@ export default function FriendsScreen() {
                       <Card.Content style={styles.cardContent}>
                         <View style={styles.friendHeader}>
                           <View style={styles.friendInfo}>
-                            <View style={styles.avatar}>
-                              <Text style={styles.avatarText}>👤</Text>
+                            <View
+                              style={[
+                                styles.avatar,
+                                {
+                                  backgroundColor:
+                                    friend.otherUserProfile?.avatarConfig
+                                      ?.baseColor || "#6200EE",
+                                },
+                              ]}
+                            >
+                              <Text style={styles.avatarText}>
+                                {friend.otherUserProfile?.username
+                                  ?.charAt(0)
+                                  .toUpperCase() || "?"}
+                              </Text>
                             </View>
                             <View style={styles.nameContainer}>
                               <Text
                                 variant="bodyMedium"
                                 style={styles.friendName}
                               >
-                                Friend
+                                {friend.otherUserProfile?.username ||
+                                  "Loading..."}
                               </Text>
                               {streakCount > 0 && (
                                 <Chip

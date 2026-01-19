@@ -512,7 +512,7 @@ export async function getUserProfileByUid(uid: string) {
     const db = getFirestoreInstance();
     const userDocRef = doc(db, "Users", uid);
     const userDoc = await getDoc(userDocRef);
-    
+
     if (userDoc.exists()) {
       const data = userDoc.data();
       return {
