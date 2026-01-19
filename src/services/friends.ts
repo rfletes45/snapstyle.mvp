@@ -271,10 +271,7 @@ export async function getFriends(uid: string): Promise<Friend[]> {
 
   try {
     const friendsRef = collection(db, "Friends");
-    const q = query(
-      friendsRef,
-      where("users", "array-contains", uid),
-    );
+    const q = query(friendsRef, where("users", "array-contains", uid));
 
     const snapshot = await getDocs(q);
     const friends: Friend[] = [];
@@ -356,13 +353,13 @@ export async function removeFriend(
     const snapshot = await getDocs(q);
     let found = false;
 
-    snapshot.forEach((doc) => {
+    for (const doc of snapshot.docs) {
       const friend = doc.data() as Friend;
       if (friend.users.includes(uid2)) {
-        deleteDoc(doc.ref);
+        await deleteDoc(doc.ref);
         found = true;
       }
-    });
+    }
 
     if (!found) {
       throw new Error("Friendship not found");
