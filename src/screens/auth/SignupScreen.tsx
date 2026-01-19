@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
 import { TextInput, Button, Text } from "react-native-paper";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { getAuthInstance } from "@/services/firebase";
+import { signUp } from "@/services/auth";
+import { isValidEmail, isValidPassword } from "@/utils/validators";
 
 export default function SignupScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
@@ -14,8 +14,19 @@ export default function SignupScreen({ navigation }: any) {
   const handleSignup = async () => {
     setError("");
 
+    // Validation
     if (!email || !password || !confirmPassword) {
       setError("All fields are required");
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      setError("Password must be at least 6 characters");
       return;
     }
 
@@ -24,20 +35,25 @@ export default function SignupScreen({ navigation }: any) {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const auth = getAuthInstance();
-      await createUserWithEmailAndPassword(auth, email, password);
+      // Create user with Firebase Authentication
+      await signUp(email.trim(), password);
       // After signup, navigate to profile setup
       navigation.navigate("ProfileSetup");
     } catch (err: any) {
-      setError(err.message);
+      console.error("Signup error:", err);
+      // Parse Firebase error messages
+      if (err.code === "auth/email-already-in-use") {
+        setError("This email is already registered");
+      } else if (err.code === "auth/weak-password") {
+        setError("Password is too weak");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Invalid email address");
+      } else {
+        setError(err.message || "Failed to create account");
+      }
     } finally {
       setLoading(false);
     }
@@ -55,6 +71,7 @@ export default function SignupScreen({ navigation }: any) {
         keyboardType="email-address"
         disabled={loading}
         style={styles.input}
+        autoCapitalize="none"
       />
 
       <TextInput

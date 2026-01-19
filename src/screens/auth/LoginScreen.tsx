@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { StyleSheet, ScrollView } from "react-native";
 import { TextInput, Button, Text } from "react-native-paper";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { getAuthInstance } from "@/services/firebase";
+import { login } from "@/services/auth";
+import { isValidEmail } from "@/utils/validators";
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
@@ -12,14 +12,38 @@ export default function LoginScreen({ navigation }: any) {
 
   const handleLogin = async () => {
     setError("");
+
+    // Validation
+    if (!email || !password) {
+      setError("Email and password are required");
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const auth = getAuthInstance();
-      await signInWithEmailAndPassword(auth, email, password);
-      // Navigation will happen automatically via AuthContext
+      // Sign in with Firebase Authentication
+      await login(email.trim(), password);
+      // Navigation will happen automatically via AuthContext when user state updates
     } catch (err: any) {
-      setError(err.message);
+      console.error("Login error:", err);
+      // Parse Firebase error messages
+      if (err.code === "auth/user-not-found") {
+        setError("No account found with this email");
+      } else if (err.code === "auth/wrong-password") {
+        setError("Incorrect password");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Invalid email address");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many login attempts. Please try again later.");
+      } else {
+        setError(err.message || "Failed to sign in");
+      }
     } finally {
       setLoading(false);
     }
@@ -37,6 +61,7 @@ export default function LoginScreen({ navigation }: any) {
         keyboardType="email-address"
         disabled={loading}
         style={styles.input}
+        autoCapitalize="none"
       />
 
       <TextInput
