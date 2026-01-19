@@ -87,11 +87,11 @@ function AppTabs() {
 }
 
 export default function RootNavigator() {
-  const { currentFirebaseUser, loading } = useAuth();
-  const { profile } = useUser();
+  const { currentFirebaseUser, loading: authLoading } = useAuth();
+  const { profile, loading: profileLoading } = useUser();
 
   // Show loading screen while auth state is being determined
-  if (loading) {
+  if (authLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color="#FFFC00" />
@@ -101,10 +101,21 @@ export default function RootNavigator() {
 
   // Determine which navigator to show:
   // 1. If not logged in → show AuthStack (Welcome, Login, Signup)
-  // 2. If logged in but no profile → show ProfileSetup only
-  // 3. If logged in with profile → show AppTabs
+  // 2. If logged in but profile is loading → show loading spinner (prevents flicker)
+  // 3. If logged in but no profile → show ProfileSetup only
+  // 4. If logged in with profile → show AppTabs
   const isLoggedIn = !!currentFirebaseUser;
   const hasProfile = !!profile?.username;
+
+  // If logged in but profile is still loading, show loading spinner
+  // This prevents the flicker between AppTabs → ProfileSetup → AppTabs
+  if (isLoggedIn && profileLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#FFFC00" />
+      </View>
+    );
+  }
 
   // For web, we need a linking configuration
   const linking = {
