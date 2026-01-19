@@ -122,22 +122,26 @@ export default function FriendsScreen() {
   const handleRemoveFriend = async (friendUid: string) => {
     if (!uid) return;
 
-    Alert.alert("Remove Friend", "Are you sure you want to remove this friend?", [
-      { text: "Cancel", onPress: () => {}, style: "cancel" },
-      {
-        text: "Remove",
-        onPress: async () => {
-          try {
-            await removeFriend(uid, friendUid);
-            Alert.alert("Success", "Friend removed");
-            await loadData();
-          } catch {
-            Alert.alert("Error", "Failed to remove friend");
-          }
+    Alert.alert(
+      "Remove Friend",
+      "Are you sure you want to remove this friend?",
+      [
+        { text: "Cancel", onPress: () => {}, style: "cancel" },
+        {
+          text: "Remove",
+          onPress: async () => {
+            try {
+              await removeFriend(uid, friendUid);
+              Alert.alert("Success", "Friend removed");
+              await loadData();
+            } catch {
+              Alert.alert("Error", "Failed to remove friend");
+            }
+          },
+          style: "destructive",
         },
-        style: "destructive",
-      },
-    ]);
+      ],
+    );
   };
 
   // Get request preview (show username or initials of other user)
@@ -188,7 +192,7 @@ export default function FriendsScreen() {
         data={[]}
         renderItem={() => null}
         ListEmptyComponent={
-          <>
+          <View>
             {/* Received Requests Section */}
             {receivedRequests.length > 0 && (
               <View style={styles.section}>
@@ -205,7 +209,10 @@ export default function FriendsScreen() {
                           </Text>
                         </View>
                         <View style={styles.requestInfo}>
-                          <Text variant="bodyMedium" style={styles.requestSubtitle}>
+                          <Text
+                            variant="bodyMedium"
+                            style={styles.requestSubtitle}
+                          >
                             Friend Request
                           </Text>
                         </View>
@@ -253,7 +260,10 @@ export default function FriendsScreen() {
                               <Text style={styles.avatarText}>👤</Text>
                             </View>
                             <View style={styles.nameContainer}>
-                              <Text variant="bodyMedium" style={styles.friendName}>
+                              <Text
+                                variant="bodyMedium"
+                                style={styles.friendName}
+                              >
                                 Friend
                               </Text>
                               {streakCount > 0 && (
@@ -270,7 +280,9 @@ export default function FriendsScreen() {
                           </View>
                           <Button
                             mode="text"
-                            onPress={() => friendUid && handleRemoveFriend(friendUid)}
+                            onPress={() =>
+                              friendUid && handleRemoveFriend(friendUid)
+                            }
                             compact
                           >
                             Remove
@@ -305,7 +317,10 @@ export default function FriendsScreen() {
                         <View style={styles.avatar}>
                           <Text style={styles.avatarText}>⏳</Text>
                         </View>
-                        <Text variant="bodySmall" style={styles.sentRequestText}>
+                        <Text
+                          variant="bodySmall"
+                          style={styles.sentRequestText}
+                        >
                           Pending Request
                         </Text>
                         <Button
@@ -321,7 +336,7 @@ export default function FriendsScreen() {
                 ))}
               </View>
             )}
-          </>
+          </View>
         }
         refreshing={refreshing}
         onRefresh={onRefresh}

@@ -30,7 +30,10 @@ export async function sendFriendRequest(
   try {
     // Find user by username
     const usersRef = collection(db, "Users");
-    const q = query(usersRef, where("usernameLower", "==", toUsername.toLowerCase()));
+    const q = query(
+      usersRef,
+      where("usernameLower", "==", toUsername.toLowerCase()),
+    );
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
@@ -99,7 +102,9 @@ export async function sendFriendRequest(
  * @param uid User ID
  * @returns Array of pending requests
  */
-export async function getPendingRequests(uid: string): Promise<FriendRequest[]> {
+export async function getPendingRequests(
+  uid: string,
+): Promise<FriendRequest[]> {
   const db = getFirestoreInstance();
 
   try {
@@ -206,7 +211,9 @@ export async function acceptFriendRequest(requestId: string): Promise<boolean> {
  * @param requestId Friend request ID
  * @returns true if successful
  */
-export async function declineFriendRequest(requestId: string): Promise<boolean> {
+export async function declineFriendRequest(
+  requestId: string,
+): Promise<boolean> {
   const db = getFirestoreInstance();
 
   try {
@@ -266,7 +273,6 @@ export async function getFriends(uid: string): Promise<Friend[]> {
     const q = query(
       friendsRef,
       where("users", "array-contains", uid),
-      orderBy("createdAt", "desc"),
     );
 
     const snapshot = await getDocs(q);
@@ -278,6 +284,9 @@ export async function getFriends(uid: string): Promise<Friend[]> {
         ...doc.data(),
       } as Friend);
     });
+
+    // Sort by creation date (newest first) in memory
+    friends.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     return friends;
   } catch (error) {
@@ -295,7 +304,7 @@ export async function getFriends(uid: string): Promise<Friend[]> {
 export async function getFriendDetails(
   friendId: string,
   currentUid: string,
-): Promise<Friend & { friendUid: string; friendProfile?: any } | null> {
+): Promise<(Friend & { friendUid: string; friendProfile?: any }) | null> {
   const db = getFirestoreInstance();
 
   try {
@@ -333,15 +342,15 @@ export async function getFriendDetails(
  * @param uid2 Friend user ID
  * @returns true if successful
  */
-export async function removeFriend(uid1: string, uid2: string): Promise<boolean> {
+export async function removeFriend(
+  uid1: string,
+  uid2: string,
+): Promise<boolean> {
   const db = getFirestoreInstance();
 
   try {
     const friendsRef = collection(db, "Friends");
-    const q = query(
-      friendsRef,
-      where("users", "array-contains", uid1),
-    );
+    const q = query(friendsRef, where("users", "array-contains", uid1));
 
     const snapshot = await getDocs(q);
     let found = false;
@@ -381,10 +390,7 @@ export async function toggleBlockFriend(
 
   try {
     const friendsRef = collection(db, "Friends");
-    const q = query(
-      friendsRef,
-      where("users", "array-contains", blockerUid),
-    );
+    const q = query(friendsRef, where("users", "array-contains", blockerUid));
 
     const snapshot = await getDocs(q);
     let found = false;
@@ -437,8 +443,12 @@ export async function updateStreak(
     // Determine which user field to update
     const [uid1] = friend.users;
     const isUid1Sending = senderUid === uid1;
-    const lastSentDayField = isUid1Sending ? "lastSentDay_uid1" : "lastSentDay_uid2";
-    const lastSentDay = isUid1Sending ? friend.lastSentDay_uid1 : friend.lastSentDay_uid2;
+    const lastSentDayField = isUid1Sending
+      ? "lastSentDay_uid1"
+      : "lastSentDay_uid2";
+    const lastSentDay = isUid1Sending
+      ? friend.lastSentDay_uid1
+      : friend.lastSentDay_uid2;
 
     // If both users sent today, don't update streak
     if (lastSentDay === today) {
@@ -446,7 +456,9 @@ export async function updateStreak(
     }
 
     // Get other user's last sent day
-    const otherSentDay = isUid1Sending ? friend.lastSentDay_uid2 : friend.lastSentDay_uid1;
+    const otherSentDay = isUid1Sending
+      ? friend.lastSentDay_uid2
+      : friend.lastSentDay_uid1;
 
     let newStreak = friend.streakCount;
 

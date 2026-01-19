@@ -15,6 +15,7 @@ Phase 2 implements a complete friends system with friend requests, friendship ma
 Complete friends operations with full error handling and validation:
 
 **Friend Management Functions:**
+
 - `sendFriendRequest(fromUid, toUsername)` - Add friend by username with validation
   - Finds user by lowercase username
   - Prevents self-adding
@@ -38,6 +39,7 @@ Complete friends operations with full error handling and validation:
   - Used when user wants to unsend request
 
 **Friend List Operations:**
+
 - `getFriends(uid)` - Get all friendships for user
   - Queries Friends collection where user is in users array
   - Returns sorted by creation date (newest first)
@@ -52,6 +54,7 @@ Complete friends operations with full error handling and validation:
   - Breaks friendship connection
 
 **Streak Tracking:**
+
 - `updateStreak(friendshipId, senderUid)` - Track daily exchanges
   - Records which user sent today
   - Increments streak if both users sent yesterday
@@ -59,6 +62,7 @@ Complete friends operations with full error handling and validation:
   - Used when messages are sent (Phase 3)
 
 **Blocking:**
+
 - `toggleBlockFriend(blockerUid, blockedUid, block)` - Block/unblock friend
   - Sets blockedBy field to indicate who blocked
   - null = not blocked, uid = blocked by this user
@@ -69,6 +73,7 @@ Complete friends operations with full error handling and validation:
 Complete Friends tab implementation:
 
 **Screen Layout:**
+
 - Header with "Friends" title and "Add Friend" button
 - Search bar for filtering friends (prepared for Phase 3)
 - Three main sections (conditional rendering):
@@ -77,12 +82,14 @@ Complete Friends tab implementation:
   3. **Sent Requests** - Pending requests user sent (pending confirmation)
 
 **Received Requests Section:**
+
 - Shows pending friend requests to current user
 - User avatar/initials display
 - Accept/Decline action buttons
 - Color-coded cards (orange border)
 
 **Friends List Section:**
+
 - Shows all confirmed friendships
 - Friend identifier (avatar + "Friend" label)
 - Streak counter with fire icon (🔥) when > 0
@@ -91,12 +98,14 @@ Complete Friends tab implementation:
 - Empty state message when no friends
 
 **Sent Requests Section:**
+
 - Shows requests user sent awaiting response
 - Pending indicator (⏳ icon)
 - Cancel request action button
 - Color-coded cards (gray, faded)
 
 **Add Friend Modal:**
+
 - Input field for username search
 - Real-time input validation
 - Loading state during request send
@@ -104,6 +113,7 @@ Complete Friends tab implementation:
 - Proper error/success alerts
 
 **State Management:**
+
 - `friends` - Array of Friend documents
 - `pendingRequests` - Array of pending FriendRequest documents
 - `loading` - Initial data load state
@@ -114,6 +124,7 @@ Complete Friends tab implementation:
 - `refreshing` - Pull-to-refresh state
 
 **Interactions:**
+
 - Load friends and requests on mount
 - Pull-to-refresh to sync latest data
 - Send friend request by username
@@ -126,34 +137,37 @@ Complete Friends tab implementation:
 ### Type Updates: `src/types/models.ts`
 
 **FriendRequest Interface:**
+
 ```typescript
 export interface FriendRequest {
   id: string;
-  from: string;          // UID of requester
-  to: string;            // UID of recipient
+  from: string; // UID of requester
+  to: string; // UID of recipient
   status: "pending" | "accepted" | "declined";
-  createdAt: number;     // Request creation timestamp
-  respondedAt: number | null;  // When request was responded to
+  createdAt: number; // Request creation timestamp
+  respondedAt: number | null; // When request was responded to
 }
 ```
 
 **Friend Interface** (already defined, used here):
+
 ```typescript
 export interface Friend {
   id: string;
-  users: [string, string];      // Both UIDs in friendship
-  createdAt: number;            // Friendship creation timestamp
-  streakCount: number;          // Current streak days
-  streakUpdatedDay: string;     // Last day streak was updated (YYYY-MM-DD)
-  lastSentDay_uid1?: string;    // Last day uid1 sent message
-  lastSentDay_uid2?: string;    // Last day uid2 sent message
-  blockedBy?: string | null;    // UID of blocker or null
+  users: [string, string]; // Both UIDs in friendship
+  createdAt: number; // Friendship creation timestamp
+  streakCount: number; // Current streak days
+  streakUpdatedDay: string; // Last day streak was updated (YYYY-MM-DD)
+  lastSentDay_uid1?: string; // Last day uid1 sent message
+  lastSentDay_uid2?: string; // Last day uid2 sent message
+  blockedBy?: string | null; // UID of blocker or null
 }
 ```
 
 ## Firestore Collections
 
 ### Friends Collection
+
 ```
 /Friends/{friendshipId}
 {
@@ -168,6 +182,7 @@ export interface Friend {
 ```
 
 ### FriendRequests Collection
+
 ```
 /FriendRequests/{requestId}
 {
@@ -184,33 +199,38 @@ export interface Friend {
 Both collections protected with proper access controls:
 
 **Friends Collection:**
+
 - Users can read their own friendships
 - Users can create friendships via acceptFriendRequest
 - Users can update their own friendships (streaks, blocks)
 - Users cannot delete (friendship removal handled by rules)
 
 **FriendRequests Collection:**
+
 - Users can create new requests
 - Users can read requests directed to them or from them
 - Users can update (accept/decline) requests to them
 - Users can delete requests they sent
 
-*Note: Rules were added manually to Firebase Console during Phase 2 setup*
+_Note: Rules were added manually to Firebase Console during Phase 2 setup_
 
 ## Code Quality
 
 **TypeScript:**
+
 - ✅ 0 compilation errors
 - ✅ Strict mode enabled
 - ✅ Full type coverage on all functions
 - ✅ Proper interface definitions
 
 **ESLint:**
+
 - ✅ 0 errors
 - ✅ 0 warnings
 - ✅ Clean code style across 2 new files
 
 **Architecture:**
+
 - ✅ Service layer separates business logic
 - ✅ UI layer manages state and interactions
 - ✅ Error handling on all operations
@@ -220,6 +240,7 @@ Both collections protected with proper access controls:
 ## Testing Checklist
 
 ### Basic Operations
+
 - [x] Send friend request to valid username
 - [x] Send friend request to invalid username (error handling)
 - [x] Send friend request to self (error handling)
@@ -231,6 +252,7 @@ Both collections protected with proper access controls:
 - [x] Remove friend
 
 ### UI Features
+
 - [x] Loading spinner on initial load
 - [x] Loading state in modal during send
 - [x] Error alerts for failed operations
@@ -241,6 +263,7 @@ Both collections protected with proper access controls:
 - [x] Empty state when no friends
 
 ### Edge Cases
+
 - [x] Receive request from same friend twice
 - [x] Accept request then try to remove
 - [x] Send request to friend already added
@@ -250,13 +273,16 @@ Both collections protected with proper access controls:
 ## File Changes
 
 **Created:**
+
 - `src/services/friends.ts` (534 lines) - Friends service layer
 
 **Modified:**
+
 - `src/screens/friends/FriendsScreen.tsx` (608 lines) - Complete implementation
 - `src/types/models.ts` - Added respondedAt to FriendRequest
 
 **Total Changes:**
+
 - 3 files modified/created
 - 1,123 lines of code added
 - 35 lines of boilerplate removed
@@ -264,30 +290,35 @@ Both collections protected with proper access controls:
 ## Key Features
 
 ✅ **Friend Requests**
+
 - Send by username with validation
 - Accept/decline/cancel actions
 - Status tracking (pending, accepted, declined)
 - Response time recording
 
 ✅ **Friend Management**
+
 - View all friends with profiles
 - Remove friends
 - Block/unblock capability
 - Friendship timestamps
 
 ✅ **Streak Tracking**
+
 - Daily message exchange tracking
 - Automatic increment when both users send
 - Reset on missing days
 - Visual indicators (fire emoji)
 
 ✅ **Real-time Sync**
+
 - Pull-to-refresh
 - Auto-load on mount
 - State updates after actions
 - Proper loading indicators
 
 ✅ **Error Handling**
+
 - Validation on all inputs
 - User-friendly error messages
 - Graceful failure handling
@@ -296,12 +327,14 @@ Both collections protected with proper access controls:
 ## Integration Points
 
 **Dependency Chain:**
+
 - AuthContext → Get current user
 - UserContext → User availability (optional)
 - Firebase Firestore → Data persistence
 - Models.ts → Type definitions
 
 **Future Integration (Phase 3+):**
+
 - Chat messaging will use Friends to verify relationships
 - Messages will trigger `updateStreak()` to maintain streaks
 - Chat will be associated with Friends via friendshipId
@@ -316,12 +349,14 @@ Both collections protected with proper access controls:
 ## Known Limitations / Future Improvements
 
 **Current Limitations:**
+
 1. Search bar UI exists but filter not yet implemented (Phase 3)
 2. Friend profiles show generic "Friend" label (will integrate with user profiles)
 3. Streak reset logic is permissive (could add recovery window)
 4. No notification for friend requests (Phase 6)
 
 **Potential Enhancements:**
+
 - Custom friend labels/groups
 - Friend request expiration
 - Suggested friends based on mutual connections
@@ -339,6 +374,7 @@ Files: 6 changed, 1,123 insertions(+), 35 deletions(-)
 ## What's Next
 
 ### Phase 3: Chat Messaging
+
 - Create Chat collection (linked to Friends)
 - Implement ChatScreen with message thread
 - Create Message service layer
@@ -346,18 +382,21 @@ Files: 6 changed, 1,123 insertions(+), 35 deletions(-)
 - Streak updates on message send
 
 ### Phase 4: Photo Snaps
+
 - Photo capture/selection UI
 - Storage in Firebase Cloud Storage
 - Snap lifetime tracking (viewed, saved)
 - Snap conversations
 
 ### Phase 5: Stories
+
 - 24-hour story posts
 - Story view counts
 - Story reactions
 - Story storage
 
 ### Phase 6: Games & Notifications
+
 - Mini-games between friends
 - Notification system
 - Push notifications
@@ -366,6 +405,7 @@ Files: 6 changed, 1,123 insertions(+), 35 deletions(-)
 ## Summary
 
 Phase 2 is complete with full friends system implementation. Users can:
+
 - ✅ Add friends by username
 - ✅ Accept/decline friend requests
 - ✅ View friends list with streaks
