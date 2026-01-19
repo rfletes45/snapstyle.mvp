@@ -484,18 +484,47 @@ export async function updateStreak(
  * @param uid User ID
  * @returns Username or undefined if not found
  */
-export async function getUsernameByUid(uid: string): Promise<string | undefined> {
+export async function getUsernameByUid(
+  uid: string,
+): Promise<string | undefined> {
   try {
     const db = getFirestoreInstance();
     const userDocRef = doc(db, "Users", uid);
     const userDoc = await getDoc(userDocRef);
-    
+
     if (userDoc.exists()) {
       return userDoc.data().username;
     }
     return undefined;
   } catch (error) {
     console.error("Error getting username:", error);
+    return undefined;
+  }
+}
+
+/**
+ * Get user profile by UID (includes username and avatar config)
+ * @param uid User ID
+ * @returns User profile or undefined if not found
+ */
+export async function getUserProfileByUid(uid: string) {
+  try {
+    const db = getFirestoreInstance();
+    const userDocRef = doc(db, "Users", uid);
+    const userDoc = await getDoc(userDocRef);
+    
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      return {
+        uid,
+        username: data.username,
+        displayName: data.displayName,
+        avatarConfig: data.avatarConfig,
+      };
+    }
+    return undefined;
+  } catch (error) {
+    console.error("Error getting user profile:", error);
     return undefined;
   }
 }

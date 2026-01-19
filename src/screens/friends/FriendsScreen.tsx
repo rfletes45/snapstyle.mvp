@@ -19,11 +19,17 @@ import {
   getFriends,
   removeFriend,
   getUsernameByUid,
+  getUserProfileByUid,
 } from "@/services/friends";
-import { Friend, FriendRequest } from "@/types/models";
+import { Friend, FriendRequest, AvatarConfig } from "@/types/models";
 
 interface RequestWithUsername extends FriendRequest {
   otherUserUsername?: string;
+  otherUserProfile?: {
+    username: string;
+    displayName: string;
+    avatarConfig: AvatarConfig;
+  };
 }
 
 export default function FriendsScreen() {
@@ -33,7 +39,9 @@ export default function FriendsScreen() {
 
   // State management
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<RequestWithUsername[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<RequestWithUsername[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
@@ -51,21 +59,28 @@ export default function FriendsScreen() {
         getPendingRequests(uid),
       ]);
 
-      // Fetch usernames for each request
-      const requestsWithUsernames = await Promise.all(
+      // Fetch user profiles for each request (especially for received requests)
+      const requestsWithProfiles = await Promise.all(
         requestsData.map(async (request) => {
-          // Determine whose username to fetch (the other person in the request)
+          // Determine whose profile to fetch (the other person in the request)
           const otherUserId = request.from === uid ? request.to : request.from;
-          const username = await getUsernameByUid(otherUserId);
+          const profile = await getUserProfileByUid(otherUserId);
           return {
             ...request,
-            otherUserUsername: username,
+            otherUserUsername: profile?.username,
+            otherUserProfile: profile
+              ? {
+                  username: profile.username,
+                  displayName: profile.displayName,
+                  avatarConfig: profile.avatarConfig,
+                }
+              : undefined,
           };
-        })
+        }),
       );
 
       setFriends(friendsData);
-      setPendingRequests(requestsWithUsernames);
+      setPendingRequests(requestsWithProfiles);
     } catch (error) {
       console.error("Error loading friends data:", error);
       Alert.alert("Error", "Failed to load friends. Please try again.");
@@ -212,14 +227,32 @@ export default function FriendsScreen() {
                   <Card key={request.id} style={styles.requestCard}>
                     <Card.Content style={styles.cardContent}>
                       <View style={styles.requestHeader}>
-                        <View style={styles.avatar}>
+                        <View
+                          style={[
+                            styles.avatar,
+                            {
+                              backgroundColor:
+                                request.otherUserProfile?.avatarConfig
+                                  ?.baseColor || "#6200EE",
+                            },
+                          ]}
+                        >
                           <Text style={styles.avatarText}>
-                            {getRequestUserPreview(request)}
+                            {request.otherUserProfile?.username
+                              ?.charAt(0)
+                              .toUpperCase() || "?"}
                           </Text>
                         </View>
                         <View style={styles.requestInfo}>
                           <Text
                             variant="bodyMedium"
+                            style={styles.requestUsername}
+                          >
+                            {request.otherUserProfile?.username ||
+                              "Loading..."}
+                          </Text>
+                          <Text
+                            variant="bodySmall"
                             style={styles.requestSubtitle}
                           >
                             Friend Request
@@ -516,8 +549,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  requestUsername: {
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 2,
+  },
+
   requestSubtitle: {
-    color: "#666",
+    color: "#999",
   },
 
   requestActions: {
