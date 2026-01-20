@@ -132,8 +132,6 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         } else {
           await selectPhoto();
         }
-        // Reset posting state after menu action
-        setPostingStory(false);
       } else if (Platform.OS === "ios") {
         ActionSheetIOS.showActionSheetWithOptions(
           {
