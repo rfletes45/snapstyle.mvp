@@ -386,13 +386,16 @@ export default function ChatScreen({
       // On web, Alert doesn't work reliably with multiple buttons
       // Use browser's confirm() for a simple choice
       console.log("🔵 [showPhotoMenu] Using web-specific menu");
-      
+
       const useCamera = window.confirm(
-        "Send Snap\n\nClick OK to take a photo with camera, or Cancel to choose from gallery."
+        "Send Snap\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
       );
-      
-      console.log("🔵 [showPhotoMenu] User choice:", useCamera ? "camera" : "gallery");
-      
+
+      console.log(
+        "🔵 [showPhotoMenu] User choice:",
+        useCamera ? "camera" : "gallery",
+      );
+
       if (useCamera) {
         console.log("🔵 [showPhotoMenu] Calling handleCapturePhoto");
         handleCapturePhoto().catch((error) => {
@@ -475,8 +478,22 @@ export default function ChatScreen({
                   : styles.receivedBubble,
               ]}
               onPress={() => {
-                // If image message, navigate to snap viewer
+                // If image message, check if user is the receiver before allowing view
                 if (message.type === "image") {
+                  // Only allow receiver to open snaps, not the sender
+                  if (message.sender === uid) {
+                    console.log(
+                      "ℹ️  [ChatScreen] Sender cannot open their own snap",
+                    );
+                    Alert.alert(
+                      "Cannot Open",
+                      "You sent this snap. Only the receiver can open it.",
+                    );
+                    return;
+                  }
+
+                  // Receiver can open the snap
+                  console.log("🔵 [ChatScreen] Opening snap for receiver");
                   navigation.navigate("SnapViewer", {
                     messageId: message.id,
                     chatId: chatId,

@@ -9,6 +9,7 @@ The camera button in ChatScreen and Stories was not working on the web version o
 React Native's `Alert.alert()` component doesn't work reliably with multiple buttons on the web platform. While it shows a dialog, the button callbacks were not being triggered properly. This is a known limitation of React Native Web's Alert polyfill.
 
 **Technical Details:**
+
 - React Native Web implements Alert using browser's `window.alert()` which only supports a single OK button
 - Multi-button Alert dialogs on web require custom implementations
 - The polyfill was showing the dialog but not properly handling button callbacks
@@ -19,6 +20,7 @@ React Native's `Alert.alert()` component doesn't work reliably with multiple but
 Replaced `Alert.alert()` with browser's native `window.confirm()` specifically for the web platform:
 
 ### Before (Not Working on Web):
+
 ```typescript
 // Android and web: show alert dialog
 Alert.alert("Send Snap", "Choose an option", [
@@ -42,13 +44,14 @@ Alert.alert("Send Snap", "Choose an option", [
 ```
 
 ### After (Working on All Platforms):
+
 ```typescript
 if (Platform.OS === "web") {
   // On web, use browser's native confirm for reliability
   const useCamera = window.confirm(
     "Send Snap\n\nClick OK to take a photo with camera, or Cancel to choose from gallery."
   );
-  
+
   if (useCamera) {
     handleCapturePhoto().catch((error) => {
       console.error("Camera error:", error);
@@ -92,6 +95,7 @@ if (Platform.OS === "web") {
 ## Testing
 
 Test the fix by:
+
 1. Opening the web version of the app
 2. Navigating to a chat with another user
 3. Clicking the camera button
@@ -134,6 +138,7 @@ The `window.confirm()` solution is the simplest and most reliable for this use c
 ## Related Issues
 
 This fix resolves the long-standing issue where:
+
 - Camera button in chat did nothing on web
 - Stories "Add Story" button didn't work on web
 - Alert dialogs appeared but buttons didn't respond

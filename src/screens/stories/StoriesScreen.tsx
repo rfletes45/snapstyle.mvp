@@ -109,13 +109,16 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       if (Platform.OS === "web") {
         // On web, use browser's native confirm for reliability
         console.log("🔵 [StoriesScreen] Using web-specific menu");
-        
+
         const useCamera = window.confirm(
-          "Post Story\n\nClick OK to take a photo with camera, or Cancel to choose from gallery."
+          "Post Story\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
         );
-        
-        console.log("🔵 [StoriesScreen] User choice:", useCamera ? "camera" : "gallery");
-        
+
+        console.log(
+          "🔵 [StoriesScreen] User choice:",
+          useCamera ? "camera" : "gallery",
+        );
+
         if (useCamera) {
           await capturePhoto();
         } else {
