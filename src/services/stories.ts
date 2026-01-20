@@ -140,6 +140,8 @@ export async function markStoryViewed(
   storyId: string,
   userId: string,
 ): Promise<void> {
+  const db = getFirestore();
+
   try {
     console.log("🔵 [markStoryViewed] Marking story as viewed:", {
       storyId,

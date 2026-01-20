@@ -20,9 +20,9 @@ import {
 import { Text, FAB, Avatar } from "react-native-paper";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
 import { getFriendsStories, hasUserViewedStory } from "@/services/stories";
-import { Story } from "@/types/models";
+import { getFriends } from "@/services/friends";
+import { Story, Friend } from "@/types/models";
 import * as ImagePicker from "expo-image-picker";
 import {
   captureImageFromWebcam,
@@ -36,30 +36,36 @@ interface StoriesScreenProps {
 
 export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   const { currentFirebaseUser } = useAuth();
-  const { userData, friendsList } = useUser();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewedStories, setViewedStories] = useState<Set<string>>(new Set());
   const [postingStory, setPostingStory] = useState(false);
+  const [friends, setFriends] = useState<Friend[]>([]);
 
   // Fetch stories when screen is focused
   useFocusEffect(
     useCallback(() => {
-      if (currentFirebaseUser && friendsList) {
+      if (currentFirebaseUser) {
         loadStories();
       }
-    }, [currentFirebaseUser, friendsList]),
+    }, [currentFirebaseUser]),
   );
 
   const loadStories = async () => {
-    if (!currentFirebaseUser || !friendsList) return;
+    if (!currentFirebaseUser) return;
 
     try {
       console.log("🔵 [StoriesScreen] Loading stories");
       setLoading(true);
 
+      // Get friends
+      const friendsData = await getFriends(currentFirebaseUser.uid);
+      setFriends(friendsData);
+
       // Get friend IDs
-      const friendIds = friendsList.map((f) => f.uid).filter((id) => id);
+      const friendIds = friendsData
+        .map((f) => f.users.find((u) => u !== currentFirebaseUser.uid))
+        .filter((id): id is string => Boolean(id));
 
       // Fetch stories
       const fetchedStories = await getFriendsStories(

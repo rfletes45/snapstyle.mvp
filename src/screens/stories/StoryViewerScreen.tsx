@@ -18,7 +18,6 @@ import {
 import { Text, IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
 import {
   downloadSnapImage,
   compressImage,
@@ -44,7 +43,6 @@ export default function StoryViewerScreen({
   navigation,
 }: StoryViewerScreenProps) {
   const { currentFirebaseUser } = useAuth();
-  const { userData } = useUser();
   const insets = useSafeAreaInsets();
   const { imageUri, storyId, authorId, isNewStory } = route.params;
 
