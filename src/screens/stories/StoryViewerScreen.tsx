@@ -18,10 +18,7 @@ import {
 import { Text, IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/store/AuthContext";
-import {
-  downloadSnapImage,
-  compressImage,
-} from "@/services/storage";
+import { downloadSnapImage, compressImage } from "@/services/storage";
 import {
   getStory,
   markStoryViewed,

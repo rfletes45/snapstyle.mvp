@@ -54,7 +54,10 @@ export async function postStory(
     // Use uploadSnapImage but with stories path format
     const storagePath = `stories/${authorId}/${storyId}.jpg`;
     const storage = (await import("firebase/storage")).getStorage();
-    const storageRef = (await import("firebase/storage")).ref(storage, storagePath);
+    const storageRef = (await import("firebase/storage")).ref(
+      storage,
+      storagePath,
+    );
 
     console.log("🔵 [postStory] Uploading image to Storage at:", storagePath);
 
