@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
   Alert,
   TouchableOpacity,
+  Pressable,
+  Platform,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -141,22 +143,40 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
         paddingBottom: insets.bottom,
       }}
     >
-      <TouchableOpacity
-        onPress={handleDismiss}
-        style={{ width: "100%", height: "100%" }}
-        activeOpacity={1}
-      >
-        {imageUri && (
-          <Image
-            source={{ uri: imageUri }}
-            style={{
-              width: "100%",
-              height: "100%",
-              resizeMode: "contain",
-            }}
-          />
-        )}
-      </TouchableOpacity>
+      {Platform.OS === "web" ? (
+        <Pressable
+          onPress={handleDismiss}
+          style={{ width: "100%", height: "100%" }}
+        >
+          {imageUri && (
+            <Image
+              source={{ uri: imageUri }}
+              style={{
+                width: "100%",
+                height: "100%",
+                resizeMode: "contain",
+              }}
+            />
+          )}
+        </Pressable>
+      ) : (
+        <TouchableOpacity
+          onPress={handleDismiss}
+          style={{ width: "100%", height: "100%" }}
+          activeOpacity={1}
+        >
+          {imageUri && (
+            <Image
+              source={{ uri: imageUri }}
+              style={{
+                width: "100%",
+                height: "100%",
+                resizeMode: "contain",
+              }}
+            />
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

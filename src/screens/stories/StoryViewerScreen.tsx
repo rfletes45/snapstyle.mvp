@@ -304,10 +304,7 @@ export default function StoryViewerScreen({
       {!isNewStory && isAuthor && (
         <View style={styles.footer}>
           {Platform.OS === "web" ? (
-            <Pressable
-              onPress={handleDeleteStory}
-              style={styles.deleteButton}
-            >
+            <Pressable onPress={handleDeleteStory} style={styles.deleteButton}>
               <Text style={styles.deleteButtonText}>Delete Story</Text>
             </Pressable>
           ) : (
