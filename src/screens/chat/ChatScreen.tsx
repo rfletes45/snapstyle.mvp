@@ -9,7 +9,13 @@ import {
   Platform,
   ActionSheetIOS,
 } from "react-native";
-import { Text, Button, ActivityIndicator, Card, IconButton } from "react-native-paper";
+import {
+  Text,
+  Button,
+  ActivityIndicator,
+  Card,
+  IconButton,
+} from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/store/AuthContext";
 import { useFocusEffect } from "@react-navigation/native";
@@ -181,7 +187,10 @@ export default function ChatScreen({
   const requestCameraPermission = async () => {
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
     if (!granted) {
-      Alert.alert("Permission Denied", "Camera access is required to take photos");
+      Alert.alert(
+        "Permission Denied",
+        "Camera access is required to take photos",
+      );
       return false;
     }
     return true;
@@ -244,7 +253,11 @@ export default function ChatScreen({
 
       // Upload to Storage and get storagePath
       const messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const storagePath = await uploadSnapImage(chatId, messageId, compressedUri);
+      const storagePath = await uploadSnapImage(
+        chatId,
+        messageId,
+        compressedUri,
+      );
 
       // Send as image message
       await sendMessage(chatId, uid, storagePath, friendUid, "image");

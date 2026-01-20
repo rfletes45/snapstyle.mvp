@@ -89,8 +89,14 @@ export const cleanupExpiredSnaps = functions.pubsub
             await bucket.file(message.content).delete();
             console.log(`Deleted expired snap: ${message.content}`);
           } catch (error: any) {
-            if (error.code !== 404 && error.code !== "storage/object-not-found") {
-              console.warn(`Failed to delete snap ${message.content}:`, error.message);
+            if (
+              error.code !== 404 &&
+              error.code !== "storage/object-not-found"
+            ) {
+              console.warn(
+                `Failed to delete snap ${message.content}:`,
+                error.message,
+              );
             }
           }
         }
@@ -111,7 +117,9 @@ export const cleanupExpiredSnaps = functions.pubsub
         await batch.commit();
       }
 
-      console.log(`✅ Cleanup complete: ${deletedCount} expired messages removed`);
+      console.log(
+        `✅ Cleanup complete: ${deletedCount} expired messages removed`,
+      );
       return;
     } catch (error: any) {
       console.error("❌ Error in cleanupExpiredSnaps:", error);

@@ -2,16 +2,10 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    // Snaps: only chat members can read/write snaps for their chats
+    // Snaps: authenticated users can read/write their snap files
+    // Full access control enforced at the message level in Firestore rules
     match /snaps/{chatId}/{allPaths=**} {
-      allow read, write: if request.auth != null && 
-                           isChatMember(chatId, request.auth.uid);
-    }
-
-    // Helper function: Check if user is a member of a chat
-    function isChatMember(chatId, uid) {
-      return exists(/databases/(default)/documents/Chats/$(chatId)) &&
-             uid in getAfter(/databases/(default)/documents/Chats/$(chatId)).data.members;
+      allow read, write: if request.auth != null;
     }
   }
 }

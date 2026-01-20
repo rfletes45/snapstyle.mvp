@@ -138,7 +138,7 @@ export async function sendMessage(
     // Update chat's last message
     console.log("🔵 [sendMessage] Updating chat document with last message...");
     const chatDocRef = doc(db, "Chats", chatId);
-    
+
     let previewText = content;
     if (type === "image") {
       previewText = "[Photo snap]";

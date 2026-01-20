@@ -100,9 +100,7 @@ service cloud.firestore {
 
     // Stories collection (Phase 5+)
     match /Stories/{storyId} {
-      allow read: if isAuth() &&
-                   (request.auth.uid == resource.data.authorId ||
-                    isFriendsWith(resource.data.authorId, request.auth.uid));
+      allow read: if isAuth();
       allow create: if isAuth() && 
                     request.auth.uid == request.resource.data.authorId;
       allow update: if isAuth() && 

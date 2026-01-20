@@ -8,7 +8,13 @@
  */
 
 import * as ImageManipulator from "expo-image-manipulator";
-import { getStorage, ref, uploadBytes, getBytes, deleteObject } from "firebase/storage";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getBytes,
+  deleteObject,
+} from "firebase/storage";
 
 const storage = getStorage();
 
