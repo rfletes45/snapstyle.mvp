@@ -8,6 +8,7 @@
  */
 
 import * as ImageManipulator from "expo-image-manipulator";
+import { Platform } from "react-native";
 import {
   getStorage,
   ref,
@@ -18,9 +19,11 @@ import {
 
 /**
  * Compress image before upload
+ * On web: uses canvas-based compression for data URLs
+ * On native: uses expo-image-manipulator
  * Resizes to max 1024px (preserving aspect ratio) and reduces JPEG quality to 0.7
  * Reduces file size from MB to typically 50-200KB
- * @param imageUri - Local file URI from camera capture or image picker
+ * @param imageUri - Local file URI from camera capture or image picker, or data URL on web
  * @param maxSize - Max dimension (default 1024px)
  * @param quality - JPEG quality 0-1 (default 0.7)
  * @returns Compressed image URI for upload
@@ -31,25 +34,92 @@ export async function compressImage(
   quality: number = 0.7,
 ): Promise<string> {
   try {
-    const result = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: maxSize, height: maxSize } }],
-      { compress: quality, format: ImageManipulator.SaveFormat.JPEG },
-    );
+    // On web, use canvas-based compression for data URLs
+    if (Platform.OS === "web") {
+      console.log("🔵 [compressImage] Using web-based compression");
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            // Calculate new dimensions maintaining aspect ratio
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+              if (width > maxSize) {
+                height = Math.round((height * maxSize) / width);
+                width = maxSize;
+              }
+            } else {
+              if (height > maxSize) {
+                width = Math.round((width * maxSize) / height);
+                height = maxSize;
+              }
+            }
 
-    return result.uri;
+            // Create canvas and draw resized image
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              throw new Error("Could not get canvas context");
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Convert to data URL with compression
+            const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+            console.log("✅ [compressImage] Web compression complete");
+            resolve(compressedDataUrl);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        img.onerror = () => {
+          reject(new Error("Failed to load image for compression"));
+        };
+        img.src = imageUri;
+      });
+    } else {
+      // On native, use expo-image-manipulator
+      console.log("🔵 [compressImage] Using expo-image-manipulator");
+      const result = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: maxSize, height: maxSize } }],
+        { compress: quality, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      console.log("✅ [compressImage] Native compression complete");
+      return result.uri;
+    }
   } catch (error) {
-    console.error("Error compressing image:", error);
+    console.error("❌ [compressImage] Error compressing image:", error);
     throw error;
   }
 }
 
 /**
+ * Convert data URL to Blob
+ * Helper for web platform where image URIs are data URLs
+ */
+function dataURLtoBlob(dataUrl: string): Blob {
+  const arr = dataUrl.split(",");
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const bstr = atob(arr[1]);
+  const n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    u8arr[i] = bstr.charCodeAt(i);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
+/**
  * Upload snap image to Firebase Storage
  * Stores at snaps/{chatId}/{messageId}.jpg
+ * Handles both data URLs (web) and file URIs (native)
  * @param chatId - Chat ID for organizing snaps
  * @param messageId - Message ID for unique file naming
- * @param imageUri - Local file URI (should be pre-compressed)
+ * @param imageUri - Local file URI or data URL (should be pre-compressed)
  * @returns Storage path string for saving in Message doc
  */
 export async function uploadSnapImage(
@@ -62,17 +132,28 @@ export async function uploadSnapImage(
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
-    // Fetch the image as blob
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
+    console.log("🔵 [uploadSnapImage] Uploading snap image");
 
+    let blob: Blob;
+
+    // Handle data URLs (web platform) vs file URIs (native)
+    if (imageUri.startsWith("data:")) {
+      console.log("🔵 [uploadSnapImage] Converting data URL to blob");
+      blob = dataURLtoBlob(imageUri);
+    } else {
+      console.log("🔵 [uploadSnapImage] Fetching file URI as blob");
+      const response = await fetch(imageUri);
+      blob = await response.blob();
+    }
+
+    console.log("🔵 [uploadSnapImage] Uploading blob to Firebase Storage");
     // Upload to Firebase Storage
     await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
 
-    console.log(`Uploaded snap to: ${storagePath}`);
+    console.log(`✅ [uploadSnapImage] Uploaded snap to: ${storagePath}`);
     return storagePath;
   } catch (error) {
-    console.error("Error uploading snap image:", error);
+    console.error("❌ [uploadSnapImage] Error uploading snap image:", error);
     throw error;
   }
 }
