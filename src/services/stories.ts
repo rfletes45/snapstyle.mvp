@@ -133,23 +133,22 @@ export async function getFriendsStories(
     // Query only unexpired stories (filtering by recipientIds happens in app layer)
     const now = Date.now();
     const storiesRef = collection(db, "stories");
-    const q = query(
-      storiesRef,
-      where("expiresAt", ">", now),
-    );
+    const q = query(storiesRef, where("expiresAt", ">", now));
 
     const snapshot = await getDocs(q);
     const stories: Story[] = [];
-    
+
     // Build set of authorized recipient IDs (self + friends)
     const authorizedIds = new Set([userId, ...userFriendIds]);
 
     snapshot.forEach((doc) => {
       const data = doc.data();
-      
+
       // Filter by recipientIds in app layer (only show stories from self and friends)
       if (data.recipientIds && Array.isArray(data.recipientIds)) {
-        const hasMatch = data.recipientIds.some((id: string) => authorizedIds.has(id));
+        const hasMatch = data.recipientIds.some((id: string) =>
+          authorizedIds.has(id),
+        );
         if (hasMatch) {
           stories.push({
             id: doc.id,
