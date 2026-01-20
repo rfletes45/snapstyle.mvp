@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { View, Image, ActivityIndicator, Alert } from "react-native";
+import { View, Image, ActivityIndicator, Alert, TouchableOpacity } from "react-native";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { downloadSnapImage, deleteSnapImage } from "@/services/storage";
@@ -134,18 +134,23 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
         paddingTop: insets.top,
         paddingBottom: insets.bottom,
       }}
-      onTouchEnd={handleDismiss}
     >
-      {imageUri && (
-        <Image
-          source={{ uri: imageUri }}
-          style={{
-            width: "100%",
-            height: "100%",
-            resizeMode: "contain",
-          }}
-        />
-      )}
+      <TouchableOpacity
+        onPress={handleDismiss}
+        style={{ width: "100%", height: "100%" }}
+        activeOpacity={1}
+      >
+        {imageUri && (
+          <Image
+            source={{ uri: imageUri }}
+            style={{
+              width: "100%",
+              height: "100%",
+              resizeMode: "contain",
+            }}
+          />
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
