@@ -103,10 +103,9 @@ service cloud.firestore {
 
     // Stories collection (Phase 5)
     match /stories/{storyId} {
-      // Authenticated users can read unexpired stories
-      // (recipientIds is used for application-level filtering, not security)
-      allow read: if isAuth() && 
-                   resource.data.expiresAt > request.time.toMillis();
+      // Authenticated users can read all stories
+      // (expiresAt and recipientIds filtering handled in application layer)
+      allow read: if isAuth();
       
       // Only author can create
       allow create: if isAuth() && 
