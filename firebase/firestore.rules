@@ -13,9 +13,10 @@ service cloud.firestore {
     }
 
     // Helper function: Check if user is in a chat
-    function isChatMember(chatId, uid) {
-      return uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
-    }
+    // NOTE: No longer used - using direct array membership check instead for query compatibility
+    // function isChatMember(chatId, uid) {
+    //   return uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+    // }
 
     // Users collection - controlled access to profile data
     match /Users/{uid} {
@@ -78,18 +79,20 @@ service cloud.firestore {
 
     // Chats collection
     match /Chats/{chatId} {
+      // Allow read for collection queries filtering by members array-contains
+      // Also allow direct document access if user is member
       allow read: if isAuth() && 
-                    isChatMember(chatId, request.auth.uid);
+                    request.auth.uid in resource.data.members;
       allow create, update: if isAuth() && 
-                             isChatMember(chatId, request.auth.uid);
+                             request.auth.uid in resource.data.members;
 
       // Messages subcollection
       match /Messages/{messageId} {
         allow read: if isAuth() && 
-                     isChatMember(chatId, request.auth.uid);
+                     request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
         allow create: if isAuth() && 
                       request.auth.uid == request.resource.data.sender &&
-                      isChatMember(chatId, request.auth.uid);
+                      request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
         allow update: if isAuth() && 
                       request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
         // Allow delete for view-once snap deletion (after viewing)
