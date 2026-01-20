@@ -2,9 +2,10 @@
 /**
  * SnapStyle Cloud Functions
  * Handles:
- * - Automatic Storage cleanup when messages are deleted
- * - Push notifications (future phases)
- * - Streak management (future phases)
+ * - Automatic Storage cleanup when messages are deleted (Phase 4)
+ * - Story auto-expiry and cleanup (Phase 5)
+ * - Push notifications (Phase 6)
+ * - Streak management (Phase 6)
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -40,7 +41,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cleanupExpiredSnaps = exports.onDeleteMessage = void 0;
+exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewMessage = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 // Initialize Firebase Admin SDK
@@ -49,6 +50,330 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 const storage = admin.storage();
+/**
+ * Send push notification via Expo's push service
+ */
+async function sendExpoPushNotification(message) {
+    try {
+        const response = await fetch("https://exp.host/--/api/v2/push/send", {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "Accept-Encoding": "gzip, deflate",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(message),
+        });
+        const result = await response.json();
+        console.log("📱 Push notification result:", result);
+    }
+    catch (error) {
+        console.error("❌ Error sending push notification:", error);
+    }
+}
+/**
+ * Get user's Expo Push Token from Firestore
+ */
+async function getUserPushToken(userId) {
+    try {
+        const userDoc = await db.collection("Users").doc(userId).get();
+        if (!userDoc.exists)
+            return null;
+        return userDoc.data()?.expoPushToken || null;
+    }
+    catch (error) {
+        console.error("❌ Error getting push token:", error);
+        return null;
+    }
+}
+/**
+ * onNewMessage: Triggered when a new message is created
+ * Sends push notification to recipient and updates streak tracking
+ */
+exports.onNewMessage = functions.firestore
+    .document("Chats/{chatId}/Messages/{messageId}")
+    .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const { chatId } = context.params;
+    try {
+        // Get chat to find recipient
+        const chatDoc = await db.collection("Chats").doc(chatId).get();
+        if (!chatDoc.exists) {
+            console.log("Chat not found:", chatId);
+            return;
+        }
+        const chat = chatDoc.data();
+        const senderId = message.sender;
+        const recipientId = chat.members.find((m) => m !== senderId);
+        if (!recipientId) {
+            console.log("Recipient not found in chat");
+            return;
+        }
+        // Get sender's display name
+        const senderDoc = await db.collection("Users").doc(senderId).get();
+        const senderName = senderDoc.exists
+            ? senderDoc.data()?.displayName || "Someone"
+            : "Someone";
+        // Get recipient's push token
+        const pushToken = await getUserPushToken(recipientId);
+        if (pushToken) {
+            // Determine notification content based on message type
+            const isSnap = message.type === "image";
+            const title = senderName;
+            const body = isSnap ? "📸 Sent you a snap!" : message.content;
+            await sendExpoPushNotification({
+                to: pushToken,
+                title,
+                body,
+                data: {
+                    type: "message",
+                    chatId,
+                    senderId,
+                },
+                sound: "default",
+            });
+            console.log(`✅ Sent notification to ${recipientId}`);
+        }
+        // Update streak tracking
+        await updateStreakOnMessage(senderId, recipientId);
+    }
+    catch (error) {
+        console.error("❌ Error in onNewMessage:", error);
+    }
+});
+/**
+ * Update streak when a message is sent
+ */
+async function updateStreakOnMessage(senderId, recipientId) {
+    try {
+        // Find the friendship document
+        const friendsRef = db.collection("Friends");
+        const q1 = await friendsRef
+            .where("users", "==", [senderId, recipientId])
+            .get();
+        const q2 = await friendsRef
+            .where("users", "==", [recipientId, senderId])
+            .get();
+        let friendDoc = q1.docs[0] || q2.docs[0];
+        if (!friendDoc) {
+            console.log("Friendship not found for streak update");
+            return;
+        }
+        const data = friendDoc.data();
+        const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+        const [uid1, uid2] = data.users;
+        const isUser1 = senderId === uid1;
+        const lastSentField = isUser1 ? "lastSentDay_uid1" : "lastSentDay_uid2";
+        const otherLastSentField = isUser1 ? "lastSentDay_uid2" : "lastSentDay_uid1";
+        const currentLastSent = data[lastSentField] || "";
+        const otherLastSent = data[otherLastSentField] || "";
+        const streakUpdatedDay = data.streakUpdatedDay || "";
+        let streakCount = data.streakCount || 0;
+        // If user already sent today, no update needed
+        if (currentLastSent === today) {
+            return;
+        }
+        const updates = {
+            [lastSentField]: today,
+        };
+        // Check if this completes today's streak requirement
+        const otherSentToday = otherLastSent === today;
+        if (otherSentToday && streakUpdatedDay !== today) {
+            // Both users have now sent today - check if streak continues
+            const lastUpdate = new Date(streakUpdatedDay || "2000-01-01");
+            const todayDate = new Date(today);
+            const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
+            if (daysDiff <= 1) {
+                // Streak continues
+                streakCount += 1;
+            }
+            else {
+                // Streak broken, start fresh
+                streakCount = 1;
+            }
+            updates.streakCount = streakCount;
+            updates.streakUpdatedDay = today;
+            // Check for milestone and send notification
+            const milestones = [3, 7, 14, 30, 50, 100, 365];
+            if (milestones.includes(streakCount)) {
+                await sendStreakMilestoneNotification(senderId, recipientId, streakCount);
+            }
+        }
+        else if (!otherSentToday) {
+            // Check if streak needs reset
+            const lastUpdate = new Date(streakUpdatedDay || "2000-01-01");
+            const todayDate = new Date(today);
+            const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
+            if (daysDiff > 1 && streakCount > 0) {
+                updates.streakCount = 0;
+            }
+        }
+        await friendDoc.ref.update(updates);
+        console.log("✅ Streak updated for friendship:", friendDoc.id);
+    }
+    catch (error) {
+        console.error("❌ Error updating streak:", error);
+    }
+}
+/**
+ * Send notification when streak milestone is reached
+ */
+async function sendStreakMilestoneNotification(user1Id, user2Id, milestone) {
+    const messages = {
+        3: "🔥 3-day streak! You're on fire!",
+        7: "🔥 1 week streak! Amazing!",
+        14: "🔥 2 week streak! Incredible!",
+        30: "🔥 30-day streak! One month strong!",
+        50: "🔥 50-day streak! Legendary!",
+        100: "💯 100-day streak! Champion!",
+        365: "🏆 365-day streak! One whole year!",
+    };
+    const body = messages[milestone] || `🔥 ${milestone}-day streak!`;
+    // Notify both users
+    for (const userId of [user1Id, user2Id]) {
+        const token = await getUserPushToken(userId);
+        if (token) {
+            await sendExpoPushNotification({
+                to: token,
+                title: "Streak Milestone! 🎉",
+                body,
+                data: { type: "streak_milestone", milestone },
+                sound: "default",
+            });
+        }
+    }
+}
+/**
+ * onNewFriendRequest: Notify user when they receive a friend request
+ */
+exports.onNewFriendRequest = functions.firestore
+    .document("FriendRequests/{requestId}")
+    .onCreate(async (snap) => {
+    const request = snap.data();
+    try {
+        const recipientId = request.to;
+        const senderId = request.from;
+        // Get sender's display name
+        const senderDoc = await db.collection("Users").doc(senderId).get();
+        const senderName = senderDoc.exists
+            ? senderDoc.data()?.displayName || "Someone"
+            : "Someone";
+        // Get recipient's push token
+        const pushToken = await getUserPushToken(recipientId);
+        if (pushToken) {
+            await sendExpoPushNotification({
+                to: pushToken,
+                title: "New Friend Request! 👋",
+                body: `${senderName} wants to be your friend`,
+                data: {
+                    type: "friend_request",
+                    requestId: snap.id,
+                    senderId,
+                },
+                sound: "default",
+            });
+            console.log(`✅ Sent friend request notification to ${recipientId}`);
+        }
+    }
+    catch (error) {
+        console.error("❌ Error in onNewFriendRequest:", error);
+    }
+});
+/**
+ * onStoryViewed: Notify story author when their story is viewed
+ */
+exports.onStoryViewed = functions.firestore
+    .document("stories/{storyId}/views/{viewerId}")
+    .onCreate(async (snap, context) => {
+    const { storyId, viewerId } = context.params;
+    try {
+        // Get story to find author
+        const storyDoc = await db.collection("stories").doc(storyId).get();
+        if (!storyDoc.exists)
+            return;
+        const story = storyDoc.data();
+        const authorId = story.authorId;
+        // Don't notify if viewing own story
+        if (authorId === viewerId)
+            return;
+        // Get viewer's display name
+        const viewerDoc = await db.collection("Users").doc(viewerId).get();
+        const viewerName = viewerDoc.exists
+            ? viewerDoc.data()?.displayName || "Someone"
+            : "Someone";
+        // Get author's push token
+        const pushToken = await getUserPushToken(authorId);
+        if (pushToken) {
+            await sendExpoPushNotification({
+                to: pushToken,
+                title: "Story Viewed! 👀",
+                body: `${viewerName} viewed your story`,
+                data: {
+                    type: "story_view",
+                    storyId,
+                    viewerId,
+                },
+                sound: "default",
+            });
+            console.log(`✅ Sent story view notification to ${authorId}`);
+        }
+    }
+    catch (error) {
+        console.error("❌ Error in onStoryViewed:", error);
+    }
+});
+/**
+ * streakReminder: Daily check for at-risk streaks
+ * Runs at 8 PM UTC to remind users whose streaks are at risk
+ */
+exports.streakReminder = functions.pubsub
+    .schedule("0 20 * * *") // 8 PM UTC daily
+    .timeZone("UTC")
+    .onRun(async () => {
+    try {
+        const today = new Date().toISOString().split("T")[0];
+        // Find all friendships with active streaks
+        const friendsRef = db.collection("Friends");
+        const activeStreaks = await friendsRef
+            .where("streakCount", ">", 0)
+            .get();
+        console.log(`Checking ${activeStreaks.docs.length} active streaks`);
+        for (const doc of activeStreaks.docs) {
+            const data = doc.data();
+            const [uid1, uid2] = data.users;
+            const lastSent1 = data.lastSentDay_uid1 || "";
+            const lastSent2 = data.lastSentDay_uid2 || "";
+            // Check if only one user has sent today (streak at risk)
+            const user1SentToday = lastSent1 === today;
+            const user2SentToday = lastSent2 === today;
+            if (user1SentToday !== user2SentToday) {
+                // Streak is at risk - notify the user who hasn't sent
+                const userToNotify = user1SentToday ? uid2 : uid1;
+                const token = await getUserPushToken(userToNotify);
+                if (token) {
+                    await sendExpoPushNotification({
+                        to: token,
+                        title: "Streak at Risk! ⚠️",
+                        body: `Your ${data.streakCount}-day streak is about to end! Send a message to keep it going.`,
+                        data: {
+                            type: "streak_reminder",
+                            friendshipId: doc.id,
+                            streakCount: data.streakCount,
+                        },
+                        sound: "default",
+                    });
+                    console.log(`✅ Sent streak reminder to ${userToNotify}`);
+                }
+            }
+        }
+        console.log("✅ Streak reminder check complete");
+        return;
+    }
+    catch (error) {
+        console.error("❌ Error in streakReminder:", error);
+        throw error;
+    }
+});
 /**
  * onDeleteMessage: Triggered when a message document is deleted
  * Cleans up associated Storage object if it's an image snap
@@ -136,6 +461,56 @@ exports.cleanupExpiredSnaps = functions.pubsub
     }
     catch (error) {
         console.error("❌ Error in cleanupExpiredSnaps:", error);
+        throw error;
+    }
+});
+/**
+ * cleanupExpiredStories: Scheduled function to clean up expired stories
+ * Runs daily at 2 AM UTC to remove stories past their 24h expiry
+ *
+ * For each expired story:
+ * - Delete the storage file from Storage
+ * - Delete the story document (views subcollection auto-deletes)
+ *
+ * This ensures stories expire even if TTL index isn't active
+ */
+exports.cleanupExpiredStories = functions.pubsub
+    .schedule("0 2 * * *") // 2 AM UTC daily (same as snap cleanup)
+    .timeZone("UTC")
+    .onRun(async () => {
+    try {
+        // Query all stories with expiresAt in the past
+        const now = admin.firestore.Timestamp.now();
+        const storiesRef = db.collection("stories");
+        const expiredQuery = await storiesRef.where("expiresAt", "<", now).get();
+        console.log(`Found ${expiredQuery.docs.length} expired stories`);
+        const bucket = storage.bucket();
+        let deletedCount = 0;
+        // Process each expired story
+        for (const doc of expiredQuery.docs) {
+            const story = doc.data();
+            const storagePath = story.storagePath; // e.g., "stories/authorId/storyId.jpg"
+            try {
+                // Delete the Storage file
+                await bucket.file(storagePath).delete();
+                console.log(`✅ Deleted expired story storage: ${storagePath}`);
+            }
+            catch (error) {
+                // File may already be deleted; only log real errors
+                if (error.code !== 404 && error.code !== "storage/object-not-found") {
+                    console.warn(`⚠️ Failed to delete story storage ${storagePath}:`, error.message);
+                }
+            }
+            // Delete the story document (views subcollection auto-deletes)
+            await doc.ref.delete();
+            deletedCount++;
+            console.log(`✅ Deleted expired story document: ${doc.id}`);
+        }
+        console.log(`✅ Story cleanup complete: ${deletedCount} expired stories removed`);
+        return;
+    }
+    catch (error) {
+        console.error("❌ Error in cleanupExpiredStories:", error);
         throw error;
     }
 });

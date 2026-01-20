@@ -1,6 +1,15 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { User as FirebaseUser } from "firebase/auth";
+import { Platform } from "react-native";
 import { getAuthInstance } from "@/services/firebase";
+import {
+  registerForPushNotifications,
+  savePushToken,
+  removePushToken,
+  addNotificationReceivedListener,
+  addNotificationResponseListener,
+} from "@/services/notifications";
+import * as Notifications from "expo-notifications";
 
 export interface AuthContextType {
   currentFirebaseUser: FirebaseUser | null;
@@ -14,6 +23,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentFirebaseUser, setCurrentFirebaseUser] =
     useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const notificationListenerRef = useRef<Notifications.Subscription | null>(null);
+  const responseListenerRef = useRef<Notifications.Subscription | null>(null);
+  const previousUserIdRef = useRef<string | null>(null);
+
+  // Set up notification listeners
+  useEffect(() => {
+    // Listener for notifications received while app is foregrounded
+    notificationListenerRef.current = addNotificationReceivedListener(
+      (notification) => {
+        console.log("📱 Notification received:", notification.request.content);
+      },
+    );
+
+    // Listener for notification taps
+    responseListenerRef.current = addNotificationResponseListener((response) => {
+      console.log(
+        "📱 Notification tapped:",
+        response.notification.request.content,
+      );
+      // TODO: Handle navigation based on notification data
+      const data = response.notification.request.content.data;
+      if (data?.type === "message" && data?.chatId) {
+        // Could navigate to chat here
+        console.log("Would navigate to chat:", data.chatId);
+      } else if (data?.type === "friend_request") {
+        // Could navigate to friends screen
+        console.log("Would navigate to friends");
+      }
+    });
+
+    return () => {
+      if (notificationListenerRef.current) {
+        notificationListenerRef.current.remove();
+      }
+      if (responseListenerRef.current) {
+        responseListenerRef.current.remove();
+      }
+    };
+  }, []);
+
+  // Register for push notifications when user logs in
+  useEffect(() => {
+    const registerPushToken = async () => {
+      if (currentFirebaseUser && currentFirebaseUser.uid !== previousUserIdRef.current) {
+        try {
+          console.log("🔵 [AuthContext] Registering for push notifications");
+          const token = await registerForPushNotifications();
+          if (token) {
+            await savePushToken(currentFirebaseUser.uid, token);
+            console.log("✅ [AuthContext] Push token saved");
+          }
+          previousUserIdRef.current = currentFirebaseUser.uid;
+        } catch (error) {
+          console.error("❌ [AuthContext] Error registering push token:", error);
+        }
+      } else if (!currentFirebaseUser && previousUserIdRef.current) {
+        // User logged out - remove push token
+        try {
+          console.log("🔵 [AuthContext] Removing push token on logout");
+          await removePushToken(previousUserIdRef.current);
+          previousUserIdRef.current = null;
+        } catch (error) {
+          console.error("❌ [AuthContext] Error removing push token:", error);
+        }
+      }
+    };
+
+    // Only register on native platforms (not web)
+    if (Platform.OS !== "web") {
+      registerPushToken();
+    }
+  }, [currentFirebaseUser]);
 
   useEffect(() => {
     try {
