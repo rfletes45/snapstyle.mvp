@@ -108,7 +108,6 @@ export default function StoryViewerScreen({
 
       if (!alreadyViewed) {
         await markStoryViewed(story.id, currentFirebaseUser.uid);
-        setHasViewed(true);
         console.log("✅ [StoryViewerScreen] Story marked as viewed");
       }
     } catch (err: any) {
