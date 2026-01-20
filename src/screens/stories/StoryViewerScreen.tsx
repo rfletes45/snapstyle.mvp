@@ -169,25 +169,57 @@ export default function StoryViewerScreen({
       story.id,
     );
 
-    Alert.alert("Delete Story", "Are you sure you want to delete this story?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            console.log("🔵 [StoryViewerScreen] Deleting story:", story.id);
-            await deleteStory(story.id, story.storagePath);
-            console.log("✅ [StoryViewerScreen] Story deleted");
-            Alert.alert("Success", "Story deleted");
-            navigation.goBack();
-          } catch (err: any) {
-            console.error("❌ [StoryViewerScreen] Error deleting story:", err);
-            Alert.alert("Error", `Failed to delete story: ${String(err)}`);
-          }
-        },
-      },
-    ]);
+    // Use window.confirm on web, Alert.alert on native
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(
+        "Are you sure you want to delete this story?",
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        console.log("🔵 [StoryViewerScreen] Deleting story:", story.id);
+        await deleteStory(story.id, story.storagePath);
+        console.log("✅ [StoryViewerScreen] Story deleted");
+        window.alert("Story deleted");
+        navigation.goBack();
+      } catch (err: any) {
+        console.error("❌ [StoryViewerScreen] Error deleting story:", err);
+        window.alert(`Failed to delete story: ${String(err)}`);
+      }
+    } else {
+      // Native platform: use Alert.alert
+      Alert.alert(
+        "Delete Story",
+        "Are you sure you want to delete this story?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                console.log(
+                  "🔵 [StoryViewerScreen] Deleting story:",
+                  story.id,
+                );
+                await deleteStory(story.id, story.storagePath);
+                console.log("✅ [StoryViewerScreen] Story deleted");
+                Alert.alert("Success", "Story deleted");
+                navigation.goBack();
+              } catch (err: any) {
+                console.error(
+                  "❌ [StoryViewerScreen] Error deleting story:",
+                  err,
+                );
+                Alert.alert("Error", `Failed to delete story: ${String(err)}`);
+              }
+            },
+          },
+        ],
+      );
+    }
   };
 
   const isAuthor = story && currentFirebaseUser?.uid === story.authorId;
