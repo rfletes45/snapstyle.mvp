@@ -15,7 +15,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import { Text, IconButton } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/store/AuthContext";
 import { downloadSnapImage, compressImage } from "@/services/storage";
@@ -27,7 +27,6 @@ import {
   getStoryViewCount,
   postStory,
 } from "@/services/stories";
-import { sendMessage } from "@/services/chat";
 import { Story } from "@/types/models";
 
 interface StoryViewerScreenProps {
@@ -41,7 +40,7 @@ export default function StoryViewerScreen({
 }: StoryViewerScreenProps) {
   const { currentFirebaseUser } = useAuth();
   const insets = useSafeAreaInsets();
-  const { imageUri, storyId, authorId, isNewStory } = route.params;
+  const { imageUri, storyId, isNewStory } = route.params;
 
   const [displayImage, setDisplayImage] = useState<string | null>(
     isNewStory ? imageUri : null,
@@ -50,7 +49,6 @@ export default function StoryViewerScreen({
   const [loading, setLoading] = useState(!isNewStory);
   const [error, setError] = useState<string | null>(null);
   const [viewCount, setViewCount] = useState(0);
-  const [hasViewed, setHasViewed] = useState(false);
   const [posting, setPosting] = useState(false);
 
   // Load existing story
@@ -58,6 +56,7 @@ export default function StoryViewerScreen({
     if (!isNewStory && storyId) {
       loadStory();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storyId, isNewStory]);
 
   // Mark as viewed when loaded (for existing stories)
@@ -66,6 +65,7 @@ export default function StoryViewerScreen({
       markAsViewed();
       loadViewCount();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story, currentFirebaseUser]);
 
   const loadStory = async () => {
@@ -195,6 +195,7 @@ export default function StoryViewerScreen({
       authorId: story?.authorId,
       isAuthor,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story, currentFirebaseUser, isNewStory]);
 
   if (error && !isNewStory) {
