@@ -13,8 +13,11 @@ export async function pickImageFromWeb(): Promise<string | null> {
       input.type = "file";
       input.accept = "image/*";
 
+      let resolved = false;
+
       input.onchange = (e: any) => {
         try {
+          resolved = true;
           const file = e.target.files?.[0];
           if (!file) {
             console.log("ℹ️  [webImagePicker] No file selected");
@@ -42,6 +45,7 @@ export async function pickImageFromWeb(): Promise<string | null> {
           reader.readAsDataURL(file);
         } catch (error) {
           console.error("❌ [webImagePicker] Error processing file:", error);
+          resolved = true;
           resolve(null);
         }
       };
@@ -49,6 +53,28 @@ export async function pickImageFromWeb(): Promise<string | null> {
       input.onclick = () => {
         console.log("🔵 [webImagePicker] File input clicked");
       };
+
+      // Handle cancellation - when user closes the picker without selecting
+      const handleCancel = () => {
+        if (!resolved) {
+          console.log("ℹ️  [webImagePicker] File picker cancelled");
+          resolved = true;
+          resolve(null);
+        }
+      };
+
+      // Listen for window focus to detect cancellation
+      // When the file picker dialog is closed, the window regains focus
+      window.addEventListener("focus", handleCancel, { once: true });
+
+      // Fallback timeout in case focus event doesn't fire
+      setTimeout(() => {
+        if (!resolved) {
+          console.log("⚠️  [webImagePicker] File picker timeout");
+          resolved = true;
+          resolve(null);
+        }
+      }, 60000); // 60 second timeout
 
       console.log("🔵 [webImagePicker] Triggering file input click");
       input.click();
