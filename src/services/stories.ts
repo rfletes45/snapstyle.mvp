@@ -25,7 +25,6 @@ import {
 import { deleteSnapImage } from "./storage";
 import { Story, StoryView } from "@/types/models";
 
-const db = getFirestore();
 const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 /**
@@ -42,6 +41,8 @@ export async function getFriendsStories(
 ): Promise<Story[]> {
   try {
     console.log("🔵 [getFriendsStories] Fetching stories for user:", userId);
+
+    const db = getFirestore();
 
     // Include self and all friends in recipients
     const recipientIds = [userId, ...userFriendIds];
@@ -94,6 +95,7 @@ export async function getStory(storyId: string): Promise<Story | null> {
   try {
     console.log("🔵 [getStory] Fetching story:", storyId);
 
+    const db = getFirestore();
     const storyRef = doc(db, "stories", storyId);
     const docSnap = await getDoc(storyRef);
 
@@ -188,6 +190,7 @@ export async function hasUserViewedStory(
       userId,
     });
 
+    const db = getFirestore();
     const viewRef = doc(db, "stories", storyId, "views", userId);
     const docSnap = await getDoc(viewRef);
 
@@ -210,6 +213,7 @@ export async function getStoryViewCount(storyId: string): Promise<number> {
   try {
     console.log("🔵 [getStoryViewCount] Fetching view count for:", storyId);
 
+    const db = getFirestore();
     const storyRef = doc(db, "stories", storyId);
     const docSnap = await getDoc(storyRef);
 
@@ -237,6 +241,7 @@ export async function getStoryViewers(storyId: string): Promise<string[]> {
   try {
     console.log("🔵 [getStoryViewers] Fetching viewers for:", storyId);
 
+    const db = getFirestore();
     const viewsRef = collection(db, "stories", storyId, "views");
     const snapshot = await getDocs(viewsRef);
 
@@ -267,6 +272,7 @@ export async function deleteStory(
   try {
     console.log("🔵 [deleteStory] Deleting story:", { storyId, storagePath });
 
+    const db = getFirestore();
     const storyRef = doc(db, "stories", storyId);
 
     // Delete Storage file
