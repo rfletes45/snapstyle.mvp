@@ -42,12 +42,14 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   const [postingStory, setPostingStory] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
 
-  // Fetch stories when screen is focused
+  // Fetch stories and reset posting state when screen is focused
   useFocusEffect(
     useCallback(() => {
       if (currentFirebaseUser) {
         loadStories();
       }
+      // Reset posting state when returning to this screen
+      setPostingStory(false);
     }, [currentFirebaseUser]),
   );
 
@@ -130,6 +132,8 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         } else {
           await selectPhoto();
         }
+        // Reset posting state after menu action
+        setPostingStory(false);
       } else if (Platform.OS === "ios") {
         ActionSheetIOS.showActionSheetWithOptions(
           {
@@ -141,6 +145,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               await capturePhoto();
             } else if (buttonIndex === 2) {
               await selectPhoto();
+            } else {
+              // User cancelled
+              setPostingStory(false);
             }
           },
         );

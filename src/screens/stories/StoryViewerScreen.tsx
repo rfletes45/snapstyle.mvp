@@ -200,10 +200,7 @@ export default function StoryViewerScreen({
             style: "destructive",
             onPress: async () => {
               try {
-                console.log(
-                  "🔵 [StoryViewerScreen] Deleting story:",
-                  story.id,
-                );
+                console.log("🔵 [StoryViewerScreen] Deleting story:", story.id);
                 await deleteStory(story.id, story.storagePath);
                 console.log("✅ [StoryViewerScreen] Story deleted");
                 Alert.alert("Success", "Story deleted");
