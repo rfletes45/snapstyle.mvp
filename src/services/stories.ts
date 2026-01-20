@@ -19,12 +19,10 @@ import {
   updateDoc,
   deleteDoc,
   increment,
-  serverTimestamp,
-  Timestamp,
 } from "firebase/firestore";
-import { deleteSnapImage, uploadSnapImage } from "./storage";
+import { deleteSnapImage } from "./storage";
 import { getFriends } from "./friends";
-import { Story, StoryView } from "@/types/models";
+import { Story } from "@/types/models";
 
 const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
@@ -132,34 +130,38 @@ export async function getFriendsStories(
 
     const db = getFirestore();
 
-    // Include self and all friends in recipients
-    const recipientIds = [userId, ...userFriendIds];
-
-    // Query stories where:
-    // - recipientIds contains current user
-    // - expiresAt > now (not expired)
+    // Query only unexpired stories (filtering by recipientIds happens in app layer)
     const now = Date.now();
     const storiesRef = collection(db, "stories");
     const q = query(
       storiesRef,
-      where("recipientIds", "array-contains", userId),
       where("expiresAt", ">", now),
     );
 
     const snapshot = await getDocs(q);
     const stories: Story[] = [];
+    
+    // Build set of authorized recipient IDs (self + friends)
+    const authorizedIds = new Set([userId, ...userFriendIds]);
 
     snapshot.forEach((doc) => {
       const data = doc.data();
-      stories.push({
-        id: doc.id,
-        authorId: data.authorId,
-        createdAt: data.createdAt,
-        expiresAt: data.expiresAt,
-        storagePath: data.storagePath,
-        viewCount: data.viewCount || 0,
-        recipientIds: data.recipientIds,
-      });
+      
+      // Filter by recipientIds in app layer (only show stories from self and friends)
+      if (data.recipientIds && Array.isArray(data.recipientIds)) {
+        const hasMatch = data.recipientIds.some((id: string) => authorizedIds.has(id));
+        if (hasMatch) {
+          stories.push({
+            id: doc.id,
+            authorId: data.authorId,
+            createdAt: data.createdAt,
+            expiresAt: data.expiresAt,
+            storagePath: data.storagePath,
+            viewCount: data.viewCount || 0,
+            recipientIds: data.recipientIds,
+          });
+        }
+      }
     });
 
     // Sort by createdAt DESC (newest first)
