@@ -102,7 +102,7 @@ service cloud.firestore {
     }
 
     // Stories collection (Phase 5)
-    match /Stories/{storyId} {
+    match /stories/{storyId} {
       // Anyone can read unexpired stories from their friends
       allow read: if isAuth() && 
                    resource.data.expiresAt > request.time.toMillis() &&
