@@ -31,7 +31,10 @@ import { getUserProfileByUid } from "@/services/friends";
 import { Message, AvatarConfig } from "@/types/models";
 import * as ImagePicker from "expo-image-picker";
 import { compressImage, uploadSnapImage } from "@/services/storage";
-import { pickImageFromWeb, captureImageFromWebcam } from "@/utils/webImagePicker";
+import {
+  pickImageFromWeb,
+  captureImageFromWebcam,
+} from "@/utils/webImagePicker";
 
 interface MessageWithProfile extends Message {
   otherUserProfile?: {
@@ -232,7 +235,7 @@ export default function ChatScreen({
 
     try {
       console.log("🔵 [handleCapturePhoto] Platform:", Platform.OS);
-      
+
       let imageUri: string | null = null;
 
       // On web, use webcam or file picker
@@ -282,7 +285,7 @@ export default function ChatScreen({
 
     try {
       console.log("🔵 [handleSelectPhoto] Platform:", Platform.OS);
-      
+
       let imageUri: string | null = null;
 
       // On web, use file picker

@@ -12,8 +12,8 @@ import {
   getStorage,
   ref,
   uploadBytes,
-  getBytes,
   deleteObject,
+  getDownloadURL,
 } from "firebase/storage";
 
 /**
@@ -79,25 +79,21 @@ export async function uploadSnapImage(
 
 /**
  * Download snap image from Firebase Storage
- * Retrieves image data for fullscreen display
- * Caches locally to avoid re-downloading
+ * Retrieves download URL for displaying in SnapViewer
+ * Works on both native and web platforms
  * @param storagePath - Storage path (e.g., "snaps/chatId/messageId.jpg")
- * @returns Local cache URI or data URL for Image component
+ * @returns Download URL for Image component or direct image display
  */
 export async function downloadSnapImage(storagePath: string): Promise<string> {
   try {
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
-    // Get image as bytes
-    const bytes = await getBytes(storageRef);
+    // Get download URL - works on all platforms and handles CORS properly
+    const downloadUrl = await getDownloadURL(storageRef);
 
-    // Convert to blob and create object URL
-    const blob = new Blob([bytes], { type: "image/jpeg" });
-    const url = URL.createObjectURL(blob);
-
-    console.log(`Downloaded snap from: ${storagePath}`);
-    return url;
+    console.log(`Got download URL for snap: ${storagePath}`);
+    return downloadUrl;
   } catch (error) {
     console.error("Error downloading snap image:", error);
     throw error;

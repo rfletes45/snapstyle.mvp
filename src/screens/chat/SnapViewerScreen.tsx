@@ -31,35 +31,52 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   useEffect(() => {
     const loadSnap = async () => {
       try {
+        console.log("🔵 [SnapViewerScreen] Loading snap:", {
+          storagePath,
+          messageId,
+          chatId,
+        });
         setLoading(true);
-        const uri = await downloadSnapImage(storagePath);
-        setImageUri(uri);
         setError(null);
+
+        const uri = await downloadSnapImage(storagePath);
+        console.log("✅ [SnapViewerScreen] Snap loaded successfully");
+        setImageUri(uri);
       } catch (err: any) {
-        console.error("Failed to load snap:", err);
-        setError("Failed to load snap");
+        console.error("❌ [SnapViewerScreen] Failed to load snap:", err);
+        setError(err.message || "Failed to load snap");
+      } finally {
         setLoading(false);
       }
     };
 
     loadSnap();
-  }, [storagePath]);
+  }, [storagePath, messageId, chatId]);
 
   // Handle snap dismissal (view-once: mark opened + delete message + delete storage file)
   const handleDismiss = async () => {
-    if (!currentFirebaseUser) return;
+    if (!currentFirebaseUser) {
+      console.error("❌ [SnapViewerScreen] No user logged in");
+      return;
+    }
 
     try {
+      console.log(
+        "🔵 [SnapViewerScreen] Dismissing snap and marking as opened",
+      );
+
       // Mark snap as opened in Firestore (records metadata)
       await markSnapOpened(chatId, messageId, currentFirebaseUser.uid);
+      console.log("✅ [SnapViewerScreen] Snap marked as opened");
 
       // Delete snap from Storage
       await deleteSnapImage(storagePath);
+      console.log("✅ [SnapViewerScreen] Snap deleted from storage");
 
       // Navigate back to chat
       navigation.goBack();
     } catch (err: any) {
-      console.error("Error marking snap opened:", err);
+      console.error("❌ [SnapViewerScreen] Error marking snap opened:", err);
       Alert.alert(
         "Error",
         "Failed to save snap view. The snap may still be visible to the sender.",
