@@ -70,7 +70,6 @@ function ChatStack() {
         component={SnapViewerScreen}
         options={{
           headerShown: false,
-          animationEnabled: true,
           presentation: "modal",
         }}
       />

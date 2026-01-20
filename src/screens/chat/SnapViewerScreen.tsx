@@ -20,7 +20,7 @@ interface SnapViewerScreenProps {
 
 export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   const { messageId, chatId, storagePath } = route.params;
-  const { currentUser } = useAuth();
+  const { currentFirebaseUser } = useAuth();
   const insets = useSafeAreaInsets();
 
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -47,11 +47,11 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
 
   // Handle snap dismissal (view-once: mark opened + delete message + delete storage file)
   const handleDismiss = async () => {
-    if (!currentUser) return;
+    if (!currentFirebaseUser) return;
 
     try {
       // Mark snap as opened in Firestore (records metadata)
-      await markSnapOpened(chatId, messageId, currentUser.uid);
+      await markSnapOpened(chatId, messageId, currentFirebaseUser.uid);
 
       // Delete snap from Storage
       await deleteSnapImage(storagePath);
