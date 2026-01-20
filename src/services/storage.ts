@@ -16,8 +16,6 @@ import {
   deleteObject,
 } from "firebase/storage";
 
-const storage = getStorage();
-
 /**
  * Compress image before upload
  * Resizes to max 1024px (preserving aspect ratio) and reduces JPEG quality to 0.7
@@ -61,6 +59,7 @@ export async function uploadSnapImage(
 ): Promise<string> {
   try {
     const storagePath = `snaps/${chatId}/${messageId}.jpg`;
+    const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
     // Fetch the image as blob
@@ -87,6 +86,7 @@ export async function uploadSnapImage(
  */
 export async function downloadSnapImage(storagePath: string): Promise<string> {
   try {
+    const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
     // Get image as bytes
@@ -112,6 +112,7 @@ export async function downloadSnapImage(storagePath: string): Promise<string> {
  */
 export async function deleteSnapImage(storagePath: string): Promise<void> {
   try {
+    const storage = getStorage();
     const storageRef = ref(storage, storagePath);
     await deleteObject(storageRef);
     console.log(`Deleted snap: ${storagePath}`);
