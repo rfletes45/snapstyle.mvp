@@ -7,5 +7,12 @@ service firebase.storage {
     match /snaps/{chatId}/{allPaths=**} {
       allow read, write: if request.auth != null;
     }
+
+    // Stories: authenticated users can upload to their own stories directory
+    // Users can read any story file, but only write to their own directory
+    match /stories/{authorId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == authorId;
+    }
   }
 }
