@@ -21,7 +21,6 @@ import { useAuth } from "@/store/AuthContext";
 import {
   downloadSnapImage,
   compressImage,
-  uploadSnapImage,
 } from "@/services/storage";
 import {
   getStory,
@@ -29,6 +28,7 @@ import {
   deleteStory,
   hasUserViewedStory,
   getStoryViewCount,
+  postStory,
 } from "@/services/stories";
 import { sendMessage } from "@/services/chat";
 import { Story } from "@/types/models";
@@ -144,26 +144,9 @@ export default function StoryViewerScreen({
       const compressedUri = await compressImage(displayImage);
       console.log("✅ [StoryViewerScreen] Image compressed");
 
-      // Generate story ID
-      const storyIdNew = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Upload to Storage
-      const storagePath = `stories/${currentFirebaseUser.uid}/${storyIdNew}.jpg`;
-      const storageRef = require("firebase/storage").ref(
-        require("firebase/storage").getStorage(),
-        storagePath,
-      );
-
-      // For now, use the same upload mechanism as snaps
-      // In production, you'd want a dedicated story upload function
-      const response = await fetch(compressedUri);
-      const blob = await response.blob();
-
-      // This is a simplified approach - in production, use uploadSnapImage with story path
-      console.log(
-        "🔵 [StoryViewerScreen] Uploading to Storage at:",
-        storagePath,
-      );
+      // Post story using service (handles upload + Firestore doc creation)
+      const storyId = await postStory(currentFirebaseUser.uid, compressedUri);
+      console.log("✅ [StoryViewerScreen] Story posted with ID:", storyId);
 
       Alert.alert("Success", "Story posted successfully!");
       navigation.goBack();

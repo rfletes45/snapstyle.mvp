@@ -22,10 +22,95 @@ import {
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { deleteSnapImage } from "./storage";
+import { deleteSnapImage, uploadSnapImage } from "./storage";
+import { getFriends } from "./friends";
 import { Story, StoryView } from "@/types/models";
 
 const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+/**
+ * Post a new story
+ * Uploads image to Firebase Storage and creates Story document in Firestore
+ * Story is visible to current user and all their friends for 24 hours
+ *
+ * @param authorId - Current user ID
+ * @param imageUri - Image URI (data URL on web, file URI on native)
+ * @returns Story ID
+ */
+export async function postStory(
+  authorId: string,
+  imageUri: string,
+): Promise<string> {
+  try {
+    console.log("🔵 [postStory] Starting story post for user:", authorId);
+
+    const db = getFirestore();
+
+    // Generate story ID
+    const storyId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log("🔵 [postStory] Generated story ID:", storyId);
+
+    // Upload image to Storage
+    // Use uploadSnapImage but with stories path format
+    const storagePath = `stories/${authorId}/${storyId}.jpg`;
+    const storage = (await import("firebase/storage")).getStorage();
+    const storageRef = (await import("firebase/storage")).ref(storage, storagePath);
+
+    console.log("🔵 [postStory] Uploading image to Storage at:", storagePath);
+
+    let blob: Blob;
+
+    // Handle data URLs (web) vs file URIs (native)
+    if (imageUri.startsWith("data:")) {
+      console.log("🔵 [postStory] Converting data URL to blob");
+      // Convert data URL to blob
+      const response = await fetch(imageUri);
+      blob = await response.blob();
+    } else {
+      console.log("🔵 [postStory] Fetching file URI as blob");
+      const response = await fetch(imageUri);
+      blob = await response.blob();
+    }
+
+    // Upload to Firebase Storage
+    const { uploadBytes } = await import("firebase/storage");
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+    console.log("✅ [postStory] Image uploaded to Storage");
+
+    // Get user's friends to set recipientIds
+    const friends = await getFriends(authorId);
+    const friendIds = friends
+      .map((f) => f.users.find((u) => u !== authorId))
+      .filter((id): id is string => Boolean(id));
+
+    // Add self to recipients (user can see their own stories)
+    const recipientIds = [authorId, ...friendIds];
+    console.log("🔵 [postStory] Recipient IDs:", recipientIds.length, "users");
+
+    // Create Story document in Firestore
+    const now = Date.now();
+    const expiresAt = now + STORY_EXPIRY_MS;
+
+    const storyData: Story = {
+      id: storyId,
+      authorId,
+      createdAt: now,
+      expiresAt,
+      storagePath,
+      viewCount: 0,
+      recipientIds,
+    };
+
+    const storyRef = doc(db, "stories", storyId);
+    await setDoc(storyRef, storyData);
+    console.log("✅ [postStory] Story document created in Firestore");
+
+    return storyId;
+  } catch (error) {
+    console.error("❌ [postStory] Error posting story:", error);
+    throw error;
+  }
+}
 
 /**
  * Get all unexpired stories from current user and their friends
