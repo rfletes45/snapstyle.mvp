@@ -13,7 +13,9 @@ import {
   ActivityIndicator,
   Alert,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -156,11 +158,16 @@ export default function StoryViewerScreen({
 
   const handleDeleteStory = async () => {
     if (!story || !currentFirebaseUser) {
-      console.error("❌ [StoryViewerScreen] Cannot delete: story or user is null");
+      console.error(
+        "❌ [StoryViewerScreen] Cannot delete: story or user is null",
+      );
       return;
     }
 
-    console.log("🔵 [StoryViewerScreen] Delete button pressed for story:", story.id);
+    console.log(
+      "🔵 [StoryViewerScreen] Delete button pressed for story:",
+      story.id,
+    );
 
     Alert.alert("Delete Story", "Are you sure you want to delete this story?", [
       { text: "Cancel", style: "cancel" },
@@ -296,12 +303,21 @@ export default function StoryViewerScreen({
       {/* Footer Actions */}
       {!isNewStory && isAuthor && (
         <View style={styles.footer}>
-          <TouchableOpacity
-            onPress={handleDeleteStory}
-            style={styles.deleteButton}
-          >
-            <Text style={styles.deleteButtonText}>Delete Story</Text>
-          </TouchableOpacity>
+          {Platform.OS === "web" ? (
+            <Pressable
+              onPress={handleDeleteStory}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteButtonText}>Delete Story</Text>
+            </Pressable>
+          ) : (
+            <TouchableOpacity
+              onPress={handleDeleteStory}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteButtonText}>Delete Story</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>
