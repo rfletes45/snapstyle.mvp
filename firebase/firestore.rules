@@ -111,19 +111,22 @@ service cloud.firestore {
       allow create: if isAuth() && 
                     request.auth.uid == request.resource.data.authorId;
       
-      // Only author can update/delete
-      allow update, delete: if isAuth() && 
-                            request.auth.uid == resource.data.authorId;
+      // Author can update/delete story content
+      // Any authenticated user can increment viewCount
+      allow update: if isAuth() && (
+                      request.auth.uid == resource.data.authorId ||
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']))
+                    );
+      allow delete: if isAuth() && 
+                    request.auth.uid == resource.data.authorId;
 
       // Views subcollection
       match /views/{userId} {
-        // User can read their own view, author can read all views
-        allow read: if isAuth() && 
-                    (userId == request.auth.uid ||
-                     request.auth.uid == get(/databases/(default)/documents/stories/$(storyId)).data.authorId);
+        // User can read their own view
+        allow read: if isAuth() && userId == request.auth.uid;
         
-        // User can only create their own view record
-        allow create, write: if isAuth() && userId == request.auth.uid;
+        // User can only create/update their own view record
+        allow write: if isAuth() && userId == request.auth.uid;
       }
     }
 
