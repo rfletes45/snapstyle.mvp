@@ -106,7 +106,22 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       setPostingStory(true);
 
       // Show photo menu
-      if (Platform.OS === "ios") {
+      if (Platform.OS === "web") {
+        // On web, use browser's native confirm for reliability
+        console.log("🔵 [StoriesScreen] Using web-specific menu");
+        
+        const useCamera = window.confirm(
+          "Post Story\n\nClick OK to take a photo with camera, or Cancel to choose from gallery."
+        );
+        
+        console.log("🔵 [StoriesScreen] User choice:", useCamera ? "camera" : "gallery");
+        
+        if (useCamera) {
+          await capturePhoto();
+        } else {
+          await selectPhoto();
+        }
+      } else if (Platform.OS === "ios") {
         ActionSheetIOS.showActionSheetWithOptions(
           {
             options: ["Cancel", "Take Photo", "Choose from Gallery"],
@@ -121,9 +136,13 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
           },
         );
       } else {
-        // Android and web
+        // Android
         Alert.alert("Post Story", "Choose an option", [
-          { text: "Cancel", style: "cancel", onPress: () => setPostingStory(false) },
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => setPostingStory(false),
+          },
           {
             text: "Take Photo",
             onPress: async () => {
@@ -161,7 +180,10 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       if (Platform.OS === "web") {
         console.log("🔵 [capturePhoto] Using web camera capture");
         imageUri = await captureImageFromWebcam();
-        console.log("✅ [capturePhoto] Got image URI:", imageUri ? "success" : "null");
+        console.log(
+          "✅ [capturePhoto] Got image URI:",
+          imageUri ? "success" : "null",
+        );
       } else {
         console.log("🔵 [capturePhoto] Using expo camera");
         const result = await ImagePicker.launchCameraAsync({
@@ -201,7 +223,10 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       if (Platform.OS === "web") {
         console.log("🔵 [selectPhoto] Using web file picker");
         imageUri = await pickImageFromWeb();
-        console.log("✅ [selectPhoto] Got image URI:", imageUri ? "success" : "null");
+        console.log(
+          "✅ [selectPhoto] Got image URI:",
+          imageUri ? "success" : "null",
+        );
       } else {
         console.log("🔵 [selectPhoto] Using expo image library");
         const result = await ImagePicker.launchImageLibraryAsync({

@@ -29,12 +29,12 @@ Phase 5 extends the app to support photo stories. Users can post photos visible 
 ```typescript
 export interface Story {
   id: string;
-  authorId: string;           // User who posted story
-  createdAt: number;          // Timestamp
-  expiresAt: number;          // 24h from now (TTL index for auto-delete)
-  storagePath: string;        // stories/{authorId}/{storyId}.jpg
-  viewCount: number;          // Aggregate view count (cached)
-  recipientIds?: string[];    // Array of friend IDs (for queries)
+  authorId: string; // User who posted story
+  createdAt: number; // Timestamp
+  expiresAt: number; // 24h from now (TTL index for auto-delete)
+  storagePath: string; // stories/{authorId}/{storyId}.jpg
+  viewCount: number; // Aggregate view count (cached)
+  recipientIds?: string[]; // Array of friend IDs (for queries)
 }
 ```
 
@@ -43,8 +43,8 @@ export interface Story {
 ```typescript
 export interface StoryView {
   userId: string;
-  viewedAt: number;          // When they viewed it
-  viewed: boolean;           // true (for querying convenience)
+  viewedAt: number; // When they viewed it
+  viewed: boolean; // true (for querying convenience)
 }
 ```
 
@@ -129,7 +129,10 @@ export async function getStoryViewers(storyId: string): Promise<string[]>;
 /**
  * Delete a story (author only)
  */
-export async function deleteStory(storyId: string, storagePath: string): Promise<void>;
+export async function deleteStory(
+  storyId: string,
+  storagePath: string,
+): Promise<void>;
 ```
 
 ---
@@ -141,12 +144,14 @@ export async function deleteStory(storyId: string, storagePath: string): Promise
 Shows a horizontal scrollable bar of friends' stories (like Snapchat/Instagram):
 
 **Layout:**
+
 - Header: "Stories"
 - Horizontal scroll view with story cards
 - Each card shows: Friend's avatar + first frame of story
 - Tap to view fullscreen
 
 **Features:**
+
 - List stories from `getFriendsStories(currentUserId)`
 - Show "Add Story +" button to post new story
 - Filter out expired stories (expiresAt > now())
@@ -154,6 +159,7 @@ Shows a horizontal scrollable bar of friends' stories (like Snapchat/Instagram):
 - Display view count on each card (if viewed by current user, show checkmark)
 
 **Interactions:**
+
 - Tap story card → open StoryViewerScreen
 - Press "Add Story +" → camera/gallery menu → StoryViewerScreen (own story, no dismiss)
 
@@ -162,12 +168,14 @@ Shows a horizontal scrollable bar of friends' stories (like Snapchat/Instagram):
 Fullscreen story viewer (similar to SnapViewerScreen but persistent):
 
 **Layout:**
+
 - Fullscreen image on black background
 - Bottom overlay: "X views" or "1 view"
 - Top-right: "Delete" button (only if author)
 - Tap image to return to StoriesScreen
 
 **Features:**
+
 - Download and display story image
 - Show view count: `getStoryViewCount(storyId)`
 - Mark as viewed: `markStoryViewed(storyId, userId)` on mount
@@ -184,6 +192,7 @@ Fullscreen story viewer (similar to SnapViewerScreen but persistent):
 **When:** Document created in `stories/{storyId}`
 
 **What:**
+
 1. Set `expiresAt = createdAt + 24h`
 2. Copy `recipientIds` from user.friendIds (for Firestore query compatibility)
 3. Log: "Story {storyId} posted by {authorId}"
@@ -195,6 +204,7 @@ Fullscreen story viewer (similar to SnapViewerScreen but persistent):
 **When:** Daily at 2 AM UTC (same as snap cleanup)
 
 **What:**
+
 1. Query stories where expiresAt < now()
 2. For each expired story:
    - Delete storagePath from Storage
@@ -214,15 +224,15 @@ match /stories/{storyId} {
   // Anyone can read unexpired stories from their friends
   allow read: if request.auth != null && isAuth() && (
     resource.data.expiresAt > request.time.toMillis() &&
-    (request.auth.uid in resource.data.recipientIds || 
+    (request.auth.uid in resource.data.recipientIds ||
      resource.data.authorId == request.auth.uid)
   );
-  
+
   // Only owner can create/update/delete
   allow create: if isAuth() && request.resource.data.authorId == request.auth.uid;
   allow update: if isAuth() && resource.data.authorId == request.auth.uid;
   allow delete: if isAuth() && resource.data.authorId == request.auth.uid;
-  
+
   // Views subcollection: anyone can add view record
   match /views/{userId} {
     allow read: if request.auth != null && isAuth();
@@ -265,13 +275,13 @@ match /stories/{authorId}/{allPaths=**} {
 
 ## Key Differences from Snaps (Phase 4)
 
-| Feature | Snaps | Stories |
-|---------|-------|---------|
-| **Recipients** | One specific friend | All friends |
-| **Persistence** | Deleted immediately after viewing (view-once) | Persists 24h for multiple viewers |
-| **View tracking** | Simple openedAt + openedBy | Views subcollection (multiple views) |
-| **Screen** | In chat (ChatScreen) | Dedicated StoriesScreen |
-| **Viewer** | SnapViewerScreen (auto-dismiss) | StoryViewerScreen (persistent, return manually) |
+| Feature           | Snaps                                         | Stories                                         |
+| ----------------- | --------------------------------------------- | ----------------------------------------------- |
+| **Recipients**    | One specific friend                           | All friends                                     |
+| **Persistence**   | Deleted immediately after viewing (view-once) | Persists 24h for multiple viewers               |
+| **View tracking** | Simple openedAt + openedBy                    | Views subcollection (multiple views)            |
+| **Screen**        | In chat (ChatScreen)                          | Dedicated StoriesScreen                         |
+| **Viewer**        | SnapViewerScreen (auto-dismiss)               | StoryViewerScreen (persistent, return manually) |
 
 ---
 

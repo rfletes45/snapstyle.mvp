@@ -382,7 +382,29 @@ export default function ChatScreen({
       Platform.OS,
     );
 
-    if (Platform.OS === "ios") {
+    if (Platform.OS === "web") {
+      // On web, Alert doesn't work reliably with multiple buttons
+      // Use browser's confirm() for a simple choice
+      console.log("🔵 [showPhotoMenu] Using web-specific menu");
+      
+      const useCamera = window.confirm(
+        "Send Snap\n\nClick OK to take a photo with camera, or Cancel to choose from gallery."
+      );
+      
+      console.log("🔵 [showPhotoMenu] User choice:", useCamera ? "camera" : "gallery");
+      
+      if (useCamera) {
+        console.log("🔵 [showPhotoMenu] Calling handleCapturePhoto");
+        handleCapturePhoto().catch((error) => {
+          console.error("❌ [showPhotoMenu] Camera error:", error);
+        });
+      } else {
+        console.log("🔵 [showPhotoMenu] Calling handleSelectPhoto");
+        handleSelectPhoto().catch((error) => {
+          console.error("❌ [showPhotoMenu] Gallery error:", error);
+        });
+      }
+    } else if (Platform.OS === "ios") {
       console.log("🔵 [showPhotoMenu] Using ActionSheetIOS");
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -399,7 +421,7 @@ export default function ChatScreen({
         },
       );
     } else {
-      // Android and web: show alert dialog
+      // Android: show alert dialog
       console.log("🔵 [showPhotoMenu] Using Alert dialog");
       Alert.alert("Send Snap", "Choose an option", [
         {

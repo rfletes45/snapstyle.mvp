@@ -164,10 +164,7 @@ export const cleanupExpiredStories = functions.pubsub
           console.log(`✅ Deleted expired story storage: ${storagePath}`);
         } catch (error: any) {
           // File may already be deleted; only log real errors
-          if (
-            error.code !== 404 &&
-            error.code !== "storage/object-not-found"
-          ) {
+          if (error.code !== 404 && error.code !== "storage/object-not-found") {
             console.warn(
               `⚠️ Failed to delete story storage ${storagePath}:`,
               error.message,

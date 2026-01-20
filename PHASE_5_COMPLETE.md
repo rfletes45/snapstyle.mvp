@@ -15,11 +15,13 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
 ## What Was Implemented
 
 ### 1. **Type Definitions** ✅
+
 - Updated `Story` model with proper fields: `id`, `authorId`, `createdAt`, `expiresAt`, `storagePath`, `viewCount`, `recipientIds`
 - Created `StoryView` interface for tracking who viewed each story
 - File: `src/types/models.ts`
 
 ### 2. **Story Service Layer** ✅
+
 - **File:** `src/services/stories.ts`
 - **Functions:**
   - `getFriendsStories()` - Query unexpired stories from current user and friends
@@ -31,6 +33,7 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
   - `deleteStory()` - Delete story (author only)
 
 ### 3. **StoriesScreen UI** ✅
+
 - **File:** `src/screens/stories/StoriesScreen.tsx`
 - **Features:**
   - Horizontal scrollable feed of friends' stories
@@ -44,6 +47,7 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
   - Loading states and error handling
 
 ### 4. **StoryViewerScreen** ✅
+
 - **File:** `src/screens/stories/StoryViewerScreen.tsx`
 - **Features:**
   - Fullscreen story display (black background)
@@ -55,6 +59,7 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
   - Back button to return to stories feed
 
 ### 5. **Firestore Schema** ✅
+
 - **Collection:** `stories/{storyId}`
 - **Fields:**
   - `id`: Story ID
@@ -64,11 +69,11 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
   - `storagePath`: Path to image in Storage (`stories/{authorId}/{storyId}.jpg`)
   - `viewCount`: Aggregate view count (updated by Cloud Function)
   - `recipientIds`: Array of friend IDs (for Firestore query compatibility)
-  
 - **Subcollection:** `stories/{storyId}/views/{userId}`
   - Fields: `userId`, `viewedAt`, `viewed: true`
 
 ### 6. **Firestore Security Rules** ✅
+
 - **File:** `firebase/firestore.rules`
 - **Stories Collection:**
   - Read: Any authenticated user can read unexpired stories from their friends (via recipientIds check)
@@ -77,6 +82,7 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
   - Views subcollection: Users can read their own views and author can see all views
 
 ### 7. **Cloud Functions** ✅
+
 - **File:** `firebase/functions/src/index.ts`
 - **New Function: `cleanupExpiredStories`**
   - Scheduled daily at 2 AM UTC
@@ -86,12 +92,14 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
   - Runs alongside existing snap cleanup
 
 ### 8. **Navigation Updates** ✅
+
 - **File:** `src/navigation/RootNavigator.tsx`
 - Created `StoriesStack` navigator (stories feed + viewer)
 - Added `StoryViewerScreen` route with modal presentation
 - Updated tab bar to use `StoriesStack` instead of component directly
 
 ### 9. **Documentation** ✅
+
 - Created comprehensive `PHASE_5_PREP.md` with:
   - Feature overview
   - Firestore schema details
@@ -107,25 +115,30 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
 ## Technical Highlights
 
 ### Query Optimization
+
 - Using `recipientIds` array in story documents allows Firestore queries with `array-contains`
 - Enables filtering stories by friends without complex joins
 
 ### View Tracking
+
 - Views stored in subcollection for scalability (handles multiple viewers)
 - `viewCount` field cached on story doc for fast reads
 - Cloud Function can increment viewCount when views are recorded
 
 ### Image Handling
+
 - Reuses existing `downloadSnapImage()` and `deleteSnapImage()` from Phase 4
 - Same compression/upload flow as snaps via `compressImage()`
 - Storage path: `stories/{authorId}/{storyId}.jpg`
 
 ### Auto-Expiry
+
 - `expiresAt` field set to 24 hours from creation
 - `cleanupExpiredStories` Cloud Function runs daily
 - Ensures stories deleted even if TTL index not active
 
 ### Platform Support
+
 - Web: Uses `webImagePicker` utilities for camera/gallery
 - Native: Uses expo-image-picker as fallback
 - Platform detection in `StoriesScreen` for appropriate UI
@@ -135,19 +148,22 @@ Phase 5 has been successfully implemented, adding persistent photo stories visib
 ## Deployment Status
 
 ### ✅ Cloud Functions Deployed
+
 - `onDeleteMessage` (Phase 4) - Still active
-- `cleanupExpiredSnaps` (Phase 4) - Still active  
+- `cleanupExpiredSnaps` (Phase 4) - Still active
 - `cleanupExpiredStories` (Phase 5) - **NEWLY DEPLOYED**
 - All functions in `us-central1` region
 - Runtime: Node.js 20 (1st Gen)
 
 ### ✅ Firestore Rules Deployed
+
 - Stories collection rules published
 - Subcollection (views) rules active
 - Authentication checks enforced
 - Query optimization compatible
 
 ### ✅ Storage Rules Active
+
 - `stories/{authorId}/{allPaths=**}` path created
 - Read: Any authenticated user
 - Write: Author only
@@ -207,12 +223,14 @@ All features tested and working:
 ## Files Modified/Created
 
 ### New Files:
+
 1. `PHASE_5_PREP.md` - Comprehensive planning document
 2. `src/services/stories.ts` - Story service layer
 3. `src/screens/stories/StoryViewerScreen.tsx` - Fullscreen viewer
 4. `start.ps1` - PowerShell startup helper (from Phase 4)
 
 ### Modified Files:
+
 1. `src/types/models.ts` - Updated Story/StoryView models
 2. `src/screens/stories/StoriesScreen.tsx` - Full UI implementation
 3. `firebase/firestore.rules` - Added stories collection rules
@@ -224,6 +242,7 @@ All features tested and working:
 ## Next Phase: Phase 6 - Notifications + Streaks
 
 ### Planned Features:
+
 - Push notifications for:
   - New messages in chats
   - Friend requests
@@ -236,6 +255,7 @@ All features tested and working:
 - Milestone rewards when streaks reach 7, 14, 30 days
 
 ### Estimated Complexity: Medium-High
+
 - Requires Expo push notifications setup
 - Cloud Function triggers for streak updates
 - Notifications service layer
@@ -266,6 +286,7 @@ All features tested and working:
 **Start:** Phase 4 snapshot fixes + web image upload issues
 **End:** Phase 5 fully implemented with stories feed, viewer, and auto-expiry
 **Key Achievements:**
+
 - ✅ Fixed web snap uploads (data URL handling)
 - ✅ Implemented complete Stories feature
 - ✅ Deployed Cloud Functions + rules
@@ -274,6 +295,7 @@ All features tested and working:
 - ✅ Comprehensive documentation
 
 **Commits in Session:**
+
 1. `d472a61` - Web snapshot upload fixes
 2. `346d59a` - Phase 5 complete implementation
 

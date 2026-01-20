@@ -66,15 +66,15 @@ export interface Story {
   authorId: string;
   createdAt: number;
   expiresAt: number;
-  storagePath: string;        // stories/{authorId}/{storyId}.jpg
-  viewCount: number;          // Aggregate view count
-  recipientIds?: string[];    // Array of friend IDs (for query compatibility)
+  storagePath: string; // stories/{authorId}/{storyId}.jpg
+  viewCount: number; // Aggregate view count
+  recipientIds?: string[]; // Array of friend IDs (for query compatibility)
 }
 
 export interface StoryView {
   userId: string;
   viewedAt: number;
-  viewed: boolean;            // true (for querying convenience)
+  viewed: boolean; // true (for querying convenience)
 }
 
 // Game
