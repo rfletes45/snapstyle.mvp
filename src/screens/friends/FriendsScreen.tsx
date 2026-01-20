@@ -416,16 +416,38 @@ export default function FriendsScreen({ navigation }: any) {
                   <Card key={request.id} style={styles.sentRequestCard}>
                     <Card.Content style={styles.cardContent}>
                       <View style={styles.sentRequestHeader}>
-                        <View style={styles.avatar}>
-                          <Text style={styles.avatarText}>⏳</Text>
+                        <View
+                          style={[
+                            styles.avatar,
+                            {
+                              backgroundColor:
+                                request.otherUserProfile?.avatarConfig
+                                  ?.baseColor || "#6200EE",
+                            },
+                          ]}
+                        >
+                          <Text style={styles.avatarText}>
+                            {request.otherUserUsername
+                              ?.charAt(0)
+                              .toUpperCase() || "?"}
+                          </Text>
                         </View>
                         <View style={styles.sentRequestInfo}>
-                          <Text
-                            variant="bodySmall"
-                            style={styles.sentRequestText}
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                            }}
                           >
-                            {request.otherUserUsername || "Loading..."}
-                          </Text>
+                            <Text
+                              variant="bodySmall"
+                              style={styles.sentRequestText}
+                            >
+                              {request.otherUserUsername || "Loading..."}
+                            </Text>
+                            <Text style={{ fontSize: 18 }}>⏳</Text>
+                          </View>
                           <Text
                             variant="labelSmall"
                             style={styles.sentRequestSubtext}

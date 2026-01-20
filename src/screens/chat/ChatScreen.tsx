@@ -6,8 +6,11 @@ import {
   TextInput,
   Alert,
   KeyboardAvoidingView,
+  Platform,
+  ActionSheetIOS,
 } from "react-native";
-import { Text, Button, ActivityIndicator, Card } from "react-native-paper";
+import { Text, Button, ActivityIndicator, Card, IconButton } from "react-native-paper";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/store/AuthContext";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -20,6 +23,8 @@ import {
 } from "@/services/chat";
 import { getUserProfileByUid } from "@/services/friends";
 import { Message, AvatarConfig } from "@/types/models";
+import * as ImagePicker from "expo-image-picker";
+import { compressImage, uploadSnapImage } from "@/services/storage";
 
 interface MessageWithProfile extends Message {
   otherUserProfile?: {
@@ -43,27 +48,54 @@ export default function ChatScreen({
   const [sendingLoading, setSendingLoading] = useState(false);
   const [inputText, setInputText] = useState("");
   const [friendProfile, setFriendProfile] = useState<any>(null);
+  const [uploadingSnap, setUploadingSnap] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Initialize chat and subscribe to messages
   useFocusEffect(
     useCallback(() => {
       const initializeChat = async () => {
-        if (!uid) return;
+        if (!uid) {
+          console.error("❌ [ChatScreen] No uid available");
+          return;
+        }
+
+        console.log(
+          "🔵 [ChatScreen] Initializing chat with friendUid:",
+          friendUid,
+          "currentUid:",
+          uid,
+        );
 
         try {
           setLoading(true);
 
           // Get or create chat
+          console.log("🔵 [ChatScreen] Calling getOrCreateChat...");
           const id = await getOrCreateChat(uid, friendUid);
+          console.log("✅ [ChatScreen] Chat ID obtained:", id);
           setChatId(id);
 
           // Fetch friend profile
+          console.log(
+            "🔵 [ChatScreen] Fetching friend profile for:",
+            friendUid,
+          );
           const profile = await getUserProfileByUid(friendUid);
+          console.log(
+            "✅ [ChatScreen] Friend profile loaded:",
+            profile?.username,
+          );
           setFriendProfile(profile);
 
           // Subscribe to real-time messages
+          console.log("🔵 [ChatScreen] Setting up message subscription...");
           const unsubscribe = subscribeToChat(id, async (newMessages) => {
+            console.log(
+              "✅ [ChatScreen] Received",
+              newMessages.length,
+              "messages from subscription",
+            );
             // Enrich messages with friend profile
             const enrichedMessages = newMessages.map((msg) => ({
               ...msg,
@@ -75,15 +107,22 @@ export default function ChatScreen({
             // Mark messages as read if they're from the friend
             for (const msg of newMessages) {
               if (msg.sender === friendUid && !msg.read) {
+                console.log("🔵 [ChatScreen] Marking message as read:", msg.id);
                 await markMessageAsRead(id, msg.id);
               }
             }
           });
 
           unsubscribeRef.current = unsubscribe;
+          console.log("✅ [ChatScreen] Chat initialization complete");
           setLoading(false);
-        } catch (error) {
-          console.error("Error initializing chat:", error);
+        } catch (error: any) {
+          console.error("❌ [ChatScreen] Chat initialization error:", {
+            message: error.message,
+            code: error.code,
+            errorType: error.constructor.name,
+            timestamp: new Date().toISOString(),
+          });
           Alert.alert("Error", "Failed to initialize chat");
           setLoading(false);
         }
@@ -94,6 +133,7 @@ export default function ChatScreen({
       // Cleanup listener on unmount
       return () => {
         if (unsubscribeRef.current) {
+          console.log("🔵 [ChatScreen] Cleaning up message listener");
           unsubscribeRef.current();
         }
       };
@@ -121,6 +161,126 @@ export default function ChatScreen({
       Alert.alert("Error", "Failed to send message");
     } finally {
       setSendingLoading(false);
+    }
+  };
+
+  // Request media library permission
+  const requestMediaLibraryPermission = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert(
+        "Permission Denied",
+        "Media library access is required to select photos",
+      );
+      return false;
+    }
+    return true;
+  };
+
+  // Request camera permission
+  const requestCameraPermission = async () => {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) {
+      Alert.alert("Permission Denied", "Camera access is required to take photos");
+      return false;
+    }
+    return true;
+  };
+
+  // Capture photo from camera
+  const handleCapturePhoto = async () => {
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) return;
+
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        aspect: [1, 1],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        await handleSnapUpload(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Error capturing photo:", error);
+      Alert.alert("Error", "Failed to capture photo");
+    }
+  };
+
+  // Select photo from gallery
+  const handleSelectPhoto = async () => {
+    const hasPermission = await requestMediaLibraryPermission();
+    if (!hasPermission) return;
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        aspect: [1, 1],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        await handleSnapUpload(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Error selecting photo:", error);
+      Alert.alert("Error", "Failed to select photo");
+    }
+  };
+
+  // Handle snap upload and send
+  const handleSnapUpload = async (imageUri: string) => {
+    if (!uid || !chatId) return;
+
+    try {
+      setUploadingSnap(true);
+
+      // Compress image
+      Alert.alert("Compressing...", "Please wait");
+      const compressedUri = await compressImage(imageUri);
+
+      // Upload to Storage and get storagePath
+      const messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const storagePath = await uploadSnapImage(chatId, messageId, compressedUri);
+
+      // Send as image message
+      await sendMessage(chatId, uid, storagePath, friendUid, "image");
+
+      Alert.alert("Success", "Snap sent!");
+    } catch (error) {
+      console.error("Error uploading snap:", error);
+      Alert.alert("Error", "Failed to send snap");
+    } finally {
+      setUploadingSnap(false);
+    }
+  };
+
+  // Show photo options menu
+  const showPhotoMenu = () => {
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "Take Photo", "Choose from Gallery"],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            handleCapturePhoto();
+          } else if (buttonIndex === 2) {
+            handleSelectPhoto();
+          }
+        },
+      );
+    } else {
+      // Android: show alert dialog
+      Alert.alert("Send Snap", "Choose an option", [
+        { text: "Cancel", onPress: () => {} },
+        { text: "Take Photo", onPress: handleCapturePhoto },
+        { text: "Choose from Gallery", onPress: handleSelectPhoto },
+      ]);
     }
   };
 
@@ -152,18 +312,32 @@ export default function ChatScreen({
                   ? styles.sentBubble
                   : styles.receivedBubble,
               ]}
+              onPress={() => {
+                // If image message, navigate to snap viewer
+                if (message.type === "image") {
+                  navigation.navigate("SnapViewer", {
+                    messageId: message.id,
+                    chatId: chatId,
+                    storagePath: message.content,
+                  });
+                }
+              }}
             >
               <Card.Content style={styles.messageContent}>
-                <Text
-                  style={[
-                    styles.messageText,
-                    message.sender === uid
-                      ? styles.sentText
-                      : styles.receivedText,
-                  ]}
-                >
-                  {message.content}
-                </Text>
+                {message.type === "image" ? (
+                  <Text style={{ fontSize: 24 }}>🔒</Text>
+                ) : (
+                  <Text
+                    style={[
+                      styles.messageText,
+                      message.sender === uid
+                        ? styles.sentText
+                        : styles.receivedText,
+                    ]}
+                  >
+                    {message.content}
+                  </Text>
+                )}
               </Card.Content>
             </Card>
             <Text style={styles.timestamp}>
@@ -175,7 +349,6 @@ export default function ChatScreen({
           </View>
         )}
         keyExtractor={(item) => item.id}
-        inverted
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text variant="bodyLarge" style={styles.emptyText}>
@@ -189,6 +362,12 @@ export default function ChatScreen({
       />
 
       <View style={styles.inputContainer}>
+        <IconButton
+          icon="camera"
+          size={24}
+          onPress={showPhotoMenu}
+          disabled={sendingLoading || uploadingSnap}
+        />
         <TextInput
           style={styles.textInput}
           placeholder="Type a message..."
@@ -196,12 +375,12 @@ export default function ChatScreen({
           onChangeText={setInputText}
           multiline
           maxLength={500}
-          editable={!sendingLoading}
+          editable={!sendingLoading && !uploadingSnap}
         />
         <Button
           mode="contained"
           onPress={handleSendMessage}
-          disabled={!inputText.trim() || sendingLoading}
+          disabled={!inputText.trim() || sendingLoading || uploadingSnap}
           loading={sendingLoading}
           style={styles.sendButton}
           labelStyle={styles.sendButtonLabel}

@@ -17,6 +17,7 @@ import ProfileSetupScreen from "@/screens/auth/ProfileSetupScreen";
 // App screens
 import ChatListScreen from "@/screens/chat/ChatListScreen";
 import ChatScreen from "@/screens/chat/ChatScreen";
+import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
 import GamesScreen from "@/screens/games/GamesScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
@@ -64,6 +65,15 @@ function ChatStack() {
         component={ChatScreen}
         options={{ title: "Chat" }}
       />
+      <Stack.Screen
+        name="SnapViewer"
+        component={SnapViewerScreen}
+        options={{
+          headerShown: false,
+          animationEnabled: true,
+          presentation: "modal",
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -90,8 +100,8 @@ function AppTabs() {
         },
         tabBarIcon: ({ color, size }) => {
           let iconName = "chat";
-          if (route.name === "Chats") iconName = "chat-multiple";
-          else if (route.name === "Stories") iconName = "image-multiple";
+          if (route.name === "Chats") iconName = "chat";
+          else if (route.name === "Stories") iconName = "image";
           else if (route.name === "Games") iconName = "gamepad-variant";
           else if (route.name === "Friends") iconName = "account-multiple";
           else if (route.name === "Profile") iconName = "account";

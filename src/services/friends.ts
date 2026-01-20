@@ -8,7 +8,6 @@ import {
   updateDoc,
   deleteDoc,
   writeBatch,
-  orderBy,
   getDoc,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
@@ -411,6 +410,37 @@ export async function toggleBlockFriend(
   } catch (error) {
     console.error("Error toggling block:", error);
     throw error;
+  }
+}
+
+/**
+ * Find friendship document ID by two user UIDs
+ * @param uid1 First user ID
+ * @param uid2 Second user ID
+ * @returns Friendship document ID or null if not found
+ */
+export async function getFriendshipId(
+  uid1: string,
+  uid2: string,
+): Promise<string | null> {
+  const db = getFirestoreInstance();
+
+  try {
+    const friendsRef = collection(db, "Friends");
+    const q = query(friendsRef, where("users", "array-contains", uid1));
+
+    const snapshot = await getDocs(q);
+    for (const friendDoc of snapshot.docs) {
+      const friend = friendDoc.data() as Friend;
+      if (friend.users.includes(uid2)) {
+        return friendDoc.id;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error finding friendship ID:", error);
+    return null;
   }
 }
 

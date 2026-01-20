@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function: Check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper function: Check if user is the resource owner
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    // Helper function: Check if user is in a chat
+    function isChatMember(chatId, uid) {
+      return uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+    }
+
+    // Users collection - controlled access to profile data
+    match /Users/{uid} {
+      // Anyone can read limited public profile fields
+      allow read: if isAuth();
+      
+      // Users can only write their own profile
+      allow create: if isAuth() && isOwner(uid);
+      allow update, delete: if isAuth() && isOwner(uid);
+
+      // Usernames subcollection - atomic uniqueness constraint
+      match /Usernames/{username} {
+        allow read: if isAuth();
+        allow write: if isAuth() && isOwner(uid);
+      }
+
+      // Inventory subcollection - read-only for owner
+      match /Inventory/{itemId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow write: if false; // Only Cloud Functions can write
+      }
+
+      // Blocked users list
+      match /Blocked/{blockedUid} {
+        allow read: if isAuth() && isOwner(uid);
+        allow write: if isAuth() && isOwner(uid);
+      }
+    }
+
+    // Usernames collection - uniqueness index
+    match /Usernames/{username} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Friend Requests collection
+    match /FriendRequests/{requestId} {
+      allow read: if isAuth() && 
+                    (request.auth.uid == resource.data.from || 
+                     request.auth.uid == resource.data.to);
+      allow create: if isAuth() && request.auth.uid == request.resource.data.from;
+      allow update: if isAuth() && request.auth.uid == resource.data.to;
+      allow delete: if isAuth() && 
+                     (request.auth.uid == resource.data.from || 
+                      request.auth.uid == resource.data.to);
+    }
+
+    // Friends collection
+    match /Friends/{friendId} {
+      allow read: if isAuth() && 
+                    request.auth.uid in resource.data.users;
+      allow create: if isAuth() && 
+                     request.auth.uid in request.resource.data.users;
+      allow update: if isAuth() && 
+                     request.auth.uid in resource.data.users;
+      allow delete: if isAuth() && 
+                     request.auth.uid in resource.data.users;
+    }
+
+    // Chats collection
+    match /Chats/{chatId} {
+      allow read: if isAuth() && 
+                    isChatMember(chatId, request.auth.uid);
+      allow create, update: if isAuth() && 
+                             isChatMember(chatId, request.auth.uid);
+
+      // Messages subcollection
+      match /Messages/{messageId} {
+        allow read: if isAuth() && 
+                     isChatMember(chatId, request.auth.uid);
+        allow create: if isAuth() && 
+                      request.auth.uid == request.resource.data.sender &&
+                      isChatMember(chatId, request.auth.uid);
+        allow update: if isAuth() && 
+                      request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+        // Allow delete for view-once snap deletion (after viewing)
+        allow delete: if isAuth() && 
+                      request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+      }
+    }
+
+    // Stories collection (Phase 5+)
+    match /Stories/{storyId} {
+      allow read: if isAuth() &&
+                   (request.auth.uid == resource.data.authorId ||
+                    isFriendsWith(resource.data.authorId, request.auth.uid));
+      allow create: if isAuth() && 
+                    request.auth.uid == request.resource.data.authorId;
+      allow update: if isAuth() && 
+                    request.auth.uid == resource.data.authorId;
+      allow delete: if isAuth() && 
+                    request.auth.uid == resource.data.authorId;
+
+      // Views subcollection
+      match /Views/{viewerUid} {
+        allow read: if isAuth() && 
+                    (viewerUid == request.auth.uid ||
+                     request.auth.uid == get(/databases/(default)/documents/Stories/$(storyId)).data.authorId);
+        allow create, write: if isAuth() && viewerUid == request.auth.uid;
+      }
+    }
+
+    // Reports collection (Phase 8+)
+    match /Reports/{reportId} {
+      allow create: if isAuth() && 
+                    request.auth.uid == request.resource.data.reporterId;
+      allow read: if false; // Admins read via Cloud Functions
+      allow update, delete: if false; // Immutable after creation
+    }
+
+    // Game Sessions collection (Phase 6+)
+    match /GameSessions/{sessionId} {
+      allow read: if isAuth() && 
+                   request.auth.uid == resource.data.playerId;
+      allow create: if isAuth() && 
+                    request.auth.uid == request.resource.data.playerId;
+      allow update, delete: if false;
+    }
+
+    // Cosmetics collection (read-only, seeded by admin)
+    match /Cosmetics/{itemId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

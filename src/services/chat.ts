@@ -8,12 +8,12 @@ import {
   updateDoc,
   orderBy,
   getDoc,
-  writeBatch,
   onSnapshot,
   Timestamp,
+  deleteDoc,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { updateStreak } from "./friends";
+import { updateStreak, getFriendshipId } from "./friends";
 import { Chat, Message } from "@/types/models";
 
 /**
@@ -35,10 +35,29 @@ export async function getOrCreateChat(
   const chatId = generateChatId(currentUid, otherUid);
   const chatDocRef = doc(db, "Chats", chatId);
 
+  console.log("🔵 [getOrCreateChat] Starting with:", {
+    currentUid,
+    otherUid,
+    chatId,
+    timestamp: new Date().toISOString(),
+  });
+
   try {
+    console.log(
+      "🔵 [getOrCreateChat] Attempting to get existing chat document...",
+    );
     const chatDoc = await getDoc(chatDocRef);
+    console.log(
+      "✅ [getOrCreateChat] Successfully retrieved chat doc. Exists:",
+      chatDoc.exists(),
+    );
 
     if (!chatDoc.exists()) {
+      console.log(
+        "🔵 [getOrCreateChat] Chat doesn't exist. Creating new chat with members:",
+        [currentUid, otherUid].sort(),
+      );
+
       // Create new chat
       await setDoc(chatDocRef, {
         members: [currentUid, otherUid].sort(),
@@ -46,11 +65,23 @@ export async function getOrCreateChat(
         lastMessageText: "",
         lastMessageAt: Timestamp.now(),
       });
+      console.log(
+        "✅ [getOrCreateChat] Successfully created new chat document",
+      );
+    } else {
+      console.log("✅ [getOrCreateChat] Chat already exists");
     }
 
+    console.log("✅ [getOrCreateChat] Returning chatId:", chatId);
     return chatId;
-  } catch (error) {
-    console.error("Error getting or creating chat:", error);
+  } catch (error: any) {
+    console.error("❌ [getOrCreateChat] ERROR:", {
+      message: error.message,
+      code: error.code,
+      errorType: error.constructor.name,
+      fullError: error,
+      timestamp: new Date().toISOString(),
+    });
     throw error;
   }
 }
@@ -63,11 +94,24 @@ export async function sendMessage(
   sender: string,
   content: string,
   friendUid: string,
+  type: "text" | "image" = "text",
 ): Promise<void> {
   const db = getFirestoreInstance();
 
+  console.log("🔵 [sendMessage] Starting message send:", {
+    chatId,
+    sender,
+    type,
+    contentLength: content.length,
+    friendUid,
+    timestamp: new Date().toISOString(),
+  });
+
   try {
     // Create message document
+    console.log(
+      "🔵 [sendMessage] Creating message reference for subcollection...",
+    );
     const messagesRef = collection(db, "Chats", chatId, "Messages");
     const newMessageRef = doc(messagesRef);
 
@@ -75,7 +119,7 @@ export async function sendMessage(
       chatId,
       sender,
       content,
-      type: "text" as const,
+      type: type,
       createdAt: Timestamp.now(),
       expiresAt: Timestamp.fromMillis(
         new Date().getTime() + 24 * 60 * 60 * 1000,
@@ -85,25 +129,56 @@ export async function sendMessage(
     };
 
     // Update message in subcollection
+    console.log(
+      "🔵 [sendMessage] Writing message to Firestore subcollection...",
+    );
     await setDoc(newMessageRef, messageData);
+    console.log("✅ [sendMessage] Message written successfully");
 
     // Update chat's last message
+    console.log("🔵 [sendMessage] Updating chat document with last message...");
     const chatDocRef = doc(db, "Chats", chatId);
+    
+    let previewText = content;
+    if (type === "image") {
+      previewText = "[Photo snap]";
+    } else {
+      previewText = content.substring(0, 50);
+    }
+
     await updateDoc(chatDocRef, {
-      lastMessageText: content.substring(0, 50),
+      lastMessageText: previewText,
       lastMessageAt: Timestamp.now(),
     });
+    console.log("✅ [sendMessage] Chat document updated successfully");
 
     // Update streak for sender
     try {
-      const friendshipId = generateChatId(sender, friendUid);
-      await updateStreak(friendshipId, sender);
+      console.log("🔵 [sendMessage] Attempting to update streak...");
+      const friendshipId = await getFriendshipId(sender, friendUid);
+      if (!friendshipId) {
+        console.warn(
+          "⚠️ [sendMessage] Friendship not found - cannot update streak",
+        );
+      } else {
+        await updateStreak(friendshipId, sender);
+        console.log("✅ [sendMessage] Streak updated successfully");
+      }
     } catch (streakError) {
-      console.warn("Could not update streak:", streakError);
+      console.warn("⚠️ [sendMessage] Could not update streak:", streakError);
       // Don't fail the message send if streak update fails
     }
-  } catch (error) {
-    console.error("Error sending message:", error);
+
+    console.log("✅ [sendMessage] Message send completed successfully");
+  } catch (error: any) {
+    console.error("❌ [sendMessage] ERROR:", {
+      message: error.message,
+      code: error.code,
+      errorType: error.constructor.name,
+      chatId,
+      sender,
+      timestamp: new Date().toISOString(),
+    });
     throw error;
   }
 }
@@ -119,19 +194,17 @@ export async function getUserChats(uid: string): Promise<Chat[]> {
     const q = query(
       chatsRef,
       where("members", "array-contains", uid),
+      orderBy("lastMessageAt", "desc"),
     );
 
     const snapshot = await getDocs(q);
-    const chats = snapshot.docs.map((doc) => ({
+    return snapshot.docs.map((doc) => ({
       id: doc.id,
       members: doc.data().members,
       createdAt: doc.data().createdAt?.toMillis?.() || 0,
       lastMessageText: doc.data().lastMessageText,
       lastMessageAt: doc.data().lastMessageAt?.toMillis?.() || 0,
     }));
-
-    // Sort by lastMessageAt descending (newest first)
-    return chats.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
   } catch (error) {
     console.error("Error getting user chats:", error);
     throw error;
@@ -177,31 +250,60 @@ export function subscribeToChat(
 ): () => void {
   const db = getFirestoreInstance();
 
+  console.log("🔵 [subscribeToChat] Setting up listener for chatId:", chatId);
+
   try {
     const messagesRef = collection(db, "Chats", chatId, "Messages");
     const q = query(messagesRef, orderBy("createdAt", "asc"));
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const messages = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        chatId,
-        sender: doc.data().sender,
-        type: doc.data().type || "text",
-        content: doc.data().content,
-        createdAt: doc.data().createdAt?.toMillis?.() || 0,
-        expiresAt:
-          doc.data().expiresAt?.toMillis?.() ||
-          Date.now() + 24 * 60 * 60 * 1000,
-        read: doc.data().read || false,
-        readAt: doc.data().readAt?.toMillis?.() || undefined,
-      }));
-      callback(messages);
-    });
+    console.log("🔵 [subscribeToChat] Creating onSnapshot listener...");
 
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        console.log(
+          "✅ [subscribeToChat] Received snapshot with",
+          snapshot.docs.length,
+          "messages",
+        );
+        const messages = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          chatId,
+          sender: doc.data().sender,
+          type: doc.data().type || "text",
+          content: doc.data().content,
+          createdAt: doc.data().createdAt?.toMillis?.() || 0,
+          expiresAt:
+            doc.data().expiresAt?.toMillis?.() ||
+            Date.now() + 24 * 60 * 60 * 1000,
+          read: doc.data().read || false,
+          readAt: doc.data().readAt?.toMillis?.() || undefined,
+        }));
+
+        callback(messages);
+      },
+      (error: any) => {
+        console.error("❌ [subscribeToChat] ERROR in listener:", {
+          message: error.message,
+          code: error.code,
+          errorType: error.constructor.name,
+          chatId,
+          timestamp: new Date().toISOString(),
+        });
+      },
+    );
+
+    console.log("✅ [subscribeToChat] Listener set up successfully");
     return unsubscribe;
-  } catch (error) {
-    console.error("Error subscribing to chat:", error);
-    throw error;
+  } catch (error: any) {
+    console.error("❌ [subscribeToChat] ERROR setting up listener:", {
+      message: error.message,
+      code: error.code,
+      errorType: error.constructor.name,
+      chatId,
+      timestamp: new Date().toISOString(),
+    });
+    return () => {};
   }
 }
 
@@ -273,6 +375,43 @@ export async function deleteMessage(
     });
   } catch (error) {
     console.error("Error deleting message:", error);
+    throw error;
+  }
+}
+
+/**
+ * Mark snap as opened and delete message document (view-once flow)
+ * Records opening metadata and immediately deletes the message doc
+ */
+export async function markSnapOpened(
+  chatId: string,
+  messageId: string,
+  openedBy: string,
+): Promise<void> {
+  const db = getFirestoreInstance();
+
+  try {
+    const messageDocRef = doc(db, "Chats", chatId, "Messages", messageId);
+
+    // Update with opening metadata
+    console.log(
+      "🔵 [markSnapOpened] Marking snap as opened:",
+      messageId,
+      "by:",
+      openedBy,
+    );
+    await updateDoc(messageDocRef, {
+      openedAt: Timestamp.now(),
+      openedBy: openedBy,
+    });
+
+    // Immediately delete the message document (view-once)
+    console.log("🔵 [markSnapOpened] Deleting snap message document");
+    await deleteDoc(messageDocRef);
+
+    console.log("✅ [markSnapOpened] Snap deleted after viewing");
+  } catch (error: any) {
+    console.error("❌ [markSnapOpened] Error:", error);
     throw error;
   }
 }
