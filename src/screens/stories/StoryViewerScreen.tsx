@@ -156,7 +156,12 @@ export default function StoryViewerScreen({
   };
 
   const handleDeleteStory = async () => {
-    if (!story || !currentFirebaseUser) return;
+    if (!story || !currentFirebaseUser) {
+      console.error("❌ [StoryViewerScreen] Cannot delete: story or user is null");
+      return;
+    }
+
+    console.log("🔵 [StoryViewerScreen] Delete button pressed for story:", story.id);
 
     Alert.alert("Delete Story", "Are you sure you want to delete this story?", [
       { text: "Cancel", style: "cancel" },
@@ -180,6 +185,17 @@ export default function StoryViewerScreen({
   };
 
   const isAuthor = story && currentFirebaseUser?.uid === story.authorId;
+
+  // Debug logging for delete button visibility
+  React.useEffect(() => {
+    console.log("🔵 [StoryViewerScreen] Delete button state:", {
+      isNewStory,
+      hasStory: !!story,
+      currentUserUid: currentFirebaseUser?.uid,
+      authorId: story?.authorId,
+      isAuthor,
+    });
+  }, [story, currentFirebaseUser, isNewStory]);
 
   if (error && !isNewStory) {
     return (
