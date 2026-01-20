@@ -31,6 +31,7 @@ import { getUserProfileByUid } from "@/services/friends";
 import { Message, AvatarConfig } from "@/types/models";
 import * as ImagePicker from "expo-image-picker";
 import { compressImage, uploadSnapImage } from "@/services/storage";
+import { pickImageFromWeb, captureImageFromWebcam } from "@/utils/webImagePicker";
 
 interface MessageWithProfile extends Message {
   otherUserProfile?: {
@@ -172,100 +173,200 @@ export default function ChatScreen({
 
   // Request media library permission
   const requestMediaLibraryPermission = async () => {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) {
-      Alert.alert(
-        "Permission Denied",
-        "Media library access is required to select photos",
+    try {
+      console.log(
+        "🔵 [requestMediaLibraryPermission] Requesting permissions...",
       );
-      return false;
+      const { granted } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      console.log(
+        "✅ [requestMediaLibraryPermission] Permission result:",
+        granted,
+      );
+
+      if (!granted) {
+        Alert.alert(
+          "Permission Denied",
+          "Media library access is required to select photos",
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error("❌ [requestMediaLibraryPermission] Error:", error);
+      return true; // On web, permissions don't apply - continue anyway
     }
-    return true;
   };
 
   // Request camera permission
   const requestCameraPermission = async () => {
-    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-    if (!granted) {
-      Alert.alert(
-        "Permission Denied",
-        "Camera access is required to take photos",
+    try {
+      console.log(
+        "🔵 [requestCameraPermission] Requesting camera permissions...",
       );
-      return false;
+      const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+      console.log("✅ [requestCameraPermission] Permission result:", granted);
+
+      if (!granted) {
+        Alert.alert(
+          "Permission Denied",
+          "Camera access is required to take photos",
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error("❌ [requestCameraPermission] Error:", error);
+      return true; // On web, permissions don't apply - continue anyway
     }
-    return true;
   };
 
   // Capture photo from camera
   const handleCapturePhoto = async () => {
+    console.log("🔵 [handleCapturePhoto] Starting camera capture");
     const hasPermission = await requestCameraPermission();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      console.warn("⚠️  [handleCapturePhoto] Permission denied");
+      return;
+    }
 
     try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        aspect: [1, 1],
-        quality: 1,
-      });
+      console.log("🔵 [handleCapturePhoto] Platform:", Platform.OS);
+      
+      let imageUri: string | null = null;
 
-      if (!result.canceled && result.assets.length > 0) {
-        await handleSnapUpload(result.assets[0].uri);
+      // On web, use webcam or file picker
+      if (Platform.OS === "web") {
+        console.log("🔵 [handleCapturePhoto] Using web-specific capture");
+        imageUri = await captureImageFromWebcam();
+      } else {
+        // On native platforms, use expo-image-picker
+        console.log("🔵 [handleCapturePhoto] Launching camera...");
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: false,
+          aspect: [1, 1],
+          quality: 1,
+        });
+
+        console.log("✅ [handleCapturePhoto] Camera result:", {
+          canceled: result.canceled,
+          assetsCount: result.assets?.length || 0,
+        });
+
+        if (!result.canceled && result.assets.length > 0) {
+          imageUri = result.assets[0].uri;
+        }
+      }
+
+      if (imageUri) {
+        console.log("✅ [handleCapturePhoto] Image captured, uploading...");
+        await handleSnapUpload(imageUri);
+      } else {
+        console.log("ℹ️  [handleCapturePhoto] User cancelled capture");
       }
     } catch (error) {
-      console.error("Error capturing photo:", error);
-      Alert.alert("Error", "Failed to capture photo");
+      console.error("❌ [handleCapturePhoto] Error:", error);
+      Alert.alert("Error", `Failed to capture photo: ${String(error)}`);
     }
   };
 
   // Select photo from gallery
   const handleSelectPhoto = async () => {
+    console.log("🔵 [handleSelectPhoto] Starting gallery selection");
     const hasPermission = await requestMediaLibraryPermission();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      console.warn("⚠️  [handleSelectPhoto] Permission denied");
+      return;
+    }
 
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        aspect: [1, 1],
-        quality: 1,
-      });
+      console.log("🔵 [handleSelectPhoto] Platform:", Platform.OS);
+      
+      let imageUri: string | null = null;
 
-      if (!result.canceled && result.assets.length > 0) {
-        await handleSnapUpload(result.assets[0].uri);
+      // On web, use file picker
+      if (Platform.OS === "web") {
+        console.log("🔵 [handleSelectPhoto] Using web file picker");
+        imageUri = await pickImageFromWeb();
+      } else {
+        // On native platforms, use expo-image-picker
+        console.log("🔵 [handleSelectPhoto] Launching image library...");
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: false,
+          aspect: [1, 1],
+          quality: 1,
+        });
+
+        console.log("✅ [handleSelectPhoto] Library result:", {
+          canceled: result.canceled,
+          assetsCount: result.assets?.length || 0,
+        });
+
+        if (!result.canceled && result.assets.length > 0) {
+          imageUri = result.assets[0].uri;
+        }
+      }
+
+      if (imageUri) {
+        console.log("✅ [handleSelectPhoto] Image selected, uploading...");
+        await handleSnapUpload(imageUri);
+      } else {
+        console.log("ℹ️  [handleSelectPhoto] User cancelled selection");
       }
     } catch (error) {
-      console.error("Error selecting photo:", error);
-      Alert.alert("Error", "Failed to select photo");
+      console.error("❌ [handleSelectPhoto] Error:", error);
+      Alert.alert("Error", `Failed to select photo: ${String(error)}`);
     }
   };
 
   // Handle snap upload and send
   const handleSnapUpload = async (imageUri: string) => {
-    if (!uid || !chatId) return;
+    console.log("🔵 [handleSnapUpload] Starting upload with URI:", imageUri);
+
+    if (!uid || !chatId) {
+      console.error("❌ [handleSnapUpload] Missing uid or chatId:", {
+        uid,
+        chatId,
+      });
+      Alert.alert("Error", "Chat not initialized");
+      return;
+    }
 
     try {
       setUploadingSnap(true);
 
       // Compress image
-      Alert.alert("Compressing...", "Please wait");
+      console.log("🔵 [handleSnapUpload] Starting compression...");
       const compressedUri = await compressImage(imageUri);
+      console.log("✅ [handleSnapUpload] Compression complete:", compressedUri);
 
       // Upload to Storage and get storagePath
       const messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log(
+        "🔵 [handleSnapUpload] Uploading to Storage with messageId:",
+        messageId,
+      );
       const storagePath = await uploadSnapImage(
         chatId,
         messageId,
         compressedUri,
       );
+      console.log(
+        "✅ [handleSnapUpload] Upload complete, storagePath:",
+        storagePath,
+      );
 
       // Send as image message
+      console.log("🔵 [handleSnapUpload] Sending message...");
       await sendMessage(chatId, uid, storagePath, friendUid, "image");
+      console.log("✅ [handleSnapUpload] Message sent successfully");
 
       Alert.alert("Success", "Snap sent!");
     } catch (error) {
-      console.error("Error uploading snap:", error);
-      Alert.alert("Error", "Failed to send snap");
+      console.error("❌ [handleSnapUpload] Error:", error);
+      Alert.alert("Error", `Failed to send snap: ${String(error)}`);
     } finally {
       setUploadingSnap(false);
     }
@@ -273,13 +374,20 @@ export default function ChatScreen({
 
   // Show photo options menu
   const showPhotoMenu = () => {
+    console.log(
+      "🔵 [showPhotoMenu] Opening photo menu, platform:",
+      Platform.OS,
+    );
+
     if (Platform.OS === "ios") {
+      console.log("🔵 [showPhotoMenu] Using ActionSheetIOS");
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options: ["Cancel", "Take Photo", "Choose from Gallery"],
           cancelButtonIndex: 0,
         },
         (buttonIndex) => {
+          console.log("🔵 [showPhotoMenu] Selected option:", buttonIndex);
           if (buttonIndex === 1) {
             handleCapturePhoto();
           } else if (buttonIndex === 2) {
@@ -288,11 +396,27 @@ export default function ChatScreen({
         },
       );
     } else {
-      // Android: show alert dialog
+      // Android and web: show alert dialog
+      console.log("🔵 [showPhotoMenu] Using Alert dialog");
       Alert.alert("Send Snap", "Choose an option", [
-        { text: "Cancel", onPress: () => {} },
-        { text: "Take Photo", onPress: handleCapturePhoto },
-        { text: "Choose from Gallery", onPress: handleSelectPhoto },
+        {
+          text: "Cancel",
+          onPress: () => console.log("🔵 [showPhotoMenu] Cancel pressed"),
+        },
+        {
+          text: "Take Photo",
+          onPress: () => {
+            console.log("🔵 [showPhotoMenu] Take Photo pressed");
+            handleCapturePhoto();
+          },
+        },
+        {
+          text: "Choose from Gallery",
+          onPress: () => {
+            console.log("🔵 [showPhotoMenu] Choose from Gallery pressed");
+            handleSelectPhoto();
+          },
+        },
       ]);
     }
   };
