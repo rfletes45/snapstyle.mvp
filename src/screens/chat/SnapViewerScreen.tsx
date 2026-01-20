@@ -6,7 +6,13 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { View, Image, ActivityIndicator, Alert, TouchableOpacity } from "react-native";
+import {
+  View,
+  Image,
+  ActivityIndicator,
+  Alert,
+  TouchableOpacity,
+} from "react-native";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { downloadSnapImage, deleteSnapImage } from "@/services/storage";

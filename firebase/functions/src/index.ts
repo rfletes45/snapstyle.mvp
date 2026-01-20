@@ -1,9 +1,10 @@
 /**
  * SnapStyle Cloud Functions
  * Handles:
- * - Automatic Storage cleanup when messages are deleted
- * - Push notifications (future phases)
- * - Streak management (future phases)
+ * - Automatic Storage cleanup when messages are deleted (Phase 4)
+ * - Story auto-expiry and cleanup (Phase 5)
+ * - Push notifications (Phase 6+)
+ * - Streak management (Phase 6+)
  */
 
 import * as functions from "firebase-functions";
@@ -123,6 +124,70 @@ export const cleanupExpiredSnaps = functions.pubsub
       return;
     } catch (error: any) {
       console.error("❌ Error in cleanupExpiredSnaps:", error);
+      throw error;
+    }
+  });
+
+/**
+ * cleanupExpiredStories: Scheduled function to clean up expired stories
+ * Runs daily at 2 AM UTC to remove stories past their 24h expiry
+ *
+ * For each expired story:
+ * - Delete the storage file from Storage
+ * - Delete the story document (views subcollection auto-deletes)
+ *
+ * This ensures stories expire even if TTL index isn't active
+ */
+export const cleanupExpiredStories = functions.pubsub
+  .schedule("0 2 * * *") // 2 AM UTC daily (same as snap cleanup)
+  .timeZone("UTC")
+  .onRun(async () => {
+    try {
+      // Query all stories with expiresAt in the past
+      const now = admin.firestore.Timestamp.now();
+      const storiesRef = db.collection("stories");
+      const expiredQuery = await storiesRef.where("expiresAt", "<", now).get();
+
+      console.log(`Found ${expiredQuery.docs.length} expired stories`);
+
+      const bucket = storage.bucket();
+      let deletedCount = 0;
+
+      // Process each expired story
+      for (const doc of expiredQuery.docs) {
+        const story = doc.data();
+        const storagePath = story.storagePath; // e.g., "stories/authorId/storyId.jpg"
+
+        try {
+          // Delete the Storage file
+          await bucket.file(storagePath).delete();
+          console.log(`✅ Deleted expired story storage: ${storagePath}`);
+        } catch (error: any) {
+          // File may already be deleted; only log real errors
+          if (
+            error.code !== 404 &&
+            error.code !== "storage/object-not-found"
+          ) {
+            console.warn(
+              `⚠️ Failed to delete story storage ${storagePath}:`,
+              error.message,
+            );
+          }
+        }
+
+        // Delete the story document (views subcollection auto-deletes)
+        await doc.ref.delete();
+        deletedCount++;
+
+        console.log(`✅ Deleted expired story document: ${doc.id}`);
+      }
+
+      console.log(
+        `✅ Story cleanup complete: ${deletedCount} expired stories removed`,
+      );
+      return;
+    } catch (error: any) {
+      console.error("❌ Error in cleanupExpiredStories:", error);
       throw error;
     }
   });

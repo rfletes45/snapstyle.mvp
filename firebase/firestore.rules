@@ -101,22 +101,30 @@ service cloud.firestore {
       }
     }
 
-    // Stories collection (Phase 5+)
+    // Stories collection (Phase 5)
     match /Stories/{storyId} {
-      allow read: if isAuth();
+      // Anyone can read unexpired stories from their friends
+      allow read: if isAuth() && 
+                   resource.data.expiresAt > request.time.toMillis() &&
+                   request.auth.uid in resource.data.recipientIds;
+      
+      // Only author can create
       allow create: if isAuth() && 
                     request.auth.uid == request.resource.data.authorId;
-      allow update: if isAuth() && 
-                    request.auth.uid == resource.data.authorId;
-      allow delete: if isAuth() && 
-                    request.auth.uid == resource.data.authorId;
+      
+      // Only author can update/delete
+      allow update, delete: if isAuth() && 
+                            request.auth.uid == resource.data.authorId;
 
       // Views subcollection
-      match /Views/{viewerUid} {
+      match /views/{userId} {
+        // User can read their own view, author can read all views
         allow read: if isAuth() && 
-                    (viewerUid == request.auth.uid ||
-                     request.auth.uid == get(/databases/(default)/documents/Stories/$(storyId)).data.authorId);
-        allow create, write: if isAuth() && viewerUid == request.auth.uid;
+                    (userId == request.auth.uid ||
+                     request.auth.uid == get(/databases/(default)/documents/stories/$(storyId)).data.authorId);
+        
+        // User can only create their own view record
+        allow create, write: if isAuth() && userId == request.auth.uid;
       }
     }
 

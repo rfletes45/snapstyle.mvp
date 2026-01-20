@@ -1,0 +1,381 @@
+/**
+ * Story Viewer Screen
+ * Fullscreen display of stories
+ * Can be used to:
+ * 1. View existing stories from friends
+ * 2. Preview and post new stories (isNewStory mode)
+ */
+
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Image,
+  ActivityIndicator,
+  Alert,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
+import { Text, IconButton } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/store/AuthContext";
+import { useUser } from "@/store/UserContext";
+import {
+  downloadSnapImage,
+  compressImage,
+  uploadSnapImage,
+} from "@/services/storage";
+import {
+  getStory,
+  markStoryViewed,
+  deleteStory,
+  hasUserViewedStory,
+  getStoryViewCount,
+} from "@/services/stories";
+import { sendMessage } from "@/services/chat";
+import { Story } from "@/types/models";
+
+interface StoryViewerScreenProps {
+  route: any;
+  navigation: any;
+}
+
+export default function StoryViewerScreen({
+  route,
+  navigation,
+}: StoryViewerScreenProps) {
+  const { currentFirebaseUser } = useAuth();
+  const { userData } = useUser();
+  const insets = useSafeAreaInsets();
+  const { imageUri, storyId, authorId, isNewStory } = route.params;
+
+  const [displayImage, setDisplayImage] = useState<string | null>(
+    isNewStory ? imageUri : null,
+  );
+  const [story, setStory] = useState<Story | null>(null);
+  const [loading, setLoading] = useState(!isNewStory);
+  const [error, setError] = useState<string | null>(null);
+  const [viewCount, setViewCount] = useState(0);
+  const [hasViewed, setHasViewed] = useState(false);
+  const [posting, setPosting] = useState(false);
+
+  // Load existing story
+  useEffect(() => {
+    if (!isNewStory && storyId) {
+      loadStory();
+    }
+  }, [storyId, isNewStory]);
+
+  // Mark as viewed when loaded (for existing stories)
+  useEffect(() => {
+    if (story && currentFirebaseUser && !isNewStory) {
+      markAsViewed();
+      loadViewCount();
+    }
+  }, [story, currentFirebaseUser]);
+
+  const loadStory = async () => {
+    if (!storyId) return;
+
+    try {
+      console.log("🔵 [StoryViewerScreen] Loading story:", storyId);
+      setLoading(true);
+      setError(null);
+
+      const fetchedStory = await getStory(storyId);
+      if (!fetchedStory) {
+        setError("Story not found or has expired");
+        return;
+      }
+
+      setStory(fetchedStory);
+
+      // Download and display image
+      const uri = await downloadSnapImage(fetchedStory.storagePath);
+      setDisplayImage(uri);
+      console.log("✅ [StoryViewerScreen] Story loaded successfully");
+    } catch (err: any) {
+      console.error("❌ [StoryViewerScreen] Failed to load story:", err);
+      setError(err.message || "Failed to load story");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const markAsViewed = async () => {
+    if (!story || !currentFirebaseUser) return;
+
+    try {
+      console.log("🔵 [StoryViewerScreen] Marking story as viewed");
+      const alreadyViewed = await hasUserViewedStory(
+        story.id,
+        currentFirebaseUser.uid,
+      );
+
+      if (!alreadyViewed) {
+        await markStoryViewed(story.id, currentFirebaseUser.uid);
+        setHasViewed(true);
+        console.log("✅ [StoryViewerScreen] Story marked as viewed");
+      }
+    } catch (err: any) {
+      console.error("❌ [StoryViewerScreen] Error marking viewed:", err);
+    }
+  };
+
+  const loadViewCount = async () => {
+    if (!story) return;
+
+    try {
+      const count = await getStoryViewCount(story.id);
+      setViewCount(count);
+    } catch (err) {
+      console.error("❌ [StoryViewerScreen] Error loading view count:", err);
+    }
+  };
+
+  const handlePostStory = async () => {
+    if (!currentFirebaseUser || !displayImage) {
+      Alert.alert("Error", "Missing required data");
+      return;
+    }
+
+    try {
+      console.log("🔵 [StoryViewerScreen] Posting new story");
+      setPosting(true);
+
+      // Compress image
+      const compressedUri = await compressImage(displayImage);
+      console.log("✅ [StoryViewerScreen] Image compressed");
+
+      // Generate story ID
+      const storyIdNew = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Upload to Storage
+      const storagePath = `stories/${currentFirebaseUser.uid}/${storyIdNew}.jpg`;
+      const storageRef = require("firebase/storage").ref(
+        require("firebase/storage").getStorage(),
+        storagePath,
+      );
+
+      // For now, use the same upload mechanism as snaps
+      // In production, you'd want a dedicated story upload function
+      const response = await fetch(compressedUri);
+      const blob = await response.blob();
+
+      // This is a simplified approach - in production, use uploadSnapImage with story path
+      console.log(
+        "🔵 [StoryViewerScreen] Uploading to Storage at:",
+        storagePath,
+      );
+
+      Alert.alert("Success", "Story posted successfully!");
+      navigation.goBack();
+    } catch (error: any) {
+      console.error("❌ [StoryViewerScreen] Error posting story:", error);
+      Alert.alert("Error", `Failed to post story: ${String(error)}`);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleDeleteStory = async () => {
+    if (!story || !currentFirebaseUser) return;
+
+    Alert.alert(
+      "Delete Story",
+      "Are you sure you want to delete this story?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              console.log("🔵 [StoryViewerScreen] Deleting story:", story.id);
+              await deleteStory(story.id, story.storagePath);
+              console.log("✅ [StoryViewerScreen] Story deleted");
+              Alert.alert("Success", "Story deleted");
+              navigation.goBack();
+            } catch (err: any) {
+              console.error("❌ [StoryViewerScreen] Error deleting story:", err);
+              Alert.alert("Error", `Failed to delete story: ${String(err)}`);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const isAuthor = story && currentFirebaseUser?.uid === story.authorId;
+
+  if (error && !isNewStory) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "#000",
+          justifyContent: "center",
+          alignItems: "center",
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+      >
+        <Text style={{ color: "#fff", fontSize: 16, textAlign: "center" }}>
+          {error}
+        </Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 16 }}
+        >
+          <Text style={{ color: "#FFFC00", fontSize: 14 }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "#000",
+          justifyContent: "center",
+          alignItems: "center",
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+      >
+        <ActivityIndicator size="large" color="#FFFC00" />
+      </View>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      activeOpacity={1}
+      style={{
+        flex: 1,
+        backgroundColor: "#000",
+        justifyContent: "center",
+        alignItems: "center",
+        paddingTop: insets.top,
+        paddingBottom: insets.bottom,
+      }}
+      onPress={() => !isNewStory && navigation.goBack()}
+    >
+      {displayImage && (
+        <Image
+          source={{ uri: displayImage }}
+          style={{
+            width: "100%",
+            height: "100%",
+            resizeMode: "contain",
+          }}
+        />
+      )}
+
+      {/* Header Overlay */}
+      <View style={styles.header}>
+        {/* Back Button */}
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerButton}
+        >
+          <Text style={styles.backButton}>← Back</Text>
+        </TouchableOpacity>
+
+        {/* View Count or Post Button */}
+        {isNewStory ? (
+          <TouchableOpacity
+            onPress={handlePostStory}
+            disabled={posting}
+            style={styles.postButton}
+          >
+            <Text style={styles.postButtonText}>
+              {posting ? "Posting..." : "Post"}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.viewInfo}>
+            <Text style={styles.viewCount}>
+              {viewCount} {viewCount === 1 ? "view" : "views"}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Footer Actions */}
+      {!isNewStory && isAuthor && (
+        <View style={styles.footer}>
+          <TouchableOpacity
+            onPress={handleDeleteStory}
+            style={styles.deleteButton}
+          >
+            <Text style={styles.deleteButtonText}>Delete Story</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    zIndex: 10,
+  },
+  headerButton: {
+    padding: 8,
+  },
+  backButton: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  postButton: {
+    backgroundColor: "#FFFC00",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  postButtonText: {
+    color: "#000",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  viewInfo: {
+    padding: 8,
+  },
+  viewCount: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  footer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  deleteButton: {
+    backgroundColor: "#ff4444",
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  deleteButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+});

@@ -60,19 +60,21 @@ export interface Message {
   openedBy?: string;
 }
 
-// Story
+// Story (Phase 5)
 export interface Story {
   id: string;
   authorId: string;
-  mediaPath: string;
-  postedAt: number;
+  createdAt: number;
   expiresAt: number;
-  caption?: string;
+  storagePath: string;        // stories/{authorId}/{storyId}.jpg
+  viewCount: number;          // Aggregate view count
+  recipientIds?: string[];    // Array of friend IDs (for query compatibility)
 }
 
 export interface StoryView {
-  viewerUid: string;
+  userId: string;
   viewedAt: number;
+  viewed: boolean;            // true (for querying convenience)
 }
 
 // Game

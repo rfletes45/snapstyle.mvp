@@ -1,0 +1,283 @@
+/**
+ * Stories Service
+ * Handles Firebase operations for photo stories:
+ * - Post new story (upload image to Storage, create Story doc)
+ * - Fetch friends' stories from Firestore
+ * - Track views (create Views subcollection entries)
+ * - Delete stories (author only)
+ */
+
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  increment,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
+import { deleteSnapImage } from "./storage";
+import { Story, StoryView } from "@/types/models";
+
+const db = getFirestore();
+const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+/**
+ * Get all unexpired stories from current user and their friends
+ * Stories are sorted by createdAt DESC (newest first)
+ *
+ * @param userId - Current user ID
+ * @param userFriendIds - Array of current user's friend IDs
+ * @returns Array of unexpired stories
+ */
+export async function getFriendsStories(
+  userId: string,
+  userFriendIds: string[],
+): Promise<Story[]> {
+  try {
+    console.log("🔵 [getFriendsStories] Fetching stories for user:", userId);
+
+    // Include self and all friends in recipients
+    const recipientIds = [userId, ...userFriendIds];
+
+    // Query stories where:
+    // - recipientIds contains current user
+    // - expiresAt > now (not expired)
+    const now = Date.now();
+    const storiesRef = collection(db, "stories");
+    const q = query(
+      storiesRef,
+      where("recipientIds", "array-contains", userId),
+      where("expiresAt", ">", now),
+    );
+
+    const snapshot = await getDocs(q);
+    const stories: Story[] = [];
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      stories.push({
+        id: doc.id,
+        authorId: data.authorId,
+        createdAt: data.createdAt,
+        expiresAt: data.expiresAt,
+        storagePath: data.storagePath,
+        viewCount: data.viewCount || 0,
+        recipientIds: data.recipientIds,
+      });
+    });
+
+    // Sort by createdAt DESC (newest first)
+    stories.sort((a, b) => b.createdAt - a.createdAt);
+
+    console.log("✅ [getFriendsStories] Found", stories.length, "stories");
+    return stories;
+  } catch (error) {
+    console.error("❌ [getFriendsStories] Error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get single story by ID
+ *
+ * @param storyId - Story ID
+ * @returns Story object or null if not found/expired
+ */
+export async function getStory(storyId: string): Promise<Story | null> {
+  try {
+    console.log("🔵 [getStory] Fetching story:", storyId);
+
+    const storyRef = doc(db, "stories", storyId);
+    const docSnap = await getDoc(storyRef);
+
+    if (!docSnap.exists()) {
+      console.warn("⚠️  [getStory] Story not found:", storyId);
+      return null;
+    }
+
+    const data = docSnap.data();
+
+    // Check if expired
+    if (data.expiresAt < Date.now()) {
+      console.warn("⚠️  [getStory] Story expired:", storyId);
+      return null;
+    }
+
+    console.log("✅ [getStory] Story loaded successfully");
+    return {
+      id: docSnap.id,
+      authorId: data.authorId,
+      createdAt: data.createdAt,
+      expiresAt: data.expiresAt,
+      storagePath: data.storagePath,
+      viewCount: data.viewCount || 0,
+      recipientIds: data.recipientIds,
+    };
+  } catch (error) {
+    console.error("❌ [getStory] Error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Mark story as viewed by current user
+ * Creates entry in stories/{storyId}/views/{userId}
+ * Increments viewCount on story doc
+ *
+ * @param storyId - Story ID
+ * @param userId - Current user ID
+ */
+export async function markStoryViewed(
+  storyId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    console.log("🔵 [markStoryViewed] Marking story as viewed:", {
+      storyId,
+      userId,
+    });
+
+    const viewRef = doc(db, "stories", storyId, "views", userId);
+    const storyRef = doc(db, "stories", storyId);
+
+    // Create/update view record
+    const now = Date.now();
+    await setDoc(
+      viewRef,
+      {
+        userId,
+        viewedAt: now,
+        viewed: true,
+      },
+      { merge: true },
+    );
+
+    // Increment view count on story doc
+    await updateDoc(storyRef, {
+      viewCount: increment(1),
+    });
+
+    console.log("✅ [markStoryViewed] Story marked as viewed");
+  } catch (error) {
+    console.error("❌ [markStoryViewed] Error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Check if current user has already viewed a story
+ *
+ * @param storyId - Story ID
+ * @param userId - Current user ID
+ * @returns true if viewed, false otherwise
+ */
+export async function hasUserViewedStory(
+  storyId: string,
+  userId: string,
+): Promise<boolean> {
+  try {
+    console.log("🔵 [hasUserViewedStory] Checking view status:", {
+      storyId,
+      userId,
+    });
+
+    const viewRef = doc(db, "stories", storyId, "views", userId);
+    const docSnap = await getDoc(viewRef);
+
+    const viewed = docSnap.exists();
+    console.log("✅ [hasUserViewedStory] View status:", viewed);
+    return viewed;
+  } catch (error) {
+    console.error("❌ [hasUserViewedStory] Error:", error);
+    return false;
+  }
+}
+
+/**
+ * Get view count for a story
+ *
+ * @param storyId - Story ID
+ * @returns View count
+ */
+export async function getStoryViewCount(storyId: string): Promise<number> {
+  try {
+    console.log("🔵 [getStoryViewCount] Fetching view count for:", storyId);
+
+    const storyRef = doc(db, "stories", storyId);
+    const docSnap = await getDoc(storyRef);
+
+    if (!docSnap.exists()) {
+      console.warn("⚠️  [getStoryViewCount] Story not found");
+      return 0;
+    }
+
+    const viewCount = docSnap.data().viewCount || 0;
+    console.log("✅ [getStoryViewCount] View count:", viewCount);
+    return viewCount;
+  } catch (error) {
+    console.error("❌ [getStoryViewCount] Error:", error);
+    return 0;
+  }
+}
+
+/**
+ * Get list of users who viewed a story (for author)
+ *
+ * @param storyId - Story ID
+ * @returns Array of user IDs who viewed the story
+ */
+export async function getStoryViewers(storyId: string): Promise<string[]> {
+  try {
+    console.log("🔵 [getStoryViewers] Fetching viewers for:", storyId);
+
+    const viewsRef = collection(db, "stories", storyId, "views");
+    const snapshot = await getDocs(viewsRef);
+
+    const viewers: string[] = [];
+    snapshot.forEach((doc) => {
+      viewers.push(doc.data().userId);
+    });
+
+    console.log("✅ [getStoryViewers] Found", viewers.length, "viewers");
+    return viewers;
+  } catch (error) {
+    console.error("❌ [getStoryViewers] Error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a story (author only)
+ * Deletes Story doc, Views subcollection, and Storage file
+ *
+ * @param storyId - Story ID
+ * @param storagePath - Storage path (for deletion)
+ */
+export async function deleteStory(
+  storyId: string,
+  storagePath: string,
+): Promise<void> {
+  try {
+    console.log("🔵 [deleteStory] Deleting story:", { storyId, storagePath });
+
+    const storyRef = doc(db, "stories", storyId);
+
+    // Delete Storage file
+    await deleteSnapImage(storagePath);
+    console.log("✅ [deleteStory] Storage file deleted");
+
+    // Delete story document (views subcollection auto-deletes with parent)
+    await deleteDoc(storyRef);
+    console.log("✅ [deleteStory] Story document deleted");
+  } catch (error) {
+    console.error("❌ [deleteStory] Error:", error);
+    throw error;
+  }
+}
