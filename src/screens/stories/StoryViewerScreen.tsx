@@ -22,7 +22,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { Text, ProgressBar } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/store/AuthContext";
 import { downloadSnapImage, compressImage } from "@/services/storage";
@@ -103,6 +103,15 @@ export default function StoryViewerScreen({
     const totalDuration = 24 * 60 * 60 * 1000; // 24 hours
     const elapsed = Date.now() - story.createdAt;
     const progress = Math.max(0, Math.min(1, 1 - elapsed / totalDuration));
+
+    // Debug log
+    console.log("🔵 [StoryViewer] Progress calculation:", {
+      elapsed: Math.floor(elapsed / 1000 / 60),
+      totalMinutes: Math.floor(totalDuration / 1000 / 60),
+      progress: progress.toFixed(2),
+      timeRemaining,
+    });
+
     return progress;
   };
 
@@ -357,12 +366,18 @@ export default function StoryViewerScreen({
       {/* Phase 13: Time Remaining Progress Bar */}
       {!isNewStory && story && (
         <View style={styles.progressContainer}>
-          <ProgressBar
-            progress={getExpirationProgress()}
-            color="#FFFC00"
-            style={styles.progressBar}
-          />
-          <Text style={styles.timeRemainingLabel}>{timeRemaining} left</Text>
+          {/* Custom progress bar using nested Views for better control */}
+          <View style={styles.progressBarBackground}>
+            <View
+              style={[
+                styles.progressBarFill,
+                { width: `${getExpirationProgress() * 100}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.timeRemainingLabel}>
+            {timeRemaining || "..."} left
+          </Text>
         </View>
       )}
 
@@ -428,21 +443,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     zIndex: 11,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 12,
-    padding: 8,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  progressBarBackground: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: "#FFFC00",
+    borderRadius: 3,
   },
   progressBar: {
     flex: 1,
-    height: 4,
-    borderRadius: 2,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: "rgba(255,255,255,0.3)",
   },
   timeRemainingLabel: {
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-    minWidth: 55,
+    fontSize: 13,
+    fontWeight: "700",
+    minWidth: 65,
+    textAlign: "right",
   },
   header: {
     position: "absolute",

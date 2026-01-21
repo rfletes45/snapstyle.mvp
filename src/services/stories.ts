@@ -457,33 +457,56 @@ export async function preloadStoryImages(
   const toPreload = stories.slice(0, maxToPreload);
 
   console.log(
-    "🔵 [preloadStoryImages] Preloading",
+    "🔵 [preloadStoryImages] Starting preload for",
     toPreload.length,
     "story images",
   );
 
-  // Preload in parallel, don't await - this is background optimization
-  toPreload.forEach(async (story) => {
+  // Preload in parallel
+  const preloadPromises = toPreload.map(async (story) => {
     try {
       // Skip if already cached
       if (preloadedImageCache.has(story.id)) {
+        console.log("✅ [preloadStoryImages] Already cached:", story.id);
         return;
       }
 
+      console.log("🔵 [preloadStoryImages] Starting download:", story.id);
+      
       // Download image URL from Storage
       const uri = await downloadSnapImage(story.storagePath);
       preloadedImageCache.set(story.id, uri);
 
-      // Prefetch image data into memory (React Native Image cache)
+      // Prefetch image data into memory
       if (Platform.OS !== "web") {
+        // Native: Use Image.prefetch
         await Image.prefetch(uri);
+      } else {
+        // Web: Create an Image element and preload it
+        return new Promise<void>((resolve) => {
+          const img = new window.Image();
+          img.onload = () => {
+            console.log("✅ [preloadStoryImages] Preloaded (web):", story.id);
+            resolve();
+          };
+          img.onerror = () => {
+            console.warn("⚠️ [preloadStoryImages] Failed to load image:", story.id);
+            resolve(); // Resolve anyway, don't block
+          };
+          img.src = uri;
+        });
       }
 
       console.log("✅ [preloadStoryImages] Preloaded:", story.id);
     } catch (error) {
       // Silent fail - preloading is optimization only
-      console.warn("⚠️ [preloadStoryImages] Failed to preload:", story.id);
+      console.warn("⚠️ [preloadStoryImages] Failed to preload:", story.id, error);
     }
+  });
+
+  // Don't await - let preloading happen in background
+  Promise.all(preloadPromises).then(() => {
+    console.log("✅ [preloadStoryImages] All preloading complete");
   });
 }
 
