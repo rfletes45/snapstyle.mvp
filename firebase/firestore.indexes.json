@@ -56,20 +56,6 @@
         { "fieldPath": "recipientIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "Messages",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "Messages",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": [
@@ -93,9 +79,7 @@
       "collectionGroup": "stories",
       "fieldPath": "expiresAt",
       "ttl": true,
-      "indexes": [
-        { "order": "ASCENDING", "queryScope": "COLLECTION" }
-      ]
+      "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }]
     }
   ]
 }
