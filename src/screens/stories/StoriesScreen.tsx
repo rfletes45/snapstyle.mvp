@@ -3,32 +3,46 @@
  * Displays friends' stories in a horizontal scrollable bar
  * Each story shows thumbnail with view count
  * Users can tap to view fullscreen or post a new story
+ *
+ * Phase 13: Performance optimizations
+ * - Batch view status checking (replaces N+1 queries)
+ * - In-memory view cache
+ * - Image preloading
+ * - Story expiration handling
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
-  ScrollView,
+  FlatList,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
-  Image,
-  FlatList,
   ActionSheetIOS,
+  Platform,
 } from "react-native";
-import { Text, FAB, Avatar } from "react-native-paper";
+import { Text, FAB } from "react-native-paper";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@/store/AuthContext";
-import { getFriendsStories, hasUserViewedStory } from "@/services/stories";
+import {
+  getFriendsStories,
+  getBatchViewedStories,
+  preloadStoryImages,
+  filterExpiredStories,
+  getStoryTimeRemaining,
+} from "@/services/stories";
 import { getFriends } from "@/services/friends";
-import { Story, Friend } from "@/types/models";
+import { Story } from "@/types/models";
 import * as ImagePicker from "expo-image-picker";
 import {
   captureImageFromWebcam,
   pickImageFromWeb,
 } from "@/utils/webImagePicker";
-import { Platform } from "react-native";
+import { LoadingState, EmptyState } from "@/components/ui";
+import { AppColors } from "../../../constants/theme";
+
+// Phase 13: Story item dimensions for FlatList optimization
+const STORY_ITEM_WIDTH = 88; // 80px thumbnail + 8px margin
 
 interface StoriesScreenProps {
   navigation: any;
@@ -40,7 +54,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   const [loading, setLoading] = useState(true);
   const [viewedStories, setViewedStories] = useState<Set<string>>(new Set());
   const [postingStory, setPostingStory] = useState(false);
-  const [friends, setFriends] = useState<Friend[]>([]);
+
+  // Phase 13: In-memory cache for viewed stories across screen visits
+  const viewedCacheRef = useRef<Map<string, boolean>>(new Map());
 
   // Fetch stories and reset posting state when screen is focused
   useFocusEffect(
@@ -57,12 +73,12 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     if (!currentFirebaseUser) return;
 
     try {
-      console.log("🔵 [StoriesScreen] Loading stories");
+      console.log("🔵 [StoriesScreen] Loading stories (Phase 13 optimized)");
+      const startTime = Date.now();
       setLoading(true);
 
       // Get friends
       const friendsData = await getFriends(currentFirebaseUser.uid);
-      setFriends(friendsData);
 
       // Get friend IDs
       const friendIds = friendsData
@@ -75,24 +91,49 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         friendIds,
       );
 
-      // Check which stories user has viewed
-      const viewed = new Set<string>();
-      for (const story of fetchedStories) {
-        const hasViewed = await hasUserViewedStory(
-          story.id,
+      // Phase 13: Filter out expired stories client-side
+      const validStories = filterExpiredStories(fetchedStories);
+
+      // Phase 13: Check view cache first, only query uncached stories
+      const uncachedStoryIds = validStories
+        .map((s) => s.id)
+        .filter((id) => !viewedCacheRef.current.has(id));
+
+      // Phase 13: Batch check viewed status (replaces N individual queries)
+      let newViewedSet = new Set<string>();
+      if (uncachedStoryIds.length > 0) {
+        newViewedSet = await getBatchViewedStories(
+          uncachedStoryIds,
           currentFirebaseUser.uid,
         );
-        if (hasViewed) {
-          viewed.add(story.id);
-        }
+
+        // Update cache with new results
+        uncachedStoryIds.forEach((id) => {
+          viewedCacheRef.current.set(id, newViewedSet.has(id));
+        });
       }
 
-      setViewedStories(viewed);
-      setStories(fetchedStories);
+      // Build final viewed set from cache
+      const allViewed = new Set<string>();
+      validStories.forEach((story) => {
+        if (viewedCacheRef.current.get(story.id)) {
+          allViewed.add(story.id);
+        }
+      });
+
+      setViewedStories(allViewed);
+      setStories(validStories);
+
+      // Phase 13: Preload images for first few stories
+      preloadStoryImages(validStories, 5);
+
+      const duration = Date.now() - startTime;
       console.log(
         "✅ [StoriesScreen] Loaded",
-        fetchedStories.length,
-        "stories",
+        validStories.length,
+        "stories in",
+        duration,
+        "ms",
       );
     } catch (error) {
       console.error("❌ [StoriesScreen] Error loading stories:", error);
@@ -294,7 +335,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#FFFC00" />
+        <LoadingState message="Loading stories..." />
       </View>
     );
   }
@@ -306,41 +347,61 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       </View>
 
       {stories.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No stories yet</Text>
-          <Text style={styles.emptySubtext}>
-            Add friends and share stories with them
-          </Text>
-        </View>
+        <EmptyState
+          icon="camera-burst"
+          title="No stories yet"
+          subtitle="Add friends and share stories with them"
+          actionLabel="Post Story"
+          onAction={handlePostStory}
+        />
       ) : (
-        <ScrollView
+        <FlatList
+          data={stories}
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.storiesScroll}
           contentContainerStyle={styles.scrollContent}
-        >
-          {/* Add Story Button */}
-          <TouchableOpacity
-            style={styles.addStoryCard}
-            onPress={handlePostStory}
-            disabled={postingStory}
-          >
-            <View style={styles.addStoryContent}>
-              <Text style={styles.addStoryIcon}>+</Text>
-              <Text style={styles.addStoryText}>Add Story</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Story Cards */}
-          {stories.map((story) => (
+          keyExtractor={(item) => item.id}
+          // Phase 13: Performance optimizations
+          initialNumToRender={6}
+          maxToRenderPerBatch={4}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS !== "web"}
+          getItemLayout={(_, index) => ({
+            length: STORY_ITEM_WIDTH,
+            offset: STORY_ITEM_WIDTH * (index + 1), // +1 for Add Story button
+            index,
+          })}
+          ListHeaderComponent={
+            // Add Story Button
             <TouchableOpacity
-              key={story.id}
-              style={styles.storyCard}
+              style={styles.addStoryCard}
+              onPress={handlePostStory}
+              disabled={postingStory}
+            >
+              <View style={styles.addStoryContent}>
+                <Text style={styles.addStoryIcon}>+</Text>
+                <Text style={styles.addStoryText}>Add Story</Text>
+              </View>
+            </TouchableOpacity>
+          }
+          renderItem={({ item: story }) => (
+            <TouchableOpacity
+              style={[
+                styles.storyCard,
+                !viewedStories.has(story.id) && styles.unviewedStoryCard,
+              ]}
               onPress={() => handleStoryPress(story)}
             >
               <View style={styles.storyImageContainer}>
                 {/* Placeholder for story thumbnail - would need to fetch image */}
-                <View style={styles.storyImagePlaceholder}>
+                <View
+                  style={[
+                    styles.storyImagePlaceholder,
+                    !viewedStories.has(story.id) &&
+                      styles.unviewedImagePlaceholder,
+                  ]}
+                >
                   <Text style={styles.storyInitial}>
                     {story.authorId.charAt(0).toUpperCase()}
                   </Text>
@@ -352,6 +413,13 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
                     <Text style={styles.viewedText}>✓</Text>
                   </View>
                 )}
+
+                {/* Phase 13: Time remaining badge */}
+                <View style={styles.timeRemainingBadge}>
+                  <Text style={styles.timeRemainingText}>
+                    {getStoryTimeRemaining(story.expiresAt)}
+                  </Text>
+                </View>
               </View>
 
               {/* View count */}
@@ -359,8 +427,8 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
                 {story.viewCount} {story.viewCount === 1 ? "view" : "views"}
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          )}
+        />
       )}
 
       {/* FAB for adding story */}
@@ -417,8 +485,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   addStoryCard: {
-    width: 100,
-    marginHorizontal: 8,
+    width: 80,
+    height: 120,
+    marginHorizontal: 4,
     backgroundColor: "#f5f5f5",
     borderRadius: 12,
     overflow: "hidden",
@@ -440,11 +509,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   storyCard: {
-    width: 100,
-    marginHorizontal: 8,
+    width: 80,
+    height: 120,
+    marginHorizontal: 4,
     backgroundColor: "#f5f5f5",
     borderRadius: 12,
     overflow: "hidden",
+  },
+  unviewedStoryCard: {
+    borderWidth: 2,
+    borderColor: AppColors.primary,
   },
   storyImageContainer: {
     flex: 1,
@@ -455,7 +529,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#e0e0e0",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 12,
+    borderRadius: 10,
+  },
+  unviewedImagePlaceholder: {
+    backgroundColor: AppColors.primary + "30", // 30% opacity
   },
   storyInitial: {
     fontSize: 32,
@@ -478,10 +555,24 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
   },
+  timeRemainingBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  timeRemainingText: {
+    fontSize: 10,
+    color: "#fff",
+    fontWeight: "600",
+  },
   storyViewCount: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#666",
-    padding: 6,
+    padding: 4,
     textAlign: "center",
   },
   fab: {

@@ -5,6 +5,7 @@
  * - Fetch friends' stories from Firestore
  * - Track views (create Views subcollection entries)
  * - Delete stories (author only)
+ * - Batch operations for performance (Phase 13)
  */
 
 import {
@@ -20,11 +21,15 @@ import {
   deleteDoc,
   increment,
 } from "firebase/firestore";
-import { deleteSnapImage } from "./storage";
+import { deleteSnapImage, downloadSnapImage } from "./storage";
 import { getFriends } from "./friends";
 import { Story } from "@/types/models";
+import { Image, Platform } from "react-native";
 
 const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+// Phase 13: In-memory cache for preloaded image URLs
+const preloadedImageCache = new Map<string, string>();
 
 /**
  * Post a new story
@@ -130,37 +135,30 @@ export async function getFriendsStories(
 
     const db = getFirestore();
 
-    // Query only unexpired stories (filtering by recipientIds happens in app layer)
+    // Query unexpired stories where user is a recipient
+    // This matches the security rule: request.auth.uid in resource.data.recipientIds
     const now = Date.now();
     const storiesRef = collection(db, "stories");
-    const q = query(storiesRef, where("expiresAt", ">", now));
+    const q = query(
+      storiesRef,
+      where("recipientIds", "array-contains", userId),
+      where("expiresAt", ">", now),
+    );
 
     const snapshot = await getDocs(q);
     const stories: Story[] = [];
 
-    // Build set of authorized recipient IDs (self + friends)
-    const authorizedIds = new Set([userId, ...userFriendIds]);
-
     snapshot.forEach((doc) => {
       const data = doc.data();
-
-      // Filter by recipientIds in app layer (only show stories from self and friends)
-      if (data.recipientIds && Array.isArray(data.recipientIds)) {
-        const hasMatch = data.recipientIds.some((id: string) =>
-          authorizedIds.has(id),
-        );
-        if (hasMatch) {
-          stories.push({
-            id: doc.id,
-            authorId: data.authorId,
-            createdAt: data.createdAt,
-            expiresAt: data.expiresAt,
-            storagePath: data.storagePath,
-            viewCount: data.viewCount || 0,
-            recipientIds: data.recipientIds,
-          });
-        }
-      }
+      stories.push({
+        id: doc.id,
+        authorId: data.authorId,
+        createdAt: data.createdAt,
+        expiresAt: data.expiresAt,
+        storagePath: data.storagePath,
+        viewCount: data.viewCount || 0,
+        recipientIds: data.recipientIds,
+      });
     });
 
     // Sort by createdAt DESC (newest first)
@@ -377,4 +375,184 @@ export async function deleteStory(
     console.error("❌ [deleteStory] Error:", error);
     throw error;
   }
+}
+
+// =============================================================================
+// Phase 13: Performance Optimizations
+// =============================================================================
+
+/**
+ * Batch check which stories the user has already viewed (Phase 13)
+ * Replaces N individual getDoc() calls with parallel batch processing
+ *
+ * @param storyIds - Array of story IDs to check
+ * @param userId - Current user ID
+ * @returns Set of story IDs that have been viewed
+ */
+export async function getBatchViewedStories(
+  storyIds: string[],
+  userId: string,
+): Promise<Set<string>> {
+  if (storyIds.length === 0) {
+    return new Set();
+  }
+
+  console.log(
+    "🔵 [getBatchViewedStories] Checking",
+    storyIds.length,
+    "stories for user:",
+    userId,
+  );
+  const startTime = Date.now();
+
+  const db = getFirestore();
+  const viewedSet = new Set<string>();
+
+  try {
+    // Process all view checks in parallel for speed
+    // Each check is a single doc read from stories/{storyId}/views/{userId}
+    const viewPromises = storyIds.map((storyId) =>
+      getDoc(doc(db, "stories", storyId, "views", userId))
+        .then((docSnap) => ({ storyId, viewed: docSnap.exists() }))
+        .catch(() => ({ storyId, viewed: false })),
+    );
+
+    const results = await Promise.all(viewPromises);
+
+    results.forEach(({ storyId, viewed }) => {
+      if (viewed) {
+        viewedSet.add(storyId);
+      }
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(
+      "✅ [getBatchViewedStories] Checked",
+      storyIds.length,
+      "stories in",
+      duration,
+      "ms.",
+      "Viewed:",
+      viewedSet.size,
+    );
+
+    return viewedSet;
+  } catch (error) {
+    console.error("❌ [getBatchViewedStories] Error:", error);
+    return viewedSet;
+  }
+}
+
+/**
+ * Preload story images for faster viewing (Phase 13)
+ * Downloads and caches images in the background
+ *
+ * @param stories - Array of stories to preload
+ * @param maxToPreload - Maximum number of stories to preload (default 5)
+ */
+export async function preloadStoryImages(
+  stories: Story[],
+  maxToPreload: number = 5,
+): Promise<void> {
+  const toPreload = stories.slice(0, maxToPreload);
+
+  console.log(
+    "🔵 [preloadStoryImages] Preloading",
+    toPreload.length,
+    "story images",
+  );
+
+  // Preload in parallel, don't await - this is background optimization
+  toPreload.forEach(async (story) => {
+    try {
+      // Skip if already cached
+      if (preloadedImageCache.has(story.id)) {
+        return;
+      }
+
+      // Download image URL from Storage
+      const uri = await downloadSnapImage(story.storagePath);
+      preloadedImageCache.set(story.id, uri);
+
+      // Prefetch image data into memory (React Native Image cache)
+      if (Platform.OS !== "web") {
+        await Image.prefetch(uri);
+      }
+
+      console.log("✅ [preloadStoryImages] Preloaded:", story.id);
+    } catch (error) {
+      // Silent fail - preloading is optimization only
+      console.warn("⚠️ [preloadStoryImages] Failed to preload:", story.id);
+    }
+  });
+}
+
+/**
+ * Get preloaded image URL from cache (Phase 13)
+ *
+ * @param storyId - Story ID
+ * @returns Cached image URL or null
+ */
+export function getPreloadedImageUrl(storyId: string): string | null {
+  return preloadedImageCache.get(storyId) || null;
+}
+
+/**
+ * Clear preloaded image cache (Phase 13)
+ * Call when user logs out or to free memory
+ */
+export function clearPreloadedImageCache(): void {
+  console.log(
+    "🔵 [clearPreloadedImageCache] Clearing",
+    preloadedImageCache.size,
+    "cached images",
+  );
+  preloadedImageCache.clear();
+}
+
+/**
+ * Filter out expired stories client-side (Phase 13)
+ *
+ * @param stories - Array of stories to filter
+ * @returns Array of valid (unexpired) stories
+ */
+export function filterExpiredStories(stories: Story[]): Story[] {
+  const now = Date.now();
+  const valid = stories.filter((s) => s.expiresAt > now);
+
+  if (valid.length < stories.length) {
+    console.log(
+      "🔵 [filterExpiredStories] Filtered out",
+      stories.length - valid.length,
+      "expired stories",
+    );
+  }
+
+  return valid;
+}
+
+/**
+ * Calculate time remaining until story expires (Phase 13)
+ *
+ * @param expiresAt - Expiration timestamp
+ * @returns Human-readable time string (e.g., "5h", "23m")
+ */
+export function getStoryTimeRemaining(expiresAt: number): string {
+  const remaining = expiresAt - Date.now();
+
+  if (remaining <= 0) {
+    return "Expired";
+  }
+
+  const hours = Math.floor(remaining / (1000 * 60 * 60));
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+
+  const minutes = Math.floor(remaining / (1000 * 60));
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return "<1m";
 }

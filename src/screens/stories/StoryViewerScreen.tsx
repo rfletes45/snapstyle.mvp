@@ -4,6 +4,11 @@
  * Can be used to:
  * 1. View existing stories from friends
  * 2. Preview and post new stories (isNewStory mode)
+ *
+ * Phase 13: Performance optimizations
+ * - Uses preloaded images if available
+ * - Shows time remaining progress bar
+ * - Handles expired stories gracefully
  */
 
 import React, { useEffect, useState } from "react";
@@ -17,7 +22,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { Text } from "react-native-paper";
+import { Text, ProgressBar } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/store/AuthContext";
 import { downloadSnapImage, compressImage } from "@/services/storage";
@@ -28,8 +33,11 @@ import {
   hasUserViewedStory,
   getStoryViewCount,
   postStory,
+  getPreloadedImageUrl,
+  getStoryTimeRemaining,
 } from "@/services/stories";
 import { Story } from "@/types/models";
+import { AppColors } from "../../../constants/theme";
 
 interface StoryViewerScreenProps {
   route: any;
@@ -44,8 +52,11 @@ export default function StoryViewerScreen({
   const insets = useSafeAreaInsets();
   const { imageUri, storyId, isNewStory } = route.params;
 
+  // Phase 13: Try to use preloaded image first
+  const preloadedImage = storyId ? getPreloadedImageUrl(storyId) : null;
+
   const [displayImage, setDisplayImage] = useState<string | null>(
-    isNewStory ? imageUri : null,
+    isNewStory ? imageUri : preloadedImage,
   );
   const [story, setStory] = useState<Story | null>(null);
   const [loading, setLoading] = useState(!isNewStory);
@@ -70,25 +81,69 @@ export default function StoryViewerScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story, currentFirebaseUser]);
 
+  // Phase 13: Update time remaining every minute
+  const [timeRemaining, setTimeRemaining] = useState<string>("");
+
+  useEffect(() => {
+    if (!story || isNewStory) return;
+
+    const updateTimeRemaining = () => {
+      setTimeRemaining(getStoryTimeRemaining(story.expiresAt));
+    };
+
+    updateTimeRemaining();
+    const interval = setInterval(updateTimeRemaining, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [story, isNewStory]);
+
+  // Phase 13: Calculate expiration progress (0 to 1)
+  const getExpirationProgress = (): number => {
+    if (!story) return 1;
+    const totalDuration = 24 * 60 * 60 * 1000; // 24 hours
+    const elapsed = Date.now() - story.createdAt;
+    const progress = Math.max(0, Math.min(1, 1 - elapsed / totalDuration));
+    return progress;
+  };
+
   const loadStory = async () => {
     if (!storyId) return;
 
     try {
       console.log("🔵 [StoryViewerScreen] Loading story:", storyId);
-      setLoading(true);
+
+      // Phase 13: If we have preloaded image, skip loading state
+      if (preloadedImage) {
+        console.log("✅ [StoryViewerScreen] Using preloaded image");
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       setError(null);
 
       const fetchedStory = await getStory(storyId);
       if (!fetchedStory) {
         setError("Story not found or has expired");
+        setLoading(false);
+        return;
+      }
+
+      // Phase 13: Check if story expired while loading
+      if (fetchedStory.expiresAt < Date.now()) {
+        setError("This story has expired");
+        setLoading(false);
         return;
       }
 
       setStory(fetchedStory);
 
-      // Download and display image
-      const uri = await downloadSnapImage(fetchedStory.storagePath);
-      setDisplayImage(uri);
+      // Phase 13: Only download if not already preloaded
+      if (!preloadedImage) {
+        const uri = await downloadSnapImage(fetchedStory.storagePath);
+        setDisplayImage(uri);
+      }
+
       console.log("✅ [StoryViewerScreen] Story loaded successfully");
     } catch (err: any) {
       console.error("❌ [StoryViewerScreen] Failed to load story:", err);
@@ -299,6 +354,18 @@ export default function StoryViewerScreen({
         />
       )}
 
+      {/* Phase 13: Time Remaining Progress Bar */}
+      {!isNewStory && story && (
+        <View style={styles.progressContainer}>
+          <ProgressBar
+            progress={getExpirationProgress()}
+            color={AppColors.primary}
+            style={styles.progressBar}
+          />
+          <Text style={styles.timeRemainingLabel}>{timeRemaining} left</Text>
+        </View>
+      )}
+
       {/* Header Overlay */}
       <View style={styles.header}>
         {/* Back Button */}
@@ -351,9 +418,34 @@ export default function StoryViewerScreen({
 }
 
 const styles = StyleSheet.create({
-  header: {
+  // Phase 13: Progress bar for time remaining
+  progressContainer: {
     position: "absolute",
     top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 4,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    zIndex: 11,
+  },
+  progressBar: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.3)",
+  },
+  timeRemainingLabel: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+    minWidth: 50,
+  },
+  header: {
+    position: "absolute",
+    top: 12,
     left: 0,
     right: 0,
     flexDirection: "row",
