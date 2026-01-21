@@ -11,10 +11,21 @@ import {
   onSnapshot,
   Timestamp,
   deleteDoc,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { updateStreak, getFriendshipId } from "./friends";
-import { Chat, Message } from "@/types/models";
+import { Chat, Message, MessageStatus } from "@/types/models";
+import { updateStreakAfterMessage } from "./streakCosmetics";
+import { hasBlockBetweenUsers } from "./blocking";
+
+/** Default number of messages to load per page */
+const DEFAULT_PAGE_SIZE = 25;
+
+/** Cursor for pagination - stores last document snapshot */
+let lastMessageCursor: QueryDocumentSnapshot<DocumentData> | null = null;
 
 /**
  * Generate a deterministic chat ID from two user IDs
@@ -43,6 +54,13 @@ export async function getOrCreateChat(
   });
 
   try {
+    // Check if there's a block between users
+    const isBlocked = await hasBlockBetweenUsers(currentUid, otherUid);
+    if (isBlocked) {
+      console.log("❌ [getOrCreateChat] Cannot create chat - user is blocked");
+      throw new Error("Cannot chat with this user");
+    }
+
     console.log(
       "🔵 [getOrCreateChat] Attempting to get existing chat document...",
     );
@@ -88,6 +106,7 @@ export async function getOrCreateChat(
 
 /**
  * Send a message to a chat
+ * Returns milestone info if a streak milestone was reached
  */
 export async function sendMessage(
   chatId: string,
@@ -95,7 +114,7 @@ export async function sendMessage(
   content: string,
   friendUid: string,
   type: "text" | "image" = "text",
-): Promise<void> {
+): Promise<{ milestoneReached?: number; streakCount?: number }> {
   const db = getFirestoreInstance();
 
   console.log("🔵 [sendMessage] Starting message send:", {
@@ -108,6 +127,16 @@ export async function sendMessage(
   });
 
   try {
+    // Check if there's a block between users
+    console.log("🔵 [sendMessage] Checking for blocks...");
+    const isBlocked = await hasBlockBetweenUsers(sender, friendUid);
+    console.log("✅ [sendMessage] Block check complete, isBlocked:", isBlocked);
+
+    if (isBlocked) {
+      console.log("❌ [sendMessage] Cannot send - user is blocked");
+      throw new Error("Cannot send message to this user");
+    }
+
     // Create message document
     console.log(
       "🔵 [sendMessage] Creating message reference for subcollection...",
@@ -152,24 +181,32 @@ export async function sendMessage(
     });
     console.log("✅ [sendMessage] Chat document updated successfully");
 
-    // Update streak for sender
+    // Update streak and grant cosmetics if milestone reached
+    // This runs client-side as a fallback if Cloud Functions aren't deployed
     try {
-      console.log("🔵 [sendMessage] Attempting to update streak...");
-      const friendshipId = await getFriendshipId(sender, friendUid);
-      if (!friendshipId) {
-        console.warn(
-          "⚠️ [sendMessage] Friendship not found - cannot update streak",
+      const { newCount, milestoneReached } = await updateStreakAfterMessage(
+        sender,
+        friendUid,
+      );
+      if (milestoneReached) {
+        console.log(
+          `🎉 [sendMessage] Milestone reached! ${milestoneReached}-day streak!`,
         );
-      } else {
-        await updateStreak(friendshipId, sender);
-        console.log("✅ [sendMessage] Streak updated successfully");
       }
-    } catch (streakError) {
-      console.warn("⚠️ [sendMessage] Could not update streak:", streakError);
-      // Don't fail the message send if streak update fails
-    }
+      if (newCount > 0) {
+        console.log(`🔥 [sendMessage] Current streak: ${newCount} days`);
+      }
 
-    console.log("✅ [sendMessage] Message send completed successfully");
+      console.log("✅ [sendMessage] Message send completed successfully");
+      return {
+        milestoneReached: milestoneReached || undefined,
+        streakCount: newCount,
+      };
+    } catch (streakError) {
+      console.error("⚠️ [sendMessage] Streak update error:", streakError);
+      // Don't throw - message was sent successfully, streak is secondary
+      return {};
+    }
   } catch (error: any) {
     console.error("❌ [sendMessage] ERROR:", {
       message: error.message,
@@ -181,6 +218,74 @@ export async function sendMessage(
     });
     throw error;
   }
+}
+
+/**
+ * Generate a temporary local message ID for optimistic updates
+ */
+function generateLocalMessageId(): string {
+  return `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Create an optimistic local message (Phase 12)
+ * Returns a Message object immediately for UI display while sending in background
+ */
+export function createOptimisticMessage(
+  chatId: string,
+  sender: string,
+  content: string,
+  type: "text" | "image" = "text",
+): Message {
+  const now = Date.now();
+  return {
+    id: generateLocalMessageId(),
+    sender,
+    type,
+    content,
+    createdAt: now,
+    expiresAt: now + 24 * 60 * 60 * 1000,
+    read: false,
+    status: "sending",
+    isLocal: true,
+  };
+}
+
+/**
+ * Send message with optimistic update support (Phase 12)
+ * Returns both the local message (for immediate UI) and a promise for the result
+ */
+export function sendMessageOptimistic(
+  chatId: string,
+  sender: string,
+  content: string,
+  friendUid: string,
+  type: "text" | "image" = "text",
+): {
+  localMessage: Message;
+  sendPromise: Promise<{
+    success: boolean;
+    milestoneReached?: number;
+    streakCount?: number;
+    error?: string;
+  }>;
+} {
+  // Create optimistic message immediately
+  const localMessage = createOptimisticMessage(chatId, sender, content, type);
+
+  // Send in background
+  const sendPromise = sendMessage(chatId, sender, content, friendUid, type)
+    .then((result) => ({
+      success: true,
+      milestoneReached: result.milestoneReached,
+      streakCount: result.streakCount,
+    }))
+    .catch((error: any) => ({
+      success: false,
+      error: error.message || "Failed to send message",
+    }));
+
+  return { localMessage, sendPromise };
 }
 
 /**
@@ -246,7 +351,8 @@ export async function getChatMessages(chatId: string): Promise<Message[]> {
  */
 export function subscribeToChat(
   chatId: string,
-  callback: (messages: Message[]) => void,
+  callback: (messages: Message[], hasMore: boolean) => void,
+  messageLimit: number = DEFAULT_PAGE_SIZE,
 ): () => void {
   const db = getFirestoreInstance();
 
@@ -254,7 +360,11 @@ export function subscribeToChat(
 
   try {
     const messagesRef = collection(db, "Chats", chatId, "Messages");
-    const q = query(messagesRef, orderBy("createdAt", "asc"));
+    const q = query(
+      messagesRef,
+      orderBy("createdAt", "desc"),
+      limit(messageLimit),
+    );
 
     console.log("🔵 [subscribeToChat] Creating onSnapshot listener...");
 
@@ -266,7 +376,13 @@ export function subscribeToChat(
           snapshot.docs.length,
           "messages",
         );
-        const messages = snapshot.docs.map((doc) => ({
+
+        // Store cursor for pagination (oldest message in current batch)
+        if (snapshot.docs.length > 0) {
+          lastMessageCursor = snapshot.docs[snapshot.docs.length - 1];
+        }
+
+        const messages: Message[] = snapshot.docs.map((doc) => ({
           id: doc.id,
           chatId,
           sender: doc.data().sender,
@@ -278,9 +394,13 @@ export function subscribeToChat(
             Date.now() + 24 * 60 * 60 * 1000,
           read: doc.data().read || false,
           readAt: doc.data().readAt?.toMillis?.() || undefined,
+          status: "sent" as MessageStatus, // Messages from Firestore are confirmed sent
         }));
 
-        callback(messages);
+        // Reverse to show oldest first in UI (we fetched newest first for limit)
+        // Also determine if there might be more messages
+        const hasMore = snapshot.docs.length >= messageLimit;
+        callback(messages.reverse(), hasMore);
       },
       (error: any) => {
         console.error("❌ [subscribeToChat] ERROR in listener:", {
@@ -305,6 +425,75 @@ export function subscribeToChat(
     });
     return () => {};
   }
+}
+
+/**
+ * Load older messages for pagination (Phase 12)
+ * Uses cursor from last subscription snapshot
+ * @returns Object with messages array and hasMore flag
+ */
+export async function loadOlderMessages(
+  chatId: string,
+  pageSize: number = DEFAULT_PAGE_SIZE,
+): Promise<{ messages: Message[]; hasMore: boolean }> {
+  const db = getFirestoreInstance();
+
+  console.log("🔵 [loadOlderMessages] Loading older messages for:", chatId);
+
+  if (!lastMessageCursor) {
+    console.log("ℹ️ [loadOlderMessages] No cursor available, returning empty");
+    return { messages: [], hasMore: false };
+  }
+
+  try {
+    const messagesRef = collection(db, "Chats", chatId, "Messages");
+    const q = query(
+      messagesRef,
+      orderBy("createdAt", "desc"),
+      startAfter(lastMessageCursor),
+      limit(pageSize),
+    );
+
+    const snapshot = await getDocs(q);
+    console.log(
+      "✅ [loadOlderMessages] Loaded",
+      snapshot.docs.length,
+      "older messages",
+    );
+
+    // Update cursor for next pagination
+    if (snapshot.docs.length > 0) {
+      lastMessageCursor = snapshot.docs[snapshot.docs.length - 1];
+    }
+
+    const messages: Message[] = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      chatId,
+      sender: doc.data().sender,
+      type: doc.data().type || "text",
+      content: doc.data().content,
+      createdAt: doc.data().createdAt?.toMillis?.() || 0,
+      expiresAt:
+        doc.data().expiresAt?.toMillis?.() || Date.now() + 24 * 60 * 60 * 1000,
+      read: doc.data().read || false,
+      readAt: doc.data().readAt?.toMillis?.() || undefined,
+      status: "sent" as MessageStatus,
+    }));
+
+    // Return in chronological order (oldest first)
+    const hasMore = snapshot.docs.length >= pageSize;
+    return { messages: messages.reverse(), hasMore };
+  } catch (error: any) {
+    console.error("❌ [loadOlderMessages] Error:", error);
+    return { messages: [], hasMore: false };
+  }
+}
+
+/**
+ * Reset pagination cursor (call when switching chats)
+ */
+export function resetPaginationCursor(): void {
+  lastMessageCursor = null;
 }
 
 /**
