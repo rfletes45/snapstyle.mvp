@@ -75,7 +75,11 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     try {
       console.log("🔵 [StoriesScreen] Loading stories (Phase 13 optimized)");
       const startTime = Date.now();
-      setLoading(true);
+      
+      // Phase 13: Only show loading spinner if cache is empty (first load)
+      if (viewedCacheRef.current.size === 0) {
+        setLoading(true);
+      }
 
       // Get friends
       const friendsData = await getFriends(currentFirebaseUser.uid);
@@ -95,9 +99,14 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       const validStories = filterExpiredStories(fetchedStories);
 
       // Phase 13: Check view cache first, only query uncached stories
+      // Also re-query stories that were previously marked as "not viewed" to detect new views
       const uncachedStoryIds = validStories
         .map((s) => s.id)
-        .filter((id) => !viewedCacheRef.current.has(id));
+        .filter((id) => {
+          const cachedValue = viewedCacheRef.current.get(id);
+          // Query if not in cache OR if it was previously unviewed (might have been viewed now)
+          return cachedValue === undefined || cachedValue === false;
+        });
 
       // Phase 13: Batch check viewed status (replaces N individual queries)
       let newViewedSet = new Set<string>();
@@ -518,7 +527,7 @@ const styles = StyleSheet.create({
   },
   unviewedStoryCard: {
     borderWidth: 2,
-    borderColor: AppColors.primary,
+    borderColor: "#FFFC00",
   },
   storyImageContainer: {
     flex: 1,
@@ -532,7 +541,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   unviewedImagePlaceholder: {
-    backgroundColor: AppColors.primary + "30", // 30% opacity
+    backgroundColor: "#FFFC0030", // Yellow 30% opacity
   },
   storyInitial: {
     fontSize: 32,

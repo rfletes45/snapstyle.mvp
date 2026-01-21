@@ -359,7 +359,7 @@ export default function StoryViewerScreen({
         <View style={styles.progressContainer}>
           <ProgressBar
             progress={getExpirationProgress()}
-            color={AppColors.primary}
+            color="#FFFC00"
             style={styles.progressBar}
           />
           <Text style={styles.timeRemainingLabel}>{timeRemaining} left</Text>
@@ -421,27 +421,28 @@ const styles = StyleSheet.create({
   // Phase 13: Progress bar for time remaining
   progressContainer: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingTop: 4,
-    paddingHorizontal: 8,
+    top: 8,
+    left: 8,
+    right: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     zIndex: 11,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 12,
+    padding: 8,
   },
   progressBar: {
     flex: 1,
-    height: 3,
+    height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.3)",
   },
   timeRemainingLabel: {
     color: "#fff",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
-    minWidth: 50,
+    minWidth: 55,
   },
   header: {
     position: "absolute",
