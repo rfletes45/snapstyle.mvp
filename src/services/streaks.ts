@@ -68,7 +68,7 @@ export async function getStreakStatus(
 
     const data = friendDoc.data();
     const today = todayKey();
-    const [uid1, uid2] = data.users;
+    const [uid1] = data.users;
 
     // Determine which user is which
     const isUser1 = currentUserId === uid1;
@@ -85,8 +85,7 @@ export async function getStreakStatus(
 
     // Streak is active if it was updated today or yesterday (grace period)
     // and if at least one user has sent today
-    const isActive =
-      daysSinceUpdate <= 1 && (user1SentToday || user2SentToday);
+    const isActive = daysSinceUpdate <= 1 && (user1SentToday || user2SentToday);
 
     // Streak is at risk if only one user has sent today
     const atRisk =
@@ -144,12 +143,14 @@ export async function recordMessageSent(
 
     const data = friendDoc.data();
     const today = todayKey();
-    const [uid1, uid2] = data.users;
+    const [uid1] = data.users;
 
     // Determine which user position the sender is
     const isUser1 = senderId === uid1;
     const lastSentField = isUser1 ? "lastSentDay_uid1" : "lastSentDay_uid2";
-    const otherLastSentField = isUser1 ? "lastSentDay_uid2" : "lastSentDay_uid1";
+    const otherLastSentField = isUser1
+      ? "lastSentDay_uid2"
+      : "lastSentDay_uid1";
 
     // Get current state
     const currentLastSent = data[lastSentField] || "";
@@ -239,18 +240,29 @@ export async function getActiveStreaks(
 
     const snapshot = await getDocs(q);
     const today = todayKey();
-    const activeStreaks: { friendshipId: string; count: number; atRisk: boolean }[] = [];
+    const activeStreaks: {
+      friendshipId: string;
+      count: number;
+      atRisk: boolean;
+    }[] = [];
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
-      const daysSinceUpdate = getDaysBetween(data.streakUpdatedDay || "", today);
+      const daysSinceUpdate = getDaysBetween(
+        data.streakUpdatedDay || "",
+        today,
+      );
 
       // Only include if streak is still alive (updated today or yesterday)
       if (daysSinceUpdate <= 1) {
         const [uid1] = data.users;
         const isUser1 = userId === uid1;
-        const myLastSent = isUser1 ? data.lastSentDay_uid1 : data.lastSentDay_uid2;
-        const theirLastSent = isUser1 ? data.lastSentDay_uid2 : data.lastSentDay_uid1;
+        const myLastSent = isUser1
+          ? data.lastSentDay_uid1
+          : data.lastSentDay_uid2;
+        const theirLastSent = isUser1
+          ? data.lastSentDay_uid2
+          : data.lastSentDay_uid1;
 
         const atRisk =
           (myLastSent === today && theirLastSent !== today) ||

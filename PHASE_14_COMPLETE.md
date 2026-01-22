@@ -23,19 +23,20 @@ Phase 14 focused on hardening the Firebase backend for production readiness:
 
 Created comprehensive `firestore.indexes.json` with all required composite indexes:
 
-| Collection | Query Pattern | Index Fields |
-|------------|---------------|--------------|
-| `Chats` | Members + Sort by lastMessage | `members` (array-contains) + `lastMessageAt` (desc) |
-| `FriendRequests` | Incoming requests | `to` + `status` |
-| `FriendRequests` | Outgoing requests | `from` + `status` |
-| `FriendRequests` | Check existing | `from` + `to` + `status` |
-| `Friends` | Active streaks | `users` (array-contains) + `streakCount` |
-| `stories` | Unexpired for user | `recipientIds` (array-contains) + `expiresAt` |
-| `stories` | Recent for user | `recipientIds` (array-contains) + `createdAt` (desc) |
-| `Messages` | Ascending order | `createdAt` (asc) - Collection Group |
-| `Messages` | Descending order | `createdAt` (desc) - Collection Group |
+| Collection       | Query Pattern                 | Index Fields                                         |
+| ---------------- | ----------------------------- | ---------------------------------------------------- |
+| `Chats`          | Members + Sort by lastMessage | `members` (array-contains) + `lastMessageAt` (desc)  |
+| `FriendRequests` | Incoming requests             | `to` + `status`                                      |
+| `FriendRequests` | Outgoing requests             | `from` + `status`                                    |
+| `FriendRequests` | Check existing                | `from` + `to` + `status`                             |
+| `Friends`        | Active streaks                | `users` (array-contains) + `streakCount`             |
+| `stories`        | Unexpired for user            | `recipientIds` (array-contains) + `expiresAt`        |
+| `stories`        | Recent for user               | `recipientIds` (array-contains) + `createdAt` (desc) |
+| `Messages`       | Ascending order               | `createdAt` (asc) - Collection Group                 |
+| `Messages`       | Descending order              | `createdAt` (desc) - Collection Group                |
 
 **Field Overrides**:
+
 - `Users.usernameLower` - Single field index for username lookups
 - `Users.username` - Single field index
 - `stories.expiresAt` - TTL enabled for automatic cleanup
@@ -70,6 +71,7 @@ function rateLimitPassed(lastField, minSeconds) {
 #### Collection-Specific Hardening
 
 **Users Collection**:
+
 - Username: 3-20 characters required
 - Display name: 1-50 characters required
 - `usernameLower` must match `username.lower()`
@@ -77,6 +79,7 @@ function rateLimitPassed(lastField, minSeconds) {
 - Inventory items are immutable after creation
 
 **Friend Requests**:
+
 - Cannot send request to yourself
 - Must start as `pending` status
 - Only recipient can accept/decline
@@ -84,18 +87,21 @@ function rateLimitPassed(lastField, minSeconds) {
 - Cannot tamper with `from`/`to` fields
 
 **Friends**:
+
 - Exactly 2 users in array
 - Must start with `streakCount: 0`
 - Cannot change users array
 - Cannot arbitrarily decrease streak (backend handles resets)
 
 **Chats**:
+
 - Exactly 2 members required
 - Cannot change members after creation
 - Messages: content 1-2000 chars for text
 - Messages: sender/content/type immutable after creation
 
 **Stories**:
+
 - `expiresAt` must be in future
 - Author must be in `recipientIds`
 - Max 1000 recipients
@@ -104,6 +110,7 @@ function rateLimitPassed(lastField, minSeconds) {
 - View records are permanent (no delete)
 
 **Reports**:
+
 - Cannot report yourself
 - Reason must be valid enum value
 - Description max 500 chars
@@ -120,9 +127,10 @@ function validFileSize(maxBytes) {
 
 // Validate specific image types
 function isValidImageType() {
-  return request.resource.contentType in [
-    'image/jpeg', 'image/png', 'image/gif', 'image/webp'
-  ];
+  return (
+    request.resource.contentType in
+    ["image/jpeg", "image/png", "image/gif", "image/webp"]
+  );
 }
 ```
 
@@ -165,6 +173,7 @@ function isValidImageType() {
 **Before**: ~177 lines, basic auth checks
 
 **After**: ~300 lines with:
+
 - 4 helper validation functions
 - Data validation on all creates
 - Field immutability on updates
@@ -176,6 +185,7 @@ function isValidImageType() {
 **Before**: ~20 lines, basic path matching
 
 **After**: ~90 lines with:
+
 - Helper functions for validation
 - File type whitelist (images only)
 - File size limits per path
@@ -188,33 +198,33 @@ function isValidImageType() {
 
 ### Prevent Common Attacks
 
-| Attack Vector | Mitigation |
-|---------------|------------|
-| Username hijacking | `Usernames` collection immutable |
-| Streak manipulation | `streakCount` can only go up or reset to 0 |
-| View count inflation | Can only increment by 1 |
-| Friend request spam | Rate limiting helper available |
-| Report abuse | Cannot report yourself |
-| Message tampering | sender/content/type immutable |
-| Large file uploads | 5-10MB limits per path |
-| Invalid file types | Whitelist: jpg, png, gif, webp |
-| Data pollution | Timestamp validation within 60s of server time |
-| Array bombs | `recipientIds` limited to 1000 |
+| Attack Vector        | Mitigation                                     |
+| -------------------- | ---------------------------------------------- |
+| Username hijacking   | `Usernames` collection immutable               |
+| Streak manipulation  | `streakCount` can only go up or reset to 0     |
+| View count inflation | Can only increment by 1                        |
+| Friend request spam  | Rate limiting helper available                 |
+| Report abuse         | Cannot report yourself                         |
+| Message tampering    | sender/content/type immutable                  |
+| Large file uploads   | 5-10MB limits per path                         |
+| Invalid file types   | Whitelist: jpg, png, gif, webp                 |
+| Data pollution       | Timestamp validation within 60s of server time |
+| Array bombs          | `recipientIds` limited to 1000                 |
 
 ### Access Control Matrix
 
-| Collection | Create | Read | Update | Delete |
-|------------|--------|------|--------|--------|
-| Users | Owner | Auth | Owner | Owner |
-| Usernames | Owner | Auth | ❌ | ❌ |
-| FriendRequests | Sender | Sender/Recipient | Recipient | Sender/Recipient |
-| Friends | Member | Member | Member | Member |
-| Chats | Member | Member | Member | ❌ |
-| Messages | Member+Sender | Member | Member | Member |
-| stories | Author | Recipient | Author/Viewer | Author |
-| Reports | Reporter | ❌ | ❌ | ❌ |
-| GameSessions | Player | Player | ❌ | ❌ |
-| Cosmetics | ❌ | Auth | ❌ | ❌ |
+| Collection     | Create        | Read             | Update        | Delete           |
+| -------------- | ------------- | ---------------- | ------------- | ---------------- |
+| Users          | Owner         | Auth             | Owner         | Owner            |
+| Usernames      | Owner         | Auth             | ❌            | ❌               |
+| FriendRequests | Sender        | Sender/Recipient | Recipient     | Sender/Recipient |
+| Friends        | Member        | Member           | Member        | Member           |
+| Chats          | Member        | Member           | Member        | ❌               |
+| Messages       | Member+Sender | Member           | Member        | Member           |
+| stories        | Author        | Recipient        | Author/Viewer | Author           |
+| Reports        | Reporter      | ❌               | ❌            | ❌               |
+| GameSessions   | Player        | Player           | ❌            | ❌               |
+| Cosmetics      | ❌            | Auth             | ❌            | ❌               |
 
 ---
 
@@ -258,12 +268,14 @@ firebase deploy --only storage
 ## ✅ Definition of Done
 
 ### Indexes
+
 - [x] All composite queries have matching indexes
 - [x] Collection group indexes for Messages
 - [x] TTL field override for story expiration
 - [x] Single field indexes for username lookups
 
 ### Firestore Rules
+
 - [x] All collections have explicit rules
 - [x] Data validation on creates
 - [x] Field immutability enforced
@@ -273,6 +285,7 @@ firebase deploy --only storage
 - [x] Catch-all deny rule
 
 ### Storage Rules
+
 - [x] File type validation (images only)
 - [x] File size limits per path
 - [x] Owner-only write for stories/avatars
@@ -280,6 +293,7 @@ firebase deploy --only storage
 - [x] Catch-all deny rule
 
 ### Documentation
+
 - [x] All rules commented
 - [x] Access control matrix documented
 - [x] Deployment instructions included
@@ -292,26 +306,34 @@ firebase deploy --only storage
 
 ```javascript
 // Test: Cannot send friend request to yourself
-await assertFails(addDoc(friendRequestsRef, {
-  from: userId,
-  to: userId, // Same user
-  status: 'pending'
-}));
+await assertFails(
+  addDoc(friendRequestsRef, {
+    from: userId,
+    to: userId, // Same user
+    status: "pending",
+  }),
+);
 
 // Test: Cannot manipulate viewCount arbitrarily
-await assertFails(updateDoc(storyRef, {
-  viewCount: 999 // Should only increment by 1
-}));
+await assertFails(
+  updateDoc(storyRef, {
+    viewCount: 999, // Should only increment by 1
+  }),
+);
 
 // Test: Cannot change message content
-await assertFails(updateDoc(messageRef, {
-  content: 'modified content'
-}));
+await assertFails(
+  updateDoc(messageRef, {
+    content: "modified content",
+  }),
+);
 
 // Test: Report requires valid reason
-await assertFails(addDoc(reportsRef, {
-  reason: 'invalid_reason' // Not in enum
-}));
+await assertFails(
+  addDoc(reportsRef, {
+    reason: "invalid_reason", // Not in enum
+  }),
+);
 ```
 
 ### Storage Rules Tests
@@ -339,17 +361,17 @@ curl -X POST "https://firebasestorage.googleapis.com/..." \
 
 After deployment, monitor index build status:
 
-| Index | Collection | Status |
-|-------|------------|--------|
-| Chats (members + lastMessageAt) | Chats | Pending |
-| FriendRequests (to + status) | FriendRequests | Pending |
-| FriendRequests (from + status) | FriendRequests | Pending |
+| Index                               | Collection     | Status  |
+| ----------------------------------- | -------------- | ------- |
+| Chats (members + lastMessageAt)     | Chats          | Pending |
+| FriendRequests (to + status)        | FriendRequests | Pending |
+| FriendRequests (from + status)      | FriendRequests | Pending |
 | FriendRequests (from + to + status) | FriendRequests | Pending |
-| Friends (users + streakCount) | Friends | Pending |
-| stories (recipientIds + expiresAt) | stories | Pending |
-| stories (recipientIds + createdAt) | stories | Pending |
-| Messages (createdAt asc) | Messages | Pending |
-| Messages (createdAt desc) | Messages | Pending |
+| Friends (users + streakCount)       | Friends        | Pending |
+| stories (recipientIds + expiresAt)  | stories        | Pending |
+| stories (recipientIds + createdAt)  | stories        | Pending |
+| Messages (createdAt asc)            | Messages       | Pending |
+| Messages (createdAt desc)           | Messages       | Pending |
 
 **Estimated Build Time**: 5-15 minutes per index
 

@@ -41,3 +41,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Firebase config files
+  firebaseConfig.local.ts
+  src/services/firebaseConfig.local.ts

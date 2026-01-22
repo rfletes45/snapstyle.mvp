@@ -1,17 +1,45 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { StyleSheet, View, FlatList, Alert } from "react-native";
+/**
+ * ChatListScreen (Inbox)
+ * Vibe rebranded: Shows all conversations (DMs and groups)
+ */
+
+import React, {
+  useState,
+  useCallback,
+  useLayoutEffect,
+  useEffect,
+} from "react";
+import {
+  StyleSheet,
+  View,
+  FlatList,
+  Alert,
+  TouchableOpacity,
+} from "react-native";
 import {
   Text,
   Searchbar,
   Card,
-  ActivityIndicator,
-  Button,
+  Badge,
+  FAB,
+  useTheme,
 } from "react-native-paper";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/store/AuthContext";
-import { getUserChats, getOrCreateChat } from "@/services/chat";
+import { getUserChats } from "@/services/chat";
 import { getUserProfileByUid } from "@/services/friends";
-import { Chat, AvatarConfig } from "@/types/models";
+import { getScheduledMessages } from "@/services/scheduledMessages";
+import {
+  getUserGroups,
+  getPendingInvites,
+  subscribeToUserGroups,
+} from "@/services/groups";
+import { Chat, AvatarConfig, Group, GroupInvite } from "@/types/models";
 import { useFocusEffect } from "@react-navigation/native";
+import { AvatarMini } from "@/components/Avatar";
+import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
+import { Spacing, BorderRadius } from "../../../constants/theme";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 
 interface ChatWithProfile extends Chat {
   otherUserProfile?: {
@@ -23,20 +51,92 @@ interface ChatWithProfile extends Chat {
 }
 
 export default function ChatListScreen({ navigation }: any) {
+  const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
   const [chats, setChats] = useState<ChatWithProfile[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<GroupInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingScheduledCount, setPendingScheduledCount] = useState(0);
+
+  // Set up header with scheduled messages button and group invites
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerRightContainer}>
+          {pendingInvites.length > 0 && (
+            <TouchableOpacity
+              onPress={() => navigation.navigate("GroupInvites")}
+              style={styles.headerButton}
+            >
+              <MaterialCommunityIcons
+                name="email-outline"
+                size={24}
+                color={theme.colors.onSurface}
+              />
+              <Badge size={16} style={styles.badge}>
+                {pendingInvites.length > 99 ? "99+" : pendingInvites.length}
+              </Badge>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => navigation.navigate("ScheduledMessages")}
+            style={styles.headerButton}
+          >
+            <MaterialCommunityIcons
+              name="clock-outline"
+              size={24}
+              color={theme.colors.onSurface}
+            />
+            {pendingScheduledCount > 0 && (
+              <Badge size={16} style={styles.badge}>
+                {pendingScheduledCount > 99 ? "99+" : pendingScheduledCount}
+              </Badge>
+            )}
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [navigation, pendingScheduledCount, pendingInvites.length]);
 
   const loadChats = useCallback(async () => {
     if (!uid) return;
 
     try {
       setLoading(true);
+      setError(null);
+
+      // Load DM chats
       const chatsData = await getUserChats(uid);
+
+      // Fetch pending scheduled messages count
+      try {
+        const scheduledMessages = await getScheduledMessages(uid, "pending");
+        setPendingScheduledCount(scheduledMessages.length);
+      } catch (e) {
+        console.log("Could not fetch scheduled messages count:", e);
+      }
+
+      // Fetch groups
+      try {
+        const userGroups = await getUserGroups(uid);
+        setGroups(userGroups);
+      } catch (e) {
+        console.log("Could not fetch groups:", e);
+      }
+
+      // Fetch pending invites
+      try {
+        const invites = await getPendingInvites(uid);
+        setPendingInvites(invites);
+      } catch (e) {
+        console.log("Could not fetch group invites:", e);
+      }
 
       // Fetch profiles for each chat
       const chatsWithProfiles = await Promise.all(
@@ -60,12 +160,23 @@ export default function ChatListScreen({ navigation }: any) {
       );
 
       setChats(chatsWithProfiles);
-    } catch (error) {
-      console.error("Error loading chats:", error);
-      Alert.alert("Error", "Failed to load chats");
+    } catch (err) {
+      console.error("Error loading chats:", err);
+      setError("Couldn't load your inbox");
     } finally {
       setLoading(false);
     }
+  }, [uid]);
+
+  // Subscribe to groups updates
+  useEffect(() => {
+    if (!uid) return;
+
+    const unsubscribe = subscribeToUserGroups(uid, (updatedGroups) => {
+      setGroups(updatedGroups);
+    });
+
+    return unsubscribe;
   }, [uid]);
 
   useFocusEffect(
@@ -86,89 +197,241 @@ export default function ChatListScreen({ navigation }: any) {
     }
   };
 
+  const handleGroupPress = (group: Group) => {
+    navigation.navigate("GroupChat", {
+      groupId: group.id,
+      groupName: group.name,
+    });
+  };
+
   const filteredChats = chats.filter((chat) =>
     chat.otherUserProfile?.username
       ?.toLowerCase()
       .includes(searchQuery.toLowerCase()),
   );
 
+  const filteredGroups = groups.filter((group) =>
+    group.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  // Local type for combined list items
+  type CombinedChatItem =
+    | {
+        type: "dm";
+        id: string;
+        lastMessageAt: number | undefined;
+        data: ChatWithProfile;
+      }
+    | { type: "group"; id: string; lastMessageAt: any; data: Group };
+
+  // Combine and sort all items by last message time
+  const combinedItems: CombinedChatItem[] = [
+    ...filteredChats.map(
+      (chat): CombinedChatItem => ({
+        type: "dm",
+        id: chat.id,
+        lastMessageAt: chat.lastMessageAt,
+        data: chat,
+      }),
+    ),
+    ...filteredGroups.map(
+      (group): CombinedChatItem => ({
+        type: "group",
+        id: group.id,
+        lastMessageAt: group.lastMessageAt,
+        data: group,
+      }),
+    ),
+  ].sort((a, b) => {
+    const aTime = getTimestamp(a.lastMessageAt);
+    const bTime = getTimestamp(b.lastMessageAt);
+    return bTime - aTime;
+  });
+
   if (loading) {
+    return <LoadingState message="Loading inbox..." />;
+  }
+
+  if (error) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator animating={true} size="large" />
-        <Text style={styles.loadingText}>Loading chats...</Text>
-      </View>
+      <ErrorState
+        title="Something went wrong"
+        message={error}
+        onRetry={loadChats}
+      />
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
       <Searchbar
-        placeholder="Search chats..."
+        placeholder="Search conversations..."
         onChangeText={setSearchQuery}
         value={searchQuery}
-        style={styles.searchbar}
+        style={[styles.searchbar, { backgroundColor: theme.colors.surface }]}
       />
 
       <FlatList
-        data={filteredChats}
-        renderItem={({ item: chat }) => (
-          <Card style={styles.chatCard} onPress={() => handleChatPress(chat)}>
-            <Card.Content style={styles.chatContent}>
-              <View style={styles.chatHeader}>
-                <View
-                  style={[
-                    styles.avatar,
-                    {
-                      backgroundColor:
-                        chat.otherUserProfile?.avatarConfig?.baseColor ||
-                        "#6200EE",
-                    },
-                  ]}
-                >
-                  <Text style={styles.avatarText}>
-                    {chat.otherUserProfile?.username?.charAt(0).toUpperCase() ||
-                      "?"}
-                  </Text>
-                </View>
+        data={combinedItems}
+        renderItem={({ item }) => {
+          if (item.type === "dm") {
+            const chat = item.data as ChatWithProfile;
+            return (
+              <Card
+                style={[
+                  styles.chatCard,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+                onPress={() => handleChatPress(chat)}
+              >
+                <Card.Content style={styles.chatContent}>
+                  <View style={styles.chatHeader}>
+                    <AvatarMini
+                      config={
+                        chat.otherUserProfile?.avatarConfig || {
+                          baseColor: theme.colors.primary,
+                        }
+                      }
+                      size={48}
+                    />
 
-                <View style={styles.chatInfo}>
-                  <Text variant="bodyMedium" style={styles.chatUsername}>
-                    {chat.otherUserProfile?.username || "Loading..."}
-                  </Text>
-                  <Text
-                    variant="bodySmall"
-                    style={styles.chatPreview}
-                    numberOfLines={1}
-                  >
-                    {chat.lastMessageText || "No messages yet"}
-                  </Text>
-                </View>
+                    <View style={styles.chatInfo}>
+                      <Text
+                        variant="bodyMedium"
+                        style={[
+                          styles.chatUsername,
+                          { color: theme.colors.onSurface },
+                        ]}
+                      >
+                        {chat.otherUserProfile?.username || "Loading..."}
+                      </Text>
+                      <Text
+                        variant="bodySmall"
+                        style={[
+                          styles.chatPreview,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {chat.lastMessageText || "No messages yet"}
+                      </Text>
+                    </View>
 
-                <View style={styles.chatTime}>
-                  <Text variant="labelSmall" style={styles.timestamp}>
-                    {chat.lastMessageAt
-                      ? formatTime(new Date(chat.lastMessageAt))
-                      : ""}
-                  </Text>
-                </View>
-              </View>
-            </Card.Content>
-          </Card>
-        )}
-        keyExtractor={(item) => item.id}
+                    <View style={styles.chatTime}>
+                      <Text
+                        variant="labelSmall"
+                        style={[
+                          styles.timestamp,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                      >
+                        {chat.lastMessageAt
+                          ? formatTime(new Date(chat.lastMessageAt))
+                          : ""}
+                      </Text>
+                    </View>
+                  </View>
+                </Card.Content>
+              </Card>
+            );
+          } else {
+            // Group chat
+            const group = item.data as Group;
+            return (
+              <Card
+                style={[
+                  styles.chatCard,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+                onPress={() => handleGroupPress(group)}
+              >
+                <Card.Content style={styles.chatContent}>
+                  <View style={styles.chatHeader}>
+                    <View
+                      style={[
+                        styles.groupAvatar,
+                        { backgroundColor: theme.colors.primary },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="account-group"
+                        size={24}
+                        color={theme.colors.onPrimary}
+                      />
+                    </View>
+
+                    <View style={styles.chatInfo}>
+                      <View style={styles.groupNameRow}>
+                        <Text
+                          variant="bodyMedium"
+                          style={[
+                            styles.chatUsername,
+                            { color: theme.colors.onSurface },
+                          ]}
+                        >
+                          {group.name}
+                        </Text>
+                        <Badge
+                          size={16}
+                          style={[
+                            styles.memberBadge,
+                            { backgroundColor: theme.colors.surfaceVariant },
+                          ]}
+                        >
+                          {group.memberCount}
+                        </Badge>
+                      </View>
+                      <Text
+                        variant="bodySmall"
+                        style={[
+                          styles.chatPreview,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {group.lastMessageText || "No messages yet"}
+                      </Text>
+                    </View>
+
+                    <View style={styles.chatTime}>
+                      <Text
+                        variant="labelSmall"
+                        style={[
+                          styles.timestamp,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                      >
+                        {group.lastMessageAt
+                          ? formatTime(toDate(group.lastMessageAt))
+                          : ""}
+                      </Text>
+                    </View>
+                  </View>
+                </Card.Content>
+              </Card>
+            );
+          }
+        }}
+        keyExtractor={(item) => `${item.type}-${item.id}`}
+        {...LIST_PERFORMANCE_PROPS}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text variant="bodyLarge" style={styles.emptyText}>
-              No chats yet
-            </Text>
-            <Text variant="bodySmall" style={styles.emptySubtext}>
-              Start chatting with friends to see conversations here
-            </Text>
-          </View>
+          <EmptyState
+            icon="message-outline"
+            title="Your inbox is quiet"
+            subtitle="Start a conversation with your connections"
+          />
         }
         refreshing={refreshing}
         onRefresh={onRefresh}
+      />
+
+      <FAB
+        icon="account-group-outline"
+        label="New Group"
+        onPress={() => navigation.navigate("GroupChatCreate")}
+        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
       />
     </View>
   );
@@ -189,10 +452,28 @@ function formatTime(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function getTimestamp(value: any): number {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  if (value?.toMillis) return value.toMillis();
+  if (value?.getTime) return value.getTime();
+  if (value?.seconds) return value.seconds * 1000;
+  return 0;
+}
+
+function toDate(timestamp: any): Date {
+  if (timestamp?.toDate) {
+    return timestamp.toDate();
+  }
+  if (timestamp instanceof Date) {
+    return timestamp;
+  }
+  return new Date(timestamp);
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
   },
 
   centerContainer: {
@@ -202,24 +483,23 @@ const styles = StyleSheet.create({
   },
 
   loadingText: {
-    marginTop: 16,
-    color: "#666",
+    marginTop: Spacing.md,
   },
 
   searchbar: {
-    margin: 16,
+    margin: Spacing.md,
     elevation: 0,
-    backgroundColor: "#fff",
   },
 
   chatCard: {
-    marginHorizontal: 16,
-    marginVertical: 8,
+    marginHorizontal: Spacing.md,
+    marginVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
   },
 
   chatContent: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
 
   chatHeader: {
@@ -230,16 +510,34 @@ const styles = StyleSheet.create({
   avatar: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: BorderRadius.full,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
 
   avatarText: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#fff",
+  },
+
+  groupAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: Spacing.md,
+  },
+
+  groupNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+
+  memberBadge: {
+    // Color applied inline
   },
 
   chatInfo: {
@@ -249,36 +547,59 @@ const styles = StyleSheet.create({
 
   chatUsername: {
     fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
 
   chatPreview: {
-    color: "#999",
+    // Color applied inline
   },
 
   chatTime: {
     justifyContent: "center",
     alignItems: "flex-end",
-    marginLeft: 8,
+    marginLeft: Spacing.sm,
   },
 
   timestamp: {
-    color: "#999",
+    // Color applied inline
   },
 
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 48,
+    paddingVertical: Spacing.xl * 2,
   },
 
   emptyText: {
     fontWeight: "500",
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
 
   emptySubtext: {
-    color: "#999",
+    // Color applied inline
+  },
+
+  headerButton: {
+    marginRight: Spacing.sm,
+    padding: Spacing.xs,
+    position: "relative",
+  },
+
+  headerRightContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  badge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+  },
+
+  fab: {
+    position: "absolute",
+    bottom: Spacing.md,
+    right: Spacing.md,
+    borderRadius: BorderRadius.lg,
   },
 });

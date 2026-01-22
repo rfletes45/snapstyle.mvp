@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 import { User } from "@/types/models";
+import { Latte } from "../../constants/theme";
 
 /**
  * Check if a username is available (not reserved)
@@ -106,6 +107,8 @@ export async function getUserProfile(uid: string): Promise<User | null> {
 
 /**
  * Create a new user profile in Firestore
+ * Note: After calling this, call grantStarterItems(uid) from cosmetics service
+ * to give the user their starter items
  * @param uid User ID
  * @param username Username
  * @param displayName Display name
@@ -128,7 +131,7 @@ export async function createUserProfile(
     usernameLower: username.toLowerCase(),
     displayName,
     avatarConfig: {
-      baseColor: baseColor || "#FFFC00",
+      baseColor: baseColor || Latte.lavender,
     },
     createdAt: now,
     lastActive: now,
@@ -199,6 +202,15 @@ export async function setupNewUser(
     const reserved = await reserveUsername(username, uid);
     if (!reserved) {
       throw new Error("Failed to reserve username");
+    }
+
+    // Grant starter cosmetic items (lazy import to avoid circular dependency)
+    try {
+      const { grantStarterItems } = await import("./cosmetics");
+      await grantStarterItems(uid);
+    } catch (cosmeticError) {
+      console.warn("Failed to grant starter items:", cosmeticError);
+      // Don't fail user creation if cosmetics fail
     }
 
     return user;

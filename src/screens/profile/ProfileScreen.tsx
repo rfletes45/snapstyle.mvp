@@ -1,33 +1,27 @@
 import React, { useState } from "react";
 import { View, StyleSheet, ScrollView } from "react-native";
-import { Text, Button, TextInput, ActivityIndicator } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Text, Button, TextInput, useTheme } from "react-native-paper";
 import { signOut } from "firebase/auth";
 import { getAuthInstance } from "@/services/firebase";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import { updateProfile } from "@/services/users";
 import { isValidDisplayName } from "@/utils/validators";
+import Avatar from "@/components/Avatar";
+import AvatarCustomizer from "@/components/AvatarCustomizer";
+import { LoadingState } from "@/components/ui";
+import { Spacing, BorderRadius } from "../../../constants/theme";
+import type { AvatarConfig } from "@/types/models";
 
-const AVATAR_COLORS = [
-  "#FFFC00",
-  "#FF6B6B",
-  "#4ECDC4",
-  "#45B7D1",
-  "#FFA07A",
-  "#98D8C8",
-];
-
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }: any) {
+  const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile, refreshProfile } = useUser();
 
   const [isEditing, setIsEditing] = useState(false);
+  const [showCustomizer, setShowCustomizer] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState(
     profile?.displayName || "",
-  );
-  const [selectedColorIndex, setSelectedColorIndex] = useState(
-    AVATAR_COLORS.indexOf(profile?.avatarConfig?.baseColor || "#FFFC00"),
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -56,26 +50,22 @@ export default function ProfileScreen() {
     setLoading(true);
 
     try {
-      const newColor = AVATAR_COLORS[selectedColorIndex];
       const success = await updateProfile(currentFirebaseUser.uid, {
         displayName: editDisplayName,
-        avatarConfig: {
-          baseColor: newColor,
-        },
       });
 
       if (success) {
         await refreshProfile();
-        setSuccess("Profile updated successfully!");
+        setSuccess("All set!");
         setIsEditing(false);
         // Clear success message after 2 seconds
         setTimeout(() => setSuccess(""), 2000);
       } else {
-        setError("Failed to update profile");
+        setError("Couldn't update profile. Please try again.");
       }
     } catch (err: any) {
       console.error("Profile update error:", err);
-      setError(err.message || "Failed to update profile");
+      setError(err.message || "Couldn't update profile");
     } finally {
       setLoading(false);
     }
@@ -92,59 +82,116 @@ export default function ProfileScreen() {
 
   if (!profile) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#FFFC00" />
+      <View
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <LoadingState message="Loading profile..." />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={styles.content}
+    >
       {/* Profile Header */}
-      <Text style={styles.title}>Profile</Text>
+      <Text style={[styles.title, { color: theme.colors.onBackground }]}>
+        Profile
+      </Text>
 
-      {/* Avatar Preview */}
+      {/* Avatar Preview with Customization */}
       {!isEditing && (
         <View style={styles.avatarSection}>
-          <View
-            style={[
-              styles.avatarPreview,
-              {
-                backgroundColor: profile.avatarConfig?.baseColor || "#FFFC00",
-              },
-            ]}
+          <Avatar
+            config={profile.avatarConfig || { baseColor: theme.colors.primary }}
+            size={120}
+          />
+          <Button
+            mode="outlined"
+            onPress={() => setShowCustomizer(true)}
+            style={styles.customizeButton}
+            icon="palette"
           >
-            <MaterialCommunityIcons
-              name="account-circle"
-              size={80}
-              color="#fff"
-            />
-          </View>
+            Customize Avatar
+          </Button>
         </View>
       )}
 
+      {/* Avatar Customizer Modal */}
+      <AvatarCustomizer
+        visible={showCustomizer}
+        onClose={() => setShowCustomizer(false)}
+        userId={currentFirebaseUser?.uid || ""}
+        currentConfig={
+          profile.avatarConfig || { baseColor: theme.colors.primary }
+        }
+        onSave={async (newConfig: AvatarConfig) => {
+          await refreshProfile();
+          setSuccess("Avatar updated!");
+          setTimeout(() => setSuccess(""), 2000);
+        }}
+      />
+
       {/* Profile Info */}
       <View style={styles.infoSection}>
-        <Text style={styles.label}>Username</Text>
-        <Text style={styles.value}>{profile.username}</Text>
+        <Text style={[styles.label, { color: theme.colors.onSurfaceVariant }]}>
+          Username
+        </Text>
+        <Text
+          style={[
+            styles.value,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              color: theme.colors.onBackground,
+            },
+          ]}
+        >
+          {profile.username}
+        </Text>
 
-        <Text style={styles.label}>Email</Text>
-        <Text style={styles.value}>{currentFirebaseUser?.email}</Text>
+        <Text style={[styles.label, { color: theme.colors.onSurfaceVariant }]}>
+          Email
+        </Text>
+        <Text
+          style={[
+            styles.value,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              color: theme.colors.onBackground,
+            },
+          ]}
+        >
+          {currentFirebaseUser?.email}
+        </Text>
 
         {!isEditing ? (
           <>
-            <Text style={styles.label}>Display Name</Text>
-            <Text style={styles.value}>{profile.displayName}</Text>
-
-            <Text style={styles.label}>Avatar Color</Text>
-            <Text style={styles.value}>
-              {profile.avatarConfig?.baseColor || "#FFFC00"}
+            <Text
+              style={[styles.label, { color: theme.colors.onSurfaceVariant }]}
+            >
+              Display Name
+            </Text>
+            <Text
+              style={[
+                styles.value,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  color: theme.colors.onBackground,
+                },
+              ]}
+            >
+              {profile.displayName}
             </Text>
           </>
         ) : (
           <>
             {/* Edit Mode */}
-            <Text style={styles.label}>Edit Display Name</Text>
+            <Text
+              style={[styles.label, { color: theme.colors.onSurfaceVariant }]}
+            >
+              Edit Display Name
+            </Text>
             <TextInput
               label="Display Name"
               value={editDisplayName}
@@ -153,39 +200,106 @@ export default function ProfileScreen() {
               style={styles.input}
               disabled={loading}
             />
-
-            <Text style={styles.label}>Choose Avatar Color</Text>
-            <View style={styles.colorGrid}>
-              {AVATAR_COLORS.map((color, index) => (
-                <Button
-                  key={color}
-                  mode={selectedColorIndex === index ? "contained" : "outlined"}
-                  onPress={() => setSelectedColorIndex(index)}
-                  buttonColor={color}
-                  textColor="#000"
-                  style={styles.colorButton}
-                  disabled={loading}
-                >
-                  {selectedColorIndex === index ? "✓" : ""}
-                </Button>
-              ))}
-            </View>
           </>
         )}
       </View>
 
       {/* Status Messages */}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {success ? <Text style={styles.successMessage}>{success}</Text> : null}
+      {error ? (
+        <Text
+          style={[
+            styles.error,
+            {
+              backgroundColor: theme.colors.errorContainer,
+              color: theme.colors.error,
+            },
+          ]}
+        >
+          {error}
+        </Text>
+      ) : null}
+      {success ? (
+        <Text
+          style={[
+            styles.successMessage,
+            {
+              backgroundColor: theme.colors.primaryContainer,
+              color: theme.colors.primary,
+            },
+          ]}
+        >
+          {success}
+        </Text>
+      ) : null}
 
       {/* Action Buttons */}
       <View style={styles.buttonSection}>
+        {/* Wallet Button */}
+        <Button
+          mode="contained"
+          onPress={() => navigation.navigate("Wallet")}
+          icon="wallet"
+          style={styles.button}
+        >
+          My Wallet
+        </Button>
+
+        {/* Shop Button */}
+        <Button
+          mode="contained-tonal"
+          onPress={() => navigation.navigate("Shop")}
+          icon="shopping"
+          style={styles.button}
+        >
+          Shop
+        </Button>
+
+        {/* Daily Tasks Button */}
+        <Button
+          mode="contained-tonal"
+          onPress={() => navigation.navigate("Tasks")}
+          icon="clipboard-check"
+          style={styles.button}
+        >
+          Daily Tasks
+        </Button>
+
+        {/* Settings Button */}
+        <Button
+          mode="outlined"
+          onPress={() => navigation.navigate("Settings")}
+          icon="cog"
+          style={styles.button}
+        >
+          Settings
+        </Button>
+
+        {/* Debug Button - only in dev */}
+        {__DEV__ && (
+          <Button
+            mode="outlined"
+            onPress={() => navigation.navigate("Debug")}
+            icon="bug"
+            style={styles.button}
+          >
+            Debug Rituals & Cosmetics
+          </Button>
+        )}
+
+        {/* Blocked Users Button */}
+        <Button
+          mode="outlined"
+          onPress={() => navigation.navigate("BlockedUsers")}
+          icon="account-cancel"
+          style={styles.button}
+        >
+          Blocked
+        </Button>
+
         {!isEditing ? (
           <Button
             mode="contained"
             onPress={() => setIsEditing(true)}
-            buttonColor="#FFFC00"
-            textColor="#000"
             style={styles.button}
           >
             Edit Profile
@@ -197,8 +311,6 @@ export default function ProfileScreen() {
               onPress={handleSaveChanges}
               loading={loading}
               disabled={loading}
-              buttonColor="#4CAF50"
-              textColor="#fff"
               style={styles.button}
             >
               Save Changes
@@ -208,11 +320,6 @@ export default function ProfileScreen() {
               onPress={() => {
                 setIsEditing(false);
                 setEditDisplayName(profile.displayName);
-                setSelectedColorIndex(
-                  AVATAR_COLORS.indexOf(
-                    profile.avatarConfig?.baseColor || "#FFFC00",
-                  ),
-                );
                 setError("");
               }}
               disabled={loading}
@@ -226,8 +333,8 @@ export default function ProfileScreen() {
         <Button
           mode="contained"
           onPress={handleSignOut}
-          buttonColor="#d32f2f"
-          textColor="#fff"
+          buttonColor={theme.colors.error}
+          textColor={theme.colors.onError}
           style={[styles.button, styles.signOutButton]}
         >
           Sign Out
@@ -240,85 +347,63 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   content: {
-    padding: 20,
+    padding: Spacing.xl,
   },
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    marginBottom: 20,
+    marginBottom: Spacing.xl,
     textAlign: "center",
   },
   avatarSection: {
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: Spacing.xl,
   },
-  avatarPreview: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
+  customizeButton: {
+    marginTop: Spacing.md,
   },
   infoSection: {
-    marginBottom: 24,
+    marginBottom: Spacing.xl,
   },
   label: {
     fontSize: 12,
-    fontWeight: "bold",
-    color: "#666",
-    marginTop: 12,
-    marginBottom: 4,
+    fontWeight: "600",
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
   },
   value: {
     fontSize: 16,
-    color: "#000",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 4,
-    marginBottom: 12,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.md,
   },
   input: {
-    marginBottom: 12,
-  },
-  colorGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 12,
-  },
-  colorButton: {
-    flex: 1,
-    minWidth: "45%",
+    marginBottom: Spacing.md,
   },
   buttonSection: {
-    gap: 12,
-    marginBottom: 20,
+    gap: Spacing.md,
+    marginBottom: Spacing.xl,
   },
   button: {
-    paddingVertical: 6,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.md,
   },
   signOutButton: {
-    marginTop: 12,
+    marginTop: Spacing.md,
   },
   error: {
-    color: "#d32f2f",
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#ffebee",
-    borderRadius: 4,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
   },
   successMessage: {
-    color: "#4CAF50",
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#f1f8e9",
-    borderRadius: 4,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
   },
 });

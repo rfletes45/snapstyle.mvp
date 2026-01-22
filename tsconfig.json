@@ -7,8 +7,14 @@
     "jsx": "react-native",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "firebase/functions": ["node_modules/firebase/functions"],
+      "firebase/firestore": ["node_modules/firebase/firestore"],
+      "firebase/auth": ["node_modules/firebase/auth"],
+      "firebase/storage": ["node_modules/firebase/storage"],
+      "firebase/app": ["node_modules/firebase/app"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "exclude": ["firebase/**", "firebase-backend/**", "node_modules"]
 }

@@ -113,7 +113,7 @@ export async function sendMessage(
   sender: string,
   content: string,
   friendUid: string,
-  type: "text" | "image" = "text",
+  type: "text" | "image" | "scorecard" = "text",
 ): Promise<{ milestoneReached?: number; streakCount?: number }> {
   const db = getFirestoreInstance();
 
@@ -171,6 +171,8 @@ export async function sendMessage(
     let previewText = content;
     if (type === "image") {
       previewText = "[Photo snap]";
+    } else if (type === "scorecard") {
+      previewText = "🎮 Sent a game score!";
     } else {
       previewText = content.substring(0, 50);
     }
@@ -235,7 +237,7 @@ export function createOptimisticMessage(
   chatId: string,
   sender: string,
   content: string,
-  type: "text" | "image" = "text",
+  type: "text" | "image" | "scorecard" = "text",
 ): Message {
   const now = Date.now();
   return {
@@ -260,7 +262,7 @@ export function sendMessageOptimistic(
   sender: string,
   content: string,
   friendUid: string,
-  type: "text" | "image" = "text",
+  type: "text" | "image" | "scorecard" = "text",
 ): {
   localMessage: Message;
   sendPromise: Promise<{

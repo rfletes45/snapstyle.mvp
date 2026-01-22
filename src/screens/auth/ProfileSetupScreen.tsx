@@ -1,22 +1,31 @@
 import React, { useState } from "react";
 import { StyleSheet, ScrollView, View } from "react-native";
-import { TextInput, Button, Text, ActivityIndicator } from "react-native-paper";
+import {
+  TextInput,
+  Button,
+  Text,
+  ActivityIndicator,
+  useTheme,
+} from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import { isValidUsername, isValidDisplayName } from "@/utils/validators";
 import { checkUsernameAvailable, setupNewUser } from "@/services/users";
+import { Latte } from "../../../constants/theme";
 
+// Avatar colors from Catppuccin palette (vibrant options)
 const AVATAR_COLORS = [
-  "#FFFC00",
-  "#FF6B6B",
-  "#4ECDC4",
-  "#45B7D1",
-  "#FFA07A",
-  "#98D8C8",
+  Latte.lavender,
+  Latte.pink,
+  Latte.mauve,
+  Latte.peach,
+  Latte.teal,
+  Latte.sky,
 ];
 
 export default function ProfileSetupScreen({ navigation }: any) {
+  const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { refreshProfile } = useUser();
 
@@ -120,9 +129,16 @@ export default function ProfileSetupScreen({ navigation }: any) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Set Up Your Profile</Text>
-      <Text style={styles.subtitle}>Complete your profile to get started</Text>
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={styles.content}
+    >
+      <Text style={[styles.title, { color: theme.colors.onBackground }]}>
+        Set Up Your Profile
+      </Text>
+      <Text style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}>
+        Complete your profile to get started
+      </Text>
 
       {/* Avatar Preview */}
       <View style={styles.avatarSection}>
@@ -181,7 +197,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
         {usernameCheckLoading && (
           <ActivityIndicator
             size="small"
-            color="#FFFC00"
+            color={theme.colors.primary}
             style={styles.checkIndicator}
           />
         )}
@@ -213,14 +229,12 @@ export default function ProfileSetupScreen({ navigation }: any) {
         onPress={handleSetupProfile}
         loading={loading}
         disabled={loading || !usernameAvailable}
-        buttonColor="#FFFC00"
-        textColor="#000"
         style={styles.button}
       >
         {loading ? "Setting up..." : "Continue"}
       </Button>
 
-      <Text style={styles.hint}>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceDisabled }]}>
         3-20 characters, alphanumeric and underscores
       </Text>
     </ScrollView>

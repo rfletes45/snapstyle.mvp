@@ -14,6 +14,7 @@ import * as Device from "expo-device";
 import { Platform } from "react-native";
 import { doc, updateDoc } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
+import { LightColors } from "../../constants/theme";
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -94,10 +95,10 @@ export async function registerForPushNotifications(): Promise<string | null> {
  */
 async function setupAndroidChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync("default", {
-    name: "SnapStyle",
+    name: "Vibe",
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#FFFC00",
+    lightColor: LightColors.primary,
     sound: "default",
   });
   console.log("✅ [notifications] Android channel set up");

@@ -472,7 +472,7 @@ export async function preloadStoryImages(
       }
 
       console.log("🔵 [preloadStoryImages] Starting download:", story.id);
-      
+
       // Download image URL from Storage
       const uri = await downloadSnapImage(story.storagePath);
       preloadedImageCache.set(story.id, uri);
@@ -490,7 +490,10 @@ export async function preloadStoryImages(
             resolve();
           };
           img.onerror = () => {
-            console.warn("⚠️ [preloadStoryImages] Failed to load image:", story.id);
+            console.warn(
+              "⚠️ [preloadStoryImages] Failed to load image:",
+              story.id,
+            );
             resolve(); // Resolve anyway, don't block
           };
           img.src = uri;
@@ -500,7 +503,11 @@ export async function preloadStoryImages(
       console.log("✅ [preloadStoryImages] Preloaded:", story.id);
     } catch (error) {
       // Silent fail - preloading is optimization only
-      console.warn("⚠️ [preloadStoryImages] Failed to preload:", story.id, error);
+      console.warn(
+        "⚠️ [preloadStoryImages] Failed to preload:",
+        story.id,
+        error,
+      );
     }
   });
 

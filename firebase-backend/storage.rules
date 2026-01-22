@@ -88,6 +88,24 @@ service firebase.storage {
     }
 
     // ============================================================
+    // GROUPS: Group chat images
+    // ============================================================
+    
+    // Path: /groups/{groupId}/messages/{filename}
+    match /groups/{groupId}/messages/{allPaths=**} {
+      // Read: Any authenticated user
+      // (Firestore rules handle access control via memberIds)
+      allow read: if isAuth();
+      
+      // Write: Any authenticated user
+      // (Firestore rules ensure only members can create message docs)
+      allow write: if isAuth() && 
+                     isValidImageType() &&
+                     // Max 10MB per group image
+                     validFileSize(10 * 1024 * 1024);
+    }
+
+    // ============================================================
     // CATCH-ALL: Deny everything else
     // ============================================================
     

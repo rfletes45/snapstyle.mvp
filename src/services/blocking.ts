@@ -14,7 +14,6 @@ import {
   where,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { removeFriend } from "./friends";
 import type { BlockedUser, User } from "@/types/models";
 
 /**
@@ -51,8 +50,9 @@ export async function blockUser(
     await setDoc(blockedRef, blockData);
     console.log("✅ [blocking] Added to blocked list");
 
-    // Remove friendship if exists
+    // Remove friendship if exists (lazy import to avoid circular dependency)
     try {
+      const { removeFriend } = await import("./friends");
       await removeFriend(currentUserId, userToBlockId);
       console.log("✅ [blocking] Removed friendship");
     } catch (e) {

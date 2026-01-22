@@ -200,3 +200,53 @@ export async function deleteSnapImage(storagePath: string): Promise<void> {
     }
   }
 }
+
+/**
+ * Upload group chat image to Firebase Storage
+ * Stores at groups/{groupId}/messages/{messageId}.jpg
+ * Handles both data URLs (web) and file URIs (native)
+ * @param groupId - Group ID for organizing images
+ * @param messageId - Message ID for unique file naming
+ * @param imageUri - Local file URI or data URL (should be pre-compressed)
+ * @returns Storage path string for saving in GroupMessage doc
+ */
+export async function uploadGroupImage(
+  groupId: string,
+  messageId: string,
+  imageUri: string,
+): Promise<string> {
+  try {
+    const storagePath = `groups/${groupId}/messages/${messageId}.jpg`;
+    const storage = getStorage();
+    const storageRef = ref(storage, storagePath);
+
+    console.log("🔵 [uploadGroupImage] Uploading group chat image");
+
+    let blob: Blob;
+
+    // Handle data URLs (web platform) vs file URIs (native)
+    if (imageUri.startsWith("data:")) {
+      console.log("🔵 [uploadGroupImage] Converting data URL to blob");
+      blob = dataURLtoBlob(imageUri);
+    } else {
+      console.log("🔵 [uploadGroupImage] Fetching file URI as blob");
+      const response = await fetch(imageUri);
+      blob = await response.blob();
+    }
+
+    console.log("🔵 [uploadGroupImage] Uploading blob to Firebase Storage");
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+
+    console.log(`✅ [uploadGroupImage] Uploaded to: ${storagePath}`);
+
+    // Get download URL
+    console.log("🔵 [uploadGroupImage] Getting download URL...");
+    const downloadUrl = await getDownloadURL(storageRef);
+    console.log(`✅ [uploadGroupImage] Download URL: ${downloadUrl}`);
+
+    return downloadUrl;
+  } catch (error) {
+    console.error("❌ [uploadGroupImage] Error uploading group image:", error);
+    throw error;
+  }
+}

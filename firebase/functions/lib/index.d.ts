@@ -55,3 +55,97 @@ export declare const cleanupExpiredSnaps: functions.CloudFunction<unknown>;
  * This ensures stories expire even if TTL index isn't active
  */
 export declare const cleanupExpiredStories: functions.CloudFunction<unknown>;
+/**
+ * processScheduledMessages: Runs every minute to check for scheduled messages
+ * that are due to be sent and delivers them.
+ */
+export declare const processScheduledMessages: functions.CloudFunction<unknown>;
+/**
+ * onScheduledMessageCreated: Triggered when a new scheduled message is created
+ * Can be used for additional validation or logging
+ */
+export declare const onScheduledMessageCreated: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * cleanupOldScheduledMessages: Runs daily to clean up old sent/cancelled/failed messages
+ * Keeps scheduled messages for 30 days after they've been processed
+ */
+export declare const cleanupOldScheduledMessages: functions.CloudFunction<unknown>;
+/**
+ * onGameSessionCreated: Triggered when a new game session is recorded
+ * Updates leaderboard and checks for achievements
+ */
+export declare const onGameSessionCreated: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * onStreakUpdated: Check for streak achievements when streak changes
+ * This extends the existing streak update logic
+ */
+export declare const onStreakAchievementCheck: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
+/**
+ * Weekly leaderboard reset notification (optional)
+ * Runs Monday at 00:00 UTC to notify top players from previous week
+ */
+export declare const weeklyLeaderboardReset: functions.CloudFunction<unknown>;
+/**
+ * Initialize wallet when new user is created
+ * Grants starting tokens to new users
+ */
+export declare const onUserCreated: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * claimTaskReward: Callable function to claim reward for completed task
+ * Validates completion, prevents double claims, awards tokens atomically
+ */
+export declare const claimTaskReward: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * Update task progress when message is sent
+ */
+export declare const onMessageSentTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * Update task progress when story is viewed
+ */
+export declare const onStoryViewedTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * Update task progress when story is posted
+ */
+export declare const onStoryPostedTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * Update task progress when game is played
+ * Note: This extends the existing onGameSessionCreated functionality
+ */
+export declare const onGamePlayedTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * Update task progress when friend is added
+ */
+export declare const onFriendAddedTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * Daily login task trigger
+ * This is called when user opens app (client-side via callable)
+ */
+export declare const recordDailyLogin: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * Seed initial daily tasks (run once via admin or console)
+ * This creates default task definitions
+ */
+export declare const seedDailyTasks: functions.HttpsFunction;
+/**
+ * Initialize wallet for existing users who don't have one
+ * Run once via admin to migrate existing users
+ */
+export declare const initializeExistingWallets: functions.HttpsFunction;
+/**
+ * purchaseWithTokens: Callable function to purchase shop items
+ * Performs atomic transaction:
+ * 1. Validates item availability
+ * 2. Validates user has enough tokens
+ * 3. Validates user doesn't already own the item
+ * 4. Deducts tokens from wallet
+ * 5. Adds item to user's inventory
+ * 6. Records the purchase
+ * 7. Creates transaction record
+ * 8. Updates item purchase count
+ */
+export declare const purchaseWithTokens: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * Seed shop catalog with sample items (run once via admin)
+ * Creates initial shop items for testing
+ */
+export declare const seedShopCatalog: functions.HttpsFunction;

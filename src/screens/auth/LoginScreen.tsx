@@ -1,14 +1,23 @@
+/**
+ * LoginScreen
+ * Vibe branded sign-in screen
+ */
+
 import React, { useState } from "react";
-import { StyleSheet, ScrollView } from "react-native";
-import { TextInput, Button, Text } from "react-native-paper";
+import { StyleSheet, ScrollView, View } from "react-native";
+import { TextInput, Button, Text, useTheme } from "react-native-paper";
 import { login } from "@/services/auth";
 import { isValidEmail } from "@/utils/validators";
+import { Spacing, BorderRadius } from "../../../constants/theme";
 
 export default function LoginScreen({ navigation }: any) {
+  const theme = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Debug: State to trigger render-time error
+  const [shouldThrowError, setShouldThrowError] = useState(false);
 
   const handleLogin = async () => {
     setError("");
@@ -26,34 +35,44 @@ export default function LoginScreen({ navigation }: any) {
 
     setLoading(true);
 
-    try {
-      // Sign in with Firebase Authentication
-      console.log("LoginScreen: Attempting to log in with", email);
-      await login(email.trim(), password);
-      console.log("LoginScreen: Login successful");
+    // Sign in with Firebase Authentication
+    console.log("🔵 [LoginScreen] Attempting to log in with", email);
+    const result = await login(email.trim(), password);
+
+    if (result.ok) {
+      console.log("✅ [LoginScreen] Login successful");
       // Navigation will happen automatically via AuthContext when user state updates
-    } catch (err: any) {
-      console.error("Login error:", err);
-      // Parse Firebase error messages
-      if (err.code === "auth/user-not-found") {
-        setError("No account found with this email");
-      } else if (err.code === "auth/wrong-password") {
-        setError("Incorrect password");
-      } else if (err.code === "auth/invalid-email") {
-        setError("Invalid email address");
-      } else if (err.code === "auth/too-many-requests") {
-        setError("Too many login attempts. Please try again later.");
-      } else {
-        setError(err.message || "Failed to sign in");
-      }
-    } finally {
-      setLoading(false);
+    } else {
+      console.log("❌ [LoginScreen] Login failed:", result.error.code);
+      // Use the user-friendly error message from the error utility
+      setError(result.error.userMessage);
     }
+
+    setLoading(false);
   };
 
+  // Debug: Throw error during render to test ErrorBoundary
+  if (shouldThrowError) {
+    throw new Error("🧪 Test render error - ErrorBoundary should catch this");
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Sign In</Text>
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={styles.content}
+    >
+      <Text
+        variant="headlineLarge"
+        style={[styles.title, { color: theme.colors.onBackground }]}
+      >
+        Welcome back
+      </Text>
+      <Text
+        variant="bodyMedium"
+        style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
+      >
+        Sign in to continue to Vibe
+      </Text>
 
       <TextInput
         label="Email"
@@ -76,15 +95,24 @@ export default function LoginScreen({ navigation }: any) {
         style={styles.input}
       />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <View
+          style={[
+            styles.errorContainer,
+            { backgroundColor: theme.colors.errorContainer },
+          ]}
+        >
+          <Text style={[styles.error, { color: theme.colors.error }]}>
+            {error}
+          </Text>
+        </View>
+      ) : null}
 
       <Button
         mode="contained"
         onPress={handleLogin}
         loading={loading}
         disabled={loading}
-        buttonColor="#FFFC00"
-        textColor="#000"
         style={styles.button}
       >
         Sign In
@@ -95,8 +123,20 @@ export default function LoginScreen({ navigation }: any) {
         onPress={() => navigation.navigate("Signup")}
         disabled={loading}
       >
-        Don&apos;t have an account? Sign up
+        Don&apos;t have an account? Get started
       </Button>
+
+      {/* Debug: Test ErrorBoundary - Remove after testing */}
+      {__DEV__ && (
+        <Button
+          mode="outlined"
+          onPress={() => setShouldThrowError(true)}
+          style={styles.debugButton}
+          textColor={theme.colors.error}
+        >
+          🧪 Test Error Boundary
+        </Button>
+      )}
     </ScrollView>
   );
 }
@@ -104,27 +144,36 @@ export default function LoginScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   content: {
-    padding: 20,
+    padding: Spacing.xl,
     justifyContent: "center",
     minHeight: "100%",
   },
   title: {
-    fontSize: 28,
     fontWeight: "bold",
-    marginBottom: 20,
+    marginBottom: Spacing.xs,
+  },
+  subtitle: {
+    marginBottom: Spacing.xl,
   },
   input: {
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   button: {
-    marginTop: 8,
-    paddingVertical: 6,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.md,
+  },
+  debugButton: {
+    marginTop: Spacing.xl,
+  },
+  errorContainer: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.md,
   },
   error: {
-    color: "#d32f2f",
-    marginBottom: 12,
+    textAlign: "center",
   },
 });

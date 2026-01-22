@@ -1,7 +1,7 @@
 {
   "functions": [
     {
-      "source": "firebase/functions",
+      "source": "firebase-backend/functions",
       "codebase": "default",
       "ignore": [
         "node_modules",
@@ -12,10 +12,10 @@
     }
   ],
   "firestore": {
-    "rules": "firebase/firestore.rules",
-    "indexes": "firebase/firestore.indexes.json"
+    "rules": "firebase-backend/firestore.rules",
+    "indexes": "firebase-backend/firestore.indexes.json"
   },
   "storage": {
-    "rules": "firebase/storage.rules"
+    "rules": "firebase-backend/storage.rules"
   }
 }

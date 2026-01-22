@@ -22,7 +22,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { Text } from "react-native-paper";
+import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/store/AuthContext";
 import { downloadSnapImage, compressImage } from "@/services/storage";
@@ -48,6 +48,7 @@ export default function StoryViewerScreen({
   route,
   navigation,
 }: StoryViewerScreenProps) {
+  const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const insets = useSafeAreaInsets();
   const { imageUri, storyId, isNewStory } = route.params;
@@ -316,7 +317,9 @@ export default function StoryViewerScreen({
           onPress={() => navigation.goBack()}
           style={{ marginTop: 16 }}
         >
-          <Text style={{ color: "#FFFC00", fontSize: 14 }}>Go Back</Text>
+          <Text style={{ color: theme.colors.primary, fontSize: 14 }}>
+            Go Back
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -334,7 +337,7 @@ export default function StoryViewerScreen({
           paddingBottom: insets.bottom,
         }}
       >
-        <ActivityIndicator size="large" color="#FFFC00" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
@@ -457,7 +460,7 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#FFFC00",
+    backgroundColor: AppColors.primary,
     borderRadius: 3,
   },
   progressBar: {
@@ -495,7 +498,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   postButton: {
-    backgroundColor: "#FFFC00",
+    backgroundColor: AppColors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,

@@ -8,33 +8,59 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActionSheetIOS,
+  TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
 import {
   Text,
   Button,
-  ActivityIndicator,
   Card,
   IconButton,
+  Menu,
+  useTheme,
 } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/store/AuthContext";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   getOrCreateChat,
   sendMessage,
+  sendMessageOptimistic,
   subscribeToChat,
-  getChatMessages,
   markMessageAsRead,
+  loadOlderMessages,
+  resetPaginationCursor,
 } from "@/services/chat";
 import { getUserProfileByUid } from "@/services/friends";
-import { Message, AvatarConfig } from "@/types/models";
+import { blockUser } from "@/services/blocking";
+import { submitReport } from "@/services/reporting";
+import {
+  scheduleMessage,
+  getScheduledMessagesForChat,
+} from "@/services/scheduledMessages";
+import {
+  Message,
+  AvatarConfig,
+  ReportReason,
+  MessageStatus,
+  ScheduledMessage,
+} from "@/types/models";
 import * as ImagePicker from "expo-image-picker";
 import { compressImage, uploadSnapImage } from "@/services/storage";
 import {
   pickImageFromWeb,
   captureImageFromWebcam,
 } from "@/utils/webImagePicker";
+import { AvatarMini } from "@/components/Avatar";
+import BlockUserModal from "@/components/BlockUserModal";
+import ReportUserModal from "@/components/ReportUserModal";
+import ScheduleMessageModal from "@/components/ScheduleMessageModal";
+import ScorecardBubble, {
+  parseScorecardContent,
+} from "@/components/ScorecardBubble";
+import { LoadingState, EmptyState } from "@/components/ui";
+import { Spacing, BorderRadius } from "../../../constants/theme";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 
 interface MessageWithProfile extends Message {
   otherUserProfile?: {
@@ -48,6 +74,7 @@ export default function ChatScreen({
   route,
   navigation,
 }: NativeStackScreenProps<any, "ChatDetail">) {
+  const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
   const { friendUid } = route.params as { friendUid: string };
@@ -60,6 +87,26 @@ export default function ChatScreen({
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [uploadingSnap, setUploadingSnap] = useState(false);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Phase 12: Pagination state
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
+  // Phase 12: Failed messages for retry
+  const [failedMessages, setFailedMessages] = useState<Map<string, Message>>(
+    new Map(),
+  );
+
+  // Block/Report state
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+
+  // Phase 17: Scheduled messages state
+  const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [scheduledMessages, setScheduledMessages] = useState<
+    ScheduledMessage[]
+  >([]);
 
   // Initialize chat and subscribe to messages
   useFocusEffect(
@@ -79,6 +126,9 @@ export default function ChatScreen({
 
         try {
           setLoading(true);
+
+          // Reset pagination cursor when entering chat
+          resetPaginationCursor();
 
           // Get or create chat
           console.log("🔵 [ChatScreen] Calling getOrCreateChat...");
@@ -100,28 +150,48 @@ export default function ChatScreen({
 
           // Subscribe to real-time messages
           console.log("🔵 [ChatScreen] Setting up message subscription...");
-          const unsubscribe = subscribeToChat(id, async (newMessages) => {
-            console.log(
-              "✅ [ChatScreen] Received",
-              newMessages.length,
-              "messages from subscription",
-            );
-            // Enrich messages with friend profile
-            const enrichedMessages = newMessages.map((msg) => ({
-              ...msg,
-              otherUserProfile: msg.sender === friendUid ? profile : undefined,
-            }));
+          const unsubscribe = subscribeToChat(
+            id,
+            async (newMessages, hasMore) => {
+              console.log(
+                "✅ [ChatScreen] Received",
+                newMessages.length,
+                "messages from subscription, hasMore:",
+                hasMore,
+              );
 
-            setMessages(enrichedMessages);
+              // Track if there are more messages to load
+              setHasMoreMessages(hasMore);
 
-            // Mark messages as read if they're from the friend
-            for (const msg of newMessages) {
-              if (msg.sender === friendUid && !msg.read) {
-                console.log("🔵 [ChatScreen] Marking message as read:", msg.id);
-                await markMessageAsRead(id, msg.id);
+              // Enrich messages with friend profile
+              const enrichedMessages = newMessages.map((msg) => ({
+                ...msg,
+                otherUserProfile:
+                  msg.sender === friendUid ? profile : undefined,
+              }));
+
+              // Merge with any local optimistic messages that haven't synced yet
+              setMessages((prevMessages) => {
+                // Keep only local messages that aren't in the new messages
+                const localOnlyMessages = prevMessages.filter(
+                  (m) => m.isLocal && !newMessages.some((nm) => nm.id === m.id),
+                );
+                // Combine: server messages + still-pending local messages
+                return [...enrichedMessages, ...localOnlyMessages];
+              });
+
+              // Mark messages as read if they're from the friend
+              for (const msg of newMessages) {
+                if (msg.sender === friendUid && !msg.read) {
+                  console.log(
+                    "🔵 [ChatScreen] Marking message as read:",
+                    msg.id,
+                  );
+                  await markMessageAsRead(id, msg.id);
+                }
               }
-            }
-          });
+            },
+          );
 
           unsubscribeRef.current = unsubscribe;
           console.log("✅ [ChatScreen] Chat initialization complete");
@@ -133,8 +203,13 @@ export default function ChatScreen({
             errorType: error.constructor.name,
             timestamp: new Date().toISOString(),
           });
-          Alert.alert("Error", "Failed to initialize chat");
+          const errorMessage = error.message || "Failed to initialize chat";
+          Alert.alert("Error", errorMessage);
           setLoading(false);
+          // Navigate back if blocked
+          if (error.message?.includes("Cannot chat with this user")) {
+            navigation.goBack();
+          }
         }
       };
 
@@ -150,27 +225,273 @@ export default function ChatScreen({
     }, [uid, friendUid]),
   );
 
-  // Update header with friend name
+  // Update header with friend name and menu
   useEffect(() => {
     if (friendProfile) {
       navigation.setOptions({
         title: friendProfile.username,
+        headerRight: () => (
+          <Menu
+            visible={menuVisible}
+            onDismiss={() => setMenuVisible(false)}
+            anchor={
+              <IconButton
+                icon="dots-vertical"
+                size={24}
+                onPress={() => setMenuVisible(true)}
+              />
+            }
+          >
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                setBlockModalVisible(true);
+              }}
+              title="Block User"
+              leadingIcon="block-helper"
+            />
+            <Menu.Item
+              onPress={() => {
+                setMenuVisible(false);
+                setReportModalVisible(true);
+              }}
+              title="Report User"
+              leadingIcon="flag"
+            />
+          </Menu>
+        ),
       });
     }
-  }, [friendProfile, navigation]);
+  }, [friendProfile, navigation, menuVisible]);
 
   const handleSendMessage = async () => {
     if (!uid || !chatId || !inputText.trim()) return;
 
+    const messageContent = inputText.trim();
+    setInputText(""); // Clear input immediately for better UX
+
+    // Phase 12: Use optimistic sending
+    const { localMessage, sendPromise } = sendMessageOptimistic(
+      chatId,
+      uid,
+      messageContent,
+      friendUid,
+    );
+
+    // Add optimistic message to UI immediately
+    const optimisticMsg: MessageWithProfile = {
+      ...localMessage,
+      otherUserProfile: undefined, // It's our own message
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+
     try {
       setSendingLoading(true);
-      await sendMessage(chatId, uid, inputText.trim(), friendUid);
-      setInputText("");
-    } catch (error) {
+      const result = await sendPromise;
+
+      if (result.success) {
+        // Remove the local message (will be replaced by real-time listener)
+        setMessages((prev) => prev.filter((m) => m.id !== localMessage.id));
+
+        // Remove from failed messages if it was there
+        setFailedMessages((prev) => {
+          const next = new Map(prev);
+          next.delete(localMessage.id);
+          return next;
+        });
+
+        // Show celebration if milestone reached
+        if (result.milestoneReached) {
+          const milestoneMessages: Record<number, string> = {
+            3: "🔥 3-day streak! You're on fire!\n\nUnlocked: Flame Cap 🔥",
+            7: "🔥 1 week streak! Amazing!\n\nUnlocked: Cool Shades 😎",
+            14: "🔥 2 week streak! Incredible!\n\nUnlocked: Gradient Glow ✨",
+            30: "🔥 30-day streak! One month!\n\nUnlocked: Golden Crown 👑",
+            50: "🔥 50-day streak! Legendary!\n\nUnlocked: Star Glasses 🤩",
+            100: "💯 100-day streak! Champion!\n\nUnlocked: Rainbow Burst 🌈",
+            365: "🏆 365-day streak! One year!\n\nUnlocked: Legendary Halo 😇",
+          };
+
+          const message =
+            milestoneMessages[result.milestoneReached] ||
+            `🎉 ${result.milestoneReached}-day streak milestone!`;
+
+          Alert.alert("Streak Milestone! 🎉", message);
+        }
+      } else {
+        // Mark message as failed
+        console.log("❌ [ChatScreen] Message failed:", result.error);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === localMessage.id
+              ? {
+                  ...m,
+                  status: "failed" as MessageStatus,
+                  errorMessage: result.error,
+                }
+              : m,
+          ),
+        );
+
+        // Store for retry
+        setFailedMessages((prev) => {
+          const next = new Map(prev);
+          next.set(localMessage.id, {
+            ...localMessage,
+            status: "failed",
+            errorMessage: result.error,
+          });
+          return next;
+        });
+      }
+    } catch (error: any) {
       console.error("Error sending message:", error);
-      Alert.alert("Error", "Failed to send message");
+      // Mark as failed
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === localMessage.id
+            ? {
+                ...m,
+                status: "failed" as MessageStatus,
+                errorMessage: error.message,
+              }
+            : m,
+        ),
+      );
     } finally {
       setSendingLoading(false);
+    }
+  };
+
+  // Phase 12: Retry sending a failed message
+  const handleRetryMessage = async (failedMsg: Message) => {
+    if (!uid || !chatId) return;
+
+    // Remove from failed messages
+    setFailedMessages((prev) => {
+      const next = new Map(prev);
+      next.delete(failedMsg.id);
+      return next;
+    });
+
+    // Update status to sending
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === failedMsg.id
+          ? { ...m, status: "sending" as MessageStatus }
+          : m,
+      ),
+    );
+
+    // Resend using optimistic flow
+    const { sendPromise } = sendMessageOptimistic(
+      chatId,
+      uid,
+      failedMsg.content,
+      friendUid,
+      failedMsg.type,
+    );
+
+    const result = await sendPromise;
+
+    if (result.success) {
+      // Remove the local message (real-time listener will add the server version)
+      setMessages((prev) => prev.filter((m) => m.id !== failedMsg.id));
+    } else {
+      // Still failed
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === failedMsg.id
+            ? {
+                ...m,
+                status: "failed" as MessageStatus,
+                errorMessage: result.error,
+              }
+            : m,
+        ),
+      );
+      setFailedMessages((prev) => {
+        const next = new Map(prev);
+        next.set(failedMsg.id, {
+          ...failedMsg,
+          status: "failed",
+          errorMessage: result.error,
+        });
+        return next;
+      });
+    }
+  };
+
+  // Phase 12: Load older messages
+  const handleLoadOlderMessages = async () => {
+    if (!chatId || loadingOlder || !hasMoreMessages) return;
+
+    try {
+      setLoadingOlder(true);
+      const { messages: olderMessages, hasMore } =
+        await loadOlderMessages(chatId);
+
+      if (olderMessages.length > 0) {
+        // Enrich with profile
+        const enrichedOlder = olderMessages.map((msg) => ({
+          ...msg,
+          otherUserProfile:
+            msg.sender === friendUid ? friendProfile : undefined,
+        }));
+
+        // Prepend older messages
+        setMessages((prev) => [...enrichedOlder, ...prev]);
+      }
+
+      setHasMoreMessages(hasMore);
+    } catch (error) {
+      console.error("Error loading older messages:", error);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  // Block/Report handlers
+  const handleBlockConfirm = async (reason?: string) => {
+    if (!uid) return;
+
+    try {
+      await blockUser(uid, friendUid, reason);
+      setBlockModalVisible(false);
+      Alert.alert(
+        "User Blocked",
+        `${friendProfile?.username || "User"} has been blocked.`,
+        [
+          {
+            text: "OK",
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      );
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to block user");
+    }
+  };
+
+  const handleReportSubmit = async (
+    reason: ReportReason,
+    description?: string,
+  ) => {
+    if (!uid) return;
+
+    try {
+      await submitReport(uid, friendUid, reason, {
+        description,
+        relatedContent: { type: "message" },
+      });
+      setReportModalVisible(false);
+      Alert.alert(
+        "Report Submitted",
+        "Thank you for helping keep our community safe.",
+      );
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to submit report");
     }
   };
 
@@ -363,10 +684,35 @@ export default function ChatScreen({
 
       // Send as image message
       console.log("🔵 [handleSnapUpload] Sending message...");
-      await sendMessage(chatId, uid, storagePath, friendUid, "image");
+      const result = await sendMessage(
+        chatId,
+        uid,
+        storagePath,
+        friendUid,
+        "image",
+      );
       console.log("✅ [handleSnapUpload] Message sent successfully");
 
-      Alert.alert("Success", "Snap sent!");
+      // Show celebration if milestone reached
+      if (result.milestoneReached) {
+        const milestoneMessages: Record<number, string> = {
+          3: "🔥 3-day streak! You're on fire!\n\nUnlocked: Flame Cap 🔥",
+          7: "🔥 1 week streak! Amazing!\n\nUnlocked: Cool Shades 😎",
+          14: "🔥 2 week streak! Incredible!\n\nUnlocked: Gradient Glow ✨",
+          30: "🔥 30-day streak! One month!\n\nUnlocked: Golden Crown 👑",
+          50: "🔥 50-day streak! Legendary!\n\nUnlocked: Star Glasses 🤩",
+          100: "💯 100-day streak! Champion!\n\nUnlocked: Rainbow Burst 🌈",
+          365: "🏆 365-day streak! One year!\n\nUnlocked: Legendary Halo 😇",
+        };
+
+        const message =
+          milestoneMessages[result.milestoneReached] ||
+          `🎉 ${result.milestoneReached}-day streak milestone!`;
+
+        Alert.alert("Streak Milestone! 🎉", message);
+      } else {
+        Alert.alert("Success", "Snap sent!");
+      }
     } catch (error) {
       console.error("❌ [handleSnapUpload] Error:", error);
       Alert.alert("Error", `Failed to send snap: ${String(error)}`);
@@ -374,6 +720,54 @@ export default function ChatScreen({
       setUploadingSnap(false);
     }
   };
+
+  // Phase 17: Handle scheduling a message
+  const handleScheduleMessage = async (scheduledFor: Date) => {
+    if (!uid || !chatId || !inputText.trim()) return;
+
+    const messageContent = inputText.trim();
+
+    try {
+      const result = await scheduleMessage({
+        senderId: uid,
+        recipientId: friendUid,
+        chatId,
+        content: messageContent,
+        type: "text",
+        scheduledFor,
+      });
+
+      if (result) {
+        setInputText(""); // Clear input
+        setScheduledMessages((prev) => [...prev, result]);
+        Alert.alert(
+          "Message Scheduled! ⏰",
+          `Your message will be sent ${scheduledFor.toLocaleString()}`,
+        );
+      } else {
+        Alert.alert("Error", "Failed to schedule message. Please try again.");
+      }
+    } catch (error) {
+      console.error("[ChatScreen] Error scheduling message:", error);
+      Alert.alert("Error", "Failed to schedule message.");
+    }
+  };
+
+  // Phase 17: Load scheduled messages for this chat
+  useEffect(() => {
+    const loadScheduledMessages = async () => {
+      if (!uid || !chatId) return;
+
+      try {
+        const scheduled = await getScheduledMessagesForChat(uid, chatId);
+        setScheduledMessages(scheduled);
+      } catch (error) {
+        console.error("[ChatScreen] Error loading scheduled messages:", error);
+      }
+    };
+
+    loadScheduledMessages();
+  }, [uid, chatId]);
 
   // Show photo options menu
   const showPhotoMenu = () => {
@@ -450,12 +844,45 @@ export default function ChatScreen({
   };
 
   if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator animating={true} size="large" />
-      </View>
-    );
+    return <LoadingState message="Loading chat..." />;
   }
+
+  // Helper to render message status indicator
+  const renderMessageStatus = (message: MessageWithProfile) => {
+    if (message.sender !== uid) return null; // Only show status for sent messages
+
+    switch (message.status) {
+      case "sending":
+        return (
+          <View style={styles.statusContainer}>
+            <ActivityIndicator size={10} color="#999" />
+          </View>
+        );
+      case "failed":
+        return (
+          <TouchableOpacity
+            style={styles.statusContainer}
+            onPress={() => handleRetryMessage(message)}
+          >
+            <Text style={styles.failedStatus}>⚠️ Tap to retry</Text>
+          </TouchableOpacity>
+        );
+      case "sent":
+        return (
+          <View style={styles.statusContainer}>
+            <Text style={styles.sentStatus}>✓</Text>
+          </View>
+        );
+      case "delivered":
+        return (
+          <View style={styles.statusContainer}>
+            <Text style={styles.deliveredStatus}>✓✓</Text>
+          </View>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior="padding">
@@ -468,57 +895,94 @@ export default function ChatScreen({
               message.sender === uid
                 ? styles.sentMessageContainer
                 : styles.receivedMessageContainer,
+              message.status === "failed" && styles.failedMessageContainer,
             ]}
           >
-            <Card
-              style={[
-                styles.messageBubble,
-                message.sender === uid
-                  ? styles.sentBubble
-                  : styles.receivedBubble,
-              ]}
-              onPress={() => {
-                // If image message, check if user is the receiver before allowing view
-                if (message.type === "image") {
-                  // Only allow receiver to open snaps, not the sender
-                  if (message.sender === uid) {
-                    console.log(
-                      "ℹ️  [ChatScreen] Sender cannot open their own snap",
-                    );
-                    Alert.alert(
-                      "Cannot Open",
-                      "You sent this snap. Only the receiver can open it.",
-                    );
+            {/* Show avatar for received messages */}
+            {message.sender !== uid && friendProfile && (
+              <AvatarMini
+                config={friendProfile.avatarConfig || { baseColor: "#6200EE" }}
+                size={32}
+              />
+            )}
+            <View style={styles.messageBubbleWrapper}>
+              <Card
+                style={[
+                  styles.messageBubble,
+                  message.sender === uid
+                    ? styles.sentBubble
+                    : styles.receivedBubble,
+                  message.status === "sending" && styles.sendingBubble,
+                  message.status === "failed" && styles.failedBubble,
+                ]}
+                onPress={() => {
+                  // If failed, allow retry on tap
+                  if (message.status === "failed") {
+                    handleRetryMessage(message);
                     return;
                   }
 
-                  // Receiver can open the snap
-                  console.log("🔵 [ChatScreen] Opening snap for receiver");
-                  navigation.navigate("SnapViewer", {
-                    messageId: message.id,
-                    chatId: chatId,
-                    storagePath: message.content,
-                  });
-                }
-              }}
-            >
-              <Card.Content style={styles.messageContent}>
-                {message.type === "image" ? (
-                  <Text style={{ fontSize: 24 }}>🔒</Text>
-                ) : (
-                  <Text
-                    style={[
-                      styles.messageText,
-                      message.sender === uid
-                        ? styles.sentText
-                        : styles.receivedText,
-                    ]}
-                  >
-                    {message.content}
-                  </Text>
-                )}
-              </Card.Content>
-            </Card>
+                  // If image message, check if user is the receiver before allowing view
+                  if (message.type === "image") {
+                    // Only allow receiver to open snaps, not the sender
+                    if (message.sender === uid) {
+                      console.log(
+                        "ℹ️  [ChatScreen] Sender cannot open their own snap",
+                      );
+                      Alert.alert(
+                        "Cannot Open",
+                        "You sent this snap. Only the receiver can open it.",
+                      );
+                      return;
+                    }
+
+                    // Receiver can open the snap
+                    console.log("🔵 [ChatScreen] Opening snap for receiver");
+                    navigation.navigate("SnapViewer", {
+                      messageId: message.id,
+                      chatId: chatId,
+                      storagePath: message.content,
+                    });
+                  }
+                }}
+              >
+                <Card.Content style={styles.messageContent}>
+                  {message.type === "image" ? (
+                    <Text style={{ fontSize: 24 }}>🔒</Text>
+                  ) : message.type === "scorecard" ? (
+                    (() => {
+                      const scorecard = parseScorecardContent(message.content);
+                      if (scorecard) {
+                        return (
+                          <ScorecardBubble
+                            scorecard={scorecard}
+                            isMine={message.sender === uid}
+                          />
+                        );
+                      }
+                      return (
+                        <Text style={styles.messageText}>
+                          [Invalid scorecard]
+                        </Text>
+                      );
+                    })()
+                  ) : (
+                    <Text
+                      style={[
+                        styles.messageText,
+                        message.sender === uid
+                          ? styles.sentText
+                          : styles.receivedText,
+                      ]}
+                    >
+                      {message.content}
+                    </Text>
+                  )}
+                </Card.Content>
+              </Card>
+              {/* Phase 12: Message status indicator */}
+              {renderMessageStatus(message)}
+            </View>
             <Text style={styles.timestamp}>
               {new Date(message.createdAt).toLocaleTimeString("en-US", {
                 hour: "2-digit",
@@ -528,16 +992,35 @@ export default function ChatScreen({
           </View>
         )}
         keyExtractor={(item) => item.id}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text variant="bodyLarge" style={styles.emptyText}>
-              No messages yet
-            </Text>
-            <Text variant="bodySmall" style={styles.emptySubtext}>
-              Start the conversation!
-            </Text>
-          </View>
+        {...LIST_PERFORMANCE_PROPS}
+        ListHeaderComponent={
+          // Phase 12: Load older messages button
+          hasMoreMessages ? (
+            <TouchableOpacity
+              style={styles.loadMoreContainer}
+              onPress={handleLoadOlderMessages}
+              disabled={loadingOlder}
+            >
+              {loadingOlder ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Text
+                  style={[styles.loadMoreText, { color: theme.colors.primary }]}
+                >
+                  Load older messages
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : null
         }
+        ListEmptyComponent={
+          <EmptyState
+            icon="chat-outline"
+            title="No messages yet"
+            subtitle="Send a message or snap to start the conversation!"
+          />
+        }
+        inverted={false}
       />
 
       <View style={styles.inputContainer}>
@@ -556,6 +1039,14 @@ export default function ChatScreen({
           maxLength={500}
           editable={!sendingLoading && !uploadingSnap}
         />
+        {/* Phase 17: Schedule Message Button */}
+        <IconButton
+          icon="clock-outline"
+          size={22}
+          onPress={() => setScheduleModalVisible(true)}
+          disabled={!inputText.trim() || sendingLoading || uploadingSnap}
+          style={styles.scheduleButton}
+        />
         <Button
           mode="contained"
           onPress={handleSendMessage}
@@ -567,6 +1058,30 @@ export default function ChatScreen({
           Send
         </Button>
       </View>
+
+      {/* Block User Modal */}
+      <BlockUserModal
+        visible={blockModalVisible}
+        username={friendProfile?.username || "User"}
+        onCancel={() => setBlockModalVisible(false)}
+        onConfirm={handleBlockConfirm}
+      />
+
+      {/* Report User Modal */}
+      <ReportUserModal
+        visible={reportModalVisible}
+        username={friendProfile?.username || "User"}
+        onSubmit={handleReportSubmit}
+        onCancel={() => setReportModalVisible(false)}
+      />
+
+      {/* Phase 17: Schedule Message Modal */}
+      <ScheduleMessageModal
+        visible={scheduleModalVisible}
+        messagePreview={inputText}
+        onSchedule={handleScheduleMessage}
+        onClose={() => setScheduleModalVisible(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -574,7 +1089,7 @@ export default function ChatScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    // backgroundColor applied inline via theme
   },
 
   centerContainer: {
@@ -584,10 +1099,12 @@ const styles = StyleSheet.create({
   },
 
   messageContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xs,
     flexDirection: "row",
-    marginVertical: 4,
+    marginVertical: Spacing.xs,
+    alignItems: "flex-end",
+    gap: Spacing.sm,
   },
 
   sentMessageContainer: {
@@ -604,16 +1121,16 @@ const styles = StyleSheet.create({
   },
 
   sentBubble: {
-    backgroundColor: "#0084FF",
+    // backgroundColor applied inline via theme.colors.primary
   },
 
   receivedBubble: {
-    backgroundColor: "#E5E5EA",
+    // backgroundColor applied inline via theme.colors.surfaceVariant
   },
 
   messageContent: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
 
   messageText: {
@@ -622,41 +1139,39 @@ const styles = StyleSheet.create({
   },
 
   sentText: {
-    color: "#fff",
+    // color applied inline via theme.colors.onPrimary
   },
 
   receivedText: {
-    color: "#000",
+    // color applied inline via theme.colors.onSurface
   },
 
   timestamp: {
     fontSize: 12,
-    color: "#999",
-    marginTop: 4,
-    marginHorizontal: 8,
+    marginTop: Spacing.xs,
+    marginHorizontal: Spacing.sm,
+    // color applied inline via theme
   },
 
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#fff",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: "#e0e0e0",
-    gap: 8,
+    gap: Spacing.sm,
+    // backgroundColor and borderTopColor applied inline via theme
   },
 
   textInput: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 20,
-    paddingHorizontal: 16,
+    borderRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: 10,
     maxHeight: 100,
     fontSize: 14,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
+    // backgroundColor and borderColor applied inline via theme
   },
 
   sendButton: {
@@ -667,18 +1182,76 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  scheduleButton: {
+    margin: 0,
+    marginBottom: 2,
+  },
+
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 48,
+    paddingVertical: Spacing.xxxl,
   },
 
   emptyText: {
     fontWeight: "500",
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
 
   emptySubtext: {
-    color: "#999",
+    // color applied inline via theme
+  },
+
+  // Phase 12: Message status styles
+  messageBubbleWrapper: {
+    flexDirection: "column",
+    alignItems: "flex-end",
+    maxWidth: "80%",
+  },
+
+  statusContainer: {
+    marginTop: 2,
+    paddingHorizontal: Spacing.xs,
+  },
+
+  sentStatus: {
+    fontSize: 10,
+    // color applied inline via theme
+  },
+
+  deliveredStatus: {
+    fontSize: 10,
+    // color applied inline via theme.colors.primary
+  },
+
+  failedStatus: {
+    fontSize: 10,
+    // color applied inline via theme.colors.error
+  },
+
+  sendingBubble: {
+    opacity: 0.7,
+  },
+
+  failedBubble: {
+    borderWidth: 1,
+    // backgroundColor and borderColor applied inline via theme.colors.errorContainer
+  },
+
+  failedMessageContainer: {
+    opacity: 0.8,
+  },
+
+  // Phase 12: Load more styles
+  loadMoreContainer: {
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: "500",
+    // color applied inline via theme.colors.primary
   },
 });

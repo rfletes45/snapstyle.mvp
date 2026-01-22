@@ -41,7 +41,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewMessage = void 0;
+exports.seedShopCatalog = exports.purchaseWithTokens = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewMessage = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 // Initialize Firebase Admin SDK
@@ -141,36 +141,52 @@ exports.onNewMessage = functions.firestore
         console.error("❌ Error in onNewMessage:", error);
     }
 });
-/**
- * Update streak when a message is sent
- */
 async function updateStreakOnMessage(senderId, recipientId) {
     try {
-        // Find the friendship document
+        console.log("🔵 [updateStreakOnMessage] Starting streak update", {
+            senderId,
+            recipientId,
+        });
+        // Find the friendship document using array-contains
+        // Since Friends documents have a "users" array with both UIDs,
+        // we query for documents containing the sender, then filter client-side
         const friendsRef = db.collection("Friends");
-        const q1 = await friendsRef
-            .where("users", "==", [senderId, recipientId])
+        const querySnapshot = await friendsRef
+            .where("users", "array-contains", senderId)
             .get();
-        const q2 = await friendsRef
-            .where("users", "==", [recipientId, senderId])
-            .get();
-        let friendDoc = q1.docs[0] || q2.docs[0];
+        // Find the friendship that includes both users
+        let friendDoc = querySnapshot.docs.find((doc) => {
+            const users = doc.data().users;
+            return users.includes(recipientId);
+        });
         if (!friendDoc) {
-            console.log("Friendship not found for streak update");
+            console.log("❌ [updateStreakOnMessage] Friendship not found");
             return;
         }
+        console.log("✅ [updateStreakOnMessage] Found friendship:", friendDoc.id);
         const data = friendDoc.data();
         const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
         const [uid1, uid2] = data.users;
         const isUser1 = senderId === uid1;
         const lastSentField = isUser1 ? "lastSentDay_uid1" : "lastSentDay_uid2";
-        const otherLastSentField = isUser1 ? "lastSentDay_uid2" : "lastSentDay_uid1";
+        const otherLastSentField = isUser1
+            ? "lastSentDay_uid2"
+            : "lastSentDay_uid1";
         const currentLastSent = data[lastSentField] || "";
         const otherLastSent = data[otherLastSentField] || "";
         const streakUpdatedDay = data.streakUpdatedDay || "";
         let streakCount = data.streakCount || 0;
+        console.log("🔵 [updateStreakOnMessage] Current state:", {
+            today,
+            isUser1,
+            currentLastSent,
+            otherLastSent,
+            streakUpdatedDay,
+            streakCount,
+        });
         // If user already sent today, no update needed
         if (currentLastSent === today) {
+            console.log("⏭️ [updateStreakOnMessage] User already sent today, skipping");
             return;
         }
         const updates = {
@@ -178,26 +194,36 @@ async function updateStreakOnMessage(senderId, recipientId) {
         };
         // Check if this completes today's streak requirement
         const otherSentToday = otherLastSent === today;
+        console.log("🔵 [updateStreakOnMessage] Checking streak conditions:", {
+            otherSentToday,
+            streakUpdatedDayNotToday: streakUpdatedDay !== today,
+        });
         if (otherSentToday && streakUpdatedDay !== today) {
-            // Both users have now sent today - check if streak continues
-            const lastUpdate = new Date(streakUpdatedDay || "2000-01-01");
-            const todayDate = new Date(today);
-            const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
-            if (daysDiff <= 1) {
-                // Streak continues
-                streakCount += 1;
+            // Both users have now sent today - update streak
+            if (!streakUpdatedDay) {
+                // First streak ever - start at 1
+                streakCount = 1;
+                console.log("🆕 [updateStreakOnMessage] First streak started:", streakCount);
             }
             else {
-                // Streak broken, start fresh
-                streakCount = 1;
+                // Check if streak continues from yesterday
+                const lastUpdate = new Date(streakUpdatedDay);
+                const todayDate = new Date(today);
+                const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
+                console.log("🔵 [updateStreakOnMessage] Days since last update:", daysDiff);
+                if (daysDiff <= 1) {
+                    // Streak continues (today or yesterday)
+                    streakCount += 1;
+                    console.log("🔥 [updateStreakOnMessage] Streak continues:", streakCount);
+                }
+                else {
+                    // Streak broken, start fresh
+                    streakCount = 1;
+                    console.log("💔➡️🆕 [updateStreakOnMessage] Streak broken, restarting:", streakCount);
+                }
             }
             updates.streakCount = streakCount;
             updates.streakUpdatedDay = today;
-            // Check for milestone and send notification
-            const milestones = [3, 7, 14, 30, 50, 100, 365];
-            if (milestones.includes(streakCount)) {
-                await sendStreakMilestoneNotification(senderId, recipientId, streakCount);
-            }
         }
         else if (!otherSentToday) {
             // Check if streak needs reset
@@ -205,14 +231,36 @@ async function updateStreakOnMessage(senderId, recipientId) {
             const todayDate = new Date(today);
             const daysDiff = Math.floor((todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
             if (daysDiff > 1 && streakCount > 0) {
+                console.log("💔 [updateStreakOnMessage] Streak broken, resetting");
                 updates.streakCount = 0;
             }
+            else {
+                console.log("⏳ [updateStreakOnMessage] Waiting for other user to send");
+            }
         }
+        console.log("🔵 [updateStreakOnMessage] Applying updates:", updates);
         await friendDoc.ref.update(updates);
-        console.log("✅ Streak updated for friendship:", friendDoc.id);
+        console.log("✅ [updateStreakOnMessage] Streak updated for friendship:", friendDoc.id);
+        // Check for milestone and award cosmetics
+        if (updates.streakCount) {
+            const milestones = [3, 7, 14, 30, 50, 100, 365];
+            console.log("🔵 [updateStreakOnMessage] Checking milestone:", updates.streakCount, "Valid milestones:", milestones);
+            if (milestones.includes(updates.streakCount)) {
+                console.log("🎉 [updateStreakOnMessage] MILESTONE REACHED!", updates.streakCount, "days");
+                // Send notifications and award cosmetics
+                await sendStreakMilestoneNotification(senderId, recipientId, updates.streakCount);
+                // Grant cosmetic rewards to both users
+                await grantMilestoneCosmetic(senderId, updates.streakCount);
+                await grantMilestoneCosmetic(recipientId, updates.streakCount);
+                console.log("✅ [updateStreakOnMessage] Milestone rewards granted!");
+            }
+            else {
+                console.log("ℹ️ [updateStreakOnMessage] Not a milestone day. Next milestone:", milestones.find((m) => m > updates.streakCount) || "none");
+            }
+        }
     }
     catch (error) {
-        console.error("❌ Error updating streak:", error);
+        console.error("❌ [updateStreakOnMessage] Error:", error);
     }
 }
 /**
@@ -241,6 +289,77 @@ async function sendStreakMilestoneNotification(user1Id, user2Id, milestone) {
                 sound: "default",
             });
         }
+    }
+}
+// ============================================
+// COSMETICS REWARDS
+// ============================================
+/**
+ * Mapping of streak milestones to cosmetic item IDs
+ */
+const MILESTONE_COSMETICS = {
+    3: "hat_flame",
+    7: "glasses_cool",
+    14: "bg_gradient",
+    30: "hat_crown",
+    50: "glasses_star",
+    100: "bg_rainbow",
+    365: "hat_legendary",
+};
+/**
+ * Cosmetic item names for notifications
+ */
+const COSMETIC_NAMES = {
+    hat_flame: "Flame Cap 🔥",
+    glasses_cool: "Cool Shades 😎",
+    bg_gradient: "Gradient Glow ✨",
+    hat_crown: "Golden Crown 👑",
+    glasses_star: "Star Glasses 🤩",
+    bg_rainbow: "Rainbow Burst 🌈",
+    hat_legendary: "Legendary Halo 😇",
+};
+/**
+ * Grant a cosmetic item to a user when they reach a streak milestone
+ */
+async function grantMilestoneCosmetic(userId, milestone) {
+    try {
+        const itemId = MILESTONE_COSMETICS[milestone];
+        if (!itemId) {
+            console.log(`No cosmetic reward for milestone ${milestone}`);
+            return;
+        }
+        // Check if user already has this item
+        const inventoryRef = db
+            .collection("Users")
+            .doc(userId)
+            .collection("inventory")
+            .doc(itemId);
+        const existingItem = await inventoryRef.get();
+        if (existingItem.exists) {
+            console.log(`User ${userId} already has item ${itemId}`);
+            return;
+        }
+        // Grant the item
+        await inventoryRef.set({
+            itemId,
+            acquiredAt: Date.now(),
+        });
+        console.log(`🎁 Granted ${itemId} to user ${userId} for ${milestone}-day streak`);
+        // Send notification about new cosmetic
+        const itemName = COSMETIC_NAMES[itemId] || itemId;
+        const pushToken = await getUserPushToken(userId);
+        if (pushToken) {
+            await sendExpoPushNotification({
+                to: pushToken,
+                title: "New Cosmetic Unlocked! 🎁",
+                body: `You earned ${itemName} for your ${milestone}-day streak!`,
+                data: { type: "cosmetic_unlock", itemId, milestone },
+                sound: "default",
+            });
+        }
+    }
+    catch (error) {
+        console.error(`❌ Error granting cosmetic to ${userId}:`, error);
     }
 }
 /**
@@ -334,9 +453,7 @@ exports.streakReminder = functions.pubsub
         const today = new Date().toISOString().split("T")[0];
         // Find all friendships with active streaks
         const friendsRef = db.collection("Friends");
-        const activeStreaks = await friendsRef
-            .where("streakCount", ">", 0)
-            .get();
+        const activeStreaks = await friendsRef.where("streakCount", ">", 0).get();
         console.log(`Checking ${activeStreaks.docs.length} active streaks`);
         for (const doc of activeStreaks.docs) {
             const data = doc.data();
@@ -513,5 +630,1293 @@ exports.cleanupExpiredStories = functions.pubsub
         console.error("❌ Error in cleanupExpiredStories:", error);
         throw error;
     }
+});
+// ============================================
+// PHASE 17: SCHEDULED MESSAGES
+// ============================================
+/**
+ * processScheduledMessages: Runs every minute to check for scheduled messages
+ * that are due to be sent and delivers them.
+ */
+exports.processScheduledMessages = functions.pubsub
+    .schedule("every 1 minutes")
+    .timeZone("UTC")
+    .onRun(async () => {
+    try {
+        const now = admin.firestore.Timestamp.now();
+        console.log(`🕐 [ScheduledMessages] Processing at ${now.toDate().toISOString()}`);
+        console.log(`🕐 [ScheduledMessages] Current timestamp (ms): ${now.toMillis()}`);
+        // Query pending messages that are due (scheduledFor <= now)
+        const scheduledRef = db.collection("ScheduledMessages");
+        // First, let's check all pending messages to debug
+        const allPending = await scheduledRef
+            .where("status", "==", "pending")
+            .get();
+        console.log(`🔍 [ScheduledMessages] Total pending messages: ${allPending.docs.length}`);
+        if (allPending.docs.length > 0) {
+            allPending.docs.forEach((doc) => {
+                const data = doc.data();
+                const scheduledFor = data.scheduledFor;
+                console.log(`🔍 [ScheduledMessages] Pending message ${doc.id}:`, {
+                    scheduledFor: scheduledFor?.toDate?.()?.toISOString() || scheduledFor,
+                    scheduledForMs: scheduledFor?.toMillis?.() || scheduledFor,
+                    nowMs: now.toMillis(),
+                    isDue: scheduledFor?.toMillis?.() <= now.toMillis(),
+                });
+            });
+        }
+        const dueMessages = await scheduledRef
+            .where("status", "==", "pending")
+            .where("scheduledFor", "<=", now)
+            .limit(100) // Process up to 100 messages per run
+            .get();
+        console.log(`📬 Found ${dueMessages.docs.length} scheduled messages to deliver`);
+        let sentCount = 0;
+        let failedCount = 0;
+        for (const doc of dueMessages.docs) {
+            const scheduledMessage = doc.data();
+            const messageId = doc.id;
+            try {
+                // Get the chat to verify it still exists
+                const chatDoc = await db
+                    .collection("Chats")
+                    .doc(scheduledMessage.chatId)
+                    .get();
+                if (!chatDoc.exists) {
+                    // Chat no longer exists, mark as failed
+                    await doc.ref.update({
+                        status: "failed",
+                        failReason: "Chat no longer exists",
+                    });
+                    failedCount++;
+                    console.log(`❌ Chat not found for scheduled message ${messageId}`);
+                    continue;
+                }
+                // Create the actual message in the chat
+                const newMessageRef = db
+                    .collection("Chats")
+                    .doc(scheduledMessage.chatId)
+                    .collection("Messages")
+                    .doc();
+                // Calculate expiry time (24 hours for text, 5 seconds for images)
+                const expiryMs = scheduledMessage.type === "image"
+                    ? 5 * 1000 // 5 seconds for snaps
+                    : 24 * 60 * 60 * 1000; // 24 hours for text
+                const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + expiryMs);
+                const messageData = {
+                    id: newMessageRef.id,
+                    sender: scheduledMessage.senderId,
+                    content: scheduledMessage.content,
+                    type: scheduledMessage.type,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    expiresAt: expiresAt,
+                    read: false,
+                };
+                // If it's an image message, include the image URL
+                if (scheduledMessage.type === "image" && scheduledMessage.imageUrl) {
+                    messageData.imageUrl = scheduledMessage.imageUrl;
+                }
+                // Create the message
+                await newMessageRef.set(messageData);
+                // Update the chat's lastMessage
+                await db
+                    .collection("Chats")
+                    .doc(scheduledMessage.chatId)
+                    .update({
+                    lastMessage: scheduledMessage.type === "image"
+                        ? "📸 Snap"
+                        : scheduledMessage.content,
+                    lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                // Mark scheduled message as sent
+                await doc.ref.update({
+                    status: "sent",
+                    sentAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                sentCount++;
+                console.log(`✅ Delivered scheduled message ${messageId} to chat ${scheduledMessage.chatId}`);
+            }
+            catch (error) {
+                // Mark as failed with reason
+                await doc.ref.update({
+                    status: "failed",
+                    failReason: error.message || "Unknown error",
+                });
+                failedCount++;
+                console.error(`❌ Failed to deliver scheduled message ${messageId}:`, error);
+            }
+        }
+        console.log(`✅ Scheduled messages processing complete: ${sentCount} sent, ${failedCount} failed`);
+        return;
+    }
+    catch (error) {
+        console.error("❌ Error in processScheduledMessages:", error);
+        throw error;
+    }
+});
+/**
+ * onScheduledMessageCreated: Triggered when a new scheduled message is created
+ * Can be used for additional validation or logging
+ */
+exports.onScheduledMessageCreated = functions.firestore
+    .document("ScheduledMessages/{messageId}")
+    .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const { messageId } = context.params;
+    console.log(`📅 New scheduled message created: ${messageId}`);
+    console.log(`   Sender: ${message.senderId}`);
+    console.log(`   Chat: ${message.chatId}`);
+    console.log(`   Scheduled for: ${message.scheduledFor?.toDate?.()?.toISOString() || "unknown"}`);
+    return;
+});
+/**
+ * cleanupOldScheduledMessages: Runs daily to clean up old sent/cancelled/failed messages
+ * Keeps scheduled messages for 30 days after they've been processed
+ */
+exports.cleanupOldScheduledMessages = functions.pubsub
+    .schedule("0 3 * * *") // 3 AM UTC daily
+    .timeZone("UTC")
+    .onRun(async () => {
+    try {
+        // Calculate 30 days ago
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const cutoffTimestamp = admin.firestore.Timestamp.fromDate(thirtyDaysAgo);
+        console.log(`🧹 Cleaning up scheduled messages older than ${thirtyDaysAgo.toISOString()}`);
+        const scheduledRef = db.collection("ScheduledMessages");
+        // Delete old sent messages
+        const oldSent = await scheduledRef
+            .where("status", "==", "sent")
+            .where("sentAt", "<", cutoffTimestamp)
+            .limit(500)
+            .get();
+        // Delete old cancelled messages
+        const oldCancelled = await scheduledRef
+            .where("status", "==", "cancelled")
+            .where("createdAt", "<", cutoffTimestamp)
+            .limit(500)
+            .get();
+        // Delete old failed messages
+        const oldFailed = await scheduledRef
+            .where("status", "==", "failed")
+            .where("createdAt", "<", cutoffTimestamp)
+            .limit(500)
+            .get();
+        const allDocs = [
+            ...oldSent.docs,
+            ...oldCancelled.docs,
+            ...oldFailed.docs,
+        ];
+        console.log(`Found ${allDocs.length} old scheduled messages to clean up`);
+        let deletedCount = 0;
+        for (const doc of allDocs) {
+            await doc.ref.delete();
+            deletedCount++;
+        }
+        console.log(`✅ Scheduled message cleanup complete: ${deletedCount} messages removed`);
+        return;
+    }
+    catch (error) {
+        console.error("❌ Error in cleanupOldScheduledMessages:", error);
+        throw error;
+    }
+});
+// ============================================
+// PHASE 17: LEADERBOARDS + ACHIEVEMENTS
+// ============================================
+/**
+ * Helper: Get current ISO week key (e.g., "2026-W03")
+ */
+function getCurrentWeekKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const oneJan = new Date(year, 0, 1);
+    const days = Math.floor((now.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNum = Math.ceil((days + oneJan.getDay() + 1) / 7);
+    return `${year}-W${String(weekNum).padStart(2, "0")}`;
+}
+/**
+ * Helper: Validate game score bounds (anti-cheat)
+ */
+function isValidScore(gameId, score) {
+    if (gameId === "reaction_tap") {
+        // Reaction time: 100ms - 2000ms is valid
+        if (score < 100) {
+            return {
+                valid: false,
+                reason: "Reaction time too fast (likely cheating)",
+            };
+        }
+        if (score > 2000) {
+            return { valid: false, reason: "Reaction time too slow" };
+        }
+    }
+    else if (gameId === "timed_tap") {
+        // Taps in 10 seconds: 1 - 200 is valid
+        if (score < 1) {
+            return { valid: false, reason: "Invalid tap count" };
+        }
+        if (score > 200) {
+            return { valid: false, reason: "Tap count too high (likely cheating)" };
+        }
+    }
+    else {
+        return { valid: false, reason: "Unknown game type" };
+    }
+    return { valid: true };
+}
+/**
+ * onGameSessionCreated: Triggered when a new game session is recorded
+ * Updates leaderboard and checks for achievements
+ */
+exports.onGameSessionCreated = functions.firestore
+    .document("GameSessions/{sessionId}")
+    .onCreate(async (snap, context) => {
+    const session = snap.data();
+    const { sessionId } = context.params;
+    try {
+        console.log(`🎮 New game session: ${sessionId}`);
+        console.log(`   Player: ${session.playerId}`);
+        console.log(`   Game: ${session.gameId}`);
+        console.log(`   Score: ${session.score}`);
+        // Validate score
+        const validation = isValidScore(session.gameId, session.score);
+        if (!validation.valid) {
+            console.log(`❌ Invalid score: ${validation.reason}`);
+            // Mark session as invalid but don't delete (for review)
+            await snap.ref.update({
+                invalid: true,
+                invalidReason: validation.reason,
+            });
+            return;
+        }
+        // Get player info
+        const playerDoc = await db
+            .collection("Users")
+            .doc(session.playerId)
+            .get();
+        if (!playerDoc.exists) {
+            console.log("❌ Player not found");
+            return;
+        }
+        const player = playerDoc.data();
+        // Update weekly leaderboard
+        const weekKey = getCurrentWeekKey();
+        const leaderboardId = `${session.gameId}_${weekKey}`;
+        const entryRef = db
+            .collection("Leaderboards")
+            .doc(leaderboardId)
+            .collection("Entries")
+            .doc(session.playerId);
+        const existingEntry = await entryRef.get();
+        let shouldUpdate = true;
+        if (existingEntry.exists) {
+            const existingScore = existingEntry.data().score;
+            // For reaction_tap: lower is better
+            // For timed_tap: higher is better
+            if (session.gameId === "reaction_tap") {
+                shouldUpdate = session.score < existingScore;
+            }
+            else {
+                shouldUpdate = session.score > existingScore;
+            }
+        }
+        if (shouldUpdate) {
+            await entryRef.set({
+                uid: session.playerId,
+                displayName: player.displayName,
+                avatarConfig: player.avatarConfig,
+                score: session.score,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            console.log(`✅ Updated leaderboard entry for ${session.playerId}`);
+        }
+        else {
+            console.log("⏭️ Score not better than existing, skipping leaderboard update");
+        }
+        // Check for achievements
+        await checkGameAchievements(session.playerId, session.gameId, session.score);
+        return;
+    }
+    catch (error) {
+        console.error("❌ Error in onGameSessionCreated:", error);
+    }
+});
+/**
+ * Helper: Check and grant game achievements
+ */
+async function checkGameAchievements(playerId, gameId, score) {
+    try {
+        // Count total game sessions for this player
+        const sessionsQuery = await db
+            .collection("GameSessions")
+            .where("playerId", "==", playerId)
+            .get();
+        const totalGames = sessionsQuery.size;
+        const achievementsRef = db
+            .collection("Users")
+            .doc(playerId)
+            .collection("Achievements");
+        // First game achievement
+        if (totalGames === 1) {
+            await grantAchievementIfNotEarned(achievementsRef, "game_first_play", {
+                gameId,
+            });
+        }
+        // Session count achievements
+        if (totalGames >= 10) {
+            await grantAchievementIfNotEarned(achievementsRef, "game_10_sessions");
+        }
+        if (totalGames >= 50) {
+            await grantAchievementIfNotEarned(achievementsRef, "game_50_sessions");
+        }
+        // Game-specific achievements
+        if (gameId === "reaction_tap" && score < 200) {
+            await grantAchievementIfNotEarned(achievementsRef, "game_reaction_master", {
+                score,
+                gameId,
+            });
+        }
+        if (gameId === "timed_tap" && score >= 100) {
+            await grantAchievementIfNotEarned(achievementsRef, "game_speed_demon", {
+                score,
+                gameId,
+            });
+        }
+    }
+    catch (error) {
+        console.error("❌ Error checking game achievements:", error);
+    }
+}
+/**
+ * Helper: Grant achievement if not already earned
+ */
+async function grantAchievementIfNotEarned(achievementsRef, achievementType, meta) {
+    const achievementRef = achievementsRef.doc(achievementType);
+    const existing = await achievementRef.get();
+    if (existing.exists) {
+        console.log(`⏭️ Achievement ${achievementType} already earned`);
+        return false;
+    }
+    await achievementRef.set({
+        type: achievementType,
+        earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(meta && { meta }),
+    });
+    console.log(`🏆 Granted achievement: ${achievementType}`);
+    return true;
+}
+/**
+ * onStreakUpdated: Check for streak achievements when streak changes
+ * This extends the existing streak update logic
+ */
+exports.onStreakAchievementCheck = functions.firestore
+    .document("Friends/{friendId}")
+    .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    // Only check if streakCount increased
+    if (after.streakCount <= before.streakCount) {
+        return;
+    }
+    const streakCount = after.streakCount;
+    const users = after.users;
+    console.log(`🔥 Streak updated to ${streakCount} between ${users.join(" and ")}`);
+    // Check streak achievements for both users
+    const thresholds = [
+        [3, "streak_3_days"],
+        [7, "streak_7_days"],
+        [30, "streak_30_days"],
+        [100, "streak_100_days"],
+    ];
+    for (const userId of users) {
+        const achievementsRef = db
+            .collection("Users")
+            .doc(userId)
+            .collection("Achievements");
+        for (const [threshold, achievementType] of thresholds) {
+            if (streakCount >= threshold) {
+                await grantAchievementIfNotEarned(achievementsRef, achievementType, {
+                    streakCount,
+                });
+            }
+        }
+    }
+});
+/**
+ * Weekly leaderboard reset notification (optional)
+ * Runs Monday at 00:00 UTC to notify top players from previous week
+ */
+exports.weeklyLeaderboardReset = functions.pubsub
+    .schedule("0 0 * * 1") // Every Monday at 00:00 UTC
+    .timeZone("UTC")
+    .onRun(async () => {
+    console.log("🏆 Weekly leaderboard reset - new week started");
+    // This function can be extended to:
+    // - Send notifications to top players
+    // - Archive previous week's results
+    // - Generate weekly summary stats
+    return;
+});
+// ============================================
+// PHASE 18: ECONOMY + WALLET + TASKS
+// ============================================
+/** Default starting tokens for new users */
+const DEFAULT_STARTING_TOKENS = 100;
+/** Default timezone for day calculations */
+const DEFAULT_TIMEZONE = "America/Indiana/Indianapolis";
+/**
+ * Helper to get current day key in timezone
+ */
+function getCurrentDayKey(timezone = DEFAULT_TIMEZONE) {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
+    return formatter.format(now);
+}
+/**
+ * Initialize wallet when new user is created
+ * Grants starting tokens to new users
+ */
+exports.onUserCreated = functions.firestore
+    .document("Users/{uid}")
+    .onCreate(async (snap, context) => {
+    const { uid } = context.params;
+    const userData = snap.data();
+    console.log(`👤 New user created: ${uid} (${userData.displayName})`);
+    try {
+        // Create wallet with starting balance
+        const walletRef = db.collection("Wallets").doc(uid);
+        const walletDoc = await walletRef.get();
+        if (!walletDoc.exists) {
+            await walletRef.set({
+                uid,
+                tokensBalance: DEFAULT_STARTING_TOKENS,
+                totalEarned: DEFAULT_STARTING_TOKENS,
+                totalSpent: 0,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            // Create transaction record for starting bonus
+            await db.collection("Transactions").add({
+                uid,
+                type: "earn",
+                amount: DEFAULT_STARTING_TOKENS,
+                reason: "daily_bonus",
+                description: "Welcome bonus!",
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            console.log(`💰 Created wallet for ${uid} with ${DEFAULT_STARTING_TOKENS} starting tokens`);
+        }
+    }
+    catch (error) {
+        console.error(`❌ Error creating wallet for ${uid}:`, error);
+    }
+});
+/**
+ * claimTaskReward: Callable function to claim reward for completed task
+ * Validates completion, prevents double claims, awards tokens atomically
+ */
+exports.claimTaskReward = functions.https.onCall(async (data, context) => {
+    // Verify authentication
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");
+    }
+    const uid = context.auth.uid;
+    const { taskId, dayKey } = data;
+    if (!taskId || typeof taskId !== "string") {
+        throw new functions.https.HttpsError("invalid-argument", "taskId is required");
+    }
+    if (!dayKey || typeof dayKey !== "string") {
+        throw new functions.https.HttpsError("invalid-argument", "dayKey is required");
+    }
+    console.log(`🎯 [claimTaskReward] User ${uid} claiming task ${taskId} for day ${dayKey}`);
+    try {
+        // Get task definition
+        const taskRef = db.collection("Tasks").doc(taskId);
+        const taskDoc = await taskRef.get();
+        if (!taskDoc.exists) {
+            throw new functions.https.HttpsError("not-found", "Task not found");
+        }
+        const task = taskDoc.data();
+        if (!task.active) {
+            throw new functions.https.HttpsError("failed-precondition", "Task is not active");
+        }
+        // Check availability window
+        const now = Date.now();
+        if (task.availableFrom && now < task.availableFrom.toMillis()) {
+            throw new functions.https.HttpsError("failed-precondition", "Task not yet available");
+        }
+        if (task.availableTo && now > task.availableTo.toMillis()) {
+            throw new functions.https.HttpsError("failed-precondition", "Task has expired");
+        }
+        // Get user's progress for this task
+        const progressRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("TaskProgress")
+            .doc(taskId);
+        const progressDoc = await progressRef.get();
+        if (!progressDoc.exists) {
+            throw new functions.https.HttpsError("failed-precondition", "No progress found for this task");
+        }
+        const progress = progressDoc.data();
+        // Verify dayKey matches (for daily tasks)
+        if (task.cadence === "daily" && progress.dayKey !== dayKey) {
+            throw new functions.https.HttpsError("failed-precondition", "Progress is from a different day");
+        }
+        // Check if already claimed
+        if (progress.claimed) {
+            throw new functions.https.HttpsError("already-exists", "Reward already claimed");
+        }
+        // Check if task is completed
+        if (progress.progress < task.target) {
+            throw new functions.https.HttpsError("failed-precondition", `Task not completed: ${progress.progress}/${task.target}`);
+        }
+        // All checks passed - award reward atomically
+        const batch = db.batch();
+        // 1. Mark progress as claimed
+        batch.update(progressRef, {
+            claimed: true,
+            claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // 2. Award tokens
+        const tokensAwarded = task.rewardTokens || 0;
+        if (tokensAwarded > 0) {
+            const walletRef = db.collection("Wallets").doc(uid);
+            batch.update(walletRef, {
+                tokensBalance: admin.firestore.FieldValue.increment(tokensAwarded),
+                totalEarned: admin.firestore.FieldValue.increment(tokensAwarded),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            // Create transaction record
+            const txRef = db.collection("Transactions").doc();
+            batch.set(txRef, {
+                uid,
+                type: "earn",
+                amount: tokensAwarded,
+                reason: "task_reward",
+                refId: taskId,
+                refType: "task",
+                description: task.title,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        }
+        // 3. Award cosmetic item if specified
+        let itemAwarded;
+        if (task.rewardItemId) {
+            const inventoryRef = db
+                .collection("Users")
+                .doc(uid)
+                .collection("inventory")
+                .doc(task.rewardItemId);
+            // Check if user already has this item
+            const existingItem = await inventoryRef.get();
+            if (!existingItem.exists) {
+                batch.set(inventoryRef, {
+                    itemId: task.rewardItemId,
+                    acquiredAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                itemAwarded = task.rewardItemId;
+            }
+        }
+        await batch.commit();
+        console.log(`✅ [claimTaskReward] Awarded ${tokensAwarded} tokens to ${uid} for completing ${taskId}`);
+        return {
+            success: true,
+            tokensAwarded,
+            itemAwarded,
+        };
+    }
+    catch (error) {
+        console.error(`❌ [claimTaskReward] Error:`, error);
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        throw new functions.https.HttpsError("internal", error.message || "Failed to claim reward");
+    }
+});
+/**
+ * Helper to update task progress atomically
+ */
+async function updateTaskProgress(uid, taskType, incrementBy = 1) {
+    const dayKey = getCurrentDayKey();
+    // Find active tasks of this type
+    const tasksRef = db.collection("Tasks");
+    const tasksQuery = await tasksRef
+        .where("active", "==", true)
+        .where("type", "==", taskType)
+        .get();
+    if (tasksQuery.empty) {
+        return;
+    }
+    const batch = db.batch();
+    for (const taskDoc of tasksQuery.docs) {
+        const task = taskDoc.data();
+        const taskId = taskDoc.id;
+        // Get or create progress document
+        const progressRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("TaskProgress")
+            .doc(taskId);
+        const progressDoc = await progressRef.get();
+        if (!progressDoc.exists) {
+            // Create new progress
+            batch.set(progressRef, {
+                taskId,
+                progress: incrementBy,
+                claimed: false,
+                dayKey,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        }
+        else {
+            const progress = progressDoc.data();
+            // For daily tasks, reset if it's a new day
+            if (task.cadence === "daily" && progress.dayKey !== dayKey) {
+                batch.set(progressRef, {
+                    taskId,
+                    progress: incrementBy,
+                    claimed: false,
+                    dayKey,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
+            else if (!progress.claimed) {
+                // Increment existing progress (only if not already claimed)
+                batch.update(progressRef, {
+                    progress: admin.firestore.FieldValue.increment(incrementBy),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
+        }
+    }
+    await batch.commit();
+    console.log(`📈 [updateTaskProgress] Updated ${taskType} progress for ${uid}`);
+}
+/**
+ * Update task progress when message is sent
+ */
+exports.onMessageSentTaskProgress = functions.firestore
+    .document("Chats/{chatId}/Messages/{messageId}")
+    .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const senderId = message.sender;
+    try {
+        // Update "send_message" tasks
+        await updateTaskProgress(senderId, "send_message");
+        // If it's an image message, also update "send_snap" tasks
+        if (message.type === "image") {
+            await updateTaskProgress(senderId, "send_snap");
+        }
+    }
+    catch (error) {
+        console.error("❌ [onMessageSentTaskProgress] Error:", error);
+    }
+});
+/**
+ * Update task progress when story is viewed
+ */
+exports.onStoryViewedTaskProgress = functions.firestore
+    .document("stories/{storyId}/views/{userId}")
+    .onCreate(async (snap, context) => {
+    const { userId } = context.params;
+    try {
+        // Update "view_story" tasks for the viewer
+        await updateTaskProgress(userId, "view_story");
+    }
+    catch (error) {
+        console.error("❌ [onStoryViewedTaskProgress] Error:", error);
+    }
+});
+/**
+ * Update task progress when story is posted
+ */
+exports.onStoryPostedTaskProgress = functions.firestore
+    .document("stories/{storyId}")
+    .onCreate(async (snap, context) => {
+    const story = snap.data();
+    const authorId = story.authorId;
+    try {
+        // Update "post_story" tasks for the author
+        await updateTaskProgress(authorId, "post_story");
+    }
+    catch (error) {
+        console.error("❌ [onStoryPostedTaskProgress] Error:", error);
+    }
+});
+/**
+ * Update task progress when game is played
+ * Note: This extends the existing onGameSessionCreated functionality
+ */
+exports.onGamePlayedTaskProgress = functions.firestore
+    .document("GameSessions/{sessionId}")
+    .onCreate(async (snap, context) => {
+    const session = snap.data();
+    const playerId = session.playerId;
+    const score = session.score;
+    const gameId = session.gameId;
+    try {
+        // Update "play_game" tasks
+        await updateTaskProgress(playerId, "play_game");
+        // For "win_game" tasks, check if score meets threshold
+        // This requires checking the task definition for the threshold
+        const winTasksQuery = await db
+            .collection("Tasks")
+            .where("active", "==", true)
+            .where("type", "==", "win_game")
+            .get();
+        for (const taskDoc of winTasksQuery.docs) {
+            const task = taskDoc.data();
+            // For reaction_tap, lower score is better (reaction time in ms)
+            // For timed_tap, higher score is better (tap count)
+            let isWin = false;
+            if (gameId === "reaction_tap") {
+                // Win if reaction time is under 300ms
+                isWin = score <= 300;
+            }
+            else if (gameId === "timed_tap") {
+                // Win if tap count is over 50
+                isWin = score >= 50;
+            }
+            if (isWin) {
+                await updateTaskProgress(playerId, "win_game");
+                break; // Only count once per game session
+            }
+        }
+    }
+    catch (error) {
+        console.error("❌ [onGamePlayedTaskProgress] Error:", error);
+    }
+});
+/**
+ * Update task progress when friend is added
+ */
+exports.onFriendAddedTaskProgress = functions.firestore
+    .document("Friends/{friendId}")
+    .onCreate(async (snap, context) => {
+    const friend = snap.data();
+    const users = friend.users;
+    try {
+        // Update "add_friend" tasks for both users
+        for (const userId of users) {
+            await updateTaskProgress(userId, "add_friend");
+        }
+    }
+    catch (error) {
+        console.error("❌ [onFriendAddedTaskProgress] Error:", error);
+    }
+});
+/**
+ * Daily login task trigger
+ * This is called when user opens app (client-side via callable)
+ */
+exports.recordDailyLogin = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");
+    }
+    const uid = context.auth.uid;
+    try {
+        await updateTaskProgress(uid, "login");
+        return { success: true };
+    }
+    catch (error) {
+        console.error("❌ [recordDailyLogin] Error:", error);
+        throw new functions.https.HttpsError("internal", error.message || "Failed to record login");
+    }
+});
+/**
+ * Seed initial daily tasks (run once via admin or console)
+ * This creates default task definitions
+ */
+exports.seedDailyTasks = functions.https.onRequest(async (req, res) => {
+    // Only allow from admin/localhost in development
+    // In production, this should be protected or removed
+    const defaultTasks = [
+        {
+            id: "daily_send_5_messages",
+            title: "Social Butterfly",
+            description: "Send 5 messages to friends",
+            icon: "message-text",
+            cadence: "daily",
+            type: "send_message",
+            target: 5,
+            rewardTokens: 10,
+            active: true,
+            sortOrder: 1,
+        },
+        {
+            id: "daily_send_3_snaps",
+            title: "Snap Happy",
+            description: "Send 3 snaps to friends",
+            icon: "camera",
+            cadence: "daily",
+            type: "send_snap",
+            target: 3,
+            rewardTokens: 15,
+            active: true,
+            sortOrder: 2,
+        },
+        {
+            id: "daily_view_5_stories",
+            title: "Story Explorer",
+            description: "View 5 stories from friends",
+            icon: "eye",
+            cadence: "daily",
+            type: "view_story",
+            target: 5,
+            rewardTokens: 10,
+            active: true,
+            sortOrder: 3,
+        },
+        {
+            id: "daily_post_story",
+            title: "Story Time",
+            description: "Post a story",
+            icon: "image-plus",
+            cadence: "daily",
+            type: "post_story",
+            target: 1,
+            rewardTokens: 20,
+            active: true,
+            sortOrder: 4,
+        },
+        {
+            id: "daily_play_game",
+            title: "Game On",
+            description: "Play a game",
+            icon: "gamepad-variant",
+            cadence: "daily",
+            type: "play_game",
+            target: 1,
+            rewardTokens: 15,
+            active: true,
+            sortOrder: 5,
+        },
+        {
+            id: "daily_win_game",
+            title: "Champion",
+            description: "Win a game (under 300ms reaction or 50+ taps)",
+            icon: "trophy",
+            cadence: "daily",
+            type: "win_game",
+            target: 1,
+            rewardTokens: 25,
+            active: true,
+            sortOrder: 6,
+        },
+        {
+            id: "daily_login",
+            title: "Daily Check-In",
+            description: "Open the app today",
+            icon: "login",
+            cadence: "daily",
+            type: "login",
+            target: 1,
+            rewardTokens: 5,
+            active: true,
+            sortOrder: 0,
+        },
+    ];
+    const batch = db.batch();
+    for (const task of defaultTasks) {
+        const taskRef = db.collection("Tasks").doc(task.id);
+        batch.set(taskRef, {
+            ...task,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    await batch.commit();
+    console.log(`✅ Seeded ${defaultTasks.length} daily tasks`);
+    res.json({ success: true, tasksCreated: defaultTasks.length });
+});
+/**
+ * Initialize wallet for existing users who don't have one
+ * Run once via admin to migrate existing users
+ */
+exports.initializeExistingWallets = functions.https.onRequest(async (req, res) => {
+    // This is an admin function - should be protected in production
+    try {
+        const usersSnapshot = await db.collection("Users").get();
+        let created = 0;
+        let skipped = 0;
+        for (const userDoc of usersSnapshot.docs) {
+            const uid = userDoc.id;
+            const walletRef = db.collection("Wallets").doc(uid);
+            const walletDoc = await walletRef.get();
+            if (!walletDoc.exists) {
+                await walletRef.set({
+                    uid,
+                    tokensBalance: DEFAULT_STARTING_TOKENS,
+                    totalEarned: DEFAULT_STARTING_TOKENS,
+                    totalSpent: 0,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                // Create transaction record
+                await db.collection("Transactions").add({
+                    uid,
+                    type: "earn",
+                    amount: DEFAULT_STARTING_TOKENS,
+                    reason: "daily_bonus",
+                    description: "Welcome bonus!",
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                created++;
+            }
+            else {
+                skipped++;
+            }
+        }
+        console.log(`✅ Initialized wallets: ${created} created, ${skipped} skipped`);
+        res.json({ success: true, created, skipped });
+    }
+    catch (error) {
+        console.error("❌ Error initializing wallets:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+// ============================================
+// PHASE 19: SHOP + LIMITED-TIME DROPS
+// ============================================
+/**
+ * purchaseWithTokens: Callable function to purchase shop items
+ * Performs atomic transaction:
+ * 1. Validates item availability
+ * 2. Validates user has enough tokens
+ * 3. Validates user doesn't already own the item
+ * 4. Deducts tokens from wallet
+ * 5. Adds item to user's inventory
+ * 6. Records the purchase
+ * 7. Creates transaction record
+ * 8. Updates item purchase count
+ */
+exports.purchaseWithTokens = functions.https.onCall(async (data, context) => {
+    // Verify authentication
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");
+    }
+    const uid = context.auth.uid;
+    const { itemId } = data;
+    if (!itemId || typeof itemId !== "string") {
+        throw new functions.https.HttpsError("invalid-argument", "itemId is required");
+    }
+    console.log(`🛒 [purchaseWithTokens] User ${uid} purchasing item ${itemId}`);
+    try {
+        // Get shop item
+        const itemRef = db.collection("ShopCatalog").doc(itemId);
+        const itemDoc = await itemRef.get();
+        if (!itemDoc.exists) {
+            throw new functions.https.HttpsError("not-found", "Item not found");
+        }
+        const item = itemDoc.data();
+        // Validate item is active
+        if (!item.active) {
+            throw new functions.https.HttpsError("failed-precondition", "Item is not available");
+        }
+        // Check availability window
+        const now = Date.now();
+        if (item.availableFrom) {
+            const availableFrom = item.availableFrom.toMillis
+                ? item.availableFrom.toMillis()
+                : item.availableFrom;
+            if (now < availableFrom) {
+                throw new functions.https.HttpsError("failed-precondition", "Item not yet available");
+            }
+        }
+        if (item.availableTo) {
+            const availableTo = item.availableTo.toMillis
+                ? item.availableTo.toMillis()
+                : item.availableTo;
+            if (now > availableTo) {
+                throw new functions.https.HttpsError("failed-precondition", "Item has expired");
+            }
+        }
+        // Check limited quantity
+        if (item.limitedQuantity &&
+            item.purchaseCount >= item.limitedQuantity) {
+            throw new functions.https.HttpsError("failed-precondition", "Item is sold out");
+        }
+        // Check if user already owns this cosmetic
+        const inventoryRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("inventory")
+            .doc(item.cosmeticId);
+        const existingItem = await inventoryRef.get();
+        if (existingItem.exists) {
+            throw new functions.https.HttpsError("already-exists", "You already own this item");
+        }
+        // Get user's wallet
+        const walletRef = db.collection("Wallets").doc(uid);
+        const walletDoc = await walletRef.get();
+        if (!walletDoc.exists) {
+            throw new functions.https.HttpsError("failed-precondition", "Wallet not found");
+        }
+        const wallet = walletDoc.data();
+        const priceTokens = item.priceTokens || 0;
+        if (wallet.tokensBalance < priceTokens) {
+            throw new functions.https.HttpsError("failed-precondition", `Insufficient tokens. Need ${priceTokens}, have ${wallet.tokensBalance}`);
+        }
+        // All validations passed - execute purchase atomically
+        const batch = db.batch();
+        // 1. Deduct tokens from wallet
+        batch.update(walletRef, {
+            tokensBalance: admin.firestore.FieldValue.increment(-priceTokens),
+            totalSpent: admin.firestore.FieldValue.increment(priceTokens),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // 2. Add item to inventory
+        batch.set(inventoryRef, {
+            itemId: item.cosmeticId,
+            acquiredAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // 3. Create purchase record
+        const purchaseRef = db.collection("Purchases").doc();
+        batch.set(purchaseRef, {
+            uid,
+            itemId,
+            cosmeticId: item.cosmeticId,
+            priceTokens,
+            status: "completed",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // 4. Create transaction record
+        const txRef = db.collection("Transactions").doc();
+        batch.set(txRef, {
+            uid,
+            type: "spend",
+            amount: priceTokens,
+            reason: "shop_purchase",
+            refId: itemId,
+            refType: "shop_item",
+            description: item.name,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // 5. Update item purchase count
+        batch.update(itemRef, {
+            purchaseCount: admin.firestore.FieldValue.increment(1),
+        });
+        // Commit all changes
+        await batch.commit();
+        // Calculate new balance
+        const newBalance = wallet.tokensBalance - priceTokens;
+        console.log(`✅ [purchaseWithTokens] Purchase complete: ${item.name} for ${priceTokens} tokens. New balance: ${newBalance}`);
+        // Update purchase record with transaction ID
+        await purchaseRef.update({
+            transactionId: txRef.id,
+        });
+        return {
+            success: true,
+            purchaseId: purchaseRef.id,
+            transactionId: txRef.id,
+            newBalance,
+        };
+    }
+    catch (error) {
+        console.error("❌ [purchaseWithTokens] Error:", error);
+        // Re-throw HttpsErrors as-is
+        if (error.code) {
+            throw error;
+        }
+        throw new functions.https.HttpsError("internal", error.message || "Purchase failed");
+    }
+});
+/**
+ * Seed shop catalog with sample items (run once via admin)
+ * Creates initial shop items for testing
+ */
+exports.seedShopCatalog = functions.https.onRequest(async (req, res) => {
+    // This is an admin function - should be protected in production
+    // Sample shop items based on existing cosmetics
+    const shopItems = [
+        // Featured limited-time items
+        {
+            id: "shop_hat_crown",
+            cosmeticId: "hat_crown",
+            name: "Royal Crown",
+            description: "Rule the chat with this majestic crown!",
+            category: "featured",
+            slot: "hat",
+            priceTokens: 150,
+            rarity: "legendary",
+            imagePath: "cosmetics/hats/crown.png",
+            featured: true,
+            availableFrom: Date.now(),
+            availableTo: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 1,
+        },
+        {
+            id: "shop_bg_galaxy",
+            cosmeticId: "bg_galaxy",
+            name: "Galaxy Background",
+            description: "A stunning cosmic background",
+            category: "featured",
+            slot: "background",
+            priceTokens: 100,
+            rarity: "epic",
+            imagePath: "cosmetics/backgrounds/galaxy.png",
+            featured: true,
+            availableFrom: Date.now(),
+            availableTo: Date.now() + 3 * 24 * 60 * 60 * 1000, // 3 days
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 2,
+        },
+        // Regular shop items - Hats
+        {
+            id: "shop_hat_cap",
+            cosmeticId: "hat_cap",
+            name: "Cool Cap",
+            description: "A stylish cap for everyday wear",
+            category: "hat",
+            slot: "hat",
+            priceTokens: 25,
+            rarity: "common",
+            imagePath: "cosmetics/hats/cap.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 10,
+        },
+        {
+            id: "shop_hat_beanie",
+            cosmeticId: "hat_beanie",
+            name: "Cozy Beanie",
+            description: "Stay warm and stylish",
+            category: "hat",
+            slot: "hat",
+            priceTokens: 30,
+            rarity: "common",
+            imagePath: "cosmetics/hats/beanie.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 11,
+        },
+        {
+            id: "shop_hat_tophat",
+            cosmeticId: "hat_tophat",
+            name: "Top Hat",
+            description: "For the distinguished avatar",
+            category: "hat",
+            slot: "hat",
+            priceTokens: 50,
+            rarity: "rare",
+            imagePath: "cosmetics/hats/tophat.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 12,
+        },
+        // Glasses
+        {
+            id: "shop_glasses_round",
+            cosmeticId: "glasses_round",
+            name: "Round Glasses",
+            description: "Classic round frames",
+            category: "glasses",
+            slot: "glasses",
+            priceTokens: 20,
+            rarity: "common",
+            imagePath: "cosmetics/glasses/round.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 20,
+        },
+        {
+            id: "shop_glasses_sunglasses",
+            cosmeticId: "glasses_sunglasses",
+            name: "Cool Sunglasses",
+            description: "Block the haters",
+            category: "glasses",
+            slot: "glasses",
+            priceTokens: 35,
+            rarity: "rare",
+            imagePath: "cosmetics/glasses/sunglasses.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 21,
+        },
+        {
+            id: "shop_glasses_vr",
+            cosmeticId: "glasses_vr",
+            name: "VR Headset",
+            description: "Enter the metaverse in style",
+            category: "glasses",
+            slot: "glasses",
+            priceTokens: 75,
+            rarity: "epic",
+            imagePath: "cosmetics/glasses/vr.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 22,
+        },
+        // Backgrounds
+        {
+            id: "shop_bg_sunset",
+            cosmeticId: "bg_sunset",
+            name: "Sunset Vibes",
+            description: "A beautiful sunset backdrop",
+            category: "background",
+            slot: "background",
+            priceTokens: 40,
+            rarity: "rare",
+            imagePath: "cosmetics/backgrounds/sunset.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 30,
+        },
+        {
+            id: "shop_bg_city",
+            cosmeticId: "bg_city",
+            name: "City Lights",
+            description: "Urban cityscape at night",
+            category: "background",
+            slot: "background",
+            priceTokens: 45,
+            rarity: "rare",
+            imagePath: "cosmetics/backgrounds/city.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 31,
+        },
+        {
+            id: "shop_bg_neon",
+            cosmeticId: "bg_neon",
+            name: "Neon Dreams",
+            description: "Vibrant neon aesthetic",
+            category: "background",
+            slot: "background",
+            priceTokens: 60,
+            rarity: "epic",
+            imagePath: "cosmetics/backgrounds/neon.png",
+            featured: false,
+            purchaseCount: 0,
+            active: true,
+            sortOrder: 32,
+        },
+    ];
+    const batch = db.batch();
+    for (const item of shopItems) {
+        const itemRef = db.collection("ShopCatalog").doc(item.id);
+        batch.set(itemRef, {
+            ...item,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    await batch.commit();
+    console.log(`✅ Seeded ${shopItems.length} shop items`);
+    res.json({ success: true, itemsCreated: shopItems.length });
 });
 //# sourceMappingURL=index.js.map

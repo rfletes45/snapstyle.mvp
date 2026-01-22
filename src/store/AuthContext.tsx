@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import { User as FirebaseUser } from "firebase/auth";
 import { Platform } from "react-native";
 import { getAuthInstance } from "@/services/firebase";
@@ -14,7 +20,11 @@ import * as Notifications from "expo-notifications";
 export interface AuthContextType {
   currentFirebaseUser: FirebaseUser | null;
   loading: boolean;
+  /** True once auth state has been determined at least once */
+  isHydrated: boolean;
   error: string | null;
+  /** Custom claims from Firebase Auth (e.g., admin) */
+  customClaims: Record<string, any> | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,8 +32,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentFirebaseUser, setCurrentFirebaseUser] =
     useState<FirebaseUser | null>(null);
+  const [customClaims, setCustomClaims] = useState<Record<string, any> | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
-  const notificationListenerRef = useRef<Notifications.Subscription | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const notificationListenerRef = useRef<Notifications.Subscription | null>(
+    null,
+  );
   const responseListenerRef = useRef<Notifications.Subscription | null>(null);
   const previousUserIdRef = useRef<string | null>(null);
 
@@ -37,21 +53,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Listener for notification taps
-    responseListenerRef.current = addNotificationResponseListener((response) => {
-      console.log(
-        "📱 Notification tapped:",
-        response.notification.request.content,
-      );
-      // TODO: Handle navigation based on notification data
-      const data = response.notification.request.content.data;
-      if (data?.type === "message" && data?.chatId) {
-        // Could navigate to chat here
-        console.log("Would navigate to chat:", data.chatId);
-      } else if (data?.type === "friend_request") {
-        // Could navigate to friends screen
-        console.log("Would navigate to friends");
-      }
-    });
+    responseListenerRef.current = addNotificationResponseListener(
+      (response) => {
+        console.log(
+          "📱 Notification tapped:",
+          response.notification.request.content,
+        );
+        // TODO: Handle navigation based on notification data
+        const data = response.notification.request.content.data;
+        if (data?.type === "message" && data?.chatId) {
+          // Could navigate to chat here
+          console.log("Would navigate to chat:", data.chatId);
+        } else if (data?.type === "friend_request") {
+          // Could navigate to friends screen
+          console.log("Would navigate to friends");
+        }
+      },
+    );
 
     return () => {
       if (notificationListenerRef.current) {
@@ -66,7 +84,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Register for push notifications when user logs in
   useEffect(() => {
     const registerPushToken = async () => {
-      if (currentFirebaseUser && currentFirebaseUser.uid !== previousUserIdRef.current) {
+      if (
+        currentFirebaseUser &&
+        currentFirebaseUser.uid !== previousUserIdRef.current
+      ) {
         try {
           console.log("🔵 [AuthContext] Registering for push notifications");
           const token = await registerForPushNotifications();
@@ -76,7 +97,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           previousUserIdRef.current = currentFirebaseUser.uid;
         } catch (error) {
-          console.error("❌ [AuthContext] Error registering push token:", error);
+          console.error(
+            "❌ [AuthContext] Error registering push token:",
+            error,
+          );
         }
       } else if (!currentFirebaseUser && previousUserIdRef.current) {
         // User logged out - remove push token
@@ -100,13 +124,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const auth = getAuthInstance();
       const unsubscribe = auth.onAuthStateChanged(
-        (user: any) => {
+        async (user: any) => {
           console.log(
-            "AuthContext: User state changed",
+            "🔵 [AuthContext] User state changed:",
             user?.email || "logged out",
           );
           setCurrentFirebaseUser(user);
+
+          // Fetch custom claims when user logs in
+          if (user) {
+            try {
+              // Force refresh to get the latest custom claims
+              const idTokenResult = await user.getIdTokenResult(true);
+              setCustomClaims(idTokenResult.claims);
+              console.log(
+                "🔵 [AuthContext] Custom claims loaded:",
+                idTokenResult.claims,
+              );
+              // Log admin status specifically for debugging
+              console.log(
+                "🔵 [AuthContext] Admin status:",
+                idTokenResult.claims.admin,
+              );
+            } catch (error) {
+              console.error(
+                "❌ [AuthContext] Error fetching custom claims:",
+                error,
+              );
+              setCustomClaims(null);
+            }
+          } else {
+            setCustomClaims(null);
+          }
+
           setLoading(false);
+          setIsHydrated(true);
         },
         (err: any) => {
           console.warn(
@@ -114,7 +166,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             err.message,
           );
           setCurrentFirebaseUser(null);
+          setCustomClaims(null);
           setLoading(false);
+          setIsHydrated(true);
         },
       );
 
@@ -125,12 +179,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error.message,
       );
       setLoading(false);
+      setIsHydrated(true);
       return () => {}; // Return no-op unsubscribe
     }
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentFirebaseUser, loading, error: null }}>
+    <AuthContext.Provider
+      value={{
+        currentFirebaseUser,
+        loading,
+        isHydrated,
+        error: null,
+        customClaims,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

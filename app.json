@@ -42,6 +42,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a57e6af7-ac18-4751-90ee-3b9cda7ea645"
+      }
+    },
+    "owner": "rfletes"
   }
 }

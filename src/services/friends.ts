@@ -13,6 +13,7 @@ import {
 import { getFirestoreInstance } from "./firebase";
 import { getUserProfile } from "./users";
 import { Friend, FriendRequest } from "@/types/models";
+import { isUserBlocked } from "./blocking";
 
 /**
  * Send a friend request by searching for user by username
@@ -44,6 +45,17 @@ export async function sendFriendRequest(
     // Can't add yourself
     if (fromUid === toUid) {
       throw new Error("You cannot add yourself as a friend");
+    }
+
+    // Check if you have blocked them
+    // Note: We don't check if they blocked you (privacy reasons)
+    // If they have blocked you, they simply won't see the request
+    const youBlockedThem = await isUserBlocked(fromUid, toUid);
+
+    if (youBlockedThem) {
+      throw new Error(
+        "You have blocked this user. Unblock them first to send a friend request.",
+      );
     }
 
     // Check if already friends
@@ -98,6 +110,7 @@ export async function sendFriendRequest(
 
 /**
  * Get all pending friend requests (both sent and received)
+ * Filters out requests from/to blocked users
  * @param uid User ID
  * @returns Array of pending requests
  */
@@ -123,6 +136,11 @@ export async function getPendingRequests(
       where("status", "==", "pending"),
     );
 
+    // Get blocked users
+    const blockedUsersRef = collection(db, "Users", uid, "blockedUsers");
+    const blockedSnapshot = await getDocs(blockedUsersRef);
+    const blockedUserIds = new Set(blockedSnapshot.docs.map((doc) => doc.id));
+
     const [toSnapshot, fromSnapshot] = await Promise.all([
       getDocs(toQuery),
       getDocs(fromQuery),
@@ -130,18 +148,30 @@ export async function getPendingRequests(
 
     const requests: FriendRequest[] = [];
 
+    // Filter out requests from blocked users
     toSnapshot.forEach((doc) => {
-      requests.push({
+      const request = {
         id: doc.id,
         ...doc.data(),
-      } as FriendRequest);
+      } as FriendRequest;
+
+      // Only include if sender is not blocked
+      if (!blockedUserIds.has(request.from)) {
+        requests.push(request);
+      }
     });
 
+    // Filter out requests to blocked users (user shouldn't see their own sent requests to blocked users)
     fromSnapshot.forEach((doc) => {
-      requests.push({
+      const request = {
         id: doc.id,
         ...doc.data(),
-      } as FriendRequest);
+      } as FriendRequest;
+
+      // Only include if recipient is not blocked
+      if (!blockedUserIds.has(request.to)) {
+        requests.push(request);
+      }
     });
 
     // Sort by creation date (newest first) in memory
@@ -186,9 +216,9 @@ export async function acceptFriendRequest(requestId: string): Promise<boolean> {
       users: [request.from, request.to],
       createdAt: Date.now(),
       streakCount: 0,
-      streakUpdatedDay: new Date().toISOString().split("T")[0],
-      lastSentDay_uid1: null,
-      lastSentDay_uid2: null,
+      streakUpdatedDay: "", // Empty - will be set when first streak is achieved
+      lastSentDay_uid1: "",
+      lastSentDay_uid2: "",
       blockedBy: null,
     });
 
@@ -261,7 +291,7 @@ export async function cancelFriendRequest(requestId: string): Promise<boolean> {
 }
 
 /**
- * Get all friends for a user
+ * Get all friends for a user (excluding blocked users)
  * @param uid User ID
  * @returns Array of friendships
  */
@@ -275,11 +305,24 @@ export async function getFriends(uid: string): Promise<Friend[]> {
     const snapshot = await getDocs(q);
     const friends: Friend[] = [];
 
+    // Get list of blocked users
+    const blockedUsersRef = collection(db, "Users", uid, "blockedUsers");
+    const blockedSnapshot = await getDocs(blockedUsersRef);
+    const blockedUserIds = new Set(blockedSnapshot.docs.map((doc) => doc.id));
+
     snapshot.forEach((doc) => {
-      friends.push({
+      const friend = {
         id: doc.id,
         ...doc.data(),
-      } as Friend);
+      } as Friend;
+
+      // Get the other user's ID
+      const otherUserId = friend.users.find((u) => u !== uid);
+
+      // Only include if the other user is not blocked
+      if (otherUserId && !blockedUserIds.has(otherUserId)) {
+        friends.push(friend);
+      }
     });
 
     // Sort by creation date (newest first) in memory

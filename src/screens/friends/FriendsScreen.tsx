@@ -5,9 +5,18 @@ import {
   Searchbar,
   Card,
   Button,
-  ActivityIndicator,
   Chip,
+  IconButton,
+  Menu,
+  useTheme,
 } from "react-native-paper";
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  getDocs,
+} from "firebase/firestore";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import {
@@ -18,10 +27,23 @@ import {
   cancelFriendRequest,
   getFriends,
   removeFriend,
-  getUsernameByUid,
   getUserProfileByUid,
 } from "@/services/friends";
-import { Friend, FriendRequest, AvatarConfig } from "@/types/models";
+import { getFirestoreInstance } from "@/services/firebase";
+import { blockUser } from "@/services/blocking";
+import { submitReport } from "@/services/reporting";
+import {
+  Friend,
+  FriendRequest,
+  AvatarConfig,
+  ReportReason,
+} from "@/types/models";
+import { AvatarMini } from "@/components/Avatar";
+import BlockUserModal from "@/components/BlockUserModal";
+import ReportUserModal from "@/components/ReportUserModal";
+import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
+import { Spacing, BorderRadius } from "../../../constants/theme";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 
 interface RequestWithUsername extends FriendRequest {
   otherUserUsername?: string;
@@ -44,6 +66,7 @@ export default function FriendsScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   useUser(); // Ensure user context is available
   const uid = currentFirebaseUser?.uid;
+  const theme = useTheme();
 
   // State management
   const [friends, setFriends] = useState<FriendWithProfile[]>([]);
@@ -52,16 +75,27 @@ export default function FriendsScreen({ navigation }: any) {
   );
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
   const [addFriendUsername, setAddFriendUsername] = useState("");
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Block/Report state
+  const [menuVisible, setMenuVisible] = useState<string | null>(null);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<{
+    uid: string;
+    username: string;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!uid) return;
 
     try {
       setLoading(true);
+      setError(null);
       const [friendsData, requestsData] = await Promise.all([
         getFriends(uid),
         getPendingRequests(uid),
@@ -109,20 +143,180 @@ export default function FriendsScreen({ navigation }: any) {
 
       setFriends(friendsWithProfiles);
       setPendingRequests(requestsWithProfiles);
-    } catch (error) {
-      console.error("Error loading friends data:", error);
-      Alert.alert("Error", "Failed to load friends. Please try again.");
+    } catch (err) {
+      console.error("Error loading connections data:", err);
+      setError("Couldn't load connections");
     } finally {
       setLoading(false);
     }
   }, [uid]);
 
-  // Load friends and requests
+  // Load friends and requests with real-time updates
   useEffect(() => {
-    if (uid) {
-      loadData();
-    }
-  }, [uid, loadData]);
+    if (!uid) return;
+
+    // Initial load
+    loadData();
+
+    // Set up real-time listener for Friends collection
+    const db = getFirestoreInstance();
+    const friendsRef = collection(db, "Friends");
+    const friendsQuery = query(
+      friendsRef,
+      where("users", "array-contains", uid),
+    );
+
+    const unsubscribeFriends = onSnapshot(
+      friendsQuery,
+      async (snapshot) => {
+        console.log("🔵 [FriendsScreen] Real-time friends update received");
+
+        // Get blocked users list
+        const blockedUsersRef = collection(db, "Users", uid, "blockedUsers");
+        const blockedSnapshot = await getDocs(blockedUsersRef);
+        const blockedUserIds = new Set(
+          blockedSnapshot.docs.map((doc) => doc.id),
+        );
+
+        // Process friends data
+        const friendsData: Friend[] = [];
+        snapshot.forEach((doc) => {
+          const friend = {
+            id: doc.id,
+            ...doc.data(),
+          } as Friend;
+
+          // Get the other user's ID
+          const otherUserId = friend.users.find((u) => u !== uid);
+
+          // Only include if the other user is not blocked
+          if (otherUserId && !blockedUserIds.has(otherUserId)) {
+            friendsData.push(friend);
+          }
+        });
+
+        // Sort by creation date
+        friendsData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+        // Fetch user profiles for friends
+        const friendsWithProfiles = await Promise.all(
+          friendsData.map(async (friend) => {
+            const friendUid = friend.users.find((u) => u !== uid);
+            if (!friendUid) return friend;
+
+            const profile = await getUserProfileByUid(friendUid);
+            return {
+              ...friend,
+              otherUserProfile: profile
+                ? {
+                    username: profile.username,
+                    displayName: profile.displayName,
+                    avatarConfig: profile.avatarConfig,
+                  }
+                : undefined,
+            };
+          }),
+        );
+
+        setFriends(friendsWithProfiles);
+      },
+      (error) => {
+        console.error("Error in friends listener:", error);
+      },
+    );
+
+    // Set up real-time listener for FriendRequests
+    const requestsRef = collection(db, "FriendRequests");
+
+    // Query for requests TO the user
+    const toQuery = query(
+      requestsRef,
+      where("to", "==", uid),
+      where("status", "==", "pending"),
+    );
+
+    // Query for requests FROM the user
+    const fromQuery = query(
+      requestsRef,
+      where("from", "==", uid),
+      where("status", "==", "pending"),
+    );
+
+    const unsubscribeRequestsTo = onSnapshot(
+      toQuery,
+      async () => {
+        console.log("🔵 [FriendsScreen] Real-time requests update received");
+        // Reload all requests when any change happens
+        const requestsData = await getPendingRequests(uid);
+
+        // Fetch user profiles for each request
+        const requestsWithProfiles = await Promise.all(
+          requestsData.map(async (request) => {
+            const otherUserId =
+              request.from === uid ? request.to : request.from;
+            const profile = await getUserProfileByUid(otherUserId);
+            return {
+              ...request,
+              otherUserUsername: profile?.username,
+              otherUserProfile: profile
+                ? {
+                    username: profile.username,
+                    displayName: profile.displayName,
+                    avatarConfig: profile.avatarConfig,
+                  }
+                : undefined,
+            };
+          }),
+        );
+
+        setPendingRequests(requestsWithProfiles);
+      },
+      (error) => {
+        console.error("Error in requests (to) listener:", error);
+      },
+    );
+
+    const unsubscribeRequestsFrom = onSnapshot(
+      fromQuery,
+      async () => {
+        console.log("🔵 [FriendsScreen] Real-time requests update received");
+        // Reload all requests when any change happens
+        const requestsData = await getPendingRequests(uid);
+
+        // Fetch user profiles for each request
+        const requestsWithProfiles = await Promise.all(
+          requestsData.map(async (request) => {
+            const otherUserId =
+              request.from === uid ? request.to : request.from;
+            const profile = await getUserProfileByUid(otherUserId);
+            return {
+              ...request,
+              otherUserUsername: profile?.username,
+              otherUserProfile: profile
+                ? {
+                    username: profile.username,
+                    displayName: profile.displayName,
+                    avatarConfig: profile.avatarConfig,
+                  }
+                : undefined,
+            };
+          }),
+        );
+
+        setPendingRequests(requestsWithProfiles);
+      },
+      (error) => {
+        console.error("Error in requests (from) listener:", error);
+      },
+    );
+
+    // Cleanup listeners on unmount
+    return () => {
+      unsubscribeFriends();
+      unsubscribeRequestsTo();
+      unsubscribeRequestsFrom();
+    };
+  }, [uid]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -139,12 +333,15 @@ export default function FriendsScreen({ navigation }: any) {
     try {
       setAddFriendLoading(true);
       await sendFriendRequest(uid, addFriendUsername.trim());
-      Alert.alert("Success", "Friend request sent!");
+      Alert.alert("Success", "Connection request sent!");
       setAddFriendUsername("");
       setAddFriendModalVisible(false);
       await loadData();
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to send friend request");
+      Alert.alert(
+        "Error",
+        error.message || "Failed to send connection request",
+      );
     } finally {
       setAddFriendLoading(false);
     }
@@ -153,7 +350,7 @@ export default function FriendsScreen({ navigation }: any) {
   const handleAcceptRequest = async (requestId: string) => {
     try {
       await acceptFriendRequest(requestId);
-      Alert.alert("Success", "Friend request accepted!");
+      Alert.alert("Success", "Connection request accepted!");
       await loadData();
     } catch {
       Alert.alert("Error", "Failed to accept request");
@@ -163,7 +360,7 @@ export default function FriendsScreen({ navigation }: any) {
   const handleDeclineRequest = async (requestId: string) => {
     try {
       await declineFriendRequest(requestId);
-      Alert.alert("Success", "Friend request declined");
+      Alert.alert("Success", "Connection request declined");
       await loadData();
     } catch {
       Alert.alert("Error", "Failed to decline request");
@@ -173,7 +370,7 @@ export default function FriendsScreen({ navigation }: any) {
   const handleCancelRequest = async (requestId: string) => {
     try {
       await cancelFriendRequest(requestId);
-      Alert.alert("Success", "Friend request canceled");
+      Alert.alert("Success", "Connection request canceled");
       await loadData();
     } catch {
       Alert.alert("Error", "Failed to cancel request");
@@ -184,30 +381,92 @@ export default function FriendsScreen({ navigation }: any) {
     if (!uid) return;
 
     // Confirm removal
-    const confirmed = confirm("Are you sure you want to remove this friend?");
+    const confirmed = confirm(
+      "Are you sure you want to remove this connection?",
+    );
     if (!confirmed) return;
 
     try {
       await removeFriend(uid, friendUid);
       await loadData();
-      Alert.alert("Success", "Friend removed");
-    } catch (error) {
-      Alert.alert("Error", "Failed to remove friend");
+      Alert.alert("Success", "Connection removed");
+    } catch {
+      Alert.alert("Error", "Failed to remove connection");
     }
   };
 
-  // Get request preview (show username or initials of other user)
-  const getRequestUserPreview = (request: FriendRequest) => {
-    const otherUid = request.from === uid ? request.to : request.from;
-    return otherUid.substring(0, 8).toUpperCase();
+  // Block/Report handlers
+  const handleOpenMenu = (userId: string) => {
+    setMenuVisible(userId);
+  };
+
+  const handleCloseMenu = () => {
+    setMenuVisible(null);
+  };
+
+  const handleBlockPress = (userId: string, username: string) => {
+    handleCloseMenu();
+    setSelectedUser({ uid: userId, username });
+    setBlockModalVisible(true);
+  };
+
+  const handleReportPress = (userId: string, username: string) => {
+    handleCloseMenu();
+    setSelectedUser({ uid: userId, username });
+    setReportModalVisible(true);
+  };
+
+  const handleBlockConfirm = async (reason?: string) => {
+    if (!uid || !selectedUser) return;
+
+    try {
+      await blockUser(uid, selectedUser.uid, reason);
+      setBlockModalVisible(false);
+      setSelectedUser(null);
+      Alert.alert("User Blocked", `${selectedUser.username} has been blocked.`);
+      await loadData(); // Refresh to remove blocked user from list
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to block user");
+    }
+  };
+
+  const handleReportComplete = () => {
+    setReportModalVisible(false);
+    setSelectedUser(null);
+  };
+
+  const handleReportSubmit = async (
+    reason: ReportReason,
+    description?: string,
+  ) => {
+    if (!uid || !selectedUser) return;
+
+    try {
+      await submitReport(uid, selectedUser.uid, reason, {
+        description,
+        relatedContent: { type: "profile" },
+      });
+      Alert.alert(
+        "Report Submitted",
+        "Thank you for helping keep our community safe.",
+      );
+      handleReportComplete();
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to submit report");
+    }
   };
 
   if (loading) {
+    return <LoadingState message="Loading connections..." />;
+  }
+
+  if (error) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator animating={true} size="large" />
-        <Text style={styles.loadingText}>Loading friends...</Text>
-      </View>
+      <ErrorState
+        title="Something went wrong"
+        message={error}
+        onRetry={loadData}
+      />
     );
   }
 
@@ -216,73 +475,97 @@ export default function FriendsScreen({ navigation }: any) {
   const sentRequests = pendingRequests.filter((r) => r.from === uid);
 
   return (
-    <View style={styles.container}>
-      {/* Header with Add Friend Button */}
-      <View style={styles.header}>
-        <Text variant="headlineSmall" style={styles.title}>
-          Friends
+    <View
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
+      {/* Header with Add Connection Button */}
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <Text
+          variant="headlineSmall"
+          style={[styles.title, { color: theme.colors.onSurface }]}
+        >
+          Connections
         </Text>
         <Button
           mode="contained"
           onPress={() => setAddFriendModalVisible(true)}
           style={styles.addButton}
         >
-          Add Friend
+          Add Connection
         </Button>
       </View>
 
       {/* Search Bar */}
       <Searchbar
-        placeholder="Search friends..."
+        placeholder="Search connections..."
         onChangeText={setSearchQuery}
         value={searchQuery}
-        style={styles.searchbar}
+        style={[styles.searchbar, { backgroundColor: theme.colors.surface }]}
       />
 
       {/* Main Content */}
       <FlatList
         data={[]}
         renderItem={() => null}
+        {...LIST_PERFORMANCE_PROPS}
         ListEmptyComponent={
           <View>
             {/* Received Requests Section */}
             {receivedRequests.length > 0 && (
               <View style={styles.section}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>
-                  Friend Requests ({receivedRequests.length})
+                <Text
+                  variant="titleMedium"
+                  style={[
+                    styles.sectionTitle,
+                    { color: theme.colors.onSurface },
+                  ]}
+                >
+                  Connection Requests ({receivedRequests.length})
                 </Text>
                 {receivedRequests.map((request) => (
-                  <Card key={request.id} style={styles.requestCard}>
+                  <Card
+                    key={request.id}
+                    style={[
+                      styles.requestCard,
+                      { backgroundColor: theme.colors.tertiaryContainer },
+                    ]}
+                  >
                     <Card.Content style={styles.cardContent}>
                       <View style={styles.requestHeader}>
-                        <View
-                          style={[
-                            styles.avatar,
-                            {
-                              backgroundColor:
-                                request.otherUserProfile?.avatarConfig
-                                  ?.baseColor || "#6200EE",
-                            },
-                          ]}
-                        >
-                          <Text style={styles.avatarText}>
-                            {request.otherUserProfile?.username
-                              ?.charAt(0)
-                              .toUpperCase() || "?"}
-                          </Text>
-                        </View>
+                        <AvatarMini
+                          config={
+                            request.otherUserProfile?.avatarConfig || {
+                              baseColor: theme.colors.primary,
+                            }
+                          }
+                          size={48}
+                        />
                         <View style={styles.requestInfo}>
                           <Text
                             variant="bodyMedium"
-                            style={styles.requestUsername}
+                            style={[
+                              styles.requestUsername,
+                              { color: theme.colors.onSurface },
+                            ]}
                           >
                             {request.otherUserProfile?.username || "Loading..."}
                           </Text>
                           <Text
                             variant="bodySmall"
-                            style={styles.requestSubtitle}
+                            style={[
+                              styles.requestSubtitle,
+                              { color: theme.colors.onSurfaceVariant },
+                            ]}
                           >
-                            Friend Request
+                            Connection Request
                           </Text>
                         </View>
                       </View>
@@ -310,49 +593,62 @@ export default function FriendsScreen({ navigation }: any) {
               </View>
             )}
 
-            {/* Friends List Section */}
+            {/* Connections List Section */}
             {friends.length > 0 ? (
               <View style={styles.section}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>
-                  Friends ({friends.length})
+                <Text
+                  variant="titleMedium"
+                  style={[
+                    styles.sectionTitle,
+                    { color: theme.colors.onSurface },
+                  ]}
+                >
+                  Connections ({friends.length})
                 </Text>
                 {friends.map((friend) => {
                   const friendUid = friend.users.find((u) => u !== uid);
                   const streakCount = friend.streakCount || 0;
 
                   return (
-                    <Card key={friend.id} style={styles.friendCard}>
+                    <Card
+                      key={friend.id}
+                      style={[
+                        styles.friendCard,
+                        { backgroundColor: theme.colors.secondaryContainer },
+                      ]}
+                    >
                       <Card.Content style={styles.cardContent}>
                         <View style={styles.friendHeader}>
                           <View style={styles.friendInfo}>
-                            <View
-                              style={[
-                                styles.avatar,
-                                {
-                                  backgroundColor:
-                                    friend.otherUserProfile?.avatarConfig
-                                      ?.baseColor || "#6200EE",
-                                },
-                              ]}
-                            >
-                              <Text style={styles.avatarText}>
-                                {friend.otherUserProfile?.username
-                                  ?.charAt(0)
-                                  .toUpperCase() || "?"}
-                              </Text>
-                            </View>
+                            <AvatarMini
+                              config={
+                                friend.otherUserProfile?.avatarConfig || {
+                                  baseColor: theme.colors.primary,
+                                }
+                              }
+                              size={48}
+                            />
                             <View style={styles.nameContainer}>
                               <Text
                                 variant="bodyMedium"
-                                style={styles.friendName}
+                                style={[
+                                  styles.friendName,
+                                  { color: theme.colors.onSurface },
+                                ]}
                               >
                                 {friend.otherUserProfile?.username ||
                                   "Loading..."}
                               </Text>
                               {streakCount > 0 && (
                                 <Chip
-                                  style={styles.streakChip}
-                                  textStyle={styles.streakText}
+                                  style={[
+                                    styles.streakChip,
+                                    { backgroundColor: theme.colors.error },
+                                  ]}
+                                  textStyle={[
+                                    styles.streakText,
+                                    { color: theme.colors.onError },
+                                  ]}
                                   icon="fire"
                                   compact
                                 >
@@ -377,17 +673,56 @@ export default function FriendsScreen({ navigation }: any) {
                             >
                               Message
                             </Button>
-                            <Button
-                              mode="text"
-                              onPress={() => {
-                                if (friendUid) {
-                                  handleRemoveFriend(friendUid);
-                                }
-                              }}
-                              compact
+                            <Menu
+                              visible={menuVisible === friendUid}
+                              onDismiss={handleCloseMenu}
+                              anchor={
+                                <IconButton
+                                  icon="dots-vertical"
+                                  size={24}
+                                  onPress={() =>
+                                    friendUid && handleOpenMenu(friendUid)
+                                  }
+                                />
+                              }
                             >
-                              Remove
-                            </Button>
+                              <Menu.Item
+                                onPress={() => {
+                                  if (friendUid) {
+                                    handleRemoveFriend(friendUid);
+                                    handleCloseMenu();
+                                  }
+                                }}
+                                title="Remove Connection"
+                                leadingIcon="account-remove"
+                              />
+                              <Menu.Item
+                                onPress={() => {
+                                  if (friendUid) {
+                                    handleBlockPress(
+                                      friendUid,
+                                      friend.otherUserProfile?.username ||
+                                        "User",
+                                    );
+                                  }
+                                }}
+                                title="Block User"
+                                leadingIcon="block-helper"
+                              />
+                              <Menu.Item
+                                onPress={() => {
+                                  if (friendUid) {
+                                    handleReportPress(
+                                      friendUid,
+                                      friend.otherUserProfile?.username ||
+                                        "User",
+                                    );
+                                  }
+                                }}
+                                title="Report User"
+                                leadingIcon="flag"
+                              />
+                            </Menu>
                           </View>
                         </View>
                       </Card.Content>
@@ -396,42 +731,45 @@ export default function FriendsScreen({ navigation }: any) {
                 })}
               </View>
             ) : (
-              <View style={styles.emptyContainer}>
-                <Text variant="bodyLarge" style={styles.emptyText}>
-                  No friends yet
-                </Text>
-                <Text variant="bodySmall" style={styles.emptySubtext}>
-                  Add friends to get started!
-                </Text>
-              </View>
+              <EmptyState
+                icon="account-group-outline"
+                title="No connections yet"
+                subtitle="Connect with others to start chatting and build rituals together!"
+                actionLabel="Add Connection"
+                onAction={() => setAddFriendModalVisible(true)}
+              />
             )}
 
             {/* Sent Requests Section */}
             {sentRequests.length > 0 && (
               <View style={styles.section}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>
+                <Text
+                  variant="titleMedium"
+                  style={[
+                    styles.sectionTitle,
+                    { color: theme.colors.onSurface },
+                  ]}
+                >
                   Sent Requests ({sentRequests.length})
                 </Text>
                 {sentRequests.map((request) => (
-                  <Card key={request.id} style={styles.sentRequestCard}>
+                  <Card
+                    key={request.id}
+                    style={[
+                      styles.sentRequestCard,
+                      { backgroundColor: theme.colors.surfaceVariant },
+                    ]}
+                  >
                     <Card.Content style={styles.cardContent}>
                       <View style={styles.sentRequestHeader}>
-                        <View
-                          style={[
-                            styles.avatar,
-                            {
-                              backgroundColor:
-                                request.otherUserProfile?.avatarConfig
-                                  ?.baseColor || "#6200EE",
-                            },
-                          ]}
-                        >
-                          <Text style={styles.avatarText}>
-                            {request.otherUserUsername
-                              ?.charAt(0)
-                              .toUpperCase() || "?"}
-                          </Text>
-                        </View>
+                        <AvatarMini
+                          config={
+                            request.otherUserProfile?.avatarConfig || {
+                              baseColor: theme.colors.primary,
+                            }
+                          }
+                          size={48}
+                        />
                         <View style={styles.sentRequestInfo}>
                           <View
                             style={{
@@ -442,7 +780,10 @@ export default function FriendsScreen({ navigation }: any) {
                           >
                             <Text
                               variant="bodySmall"
-                              style={styles.sentRequestText}
+                              style={[
+                                styles.sentRequestText,
+                                { color: theme.colors.onSurface },
+                              ]}
                             >
                               {request.otherUserUsername || "Loading..."}
                             </Text>
@@ -450,7 +791,10 @@ export default function FriendsScreen({ navigation }: any) {
                           </View>
                           <Text
                             variant="labelSmall"
-                            style={styles.sentRequestSubtext}
+                            style={[
+                              styles.sentRequestSubtext,
+                              { color: theme.colors.onSurfaceVariant },
+                            ]}
                           >
                             Pending Request
                           </Text>
@@ -474,7 +818,7 @@ export default function FriendsScreen({ navigation }: any) {
         onRefresh={onRefresh}
       />
 
-      {/* Add Friend Modal */}
+      {/* Add Connection Modal */}
       <Modal
         visible={addFriendModalVisible}
         onDismiss={() => setAddFriendModalVisible(false)}
@@ -482,12 +826,26 @@ export default function FriendsScreen({ navigation }: any) {
         animationType="fade"
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: theme.colors.surface },
+            ]}
+          >
             <View style={styles.modalInner}>
-              <Text variant="headlineSmall" style={styles.modalTitle}>
-                Add Friend
+              <Text
+                variant="headlineSmall"
+                style={[styles.modalTitle, { color: theme.colors.onSurface }]}
+              >
+                Add Connection
               </Text>
-              <Text variant="bodySmall" style={styles.modalSubtitle}>
+              <Text
+                variant="bodySmall"
+                style={[
+                  styles.modalSubtitle,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
                 Enter their username
               </Text>
 
@@ -520,6 +878,27 @@ export default function FriendsScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      {/* Block User Modal */}
+      <BlockUserModal
+        visible={blockModalVisible}
+        username={selectedUser?.username || ""}
+        onCancel={() => {
+          setBlockModalVisible(false);
+          setSelectedUser(null);
+        }}
+        onConfirm={handleBlockConfirm}
+      />
+
+      {/* Report User Modal */}
+      {selectedUser && (
+        <ReportUserModal
+          visible={reportModalVisible}
+          username={selectedUser.username}
+          onSubmit={handleReportSubmit}
+          onCancel={handleReportComplete}
+        />
+      )}
     </View>
   );
 }
@@ -527,7 +906,6 @@ export default function FriendsScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
   },
 
   centerContainer: {
@@ -537,16 +915,13 @@ const styles = StyleSheet.create({
   },
 
   loadingText: {
-    marginTop: 12,
-    color: "#666",
+    marginTop: Spacing.md,
   },
 
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#fff",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -557,67 +932,62 @@ const styles = StyleSheet.create({
   },
 
   addButton: {
-    borderRadius: 20,
+    borderRadius: BorderRadius.full,
   },
 
   searchbar: {
-    margin: 16,
-    marginBottom: 8,
-    borderRadius: 8,
+    margin: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.md,
   },
 
   section: {
-    paddingHorizontal: 16,
-    marginVertical: 12,
+    paddingHorizontal: Spacing.md,
+    marginVertical: Spacing.md,
   },
 
   sectionTitle: {
     fontWeight: "600",
-    marginBottom: 12,
-    color: "#333",
+    marginBottom: Spacing.md,
   },
 
   requestCard: {
-    marginBottom: 12,
-    borderRadius: 8,
-    backgroundColor: "#fff9f0",
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderLeftWidth: 4,
-    borderLeftColor: "#ff9800",
+    borderLeftColor: "#fe640b", // Peach accent for requests
   },
 
   friendCard: {
-    marginBottom: 12,
-    borderRadius: 8,
-    backgroundColor: "#f0f9ff",
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderLeftWidth: 4,
-    borderLeftColor: "#2196f3",
+    borderLeftColor: "#1e66f5", // Blue accent for connections
   },
 
   sentRequestCard: {
-    marginBottom: 12,
-    borderRadius: 8,
-    backgroundColor: "#f5f5f5",
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.md,
     opacity: 0.7,
   },
 
   cardContent: {
-    padding: 12,
+    padding: Spacing.md,
   },
 
   requestHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
 
   avatar: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: "#e0e0e0",
+    borderRadius: BorderRadius.full,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
 
   avatarText: {
@@ -631,18 +1001,17 @@ const styles = StyleSheet.create({
 
   requestUsername: {
     fontWeight: "600",
-    color: "#333",
     marginBottom: 2,
   },
 
   requestSubtitle: {
-    color: "#999",
+    // Color applied inline
   },
 
   requestActions: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 8,
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
   },
 
   acceptButton: {
@@ -675,27 +1044,25 @@ const styles = StyleSheet.create({
 
   friendName: {
     fontWeight: "500",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
 
   streakChip: {
-    backgroundColor: "#ff6b6b",
     alignSelf: "flex-start",
   },
 
   streakText: {
     fontSize: 10,
-    color: "#fff",
   },
 
   buttonGroup: {
     flexDirection: "row",
-    gap: 8,
+    gap: Spacing.sm,
     alignItems: "center",
   },
 
   messageButton: {
-    marginRight: 4,
+    marginRight: Spacing.xs,
   },
 
   sentRequestHeader: {
@@ -706,32 +1073,31 @@ const styles = StyleSheet.create({
 
   sentRequestInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: Spacing.md,
   },
 
   sentRequestText: {
     fontWeight: "600",
-    color: "#333",
     marginBottom: 2,
   },
 
   sentRequestSubtext: {
-    color: "#999",
+    // Color applied inline
   },
 
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 48,
+    paddingVertical: Spacing.xl * 2,
   },
 
   emptyText: {
     fontWeight: "500",
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
 
   emptySubtext: {
-    color: "#999",
+    // Color applied inline
   },
 
   // Modal Styles
@@ -743,9 +1109,8 @@ const styles = StyleSheet.create({
   },
 
   modalContent: {
-    backgroundColor: "#fff",
-    padding: 24,
-    borderRadius: 12,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
     width: "85%",
     minHeight: 250,
   },
@@ -757,23 +1122,22 @@ const styles = StyleSheet.create({
 
   modalTitle: {
     fontWeight: "600",
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
     textAlign: "center",
   },
 
   modalSubtitle: {
-    color: "#666",
-    marginBottom: 16,
+    marginBottom: Spacing.md,
     textAlign: "center",
   },
 
   modalInput: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
 
   modalActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    gap: 8,
+    gap: Spacing.sm,
   },
 });

@@ -15,7 +15,7 @@ import {
   Pressable,
   Platform,
 } from "react-native";
-import { Text } from "react-native-paper";
+import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { downloadSnapImage, deleteSnapImage } from "@/services/storage";
 import { markSnapOpened } from "@/services/chat";
@@ -30,6 +30,7 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   const { messageId, chatId, storagePath } = route.params;
   const { currentFirebaseUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,7 +128,7 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
           paddingBottom: insets.bottom,
         }}
       >
-        <ActivityIndicator size="large" color="#FFFC00" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }

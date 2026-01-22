@@ -1,11 +1,20 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import { Text } from "react-native-paper";
+import { useTheme } from "react-native-paper";
+import { EmptyState } from "@/components/ui";
 
 export default function GamesScreen() {
+  const theme = useTheme();
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.placeholder}>Games - Coming in Phase 6</Text>
+    <View
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
+      <EmptyState
+        icon="gamepad-variant-outline"
+        title="Play Coming Soon"
+        subtitle="Fun mini-games to enjoy with your connections will be available here in a future update!"
+      />
     </View>
   );
 }
@@ -13,12 +22,5 @@ export default function GamesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#fff",
-  },
-  placeholder: {
-    fontSize: 16,
-    color: "#999",
   },
 });

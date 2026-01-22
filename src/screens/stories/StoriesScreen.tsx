@@ -1,14 +1,14 @@
 /**
- * Stories Screen
- * Displays friends' stories in a horizontal scrollable bar
- * Each story shows thumbnail with view count
- * Users can tap to view fullscreen or post a new story
+ * Moments Screen
+ * Displays connections' moments in a horizontal scrollable bar
+ * Each moment shows thumbnail with view count
+ * Users can tap to view fullscreen or post a new moment
  *
  * Phase 13: Performance optimizations
  * - Batch view status checking (replaces N+1 queries)
  * - In-memory view cache
  * - Image preloading
- * - Story expiration handling
+ * - Moment expiration handling
  */
 
 import React, { useState, useCallback, useRef } from "react";
@@ -21,7 +21,7 @@ import {
   ActionSheetIOS,
   Platform,
 } from "react-native";
-import { Text, FAB } from "react-native-paper";
+import { Text, FAB, useTheme } from "react-native-paper";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@/store/AuthContext";
 import {
@@ -38,8 +38,8 @@ import {
   captureImageFromWebcam,
   pickImageFromWeb,
 } from "@/utils/webImagePicker";
-import { LoadingState, EmptyState } from "@/components/ui";
-import { AppColors } from "../../../constants/theme";
+import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
+import { Spacing, BorderRadius } from "../../../constants/theme";
 
 // Phase 13: Story item dimensions for FlatList optimization
 const STORY_ITEM_WIDTH = 88; // 80px thumbnail + 8px margin
@@ -50,12 +50,14 @@ interface StoriesScreenProps {
 
 export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   const { currentFirebaseUser } = useAuth();
+  const theme = useTheme();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [viewedStories, setViewedStories] = useState<Set<string>>(new Set());
   const [postingStory, setPostingStory] = useState(false);
 
-  // Phase 13: In-memory cache for viewed stories across screen visits
+  // Phase 13: In-memory cache for viewed moments across screen visits
   const viewedCacheRef = useRef<Map<string, boolean>>(new Map());
 
   // Fetch stories and reset posting state when screen is focused
@@ -73,9 +75,10 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     if (!currentFirebaseUser) return;
 
     try {
-      console.log("🔵 [StoriesScreen] Loading stories (Phase 13 optimized)");
+      console.log("🔵 [MomentsScreen] Loading moments (Phase 13 optimized)");
       const startTime = Date.now();
-      
+      setError(null);
+
       // Phase 13: Only show loading spinner if cache is empty (first load)
       if (viewedCacheRef.current.size === 0) {
         setLoading(true);
@@ -138,15 +141,15 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
       const duration = Date.now() - startTime;
       console.log(
-        "✅ [StoriesScreen] Loaded",
+        "✅ [MomentsScreen] Loaded",
         validStories.length,
-        "stories in",
+        "moments in",
         duration,
         "ms",
       );
-    } catch (error) {
-      console.error("❌ [StoriesScreen] Error loading stories:", error);
-      Alert.alert("Error", "Failed to load stories");
+    } catch (err) {
+      console.error("❌ [MomentsScreen] Error loading moments:", err);
+      setError("Couldn't load moments");
     } finally {
       setLoading(false);
     }
@@ -160,20 +163,20 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         return;
       }
 
-      console.log("🔵 [StoriesScreen] Posting story...");
+      console.log("🔵 [MomentsScreen] Posting moment...");
       setPostingStory(true);
 
       // Show photo menu
       if (Platform.OS === "web") {
         // On web, use browser's native confirm for reliability
-        console.log("🔵 [StoriesScreen] Using web-specific menu");
+        console.log("🔵 [MomentsScreen] Using web-specific menu");
 
         const useCamera = window.confirm(
-          "Post Story\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
+          "Post Moment\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
         );
 
         console.log(
-          "🔵 [StoriesScreen] User choice:",
+          "🔵 [MomentsScreen] User choice:",
           useCamera ? "camera" : "gallery",
         );
 
@@ -201,7 +204,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         );
       } else {
         // Android
-        Alert.alert("Post Story", "Choose an option", [
+        Alert.alert("Post Moment", "Choose an option", [
           {
             text: "Cancel",
             style: "cancel",
@@ -213,7 +216,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               try {
                 await capturePhoto();
               } catch (err) {
-                console.error("❌ [StoriesScreen] Capture error:", err);
+                console.error("❌ [MomentsScreen] Capture error:", err);
               }
             },
           },
@@ -223,15 +226,15 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               try {
                 await selectPhoto();
               } catch (err) {
-                console.error("❌ [StoriesScreen] Select error:", err);
+                console.error("❌ [MomentsScreen] Select error:", err);
               }
             },
           },
         ]);
       }
     } catch (error) {
-      console.error("❌ [StoriesScreen] Error:", error);
-      Alert.alert("Error", `Failed to post story: ${String(error)}`);
+      console.error("❌ [MomentsScreen] Error:", error);
+      Alert.alert("Error", `Failed to post moment: ${String(error)}`);
       setPostingStory(false);
     }
   };
@@ -343,24 +346,49 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <LoadingState message="Loading stories..." />
+      <View
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <LoadingState message="Loading moments..." />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <ErrorState
+          title="Something went wrong"
+          message={error}
+          onRetry={loadStories}
+        />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Stories</Text>
+    <View
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
+      <View
+        style={[
+          styles.header,
+          { borderBottomColor: theme.colors.outlineVariant },
+        ]}
+      >
+        <Text style={[styles.title, { color: theme.colors.onBackground }]}>
+          Moments
+        </Text>
       </View>
 
       {stories.length === 0 ? (
         <EmptyState
           icon="camera-burst"
-          title="No stories yet"
-          subtitle="Add friends and share stories with them"
-          actionLabel="Post Story"
+          title="No moments yet"
+          subtitle="Connect with others and share moments with them"
+          actionLabel="Post Moment"
           onAction={handlePostStory}
         />
       ) : (
@@ -378,19 +406,33 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
           removeClippedSubviews={Platform.OS !== "web"}
           getItemLayout={(_, index) => ({
             length: STORY_ITEM_WIDTH,
-            offset: STORY_ITEM_WIDTH * (index + 1), // +1 for Add Story button
+            offset: STORY_ITEM_WIDTH * (index + 1), // +1 for Add Moment button
             index,
           })}
           ListHeaderComponent={
-            // Add Story Button
+            // Add Moment Button
             <TouchableOpacity
-              style={styles.addStoryCard}
+              style={[
+                styles.addStoryCard,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
               onPress={handlePostStory}
               disabled={postingStory}
             >
               <View style={styles.addStoryContent}>
-                <Text style={styles.addStoryIcon}>+</Text>
-                <Text style={styles.addStoryText}>Add Story</Text>
+                <Text
+                  style={[styles.addStoryIcon, { color: theme.colors.primary }]}
+                >
+                  +
+                </Text>
+                <Text
+                  style={[
+                    styles.addStoryText,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  Add Moment
+                </Text>
               </View>
             </TouchableOpacity>
           }
@@ -398,28 +440,51 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
             <TouchableOpacity
               style={[
                 styles.storyCard,
-                !viewedStories.has(story.id) && styles.unviewedStoryCard,
+                { backgroundColor: theme.colors.surfaceVariant },
+                !viewedStories.has(story.id) && [
+                  styles.unviewedStoryCard,
+                  { borderColor: theme.colors.primary },
+                ],
               ]}
               onPress={() => handleStoryPress(story)}
             >
               <View style={styles.storyImageContainer}>
-                {/* Placeholder for story thumbnail - would need to fetch image */}
+                {/* Placeholder for moment thumbnail - would need to fetch image */}
                 <View
                   style={[
                     styles.storyImagePlaceholder,
-                    !viewedStories.has(story.id) &&
-                      styles.unviewedImagePlaceholder,
+                    { backgroundColor: theme.colors.surfaceDisabled },
+                    !viewedStories.has(story.id) && {
+                      backgroundColor: theme.colors.primaryContainer,
+                    },
                   ]}
                 >
-                  <Text style={styles.storyInitial}>
+                  <Text
+                    style={[
+                      styles.storyInitial,
+                      { color: theme.colors.onPrimaryContainer },
+                    ]}
+                  >
                     {story.authorId.charAt(0).toUpperCase()}
                   </Text>
                 </View>
 
                 {/* Viewed indicator */}
                 {viewedStories.has(story.id) && (
-                  <View style={styles.viewedBadge}>
-                    <Text style={styles.viewedText}>✓</Text>
+                  <View
+                    style={[
+                      styles.viewedBadge,
+                      { backgroundColor: theme.colors.tertiary },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.viewedText,
+                        { color: theme.colors.onTertiary },
+                      ]}
+                    >
+                      ✓
+                    </Text>
                   </View>
                 )}
 
@@ -432,7 +497,12 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               </View>
 
               {/* View count */}
-              <Text style={styles.storyViewCount}>
+              <Text
+                style={[
+                  styles.storyViewCount,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
                 {story.viewCount} {story.viewCount === 1 ? "view" : "views"}
               </Text>
             </TouchableOpacity>
@@ -440,11 +510,11 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         />
       )}
 
-      {/* FAB for adding story */}
+      {/* FAB for adding moment */}
       <FAB
         icon="camera"
-        label="Story"
-        style={styles.fab}
+        label="Moment"
+        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
         onPress={handlePostStory}
         loading={postingStory}
         disabled={postingStory}
@@ -456,49 +526,43 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
   },
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    color: "#000",
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: Spacing.lg,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#000",
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   emptySubtext: {
     fontSize: 14,
-    color: "#999",
     textAlign: "center",
   },
   storiesScroll: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: Spacing.md,
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: Spacing.md,
   },
   addStoryCard: {
     width: 80,
     height: 120,
-    marginHorizontal: 4,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
+    marginHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.md,
     overflow: "hidden",
     justifyContent: "center",
     alignItems: "center",
@@ -510,24 +574,20 @@ const styles = StyleSheet.create({
   addStoryIcon: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#FFFC00",
   },
   addStoryText: {
     fontSize: 12,
-    color: "#666",
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   storyCard: {
     width: 80,
     height: 120,
-    marginHorizontal: 4,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
+    marginHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.md,
     overflow: "hidden",
   },
   unviewedStoryCard: {
     borderWidth: 2,
-    borderColor: "#FFFC00",
   },
   storyImageContainer: {
     flex: 1,
@@ -535,25 +595,19 @@ const styles = StyleSheet.create({
   },
   storyImagePlaceholder: {
     flex: 1,
-    backgroundColor: "#e0e0e0",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 10,
-  },
-  unviewedImagePlaceholder: {
-    backgroundColor: "#FFFC0030", // Yellow 30% opacity
+    borderRadius: BorderRadius.md - 2,
   },
   storyInitial: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#fff",
   },
   viewedBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    backgroundColor: "#4CAF50",
-    borderRadius: 50,
+    top: Spacing.xs,
+    right: Spacing.xs,
+    borderRadius: BorderRadius.full,
     width: 20,
     height: 20,
     justifyContent: "center",
@@ -561,16 +615,15 @@ const styles = StyleSheet.create({
   },
   viewedText: {
     fontSize: 12,
-    color: "#fff",
     fontWeight: "bold",
   },
   timeRemainingBadge: {
     position: "absolute",
-    bottom: 4,
-    left: 4,
+    bottom: Spacing.xs,
+    left: Spacing.xs,
     backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 8,
-    paddingHorizontal: 6,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.xs,
     paddingVertical: 2,
   },
   timeRemainingText: {
@@ -580,14 +633,12 @@ const styles = StyleSheet.create({
   },
   storyViewCount: {
     fontSize: 10,
-    color: "#666",
-    padding: 4,
+    padding: Spacing.xs,
     textAlign: "center",
   },
   fab: {
     position: "absolute",
-    bottom: 16,
-    right: 16,
-    backgroundColor: "#FFFC00",
+    bottom: Spacing.md,
+    right: Spacing.md,
   },
 });
