@@ -1,45 +1,44 @@
 /**
  * ChatListScreen (Inbox)
  * Vibe rebranded: Shows all conversations (DMs and groups)
+ *
+ * Phase H13: Archive filtering support
  */
 
-import React, {
-  useState,
-  useCallback,
-  useLayoutEffect,
-  useEffect,
-} from "react";
-import {
-  StyleSheet,
-  View,
-  FlatList,
-  Alert,
-  TouchableOpacity,
-} from "react-native";
-import {
-  Text,
-  Searchbar,
-  Card,
-  Badge,
-  FAB,
-  useTheme,
-} from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
+import { AvatarMini } from "@/components/Avatar";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { getUserChats } from "@/services/chat";
+import { getDMMemberPrivate } from "@/services/chatMembers";
 import { getUserProfileByUid } from "@/services/friends";
-import { getScheduledMessages } from "@/services/scheduledMessages";
+import { getGroupMemberPrivate } from "@/services/groupMembers";
 import {
-  getUserGroups,
   getPendingInvites,
+  getUserGroups,
   subscribeToUserGroups,
 } from "@/services/groups";
-import { Chat, AvatarConfig, Group, GroupInvite } from "@/types/models";
-import { useFocusEffect } from "@react-navigation/native";
-import { AvatarMini } from "@/components/Avatar";
-import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { getScheduledMessages } from "@/services/scheduledMessages";
+import { useAuth } from "@/store/AuthContext";
+import { AvatarConfig, Chat, Group, GroupInvite } from "@/types/models";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
+import { FlatList, StyleSheet, TouchableOpacity, View } from "react-native";
+import {
+  Badge,
+  Card,
+  Chip,
+  FAB,
+  Searchbar,
+  Text,
+  useTheme,
+} from "react-native-paper";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 interface ChatWithProfile extends Chat {
   otherUserProfile?: {
@@ -48,6 +47,11 @@ interface ChatWithProfile extends Chat {
     avatarConfig: AvatarConfig;
   };
   otherUid?: string;
+  isArchived?: boolean;
+}
+
+interface GroupWithArchive extends Group {
+  isArchived?: boolean;
 }
 
 export default function ChatListScreen({ navigation }: any) {
@@ -56,13 +60,14 @@ export default function ChatListScreen({ navigation }: any) {
   const uid = currentFirebaseUser?.uid;
 
   const [chats, setChats] = useState<ChatWithProfile[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [groups, setGroups] = useState<GroupWithArchive[]>([]);
   const [pendingInvites, setPendingInvites] = useState<GroupInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [pendingScheduledCount, setPendingScheduledCount] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Set up header with scheduled messages button and group invites
   useLayoutEffect(() => {
@@ -122,10 +127,24 @@ export default function ChatListScreen({ navigation }: any) {
         console.log("Could not fetch scheduled messages count:", e);
       }
 
-      // Fetch groups
+      // Fetch groups with archive status
       try {
         const userGroups = await getUserGroups(uid);
-        setGroups(userGroups);
+        // Fetch archive status for each group
+        const groupsWithArchive = await Promise.all(
+          userGroups.map(async (group) => {
+            try {
+              const memberPrivate = await getGroupMemberPrivate(group.id, uid);
+              return {
+                ...group,
+                isArchived: memberPrivate?.archived || false,
+              };
+            } catch {
+              return { ...group, isArchived: false };
+            }
+          }),
+        );
+        setGroups(groupsWithArchive);
       } catch (e) {
         console.log("Could not fetch groups:", e);
       }
@@ -138,16 +157,21 @@ export default function ChatListScreen({ navigation }: any) {
         console.log("Could not fetch group invites:", e);
       }
 
-      // Fetch profiles for each chat
+      // Fetch profiles and archive status for each DM chat
       const chatsWithProfiles = await Promise.all(
         chatsData.map(async (chat) => {
           const otherUid = chat.members.find((m) => m !== uid);
-          if (!otherUid) return chat;
+          if (!otherUid) return { ...chat, isArchived: false };
 
-          const profile = await getUserProfileByUid(otherUid);
+          const [profile, memberPrivate] = await Promise.all([
+            getUserProfileByUid(otherUid),
+            getDMMemberPrivate(chat.id, uid).catch(() => null),
+          ]);
+
           return {
             ...chat,
             otherUid,
+            isArchived: memberPrivate?.archived || false,
             otherUserProfile: profile
               ? {
                   username: profile.username,
@@ -168,16 +192,33 @@ export default function ChatListScreen({ navigation }: any) {
     }
   }, [uid]);
 
-  // Subscribe to groups updates
+  // Subscribe to groups updates (preserve archive state from existing)
   useEffect(() => {
     if (!uid) return;
 
-    const unsubscribe = subscribeToUserGroups(uid, (updatedGroups) => {
-      setGroups(updatedGroups);
+    const unsubscribe = subscribeToUserGroups(uid, async (updatedGroups) => {
+      // Preserve archive status from current state or fetch new
+      const groupsWithArchive = await Promise.all(
+        updatedGroups.map(async (group) => {
+          // Check if we already have this group's archive state
+          const existing = groups.find((g) => g.id === group.id);
+          if (existing?.isArchived !== undefined) {
+            return { ...group, isArchived: existing.isArchived };
+          }
+          // Otherwise fetch it
+          try {
+            const memberPrivate = await getGroupMemberPrivate(group.id, uid);
+            return { ...group, isArchived: memberPrivate?.archived || false };
+          } catch {
+            return { ...group, isArchived: false };
+          }
+        }),
+      );
+      setGroups(groupsWithArchive);
     });
 
     return unsubscribe;
-  }, [uid]);
+  }, [uid]); // Note: intentionally not including groups to avoid loops
 
   useFocusEffect(
     useCallback(() => {
@@ -197,22 +238,34 @@ export default function ChatListScreen({ navigation }: any) {
     }
   };
 
-  const handleGroupPress = (group: Group) => {
+  const handleGroupPress = (group: GroupWithArchive) => {
     navigation.navigate("GroupChat", {
       groupId: group.id,
       groupName: group.name,
     });
   };
 
-  const filteredChats = chats.filter((chat) =>
-    chat.otherUserProfile?.username
+  // Filter by search and archive state
+  const filteredChats = chats.filter((chat) => {
+    const matchesSearch = chat.otherUserProfile?.username
       ?.toLowerCase()
-      .includes(searchQuery.toLowerCase()),
-  );
+      .includes(searchQuery.toLowerCase());
+    const matchesArchive = showArchived ? chat.isArchived : !chat.isArchived;
+    return matchesSearch && matchesArchive;
+  });
 
-  const filteredGroups = groups.filter((group) =>
-    group.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const filteredGroups = groups.filter((group) => {
+    const matchesSearch = group.name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const matchesArchive = showArchived ? group.isArchived : !group.isArchived;
+    return matchesSearch && matchesArchive;
+  });
+
+  // Count archived items for badge
+  const archivedCount =
+    chats.filter((c) => c.isArchived).length +
+    groups.filter((g) => g.isArchived).length;
 
   // Local type for combined list items
   type CombinedChatItem =
@@ -222,7 +275,7 @@ export default function ChatListScreen({ navigation }: any) {
         lastMessageAt: number | undefined;
         data: ChatWithProfile;
       }
-    | { type: "group"; id: string; lastMessageAt: any; data: Group };
+    | { type: "group"; id: string; lastMessageAt: any; data: GroupWithArchive };
 
   // Combine and sort all items by last message time
   const combinedItems: CombinedChatItem[] = [
@@ -272,6 +325,41 @@ export default function ChatListScreen({ navigation }: any) {
         value={searchQuery}
         style={[styles.searchbar, { backgroundColor: theme.colors.surface }]}
       />
+
+      {/* Archive Toggle */}
+      <View style={styles.filterRow}>
+        <Chip
+          selected={!showArchived}
+          onPress={() => setShowArchived(false)}
+          style={[
+            styles.filterChip,
+            !showArchived && { backgroundColor: theme.colors.primaryContainer },
+          ]}
+          textStyle={
+            !showArchived
+              ? { color: theme.colors.onPrimaryContainer }
+              : { color: theme.colors.onSurface }
+          }
+        >
+          Inbox
+        </Chip>
+        <Chip
+          selected={showArchived}
+          onPress={() => setShowArchived(true)}
+          style={[
+            styles.filterChip,
+            showArchived && { backgroundColor: theme.colors.primaryContainer },
+          ]}
+          textStyle={
+            showArchived
+              ? { color: theme.colors.onPrimaryContainer }
+              : { color: theme.colors.onSurface }
+          }
+          icon={archivedCount > 0 ? undefined : "archive-outline"}
+        >
+          Archived{archivedCount > 0 ? ` (${archivedCount})` : ""}
+        </Chip>
+      </View>
 
       <FlatList
         data={combinedItems}
@@ -418,9 +506,13 @@ export default function ChatListScreen({ navigation }: any) {
         {...LIST_PERFORMANCE_PROPS}
         ListEmptyComponent={
           <EmptyState
-            icon="message-outline"
-            title="Your inbox is quiet"
-            subtitle="Start a conversation with your connections"
+            icon={showArchived ? "archive-outline" : "message-outline"}
+            title={showArchived ? "No archived chats" : "Your inbox is quiet"}
+            subtitle={
+              showArchived
+                ? "Archive chats from the chat settings to see them here"
+                : "Start a conversation with your connections"
+            }
           />
         }
         refreshing={refreshing}
@@ -488,7 +580,19 @@ const styles = StyleSheet.create({
 
   searchbar: {
     margin: Spacing.md,
+    marginBottom: Spacing.sm,
     elevation: 0,
+  },
+
+  filterRow: {
+    flexDirection: "row",
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+
+  filterChip: {
+    borderRadius: BorderRadius.full,
   },
 
   chatCard: {

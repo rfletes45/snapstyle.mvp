@@ -5,21 +5,21 @@
  * Handles download, display, and cleanup
  */
 
+import { markSnapOpened } from "@/services/snaps";
+import { deleteSnapImage, downloadSnapImage } from "@/services/storage";
+import { useAuth } from "@/store/AuthContext";
 import React, { useEffect, useState } from "react";
 import {
-  View,
-  Image,
   ActivityIndicator,
   Alert,
-  TouchableOpacity,
-  Pressable,
+  Image,
   Platform,
+  Pressable,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { downloadSnapImage, deleteSnapImage } from "@/services/storage";
-import { markSnapOpened } from "@/services/chat";
-import { useAuth } from "@/store/AuthContext";
 
 interface SnapViewerScreenProps {
   route: any;

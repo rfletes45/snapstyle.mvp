@@ -10,21 +10,22 @@
  * - Sending scorecard messages
  */
 
+import { GAME_SCORE_LIMITS, GameSession, GameType } from "@/types/models";
+import { generateId } from "@/utils/ids";
 import {
   collection,
   doc,
-  setDoc,
   getDocs,
-  query,
-  where,
-  orderBy,
   limit,
+  orderBy,
+  query,
+  setDoc,
   Timestamp,
+  where,
 } from "firebase/firestore";
+import { getOrCreateChat } from "./chat";
+import { sendMessageV2 } from "./chatV2";
 import { getFirestoreInstance } from "./firebase";
-import { GameSession, GameType, GAME_SCORE_LIMITS } from "@/types/models";
-import { generateId } from "@/utils/ids";
-import { getOrCreateChat, sendMessage } from "./chat";
 
 // =============================================================================
 // Types
@@ -292,7 +293,7 @@ export interface ScorecardData {
 
 /**
  * Send a scorecard message to a friend
- * Creates/gets chat and sends a scorecard-type message
+ * Creates/gets chat and sends a scorecard-type message using V2
  */
 export async function sendScorecard(
   senderId: string,
@@ -308,10 +309,21 @@ export async function sendScorecard(
     // Create scorecard content as JSON string
     const content = JSON.stringify(scorecard);
 
-    // Send the scorecard message
-    await sendMessage(chatId, senderId, content, friendUid, "scorecard");
+    // Generate message ID and client ID for V2
+    const messageId = generateId();
+    const clientId = `scorecard_${senderId}_${Date.now()}`;
 
-    console.log("[games] Scorecard sent successfully");
+    // Send the scorecard message using V2
+    await sendMessageV2({
+      conversationId: chatId,
+      scope: "dm",
+      kind: "scorecard",
+      text: content,
+      clientId,
+      messageId,
+    });
+
+    console.log("[games] Scorecard sent successfully via V2");
     return true;
   } catch (error) {
     console.error("[games] Error sending scorecard:", error);

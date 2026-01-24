@@ -51,10 +51,17 @@ export default function StoryViewerScreen({
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const insets = useSafeAreaInsets();
-  const { imageUri, storyId, isNewStory } = route.params;
+  const { imageUri, storyId, isNewStory, allStoryIds, currentIndex } =
+    route.params;
+
+  // Current story index for multi-story navigation
+  const [storyIndex, setStoryIndex] = useState(currentIndex || 0);
+  const [currentStoryId, setCurrentStoryId] = useState(storyId);
 
   // Phase 13: Try to use preloaded image first
-  const preloadedImage = storyId ? getPreloadedImageUrl(storyId) : null;
+  const preloadedImage = currentStoryId
+    ? getPreloadedImageUrl(currentStoryId)
+    : null;
 
   const [displayImage, setDisplayImage] = useState<string | null>(
     isNewStory ? imageUri : preloadedImage,
@@ -67,11 +74,11 @@ export default function StoryViewerScreen({
 
   // Load existing story
   useEffect(() => {
-    if (!isNewStory && storyId) {
+    if (!isNewStory && currentStoryId) {
       loadStory();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyId, isNewStory]);
+  }, [currentStoryId, isNewStory]);
 
   // Mark as viewed when loaded (for existing stories)
   useEffect(() => {
@@ -117,14 +124,16 @@ export default function StoryViewerScreen({
   };
 
   const loadStory = async () => {
-    if (!storyId) return;
+    if (!currentStoryId) return;
 
     try {
-      console.log("🔵 [StoryViewerScreen] Loading story:", storyId);
+      console.log("🔵 [StoryViewerScreen] Loading story:", currentStoryId);
 
       // Phase 13: If we have preloaded image, skip loading state
-      if (preloadedImage) {
+      const currentPreloadedImage = getPreloadedImageUrl(currentStoryId);
+      if (currentPreloadedImage) {
         console.log("✅ [StoryViewerScreen] Using preloaded image");
+        setDisplayImage(currentPreloadedImage);
         setLoading(false);
       } else {
         setLoading(true);
@@ -132,7 +141,7 @@ export default function StoryViewerScreen({
 
       setError(null);
 
-      const fetchedStory = await getStory(storyId);
+      const fetchedStory = await getStory(currentStoryId);
       if (!fetchedStory) {
         setError("Story not found or has expired");
         setLoading(false);
@@ -149,7 +158,7 @@ export default function StoryViewerScreen({
       setStory(fetchedStory);
 
       // Phase 13: Only download if not already preloaded
-      if (!preloadedImage) {
+      if (!currentPreloadedImage) {
         const uri = await downloadSnapImage(fetchedStory.storagePath);
         setDisplayImage(uri);
       }
@@ -161,6 +170,53 @@ export default function StoryViewerScreen({
     } finally {
       setLoading(false);
     }
+  };
+
+  // Navigate to next story
+  const goToNextStory = () => {
+    if (!allStoryIds || storyIndex >= allStoryIds.length - 1) {
+      // No more stories, go back
+      navigation.goBack();
+      return;
+    }
+    const nextIndex = storyIndex + 1;
+    setStoryIndex(nextIndex);
+    setCurrentStoryId(allStoryIds[nextIndex]);
+    setStory(null);
+    setDisplayImage(null);
+  };
+
+  // Navigate to previous story
+  const goToPrevStory = () => {
+    if (!allStoryIds || storyIndex <= 0) {
+      // Already at first story
+      return;
+    }
+    const prevIndex = storyIndex - 1;
+    setStoryIndex(prevIndex);
+    setCurrentStoryId(allStoryIds[prevIndex]);
+    setStory(null);
+    setDisplayImage(null);
+  };
+
+  // Handle tap on story (left side = prev, right side = next)
+  const handleStoryTap = (event: any) => {
+    if (isNewStory) {
+      return; // Don't navigate when posting new story
+    }
+
+    const { locationX } = event.nativeEvent;
+    const screenWidth = event.nativeEvent.target?.clientWidth || 300; // Fallback width
+    const tapPosition = locationX / screenWidth;
+
+    if (tapPosition < 0.3) {
+      // Left 30% of screen - go to previous
+      goToPrevStory();
+    } else if (tapPosition > 0.7) {
+      // Right 30% of screen - go to next
+      goToNextStory();
+    }
+    // Middle 40% does nothing (allows interaction with controls)
   };
 
   const markAsViewed = async () => {
@@ -343,8 +399,7 @@ export default function StoryViewerScreen({
   }
 
   return (
-    <TouchableOpacity
-      activeOpacity={1}
+    <Pressable
       style={{
         flex: 1,
         backgroundColor: "#000",
@@ -353,7 +408,7 @@ export default function StoryViewerScreen({
         paddingTop: insets.top,
         paddingBottom: insets.bottom,
       }}
-      onPress={() => !isNewStory && navigation.goBack()}
+      onPress={handleStoryTap}
     >
       {displayImage && (
         <Image
@@ -431,7 +486,7 @@ export default function StoryViewerScreen({
           )}
         </View>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

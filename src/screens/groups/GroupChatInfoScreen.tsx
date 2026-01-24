@@ -10,47 +10,49 @@
  * - Role management (owner only)
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import { AvatarMini } from "@/components/Avatar";
+import { ErrorState, LoadingState } from "@/components/ui";
+import { getFriends, getUserProfileByUid } from "@/services/friends";
 import {
-  View,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
+  changeMemberRole,
+  deleteGroup,
+  getGroup,
+  getUserRole,
+  leaveGroup,
+  removeMember,
+  sendGroupInvite,
+  subscribeToGroupMembers,
+  updateGroupName,
+  updateGroupPhoto,
+} from "@/services/groups";
+import { useAuth } from "@/store/AuthContext";
+import { Group, GROUP_LIMITS, GroupMember, GroupRole } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import React, { useCallback, useEffect, useState } from "react";
+import {
   Alert,
+  FlatList,
+  Image,
   ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-  Text,
-  Button,
   Appbar,
+  Button,
+  Divider,
   IconButton,
   Menu,
-  Divider,
-  Portal,
   Modal,
-  TextInput,
+  Portal,
   Snackbar,
+  Text,
+  TextInput,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import {
-  getGroup,
-  getGroupMembers,
-  subscribeToGroupMembers,
-  leaveGroup,
-  removeMember,
-  changeMemberRole,
-  updateGroupName,
-  sendGroupInvite,
-  getUserRole,
-  deleteGroup,
-} from "@/services/groups";
-import { getFriends, getUserProfileByUid } from "@/services/friends";
-import { Group, GroupMember, GroupRole, GROUP_LIMITS } from "@/types/models";
-import { AvatarMini } from "@/components/Avatar";
-import { LoadingState, ErrorState } from "@/components/ui";
 import { AppColors } from "../../../constants/theme";
 
 export default function GroupChatInfoScreen({ route, navigation }: any) {
@@ -77,6 +79,59 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   const [memberToRemove, setMemberToRemove] = useState<GroupMember | null>(
     null,
   );
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Handle group photo change
+  const handleChangePhoto = async () => {
+    if (!uid || (userRole !== "owner" && userRole !== "admin")) {
+      Alert.alert(
+        "Permission Denied",
+        "Only admins can change the group photo",
+      );
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]) {
+        return;
+      }
+
+      setUploadingPhoto(true);
+      console.log("🔵 [GroupChatInfo] Starting photo upload...");
+
+      const imageUri = result.assets[0].uri;
+
+      // Import storage service dynamically to avoid circular deps
+      const { uploadGroupImage } = await import("@/services/storage");
+
+      // Upload to storage - use "avatar" as the messageId for avatar images
+      console.log("🔵 [GroupChatInfo] Uploading image to storage...");
+      const downloadUrl = await uploadGroupImage(groupId, "avatar", imageUri);
+      console.log("✅ [GroupChatInfo] Image uploaded, URL:", downloadUrl);
+
+      // Update group document
+      console.log("🔵 [GroupChatInfo] Updating group document...");
+      await updateGroupPhoto(groupId, uid, downloadUrl);
+      console.log("✅ [GroupChatInfo] Group document updated");
+
+      // Update local state
+      setGroup((prev) => (prev ? { ...prev, avatarUrl: downloadUrl } : prev));
+      setSnackbar({ visible: true, message: "Group photo updated!" });
+      console.log("✅ [GroupChatInfo] Photo change complete");
+    } catch (err: any) {
+      console.error("❌ [GroupChatInfo] Failed to update group photo:", err);
+      Alert.alert("Error", err.message || "Failed to update group photo");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   // Load group data
   useEffect(() => {
@@ -351,7 +406,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                   onPress={() => setMenuVisible(member.uid)}
                 />
               }
-              contentStyle={styles.menuContent}
+              contentStyle={{ backgroundColor: theme.colors.surface }}
             >
               {userRole === "owner" && (
                 <>
@@ -428,18 +483,50 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Group Header */}
         <View style={styles.groupHeader}>
-          <View
-            style={[
-              styles.groupAvatar,
-              { backgroundColor: theme.colors.surfaceVariant },
-            ]}
+          <TouchableOpacity
+            onPress={handleChangePhoto}
+            disabled={
+              uploadingPhoto || (userRole !== "owner" && userRole !== "admin")
+            }
+            style={styles.groupAvatarContainer}
           >
-            <MaterialCommunityIcons
-              name="account-group"
-              size={48}
-              color={theme.colors.primary}
-            />
-          </View>
+            {group.avatarUrl ? (
+              <Image
+                source={{ uri: group.avatarUrl }}
+                style={styles.groupAvatarImage}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.groupAvatar,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account-group"
+                  size={48}
+                  color={theme.colors.primary}
+                />
+              </View>
+            )}
+            {(userRole === "owner" || userRole === "admin") && (
+              <View style={styles.editAvatarBadge}>
+                {uploadingPhoto ? (
+                  <MaterialCommunityIcons
+                    name="loading"
+                    size={16}
+                    color="#FFF"
+                  />
+                ) : (
+                  <MaterialCommunityIcons
+                    name="camera"
+                    size={16}
+                    color="#FFF"
+                  />
+                )}
+              </View>
+            )}
+          </TouchableOpacity>
           <Text style={styles.groupName}>{group.name}</Text>
           <Text style={styles.memberCount}>
             {group.memberCount} {group.memberCount === 1 ? "member" : "members"}
@@ -475,6 +562,27 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         {/* Actions Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
+
+          {/* Chat Settings - H13 */}
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() =>
+              navigation.navigate("ChatSettings", {
+                groupId,
+                chatType: "group",
+                chatName: group.name,
+              })
+            }
+          >
+            <MaterialCommunityIcons
+              name="bell-cog-outline"
+              size={24}
+              color={theme.colors.primary}
+            />
+            <Text style={styles.actionButtonText}>
+              Notifications & Settings
+            </Text>
+          </TouchableOpacity>
 
           {userRole !== "owner" && (
             <TouchableOpacity
@@ -712,7 +820,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         duration={2000}
         style={styles.snackbar}
       >
-        {snackbar.message}
+        <Text style={{ color: "#FFF" }}>{snackbar.message}</Text>
       </Snackbar>
     </SafeAreaView>
   );
@@ -735,6 +843,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#222",
   },
+  groupAvatarContainer: {
+    position: "relative",
+    marginBottom: 16,
+  },
   groupAvatar: {
     width: 80,
     height: 80,
@@ -742,7 +854,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#1A1A1A",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+  },
+  groupAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  editAvatarBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    backgroundColor: AppColors.primary,
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
   },
   groupName: {
     color: "#FFF",
@@ -847,6 +974,11 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 16,
     paddingHorizontal: 8,
+  },
+  actionButtonText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "500",
   },
   actionButtonTextDanger: {
     color: "#F44336",

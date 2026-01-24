@@ -27,6 +27,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { updateProfile } from "@/services/users";
 import { isValidDisplayName } from "@/utils/validators";
 import { signOut, deleteUser } from "firebase/auth";
@@ -57,6 +58,10 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { profile, refreshProfile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
   const { mode, setMode, isDark } = useAppTheme();
+  const {
+    enabled: inAppNotificationsEnabled,
+    setEnabled: setInAppNotificationsEnabled,
+  } = useInAppNotifications();
 
   // Notification toggles (local state - persisted to Firestore in future)
   const [notifications, setNotifications] = useState<NotificationSettings>({
@@ -286,6 +291,24 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         <List.Subheader style={styles.sectionHeader}>
           Notifications
         </List.Subheader>
+
+        <List.Item
+          title="In-App Banners"
+          description="Show banners for new messages & requests"
+          left={(props) => <List.Icon {...props} icon="bell-badge" />}
+          right={() => (
+            <Switch
+              value={inAppNotificationsEnabled}
+              onValueChange={(value) => {
+                setInAppNotificationsEnabled(value);
+                showSuccess(
+                  `In-app notifications ${value ? "enabled" : "disabled"}`,
+                );
+              }}
+              color={theme.colors.primary}
+            />
+          )}
+        />
 
         <List.Item
           title="Messages"

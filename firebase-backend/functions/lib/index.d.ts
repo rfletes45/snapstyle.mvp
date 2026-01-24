@@ -5,13 +5,33 @@
  * - Story auto-expiry and cleanup (Phase 5)
  * - Push notifications (Phase 6)
  * - Streak management (Phase 6)
+ * - V2 Messaging with idempotent sends (Phase H3)
+ *
+ * Security Note (Phase E):
+ * - All onCall functions require authentication via context.auth
+ * - Admin functions verify context.auth.token.admin claim
+ * - Input validation is performed on all user-supplied data
+ * - Structured logging includes context for debugging/audit
  */
 import * as functions from "firebase-functions";
+export declare const sendMessageV2: functions.HttpsFunction & functions.Runnable<any>;
+export declare const editMessageV2: functions.HttpsFunction & functions.Runnable<any>;
+export declare const deleteMessageForAllV2: functions.HttpsFunction & functions.Runnable<any>;
+export declare const toggleReactionV2: functions.HttpsFunction & functions.Runnable<any>;
 /**
  * onNewMessage: Triggered when a new message is created
  * Sends push notification to recipient and updates streak tracking
+ * Respects user mute preferences
  */
 export declare const onNewMessage: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
+ * onNewGroupMessageV2: Triggered when a new message is created in a group
+ * Sends push notifications respecting notifyLevel preferences:
+ * - "all": notify for all messages
+ * - "mentions": notify only if mentioned
+ * - "none": never notify
+ */
+export declare const onNewGroupMessageV2: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
 /**
  * onNewFriendRequest: Notify user when they receive a friend request
  */
@@ -213,3 +233,13 @@ export declare const onNewReport: functions.CloudFunction<functions.firestore.Qu
  * Runs every hour to mark expired bans as inactive
  */
 export declare const updateExpiredBans: functions.CloudFunction<unknown>;
+/**
+ * Fetch link preview - Callable Cloud Function
+ *
+ * Fetches OpenGraph metadata from a URL server-side.
+ * Results are cached in Firestore for 24 hours.
+ *
+ * @param url - URL to fetch preview for
+ * @returns Link preview data or error
+ */
+export declare const fetchLinkPreview: functions.HttpsFunction & functions.Runnable<any>;

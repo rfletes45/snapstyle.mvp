@@ -1,55 +1,64 @@
-import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import {
+  NavigationContainer,
+  NavigationContainerRef,
+} from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import React from "react";
 
-import { useAppTheme } from "@/store/ThemeContext";
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
+import { useAppTheme } from "@/store/ThemeContext";
 
 // Auth screens
-import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 import LoginScreen from "@/screens/auth/LoginScreen";
-import SignupScreen from "@/screens/auth/SignupScreen";
 import ProfileSetupScreen from "@/screens/auth/ProfileSetupScreen";
+import SignupScreen from "@/screens/auth/SignupScreen";
+import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 
 // App screens
 import ChatListScreen from "@/screens/chat/ChatListScreen";
 import ChatScreen from "@/screens/chat/ChatScreen";
-import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
-import StoriesScreen from "@/screens/stories/StoriesScreen";
-import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
+import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
+import FriendsScreen from "@/screens/friends/FriendsScreen";
+import AchievementsScreen from "@/screens/games/AchievementsScreen";
 import GamesHub from "@/screens/games/GamesHub";
+import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
 import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
-import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
-import AchievementsScreen from "@/screens/games/AchievementsScreen";
-import FriendsScreen from "@/screens/friends/FriendsScreen";
 import ProfileScreen from "@/screens/profile/ProfileScreen";
-import DebugScreen from "@/screens/debug/DebugScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
+import StoriesScreen from "@/screens/stories/StoriesScreen";
+import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
+// Phase D: DebugScreen only loaded in development
+const DebugScreen = __DEV__
+  ? require("@/screens/debug/DebugScreen").default
+  : () => null;
 
 // Phase 18: Economy + Tasks
-import WalletScreen from "@/screens/wallet/WalletScreen";
 import TasksScreen from "@/screens/tasks/TasksScreen";
+import WalletScreen from "@/screens/wallet/WalletScreen";
 
 // Phase 19: Shop
 import ShopScreen from "@/screens/shop/ShopScreen";
 
 // Phase 20: Group Chat
 import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
-import GroupChatScreen from "@/screens/groups/GroupChatScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
+import GroupChatScreen from "@/screens/groups/GroupChatScreen";
 import GroupInvitesScreen from "@/screens/groups/GroupInvitesScreen";
+
+// Phase H13: Chat Settings
+import ChatSettingsScreen from "@/screens/chat/ChatSettingsScreen";
 
 // Phase 21: Admin Screens
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
 
-const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator<any>();
+const Tab = createBottomTabNavigator<any>();
 
 function AuthStack() {
   return (
@@ -108,29 +117,32 @@ function InboxStack() {
       <Stack.Screen
         name="ScheduledMessages"
         component={ScheduledMessagesScreen}
-        options={{ title: "Scheduled" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="GroupChatCreate"
         component={GroupChatCreateScreen}
-        options={{ title: "New Group" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="GroupChat"
         component={GroupChatScreen}
-        options={({ route }: any) => ({
-          title: route.params?.groupName || "Group",
-        })}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="GroupChatInfo"
         component={GroupChatInfoScreen}
-        options={{ title: "Group Info" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="GroupInvites"
         component={GroupInvitesScreen}
-        options={{ title: "Invites" }}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChatSettings"
+        component={ChatSettingsScreen}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );
@@ -253,11 +265,14 @@ function ProfileStack() {
         component={ProfileScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
-        name="Debug"
-        component={DebugScreen}
-        options={{ title: "Debug Info" }}
-      />
+      {/* Phase D: Debug screen only available in development */}
+      {__DEV__ && (
+        <Stack.Screen
+          name="Debug"
+          component={DebugScreen}
+          options={{ title: "Debug Info" }}
+        />
+      )}
       <Stack.Screen
         name="BlockedUsers"
         component={BlockedUsersScreen}
@@ -380,6 +395,14 @@ function AppTabs() {
 }
 
 /**
+ * RootNavigator Props
+ */
+interface RootNavigatorProps {
+  /** Ref to access navigation from outside NavigationContainer */
+  navigationRef?: React.RefObject<NavigationContainerRef<any> | null>;
+}
+
+/**
  * RootNavigator
  * Uses AppGate for hydration-safe navigation
  * Rebranded: Vibe app with Inbox, Moments, Play, Connections, Profile
@@ -390,7 +413,7 @@ function AppTabs() {
  * - Needs profile: ProfileSetupStack
  * - Ready: AppTabs (main app)
  */
-export default function RootNavigator() {
+export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
   const { theme } = useAppTheme();
 
   // For web, we need a linking configuration
@@ -414,7 +437,11 @@ export default function RootNavigator() {
   return (
     <AppGate loadingMessage="Just a moment...">
       {({ hydrationState }) => (
-        <NavigationContainer linking={linking} theme={theme.navigation}>
+        <NavigationContainer
+          ref={navigationRef}
+          linking={linking}
+          theme={theme.navigation}
+        >
           {hydrationState === "ready" ? (
             <>
               <AppTabs />

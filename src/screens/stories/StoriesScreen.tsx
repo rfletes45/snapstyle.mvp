@@ -11,35 +11,35 @@
  * - Moment expiration handling
  */
 
-import React, { useState, useCallback, useRef } from "react";
-import {
-  View,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  ActionSheetIOS,
-  Platform,
-} from "react-native";
-import { Text, FAB, useTheme } from "react-native-paper";
-import { useFocusEffect } from "@react-navigation/native";
-import { useAuth } from "@/store/AuthContext";
-import {
-  getFriendsStories,
-  getBatchViewedStories,
-  preloadStoryImages,
-  filterExpiredStories,
-  getStoryTimeRemaining,
-} from "@/services/stories";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { getFriends } from "@/services/friends";
+import {
+  filterExpiredStories,
+  getBatchViewedStories,
+  getFriendsStories,
+  getStoryTimeRemaining,
+  preloadStoryImages,
+} from "@/services/stories";
+import { useAuth } from "@/store/AuthContext";
 import { Story } from "@/types/models";
-import * as ImagePicker from "expo-image-picker";
 import {
   captureImageFromWebcam,
   pickImageFromWeb,
 } from "@/utils/webImagePicker";
-import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
+import React, { useCallback, useRef, useState } from "react";
+import {
+  ActionSheetIOS,
+  Alert,
+  FlatList,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { FAB, Text, useTheme } from "react-native-paper";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 // Phase 13: Story item dimensions for FlatList optimization
 const STORY_ITEM_WIDTH = 88; // 80px thumbnail + 8px margin
@@ -254,7 +254,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       } else {
         console.log("🔵 [capturePhoto] Using expo camera");
         const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ["images"],
           allowsEditing: false,
           aspect: [1, 1],
           quality: 1,
@@ -297,7 +297,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       } else {
         console.log("🔵 [selectPhoto] Using expo image library");
         const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ["images"],
           allowsEditing: false,
           aspect: [1, 1],
           quality: 1,
@@ -333,9 +333,14 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   };
 
   const handleStoryPress = (story: Story) => {
+    // Find the index of this story in the list
+    const storyIndex = stories.findIndex((s) => s.id === story.id);
     navigation.navigate("StoryViewer", {
       storyId: story.id,
       authorId: story.authorId,
+      // Pass all story IDs for navigation between stories
+      allStoryIds: stories.map((s) => s.id),
+      currentIndex: storyIndex >= 0 ? storyIndex : 0,
     });
   };
 

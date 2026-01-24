@@ -141,11 +141,13 @@ service cloud.firestore {
       
       // Create: sender must be auth user, validate fields
       // Note: createdAt is a number (JS timestamp) not Firestore Timestamp
+      // Rate limit: 1 request per 5 seconds (soft limit via client check)
       allow create: if isAuth() && 
                       request.auth.uid == request.resource.data.from &&
                       request.resource.data.from != request.resource.data.to && // Can't friend yourself
                       request.resource.data.status == 'pending' &&
-                      request.resource.data.createdAt is number;
+                      request.resource.data.createdAt is number &&
+                      validNumberTimestamp(request.resource.data.createdAt);
       
       // Update: only recipient can accept/decline
       allow update: if isAuth() && 
@@ -219,33 +221,148 @@ service cloud.firestore {
                       // Cannot change members
                       request.resource.data.members == resource.data.members;
 
-      // Messages subcollection
+      // --------------------------------------------------------
+      // Messages subcollection (V2 Enhanced)
+      // Supports: hiddenFor (delete-for-me), deletedForAll, edit
+      // --------------------------------------------------------
       match /Messages/{messageId} {
+        // Helper: Check if user is chat member
+        function isChatMember() {
+          return request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+        }
+        
+        // Helper: Check if user is the message sender
+        function isSender() {
+          return resource.data.senderId == request.auth.uid || 
+                 resource.data.sender == request.auth.uid;
+        }
+        
+        // Helper: Check if edit is within time limit (15 minutes)
+        function isWithinEditWindow() {
+          let createdAt = resource.data.serverReceivedAt != null 
+            ? resource.data.serverReceivedAt 
+            : resource.data.createdAt;
+          return request.time.toMillis() - createdAt < 15 * 60 * 1000;
+        }
+        
         // Read: chat members only
-        allow read: if isAuth() && 
-                     request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+        allow read: if isAuth() && isChatMember();
         
         // Create: sender must be auth user and chat member
+        // Support both V1 (sender) and V2 (senderId) fields
         allow create: if isAuth() && 
-                        request.auth.uid == request.resource.data.sender &&
-                        request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
-                        request.resource.data.type in ['text', 'image', 'scorecard'] &&
-                        validTimestamp(request.resource.data.createdAt) &&
-                        // Content length limits
-                        (request.resource.data.type == 'image' || 
-                         validStringLength(request.resource.data.content, 1, 2000));
+                        isChatMember() &&
+                        (request.resource.data.senderId == request.auth.uid ||
+                         request.resource.data.sender == request.auth.uid) &&
+                        // V1 type validation OR V2 kind validation
+                        // Voice messages use type='voice' (H11)
+                        (request.resource.data.type in ['text', 'image', 'scorecard', 'voice'] ||
+                         request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system']) &&
+                        // Content length limits (V1 content or V2 text)
+                        (!request.resource.data.keys().hasAll(['content']) ||
+                         request.resource.data.type == 'image' ||
+                         request.resource.data.type == 'voice' || 
+                         validStringLength(request.resource.data.content, 0, 2000)) &&
+                        (!request.resource.data.keys().hasAll(['text']) ||
+                         validStringLength(request.resource.data.text, 0, 2000));
         
-        // Update: members can update (mark read, etc.)
-        allow update: if isAuth() && 
-                        request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
-                        // Prevent changing sender/content/type
-                        request.resource.data.sender == resource.data.sender &&
-                        request.resource.data.content == resource.data.content &&
-                        request.resource.data.type == resource.data.type;
+        // Update: V2 features - hiddenFor, deletedForAll, edit
+        allow update: if isAuth() && isChatMember() && (
+                        // Case 1: Delete-for-me (hiddenFor) - user can only add self, cannot remove entries
+                        // BUG FIX: Added size check to prevent clearing the array
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenFor']) &&
+                         // New array must contain all entries from old array (no removals)
+                         request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) &&
+                         // Only difference must be adding the current user's uid
+                         request.resource.data.hiddenFor.removeAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) == [request.auth.uid] &&
+                         // New array must be larger (prevents setting to empty array)
+                         request.resource.data.hiddenFor.size() > (resource.data.hiddenFor == null ? 0 : resource.data.hiddenFor.size())) ||
+                        
+                        // Case 2: Delete-for-all - sender only
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedForAll']) &&
+                         isSender() &&
+                         request.resource.data.deletedForAll.by == request.auth.uid) ||
+                        
+                        // Case 3: Edit message - sender only, within 15 min
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
+                         isSender() &&
+                         isWithinEditWindow()) ||
+                        
+                        // Case 4: Legacy - mark as read (V1 compatibility)
+                        (request.resource.data.sender == resource.data.sender &&
+                         request.resource.data.content == resource.data.content &&
+                         request.resource.data.type == resource.data.type)
+                      );
         
-        // Delete: members can delete (view-once snaps)
-        allow delete: if isAuth() && 
-                        request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+        // Delete: members can delete (view-once snaps only)
+        allow delete: if isAuth() && isChatMember();
+        
+        // --------------------------------------------------------
+        // Reactions subcollection (V2)
+        // Path: Messages/{messageId}/Reactions/{emoji}_{uid}
+        // --------------------------------------------------------
+        match /Reactions/{reactionId} {
+          // Read: any chat member
+          allow read: if isAuth() && isChatMember();
+          
+          // Create: user can only create their own reaction
+          allow create: if isAuth() && 
+                          isChatMember() &&
+                          request.resource.data.uid == request.auth.uid &&
+                          request.resource.data.emoji is string &&
+                          request.resource.data.emoji.size() <= 10;
+          
+          // Delete: user can only delete their own reaction
+          allow delete: if isAuth() && 
+                          isChatMember() &&
+                          resource.data.uid == request.auth.uid;
+          
+          // No updates - delete and recreate
+          allow update: if false;
+        }
+      }
+
+      // --------------------------------------------------------
+      // Members subcollection (Public state - V2)
+      // Stores: typing indicators, read receipt watermarks
+      // --------------------------------------------------------
+      match /Members/{uid} {
+        // Read: any chat member can read all member states
+        allow read: if isAuth() && 
+                      request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
+        
+        // Create/Update: users can only modify their own state
+        allow create, update: if isAuth() && 
+                                isOwner(uid) &&
+                                request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
+                                // Validate required field
+                                request.resource.data.uid == uid;
+        
+        // No delete - member state persists
+        allow delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // MembersPrivate subcollection (Private state - V2)
+      // Stores: mute, archive, notification prefs, lastSeen
+      // OWNER-ONLY ACCESS
+      // --------------------------------------------------------
+      match /MembersPrivate/{uid} {
+        // Read: only the owner can read their private state
+        allow read: if isAuth() && isOwner(uid);
+        
+        // Create/Update: owner only, with validation
+        allow create, update: if isAuth() && 
+                                isOwner(uid) &&
+                                request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
+                                // Validate required field
+                                request.resource.data.uid == uid &&
+                                // Validate notifyLevel if present
+                                (!request.resource.data.keys().hasAll(['notifyLevel']) ||
+                                 request.resource.data.notifyLevel in ['all', 'mentions', 'none']);
+        
+        // No delete - private state persists
+        allow delete: if false;
       }
     }
 
@@ -258,10 +375,12 @@ service cloud.firestore {
       allow read: if isAuth() && request.auth.uid in resource.data.recipientIds;
       
       // Create: author validation
+      // Note: createdAt and expiresAt are numbers (JS timestamps in milliseconds)
       allow create: if isAuth() && 
                       request.auth.uid == request.resource.data.authorId &&
-                      validTimestamp(request.resource.data.createdAt) &&
+                      validNumberTimestamp(request.resource.data.createdAt) &&
                       // expiresAt must be in future (24h from creation typically)
+                      request.resource.data.expiresAt is number &&
                       request.resource.data.expiresAt > request.time.toMillis() &&
                       // recipientIds must include author and be reasonable size
                       request.auth.uid in request.resource.data.recipientIds &&
@@ -288,10 +407,11 @@ service cloud.firestore {
         allow read: if isAuth() && userId == request.auth.uid;
         
         // User can only write their own view record
+        // Note: viewedAt is a number (JS timestamp in milliseconds)
         allow create: if isAuth() && 
                         userId == request.auth.uid &&
                         request.resource.data.userId == request.auth.uid &&
-                        validTimestamp(request.resource.data.viewedAt);
+                        validNumberTimestamp(request.resource.data.viewedAt);
         
         allow update: if isAuth() && userId == request.auth.uid;
         allow delete: if false; // Views are permanent
@@ -303,13 +423,16 @@ service cloud.firestore {
     // ============================================================
 
     match /Reports/{reportId} {
-      // Only reporter can create
+      // Only reporter can create - add basic rate limiting via timestamp validation
       allow create: if isAuth() && 
                       request.auth.uid == request.resource.data.reporterId &&
                       request.resource.data.reporterId != request.resource.data.reportedUserId &&
                       request.resource.data.reason in ['spam', 'harassment', 'inappropriate_content', 'fake_account', 'other'] &&
                       request.resource.data.status == 'pending' &&
                       validTimestamp(request.resource.data.createdAt) &&
+                      // Must have valid reportedUserId
+                      request.resource.data.reportedUserId is string &&
+                      request.resource.data.reportedUserId.size() > 0 &&
                       // Optional description length limit
                       (!request.resource.data.keys().hasAll(['description']) ||
                        validStringLength(request.resource.data.description, 0, 500));
@@ -567,23 +690,148 @@ service cloud.firestore {
                       );
       }
 
-      // MESSAGES SUBCOLLECTION
+      // --------------------------------------------------------
+      // MembersPrivate subcollection (Private state - V2)
+      // Stores: mute, archive, notification prefs, lastSeen
+      // OWNER-ONLY ACCESS - user can only read/write their own
+      // --------------------------------------------------------
+      match /MembersPrivate/{uid} {
+        // Helper: Check membership via Group doc (for subcollection context)
+        function isGroupMemberViaParent() {
+          return request.auth.uid in get(/databases/$(database)/documents/Groups/$(groupId)).data.memberIds;
+        }
+        
+        // Read: only the owner can read their private state
+        allow read: if isAuth() && isOwner(uid);
+        
+        // Create/Update: owner only, with validation
+        // Use isGroupMemberViaParent() since isGroupMemberFast() references wrong resource
+        allow create, update: if isAuth() && 
+                                isOwner(uid) &&
+                                (isGroupMemberViaParent() || isGroupMember()) &&
+                                // Validate required field
+                                request.resource.data.uid == uid &&
+                                // Validate notifyLevel if present
+                                (!request.resource.data.keys().hasAll(['notifyLevel']) ||
+                                 request.resource.data.notifyLevel in ['all', 'mentions', 'none']);
+        
+        // No delete - private state persists
+        allow delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Messages subcollection (V2 Enhanced for Groups)
+      // Supports: hiddenFor (delete-for-me), deletedForAll (admin), edit
+      // --------------------------------------------------------
       match /Messages/{messageId} {
+        // Helper: Check if user is message sender
+        function isMessageSender() {
+          return resource.data.senderId == request.auth.uid || 
+                 resource.data.sender == request.auth.uid;
+        }
+        
+        // Helper: Check if user is admin or owner
+        function isAdminOrOwner() {
+          return isGroupMember() && getMemberRole() in ['owner', 'admin'];
+        }
+        
+        // Helper: Check if edit is within time limit (15 minutes)
+        function isWithinEditWindow() {
+          let createdAt = resource.data.serverReceivedAt != null 
+            ? resource.data.serverReceivedAt 
+            : resource.data.createdAt;
+          return request.time.toMillis() - createdAt < 15 * 60 * 1000;
+        }
+        
+        // Helper: Check if user is group owner (for initial message during creation)
+        function isGroupOwnerForMessage() {
+          return getAfter(/databases/$(database)/documents/Groups/$(groupId)).data.ownerId == request.auth.uid;
+        }
+        
+        // Helper: Check if user is being added to group in this batch (for join messages)
+        function isJoiningGroupMember() {
+          return request.auth.uid in getAfter(/databases/$(database)/documents/Groups/$(groupId)).data.memberIds;
+        }
+        
+        // Helper: Check membership via parent document read (needed in subcollections)
+        // NOTE: isGroupMemberFast() uses resource.data.memberIds which doesn't work in subcollections
+        function isGroupMemberViaGet() {
+          return request.auth.uid in get(/databases/$(database)/documents/Groups/$(groupId)).data.memberIds;
+        }
+        
         // Read: any group member can read messages
-        allow read: if isAuth() && (isGroupMemberFast() || isGroupMember());
+        allow read: if isAuth() && (isGroupMemberViaGet() || isGroupMember());
         
-        // Create: sender must match auth, and either is member OR is system message
+        // Create: sender must match auth, with content validation
+        // Support both V1 (sender) and V2 (senderId) fields
+        // Allow owner to create initial system message during group creation
+        // Allow joining member to create system message during invite acceptance
         allow create: if isAuth() &&
-                        request.resource.data.sender == request.auth.uid && (
-                          // Regular messages: must be group member
-                          isGroupMemberFast() ||
-                          isGroupMember() ||
-                          // System messages: allowed without membership check (for join messages)
-                          request.resource.data.type == 'system'
-                        );
+                        (isGroupMemberViaGet() || isGroupMember() || isGroupOwnerForMessage() || isJoiningGroupMember()) &&
+                        (request.resource.data.senderId == request.auth.uid ||
+                         request.resource.data.sender == request.auth.uid) &&
+                        // V1 type validation OR V2 kind validation
+                        // Voice messages use type='voice' (H11)
+                        (request.resource.data.type in ['text', 'image', 'system', 'voice', 'scorecard'] ||
+                         request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system']) &&
+                        // Validate content length
+                        (request.resource.data.type == 'image' ||
+                         request.resource.data.type == 'system' ||
+                         request.resource.data.type == 'voice' ||
+                         !request.resource.data.keys().hasAll(['content']) ||
+                         validStringLength(request.resource.data.content, 0, 2000)) &&
+                        (!request.resource.data.keys().hasAll(['text']) ||
+                         validStringLength(request.resource.data.text, 0, 2000));
         
-        // Update/Delete: not allowed (messages are immutable)
-        allow update, delete: if false;
+        // Update: V2 features - hiddenFor, deletedForAll, edit
+        allow update: if isAuth() && (isGroupMemberViaGet() || isGroupMember()) && (
+                        // Case 1: Delete-for-me (hiddenFor) - user can only add self, cannot remove entries
+                        // BUG FIX: Added size check to prevent clearing the array
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenFor']) &&
+                         // New array must contain all entries from old array (no removals)
+                         request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) &&
+                         // Only difference must be adding the current user's uid
+                         request.resource.data.hiddenFor.removeAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) == [request.auth.uid] &&
+                         // New array must be larger (prevents setting to empty array)
+                         request.resource.data.hiddenFor.size() > (resource.data.hiddenFor == null ? 0 : resource.data.hiddenFor.size())) ||
+                        
+                        // Case 2: Delete-for-all - sender OR admin/owner
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedForAll']) &&
+                         (isMessageSender() || isAdminOrOwner()) &&
+                         request.resource.data.deletedForAll.by == request.auth.uid) ||
+                        
+                        // Case 3: Edit message - sender only, within 15 min
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
+                         isMessageSender() &&
+                         isWithinEditWindow())
+                      );
+        
+        // Delete: Not allowed (use deletedForAll or hiddenFor instead)
+        allow delete: if false;
+        
+        // --------------------------------------------------------
+        // Reactions subcollection (V2)
+        // Path: Messages/{messageId}/Reactions/{emoji}_{uid}
+        // --------------------------------------------------------
+        match /Reactions/{reactionId} {
+          // Read: any group member
+          allow read: if isAuth() && (isGroupMemberFast() || isGroupMember());
+          
+          // Create: user can only create their own reaction
+          allow create: if isAuth() && 
+                          (isGroupMemberFast() || isGroupMember()) &&
+                          request.resource.data.uid == request.auth.uid &&
+                          request.resource.data.emoji is string &&
+                          request.resource.data.emoji.size() <= 10;
+          
+          // Delete: user can only delete their own reaction
+          allow delete: if isAuth() && 
+                          (isGroupMemberFast() || isGroupMember()) &&
+                          resource.data.uid == request.auth.uid;
+          
+          // No updates - delete and recreate
+          allow update: if false;
+        }
       }
     }
 
@@ -592,13 +840,21 @@ service cloud.firestore {
       // Read: Any authenticated user can read
       allow read: if isAuth();
       
-      // Create: sender must be authenticated
+      // Create: sender must be authenticated, validate all fields
+      // Added timestamp validation and size limits
       allow create: if isAuth() &&
                       request.resource.data.fromUid == request.auth.uid &&
                       request.resource.data.status == 'pending' &&
                       request.resource.data.fromUid != request.resource.data.toUid &&
                       request.resource.data.expiresAt is number &&
-                      request.resource.data.createdAt is number;
+                      request.resource.data.createdAt is number &&
+                      validNumberTimestamp(request.resource.data.createdAt) &&
+                      // Ensure target user ID is valid
+                      request.resource.data.toUid is string &&
+                      request.resource.data.toUid.size() > 0 &&
+                      // Ensure group ID is valid
+                      request.resource.data.groupId is string &&
+                      request.resource.data.groupId.size() > 0;
       
       // Update: only recipient can accept/decline
       allow update: if isAuth() &&

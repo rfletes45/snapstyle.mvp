@@ -37,7 +37,7 @@ interface AvatarCustomizerProps {
   onClose: () => void;
   userId: string;
   currentConfig: AvatarConfig;
-  onSave: (newConfig: AvatarConfig) => void;
+  onSave: (newConfig: AvatarConfig) => void | Promise<void>;
 }
 
 export default function AvatarCustomizer({
@@ -83,7 +83,8 @@ export default function AvatarCustomizer({
     try {
       const success = await updateAvatarConfig(userId, previewConfig);
       if (success) {
-        onSave(previewConfig);
+        // Wait for parent's onSave to complete (e.g., refreshProfile)
+        await onSave(previewConfig);
         onClose();
       }
     } catch (error) {

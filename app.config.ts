@@ -1,4 +1,4 @@
-import { ExpoConfig, ConfigContext } from "expo/config";
+import { ConfigContext, ExpoConfig } from "expo/config";
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -13,7 +13,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     adaptiveIcon: {
-      foregroundImage: "./src/assets/icon.png",
+      foregroundImage: undefined, // Icon will be added later
       backgroundColor: "#eff1f5",
     },
     package: "com.vibeapp.mobile",
@@ -22,4 +22,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: "./src/assets/favicon.png",
   },
   scheme: "vibe",
+  plugins: ["expo-audio"],
 });

@@ -221,17 +221,12 @@ export async function equipItem(
 }
 
 /**
- * Get all items user can access (owned + free)
+ * Get all items user can access (strictly from inventory)
+ * Inventory is the single source of truth for ownership
+ * Free items are granted during account setup via grantStarterItems()
  */
 export async function getAccessibleItems(userId: string): Promise<string[]> {
-  // Get user's inventory
+  // Get user's inventory - this is the ONLY source of truth
   const inventory = await getUserInventory(userId);
-  const ownedItemIds = inventory.map((item) => item.itemId);
-
-  // Add free items
-  const freeItems = getFreeItems();
-  const freeItemIds = freeItems.map((item) => item.id);
-
-  // Combine and dedupe
-  return [...new Set([...ownedItemIds, ...freeItemIds])];
+  return inventory.map((item) => item.itemId);
 }

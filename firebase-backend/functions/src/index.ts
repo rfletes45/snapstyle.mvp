@@ -5,10 +5,31 @@
  * - Story auto-expiry and cleanup (Phase 5)
  * - Push notifications (Phase 6)
  * - Streak management (Phase 6)
+ * - V2 Messaging with idempotent sends (Phase H3)
+ *
+ * Security Note (Phase E):
+ * - All onCall functions require authentication via context.auth
+ * - Admin functions verify context.auth.token.admin claim
+ * - Input validation is performed on all user-supplied data
+ * - Structured logging includes context for debugging/audit
  */
 
-import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import * as functions from "firebase-functions";
+
+// Import V2 Messaging functions
+import {
+  deleteMessageForAllV2Function,
+  editMessageV2Function,
+  sendMessageV2Function,
+  toggleReactionV2Function,
+} from "./messaging";
+
+// Re-export V2 Messaging functions
+export const sendMessageV2 = sendMessageV2Function;
+export const editMessageV2 = editMessageV2Function;
+export const deleteMessageForAllV2 = deleteMessageForAllV2Function;
+export const toggleReactionV2 = toggleReactionV2Function;
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -17,6 +38,45 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 const storage = admin.storage();
+
+// ============================================
+// INPUT VALIDATION HELPERS (Phase E Security)
+// ============================================
+
+/**
+ * Validate that a string is safe (non-empty, reasonable length, no control chars)
+ */
+function isValidString(
+  value: unknown,
+  minLen = 1,
+  maxLen = 1000,
+): value is string {
+  if (typeof value !== "string") return false;
+  if (value.length < minLen || value.length > maxLen) return false;
+  // Reject control characters (except newlines/tabs for content)
+  if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(value)) return false;
+  return true;
+}
+
+/**
+ * Validate that a value is a valid Firebase UID
+ */
+function isValidUid(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  // Firebase UIDs are typically 20-128 chars, alphanumeric
+  return (
+    value.length >= 20 && value.length <= 128 && /^[a-zA-Z0-9]+$/.test(value)
+  );
+}
+
+/**
+ * Sanitize string for logging (truncate, remove newlines)
+ */
+function sanitizeForLog(value: string, maxLen = 100): string {
+  const truncated =
+    value.length > maxLen ? value.slice(0, maxLen) + "..." : value;
+  return truncated.replace(/[\r\n]+/g, " ");
+}
 
 // ============================================
 // EXPO PUSH NOTIFICATIONS
@@ -70,8 +130,46 @@ async function getUserPushToken(userId: string): Promise<string | null> {
 }
 
 /**
+ * Check if user has muted a DM chat
+ * Uses the MembersPrivate subcollection of Chats
+ */
+async function isDmChatMuted(chatId: string, userId: string): Promise<boolean> {
+  try {
+    const memberPrivateDoc = await db
+      .collection("Chats")
+      .doc(chatId)
+      .collection("MembersPrivate")
+      .doc(userId)
+      .get();
+
+    if (!memberPrivateDoc.exists) {
+      return false;
+    }
+
+    const data = memberPrivateDoc.data();
+    const mutedUntil = data?.mutedUntil;
+
+    if (!mutedUntil) {
+      return false;
+    }
+
+    // -1 means muted forever
+    if (mutedUntil === -1) {
+      return true;
+    }
+
+    // Check if still muted
+    return mutedUntil > Date.now();
+  } catch (error) {
+    console.error(`[isDmChatMuted] Error for ${userId}:`, error);
+    return false;
+  }
+}
+
+/**
  * onNewMessage: Triggered when a new message is created
  * Sends push notification to recipient and updates streak tracking
+ * Respects user mute preferences
  */
 export const onNewMessage = functions.firestore
   .document("Chats/{chatId}/Messages/{messageId}")
@@ -93,6 +191,17 @@ export const onNewMessage = functions.firestore
 
       if (!recipientId) {
         console.log("Recipient not found in chat");
+        return;
+      }
+
+      // Check if recipient has muted this chat
+      const isMuted = await isDmChatMuted(chatId, recipientId);
+      if (isMuted) {
+        console.log(
+          `[onNewMessage] Skipping muted user ${recipientId.substring(0, 8)}`,
+        );
+        // Still update streak tracking even if muted
+        await updateStreakOnMessage(senderId, recipientId);
         return;
       }
 
@@ -130,6 +239,249 @@ export const onNewMessage = functions.firestore
       await updateStreakOnMessage(senderId, recipientId);
     } catch (error) {
       console.error("❌ Error in onNewMessage:", error);
+    }
+  });
+
+// =============================================================================
+// H9: Group Message Notifications with Mention Support
+// =============================================================================
+
+/**
+ * Get user's notification preference for a group conversation
+ * Returns "all", "mentions", or "none"
+ */
+async function getGroupNotifyLevel(
+  groupId: string,
+  userId: string,
+): Promise<"all" | "mentions" | "none"> {
+  try {
+    const memberPrivateDoc = await db
+      .collection("Groups")
+      .doc(groupId)
+      .collection("MembersPrivate")
+      .doc(userId)
+      .get();
+
+    if (!memberPrivateDoc.exists) {
+      // Default to "all" if no preference set
+      return "all";
+    }
+
+    const data = memberPrivateDoc.data();
+    return data?.notifyLevel || "all";
+  } catch (error) {
+    console.error(`[getGroupNotifyLevel] Error for ${userId}:`, error);
+    return "all"; // Default to "all" on error
+  }
+}
+
+/**
+ * Check if user is muted for a group conversation
+ */
+async function isGroupMuted(groupId: string, userId: string): Promise<boolean> {
+  try {
+    const memberPrivateDoc = await db
+      .collection("Groups")
+      .doc(groupId)
+      .collection("MembersPrivate")
+      .doc(userId)
+      .get();
+
+    if (!memberPrivateDoc.exists) {
+      return false;
+    }
+
+    const data = memberPrivateDoc.data();
+    const mutedUntil = data?.mutedUntil;
+
+    if (!mutedUntil) {
+      return false;
+    }
+
+    // -1 means muted forever
+    if (mutedUntil === -1) {
+      return true;
+    }
+
+    // Check if still muted
+    return mutedUntil > Date.now();
+  } catch (error) {
+    console.error(`[isGroupMuted] Error for ${userId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Get all members of a group
+ */
+async function getGroupMemberUids(groupId: string): Promise<string[]> {
+  try {
+    const membersSnapshot = await db
+      .collection("Groups")
+      .doc(groupId)
+      .collection("Members")
+      .get();
+
+    return membersSnapshot.docs.map((doc) => doc.id);
+  } catch (error) {
+    console.error(`[getGroupMemberUids] Error:`, error);
+    return [];
+  }
+}
+
+/**
+ * onNewGroupMessageV2: Triggered when a new message is created in a group
+ * Sends push notifications respecting notifyLevel preferences:
+ * - "all": notify for all messages
+ * - "mentions": notify only if mentioned
+ * - "none": never notify
+ */
+export const onNewGroupMessageV2 = functions.firestore
+  .document("Groups/{groupId}/Messages/{messageId}")
+  .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const { groupId, messageId } = context.params;
+
+    try {
+      // Skip system messages
+      if (message.kind === "system") {
+        console.log(`[onNewGroupMessageV2] Skipping system message`);
+        return;
+      }
+
+      const senderId = message.senderId;
+      const senderName = message.senderName || "Someone";
+      const mentionUids: string[] = message.mentionUids || [];
+
+      console.log(
+        `[onNewGroupMessageV2] Processing message in group ${groupId.substring(0, 8)}`,
+        {
+          messageId: messageId.substring(0, 8),
+          senderId: senderId.substring(0, 8),
+          mentionCount: mentionUids.length,
+        },
+      );
+
+      // Get group info for notification title
+      const groupDoc = await db.collection("Groups").doc(groupId).get();
+      if (!groupDoc.exists) {
+        console.log(`[onNewGroupMessageV2] Group not found: ${groupId}`);
+        return;
+      }
+      const groupName = groupDoc.data()?.name || "Group Chat";
+
+      // Get all group members
+      const memberUids = await getGroupMemberUids(groupId);
+
+      // Filter out the sender - they don't need a notification
+      const recipientUids = memberUids.filter((uid) => uid !== senderId);
+
+      console.log(
+        `[onNewGroupMessageV2] Processing ${recipientUids.length} potential recipients`,
+      );
+
+      // Process each recipient
+      for (const recipientUid of recipientUids) {
+        try {
+          // Check if muted
+          const isMuted = await isGroupMuted(groupId, recipientUid);
+          if (isMuted) {
+            console.log(
+              `[onNewGroupMessageV2] Skipping muted user: ${recipientUid.substring(0, 8)}`,
+            );
+            continue;
+          }
+
+          // Get notification preference
+          const notifyLevel = await getGroupNotifyLevel(groupId, recipientUid);
+          const isMentioned = mentionUids.includes(recipientUid);
+
+          // Determine if we should notify
+          let shouldNotify = false;
+          if (notifyLevel === "all") {
+            shouldNotify = true;
+          } else if (notifyLevel === "mentions" && isMentioned) {
+            shouldNotify = true;
+          }
+          // notifyLevel === "none" means never notify
+
+          if (!shouldNotify) {
+            console.log(
+              `[onNewGroupMessageV2] Skipping user ${recipientUid.substring(0, 8)}: notifyLevel=${notifyLevel}, mentioned=${isMentioned}`,
+            );
+            continue;
+          }
+
+          // Get push token
+          const pushToken = await getUserPushToken(recipientUid);
+          if (!pushToken) {
+            console.log(
+              `[onNewGroupMessageV2] No push token for user: ${recipientUid.substring(0, 8)}`,
+            );
+            continue;
+          }
+
+          // Build notification content
+          let title: string;
+          let body: string;
+
+          if (isMentioned) {
+            title = `${senderName} mentioned you in ${groupName}`;
+          } else {
+            title = `${groupName}`;
+          }
+
+          // Determine body based on message type
+          if (message.kind === "text" && message.text) {
+            body = `${senderName}: ${message.text}`;
+            if (body.length > 100) {
+              body = body.substring(0, 97) + "...";
+            }
+          } else if (message.kind === "media") {
+            const attachmentCount = message.attachments?.length || 1;
+            body =
+              attachmentCount > 1
+                ? `${senderName}: 📷 ${attachmentCount} photos`
+                : `${senderName}: 📷 Photo`;
+          } else if (message.kind === "voice") {
+            body = `${senderName}: 🎤 Voice message`;
+          } else if (message.kind === "file") {
+            body = `${senderName}: 📎 File`;
+          } else {
+            body = `${senderName} sent a message`;
+          }
+
+          // Send notification
+          await sendExpoPushNotification({
+            to: pushToken,
+            title,
+            body,
+            data: {
+              type: "group_message",
+              groupId,
+              messageId,
+              senderId,
+              mentioned: isMentioned,
+            },
+            sound: "default",
+          });
+
+          console.log(
+            `[onNewGroupMessageV2] ✅ Sent notification to ${recipientUid.substring(0, 8)}`,
+          );
+        } catch (recipientError) {
+          console.error(
+            `[onNewGroupMessageV2] Error processing recipient ${recipientUid.substring(0, 8)}:`,
+            recipientError,
+          );
+        }
+      }
+
+      console.log(
+        `[onNewGroupMessageV2] ✅ Completed processing message ${messageId.substring(0, 8)}`,
+      );
+    } catch (error) {
+      console.error("❌ Error in onNewGroupMessageV2:", error);
     }
   });
 
@@ -1366,22 +1718,23 @@ export const claimTaskReward = functions.https.onCall(async (data, context) => {
   const uid = context.auth.uid;
   const { taskId, dayKey } = data;
 
-  if (!taskId || typeof taskId !== "string") {
+  // Enhanced input validation (Phase E Security)
+  if (!isValidString(taskId, 1, 100)) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "taskId is required",
+      "Invalid taskId format",
     );
   }
 
-  if (!dayKey || typeof dayKey !== "string") {
+  if (!isValidString(dayKey, 8, 15)) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "dayKey is required",
+      "Invalid dayKey format",
     );
   }
 
   console.log(
-    `🎯 [claimTaskReward] User ${uid} claiming task ${taskId} for day ${dayKey}`,
+    `🎯 [claimTaskReward] User ${sanitizeForLog(uid)} claiming task ${sanitizeForLog(taskId)} for day ${sanitizeForLog(dayKey)}`,
   );
 
   try {
@@ -2432,10 +2785,19 @@ export const sendFriendRequestWithRateLimit = functions.https.onCall(
     const uid = context.auth.uid;
     const { toUid } = data;
 
-    if (!toUid) {
+    // Enhanced input validation (Phase E Security)
+    if (!isValidUid(toUid)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
-        "Missing recipient",
+        "Invalid recipient ID",
+      );
+    }
+
+    // Prevent self-friending
+    if (toUid === uid) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Cannot send friend request to yourself",
       );
     }
 
@@ -3111,3 +3473,269 @@ export const updateExpiredBans = functions.pubsub
     console.log(`✅ Marked ${expiredBansQuery.docs.length} bans as expired`);
     return null;
   });
+
+// ============================================
+// LINK PREVIEW (H12)
+// ============================================
+
+interface LinkPreviewData {
+  url: string;
+  canonicalUrl?: string;
+  title?: string;
+  description?: string;
+  siteName?: string;
+  imageUrl?: string;
+  fetchedAt: number;
+  expiresAt: number;
+}
+
+interface FetchPreviewParams {
+  url: string;
+}
+
+interface FetchPreviewResponse {
+  success: boolean;
+  preview?: LinkPreviewData;
+  error?: string;
+  cached?: boolean;
+}
+
+/** Cache TTL: 24 hours */
+const LINK_PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Max URL length */
+const MAX_URL_LENGTH = 2048;
+
+/** Domains to block */
+const BLOCKED_DOMAINS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "10.0.0.0",
+  "192.168.",
+  "172.16.",
+]);
+
+/** Request timeout in ms */
+const FETCH_TIMEOUT_MS = 8000;
+
+/**
+ * Check if a domain is blocked (local/internal)
+ */
+function isBlockedDomain(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  for (const blocked of BLOCKED_DOMAINS) {
+    if (lower === blocked || lower.startsWith(blocked)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Extract OpenGraph meta tags from HTML
+ */
+function extractOgTags(html: string): Record<string, string> {
+  const tags: Record<string, string> = {};
+
+  // Match <meta property="og:xxx" content="yyy">
+  const ogRegex =
+    /<meta\s+(?:[^>]*?\s+)?property=["']og:([^"']+)["']\s+(?:[^>]*?\s+)?content=["']([^"']*)["']/gi;
+  let match;
+  while ((match = ogRegex.exec(html)) !== null) {
+    tags[match[1]] = match[2];
+  }
+
+  // Also match reverse order: content before property
+  const ogRegex2 =
+    /<meta\s+(?:[^>]*?\s+)?content=["']([^"']*)["']\s+(?:[^>]*?\s+)?property=["']og:([^"']+)["']/gi;
+  while ((match = ogRegex2.exec(html)) !== null) {
+    tags[match[2]] = match[1];
+  }
+
+  // Fallback to regular meta tags
+  if (!tags.title) {
+    const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
+    if (titleMatch) tags.title = titleMatch[1];
+  }
+
+  if (!tags.description) {
+    const descMatch =
+      /<meta\s+(?:[^>]*?\s+)?name=["']description["']\s+(?:[^>]*?\s+)?content=["']([^"']*)["']/i.exec(
+        html,
+      );
+    if (descMatch) tags.description = descMatch[1];
+  }
+
+  return tags;
+}
+
+/**
+ * Decode HTML entities
+ */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+/**
+ * Generate cache key from URL
+ */
+function getCacheKey(url: string): string {
+  // Simple hash: use base64 of URL
+  return Buffer.from(url).toString("base64").substring(0, 64);
+}
+
+/**
+ * Fetch link preview - Callable Cloud Function
+ *
+ * Fetches OpenGraph metadata from a URL server-side.
+ * Results are cached in Firestore for 24 hours.
+ *
+ * @param url - URL to fetch preview for
+ * @returns Link preview data or error
+ */
+export const fetchLinkPreview = functions.https.onCall(
+  async (data: FetchPreviewParams, context): Promise<FetchPreviewResponse> => {
+    // Require authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Must be logged in to fetch link previews",
+      );
+    }
+
+    const { url } = data;
+
+    // Validate URL
+    if (!url || typeof url !== "string") {
+      return { success: false, error: "Invalid URL" };
+    }
+
+    if (url.length > MAX_URL_LENGTH) {
+      return { success: false, error: "URL too long" };
+    }
+
+    // Parse and validate URL
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return { success: false, error: "Invalid URL format" };
+    }
+
+    // Only allow HTTP/HTTPS
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return { success: false, error: "Only HTTP/HTTPS URLs are supported" };
+    }
+
+    // Block internal/local domains
+    if (isBlockedDomain(parsed.hostname)) {
+      return { success: false, error: "URL not allowed" };
+    }
+
+    const cacheKey = getCacheKey(url);
+    const cacheRef = db.collection("LinkPreviews").doc(cacheKey);
+
+    // Check cache first
+    try {
+      const cached = await cacheRef.get();
+      if (cached.exists) {
+        const data = cached.data() as LinkPreviewData;
+        // Check if not expired
+        if (data.expiresAt > Date.now()) {
+          console.log(`✅ [fetchLinkPreview] Cache hit for: ${url}`);
+          return { success: true, preview: data, cached: true };
+        }
+      }
+    } catch (error) {
+      console.warn("[fetchLinkPreview] Cache lookup failed:", error);
+    }
+
+    // Fetch the URL
+    console.log(`🔵 [fetchLinkPreview] Fetching: ${url}`);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; VibeBot/1.0; +https://vibeapp.com)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+        signal: controller.signal,
+        redirect: "follow",
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.warn(`[fetchLinkPreview] HTTP ${response.status} for: ${url}`);
+        return {
+          success: false,
+          error: `Failed to fetch URL (HTTP ${response.status})`,
+        };
+      }
+
+      // Only process HTML content
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("text/html")) {
+        return { success: false, error: "URL is not an HTML page" };
+      }
+
+      // Read response (limit to 1MB)
+      const text = await response.text();
+      const html = text.substring(0, 1024 * 1024);
+
+      // Extract OG tags
+      const tags = extractOgTags(html);
+
+      const now = Date.now();
+      const preview: LinkPreviewData = {
+        url,
+        canonicalUrl: tags.url || response.url,
+        title: tags.title
+          ? decodeHtmlEntities(tags.title).substring(0, 200)
+          : undefined,
+        description: tags.description
+          ? decodeHtmlEntities(tags.description).substring(0, 500)
+          : undefined,
+        siteName: tags.site_name
+          ? decodeHtmlEntities(tags.site_name).substring(0, 100)
+          : undefined,
+        imageUrl: tags.image,
+        fetchedAt: now,
+        expiresAt: now + LINK_PREVIEW_TTL_MS,
+      };
+
+      // Save to cache
+      try {
+        await cacheRef.set(preview);
+        console.log(`✅ [fetchLinkPreview] Cached preview for: ${url}`);
+      } catch (error) {
+        console.warn("[fetchLinkPreview] Failed to cache:", error);
+      }
+
+      return { success: true, preview };
+    } catch (error: any) {
+      console.error(`❌ [fetchLinkPreview] Error fetching ${url}:`, error);
+
+      if (error.name === "AbortError") {
+        return { success: false, error: "Request timed out" };
+      }
+
+      return {
+        success: false,
+        error: error.message || "Failed to fetch URL",
+      };
+    }
+  },
+);

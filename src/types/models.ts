@@ -1,5 +1,4 @@
 // User model
-import { Timestamp } from "firebase/firestore";
 
 export interface User {
   uid: string;
@@ -76,6 +75,8 @@ export interface Message {
   errorMessage?: string;
   // Phase 12: Local-only flag (not yet persisted to Firestore)
   isLocal?: boolean;
+  // Phase 21: Client-generated ID for deduplication with optimistic UI
+  clientMessageId?: string;
   // Phase 16: Scorecard data (for type: "scorecard")
   scorecard?: {
     gameId: GameType;
@@ -722,7 +723,8 @@ export interface Group {
   name: string;
   ownerId: string; // User who created the group
   memberIds: string[]; // Array of member UIDs for efficient queries
-  avatarPath?: string; // Optional group avatar in Storage
+  avatarPath?: string; // Optional group avatar path in Storage
+  avatarUrl?: string; // Optional group avatar download URL
   memberCount: number; // Denormalized count for display
   createdAt: number;
   updatedAt: number;
@@ -778,7 +780,7 @@ export interface GroupMessage {
   groupId: string;
   sender: string;
   senderDisplayName: string; // Denormalized for display
-  type: "text" | "image" | "scorecard" | "system"; // system for join/leave notifications
+  type: "text" | "image" | "scorecard" | "system" | "voice"; // system for join/leave notifications, voice for H11
   content: string;
   createdAt: number;
   // For image messages
@@ -800,6 +802,20 @@ export interface GroupMessage {
     targetUid?: string;
     targetDisplayName?: string;
     newRole?: GroupRole;
+  };
+  // H11: For voice messages
+  voiceMetadata?: {
+    durationMs: number;
+    storagePath?: string;
+    sizeBytes?: number;
+  };
+  // H6: For reply-to threading
+  replyTo?: {
+    messageId: string;
+    senderId: string;
+    senderName: string;
+    textSnippet?: string;
+    attachmentKind?: "image" | "voice";
   };
 }
 

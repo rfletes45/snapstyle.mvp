@@ -24,6 +24,7 @@ import {
   IconButton,
   Menu,
   Text,
+  useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -43,6 +44,7 @@ import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 type Props = NativeStackScreenProps<any, "ScheduledMessages">;
 
 export default function ScheduledMessagesScreen({ navigation }: Props) {
+  const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
   const [messages, setMessages] = useState<ScheduledMessage[]>([]);
@@ -308,6 +310,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
                     onPress={() => setMenuVisible(item.id)}
                   />
                 }
+                contentStyle={{ backgroundColor: theme.colors.surface }}
               >
                 <Menu.Item
                   onPress={() => {

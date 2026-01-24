@@ -30,6 +30,12 @@ service firebase.storage {
         'image/webp'
       ];
     }
+    
+    // Validate UID format (Firebase Auth UIDs are 28 chars alphanumeric)
+    // This helps prevent path traversal attacks
+    function isValidUid(uid) {
+      return uid.size() >= 20 && uid.size() <= 128 && uid.matches('[a-zA-Z0-9]+');
+    }
 
     // ============================================================
     // SNAPS: Chat images between two users
@@ -39,16 +45,21 @@ service firebase.storage {
     // Chat ID format is uid1_uid2 (sorted alphabetically)
     match /snaps/{chatId}/{allPaths=**} {
       // Read: Only chat members (UID in chatId)
-      allow read: if isAuth() && 
-                    chatId.matches('.*' + request.auth.uid + '.*');
+      // Strengthened: Exact boundary match with underscore
+      allow read: if isAuth() && (
+                    chatId.matches(request.auth.uid + '_.*') ||
+                    chatId.matches('.*_' + request.auth.uid)
+                  );
       
       // Write: Only chat members, with validation
-      allow write: if isAuth() && 
-                     chatId.matches('.*' + request.auth.uid + '.*') &&
-                     // Must be an image
-                     isValidImageType() &&
-                     // Max 10MB per snap
-                     validFileSize(10 * 1024 * 1024);
+      allow write: if isAuth() && (
+                     chatId.matches(request.auth.uid + '_.*') ||
+                     chatId.matches('.*_' + request.auth.uid)
+                   ) &&
+                   // Must be an image
+                   isValidImageType() &&
+                   // Max 10MB per snap
+                   validFileSize(10 * 1024 * 1024);
     }
 
     // ============================================================
@@ -62,8 +73,10 @@ service firebase.storage {
       allow read: if isAuth();
       
       // Write: Only the author can upload to their directory
+      // Added: UID format validation
       allow write: if isAuth() && 
                      request.auth.uid == authorId &&
+                     isValidUid(authorId) &&
                      // Must be an image
                      isValidImageType() &&
                      // Max 10MB per story image
@@ -80,15 +93,17 @@ service firebase.storage {
       allow read: if isAuth();
       
       // Write: Only owner can upload
+      // Added: UID format validation
       allow write: if isAuth() && 
                      request.auth.uid == userId &&
+                     isValidUid(userId) &&
                      isValidImageType() &&
                      // Max 5MB for avatars
                      validFileSize(5 * 1024 * 1024);
     }
 
     // ============================================================
-    // GROUPS: Group chat images
+    // GROUPS: Group chat images and attachments
     // ============================================================
     
     // Path: /groups/{groupId}/messages/{filename}
@@ -97,11 +112,42 @@ service firebase.storage {
       // (Firestore rules handle access control via memberIds)
       allow read: if isAuth();
       
-      // Write: Any authenticated user
-      // (Firestore rules ensure only members can create message docs)
+      // Write: Any authenticated user (membership verified at Firestore level)
+      // Note: Full membership verification would require Firestore lookup,
+      // which is not available in Storage rules. Relying on Firestore rules
+      // for the message document creation as the security boundary.
       allow write: if isAuth() && 
                      isValidImageType() &&
                      // Max 10MB per group image
+                     validFileSize(10 * 1024 * 1024);
+    }
+    
+    // Path: /groups/{groupId}/attachments/{filename}
+    // Used by GroupChatScreen for message attachments
+    match /groups/{groupId}/attachments/{allPaths=**} {
+      // Read: Any authenticated user
+      // (Firestore rules handle access control via memberIds)
+      allow read: if isAuth();
+      
+      // Write: Any authenticated user (membership verified at Firestore level)
+      allow write: if isAuth() && 
+                     isValidImageType() &&
+                     // Max 10MB per attachment
+                     validFileSize(10 * 1024 * 1024);
+    }
+
+    // Path: /groups/{groupId}/voice/{filename}
+    // Used for voice messages in group chats
+    match /groups/{groupId}/voice/{allPaths=**} {
+      // Read: Any authenticated user
+      // (Firestore rules handle access control via memberIds)
+      allow read: if isAuth();
+      
+      // Write: Any authenticated user (membership verified at Firestore level)
+      // Audio file types allowed
+      allow write: if isAuth() && 
+                     request.resource.contentType.matches('audio/.*') &&
+                     // Max 10MB per voice message
                      validFileSize(10 * 1024 * 1024);
     }
 

@@ -93,8 +93,10 @@ export default function ReactionTapGameScreen({
 
   // Pulse animation for waiting state
   useEffect(() => {
+    let animationRef: Animated.CompositeAnimation | null = null;
+
     if (gameState === "ready") {
-      Animated.loop(
+      animationRef = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1.05,
@@ -107,10 +109,18 @@ export default function ReactionTapGameScreen({
             useNativeDriver: true,
           }),
         ]),
-      ).start();
+      );
+      animationRef.start();
     } else {
       pulseAnim.setValue(1);
     }
+
+    // Cleanup: stop animation when component unmounts or gameState changes
+    return () => {
+      if (animationRef) {
+        animationRef.stop();
+      }
+    };
   }, [gameState, pulseAnim]);
 
   const startGame = () => {

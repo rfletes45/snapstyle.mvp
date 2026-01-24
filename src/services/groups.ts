@@ -16,40 +16,38 @@
  */
 
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  limit,
-  startAfter,
-  onSnapshot,
-  Timestamp,
-  writeBatch,
-  increment,
-  arrayRemove,
-  QueryDocumentSnapshot,
-  DocumentData,
-} from "firebase/firestore";
-import { getFirestoreInstance, getAppInstance } from "./firebase";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import {
+  CreateGroupInput,
   Group,
-  GroupMember,
+  GROUP_LIMITS,
   GroupInvite,
+  GroupMember,
   GroupMessage,
   GroupRole,
-  CreateGroupInput,
-  GROUP_LIMITS,
-  AvatarConfig,
 } from "@/types/models";
-import { getUserProfileByUid } from "./friends";
+import {
+  arrayRemove,
+  collection,
+  deleteDoc,
+  doc,
+  DocumentData,
+  getDoc,
+  getDocs,
+  increment,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  QueryDocumentSnapshot,
+  setDoc,
+  startAfter,
+  Timestamp,
+  updateDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import { isUserBlocked } from "./blocking";
+import { getFirestoreInstance } from "./firebase";
+import { getUserProfileByUid } from "./friends";
 
 // =============================================================================
 // Constants
@@ -630,6 +628,7 @@ export async function getGroup(groupId: string): Promise<Group | null> {
     ownerId: data.ownerId,
     memberIds: data.memberIds || [],
     avatarPath: data.avatarPath,
+    avatarUrl: data.avatarUrl,
     memberCount: data.memberCount,
     createdAt:
       data.createdAt instanceof Timestamp
@@ -1000,13 +999,18 @@ export async function transferOwnership(
 
 /**
  * Send a message to a group
+ * @param mentionUids - Array of mentioned user UIDs (H9)
+ * @param replyTo - Reply-to metadata (H6)
  */
 export async function sendGroupMessage(
   groupId: string,
   senderUid: string,
   content: string,
-  type: "text" | "image" | "scorecard" = "text",
+  type: "text" | "image" | "scorecard" | "voice" = "text",
   scorecard?: GroupMessage["scorecard"],
+  mentionUids?: string[],
+  voiceMetadata?: GroupMessage["voiceMetadata"],
+  replyTo?: GroupMessage["replyTo"],
 ): Promise<GroupMessage> {
   const db = getFirestoreInstance();
 
@@ -1025,7 +1029,7 @@ export async function sendGroupMessage(
   const now = Date.now();
   const messageRef = doc(collection(db, "Groups", groupId, "Messages"));
 
-  const messageData: Omit<GroupMessage, "id"> = {
+  const messageData: Omit<GroupMessage, "id"> & { mentionUids?: string[] } = {
     groupId,
     sender: senderUid,
     senderDisplayName: senderProfile.displayName,
@@ -1034,6 +1038,9 @@ export async function sendGroupMessage(
     createdAt: now,
     ...(type === "image" && { imagePath: content }),
     ...(type === "scorecard" && scorecard && { scorecard }),
+    ...(type === "voice" && voiceMetadata && { voiceMetadata }),
+    ...(mentionUids && mentionUids.length > 0 && { mentionUids }),
+    ...(replyTo && { replyTo }),
   };
 
   const batch = writeBatch(db);
@@ -1046,6 +1053,8 @@ export async function sendGroupMessage(
     previewText = "📷 Photo";
   } else if (type === "scorecard") {
     previewText = "🎮 Shared a score";
+  } else if (type === "voice") {
+    previewText = "🎤 Voice message";
   } else if (content.length > 50) {
     previewText = content.substring(0, 50) + "...";
   }
@@ -1236,6 +1245,30 @@ export async function updateGroupName(
   });
 
   console.log(`✅ [groups] Updated group ${groupId} name to "${newName}"`);
+}
+
+/**
+ * Update group photo
+ */
+export async function updateGroupPhoto(
+  groupId: string,
+  adminUid: string,
+  avatarUrl: string,
+): Promise<void> {
+  const db = getFirestoreInstance();
+
+  // Verify user has permission
+  const role = await getUserRole(groupId, adminUid);
+  if (role !== "owner" && role !== "admin") {
+    throw new Error("Only admins can update the group photo");
+  }
+
+  await updateDoc(doc(db, "Groups", groupId), {
+    avatarUrl: avatarUrl,
+    updatedAt: Date.now(),
+  });
+
+  console.log(`✅ [groups] Updated group ${groupId} photo`);
 }
 
 /**

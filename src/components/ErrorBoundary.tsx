@@ -1,14 +1,34 @@
 /**
  * ErrorBoundary Component
- * Phase 10: Global error boundary for React render crashes
+ * Phase F: Error Handling & Feedback - Branded error UI
  *
  * Catches JavaScript errors anywhere in the child component tree,
- * logs those errors, and displays a fallback UI.
+ * logs those errors, and displays a branded fallback UI using
+ * the Catppuccin theme.
  */
 
 import React, { Component, ErrorInfo, ReactNode } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
-import { AppColors, Spacing, BorderRadius } from "../../constants/theme";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  useColorScheme,
+} from "react-native";
+import {
+  Latte,
+  Mocha,
+  LightColors,
+  DarkColors,
+  Spacing,
+  BorderRadius,
+  FontSizes,
+  FontWeights,
+} from "../../constants/theme";
+import { createLogger } from "@/utils/log";
+
+const log = createLogger("ErrorBoundary");
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
@@ -46,12 +66,13 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // Log the error
-    console.error("🚨 [ErrorBoundary] Caught error:", error);
-    console.error(
-      "🚨 [ErrorBoundary] Component stack:",
-      errorInfo.componentStack,
-    );
+    // Log the error with our structured logger
+    log.error("React render error caught", error, {
+      operation: "componentDidCatch",
+      data: {
+        componentStack: errorInfo.componentStack?.slice(0, 500),
+      },
+    });
 
     // Update state with error info
     this.setState({ errorInfo });
@@ -63,6 +84,7 @@ export class ErrorBoundary extends Component<
   }
 
   handleRetry = (): void => {
+    log.info("User triggered error recovery", { operation: "handleRetry" });
     this.setState({
       hasError: false,
       error: null,
@@ -92,7 +114,7 @@ export class ErrorBoundary extends Component<
 }
 
 /**
- * Default error fallback UI
+ * Default error fallback UI with Catppuccin theme
  */
 interface ErrorFallbackProps {
   error: Error | null;
@@ -102,23 +124,46 @@ interface ErrorFallbackProps {
 
 function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
   const [showDetails, setShowDetails] = React.useState(false);
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+
+  // Use Catppuccin theme colors
+  const colors = isDark ? DarkColors : LightColors;
+  const palette = isDark ? Mocha : Latte;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        {/* Error icon */}
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>⚠️</Text>
+        {/* Error icon with themed background */}
+        <View
+          style={[
+            styles.iconContainer,
+            { backgroundColor: colors.errorContainer },
+          ]}
+        >
+          <Text style={styles.icon}>😕</Text>
         </View>
 
-        <Text style={styles.title}>Oops! Something went wrong</Text>
-        <Text style={styles.message}>
-          We're sorry, but something unexpected happened. Please try again.
+        <Text style={[styles.title, { color: colors.text }]}>
+          Oops! Something went wrong
+        </Text>
+        <Text style={[styles.message, { color: colors.textSecondary }]}>
+          We're sorry, but something unexpected happened. Please try again or
+          restart the app if the issue persists.
         </Text>
 
         {/* Retry button */}
-        <Pressable style={styles.retryButton} onPress={onRetry}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.retryButton,
+            { backgroundColor: colors.primary },
+            pressed && styles.retryButtonPressed,
+          ]}
+          onPress={onRetry}
+        >
+          <Text style={[styles.retryButtonText, { color: colors.onPrimary }]}>
+            Try Again
+          </Text>
         </Pressable>
 
         {/* Show details toggle (dev only) */}
@@ -127,31 +172,52 @@ function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
             style={styles.detailsToggle}
             onPress={() => setShowDetails(!showDetails)}
           >
-            <Text style={styles.detailsToggleText}>
-              {showDetails ? "Hide Details" : "Show Details"}
+            <Text style={[styles.detailsToggleText, { color: colors.primary }]}>
+              {showDetails
+                ? "Hide Technical Details"
+                : "Show Technical Details"}
             </Text>
           </Pressable>
         )}
 
         {/* Error details (dev only) */}
         {__DEV__ && showDetails && (
-          <ScrollView style={styles.detailsContainer}>
-            <Text style={styles.detailsTitle}>Error:</Text>
-            <Text style={styles.detailsText}>
+          <ScrollView
+            style={[
+              styles.detailsContainer,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+          >
+            <Text
+              style={[styles.detailsTitle, { color: colors.textSecondary }]}
+            >
+              Error:
+            </Text>
+            <Text style={[styles.detailsText, { color: colors.textMuted }]}>
               {error?.message || "Unknown error"}
             </Text>
 
             {error?.stack && (
               <>
-                <Text style={styles.detailsTitle}>Stack:</Text>
-                <Text style={styles.detailsText}>{error.stack}</Text>
+                <Text
+                  style={[styles.detailsTitle, { color: colors.textSecondary }]}
+                >
+                  Stack Trace:
+                </Text>
+                <Text style={[styles.detailsText, { color: colors.textMuted }]}>
+                  {error.stack}
+                </Text>
               </>
             )}
 
             {errorInfo?.componentStack && (
               <>
-                <Text style={styles.detailsTitle}>Component Stack:</Text>
-                <Text style={styles.detailsText}>
+                <Text
+                  style={[styles.detailsTitle, { color: colors.textSecondary }]}
+                >
+                  Component Stack:
+                </Text>
+                <Text style={[styles.detailsText, { color: colors.textMuted }]}>
                   {errorInfo.componentStack}
                 </Text>
               </>
@@ -166,7 +232,6 @@ function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: AppColors.background,
     justifyContent: "center",
     alignItems: "center",
     padding: Spacing.xl,
@@ -177,69 +242,72 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: AppColors.errorLight,
+    width: 96,
+    height: 96,
+    borderRadius: BorderRadius.full,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: Spacing.xl,
   },
   icon: {
-    fontSize: 40,
+    fontSize: 48,
   },
   title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: AppColors.textPrimary,
+    fontSize: FontSizes.xl,
+    fontWeight: FontWeights.bold,
     textAlign: "center",
     marginBottom: Spacing.md,
   },
   message: {
-    fontSize: 16,
-    color: AppColors.textSecondary,
+    fontSize: FontSizes.md,
     textAlign: "center",
     lineHeight: 24,
     marginBottom: Spacing.xl,
+    paddingHorizontal: Spacing.md,
   },
   retryButton: {
-    backgroundColor: AppColors.primary,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
     marginBottom: Spacing.md,
+    minWidth: 160,
+    alignItems: "center",
+  },
+  retryButtonPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.98 }],
   },
   retryButtonText: {
-    color: AppColors.textOnPrimary,
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
   },
   detailsToggle: {
     paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
   detailsToggleText: {
-    color: AppColors.primary,
-    fontSize: 14,
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.medium,
   },
   detailsContainer: {
     marginTop: Spacing.md,
     padding: Spacing.md,
-    backgroundColor: AppColors.surfaceVariant,
     borderRadius: BorderRadius.md,
     maxHeight: 300,
     width: "100%",
   },
   detailsTitle: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: AppColors.textSecondary,
+    fontSize: FontSizes.xs,
+    fontWeight: FontWeights.bold,
     marginTop: Spacing.sm,
     marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   detailsText: {
     fontSize: 11,
-    color: AppColors.textMuted,
     fontFamily: "monospace",
+    lineHeight: 16,
   },
 });
 

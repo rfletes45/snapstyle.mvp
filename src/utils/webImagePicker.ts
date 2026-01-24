@@ -55,12 +55,17 @@ export async function pickImageFromWeb(): Promise<string | null> {
       };
 
       // Handle cancellation - when user closes the picker without selecting
+      // We use a delay because on some browsers, the focus event fires BEFORE
+      // the onchange event when a file is selected
       const handleCancel = () => {
-        if (!resolved) {
-          console.log("ℹ️  [webImagePicker] File picker cancelled");
-          resolved = true;
-          resolve(null);
-        }
+        // Delay to allow onchange to fire first if a file was selected
+        setTimeout(() => {
+          if (!resolved) {
+            console.log("ℹ️  [webImagePicker] File picker cancelled");
+            resolved = true;
+            resolve(null);
+          }
+        }, 300); // 300ms delay to ensure onchange fires first
       };
 
       // Listen for window focus to detect cancellation

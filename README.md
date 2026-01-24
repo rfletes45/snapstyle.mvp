@@ -1,50 +1,79 @@
-# Welcome to your Expo app 👋
+# Vibe
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A social mobile app built with Expo and Firebase.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Quick Start
 
 ```bash
-npm run reset-project
+# Install dependencies
+npm install
+
+# Start development server
+npx expo start
+
+# Press 'i' for iOS, 'a' for Android, 'w' for Web
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Documentation
 
-## Learn more
+All project documentation lives in the [docs/](docs/) folder:
 
-To learn more about developing your project with Expo, look at the following resources:
+| Document | Contents |
+|----------|----------|
+| [00_INDEX.md](docs/00_INDEX.md) | Quick reference for key paths and resources |
+| [01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | App structure, navigation, services |
+| [02_FIREBASE.md](docs/02_FIREBASE.md) | Firestore schema, rules, Cloud Functions |
+| [03_CHAT_V2.md](docs/03_CHAT_V2.md) | Messaging system specification |
+| [04_TESTING.md](docs/04_TESTING.md) | Test scenarios and validation |
+| [05_RUNBOOK.md](docs/05_RUNBOOK.md) | Commands, deployment, troubleshooting |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Tech Stack
 
-## Join the community
+- **Frontend**: React Native 0.81.5 + Expo SDK 54
+- **Backend**: Firebase (Firestore, Auth, Functions, Storage)
+- **State**: Zustand + TanStack Query
+- **Navigation**: React Navigation 7
+- **Language**: TypeScript (strict)
 
-Join our community of developers creating universal apps.
+## Project Structure
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/
+├── components/     # Reusable UI components
+├── screens/        # Screen components
+├── navigation/     # React Navigation config
+├── services/       # Firebase/API operations
+├── hooks/          # Custom React hooks
+├── store/          # Zustand state stores
+├── types/          # TypeScript definitions
+└── utils/          # Pure utility functions
+```
+
+## Key Commands
+
+```bash
+npx expo start          # Dev server
+npx tsc --noEmit        # Type check
+npx eslint .            # Lint
+```
+
+## Firebase
+
+Project: `gamerapp-37e70`
+
+```bash
+cd firebase-backend/functions
+npm run deploy          # Deploy Cloud Functions
+```
+
+## Requirements
+
+- Node.js 18+
+- Expo CLI
+- Firebase CLI (for backend deployment)
+- Xcode (iOS) / Android Studio (Android)
+
+## Branding
+
+**App Name**: Vibe (formerly SnapStyle)  
+**Package**: com.snapstyle.app

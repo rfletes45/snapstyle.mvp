@@ -333,36 +333,43 @@ export default function TimedTapGameScreen({
           activeOpacity={1}
           style={styles.tapButtonOuter}
         >
+          {/* Outer Animated.View for scale (uses native driver) */}
           <Animated.View
-            style={[
-              styles.tapButton,
-              {
-                transform: [{ scale: scaleAnim }],
-                backgroundColor:
-                  gameState === "playing"
-                    ? buttonBackgroundColor
-                    : theme.colors.primary,
-              },
-            ]}
+            style={{
+              transform: [{ scale: scaleAnim }],
+            }}
           >
-            <MaterialCommunityIcons
-              name={
-                gameState === "waiting"
-                  ? "play"
+            {/* Inner Animated.View for backgroundColor (uses JS driver) */}
+            <Animated.View
+              style={[
+                styles.tapButton,
+                {
+                  backgroundColor:
+                    gameState === "playing"
+                      ? buttonBackgroundColor
+                      : theme.colors.primary,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={
+                  gameState === "waiting"
+                    ? "play"
+                    : gameState === "playing"
+                      ? "gesture-tap"
+                      : "refresh"
+                }
+                size={64}
+                color="#000"
+              />
+              <Text style={styles.tapButtonText}>
+                {gameState === "waiting"
+                  ? "START"
                   : gameState === "playing"
-                    ? "gesture-tap"
-                    : "refresh"
-              }
-              size={64}
-              color="#000"
-            />
-            <Text style={styles.tapButtonText}>
-              {gameState === "waiting"
-                ? "START"
-                : gameState === "playing"
-                  ? "TAP!"
-                  : "AGAIN"}
-            </Text>
+                    ? "TAP!"
+                    : "AGAIN"}
+              </Text>
+            </Animated.View>
           </Animated.View>
         </TouchableOpacity>
       </View>

@@ -1,9 +1,10 @@
 /**
  * ScorecardBubble - Renders a scorecard message in chat
  * Phase 16.5: Share Scorecards to Chat
+ * Phase D: Added React.memo for performance
  */
 
-import React from "react";
+import React, { memo } from "react";
 import { View, StyleSheet } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -30,7 +31,7 @@ interface ScorecardBubbleProps {
 // Component
 // =============================================================================
 
-export default function ScorecardBubble({
+export default memo(function ScorecardBubble({
   scorecard,
   isMine,
 }: ScorecardBubbleProps) {
@@ -101,7 +102,7 @@ export default function ScorecardBubble({
       </View>
     </View>
   );
-}
+});
 
 /**
  * Parse scorecard content from message

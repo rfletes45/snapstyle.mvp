@@ -17,8 +17,10 @@ import {
   onSnapshot,
   getDocs,
 } from "firebase/firestore";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import {
   sendFriendRequest,
   getPendingRequests,
@@ -65,8 +67,17 @@ interface FriendWithProfile extends Friend {
 export default function FriendsScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   useUser(); // Ensure user context is available
+  const { setCurrentScreen } = useInAppNotifications();
   const uid = currentFirebaseUser?.uid;
   const theme = useTheme();
+
+  // Phase G: Suppress friend request notifications while on this screen
+  useFocusEffect(
+    useCallback(() => {
+      setCurrentScreen("Connections");
+      return () => setCurrentScreen(null);
+    }, [setCurrentScreen]),
+  );
 
   // State management
   const [friends, setFriends] = useState<FriendWithProfile[]>([]);
@@ -380,19 +391,27 @@ export default function FriendsScreen({ navigation }: any) {
   const handleRemoveFriend = async (friendUid: string) => {
     if (!uid) return;
 
-    // Confirm removal
-    const confirmed = confirm(
+    // Confirm removal using Alert (works on both native and web)
+    Alert.alert(
+      "Remove Connection",
       "Are you sure you want to remove this connection?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await removeFriend(uid, friendUid);
+              await loadData();
+              Alert.alert("Success", "Connection removed");
+            } catch {
+              Alert.alert("Error", "Failed to remove connection");
+            }
+          },
+        },
+      ],
     );
-    if (!confirmed) return;
-
-    try {
-      await removeFriend(uid, friendUid);
-      await loadData();
-      Alert.alert("Success", "Connection removed");
-    } catch {
-      Alert.alert("Error", "Failed to remove connection");
-    }
   };
 
   // Block/Report handlers
@@ -535,7 +554,10 @@ export default function FriendsScreen({ navigation }: any) {
                     key={request.id}
                     style={[
                       styles.requestCard,
-                      { backgroundColor: theme.colors.tertiaryContainer },
+                      {
+                        backgroundColor: theme.colors.tertiaryContainer,
+                        borderLeftColor: theme.colors.tertiary,
+                      },
                     ]}
                   >
                     <Card.Content style={styles.cardContent}>
@@ -614,7 +636,10 @@ export default function FriendsScreen({ navigation }: any) {
                       key={friend.id}
                       style={[
                         styles.friendCard,
-                        { backgroundColor: theme.colors.secondaryContainer },
+                        {
+                          backgroundColor: theme.colors.secondaryContainer,
+                          borderLeftColor: theme.colors.primary,
+                        },
                       ]}
                     >
                       <Card.Content style={styles.cardContent}>
@@ -685,6 +710,9 @@ export default function FriendsScreen({ navigation }: any) {
                                   }
                                 />
                               }
+                              contentStyle={{
+                                backgroundColor: theme.colors.surface,
+                              }}
                             >
                               <Menu.Item
                                 onPress={() => {
@@ -955,14 +983,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     borderRadius: BorderRadius.md,
     borderLeftWidth: 4,
-    borderLeftColor: "#fe640b", // Peach accent for requests
+    // borderLeftColor set dynamically with theme
   },
 
   friendCard: {
     marginBottom: Spacing.md,
     borderRadius: BorderRadius.md,
     borderLeftWidth: 4,
-    borderLeftColor: "#1e66f5", // Blue accent for connections
+    // borderLeftColor set dynamically with theme
   },
 
   sentRequestCard: {

@@ -1,14 +1,34 @@
 /**
  * Hooks Index
- * Phase 10: Centralized exports for custom hooks
- * Phase 15: Added useAsyncAction for snackbar-integrated actions
+ *
+ * Exports:
+ * - useMessagesV2: V2 message subscription with pagination
+ * - useUnreadCount: Unread count calculation
+ * - useMentionAutocomplete: @mention autocomplete state management
+ * - useAttachmentPicker: Multi-attachment selection and upload management
+ * - useVoiceRecorder: Voice message recording with expo-audio
+ * - useOutboxProcessor: Outbox message processing
  */
 
-export { useAsync, useAsyncEffect, useLazyAsync } from "./useAsync";
-export type { AsyncState, UseAsyncReturn, UseAsyncOptions } from "./useAsync";
+export { useMessagesV2, useUnreadCount } from "./useMessagesV2";
 
-export {
-  useAsyncAction,
-  useMutationAction,
-  useFetchAction,
-} from "./useAsyncAction";
+export { useMentionAutocomplete } from "./useMentionAutocomplete";
+export type {
+  UseMentionAutocompleteOptions,
+  UseMentionAutocompleteReturn,
+} from "./useMentionAutocomplete";
+
+export { useAttachmentPicker } from "./useAttachmentPicker";
+export type {
+  UseAttachmentPickerOptions,
+  UseAttachmentPickerReturn,
+} from "./useAttachmentPicker";
+
+export { useVoiceRecorder } from "./useVoiceRecorder";
+export type {
+  UseVoiceRecorderOptions,
+  UseVoiceRecorderReturn,
+  VoiceRecording,
+} from "./useVoiceRecorder";
+
+export { useOutboxProcessor } from "./useOutboxProcessor";

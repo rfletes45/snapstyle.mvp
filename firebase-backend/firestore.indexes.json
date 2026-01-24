@@ -301,6 +301,24 @@
         { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "issuedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "Messages",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "serverReceivedAt", "order": "DESCENDING" }]
+    },
+    {
+      "collectionGroup": "Messages",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "serverReceivedAt", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "Messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mentionUids", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "serverReceivedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

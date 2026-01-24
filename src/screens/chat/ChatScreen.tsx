@@ -1,72 +1,134 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import { blockUser } from "@/services/blocking";
+import { getOrCreateChat } from "@/services/chat";
+import { getUserProfileByUid } from "@/services/friends";
+import { submitReport } from "@/services/reporting";
 import {
-  StyleSheet,
-  View,
-  FlatList,
-  TextInput,
+  getScheduledMessagesForChat,
+  scheduleMessage,
+} from "@/services/scheduledMessages";
+import { useAuth } from "@/store/AuthContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
+import { MessageKind, MessageV2, ReplyToMetadata } from "@/types/messaging";
+import {
+  AvatarConfig,
+  Message,
+  MessageStatus,
+  ReportReason,
+  ScheduledMessage,
+} from "@/types/models";
+import { useFocusEffect } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
   Alert,
+  FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  ActionSheetIOS,
+  StyleSheet,
+  TextInput,
   TouchableOpacity,
-  ActivityIndicator,
+  View,
 } from "react-native";
 import {
-  Text,
+  Badge,
   Button,
   Card,
   IconButton,
   Menu,
+  Text,
   useTheme,
 } from "react-native-paper";
-import { useAuth } from "@/store/AuthContext";
-import { useFocusEffect } from "@react-navigation/native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import {
-  getOrCreateChat,
-  sendMessage,
-  sendMessageOptimistic,
-  subscribeToChat,
-  markMessageAsRead,
-  loadOlderMessages,
-  resetPaginationCursor,
-} from "@/services/chat";
-import { getUserProfileByUid } from "@/services/friends";
-import { blockUser } from "@/services/blocking";
-import { submitReport } from "@/services/reporting";
-import {
-  scheduleMessage,
-  getScheduledMessagesForChat,
-} from "@/services/scheduledMessages";
-import {
-  Message,
-  AvatarConfig,
-  ReportReason,
-  MessageStatus,
-  ScheduledMessage,
-} from "@/types/models";
-import * as ImagePicker from "expo-image-picker";
-import { compressImage, uploadSnapImage } from "@/services/storage";
-import {
-  pickImageFromWeb,
-  captureImageFromWebcam,
-} from "@/utils/webImagePicker";
+
+// V2 imports
 import { AvatarMini } from "@/components/Avatar";
 import BlockUserModal from "@/components/BlockUserModal";
+import {
+  MessageActionsSheet,
+  ReplyBubble,
+  ReplyPreviewBar,
+  SwipeableMessage,
+} from "@/components/chat";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import ScorecardBubble, {
   parseScorecardContent,
 } from "@/components/ScorecardBubble";
-import { LoadingState, EmptyState } from "@/components/ui";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { EmptyState, LoadingState } from "@/components/ui";
+import { useMessagesV2 } from "@/hooks/useMessagesV2";
+import {
+  retryFailedMessage as retryFailedMessageV2,
+  sendMessageWithOutbox,
+} from "@/services/chatV2";
+import { compressImage, uploadSnapImage } from "@/services/storage";
+import { updateStreakAfterMessage } from "@/services/streakCosmetics";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import {
+  captureImageFromWebcam,
+  pickImageFromWeb,
+} from "@/utils/webImagePicker";
+import * as ImagePicker from "expo-image-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { DEBUG_CHAT_V2, SHOW_V2_BADGE } from "../../../constants/featureFlags";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 interface MessageWithProfile extends Message {
   otherUserProfile?: {
     username: string;
     displayName: string;
     avatarConfig: AvatarConfig;
+  };
+  /** Reply-to metadata for H6 reply feature */
+  replyTo?: ReplyToMetadata;
+}
+
+/**
+ * Convert V2 message to V1 MessageWithProfile format
+ * This adapter allows the existing UI to work with V2 messages
+ */
+function messageV2ToWithProfile(
+  msg: MessageV2,
+  friendUid: string,
+  friendProfile: any,
+): MessageWithProfile {
+  // Map V2 kind to V1 type (V1 only supports text, image, scorecard)
+  const typeMap: Record<MessageKind, "text" | "image" | "scorecard"> = {
+    text: "text",
+    media: "image",
+    scorecard: "scorecard",
+    voice: "text", // Fallback for unsupported types
+    file: "text",
+    system: "text",
+  };
+
+  // Map V2 status to V1 status
+  // V2 status values: "sending" | "sent" | "delivered" | "failed" | undefined
+  let status: MessageStatus = "sent";
+  if (msg.status === "sending") status = "sending";
+  else if (msg.status === "failed") status = "failed";
+  else if (msg.status === "delivered") status = "delivered";
+  else if (msg.status === "sent") status = "sent";
+
+  return {
+    id: msg.id,
+    sender: msg.senderId,
+    content: msg.text || "",
+    type: typeMap[msg.kind] || "text",
+    createdAt: msg.serverReceivedAt || msg.createdAt || Date.now(),
+    expiresAt:
+      (msg.serverReceivedAt || msg.createdAt || Date.now()) +
+      24 * 60 * 60 * 1000,
+    read: false, // V2 uses watermarks instead
+    status,
+    isLocal: msg.status === "sending",
+    clientMessageId: msg.clientMessageId,
+    errorMessage:
+      msg.status === "failed" ? "Message failed to send" : undefined,
+    // V2 specific fields that exist in MessageWithProfile
+    otherUserProfile: msg.senderId === friendUid ? friendProfile : undefined,
+    replyTo: msg.replyTo,
   };
 }
 
@@ -75,7 +137,9 @@ export default function ChatScreen({
   navigation,
 }: NativeStackScreenProps<any, "ChatDetail">) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
+  const { setCurrentChatId } = useInAppNotifications();
   const uid = currentFirebaseUser?.uid;
   const { friendUid } = route.params as { friendUid: string };
 
@@ -86,16 +150,10 @@ export default function ChatScreen({
   const [inputText, setInputText] = useState("");
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [uploadingSnap, setUploadingSnap] = useState(false);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const flatListRef = useRef<FlatList>(null);
 
-  // Phase 12: Pagination state
-  const [hasMoreMessages, setHasMoreMessages] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-
-  // Phase 12: Failed messages for retry
-  const [failedMessages, setFailedMessages] = useState<Map<string, Message>>(
-    new Map(),
-  );
+  // H6: Reply-to state
+  const [replyTo, setReplyTo] = useState<ReplyToMetadata | null>(null);
 
   // Block/Report state
   const [menuVisible, setMenuVisible] = useState(false);
@@ -107,6 +165,76 @@ export default function ChatScreen({
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
+
+  // H7: Message actions state
+  const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
+  const [selectedMessage, setSelectedMessage] =
+    useState<MessageWithProfile | null>(null);
+
+  // ==========================================================================
+  // V2 Hook Integration
+  // ==========================================================================
+  const messagesV2 = useMessagesV2(
+    chatId
+      ? {
+          scope: "dm",
+          conversationId: chatId,
+          currentUid: uid || "",
+          currentUserName:
+            currentFirebaseUser?.displayName ||
+            currentFirebaseUser?.email ||
+            "User",
+          autoMarkRead: true,
+        }
+      : {
+          // Dummy options when no chatId yet - hook will early-return
+          scope: "dm",
+          conversationId: "",
+          currentUid: "",
+        },
+  );
+
+  // Convert V2 messages to UI format
+  const v2MessagesAsUI: MessageWithProfile[] = chatId
+    ? messagesV2.messages.map((msg) =>
+        messageV2ToWithProfile(msg, friendUid, friendProfile),
+      )
+    : [];
+
+  // Use V2 state for display
+  const displayMessages = chatId ? v2MessagesAsUI : [];
+  const isLoading = chatId ? messagesV2.loading : loading;
+  const hasMoreToLoad = chatId ? messagesV2.pagination.hasMoreOlder : false;
+  const isLoadingMore = chatId ? messagesV2.pagination.isLoadingOlder : false;
+
+  // Log V2 status in dev
+  useEffect(() => {
+    if (DEBUG_CHAT_V2 && chatId) {
+      console.log("🔵 [ChatScreen V2] Status:", {
+        chatId: chatId?.substring(0, 8) + "...",
+        messageCount: displayMessages.length,
+        loading: isLoading,
+        hasMore: hasMoreToLoad,
+      });
+    }
+  }, [chatId, displayMessages.length, isLoading, hasMoreToLoad]);
+
+  // Hide tab bar when this screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      // Hide tab bar
+      navigation.getParent()?.setOptions({
+        tabBarStyle: { display: "none" },
+      });
+
+      // Restore tab bar when leaving
+      return () => {
+        navigation.getParent()?.setOptions({
+          tabBarStyle: undefined,
+        });
+      };
+    }, [navigation]),
+  );
 
   // Initialize chat and subscribe to messages
   useFocusEffect(
@@ -127,14 +255,14 @@ export default function ChatScreen({
         try {
           setLoading(true);
 
-          // Reset pagination cursor when entering chat
-          resetPaginationCursor();
-
           // Get or create chat
           console.log("🔵 [ChatScreen] Calling getOrCreateChat...");
           const id = await getOrCreateChat(uid, friendUid);
           console.log("✅ [ChatScreen] Chat ID obtained:", id);
           setChatId(id);
+
+          // Phase G: Suppress in-app notifications for this chat
+          setCurrentChatId(id);
 
           // Fetch friend profile
           console.log(
@@ -148,52 +276,11 @@ export default function ChatScreen({
           );
           setFriendProfile(profile);
 
-          // Subscribe to real-time messages
-          console.log("🔵 [ChatScreen] Setting up message subscription...");
-          const unsubscribe = subscribeToChat(
-            id,
-            async (newMessages, hasMore) => {
-              console.log(
-                "✅ [ChatScreen] Received",
-                newMessages.length,
-                "messages from subscription, hasMore:",
-                hasMore,
-              );
-
-              // Track if there are more messages to load
-              setHasMoreMessages(hasMore);
-
-              // Enrich messages with friend profile
-              const enrichedMessages = newMessages.map((msg) => ({
-                ...msg,
-                otherUserProfile:
-                  msg.sender === friendUid ? profile : undefined,
-              }));
-
-              // Merge with any local optimistic messages that haven't synced yet
-              setMessages((prevMessages) => {
-                // Keep only local messages that aren't in the new messages
-                const localOnlyMessages = prevMessages.filter(
-                  (m) => m.isLocal && !newMessages.some((nm) => nm.id === m.id),
-                );
-                // Combine: server messages + still-pending local messages
-                return [...enrichedMessages, ...localOnlyMessages];
-              });
-
-              // Mark messages as read if they're from the friend
-              for (const msg of newMessages) {
-                if (msg.sender === friendUid && !msg.read) {
-                  console.log(
-                    "🔵 [ChatScreen] Marking message as read:",
-                    msg.id,
-                  );
-                  await markMessageAsRead(id, msg.id);
-                }
-              }
-            },
+          // V2: useMessagesV2 hook handles subscription automatically
+          console.log(
+            "🔵 [ChatScreen V2] Using useMessagesV2 hook for messages",
           );
 
-          unsubscribeRef.current = unsubscribe;
           console.log("✅ [ChatScreen] Chat initialization complete");
           setLoading(false);
         } catch (error: any) {
@@ -215,14 +302,12 @@ export default function ChatScreen({
 
       initializeChat();
 
-      // Cleanup listener on unmount
+      // Cleanup on unmount
       return () => {
-        if (unsubscribeRef.current) {
-          console.log("🔵 [ChatScreen] Cleaning up message listener");
-          unsubscribeRef.current();
-        }
+        // Phase G: Clear current chat ID to resume notifications
+        setCurrentChatId(null);
       };
-    }, [uid, friendUid]),
+    }, [uid, friendUid, setCurrentChatId]),
   );
 
   // Update header with friend name and menu
@@ -231,134 +316,243 @@ export default function ChatScreen({
       navigation.setOptions({
         title: friendProfile.username,
         headerRight: () => (
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="dots-vertical"
-                size={24}
-                onPress={() => setMenuVisible(true)}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {/* V2 badge for debugging */}
+            {SHOW_V2_BADGE && (
+              <Badge
+                size={20}
+                style={{ backgroundColor: "#4CAF50", marginRight: 8 }}
+              >
+                V2
+              </Badge>
+            )}
+            <Menu
+              visible={menuVisible}
+              onDismiss={() => setMenuVisible(false)}
+              anchor={
+                <IconButton
+                  icon="dots-vertical"
+                  size={24}
+                  onPress={() => setMenuVisible(true)}
+                />
+              }
+              contentStyle={{ backgroundColor: theme.colors.surface }}
+            >
+              <Menu.Item
+                onPress={() => {
+                  setMenuVisible(false);
+                  navigation.navigate("ChatSettings", {
+                    chatId,
+                    chatType: "dm",
+                    chatName: friendProfile?.username,
+                  });
+                }}
+                title="Settings"
+                leadingIcon="cog-outline"
               />
-            }
-          >
-            <Menu.Item
-              onPress={() => {
-                setMenuVisible(false);
-                setBlockModalVisible(true);
-              }}
-              title="Block User"
-              leadingIcon="block-helper"
-            />
-            <Menu.Item
-              onPress={() => {
-                setMenuVisible(false);
-                setReportModalVisible(true);
-              }}
-              title="Report User"
-              leadingIcon="flag"
-            />
-          </Menu>
+              <Menu.Item
+                onPress={() => {
+                  setMenuVisible(false);
+                  setBlockModalVisible(true);
+                }}
+                title="Block User"
+                leadingIcon="block-helper"
+              />
+              <Menu.Item
+                onPress={() => {
+                  setMenuVisible(false);
+                  setReportModalVisible(true);
+                }}
+                title="Report User"
+                leadingIcon="flag"
+              />
+            </Menu>
+          </View>
         ),
       });
     }
   }, [friendProfile, navigation, menuVisible]);
 
+  // Scroll to end when keyboard shows to keep latest messages visible
+  useEffect(() => {
+    const keyboardShowEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+
+    const keyboardListener = Keyboard.addListener(keyboardShowEvent, () => {
+      // Small delay to let layout adjust
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    return () => keyboardListener.remove();
+  }, []);
+
+  // H6: Handle reply-to from swipe gesture
+  const handleReply = useCallback((replyMetadata: ReplyToMetadata) => {
+    console.log(
+      "🔵 [ChatScreen] Setting reply to message:",
+      replyMetadata.messageId,
+    );
+    setReplyTo(replyMetadata);
+  }, []);
+
+  // H6: Clear reply state
+  const handleCancelReply = useCallback(() => {
+    console.log("🔵 [ChatScreen] Canceling reply");
+    setReplyTo(null);
+  }, []);
+
+  // H7: Handle long press on message to show actions
+  const handleMessageLongPress = useCallback((message: MessageWithProfile) => {
+    setSelectedMessage(message);
+    setActionsSheetVisible(true);
+  }, []);
+
+  // H7: Convert MessageWithProfile to MessageV2 format for actions sheet
+  const selectedMessageAsV2: MessageV2 | null = selectedMessage
+    ? {
+        id: selectedMessage.id,
+        scope: "dm",
+        conversationId: chatId || "",
+        senderId: selectedMessage.sender,
+        senderName:
+          selectedMessage.sender === uid
+            ? "You"
+            : friendProfile?.displayName || "User",
+        kind: selectedMessage.type === "image" ? "media" : "text",
+        text:
+          selectedMessage.type === "text" ? selectedMessage.content : undefined,
+        attachments:
+          selectedMessage.type === "image"
+            ? [
+                {
+                  id: selectedMessage.id,
+                  kind: "image" as const,
+                  mime: "image/jpeg",
+                  url: selectedMessage.content,
+                  path: "",
+                  sizeBytes: 0,
+                },
+              ]
+            : undefined,
+        createdAt: selectedMessage.createdAt,
+        serverReceivedAt: selectedMessage.createdAt,
+        clientId: "",
+        idempotencyKey: "",
+      }
+    : null;
+
+  // H7: Handle reply from actions sheet
+  const handleActionsReply = useCallback((replyMetadata: ReplyToMetadata) => {
+    setReplyTo(replyMetadata);
+  }, []);
+
+  // H7: Handle message edited
+  const handleMessageEdited = useCallback(
+    (messageId: string, newText: string) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, content: newText } : m)),
+      );
+    },
+    [],
+  );
+
+  // H7: Handle message deleted
+  const handleMessageDeleted = useCallback(
+    (messageId: string, forAll: boolean) => {
+      if (forAll) {
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      }
+    },
+    [],
+  );
+
+  // H6: Create reply metadata from a V1 message
+  const createReplyMetadataFromMessage = useCallback(
+    (message: MessageWithProfile): ReplyToMetadata => {
+      const senderName =
+        message.sender === uid
+          ? "You"
+          : friendProfile?.displayName || friendProfile?.username || "User";
+
+      return {
+        messageId: message.id,
+        senderId: message.sender,
+        senderName,
+        kind:
+          message.type === "image"
+            ? "media"
+            : message.type === "scorecard"
+              ? "text"
+              : "text",
+        textSnippet:
+          message.type === "text"
+            ? message.content.length > 100
+              ? message.content.substring(0, 100) + "..."
+              : message.content
+            : undefined,
+        attachmentPreview:
+          message.type === "image"
+            ? { kind: "image", thumbUrl: undefined }
+            : undefined,
+      };
+    },
+    [uid, friendProfile],
+  );
+
+  // H6: Scroll to a specific message
+  const scrollToMessage = useCallback(
+    (messageId: string) => {
+      const index = messages.findIndex((m) => m.id === messageId);
+      if (index !== -1 && flatListRef.current) {
+        flatListRef.current.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0.5, // Center the message
+        });
+      }
+    },
+    [messages],
+  );
+
   const handleSendMessage = async () => {
     if (!uid || !chatId || !inputText.trim()) return;
 
     const messageContent = inputText.trim();
+    const currentReplyTo = replyTo; // Capture before clearing
     setInputText(""); // Clear input immediately for better UX
+    setReplyTo(null); // H6: Clear reply state
 
-    // Phase 12: Use optimistic sending
-    const { localMessage, sendPromise } = sendMessageOptimistic(
-      chatId,
-      uid,
-      messageContent,
-      friendUid,
-    );
-
-    // Add optimistic message to UI immediately
-    const optimisticMsg: MessageWithProfile = {
-      ...localMessage,
-      otherUserProfile: undefined, // It's our own message
-    };
-
-    setMessages((prev) => [...prev, optimisticMsg]);
+    // V2 Send Path
+    console.log("🔵 [ChatScreen V2] Sending message via sendMessageWithOutbox");
+    setSendingLoading(true);
 
     try {
-      setSendingLoading(true);
+      const { outboxItem, sendPromise } = await sendMessageWithOutbox({
+        conversationId: chatId,
+        scope: "dm",
+        kind: "text",
+        text: messageContent,
+        replyTo: currentReplyTo || undefined,
+      });
+
+      // The useMessagesV2 hook will automatically pick up the optimistic message
+      // from the outbox and merge it into the display
+
+      // Wait for result
       const result = await sendPromise;
 
-      if (result.success) {
-        // Remove the local message (will be replaced by real-time listener)
-        setMessages((prev) => prev.filter((m) => m.id !== localMessage.id));
-
-        // Remove from failed messages if it was there
-        setFailedMessages((prev) => {
-          const next = new Map(prev);
-          next.delete(localMessage.id);
-          return next;
-        });
-
-        // Show celebration if milestone reached
-        if (result.milestoneReached) {
-          const milestoneMessages: Record<number, string> = {
-            3: "🔥 3-day streak! You're on fire!\n\nUnlocked: Flame Cap 🔥",
-            7: "🔥 1 week streak! Amazing!\n\nUnlocked: Cool Shades 😎",
-            14: "🔥 2 week streak! Incredible!\n\nUnlocked: Gradient Glow ✨",
-            30: "🔥 30-day streak! One month!\n\nUnlocked: Golden Crown 👑",
-            50: "🔥 50-day streak! Legendary!\n\nUnlocked: Star Glasses 🤩",
-            100: "💯 100-day streak! Champion!\n\nUnlocked: Rainbow Burst 🌈",
-            365: "🏆 365-day streak! One year!\n\nUnlocked: Legendary Halo 😇",
-          };
-
-          const message =
-            milestoneMessages[result.milestoneReached] ||
-            `🎉 ${result.milestoneReached}-day streak milestone!`;
-
-          Alert.alert("Streak Milestone! 🎉", message);
-        }
+      if (!result.success) {
+        console.log("❌ [ChatScreen V2] Message failed:", result.error);
+        // The outbox item will remain in failed state and show in UI
       } else {
-        // Mark message as failed
-        console.log("❌ [ChatScreen] Message failed:", result.error);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === localMessage.id
-              ? {
-                  ...m,
-                  status: "failed" as MessageStatus,
-                  errorMessage: result.error,
-                }
-              : m,
-          ),
-        );
-
-        // Store for retry
-        setFailedMessages((prev) => {
-          const next = new Map(prev);
-          next.set(localMessage.id, {
-            ...localMessage,
-            status: "failed",
-            errorMessage: result.error,
-          });
-          return next;
-        });
+        if (DEBUG_CHAT_V2) {
+          console.log("✅ [ChatScreen V2] Message sent successfully");
+        }
       }
     } catch (error: any) {
-      console.error("Error sending message:", error);
-      // Mark as failed
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === localMessage.id
-            ? {
-                ...m,
-                status: "failed" as MessageStatus,
-                errorMessage: error.message,
-              }
-            : m,
-        ),
-      );
+      console.error("❌ [ChatScreen V2] Error sending message:", error);
     } finally {
       setSendingLoading(false);
     }
@@ -368,88 +562,26 @@ export default function ChatScreen({
   const handleRetryMessage = async (failedMsg: Message) => {
     if (!uid || !chatId) return;
 
-    // Remove from failed messages
-    setFailedMessages((prev) => {
-      const next = new Map(prev);
-      next.delete(failedMsg.id);
-      return next;
-    });
-
-    // Update status to sending
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === failedMsg.id
-          ? { ...m, status: "sending" as MessageStatus }
-          : m,
-      ),
-    );
-
-    // Resend using optimistic flow
-    const { sendPromise } = sendMessageOptimistic(
-      chatId,
-      uid,
-      failedMsg.content,
-      friendUid,
-      failedMsg.type,
-    );
-
-    const result = await sendPromise;
-
-    if (result.success) {
-      // Remove the local message (real-time listener will add the server version)
-      setMessages((prev) => prev.filter((m) => m.id !== failedMsg.id));
+    // V2 uses the outbox retry function
+    console.log("🔵 [ChatScreen V2] Retrying message:", failedMsg.id);
+    const success = await retryFailedMessageV2(failedMsg.id);
+    if (success) {
+      console.log("✅ [ChatScreen V2] Retry successful");
     } else {
-      // Still failed
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === failedMsg.id
-            ? {
-                ...m,
-                status: "failed" as MessageStatus,
-                errorMessage: result.error,
-              }
-            : m,
-        ),
-      );
-      setFailedMessages((prev) => {
-        const next = new Map(prev);
-        next.set(failedMsg.id, {
-          ...failedMsg,
-          status: "failed",
-          errorMessage: result.error,
-        });
-        return next;
-      });
+      console.log("❌ [ChatScreen V2] Retry failed");
     }
   };
 
   // Phase 12: Load older messages
   const handleLoadOlderMessages = async () => {
-    if (!chatId || loadingOlder || !hasMoreMessages) return;
-
-    try {
-      setLoadingOlder(true);
-      const { messages: olderMessages, hasMore } =
-        await loadOlderMessages(chatId);
-
-      if (olderMessages.length > 0) {
-        // Enrich with profile
-        const enrichedOlder = olderMessages.map((msg) => ({
-          ...msg,
-          otherUserProfile:
-            msg.sender === friendUid ? friendProfile : undefined,
-        }));
-
-        // Prepend older messages
-        setMessages((prev) => [...enrichedOlder, ...prev]);
-      }
-
-      setHasMoreMessages(hasMore);
-    } catch (error) {
-      console.error("Error loading older messages:", error);
-    } finally {
-      setLoadingOlder(false);
-    }
+    // V2 uses hook's loadOlder function
+    if (
+      !chatId ||
+      messagesV2.pagination.isLoadingOlder ||
+      !messagesV2.pagination.hasMoreOlder
+    )
+      return;
+    await messagesV2.loadOlder();
   };
 
   // Block/Report handlers
@@ -567,7 +699,7 @@ export default function ChatScreen({
         // On native platforms, use expo-image-picker
         console.log("🔵 [handleCapturePhoto] Launching camera...");
         const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ["images"],
           allowsEditing: false,
           aspect: [1, 1],
           quality: 1,
@@ -617,7 +749,7 @@ export default function ChatScreen({
         // On native platforms, use expo-image-picker
         console.log("🔵 [handleSelectPhoto] Launching image library...");
         const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ["images"],
           allowsEditing: false,
           aspect: [1, 1],
           quality: 1,
@@ -682,19 +814,37 @@ export default function ChatScreen({
         storagePath,
       );
 
-      // Send as image message
-      console.log("🔵 [handleSnapUpload] Sending message...");
-      const result = await sendMessage(
-        chatId,
-        uid,
-        storagePath,
-        friendUid,
-        "image",
+      // Send as image message using V2
+      console.log("🔵 [handleSnapUpload] Sending message via V2...");
+      const { outboxItem, sendPromise } = await sendMessageWithOutbox({
+        conversationId: chatId,
+        scope: "dm",
+        kind: "media",
+        text: storagePath, // Storage path as content
+      });
+      console.log(
+        "✅ [handleSnapUpload] Message enqueued, waiting for send...",
       );
+
+      // Wait for send to complete
+      const sendResult = await sendPromise;
+      if (!sendResult.success) {
+        throw new Error(sendResult.error || "Failed to send snap");
+      }
       console.log("✅ [handleSnapUpload] Message sent successfully");
 
+      // Update streak (separate from V2 message sending)
+      const { newCount, milestoneReached } = await updateStreakAfterMessage(
+        uid,
+        friendUid,
+      );
+      console.log("✅ [handleSnapUpload] Streak updated:", {
+        newCount,
+        milestoneReached,
+      });
+
       // Show celebration if milestone reached
-      if (result.milestoneReached) {
+      if (milestoneReached) {
         const milestoneMessages: Record<number, string> = {
           3: "🔥 3-day streak! You're on fire!\n\nUnlocked: Flame Cap 🔥",
           7: "🔥 1 week streak! Amazing!\n\nUnlocked: Cool Shades 😎",
@@ -706,8 +856,8 @@ export default function ChatScreen({
         };
 
         const message =
-          milestoneMessages[result.milestoneReached] ||
-          `🎉 ${result.milestoneReached}-day streak milestone!`;
+          milestoneMessages[milestoneReached] ||
+          `🎉 ${milestoneReached}-day streak milestone!`;
 
         Alert.alert("Streak Milestone! 🎉", message);
       } else {
@@ -843,7 +993,7 @@ export default function ChatScreen({
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return <LoadingState message="Loading chat..." />;
   }
 
@@ -885,179 +1035,282 @@ export default function ChatScreen({
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior="padding">
-      <FlatList
-        data={messages}
-        renderItem={({ item: message }) => (
+    <>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      >
+        <FlatList
+          ref={flatListRef}
+          data={displayMessages}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: message }) => (
+            <SwipeableMessage
+              message={{
+                id: message.id,
+                scope: "dm",
+                conversationId: chatId || "",
+                senderId: message.sender,
+                senderName:
+                  message.sender === uid ? "You" : friendProfile?.displayName,
+                kind: message.type === "image" ? "media" : "text",
+                text: message.type === "text" ? message.content : undefined,
+                createdAt: message.createdAt,
+                serverReceivedAt: message.createdAt,
+                clientId: "",
+                idempotencyKey: "",
+              }}
+              onReply={handleReply}
+              enabled={
+                message.type !== "scorecard" && message.status !== "failed"
+              }
+              currentUid={uid}
+            >
+              <View
+                style={[
+                  styles.messageContainer,
+                  message.sender === uid
+                    ? styles.sentMessageContainer
+                    : styles.receivedMessageContainer,
+                  message.status === "failed" && styles.failedMessageContainer,
+                ]}
+              >
+                {/* Show avatar for received messages */}
+                {message.sender !== uid && friendProfile && (
+                  <AvatarMini
+                    config={
+                      friendProfile.avatarConfig || { baseColor: "#6200EE" }
+                    }
+                    size={32}
+                  />
+                )}
+                <View style={styles.messageBubbleWrapper}>
+                  <Card
+                    style={[
+                      styles.messageBubble,
+                      message.sender === uid
+                        ? styles.sentBubble
+                        : styles.receivedBubble,
+                      message.status === "sending" && styles.sendingBubble,
+                      message.status === "failed" && styles.failedBubble,
+                    ]}
+                    onLongPress={() => handleMessageLongPress(message)}
+                    onPress={() => {
+                      // If failed, allow retry on tap
+                      if (message.status === "failed") {
+                        handleRetryMessage(message);
+                        return;
+                      }
+
+                      // If image message, check if user is the receiver before allowing view
+                      if (message.type === "image") {
+                        // Only allow receiver to open snaps, not the sender
+                        if (message.sender === uid) {
+                          console.log(
+                            "ℹ️  [ChatScreen] Sender cannot open their own snap",
+                          );
+                          Alert.alert(
+                            "Cannot Open",
+                            "You sent this snap. Only the receiver can open it.",
+                          );
+                          return;
+                        }
+
+                        // Receiver can open the snap
+                        console.log(
+                          "🔵 [ChatScreen] Opening snap for receiver",
+                        );
+                        navigation.navigate("SnapViewer", {
+                          messageId: message.id,
+                          chatId: chatId,
+                          storagePath: message.content,
+                        });
+                      }
+                    }}
+                  >
+                    <Card.Content style={styles.messageContent}>
+                      {/* H6: Reply preview if message is a reply */}
+                      {message.replyTo && (
+                        <ReplyBubble
+                          replyTo={message.replyTo}
+                          isSentByMe={message.sender === uid}
+                          isReplyToMe={message.replyTo.senderId === uid}
+                          onPress={() =>
+                            scrollToMessage(message.replyTo!.messageId)
+                          }
+                        />
+                      )}
+                      {message.type === "image" ? (
+                        <Text style={{ fontSize: 24 }}>🔒</Text>
+                      ) : message.type === "scorecard" ? (
+                        (() => {
+                          const scorecard = parseScorecardContent(
+                            message.content,
+                          );
+                          if (scorecard) {
+                            return (
+                              <ScorecardBubble
+                                scorecard={scorecard}
+                                isMine={message.sender === uid}
+                              />
+                            );
+                          }
+                          return (
+                            <Text style={styles.messageText}>
+                              [Invalid scorecard]
+                            </Text>
+                          );
+                        })()
+                      ) : (
+                        <Text
+                          style={[
+                            styles.messageText,
+                            message.sender === uid
+                              ? styles.sentText
+                              : styles.receivedText,
+                          ]}
+                        >
+                          {message.content}
+                        </Text>
+                      )}
+                    </Card.Content>
+                  </Card>
+                  {/* Phase 12: Message status indicator */}
+                  {renderMessageStatus(message)}
+                </View>
+                <Text style={styles.timestamp}>
+                  {new Date(message.createdAt).toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </View>
+            </SwipeableMessage>
+          )}
+          keyExtractor={(item) => item.id}
+          {...LIST_PERFORMANCE_PROPS}
+          contentContainerStyle={{
+            paddingHorizontal: Spacing.sm,
+            paddingBottom: 16,
+          }}
+          ListHeaderComponent={
+            // Phase 12: Load older messages button
+            hasMoreToLoad ? (
+              <TouchableOpacity
+                style={styles.loadMoreContainer}
+                onPress={handleLoadOlderMessages}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.primary}
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.loadMoreText,
+                      { color: theme.colors.primary },
+                    ]}
+                  >
+                    Load older messages
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon="chat-outline"
+              title="No messages yet"
+              subtitle="Send a message or snap to start the conversation!"
+            />
+          }
+          inverted={false}
+          onContentSizeChange={() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+          }}
+        />
+
+        {/* Input area */}
+        <View
+          style={[
+            styles.inputAreaWrapper,
+            {
+              backgroundColor: theme.dark ? "#000" : "#fff",
+              paddingBottom: insets.bottom,
+            },
+          ]}
+        >
+          {/* H6: Reply preview bar above input */}
+          {replyTo && (
+            <ReplyPreviewBar
+              replyTo={replyTo}
+              onCancel={handleCancelReply}
+              isOwnMessage={replyTo.senderId === uid}
+            />
+          )}
+
           <View
             style={[
-              styles.messageContainer,
-              message.sender === uid
-                ? styles.sentMessageContainer
-                : styles.receivedMessageContainer,
-              message.status === "failed" && styles.failedMessageContainer,
+              styles.inputContainer,
+              {
+                backgroundColor: theme.dark ? "#000" : "#fff",
+                borderTopColor: theme.dark ? "#222" : "#e0e0e0",
+              },
             ]}
           >
-            {/* Show avatar for received messages */}
-            {message.sender !== uid && friendProfile && (
-              <AvatarMini
-                config={friendProfile.avatarConfig || { baseColor: "#6200EE" }}
-                size={32}
-              />
-            )}
-            <View style={styles.messageBubbleWrapper}>
-              <Card
-                style={[
-                  styles.messageBubble,
-                  message.sender === uid
-                    ? styles.sentBubble
-                    : styles.receivedBubble,
-                  message.status === "sending" && styles.sendingBubble,
-                  message.status === "failed" && styles.failedBubble,
-                ]}
-                onPress={() => {
-                  // If failed, allow retry on tap
-                  if (message.status === "failed") {
-                    handleRetryMessage(message);
-                    return;
-                  }
-
-                  // If image message, check if user is the receiver before allowing view
-                  if (message.type === "image") {
-                    // Only allow receiver to open snaps, not the sender
-                    if (message.sender === uid) {
-                      console.log(
-                        "ℹ️  [ChatScreen] Sender cannot open their own snap",
-                      );
-                      Alert.alert(
-                        "Cannot Open",
-                        "You sent this snap. Only the receiver can open it.",
-                      );
-                      return;
-                    }
-
-                    // Receiver can open the snap
-                    console.log("🔵 [ChatScreen] Opening snap for receiver");
-                    navigation.navigate("SnapViewer", {
-                      messageId: message.id,
-                      chatId: chatId,
-                      storagePath: message.content,
-                    });
-                  }
-                }}
-              >
-                <Card.Content style={styles.messageContent}>
-                  {message.type === "image" ? (
-                    <Text style={{ fontSize: 24 }}>🔒</Text>
-                  ) : message.type === "scorecard" ? (
-                    (() => {
-                      const scorecard = parseScorecardContent(message.content);
-                      if (scorecard) {
-                        return (
-                          <ScorecardBubble
-                            scorecard={scorecard}
-                            isMine={message.sender === uid}
-                          />
-                        );
-                      }
-                      return (
-                        <Text style={styles.messageText}>
-                          [Invalid scorecard]
-                        </Text>
-                      );
-                    })()
-                  ) : (
-                    <Text
-                      style={[
-                        styles.messageText,
-                        message.sender === uid
-                          ? styles.sentText
-                          : styles.receivedText,
-                      ]}
-                    >
-                      {message.content}
-                    </Text>
-                  )}
-                </Card.Content>
-              </Card>
-              {/* Phase 12: Message status indicator */}
-              {renderMessageStatus(message)}
-            </View>
-            <Text style={styles.timestamp}>
-              {new Date(message.createdAt).toLocaleTimeString("en-US", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
-          </View>
-        )}
-        keyExtractor={(item) => item.id}
-        {...LIST_PERFORMANCE_PROPS}
-        ListHeaderComponent={
-          // Phase 12: Load older messages button
-          hasMoreMessages ? (
-            <TouchableOpacity
-              style={styles.loadMoreContainer}
-              onPress={handleLoadOlderMessages}
-              disabled={loadingOlder}
+            <IconButton
+              icon="camera"
+              size={24}
+              onPress={showPhotoMenu}
+              disabled={sendingLoading || uploadingSnap}
+              style={styles.iconButton}
+            />
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: theme.dark ? "#1A1A1A" : "#f0f0f0",
+                  color: theme.dark ? "#FFF" : "#000",
+                  borderColor: theme.dark ? "#333" : "#e0e0e0",
+                },
+              ]}
+              placeholder="Message..."
+              placeholderTextColor={theme.dark ? "#888" : "#999"}
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={500}
+              editable={!sendingLoading && !uploadingSnap}
+              textAlignVertical="center"
+            />
+            {/* Phase 17: Schedule Message Button */}
+            <IconButton
+              icon="clock-outline"
+              size={22}
+              onPress={() => setScheduleModalVisible(true)}
+              disabled={!inputText.trim() || sendingLoading || uploadingSnap}
+              style={styles.iconButton}
+            />
+            <Button
+              mode="contained"
+              onPress={handleSendMessage}
+              disabled={!inputText.trim() || sendingLoading || uploadingSnap}
+              loading={sendingLoading}
+              style={styles.sendButton}
+              labelStyle={styles.sendButtonLabel}
             >
-              {loadingOlder ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : (
-                <Text
-                  style={[styles.loadMoreText, { color: theme.colors.primary }]}
-                >
-                  Load older messages
-                </Text>
-              )}
-            </TouchableOpacity>
-          ) : null
-        }
-        ListEmptyComponent={
-          <EmptyState
-            icon="chat-outline"
-            title="No messages yet"
-            subtitle="Send a message or snap to start the conversation!"
-          />
-        }
-        inverted={false}
-      />
-
-      <View style={styles.inputContainer}>
-        <IconButton
-          icon="camera"
-          size={24}
-          onPress={showPhotoMenu}
-          disabled={sendingLoading || uploadingSnap}
-        />
-        <TextInput
-          style={styles.textInput}
-          placeholder="Type a message..."
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          maxLength={500}
-          editable={!sendingLoading && !uploadingSnap}
-        />
-        {/* Phase 17: Schedule Message Button */}
-        <IconButton
-          icon="clock-outline"
-          size={22}
-          onPress={() => setScheduleModalVisible(true)}
-          disabled={!inputText.trim() || sendingLoading || uploadingSnap}
-          style={styles.scheduleButton}
-        />
-        <Button
-          mode="contained"
-          onPress={handleSendMessage}
-          disabled={!inputText.trim() || sendingLoading || uploadingSnap}
-          loading={sendingLoading}
-          style={styles.sendButton}
-          labelStyle={styles.sendButtonLabel}
-        >
-          Send
-        </Button>
-      </View>
+              Send
+            </Button>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
 
       {/* Block User Modal */}
       <BlockUserModal
@@ -1082,7 +1335,18 @@ export default function ChatScreen({
         onSchedule={handleScheduleMessage}
         onClose={() => setScheduleModalVisible(false)}
       />
-    </KeyboardAvoidingView>
+
+      {/* H7: Message Actions Sheet */}
+      <MessageActionsSheet
+        visible={actionsSheetVisible}
+        message={selectedMessageAsV2}
+        currentUid={uid || ""}
+        onClose={() => setActionsSheetVisible(false)}
+        onReply={handleActionsReply}
+        onEdited={handleMessageEdited}
+        onDeleted={handleMessageDeleted}
+      />
+    </>
   );
 }
 
@@ -1153,6 +1417,10 @@ const styles = StyleSheet.create({
     // color applied inline via theme
   },
 
+  inputAreaWrapper: {
+    // backgroundColor set inline based on theme
+  },
+
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -1160,7 +1428,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderTopWidth: 1,
     gap: Spacing.sm,
-    // backgroundColor and borderTopColor applied inline via theme
+    // backgroundColor and borderTopColor set inline based on theme
   },
 
   textInput: {
@@ -1168,13 +1436,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 10,
+    minHeight: 40,
     maxHeight: 100,
-    fontSize: 14,
+    fontSize: 16,
     borderWidth: 1,
-    // backgroundColor and borderColor applied inline via theme
+    // color, backgroundColor, borderColor set inline based on theme
   },
 
   sendButton: {
+    height: 40,
+    justifyContent: "center",
     marginBottom: 0,
   },
 
@@ -1182,9 +1453,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  scheduleButton: {
+  iconButton: {
     margin: 0,
-    marginBottom: 2,
+    width: 40,
+    height: 40,
   },
 
   emptyContainer: {

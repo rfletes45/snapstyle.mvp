@@ -1,9 +1,10 @@
 /**
  * Avatar Component - Displays user avatar with equipped cosmetics
  * Phase 7: Avatar + Cosmetics
+ * Phase D: Added React.memo for performance
  */
 
-import React from "react";
+import React, { memo } from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { AvatarConfig } from "@/types/models";
@@ -27,11 +28,8 @@ const BACKGROUND_STYLES: Record<string, { colors: string[]; type: string }> = {
   },
 };
 
-export default function Avatar({
-  config,
-  size = 80,
-  showBorder = true,
-}: AvatarProps) {
+// Main Avatar component
+function AvatarBase({ config, size = 80, showBorder = true }: AvatarProps) {
   const { baseColor, hat, glasses, background } = config;
 
   // Get background style
@@ -124,16 +122,20 @@ export default function Avatar({
   );
 }
 
-// Mini avatar for lists
-export function AvatarMini({
+// Memoized Avatar export
+const Avatar = memo(AvatarBase);
+export default Avatar;
+
+// Mini avatar for lists - Phase D: Also memoized
+export const AvatarMini = memo(function AvatarMini({
   config,
   size = 40,
 }: {
   config: AvatarConfig;
   size?: number;
 }) {
-  return <Avatar config={config} size={size} showBorder={false} />;
-}
+  return <AvatarBase config={config} size={size} showBorder={false} />;
+});
 
 const styles = StyleSheet.create({
   container: {

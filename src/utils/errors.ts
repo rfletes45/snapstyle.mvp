@@ -436,3 +436,301 @@ export function isRetryable(error: unknown): boolean {
   }
   return true; // Default to retryable for unknown errors
 }
+
+// =============================================================================
+// BOUNDED RETRY UTILITIES
+// =============================================================================
+
+/**
+ * Retry configuration options
+ */
+export interface RetryOptions {
+  /** Maximum number of retry attempts (default: 3) */
+  maxAttempts?: number;
+  /** Initial delay in milliseconds (default: 1000) */
+  initialDelay?: number;
+  /** Maximum delay in milliseconds (default: 10000) */
+  maxDelay?: number;
+  /** Backoff multiplier (default: 2) */
+  backoffMultiplier?: number;
+  /** Whether to add jitter to delays (default: true) */
+  jitter?: boolean;
+  /** Context for logging */
+  context?: string;
+  /** Custom function to determine if error is retryable */
+  shouldRetry?: (error: unknown, attempt: number) => boolean;
+  /** Callback before each retry attempt */
+  onRetry?: (error: unknown, attempt: number, delay: number) => void;
+}
+
+/**
+ * Calculate delay for exponential backoff with optional jitter
+ */
+function calculateDelay(
+  attempt: number,
+  initialDelay: number,
+  maxDelay: number,
+  multiplier: number,
+  jitter: boolean,
+): number {
+  // Exponential backoff: initialDelay * multiplier^attempt
+  const exponentialDelay = initialDelay * Math.pow(multiplier, attempt - 1);
+  const boundedDelay = Math.min(exponentialDelay, maxDelay);
+
+  if (jitter) {
+    // Add random jitter of ±25%
+    const jitterRange = boundedDelay * 0.25;
+    return boundedDelay + (Math.random() * 2 - 1) * jitterRange;
+  }
+
+  return boundedDelay;
+}
+
+/**
+ * Sleep for a specified duration
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Execute an async function with bounded exponential backoff retry
+ *
+ * @example
+ * ```typescript
+ * // Basic usage
+ * const result = await withRetry(
+ *   () => fetchUserData(userId),
+ *   { maxAttempts: 3, context: "fetchUser" }
+ * );
+ *
+ * // With custom retry logic
+ * const result = await withRetry(
+ *   () => sendMessage(chatId, message),
+ *   {
+ *     maxAttempts: 5,
+ *     initialDelay: 500,
+ *     shouldRetry: (error) => error instanceof AppError && error.category === "network",
+ *     onRetry: (error, attempt) => console.log(`Retry ${attempt}...`),
+ *   }
+ * );
+ * ```
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: RetryOptions = {},
+): Promise<T> {
+  const {
+    maxAttempts = 3,
+    initialDelay = 1000,
+    maxDelay = 10000,
+    backoffMultiplier = 2,
+    jitter = true,
+    context,
+    shouldRetry = (error) => isRetryable(error),
+    onRetry,
+  } = options;
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      // Check if we've exhausted attempts
+      if (attempt >= maxAttempts) {
+        break;
+      }
+
+      // Check if error is retryable
+      if (!shouldRetry(error, attempt)) {
+        break;
+      }
+
+      // Calculate delay with backoff
+      const delay = calculateDelay(
+        attempt,
+        initialDelay,
+        maxDelay,
+        backoffMultiplier,
+        jitter,
+      );
+
+      // Log retry attempt if in dev mode
+      if (__DEV__ && context) {
+        console.log(
+          `🔄 [${context}] Retry attempt ${attempt}/${maxAttempts} after ${Math.round(delay)}ms`,
+        );
+      }
+
+      // Callback before retry
+      onRetry?.(error, attempt, delay);
+
+      // Wait before retrying
+      await sleep(delay);
+    }
+  }
+
+  // All attempts failed, throw the last error
+  throw lastError;
+}
+
+/**
+ * Execute an async function with retry and return Result
+ *
+ * @example
+ * ```typescript
+ * const result = await withRetryResult(
+ *   () => fetchUserData(userId),
+ *   { maxAttempts: 3 }
+ * );
+ *
+ * if (result.ok) {
+ *   console.log("Success:", result.data);
+ * } else {
+ *   console.log("Failed after retries:", result.error.userMessage);
+ * }
+ * ```
+ */
+export async function withRetryResult<T>(
+  fn: () => Promise<T>,
+  options: RetryOptions = {},
+): Promise<Result<T>> {
+  try {
+    const data = await withRetry(fn, options);
+    return ok(data);
+  } catch (error) {
+    const appError = mapError(error);
+    if (options.context) {
+      appError.log(options.context);
+    }
+    return err(appError);
+  }
+}
+
+// =============================================================================
+// ERROR ACTIONS & SUGGESTIONS
+// =============================================================================
+
+/**
+ * Suggested action for the user based on error type
+ */
+export type ErrorAction =
+  | "retry" // User can retry the operation
+  | "reload" // User should reload the screen/app
+  | "re-login" // User needs to re-authenticate
+  | "check-connection" // User should check network
+  | "contact-support" // User should contact support
+  | "dismiss"; // User can just dismiss the error
+
+/**
+ * Get suggested action for an error
+ */
+export function getErrorAction(error: unknown): ErrorAction {
+  if (error instanceof AppError) {
+    switch (error.category) {
+      case "network":
+        return "check-connection";
+      case "auth":
+        if (error.code === "auth/requires-recent-login") {
+          return "re-login";
+        }
+        return "retry";
+      case "permission":
+        return "re-login";
+      case "rate_limit":
+        return "retry";
+      case "validation":
+        return "dismiss";
+      case "not_found":
+        return "reload";
+      case "storage":
+        return "retry";
+      case "conflict":
+        return "dismiss";
+      default:
+        return error.isRetryable ? "retry" : "dismiss";
+    }
+  }
+  return "retry";
+}
+
+/**
+ * Get action button text for an error
+ */
+export function getErrorActionText(action: ErrorAction): string {
+  switch (action) {
+    case "retry":
+      return "Try Again";
+    case "reload":
+      return "Reload";
+    case "re-login":
+      return "Sign In Again";
+    case "check-connection":
+      return "Check Connection";
+    case "contact-support":
+      return "Contact Support";
+    case "dismiss":
+      return "OK";
+  }
+}
+
+/**
+ * Get helpful suggestion text for an error
+ */
+export function getErrorSuggestion(error: unknown): string | null {
+  if (error instanceof AppError) {
+    switch (error.category) {
+      case "network":
+        return "Please check your internet connection and try again.";
+      case "auth":
+        if (error.code === "auth/requires-recent-login") {
+          return "For security, please sign in again to complete this action.";
+        }
+        return "Please check your credentials and try again.";
+      case "permission":
+        return "You may need to sign in again to access this feature.";
+      case "rate_limit":
+        return "Please wait a moment before trying again.";
+      case "storage":
+        return "There was an issue uploading. Please try again.";
+      default:
+        return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Combined error info for UI display
+ */
+export interface ErrorDisplayInfo {
+  /** User-friendly error message */
+  message: string;
+  /** Suggested action type */
+  action: ErrorAction;
+  /** Action button text */
+  actionText: string;
+  /** Optional helpful suggestion */
+  suggestion: string | null;
+  /** Whether the error can be retried */
+  canRetry: boolean;
+}
+
+/**
+ * Get complete display info for an error
+ */
+export function getErrorDisplayInfo(error: unknown): ErrorDisplayInfo {
+  const appError = error instanceof AppError ? error : mapError(error);
+  const action = getErrorAction(appError);
+
+  return {
+    message: appError.userMessage,
+    action,
+    actionText: getErrorActionText(action),
+    suggestion: getErrorSuggestion(appError),
+    canRetry: appError.isRetryable,
+  };
+}
