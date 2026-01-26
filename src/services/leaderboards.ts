@@ -1,6 +1,5 @@
 /**
  * Leaderboards Service
- * Phase 17: Weekly per-game leaderboards + friends-only view
  *
  * Handles:
  * - Fetching weekly global leaderboard (top 100)
@@ -9,28 +8,27 @@
  */
 
 import {
+  AvatarConfig,
+  Friend,
+  GameType,
+  getCurrentWeekKey,
+  LeaderboardEntry,
+  WeekKey,
+} from "@/types/models";
+import {
   collection,
   doc,
   getDoc,
   getDocs,
-  query,
-  orderBy,
   limit,
-  where,
+  orderBy,
+  query,
   setDoc,
   Timestamp,
+  where,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import {
-  GameType,
-  LeaderboardEntry,
-  WeekKey,
-  getCurrentWeekKey,
-  AvatarConfig,
-  Friend,
-} from "@/types/models";
 import { getFriends } from "./friends";
-import { getUserProfileByUid } from "./friends";
 
 // =============================================================================
 // Constants

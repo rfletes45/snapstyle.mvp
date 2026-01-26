@@ -1,51 +1,51 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { StyleSheet, View, FlatList, Alert, Modal } from "react-native";
-import {
-  Text,
-  Searchbar,
-  Card,
-  Button,
-  Chip,
-  IconButton,
-  Menu,
-  useTheme,
-} from "react-native-paper";
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  getDocs,
-} from "firebase/firestore";
-import { useFocusEffect } from "@react-navigation/native";
-import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
-import { useInAppNotifications } from "@/store/InAppNotificationsContext";
-import {
-  sendFriendRequest,
-  getPendingRequests,
-  acceptFriendRequest,
-  declineFriendRequest,
-  cancelFriendRequest,
-  getFriends,
-  removeFriend,
-  getUserProfileByUid,
-} from "@/services/friends";
-import { getFirestoreInstance } from "@/services/firebase";
-import { blockUser } from "@/services/blocking";
-import { submitReport } from "@/services/reporting";
-import {
-  Friend,
-  FriendRequest,
-  AvatarConfig,
-  ReportReason,
-} from "@/types/models";
 import { AvatarMini } from "@/components/Avatar";
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
-import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { blockUser } from "@/services/blocking";
+import { getFirestoreInstance } from "@/services/firebase";
+import {
+  acceptFriendRequest,
+  cancelFriendRequest,
+  declineFriendRequest,
+  getFriends,
+  getPendingRequests,
+  getUserProfileByUid,
+  removeFriend,
+  sendFriendRequest,
+} from "@/services/friends";
+import { submitReport } from "@/services/reporting";
+import { useAuth } from "@/store/AuthContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
+import { useUser } from "@/store/UserContext";
+import {
+  AvatarConfig,
+  Friend,
+  FriendRequest,
+  ReportReason,
+} from "@/types/models";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { useFocusEffect } from "@react-navigation/native";
+import {
+  collection,
+  getDocs,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert, FlatList, Modal, StyleSheet, View } from "react-native";
+import {
+  Button,
+  Card,
+  Chip,
+  IconButton,
+  Menu,
+  Searchbar,
+  Text,
+  useTheme,
+} from "react-native-paper";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 interface RequestWithUsername extends FriendRequest {
   otherUserUsername?: string;
@@ -71,7 +71,7 @@ export default function FriendsScreen({ navigation }: any) {
   const uid = currentFirebaseUser?.uid;
   const theme = useTheme();
 
-  // Phase G: Suppress friend request notifications while on this screen
+  // Suppress friend request notifications while on this screen
   useFocusEffect(
     useCallback(() => {
       setCurrentScreen("Connections");

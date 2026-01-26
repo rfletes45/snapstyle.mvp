@@ -1,36 +1,34 @@
 /**
- * Stories Service (Phase D: Cleaned up)
+ * Stories Service
  * Handles Firebase operations for photo stories:
  * - Post new story (upload image to Storage, create Story doc)
  * - Fetch friends' stories from Firestore
  * - Track views (create Views subcollection entries)
  * - Delete stories (author only)
- * - Batch operations for performance (Phase 13)
- *
- * Phase D: Unified to use getFirestoreInstance(), added __DEV__ guards
+ * - Batch operations for performance
  */
 
+import { Story } from "@/types/models";
 import {
   collection,
-  doc,
-  setDoc,
-  getDoc,
-  query,
-  where,
-  getDocs,
-  updateDoc,
   deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
   increment,
+  query,
+  setDoc,
+  updateDoc,
+  where,
 } from "firebase/firestore";
-import { getFirestoreInstance } from "./firebase";
-import { deleteSnapImage, downloadSnapImage } from "./storage";
-import { getFriends } from "./friends";
-import { Story } from "@/types/models";
 import { Image, Platform } from "react-native";
+import { getFirestoreInstance } from "./firebase";
+import { getFriends } from "./friends";
+import { deleteSnapImage, downloadSnapImage } from "./storage";
 
 const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
-// Phase 13: In-memory cache for preloaded image URLs
+// In-memory cache for preloaded image URLs
 const preloadedImageCache = new Map<string, string>();
 
 /**
@@ -393,11 +391,11 @@ export async function deleteStory(
 }
 
 // =============================================================================
-// Phase 13: Performance Optimizations
+// Performance Optimizations
 // =============================================================================
 
 /**
- * Batch check which stories the user has already viewed (Phase 13)
+ * Batch check which stories the user has already viewed
  * Replaces N individual getDoc() calls with parallel batch processing
  *
  * @param storyIds - Array of story IDs to check
@@ -461,7 +459,7 @@ export async function getBatchViewedStories(
 }
 
 /**
- * Preload story images for faster viewing (Phase 13)
+ * Preload story images for faster viewing
  * Downloads and caches images in the background
  *
  * @param stories - Array of stories to preload
@@ -538,7 +536,7 @@ export async function preloadStoryImages(
 }
 
 /**
- * Get preloaded image URL from cache (Phase 13)
+ * Get preloaded image URL from cache
  *
  * @param storyId - Story ID
  * @returns Cached image URL or null
@@ -548,7 +546,7 @@ export function getPreloadedImageUrl(storyId: string): string | null {
 }
 
 /**
- * Clear preloaded image cache (Phase 13)
+ * Clear preloaded image cache
  * Call when user logs out or to free memory
  */
 export function clearPreloadedImageCache(): void {
@@ -562,7 +560,7 @@ export function clearPreloadedImageCache(): void {
 }
 
 /**
- * Filter out expired stories client-side (Phase 13)
+ * Filter out expired stories client-side
  *
  * @param stories - Array of stories to filter
  * @returns Array of valid (unexpired) stories
@@ -583,7 +581,7 @@ export function filterExpiredStories(stories: Story[]): Story[] {
 }
 
 /**
- * Calculate time remaining until story expires (Phase 13)
+ * Calculate time remaining until story expires
  *
  * @param expiresAt - Expiration timestamp
  * @returns Human-readable time string (e.g., "5h", "23m")

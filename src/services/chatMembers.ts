@@ -154,6 +154,7 @@ export async function setDMMemberPublic(
  *
  * This updates the public lastReadAtPublic field, which is visible
  * to other members for read receipt display.
+ * Also updates lastSeenAtPrivate for unread badge computation.
  *
  * @param chatId - Chat document ID
  * @param uid - User ID
@@ -166,13 +167,26 @@ export async function updateReadWatermark(
 ): Promise<void> {
   try {
     const db = getFirestoreInstance();
-    const docRef = doc(db, "Chats", chatId, "Members", uid);
 
+    // Update public watermark (for read receipts)
+    const publicDocRef = doc(db, "Chats", chatId, "Members", uid);
     await setDoc(
-      docRef,
+      publicDocRef,
       {
         uid,
         lastReadAtPublic: timestamp,
+      },
+      { merge: true },
+    );
+
+    // Also update private last seen (for unread badge computation)
+    const privateDocRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+    await setDoc(
+      privateDocRef,
+      {
+        uid,
+        lastSeenAtPrivate: timestamp,
+        lastMarkedUnreadAt: null, // Clear manual unread marker
       },
       { merge: true },
     );
@@ -739,4 +753,212 @@ export async function initializeMemberState(
   });
 
   log.info("Initialized member state", ctx({ chatId, uid }));
+}
+
+// =============================================================================
+// Pinning Functions (Inbox Overhaul)
+// =============================================================================
+
+/**
+ * Pin or unpin a DM conversation
+ *
+ * When pinned, the conversation appears at the top of the inbox.
+ * The pinnedAt timestamp is used for sorting multiple pinned conversations.
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ * @param pinned - Whether to pin (true) or unpin (false)
+ */
+export async function setDMPinned(
+  chatId: string,
+  uid: string,
+  pinned: boolean,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const docRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+
+    await setDoc(
+      docRef,
+      {
+        uid,
+        pinnedAt: pinned ? Date.now() : null,
+      },
+      { merge: true },
+    );
+
+    log.info("Set DM pinned", ctx({ chatId, pinned }));
+  } catch (error) {
+    log.error("Failed to set DM pinned", ctx({ chatId, uid, error }));
+    throw error;
+  }
+}
+
+/**
+ * Check if a DM conversation is pinned
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ * @returns Pinned timestamp or null
+ */
+export async function getDMPinnedAt(
+  chatId: string,
+  uid: string,
+): Promise<number | null> {
+  const priv = await getDMMemberPrivate(chatId, uid);
+  return priv?.pinnedAt ?? null;
+}
+
+// =============================================================================
+// Soft Delete Functions (Inbox Overhaul)
+// =============================================================================
+
+/**
+ * Soft delete a DM conversation
+ *
+ * This hides the conversation from the inbox without deleting any messages.
+ * The conversation will reappear when a new message arrives.
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ */
+export async function softDeleteDM(chatId: string, uid: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const docRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+
+    await setDoc(
+      docRef,
+      {
+        uid,
+        deletedAt: Date.now(),
+        hiddenUntilNewMessage: true,
+        // Also unpin and unarchive
+        pinnedAt: null,
+        archived: false,
+      },
+      { merge: true },
+    );
+
+    log.info("Soft deleted DM", ctx({ chatId }));
+  } catch (error) {
+    log.error("Failed to soft delete DM", ctx({ chatId, uid, error }));
+    throw error;
+  }
+}
+
+/**
+ * Restore a soft-deleted DM conversation
+ *
+ * Makes the conversation visible again in the inbox.
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ */
+export async function restoreDM(chatId: string, uid: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const docRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+
+    await setDoc(
+      docRef,
+      {
+        uid,
+        deletedAt: null,
+        hiddenUntilNewMessage: false,
+      },
+      { merge: true },
+    );
+
+    log.info("Restored DM", ctx({ chatId }));
+  } catch (error) {
+    log.error("Failed to restore DM", ctx({ chatId, uid, error }));
+    throw error;
+  }
+}
+
+/**
+ * Check if a DM conversation is visible (not soft-deleted with hidden flag)
+ *
+ * @param memberState - Member's private state
+ * @returns true if visible, false if hidden
+ */
+export function isDMVisible(memberState: MemberStatePrivate | null): boolean {
+  if (!memberState) return true; // No state = visible (new conversation)
+
+  // Hidden if soft deleted and waiting for new message
+  if (memberState.deletedAt && memberState.hiddenUntilNewMessage) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Clear the hidden flag when a new message arrives
+ *
+ * Call this from the message listener to restore visibility.
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ */
+export async function clearHiddenFlag(
+  chatId: string,
+  uid: string,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const docRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+
+    // Only update if currently hidden
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists() && snapshot.data().hiddenUntilNewMessage) {
+      await setDoc(
+        docRef,
+        {
+          uid,
+          hiddenUntilNewMessage: false,
+        },
+        { merge: true },
+      );
+      log.debug("Cleared hidden flag", ctx({ chatId, uid }));
+    }
+  } catch (error) {
+    log.error("Failed to clear hidden flag", ctx({ chatId, uid, error }));
+    // Don't throw - this is a background operation
+  }
+}
+
+// =============================================================================
+// Mark As Read/Unread Functions (Enhanced)
+// =============================================================================
+
+/**
+ * Mark DM as read and clear manual unread marker
+ *
+ * Call this when user opens a conversation.
+ *
+ * @param chatId - Chat document ID
+ * @param uid - User ID
+ */
+export async function markDMAsRead(chatId: string, uid: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const docRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
+
+    await setDoc(
+      docRef,
+      {
+        uid,
+        lastSeenAtPrivate: Date.now(),
+        lastMarkedUnreadAt: null,
+      },
+      { merge: true },
+    );
+
+    log.debug("Marked DM as read", ctx({ chatId, uid }));
+  } catch (error) {
+    log.error("Failed to mark DM as read", ctx({ chatId, uid, error }));
+    // Don't throw - not critical
+  }
 }

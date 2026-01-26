@@ -1,11 +1,10 @@
 /**
  * Block User Modal
- * Phase 8: Safety features
  */
 
 import React, { useState } from "react";
-import { View, StyleSheet, Modal } from "react-native";
-import { Text, Button, Portal, Dialog, TextInput } from "react-native-paper";
+import { StyleSheet } from "react-native";
+import { Button, Dialog, Portal, Text, TextInput } from "react-native-paper";
 
 interface BlockUserModalProps {
   visible: boolean;

@@ -1,6 +1,5 @@
 /**
  * useMentionAutocomplete Hook
- * Phase H9: Mentions + notifyLevel
  *
  * Manages the state for @mention autocomplete in the chat composer.
  *

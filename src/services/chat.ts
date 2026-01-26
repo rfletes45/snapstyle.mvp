@@ -32,36 +32,16 @@ export async function getOrCreateChat(
   const chatId = generateChatId(currentUid, otherUid);
   const chatDocRef = doc(db, "Chats", chatId);
 
-  console.log("🔵 [getOrCreateChat] Starting with:", {
-    currentUid,
-    otherUid,
-    chatId,
-    timestamp: new Date().toISOString(),
-  });
-
   try {
     // Check if there's a block between users
     const isBlocked = await hasBlockBetweenUsers(currentUid, otherUid);
     if (isBlocked) {
-      console.log("❌ [getOrCreateChat] Cannot create chat - user is blocked");
       throw new Error("Cannot chat with this user");
     }
 
-    console.log(
-      "🔵 [getOrCreateChat] Attempting to get existing chat document...",
-    );
     const chatDoc = await getDoc(chatDocRef);
-    console.log(
-      "✅ [getOrCreateChat] Successfully retrieved chat doc. Exists:",
-      chatDoc.exists(),
-    );
 
     if (!chatDoc.exists()) {
-      console.log(
-        "🔵 [getOrCreateChat] Chat doesn't exist. Creating new chat with members:",
-        [currentUid, otherUid].sort(),
-      );
-
       // Create new chat
       await setDoc(chatDocRef, {
         members: [currentUid, otherUid].sort(),
@@ -69,23 +49,11 @@ export async function getOrCreateChat(
         lastMessageText: "",
         lastMessageAt: Timestamp.now(),
       });
-      console.log(
-        "✅ [getOrCreateChat] Successfully created new chat document",
-      );
-    } else {
-      console.log("✅ [getOrCreateChat] Chat already exists");
     }
 
-    console.log("✅ [getOrCreateChat] Returning chatId:", chatId);
     return chatId;
-  } catch (error: any) {
-    console.error("❌ [getOrCreateChat] ERROR:", {
-      message: error.message,
-      code: error.code,
-      errorType: error.constructor.name,
-      fullError: error,
-      timestamp: new Date().toISOString(),
-    });
+  } catch (error) {
+    console.error("[getOrCreateChat] Error:", error);
     throw error;
   }
 }

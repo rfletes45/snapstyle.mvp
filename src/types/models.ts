@@ -69,15 +69,11 @@ export interface Message {
   readAt?: number;
   openedAt?: number;
   openedBy?: string;
-  // Phase 12: Delivery status (client-side only for optimistic updates)
   status?: MessageStatus;
-  // Phase 12: Error message if status is 'failed'
   errorMessage?: string;
-  // Phase 12: Local-only flag (not yet persisted to Firestore)
   isLocal?: boolean;
-  // Phase 21: Client-generated ID for deduplication with optimistic UI
   clientMessageId?: string;
-  // Phase 16: Scorecard data (for type: "scorecard")
+  // Scorecard data (for type: "scorecard")
   scorecard?: {
     gameId: GameType;
     score: number;
@@ -85,7 +81,6 @@ export interface Message {
   };
 }
 
-// Story (Phase 5)
 export interface Story {
   id: string;
   authorId: string;
@@ -102,8 +97,33 @@ export interface StoryView {
   viewed: boolean; // true (for querying convenience)
 }
 
-// Game
+// Game Types - Original mini-games
 export type GameType = "reaction_tap" | "timed_tap";
+
+// Extended game types
+// @see src/types/games.ts for full type definitions and metadata
+export type SinglePlayerGameType =
+  | "flappy_snap"
+  | "bounce_blitz"
+  | "snap_2048"
+  | "snap_snake"
+  | "memory_snap"
+  | "word_snap";
+
+export type TurnBasedGameType =
+  | "chess"
+  | "checkers"
+  | "crazy_eights"
+  | "tic_tac_toe";
+
+export type RealTimeGameType = "8ball_pool" | "air_hockey";
+
+// All available game types
+export type ExtendedGameType =
+  | GameType
+  | SinglePlayerGameType
+  | TurnBasedGameType
+  | RealTimeGameType;
 
 export interface GameSession {
   id: string;
@@ -117,6 +137,36 @@ export interface GameSession {
   reactionTime?: number; // Reaction time in ms (for reaction_tap)
 }
 
+// Extended game session for new games
+export interface ExtendedGameSession {
+  id: string;
+  gameId: ExtendedGameType;
+  playerId: string;
+  score: number;
+  playedAt: number;
+  duration?: number;
+  // Game-specific metadata
+  metadata?: {
+    // Flappy Snap
+    pipesCleared?: number;
+    // Bounce Blitz
+    blocksDestroyed?: number;
+    ballsUsed?: number;
+    // Snake
+    applesEaten?: number;
+    maxLength?: number;
+    // Memory Snap
+    movesUsed?: number;
+    perfectMatches?: number;
+    // Word Snap
+    wordsFound?: number;
+    longestWord?: string;
+    // 2048
+    highestTile?: number;
+    movesUsed2048?: number;
+  };
+}
+
 // Game score limits for anti-cheat validation
 export const GAME_SCORE_LIMITS: Record<
   GameType,
@@ -125,6 +175,9 @@ export const GAME_SCORE_LIMITS: Record<
   reaction_tap: { minScore: 100, maxScore: 2000 }, // Reaction time in ms (lower is better)
   timed_tap: { minScore: 1, maxScore: 200, maxDuration: 10000 }, // Taps in 10 seconds
 };
+
+// Extended score limits for new games
+// @see src/types/games.ts EXTENDED_GAME_SCORE_LIMITS for full configuration
 
 // Cosmetics
 export interface CosmeticItem {
@@ -172,7 +225,7 @@ export interface Report {
     type: "message" | "story" | "profile";
     contentId?: string;
   };
-  // Phase 21: Admin review fields
+  // Admin review fields
   reviewedBy?: string; // Admin UID who reviewed
   reviewedAt?: number;
   resolution?: string; // Notes from admin
@@ -180,7 +233,7 @@ export interface Report {
 }
 
 // =============================================================================
-// Phase 21: Trust & Safety - Bans, Strikes, Warnings, Rate Limiting
+// Trust & Safety - Bans, Strikes, Warnings, Rate Limiting
 // =============================================================================
 
 /**
@@ -347,7 +400,7 @@ export function getBanTimeRemaining(ban: Ban | null): number | null {
 }
 
 // =============================================================================
-// Phase 17: Scheduled Messages
+// Scheduled Messages
 // =============================================================================
 
 /**
@@ -381,7 +434,7 @@ export interface ScheduledMessage {
 }
 
 // =============================================================================
-// Phase 17: Leaderboards + Achievements (per guide)
+// Leaderboards + Achievements
 // =============================================================================
 
 /**
@@ -441,7 +494,7 @@ export interface AchievementDefinition {
 export interface LeaderboardEntry {
   uid: string;
   displayName: string;
-  avatarConfig: AvatarConfig;
+  avatarConfig?: AvatarConfig; // Optional - may not be present for all players
   score: number;
   updatedAt: number;
   rank?: number; // Computed client-side or via function
@@ -467,7 +520,7 @@ export function getCurrentWeekKey(): WeekKey {
 }
 
 // =============================================================================
-// Phase 18: Economy (Wallet + Tokens)
+// Economy (Wallet + Tokens)
 // =============================================================================
 
 /**
@@ -519,7 +572,7 @@ export interface Transaction {
 }
 
 // =============================================================================
-// Phase 18: Daily Tasks / Challenges
+// Daily Tasks / Challenges
 // =============================================================================
 
 /**
@@ -605,7 +658,7 @@ export interface TaskWithProgress extends Task {
 }
 
 // =============================================================================
-// Phase 19: Shop + Limited-Time Drops
+// Shop + Limited-Time Drops
 // =============================================================================
 
 /**
@@ -706,7 +759,7 @@ export interface ShopItemWithStatus extends ShopItem {
 }
 
 // =============================================================================
-// Phase 20: Group Chat
+// Group Chat
 // =============================================================================
 
 /**
@@ -816,6 +869,12 @@ export interface GroupMessage {
     senderName: string;
     textSnippet?: string;
     attachmentKind?: "image" | "voice";
+  };
+  // H7: Delete support
+  hiddenFor?: string[];
+  deletedForAll?: {
+    by: string;
+    at: number;
   };
 }
 

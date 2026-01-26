@@ -90,3 +90,40 @@ export {
   CameraLongPressButton,
   default as CameraLongPressButtonDefault,
 } from "./CameraLongPressButton";
+
+// Keyboard-aware Chat Components
+export { ChatComposer, default as ChatComposerDefault } from "./ChatComposer";
+export type { ChatComposerProps } from "./ChatComposer";
+export {
+  ChatMessageList,
+  default as ChatMessageListDefault,
+} from "./ChatMessageList";
+export type {
+  ChatMessageListProps,
+  ChatMessageListRef,
+} from "./ChatMessageList";
+export {
+  ReturnToBottomPill,
+  default as ReturnToBottomPillDefault,
+} from "./ReturnToBottomPill";
+export type { ReturnToBottomPillProps } from "./ReturnToBottomPill";
+
+// Inbox Components
+export {
+  ConversationItem,
+  EmptyState,
+  InboxFAB,
+  InboxHeader,
+  InboxTabs,
+  PinnedSection,
+  SwipeableConversation,
+} from "./inbox";
+export type {
+  ConversationItemProps,
+  EmptyStateProps,
+  InboxFABProps,
+  InboxHeaderProps,
+  InboxTabsProps,
+  PinnedSectionProps,
+  SwipeableConversationProps,
+} from "./inbox";

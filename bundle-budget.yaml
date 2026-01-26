@@ -1,0 +1,67 @@
+# Bundle Size Budget
+# Phase 8: Testing & Launch
+#
+# This file defines bundle size limits for CI/CD checks.
+# Exceeding these limits will fail the build.
+
+# Overall bundle limits
+main_bundle_limit: 5MB
+initial_load_limit: 2MB
+
+# Per-feature budgets (compressed size)
+budgets:
+  # Core app
+  - name: "core"
+    path: "src/navigation/**"
+    limit: 200KB
+
+  # Games feature
+  - name: "games"
+    path: "src/screens/games/**"
+    limit: 500KB
+
+  - name: "game-physics"
+    path: "src/utils/physics/**"
+    limit: 50KB
+
+  - name: "game-validation"
+    path: "src/services/gameValidation/**"
+    limit: 100KB
+
+  # Chat feature
+  - name: "chat"
+    path: "src/screens/chat/**"
+    limit: 300KB
+
+  # Shared components
+  - name: "ui-components"
+    path: "src/components/ui/**"
+    limit: 150KB
+
+  # Services
+  - name: "services"
+    path: "src/services/**"
+    limit: 250KB
+
+# Dependency limits
+dependencies:
+  # Large dependencies that should be code-split or lazy loaded
+  - name: "chess.js"
+    limit: 50KB
+    strategy: "lazy-load"
+
+  - name: "react-native-reanimated"
+    limit: 200KB
+    strategy: "peer-dependency"
+
+# Warning thresholds (percentage of limit)
+warning_threshold: 80%
+error_threshold: 100%
+
+# Files to exclude from analysis
+exclude:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/__tests__/**"
+  - "**/node_modules/**"
+  - "**/*.d.ts"

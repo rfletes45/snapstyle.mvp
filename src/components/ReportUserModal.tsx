@@ -1,20 +1,19 @@
 /**
  * Report User Modal
- * Phase 8: Safety features
  */
 
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
-import {
-  Text,
-  Button,
-  Portal,
-  Dialog,
-  TextInput,
-  RadioButton,
-} from "react-native-paper";
-import type { ReportReason } from "@/types/models";
 import { REPORT_REASON_LABELS } from "@/services/reporting";
+import type { ReportReason } from "@/types/models";
+import React, { useState } from "react";
+import { ScrollView, StyleSheet } from "react-native";
+import {
+  Button,
+  Dialog,
+  Portal,
+  RadioButton,
+  Text,
+  TextInput,
+} from "react-native-paper";
 
 interface ReportUserModalProps {
   visible: boolean;

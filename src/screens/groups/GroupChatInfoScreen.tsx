@@ -1,6 +1,5 @@
 /**
  * GroupChatInfoScreen
- * Phase 20: Group Chat Info & Management
  *
  * Features:
  * - View group details (name, members)

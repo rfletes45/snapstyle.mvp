@@ -1,6 +1,5 @@
 /**
  * Admin Reports Queue Screen
- * Phase 21: Trust & Safety - Admin moderation interface
  *
  * Features:
  * - View pending reports
@@ -10,55 +9,48 @@
  * Access: Gated by admin custom claim
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import {
-  View,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  ScrollView,
-  Alert,
-  Platform,
-} from "react-native";
-import {
-  Text,
-  Card,
-  Button,
-  Chip,
-  Divider,
-  Portal,
-  Modal,
-  RadioButton,
-  TextInput,
-  ActivityIndicator,
-  Snackbar,
-  IconButton,
-  Menu,
-} from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuth } from "@/store/AuthContext";
-import { AppColors, Spacing, BorderRadius } from "../../../constants/theme";
-import {
-  getPendingReports,
-  subscribeToPendingReports,
-  adminResolveReport,
   adminApplyStrike,
   adminApplyWarning,
+  adminResolveReport,
   adminSetBan,
-  getUserStrikes,
   BAN_REASON_LABELS,
+  getPendingReports,
+  getUserStrikes,
+  subscribeToPendingReports,
 } from "@/services/moderation";
-import { getUserProfile } from "@/services/users";
 import { REPORT_REASON_LABELS } from "@/services/reporting";
-import { LoadingState, ErrorState, EmptyState } from "@/components/ui";
+import { getUserProfile } from "@/services/users";
+import { useAuth } from "@/store/AuthContext";
+import type { BanReason, Report, User, UserStrike } from "@/types/models";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
-import type {
-  Report,
-  BanReason,
-  UserStrike,
-  User,
-  BAN_DURATIONS,
-} from "@/types/models";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  FlatList,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import {
+  ActivityIndicator,
+  Button,
+  Card,
+  Chip,
+  Divider,
+  IconButton,
+  Modal,
+  Portal,
+  RadioButton,
+  Snackbar,
+  Text,
+  TextInput,
+} from "react-native-paper";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { AppColors } from "../../../constants/theme";
 
 // Ban duration options for the modal
 const BAN_DURATION_OPTIONS = [

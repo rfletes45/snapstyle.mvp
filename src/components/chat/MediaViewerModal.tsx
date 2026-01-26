@@ -1,6 +1,5 @@
 /**
  * MediaViewerModal Component
- * Phase H10: Multi-Attachment Support
  *
  * Fullscreen gallery viewer for message attachments.
  * Features:

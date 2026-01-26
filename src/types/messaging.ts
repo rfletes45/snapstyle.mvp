@@ -362,6 +362,26 @@ export interface MemberStatePrivate {
    * If set, conversation shows as unread until next view
    */
   lastMarkedUnreadAt?: number;
+
+  /**
+   * Timestamp when conversation was pinned
+   * - null: not pinned
+   * - timestamp: pinned at that time (used for sorting)
+   */
+  pinnedAt?: number | null;
+
+  /**
+   * Soft delete timestamp
+   * - null: not deleted
+   * - timestamp: when user "deleted" the conversation
+   */
+  deletedAt?: number | null;
+
+  /**
+   * Hide conversation until new message arrives
+   * Used with soft delete to restore on new activity
+   */
+  hiddenUntilNewMessage?: boolean;
 }
 
 // =============================================================================
@@ -480,6 +500,117 @@ export interface ConversationPreview {
   /** Sender of last message */
   lastMessageSenderId: string;
 }
+
+// =============================================================================
+// Inbox Types
+// =============================================================================
+
+/**
+ * Unified inbox conversation item for list display
+ *
+ * Combines DM and Group data into a single format for the inbox screen.
+ */
+export interface InboxConversation {
+  /** Conversation ID (Chat or Group document ID) */
+  id: string;
+
+  /** Conversation type */
+  type: "dm" | "group";
+
+  /** Display name */
+  name: string;
+
+  /** Avatar URL (DM) or null (use avatarIds for groups) */
+  avatarUrl: string | null;
+
+  /** Avatar configuration for DMs (custom avatar) */
+  avatarConfig?: AvatarConfig;
+
+  /** Avatar user IDs for group avatar generation */
+  avatarIds?: string[];
+
+  /** Other user ID (DM only) */
+  otherUserId?: string;
+
+  /** Last message preview */
+  lastMessage: {
+    /** Preview text */
+    text: string;
+    /** Sender display name (for groups) */
+    senderName: string;
+    /** Message timestamp */
+    timestamp: number;
+    /** Message type */
+    type: "text" | "image" | "voice" | "attachment";
+  } | null;
+
+  /** User's private state for this conversation */
+  memberState: MemberStatePrivate;
+
+  /** Unread message count */
+  unreadCount: number;
+
+  /** Has unread @mentions (groups only) */
+  hasMentions: boolean;
+
+  /** Other user is online (DM only) */
+  isOnline?: boolean;
+
+  /** Conversation created timestamp */
+  createdAt: number;
+
+  /** Number of participants (groups only) */
+  participantCount?: number;
+}
+
+/**
+ * User's global inbox settings
+ *
+ * Stored at: `Users/{uid}/settings/inbox`
+ */
+export interface InboxSettings {
+  /** Default notification level for new conversations */
+  defaultNotifyLevel: "all" | "mentions" | "none";
+
+  /** Send read receipts by default */
+  showReadReceipts: boolean;
+
+  /** Show typing indicators */
+  showTypingIndicators: boolean;
+
+  /** Show online status to others */
+  showOnlineStatus: boolean;
+
+  /** Show last seen timestamp to others */
+  showLastSeen: boolean;
+
+  /** Maximum number of pinned conversations (default: 5) */
+  maxPinnedConversations: number;
+
+  /** Show confirmation dialog before deleting */
+  confirmBeforeDelete: boolean;
+
+  /** Enable swipe actions on conversation items */
+  swipeActionsEnabled: boolean;
+
+  /** Recent search terms (max 10) */
+  recentSearches: string[];
+}
+
+/**
+ * Default inbox settings for new users
+ */
+export const DEFAULT_INBOX_SETTINGS: InboxSettings = {
+  defaultNotifyLevel: "all",
+  showReadReceipts: true,
+  showTypingIndicators: true,
+  showOnlineStatus: true,
+  showLastSeen: true,
+  maxPinnedConversations: 5,
+  confirmBeforeDelete: true,
+  swipeActionsEnabled: true,
+  recentSearches: [],
+};
 
 // =============================================================================
 // Constants

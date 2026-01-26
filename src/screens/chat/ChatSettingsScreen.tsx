@@ -1,6 +1,5 @@
 /**
  * ChatSettingsScreen
- * Phase H13: Chat Settings (Mute/Archive/Receipts)
  *
  * Universal settings screen for both DM and Group chats.
  *

@@ -1,11 +1,10 @@
 /**
  * Reporting Service
- * Phase 8: Safety features - Report users for inappropriate behavior
  */
 
-import { collection, doc, setDoc, Timestamp } from "firebase/firestore";
-import { getFirestoreInstance } from "./firebase";
 import type { Report, ReportReason } from "@/types/models";
+import { collection, doc, setDoc } from "firebase/firestore";
+import { getFirestoreInstance } from "./firebase";
 
 /**
  * Human-readable report reason labels

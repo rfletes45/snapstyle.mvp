@@ -1,6 +1,5 @@
 /**
  * Achievements Service
- * Phase 17: Game-based, streak, and social achievements
  *
  * Handles:
  * - Achievement definitions (static data)
@@ -10,23 +9,22 @@
  */
 
 import {
+  Achievement,
+  AchievementDefinition,
+  AchievementType,
+  GameType,
+} from "@/types/models";
+import {
   collection,
   doc,
   getDoc,
   getDocs,
-  setDoc,
-  query,
-  where,
   orderBy,
+  query,
+  setDoc,
   Timestamp,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import {
-  Achievement,
-  AchievementType,
-  AchievementDefinition,
-  GameType,
-} from "@/types/models";
 
 // =============================================================================
 // Achievement Definitions (Static Data)

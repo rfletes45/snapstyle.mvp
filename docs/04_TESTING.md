@@ -58,13 +58,15 @@
 
 ### Group Message Lifecycle
 
-| #   | Scenario            | Steps                    | Expected                |
-| --- | ------------------- | ------------------------ | ----------------------- |
-| 1   | Send to group       | Open group, send         | All members see message |
-| 2   | @mention            | Type @, select user      | User gets notification  |
-| 3   | Reply in group      | Swipe, reply             | Thread context shown    |
-| 4   | Admin delete        | Admin deletes member msg | Works                   |
-| 5   | Member delete other | Try delete others msg    | Not allowed             |
+| #   | Scenario            | Steps                      | Expected                |
+| --- | ------------------- | -------------------------- | ----------------------- |
+| 1   | Send to group       | Open group, send           | All members see message |
+| 2   | @mention            | Type @, select user        | User gets notification  |
+| 3   | Reply in group      | Swipe, reply               | Thread context shown    |
+| 4   | Delete for me       | Long-press, delete for me  | Disappears for you only |
+| 5   | Delete for all      | Long-press, delete for all | Shows "deleted" for all |
+| 6   | Admin delete        | Admin deletes member msg   | Works                   |
+| 7   | Member delete other | Try delete others msg      | Not allowed             |
 
 ### Attachments
 
@@ -180,6 +182,48 @@
 | 3   | Reconnect       | Go online               | Messages sync     |
 | 4   | Conflict        | Edit same thing offline | Server wins       |
 | 5   | Background sync | Switch apps, return     | Data fresh        |
+
+---
+
+## Keyboard & Composer Test Scenarios
+
+### Smooth Animation (Target: 60fps)
+
+| #   | Scenario            | Steps                      | Expected                     |
+| --- | ------------------- | -------------------------- | ---------------------------- |
+| 1   | Open keyboard       | Tap composer input         | Composer rises with keyboard |
+| 2   | Close keyboard      | Tap outside or back        | Composer lowers smoothly     |
+| 3   | Interactive dismiss | iOS: Swipe down on list    | Keyboard follows finger      |
+| 4   | Switch inputs       | Tap different text field   | No visual jump               |
+| 5   | Rotate device       | Rotate while keyboard open | Layout adapts smoothly       |
+
+### Auto-Scroll Behavior
+
+| #   | Scenario      | Steps                            | Expected                      |
+| --- | ------------- | -------------------------------- | ----------------------------- |
+| 1   | At bottom     | Be at bottom, receive message    | Auto-scrolls to new message   |
+| 2   | Scrolled up   | Scroll up 300px, receive message | NO auto-scroll, shows pill    |
+| 3   | Far behind    | 35+ messages behind, open chat   | Shows "Return to bottom" pill |
+| 4   | Tap pill      | Tap "Return to bottom"           | Scrolls to bottom, pill hides |
+| 5   | Send while up | Scroll up, send message          | Auto-scrolls to show your msg |
+
+### Return to Bottom Pill
+
+| #   | Scenario    | Steps                       | Expected                    |
+| --- | ----------- | --------------------------- | --------------------------- |
+| 1   | Shows count | Scroll up, receive 5 msgs   | Pill shows "5 new messages" |
+| 2   | Updates     | Receive more while scrolled | Count increments            |
+| 3   | Dismisses   | Scroll to bottom manually   | Pill fades out              |
+| 4   | Positioning | Open keyboard while showing | Pill moves above composer   |
+
+### Platform-Specific
+
+| #   | Platform | Scenario            | Expected                        |
+| --- | -------- | ------------------- | ------------------------------- |
+| 1   | iOS      | Interactive dismiss | Smooth drag-to-dismiss          |
+| 2   | Android  | Back button         | Keyboard closes, composer stays |
+| 3   | iOS      | Safe area           | Composer respects bottom inset  |
+| 4   | Android  | Navigation bar      | Composer above nav bar          |
 
 ---
 

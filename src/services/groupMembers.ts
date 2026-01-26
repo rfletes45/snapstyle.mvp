@@ -205,6 +205,7 @@ export async function updateGroupReadWatermark(
   try {
     await updateDoc(getMemberPrivateRef(groupId, uid), {
       lastSeenAtPrivate: serverReceivedAt,
+      lastMarkedUnreadAt: null, // Clear manual unread marker
     });
     log.debug("Updated group read watermark", { operation: "updateWatermark" });
   } catch (error) {
@@ -448,5 +449,174 @@ export async function calculateGroupUnreadCount(
   } catch (error) {
     log.error("Failed to calculate unread count", error);
     return 0;
+  }
+}
+
+// =============================================================================
+// Soft Delete Functions (Inbox Overhaul)
+// =============================================================================
+
+/**
+ * Soft delete a group conversation (leave + hide)
+ *
+ * This removes the user from the group's member list and hides
+ * the conversation from their inbox. The conversation will NOT
+ * reappear when new messages arrive (unlike DMs).
+ *
+ * Note: Owners must transfer ownership before calling this.
+ *
+ * @param groupId - Group document ID
+ * @param uid - User ID
+ * @throws Error if user is the group owner
+ */
+export async function leaveAndDeleteGroup(
+  groupId: string,
+  uid: string,
+): Promise<void> {
+  try {
+    // Get member state to check role
+    const memberState = await getGroupMemberPrivate(groupId, uid);
+
+    // Check if user is owner
+    const publicState = await getGroupMemberPublic(groupId, uid);
+    if (publicState?.role === "owner") {
+      throw new Error(
+        "Owners must transfer ownership before leaving the group",
+      );
+    }
+
+    // Update private state with soft delete
+    await updateDoc(getMemberPrivateRef(groupId, uid), {
+      deletedAt: Date.now(),
+      hiddenUntilNewMessage: true,
+      pinnedAt: null,
+      archived: false,
+    });
+
+    // Remove from public members list
+    // Note: We don't actually delete the member doc to preserve history
+    // The group's memberIds array should be updated via a separate call
+
+    log.info("Left and soft deleted group", {
+      operation: "leaveAndDelete",
+      data: { groupId, uid },
+    });
+  } catch (error) {
+    log.error("Failed to leave and delete group", error);
+    throw error;
+  }
+}
+
+/**
+ * Restore a soft-deleted group conversation
+ *
+ * Note: This only restores visibility, not group membership.
+ * User must rejoin the group separately.
+ *
+ * @param groupId - Group document ID
+ * @param uid - User ID
+ */
+export async function restoreGroup(
+  groupId: string,
+  uid: string,
+): Promise<void> {
+  try {
+    await updateDoc(getMemberPrivateRef(groupId, uid), {
+      deletedAt: null,
+      hiddenUntilNewMessage: false,
+    });
+
+    log.info("Restored group", {
+      operation: "restore",
+      data: { groupId, uid },
+    });
+  } catch (error) {
+    log.error("Failed to restore group", error);
+    throw error;
+  }
+}
+
+/**
+ * Check if a group conversation is visible (not soft-deleted)
+ *
+ * @param memberState - Member's private state
+ * @returns true if visible, false if hidden
+ */
+export function isGroupVisible(
+  memberState: MemberStatePrivate | null,
+): boolean {
+  if (!memberState) return true; // No state = visible
+
+  // Hidden if soft deleted and waiting for new message
+  if (memberState.deletedAt && memberState.hiddenUntilNewMessage) {
+    return false;
+  }
+
+  return true;
+}
+
+// =============================================================================
+// Mark As Read/Unread Functions (Inbox Overhaul)
+// =============================================================================
+
+/**
+ * Mark group as unread
+ *
+ * Sets a manual marker to force the unread badge to show.
+ *
+ * @param groupId - Group document ID
+ * @param uid - User ID
+ */
+export async function markGroupAsUnread(
+  groupId: string,
+  uid: string,
+): Promise<void> {
+  try {
+    await updateDoc(getMemberPrivateRef(groupId, uid), {
+      lastMarkedUnreadAt: Date.now(),
+    });
+
+    log.info("Marked group as unread", {
+      operation: "markUnread",
+      data: { groupId },
+    });
+  } catch (error) {
+    log.error("Failed to mark group as unread", error);
+    throw error;
+  }
+}
+
+/**
+ * Mark group as read and clear manual unread marker
+ *
+ * Call this when user opens a conversation.
+ *
+ * @param groupId - Group document ID
+ * @param uid - User ID
+ */
+export async function markGroupAsRead(
+  groupId: string,
+  uid: string,
+): Promise<void> {
+  try {
+    // Use setDoc with merge to handle case where doc may not exist
+    // or to create it with proper fields if needed
+    await setDoc(
+      getMemberPrivateRef(groupId, uid),
+      {
+        uid, // Include uid field for Firestore rules validation
+        lastSeenAtPrivate: Date.now(),
+        lastMarkedUnreadAt: null,
+      },
+      { merge: true },
+    );
+
+    log.debug("Marked group as read", {
+      operation: "markRead",
+      data: { groupId, uid },
+    });
+  } catch (error) {
+    log.error("Failed to mark group as read", error);
+    // Don't throw - not critical
   }
 }

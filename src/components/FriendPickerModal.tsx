@@ -1,23 +1,22 @@
 /**
  * FriendPickerModal - Select a connection to share scorecard with
- * Phase 16.5: Share Scorecards to Chat
  */
 
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Modal,
-  ActivityIndicator,
-} from "react-native";
-import { Text, Searchbar, Button, useTheme } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { getFriends, getFriendDetails } from "@/services/friends";
-import { AvatarMini } from "./Avatar";
+import { getFriendDetails, getFriends } from "@/services/friends";
 import { AvatarConfig } from "@/types/models";
-import { Spacing, BorderRadius, Mocha } from "../../constants/theme";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Button, Searchbar, Text, useTheme } from "react-native-paper";
+import { BorderRadius, Mocha, Spacing } from "../../constants/theme";
+import { AvatarMini } from "./Avatar";
 
 // =============================================================================
 // Types

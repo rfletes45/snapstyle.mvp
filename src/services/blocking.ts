@@ -1,20 +1,19 @@
 /**
  * Blocking Service
- * Phase 8: Safety features - Block/unblock users
  */
 
+import type { BlockedUser } from "@/types/models";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  setDoc,
-  deleteDoc,
   query,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import type { BlockedUser, User } from "@/types/models";
 
 /**
  * Block a user

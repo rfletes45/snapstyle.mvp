@@ -1,6 +1,5 @@
 /**
  * InAppNotificationsContext
- * Phase G: In-App Notifications
  *
  * Provides real-time in-app notifications for:
  * - Incoming messages (when not already in that chat)
@@ -14,29 +13,29 @@
  * - User preference toggle (persisted via localStorage on web)
  */
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-  ReactNode,
-} from "react";
-import { Platform } from "react-native";
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-  orderBy,
-  limit,
-  Unsubscribe,
-} from "firebase/firestore";
 import { getFirestoreInstance } from "@/services/firebase";
 import { getUserProfileByUid } from "@/services/friends";
-import { useAuth } from "./AuthContext";
 import { createLogger } from "@/utils/log";
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  Unsubscribe,
+  where,
+} from "firebase/firestore";
+import React, {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { Platform } from "react-native";
+import { useAuth } from "./AuthContext";
 
 const log = createLogger("InAppNotifications");
 
@@ -122,6 +121,16 @@ interface InAppNotificationsContextType {
   setCurrentScreen: (screen: string | null) => void;
   /** Set the current chat ID being viewed (to suppress its notifications) */
   setCurrentChatId: (chatId: string | null) => void;
+  /** The last viewed chat ID (set when leaving a chat). Consume to clear. */
+  lastViewedChatId: string | null;
+  /** Get and clear the last viewed chat ID (used by inbox to optimistically mark read) */
+  consumeLastViewedChatId: () => string | null;
+  /** Register a callback to be called when a message notification is pressed (for optimistic read marking) */
+  registerNotificationPressHandler: (
+    handler: (chatId: string) => void,
+  ) => () => void;
+  /** Called when a message notification is pressed - triggers registered handlers */
+  onMessageNotificationPressed: (chatId: string) => void;
 }
 
 // =============================================================================
@@ -160,7 +169,8 @@ export function InAppNotificationsProvider({
   const [enabled, setEnabledState] = useState(true);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [currentChatId, setCurrentChatIdState] = useState<string | null>(null);
+  const [lastViewedChatId, setLastViewedChatId] = useState<string | null>(null);
 
   // Refs for debouncing and tracking
   const recentNotificationKeys = useRef<Map<string, number>>(new Map());
@@ -169,6 +179,10 @@ export function InAppNotificationsProvider({
     new Map(),
   );
   const lastMessageTimestamps = useRef<Map<string, number>>(new Map());
+  // Handlers registered by inbox for notification press events
+  const notificationPressHandlers = useRef<Set<(chatId: string) => void>>(
+    new Set(),
+  );
 
   // =============================================================================
   // Persistence
@@ -322,6 +336,47 @@ export function InAppNotificationsProvider({
     setNotifications([]);
   }, []);
 
+  // Wrapper for setCurrentChatId that also tracks last viewed chat
+  const setCurrentChatId = useCallback((chatId: string | null) => {
+    setCurrentChatIdState((prevChatId) => {
+      // When leaving a chat (setting to null), remember which chat was viewed
+      if (chatId === null && prevChatId !== null) {
+        setLastViewedChatId(prevChatId);
+      }
+      return chatId;
+    });
+  }, []);
+
+  // Consume and clear the last viewed chat ID (for optimistic read marking)
+  const consumeLastViewedChatId = useCallback(() => {
+    const chatId = lastViewedChatId;
+    setLastViewedChatId(null);
+    return chatId;
+  }, [lastViewedChatId]);
+
+  // Register a handler to be called when a message notification is pressed
+  const registerNotificationPressHandler = useCallback(
+    (handler: (chatId: string) => void) => {
+      notificationPressHandlers.current.add(handler);
+      // Return unsubscribe function
+      return () => {
+        notificationPressHandlers.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  // Called when a message notification is pressed - triggers all registered handlers
+  const onMessageNotificationPressed = useCallback((chatId: string) => {
+    notificationPressHandlers.current.forEach((handler) => {
+      try {
+        handler(chatId);
+      } catch (e) {
+        log.error("Error in notification press handler", e);
+      }
+    });
+  }, []);
+
   // =============================================================================
   // Firestore Listeners
   // =============================================================================
@@ -395,6 +450,102 @@ export function InAppNotificationsProvider({
       );
     };
   }, [uid, enabled, pushNotification]);
+
+  // Subscribe to group list for new messages
+  useEffect(() => {
+    if (!uid || !enabled) return;
+
+    const db = getFirestoreInstance();
+    const groupsRef = collection(db, "Groups");
+    const q = query(
+      groupsRef,
+      where("memberIds", "array-contains", uid),
+      orderBy("lastMessageAt", "desc"),
+      limit(20), // Only track recent groups
+    );
+
+    log.info("Setting up group listener for message notifications");
+
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+          if (change.type === "modified") {
+            const data = change.doc.data();
+            const groupId = change.doc.id;
+            const lastMessageAt = data.lastMessageAt?.toMillis?.() || 0;
+            const lastMessageText = data.lastMessageText || "";
+            const lastMessageSenderId = data.lastMessageSenderId || "";
+            const groupName = data.name || "Group";
+
+            // Check if this is actually a new message
+            const previousTimestamp =
+              lastMessageTimestamps.current.get(groupId) || 0;
+            if (lastMessageAt <= previousTimestamp) {
+              continue;
+            }
+
+            // Update tracking
+            lastMessageTimestamps.current.set(groupId, lastMessageAt);
+
+            // Skip if message is old (more than 30 seconds)
+            if (Date.now() - lastMessageAt > 30000) {
+              log.debug(`Skipping old message in group: ${groupId}`);
+              continue;
+            }
+
+            // Skip if we're currently viewing this group
+            if (groupId === currentChatId) {
+              log.debug(
+                `User is viewing group ${groupId}, skipping notification`,
+              );
+              continue;
+            }
+
+            // Skip our own messages
+            if (lastMessageSenderId === uid) {
+              log.debug(`Skipping own message in group: ${groupId}`);
+              continue;
+            }
+
+            try {
+              // Truncate message preview
+              const preview =
+                lastMessageText.length > 40
+                  ? lastMessageText.slice(0, 40) + "..."
+                  : lastMessageText || "New message";
+
+              pushNotification({
+                type: "message",
+                title: groupName,
+                body: preview,
+                entityId: groupId,
+                fromUserId: lastMessageSenderId,
+                navigateTo: {
+                  screen: "GroupChat",
+                  params: { groupId, groupName },
+                },
+              });
+            } catch (err) {
+              log.error("Failed to create group message notification", err);
+            }
+          }
+        }
+      },
+      (error) => {
+        log.error("Group listener error", error);
+      },
+    );
+
+    unsubscribeRefs.current.push(unsubscribe);
+
+    return () => {
+      unsubscribe();
+      unsubscribeRefs.current = unsubscribeRefs.current.filter(
+        (u) => u !== unsubscribe,
+      );
+    };
+  }, [uid, enabled, currentChatId, pushNotification]);
 
   // Subscribe to chat list for new messages
   useEffect(() => {
@@ -523,6 +674,10 @@ export function InAppNotificationsProvider({
     clearAll,
     setCurrentScreen,
     setCurrentChatId,
+    lastViewedChatId,
+    consumeLastViewedChatId,
+    registerNotificationPressHandler,
+    onMessageNotificationPressed,
   };
 
   return (

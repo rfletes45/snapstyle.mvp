@@ -1,24 +1,23 @@
 /**
  * AvatarCustomizer Component - Modal for customizing avatar
- * Phase 7: Avatar + Cosmetics
  */
 
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Modal,
-  TouchableOpacity,
-  Pressable,
-} from "react-native";
-import { Text, Button, ActivityIndicator, useTheme } from "react-native-paper";
-import { Latte, AppColors } from "../../constants/theme";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import type { AvatarConfig, CosmeticItem } from "@/types/models";
-import Avatar from "./Avatar";
 import { getItemsBySlot, getRequiredStreak } from "@/data/cosmetics";
 import { getAccessibleItems, updateAvatarConfig } from "@/services/cosmetics";
+import type { AvatarConfig, CosmeticItem } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useEffect, useState } from "react";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { ActivityIndicator, Button, Text, useTheme } from "react-native-paper";
+import { AppColors, Latte } from "../../constants/theme";
+import Avatar from "./Avatar";
 
 // Avatar base colors
 const AVATAR_COLORS = [

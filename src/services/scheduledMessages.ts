@@ -1,6 +1,5 @@
 /**
  * Scheduled Messages Service
- * Phase 17: Schedule messages to be sent at a future time
  *
  * Handles:
  * - Creating scheduled messages
@@ -10,23 +9,23 @@
  * - Real-time subscription to scheduled messages
  */
 
-import {
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  Timestamp,
-} from "firebase/firestore";
-import { getFirestoreInstance } from "./firebase";
 import { ScheduledMessage, ScheduledMessageStatus } from "@/types/models";
 import { generateId } from "@/utils/ids";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { getFirestoreInstance } from "./firebase";
 
 // =============================================================================
 // Constants

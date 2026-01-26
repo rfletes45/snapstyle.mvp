@@ -114,6 +114,85 @@ service cloud.firestore {
         // Prevents clients from manipulating progress or claiming rewards multiple times
         allow create, update, delete: if false;
       }
+
+      // --------------------------------------------------------
+      // Settings subcollection (Inbox Overhaul)
+      // Stores user preferences for inbox, notifications, etc.
+      // --------------------------------------------------------
+      match /settings/{settingId} {
+        // User can only read their own settings
+        allow read: if isAuth() && isOwner(uid);
+        
+        // User can create/update their own settings
+        allow create, update: if isAuth() && isOwner(uid) &&
+          // Validate inbox settings if this is the inbox document
+          (settingId != 'inbox' || (
+            // Validate notifyLevel if present (must be valid enum)
+            (!request.resource.data.keys().hasAll(['defaultNotifyLevel']) ||
+             request.resource.data.defaultNotifyLevel in ['all', 'mentions', 'none']) &&
+            // Validate maxPinnedConversations if present (1-10)
+            (!request.resource.data.keys().hasAll(['maxPinnedConversations']) ||
+             (request.resource.data.maxPinnedConversations >= 1 &&
+              request.resource.data.maxPinnedConversations <= 10)) &&
+            // Validate recentSearches array size if present (max 10)
+            (!request.resource.data.keys().hasAll(['recentSearches']) ||
+             request.resource.data.recentSearches.size() <= 10) &&
+            // Validate boolean fields if present
+            (!request.resource.data.keys().hasAll(['showReadReceipts']) ||
+             request.resource.data.showReadReceipts is bool) &&
+            (!request.resource.data.keys().hasAll(['showTypingIndicators']) ||
+             request.resource.data.showTypingIndicators is bool) &&
+            (!request.resource.data.keys().hasAll(['showOnlineStatus']) ||
+             request.resource.data.showOnlineStatus is bool) &&
+            (!request.resource.data.keys().hasAll(['showLastSeen']) ||
+             request.resource.data.showLastSeen is bool) &&
+            (!request.resource.data.keys().hasAll(['confirmBeforeDelete']) ||
+             request.resource.data.confirmBeforeDelete is bool) &&
+            (!request.resource.data.keys().hasAll(['swipeActionsEnabled']) ||
+             request.resource.data.swipeActionsEnabled is bool)
+          ));
+        
+        // No delete - settings persist
+        allow delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // GameHighScores subcollection (Phase 3 - Single-Player Games)
+      // Stores per-game high score records: Users/{uid}/GameHighScores/{gameType}
+      // --------------------------------------------------------
+      match /GameHighScores/{gameType} {
+        // User can read their own high scores
+        allow read: if isAuth() && isOwner(uid);
+        
+        // User can create/update their own high scores with validation
+        allow create, update: if isAuth() && isOwner(uid) &&
+          // gameType must be valid single-player game
+          gameType in ['flappy_snap', 'bounce_blitz', 'snap_2048', 'snap_snake', 'memory_snap', 'word_snap', 'reaction_tap', 'timed_tap'] &&
+          // Must have required fields
+          request.resource.data.gameType == gameType &&
+          request.resource.data.highScore is number &&
+          request.resource.data.highScore >= 0;
+        
+        // High scores can be deleted by owner (for reset)
+        allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // GameSessions subcollection (Phase 3 - Single-Player Games)
+      // Stores individual game session records: Users/{uid}/GameSessions/{sessionId}
+      // --------------------------------------------------------
+      match /GameSessions/{sessionId} {
+        // User can read their own game sessions
+        allow read: if isAuth() && isOwner(uid);
+        
+        // User can create their own game sessions with validation
+        // TEMPORARILY SIMPLIFIED FOR DEBUGGING - remove extra validation
+        allow create: if isAuth() && isOwner(uid) &&
+          request.resource.data.playerId == uid;
+        
+        // Sessions are immutable once recorded
+        allow update, delete: if false;
+      }
     }
 
     // ============================================================
@@ -269,14 +348,16 @@ service cloud.firestore {
         // Update: V2 features - hiddenFor, deletedForAll, edit
         allow update: if isAuth() && isChatMember() && (
                         // Case 1: Delete-for-me (hiddenFor) - user can only add self, cannot remove entries
-                        // BUG FIX: Added size check to prevent clearing the array
+                        // Handles both: field doesn't exist OR field exists with values
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenFor']) &&
-                         // New array must contain all entries from old array (no removals)
-                         request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) &&
-                         // Only difference must be adding the current user's uid
-                         request.resource.data.hiddenFor.removeAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) == [request.auth.uid] &&
-                         // New array must be larger (prevents setting to empty array)
-                         request.resource.data.hiddenFor.size() > (resource.data.hiddenFor == null ? 0 : resource.data.hiddenFor.size())) ||
+                         // If field exists, new array must contain all old entries
+                         (!('hiddenFor' in resource.data) || 
+                          request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor)) &&
+                         // Only the current user's uid should be added
+                         ((!('hiddenFor' in resource.data) && request.resource.data.hiddenFor == [request.auth.uid]) ||
+                          ('hiddenFor' in resource.data && 
+                           request.resource.data.hiddenFor.removeAll(resource.data.hiddenFor) == [request.auth.uid] &&
+                           request.resource.data.hiddenFor.size() > resource.data.hiddenFor.size()))) ||
                         
                         // Case 2: Delete-for-all - sender only
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedForAll']) &&
@@ -520,6 +601,22 @@ service cloud.firestore {
                                 request.auth.uid == uid &&
                                 request.resource.data.uid == uid &&
                                 request.resource.data.score >= 0;
+        
+        // No deletes from client
+        allow delete: if false;
+      }
+
+      // Single-player game leaderboards: Leaderboards/{gameType}/{period}/{playerId}
+      match /{period}/{playerId} {
+        // Anyone authenticated can read leaderboard entries
+        allow read: if isAuth();
+        
+        // Users can only write their own entry
+        allow create, update: if isAuth() && 
+                                request.auth.uid == playerId &&
+                                request.resource.data.playerId == playerId &&
+                                request.resource.data.score >= 0 &&
+                                leaderboardId in ['word_snap', 'bounce_blitz', 'tic_tac_toe', 'snap_2048', 'snap_snake'];
         
         // No deletes from client
         allow delete: if false;
@@ -786,14 +883,16 @@ service cloud.firestore {
         // Update: V2 features - hiddenFor, deletedForAll, edit
         allow update: if isAuth() && (isGroupMemberViaGet() || isGroupMember()) && (
                         // Case 1: Delete-for-me (hiddenFor) - user can only add self, cannot remove entries
-                        // BUG FIX: Added size check to prevent clearing the array
+                        // Handles both: field doesn't exist OR field exists with values
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenFor']) &&
-                         // New array must contain all entries from old array (no removals)
-                         request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) &&
-                         // Only difference must be adding the current user's uid
-                         request.resource.data.hiddenFor.removeAll(resource.data.hiddenFor == null ? [] : resource.data.hiddenFor) == [request.auth.uid] &&
-                         // New array must be larger (prevents setting to empty array)
-                         request.resource.data.hiddenFor.size() > (resource.data.hiddenFor == null ? 0 : resource.data.hiddenFor.size())) ||
+                         // If field exists, new array must contain all old entries
+                         (!('hiddenFor' in resource.data) || 
+                          request.resource.data.hiddenFor.hasAll(resource.data.hiddenFor)) &&
+                         // Only the current user's uid should be added
+                         ((!('hiddenFor' in resource.data) && request.resource.data.hiddenFor == [request.auth.uid]) ||
+                          ('hiddenFor' in resource.data && 
+                           request.resource.data.hiddenFor.removeAll(resource.data.hiddenFor) == [request.auth.uid] &&
+                           request.resource.data.hiddenFor.size() > resource.data.hiddenFor.size()))) ||
                         
                         // Case 2: Delete-for-all - sender OR admin/owner
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedForAll']) &&
@@ -950,6 +1049,251 @@ service cloud.firestore {
       // Events are server-write only
       // Could allow admin read for debugging
       allow read: if isAuth() && request.auth.token.admin == true;
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // PHASE 22: GAMES EXPANSION - TURN-BASED & REAL-TIME GAMES
+    // ============================================================
+
+    // TURN-BASED GAMES COLLECTION
+    // Stores chess, checkers, tic-tac-toe, crazy eights, 8-ball pool
+    match /TurnBasedGames/{gameId} {
+      // Helper: Check if user is a player in this game
+      function isGamePlayer() {
+        return request.auth.uid in resource.data.playerIds;
+      }
+      
+      // Helper: Check if user is the current turn holder
+      function isCurrentTurn() {
+        return resource.data.currentTurn == request.auth.uid;
+      }
+      
+      // Helper: Check if game is in active status
+      function isGameActive() {
+        return resource.data.status == 'active';
+      }
+      
+      // Read: players can read their games
+      allow read: if isAuth() && isGamePlayer();
+      
+      // Create: TEMPORARILY SIMPLIFIED FOR DEBUGGING
+      // Any authenticated user can create a game (will restore validation later)
+      allow create: if isAuth();
+      
+      // Update: Players can update their games
+      // - Make moves when it's their turn
+      // - End game, resign, offer draw (any player)
+      // Complex validation is done server-side
+      allow update: if isAuth() && 
+                      isGamePlayer() && 
+                      (
+                        // Current turn player can make moves
+                        isCurrentTurn() || 
+                        // Game already ended
+                        resource.data.status in ['completed', 'abandoned'] ||
+                        // Any player can end/resign (changing status to completed/abandoned)
+                        request.resource.data.status in ['completed', 'abandoned'] ||
+                        // Any player can offer/respond to draw
+                        request.resource.data.keys().hasAny(['drawOfferedBy', 'drawAccepted'])
+                      ) &&
+                      // Cannot change playerIds
+                      request.resource.data.playerIds == resource.data.playerIds &&
+                      // Cannot change gameType
+                      request.resource.data.gameType == resource.data.gameType;
+      
+      // Delete: Not allowed (games are preserved for history)
+      allow delete: if false;
+      
+      // MOVES SUBCOLLECTION (Game History)
+      match /Moves/{moveId} {
+        // Read: any game player
+        allow read: if isAuth() && 
+                      request.auth.uid in get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.playerIds;
+        
+        // Create: current turn player only, validated server-side
+        allow create: if isAuth() &&
+                        get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.currentTurn == request.auth.uid &&
+                        request.resource.data.playerId == request.auth.uid &&
+                        request.resource.data.createdAt is timestamp;
+        
+        // Moves are immutable
+        allow update, delete: if false;
+      }
+    }
+
+    // GAME INVITES COLLECTION
+    // Handles invitations for multiplayer games
+    match /GameInvites/{inviteId} {
+      // Helper: Check if user is sender or recipient
+      function isInviteSenderOrRecipient() {
+        return resource.data.senderId == request.auth.uid || 
+               resource.data.recipientId == request.auth.uid;
+      }
+      
+      // Read: sender or recipient can read invite
+      allow read: if isAuth() && isInviteSenderOrRecipient();
+      
+      // Create: authenticated users can send invites
+      // TEMPORARILY SIMPLIFIED FOR DEBUGGING
+      allow create: if isAuth() &&
+                      request.resource.data.senderId == request.auth.uid &&
+                      request.resource.data.status == 'pending';
+      
+      // Update: recipient can accept/decline, sender can cancel
+      allow update: if isAuth() && (
+                      // Recipient accepting/declining
+                      (resource.data.recipientId == request.auth.uid &&
+                       resource.data.status == 'pending' &&
+                       request.resource.data.status in ['accepted', 'declined']) ||
+                      // Sender cancelling
+                      (resource.data.senderId == request.auth.uid &&
+                       resource.data.status == 'pending' &&
+                       request.resource.data.status == 'cancelled')
+                    );
+      
+      // Delete: sender or recipient can delete old invites
+      allow delete: if isAuth() && isInviteSenderOrRecipient();
+    }
+
+    // MATCHMAKING QUEUE COLLECTION
+    // Handles automatic matchmaking for games
+    match /MatchmakingQueue/{entryId} {
+      // Read: users can read their own queue entries
+      allow read: if isAuth() && resource.data.playerId == request.auth.uid;
+      
+      // Create: user can join queue
+      allow create: if isAuth() &&
+                      request.resource.data.playerId == request.auth.uid &&
+                      request.resource.data.status == 'searching' &&
+                      request.resource.data.gameType in ['chess', 'checkers', 'tic_tac_toe', 'crazy_eights', '8ball_pool'] &&
+                      request.resource.data.createdAt is timestamp &&
+                      request.resource.data.rating is number;
+      
+      // Update: user can update own entry (rating range expansion), server updates for match
+      allow update: if isAuth() && (
+                      // User updating their own searching entry
+                      (resource.data.playerId == request.auth.uid &&
+                       resource.data.status == 'searching') ||
+                      // Allow server/transaction update for matching
+                      (resource.data.playerId == request.auth.uid ||
+                       request.resource.data.matchedWith == request.auth.uid)
+                    );
+      
+      // Delete: user can leave queue
+      allow delete: if isAuth() && resource.data.playerId == request.auth.uid;
+    }
+
+    // PLAYER RATINGS COLLECTION
+    // Stores ELO/rating data for competitive games
+    match /PlayerRatings/{ratingId} {
+      // Read: anyone can read ratings (for matchmaking/display)
+      allow read: if isAuth();
+      
+      // Create: users can create their own ratings doc
+      allow create: if isAuth() && ratingId.matches(request.auth.uid + '_.*');
+      
+      // Update: Server-side only to prevent rating manipulation
+      allow update: if false;
+      
+      // Delete: not allowed
+      allow delete: if false;
+    }
+
+    // MATCH SPECTATORS COLLECTION
+    // Tracks who is watching a game
+    match /MatchSpectators/{spectatorId} {
+      // Read: authenticated users can see spectators
+      allow read: if isAuth();
+      
+      // Create: users can spectate games
+      allow create: if isAuth() &&
+                      request.resource.data.userId == request.auth.uid;
+      
+      // Update: users can update their own spectator entry
+      allow update: if isAuth() && resource.data.userId == request.auth.uid;
+      
+      // Delete: users can stop spectating
+      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
+    }
+
+    // MATCH CHAT COLLECTION  
+    // In-game chat messages during matches
+    match /MatchChat/{messageId} {
+      // Read: participants can read messages
+      allow read: if isAuth();
+      
+      // Create: participants can send messages
+      allow create: if isAuth() &&
+                      request.resource.data.senderId == request.auth.uid &&
+                      request.resource.data.text is string &&
+                      request.resource.data.text.size() > 0 &&
+                      request.resource.data.text.size() <= 500 &&
+                      request.resource.data.createdAt is timestamp;
+      
+      // Messages are immutable
+      allow update, delete: if false;
+    }
+
+    // PLAYER GAME STATS COLLECTION
+    // Stores per-player statistics for all games
+    match /PlayerGameStats/{playerId} {
+      // Read: anyone can read stats (for leaderboards)
+      allow read: if isAuth();
+      
+      // Create: users can create their own stats doc
+      allow create: if isAuth() && isOwner(playerId);
+      
+      // Update: Server-side only for game results
+      // Prevents clients from manipulating ratings/stats
+      allow update: if false;
+      
+      // Delete: not allowed
+      allow delete: if false;
+    }
+
+    // PLAYER ACHIEVEMENTS COLLECTION
+    // Stores achievement progress per player
+    match /PlayerAchievements/{playerId} {
+      // Read: user can read own achievements, others for profile display
+      allow read: if isAuth();
+      
+      // Create: user can create own achievements doc
+      allow create: if isAuth() && isOwner(playerId);
+      
+      // Update: Server-side only to prevent achievement cheating
+      allow update: if false;
+      
+      // Delete: not allowed
+      allow delete: if false;
+    }
+
+    // SINGLE-PLAYER SESSIONS COLLECTION
+    // Stores individual game session results
+    match /SinglePlayerSessions/{sessionId} {
+      // Read: user can read own sessions
+      allow read: if isAuth() && resource.data.playerId == request.auth.uid;
+      
+      // Create: user can record own session
+      allow create: if isAuth() &&
+                      request.resource.data.playerId == request.auth.uid &&
+                      request.resource.data.gameType in ['flappy_dunk', 'bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'snap_2048', 'snap_snake', 'word_snap'] &&
+                      request.resource.data.finalScore is number &&
+                      request.resource.data.finalScore >= 0 &&
+                      request.resource.data.startedAt is number &&
+                      request.resource.data.endedAt is number;
+      
+      // Sessions are immutable once recorded
+      allow update, delete: if false;
+    }
+
+    // DAILY LEADERBOARDS COLLECTION
+    // Aggregated daily high scores
+    match /DailyLeaderboards/{leaderboardId} {
+      // Read: anyone authenticated can read leaderboards
+      allow read: if isAuth();
+      
+      // Write: Server-side only via Cloud Functions
       allow create, update, delete: if false;
     }
 

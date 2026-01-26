@@ -71,3 +71,73 @@ export function expiresAt(duration: number): number {
  * 24 hours in milliseconds
  */
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Format a timestamp as relative time string
+ *
+ * Examples:
+ * - "now" (< 1 min)
+ * - "5m" (< 60 min)
+ * - "3h" (< 24 hours)
+ * - "2d" (< 7 days)
+ * - "Jan 15" (>= 7 days, same year)
+ * - "Jan 15, 2024" (different year)
+ *
+ * @param timestamp - Unix timestamp in milliseconds
+ * @returns Formatted relative time string
+ */
+export function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "now";
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+
+  const date = new Date(timestamp);
+  const currentYear = new Date().getFullYear();
+  const timestampYear = date.getFullYear();
+
+  if (timestampYear === currentYear) {
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * Convert various timestamp formats to a number (milliseconds)
+ *
+ * Handles:
+ * - Plain numbers (assumed to be ms)
+ * - Firestore Timestamps (with .toMillis())
+ * - Date objects
+ * - Objects with .seconds property (Firestore-like)
+ *
+ * @param value - The timestamp value to convert
+ * @returns Unix timestamp in milliseconds, or 0 if invalid
+ */
+export function toTimestamp(value: unknown): number {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "object") {
+    if ("toMillis" in value && typeof (value as any).toMillis === "function") {
+      return (value as any).toMillis();
+    }
+    if ("getTime" in value && typeof (value as any).getTime === "function") {
+      return (value as any).getTime();
+    }
+    if ("seconds" in value && typeof (value as any).seconds === "number") {
+      return (value as any).seconds * 1000;
+    }
+  }
+  return 0;
+}

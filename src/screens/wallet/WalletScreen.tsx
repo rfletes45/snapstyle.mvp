@@ -1,6 +1,5 @@
 /**
  * WalletScreen
- * Phase 18: Display user's token balance and transaction history
  *
  * Features:
  * - Current token balance display
@@ -8,39 +7,31 @@
  * - Real-time balance updates
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import {
-  View,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  Platform,
-} from "react-native";
+  formatTokenAmount,
+  formatTransactionAmount,
+  getTransactionColor,
+  getTransactionIcon,
+  getTransactionReasonDisplay,
+  subscribeToTransactions,
+  subscribeToWallet,
+} from "@/services/economy";
+import { useAuth } from "@/store/AuthContext";
+import { Transaction, Wallet } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useState } from "react";
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import {
-  Text,
-  Card,
-  IconButton,
   Appbar,
+  Card,
   Chip,
-  ActivityIndicator,
   Divider,
+  Text,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import {
-  subscribeToWallet,
-  subscribeToTransactions,
-  formatTokenAmount,
-  formatTransactionAmount,
-  getTransactionReasonDisplay,
-  getTransactionIcon,
-  getTransactionColor,
-} from "@/services/economy";
-import { Wallet, Transaction, TransactionType } from "@/types/models";
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 type FilterType = "all" | "earn" | "spend";
 

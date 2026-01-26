@@ -20,3 +20,9 @@ export const DEBUG_CHAT_V2 = __DEV__;
  * Show V2 badge in chat header (for testing)
  */
 export const SHOW_V2_BADGE = __DEV__;
+
+/**
+ * Log keyboard/composer/autoscroll events to console
+ * Enables detailed logging for keyboard behavior debugging
+ */
+export const DEBUG_CHAT_KEYBOARD = __DEV__;

@@ -1,6 +1,5 @@
 /**
  * InAppToast Component
- * Phase G: In-App Notifications
  *
  * A branded toast/banner component for in-app notifications.
  * Renders at the top of the app with safe area padding.
@@ -52,6 +51,7 @@ interface ToastItemProps {
   index: number;
   onDismiss: (id: string) => void;
   onPress: (notification: InAppNotification) => void;
+  topOffset: number;
 }
 
 function ToastItem({
@@ -59,6 +59,7 @@ function ToastItem({
   index,
   onDismiss,
   onPress,
+  topOffset,
 }: ToastItemProps) {
   const { colors, isDark } = useAppTheme();
   const translateY = useRef(new Animated.Value(-100)).current;
@@ -164,11 +165,8 @@ function ToastItem({
         {
           backgroundColor: isDark ? colors.surfaceElevated : colors.surface,
           borderColor: colors.border,
-          transform: [
-            { translateY },
-            { translateX },
-            { translateY: index * (TOAST_HEIGHT + Spacing.xs) },
-          ],
+          top: topOffset + index * (TOAST_HEIGHT + Spacing.xs),
+          transform: [{ translateY }, { translateX }],
           opacity,
           shadowColor: isDark ? "#000" : colors.text,
         },
@@ -233,10 +231,16 @@ interface InAppToastProps {
 
 export default function InAppToast({ onNavigate }: InAppToastProps) {
   const insets = useSafeAreaInsets();
-  const { notifications, dismiss } = useInAppNotifications();
+  const { notifications, dismiss, onMessageNotificationPressed } =
+    useInAppNotifications();
 
   const handlePress = (notification: InAppNotification) => {
-    // Dismiss first
+    // For message notifications, trigger the press handler so inbox can mark as read
+    if (notification.type === "message" && notification.entityId) {
+      onMessageNotificationPressed(notification.entityId);
+    }
+
+    // Dismiss the notification
     dismiss(notification.id);
 
     // Navigate if callback provided
@@ -252,18 +256,18 @@ export default function InAppToast({ onNavigate }: InAppToastProps) {
     return null;
   }
 
-  // Add extra spacing on mobile devices to prevent cutoff from dynamic island
+  // Add extra spacing on mobile devices to prevent cutoff from dynamic island/notch
+  // Mobile needs significant extra padding to display below status bar and notch
   const topPadding =
     Platform.OS === "web"
-      ? insets.top + Spacing.sm
-      : insets.top + Spacing.xxxl + 16;
+      ? insets.top + Spacing.lg + Spacing.md
+      : insets.top + 16;
 
   return (
     <View
       style={[
         styles.container,
         {
-          paddingTop: topPadding,
           pointerEvents: "box-none" as const,
         },
       ]}
@@ -275,6 +279,7 @@ export default function InAppToast({ onNavigate }: InAppToastProps) {
           index={index}
           onDismiss={dismiss}
           onPress={handlePress}
+          topOffset={topPadding}
         />
       ))}
     </View>

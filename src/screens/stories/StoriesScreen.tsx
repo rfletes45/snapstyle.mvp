@@ -4,8 +4,8 @@
  * Each moment shows thumbnail with view count
  * Users can tap to view fullscreen or post a new moment
  *
- * Phase 13: Performance optimizations
- * - Batch view status checking (replaces N+1 queries)
+ * Features:
+ * - Batch view status checking
  * - In-memory view cache
  * - Image preloading
  * - Moment expiration handling
@@ -41,7 +41,7 @@ import {
 import { FAB, Text, useTheme } from "react-native-paper";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 
-// Phase 13: Story item dimensions for FlatList optimization
+// Story item dimensions for FlatList optimization
 const STORY_ITEM_WIDTH = 88; // 80px thumbnail + 8px margin
 
 interface StoriesScreenProps {
@@ -57,7 +57,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   const [viewedStories, setViewedStories] = useState<Set<string>>(new Set());
   const [postingStory, setPostingStory] = useState(false);
 
-  // Phase 13: In-memory cache for viewed moments across screen visits
+  // In-memory cache for viewed moments across screen visits
   const viewedCacheRef = useRef<Map<string, boolean>>(new Map());
 
   // Fetch stories and reset posting state when screen is focused
@@ -75,11 +75,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     if (!currentFirebaseUser) return;
 
     try {
-      console.log("🔵 [MomentsScreen] Loading moments (Phase 13 optimized)");
-      const startTime = Date.now();
       setError(null);
 
-      // Phase 13: Only show loading spinner if cache is empty (first load)
+      // Only show loading spinner if cache is empty (first load)
       if (viewedCacheRef.current.size === 0) {
         setLoading(true);
       }
@@ -98,10 +96,10 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         friendIds,
       );
 
-      // Phase 13: Filter out expired stories client-side
+      // Filter out expired stories client-side
       const validStories = filterExpiredStories(fetchedStories);
 
-      // Phase 13: Check view cache first, only query uncached stories
+      // Check view cache first, only query uncached stories
       // Also re-query stories that were previously marked as "not viewed" to detect new views
       const uncachedStoryIds = validStories
         .map((s) => s.id)
@@ -111,7 +109,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
           return cachedValue === undefined || cachedValue === false;
         });
 
-      // Phase 13: Batch check viewed status (replaces N individual queries)
+      // Batch check viewed status (replaces N individual queries)
       let newViewedSet = new Set<string>();
       if (uncachedStoryIds.length > 0) {
         newViewedSet = await getBatchViewedStories(
@@ -136,19 +134,10 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       setViewedStories(allViewed);
       setStories(validStories);
 
-      // Phase 13: Preload images for first few stories
+      // Preload images for first few stories
       preloadStoryImages(validStories, 5);
-
-      const duration = Date.now() - startTime;
-      console.log(
-        "✅ [MomentsScreen] Loaded",
-        validStories.length,
-        "moments in",
-        duration,
-        "ms",
-      );
     } catch (err) {
-      console.error("❌ [MomentsScreen] Error loading moments:", err);
+      console.error("[MomentsScreen] Error loading moments:", err);
       setError("Couldn't load moments");
     } finally {
       setLoading(false);
@@ -163,21 +152,13 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
         return;
       }
 
-      console.log("🔵 [MomentsScreen] Posting moment...");
       setPostingStory(true);
 
       // Show photo menu
       if (Platform.OS === "web") {
         // On web, use browser's native confirm for reliability
-        console.log("🔵 [MomentsScreen] Using web-specific menu");
-
         const useCamera = window.confirm(
           "Post Moment\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
-        );
-
-        console.log(
-          "🔵 [MomentsScreen] User choice:",
-          useCamera ? "camera" : "gallery",
         );
 
         if (useCamera) {
@@ -404,7 +385,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
           style={styles.storiesScroll}
           contentContainerStyle={styles.scrollContent}
           keyExtractor={(item) => item.id}
-          // Phase 13: Performance optimizations
+          // Performance optimizations
           initialNumToRender={6}
           maxToRenderPerBatch={4}
           windowSize={5}
@@ -493,7 +474,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
                   </View>
                 )}
 
-                {/* Phase 13: Time remaining badge */}
+                {/* Time remaining badge */}
                 <View style={styles.timeRemainingBadge}>
                   <Text style={styles.timeRemainingText}>
                     {getStoryTimeRemaining(story.expiresAt)}

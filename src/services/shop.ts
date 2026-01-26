@@ -1,6 +1,5 @@
 /**
  * Shop Service
- * Phase 19: Shop + Limited-Time Drops
  *
  * Handles:
  * - Fetching shop catalog
@@ -13,28 +12,27 @@
  */
 
 import {
+  getShopItemTimeRemaining,
+  isShopItemAvailable,
+  Purchase,
+  PurchaseStatus,
+  ShopItem,
+  ShopItemWithStatus,
+} from "@/types/models";
+import {
   collection,
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   where,
-  limit,
-  Timestamp,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { getFirestoreInstance, getAppInstance } from "./firebase";
-import {
-  ShopItem,
-  ShopItemWithStatus,
-  Purchase,
-  PurchaseStatus,
-  isShopItemAvailable,
-  getShopItemTimeRemaining,
-} from "@/types/models";
 import { hasItem } from "./cosmetics";
+import { getAppInstance, getFirestoreInstance } from "./firebase";
 
 // =============================================================================
 // Constants

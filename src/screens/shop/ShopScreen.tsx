@@ -1,6 +1,5 @@
 /**
  * ShopScreen
- * Phase 19: Shop + Limited-Time Drops
  *
  * Features:
  * - Featured items carousel with countdown timers
@@ -10,46 +9,40 @@
  * - Owned item indicators
  */
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { formatTokenAmount, subscribeToWallet } from "@/services/economy";
 import {
-  View,
-  StyleSheet,
+  formatTimeRemaining,
+  getFeaturedItemsWithStatus,
+  getRarityColor,
+  getRarityLabel,
+  getShopCatalogWithStatus,
+  purchaseWithTokens,
+} from "@/services/shop";
+import { useAuth } from "@/store/AuthContext";
+import { ShopItemWithStatus, Wallet } from "@/types/models";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
   FlatList,
   RefreshControl,
-  ScrollView,
+  StyleSheet,
   TouchableOpacity,
-  Platform,
-  Dimensions,
+  View,
 } from "react-native";
 import {
-  Text,
-  Card,
-  Button,
   Appbar,
-  Chip,
-  ActivityIndicator,
+  Button,
+  IconButton,
   Modal,
   Portal,
-  IconButton,
-  Badge,
+  Text,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import {
-  getShopCatalogWithStatus,
-  getFeaturedItemsWithStatus,
-  purchaseWithTokens,
-  formatTimeRemaining,
-  getRarityColor,
-  getRarityLabel,
-} from "@/services/shop";
-import { subscribeToWallet, formatTokenAmount } from "@/services/economy";
-import { ShopItemWithStatus, ShopCategory, Wallet } from "@/types/models";
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
-import { Spacing, BorderRadius, AppColors } from "../../../constants/theme";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { AppColors } from "../../../constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 

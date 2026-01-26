@@ -1,6 +1,5 @@
 /**
  * GroupChatCreateScreen
- * Phase 20: Group Chat Creation
  *
  * Features:
  * - Enter group name
@@ -8,35 +7,34 @@
  * - Create group and send invites
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import { AvatarMini } from "@/components/Avatar";
+import { EmptyState, LoadingState } from "@/components/ui";
+import { getFriends, getUserProfileByUid } from "@/services/friends";
+import { createGroup } from "@/services/groups";
+import { useAuth } from "@/store/AuthContext";
+import { Friend, GROUP_LIMITS, User } from "@/types/models";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
   Alert,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-  Text,
-  TextInput,
-  Button,
   Appbar,
+  Button,
   Checkbox,
   Searchbar,
   Snackbar,
+  Text,
+  TextInput,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import { getFriends, getUserProfileByUid } from "@/services/friends";
-import { createGroup } from "@/services/groups";
-import { Friend, User, GROUP_LIMITS } from "@/types/models";
-import { AvatarMini } from "@/components/Avatar";
-import { LoadingState, EmptyState } from "@/components/ui";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 
 interface FriendWithProfile extends Friend {
   profile?: User;

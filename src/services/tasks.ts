@@ -1,6 +1,5 @@
 /**
  * Tasks Service
- * Phase 18: Daily tasks and challenges
  *
  * Handles:
  * - Fetching available tasks
@@ -13,6 +12,13 @@
  */
 
 import {
+  Task,
+  TaskCadence,
+  TaskProgress,
+  TaskWithProgress,
+  getCurrentDayKey,
+} from "@/types/models";
+import {
   collection,
   doc,
   getDoc,
@@ -21,17 +27,9 @@ import {
   orderBy,
   query,
   where,
-  Timestamp,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { getFirestoreInstance, getAppInstance } from "./firebase";
-import {
-  Task,
-  TaskProgress,
-  TaskWithProgress,
-  TaskCadence,
-  getCurrentDayKey,
-} from "@/types/models";
+import { getAppInstance, getFirestoreInstance } from "./firebase";
 
 // =============================================================================
 // Constants

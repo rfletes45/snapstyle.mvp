@@ -85,10 +85,28 @@ Groups/{groupId}
 ├── memberIds: string[] (for queries)
 ├── memberCount: number
 ├── avatarPath?: string
+├── avatarUrl?: string
 ├── lastMessageAt: Timestamp
+├── lastMessageText?: string
+├── lastMessageSenderId?: string
 ├── createdAt: Timestamp
 │
-├── /Messages/{messageId}       # Same schema as DM messages
+├── /Messages/{messageId}
+│   ├── sender: string
+│   ├── senderDisplayName: string
+│   ├── type: "text" | "image" | "voice" | "scorecard" | "system"
+│   ├── content: string
+│   ├── createdAt: number
+│   ├── imagePath?: string
+│   ├── voiceMetadata?: { durationMs, storagePath?, sizeBytes? }
+│   ├── scorecard?: { gameId, score, playerName }
+│   ├── systemType?: string
+│   ├── systemMeta?: object
+│   ├── replyTo?: { messageId, senderId, senderName, textSnippet?, attachmentKind? }
+│   ├── hiddenFor?: string[]       # delete-for-me UIDs
+│   ├── deletedForAll?: { by, at } # delete-for-all
+│   └── mentionUids?: string[]
+│
 ├── /Members/{uid}
 │   ├── uid: string
 │   ├── role: "owner" | "admin" | "member"

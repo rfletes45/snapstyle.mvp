@@ -24,8 +24,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Keyboard,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   TextInput,
@@ -35,7 +33,6 @@ import {
 import {
   Badge,
   Button,
-  Card,
   IconButton,
   Menu,
   Text,
@@ -49,6 +46,7 @@ import {
   MessageActionsSheet,
   ReplyBubble,
   ReplyPreviewBar,
+  ReturnToBottomPill,
   SwipeableMessage,
 } from "@/components/chat";
 import ReportUserModal from "@/components/ReportUserModal";
@@ -57,6 +55,11 @@ import ScorecardBubble, {
   parseScorecardContent,
 } from "@/components/ScorecardBubble";
 import { EmptyState, LoadingState } from "@/components/ui";
+import {
+  useAtBottom,
+  useChatKeyboard,
+  useNewMessageAutoscroll,
+} from "@/hooks/chat";
 import { useMessagesV2 } from "@/hooks/useMessagesV2";
 import {
   retryFailedMessage as retryFailedMessageV2,
@@ -70,9 +73,21 @@ import {
   pickImageFromWeb,
 } from "@/utils/webImagePicker";
 import * as ImagePicker from "expo-image-picker";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { DEBUG_CHAT_V2, SHOW_V2_BADGE } from "../../../constants/featureFlags";
+import {
+  DEBUG_CHAT_KEYBOARD,
+  DEBUG_CHAT_V2,
+  SHOW_V2_BADGE,
+} from "../../../constants/featureFlags";
 import { BorderRadius, Spacing } from "../../../constants/theme";
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/** Threshold for triggering infinite scroll load (0.3 = 30% from end) */
+const INFINITE_SCROLL_THRESHOLD = 0.3;
 
 interface MessageWithProfile extends Message {
   otherUserProfile?: {
@@ -160,7 +175,7 @@ export default function ChatScreen({
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
 
-  // Phase 17: Scheduled messages state
+  // Scheduled messages state
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
@@ -170,6 +185,21 @@ export default function ChatScreen({
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] =
     useState<MessageWithProfile | null>(null);
+
+  // ==========================================================================
+  // Keyboard & Scroll Hooks
+  // ==========================================================================
+
+  // Keyboard tracking for composer animation
+  const chatKeyboard = useChatKeyboard({
+    debug: DEBUG_CHAT_KEYBOARD,
+  });
+
+  // At-bottom detection for scroll behavior
+  const atBottom = useAtBottom({
+    threshold: 200, // ~2-3 messages
+    debug: DEBUG_CHAT_KEYBOARD,
+  });
 
   // ==========================================================================
   // V2 Hook Integration
@@ -206,6 +236,38 @@ export default function ChatScreen({
   const isLoading = chatId ? messagesV2.loading : loading;
   const hasMoreToLoad = chatId ? messagesV2.pagination.hasMoreOlder : false;
   const isLoadingMore = chatId ? messagesV2.pagination.isLoadingOlder : false;
+
+  // Autoscroll behavior for new messages
+  const autoscroll = useNewMessageAutoscroll({
+    messageCount: displayMessages.length,
+    isKeyboardOpen: chatKeyboard.isKeyboardOpen,
+    isAtBottom: atBottom.isAtBottom,
+    distanceFromBottom: atBottom.distanceFromBottom,
+    debug: DEBUG_CHAT_KEYBOARD,
+  });
+
+  // Set FlatList ref for autoscroll
+  useEffect(() => {
+    autoscroll.setFlatListRef(flatListRef.current);
+  }, [autoscroll]);
+
+  // Animated style for composer wrapper
+  // Using marginBottom instead of transform for keyboard tracking
+  // Also animates paddingBottom to reduce safe area gap when keyboard is open
+  const composerAnimatedStyle = useAnimatedStyle(() => {
+    if (Platform.OS === "ios") {
+      // As keyboard opens (progress 0->1), reduce paddingBottom from insets.bottom to 0
+      // This eliminates the gap between composer and keyboard
+      const animatedPadding =
+        insets.bottom * (1 - chatKeyboard.keyboardProgress.value);
+      return {
+        marginBottom: -chatKeyboard.keyboardHeight.value,
+        paddingBottom: animatedPadding,
+      };
+    }
+    // Android handles keyboard via windowSoftInputMode
+    return {};
+  }, [insets.bottom]);
 
   // Log V2 status in dev
   useEffect(() => {
@@ -261,7 +323,7 @@ export default function ChatScreen({
           console.log("✅ [ChatScreen] Chat ID obtained:", id);
           setChatId(id);
 
-          // Phase G: Suppress in-app notifications for this chat
+          // Suppress in-app notifications for this chat
           setCurrentChatId(id);
 
           // Fetch friend profile
@@ -304,7 +366,7 @@ export default function ChatScreen({
 
       // Cleanup on unmount
       return () => {
-        // Phase G: Clear current chat ID to resume notifications
+        // Clear current chat ID to resume notifications
         setCurrentChatId(null);
       };
     }, [uid, friendUid, setCurrentChatId]),
@@ -373,20 +435,9 @@ export default function ChatScreen({
     }
   }, [friendProfile, navigation, menuVisible]);
 
-  // Scroll to end when keyboard shows to keep latest messages visible
-  useEffect(() => {
-    const keyboardShowEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-
-    const keyboardListener = Keyboard.addListener(keyboardShowEvent, () => {
-      // Small delay to let layout adjust
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    });
-
-    return () => keyboardListener.remove();
-  }, []);
+  // Keyboard scroll behavior now handled by useChatKeyboard + useNewMessageAutoscroll
+  // The old Keyboard.addListener approach is replaced with smooth animated tracking
+  // and intelligent scroll rules (only scroll if at bottom, 30-message threshold, etc.)
 
   // H6: Handle reply-to from swipe gesture
   const handleReply = useCallback((replyMetadata: ReplyToMetadata) => {
@@ -504,16 +555,20 @@ export default function ChatScreen({
   // H6: Scroll to a specific message
   const scrollToMessage = useCallback(
     (messageId: string) => {
-      const index = messages.findIndex((m) => m.id === messageId);
+      const index = displayMessages.findIndex((m) => m.id === messageId);
       if (index !== -1 && flatListRef.current) {
         flatListRef.current.scrollToIndex({
           index,
           animated: true,
           viewPosition: 0.5, // Center the message
         });
+      } else {
+        console.log(
+          `[ChatScreen] Message ${messageId} not found in displayMessages`,
+        );
       }
     },
-    [messages],
+    [displayMessages],
   );
 
   const handleSendMessage = async () => {
@@ -558,7 +613,7 @@ export default function ChatScreen({
     }
   };
 
-  // Phase 12: Retry sending a failed message
+  // Retry sending a failed message
   const handleRetryMessage = async (failedMsg: Message) => {
     if (!uid || !chatId) return;
 
@@ -572,7 +627,7 @@ export default function ChatScreen({
     }
   };
 
-  // Phase 12: Load older messages
+  // Load older messages
   const handleLoadOlderMessages = async () => {
     // V2 uses hook's loadOlder function
     if (
@@ -871,7 +926,7 @@ export default function ChatScreen({
     }
   };
 
-  // Phase 17: Handle scheduling a message
+  // Handle scheduling a message
   const handleScheduleMessage = async (scheduledFor: Date) => {
     if (!uid || !chatId || !inputText.trim()) return;
 
@@ -903,7 +958,7 @@ export default function ChatScreen({
     }
   };
 
-  // Phase 17: Load scheduled messages for this chat
+  // Load scheduled messages for this chat
   useEffect(() => {
     const loadScheduledMessages = async () => {
       if (!uid || !chatId) return;
@@ -1036,16 +1091,20 @@ export default function ChatScreen({
 
   return (
     <>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-      >
+      {/* Main container - no KeyboardAvoidingView needed, using react-native-keyboard-controller */}
+      <View style={styles.container}>
         <FlatList
           ref={flatListRef}
           data={displayMessages}
+          // Inverted list: newest at bottom (visually) but index 0
+          inverted
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
+          // Scroll event handlers for at-bottom detection
+          onScroll={atBottom.onScroll}
+          onScrollEndDrag={atBottom.onScrollEndDrag}
+          onMomentumScrollEnd={atBottom.onMomentumScrollEnd}
+          scrollEventThrottle={16}
           renderItem={({ item: message }) => (
             <SwipeableMessage
               message={{
@@ -1077,148 +1136,190 @@ export default function ChatScreen({
                   message.status === "failed" && styles.failedMessageContainer,
                 ]}
               >
-                {/* Show avatar for received messages */}
-                {message.sender !== uid && friendProfile && (
-                  <AvatarMini
-                    config={
-                      friendProfile.avatarConfig || { baseColor: "#6200EE" }
-                    }
-                    size={32}
-                  />
-                )}
-                <View style={styles.messageBubbleWrapper}>
-                  <Card
+                <View style={[styles.messageBubbleWrapper]}>
+                  {/* H6: Reply preview - Apple Messages style (above main bubble) */}
+                  {/* ReplyBubble handles its own alignment based on original sender */}
+                  {message.replyTo && (
+                    <ReplyBubble
+                      replyTo={message.replyTo}
+                      isSentByMe={message.sender === uid}
+                      isReplyToMe={message.replyTo.senderId === uid}
+                      onPress={() =>
+                        scrollToMessage(message.replyTo!.messageId)
+                      }
+                    />
+                  )}
+                  {/* Main message row - contains avatar + bubble column */}
+                  <View
                     style={[
-                      styles.messageBubble,
+                      styles.messageRow,
                       message.sender === uid
-                        ? styles.sentBubble
-                        : styles.receivedBubble,
-                      message.status === "sending" && styles.sendingBubble,
-                      message.status === "failed" && styles.failedBubble,
+                        ? styles.sentMessageRow
+                        : styles.receivedMessageRow,
                     ]}
-                    onLongPress={() => handleMessageLongPress(message)}
-                    onPress={() => {
-                      // If failed, allow retry on tap
-                      if (message.status === "failed") {
-                        handleRetryMessage(message);
-                        return;
-                      }
-
-                      // If image message, check if user is the receiver before allowing view
-                      if (message.type === "image") {
-                        // Only allow receiver to open snaps, not the sender
-                        if (message.sender === uid) {
-                          console.log(
-                            "ℹ️  [ChatScreen] Sender cannot open their own snap",
-                          );
-                          Alert.alert(
-                            "Cannot Open",
-                            "You sent this snap. Only the receiver can open it.",
-                          );
-                          return;
-                        }
-
-                        // Receiver can open the snap
-                        console.log(
-                          "🔵 [ChatScreen] Opening snap for receiver",
-                        );
-                        navigation.navigate("SnapViewer", {
-                          messageId: message.id,
-                          chatId: chatId,
-                          storagePath: message.content,
-                        });
-                      }
-                    }}
                   >
-                    <Card.Content style={styles.messageContent}>
-                      {/* H6: Reply preview if message is a reply */}
-                      {message.replyTo && (
-                        <ReplyBubble
-                          replyTo={message.replyTo}
-                          isSentByMe={message.sender === uid}
-                          isReplyToMe={message.replyTo.senderId === uid}
-                          onPress={() =>
-                            scrollToMessage(message.replyTo!.messageId)
+                    {/* Show avatar for received messages */}
+                    {message.sender !== uid && friendProfile && (
+                      <AvatarMini
+                        config={
+                          friendProfile.avatarConfig || { baseColor: "#6200EE" }
+                        }
+                        size={32}
+                      />
+                    )}
+                    {/* Bubble and timestamp column */}
+                    <View style={styles.bubbleColumn}>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onLongPress={() => handleMessageLongPress(message)}
+                        onPress={() => {
+                          // If failed, allow retry on tap
+                          if (message.status === "failed") {
+                            handleRetryMessage(message);
+                            return;
                           }
-                        />
-                      )}
-                      {message.type === "image" ? (
-                        <Text style={{ fontSize: 24 }}>🔒</Text>
-                      ) : message.type === "scorecard" ? (
-                        (() => {
-                          const scorecard = parseScorecardContent(
-                            message.content,
-                          );
-                          if (scorecard) {
-                            return (
-                              <ScorecardBubble
-                                scorecard={scorecard}
-                                isMine={message.sender === uid}
-                              />
+
+                          // If image message, check if user is the receiver before allowing view
+                          if (message.type === "image") {
+                            // Only allow receiver to open snaps, not the sender
+                            if (message.sender === uid) {
+                              console.log(
+                                "ℹ️  [ChatScreen] Sender cannot open their own snap",
+                              );
+                              Alert.alert(
+                                "Cannot Open",
+                                "You sent this snap. Only the receiver can open it.",
+                              );
+                              return;
+                            }
+
+                            // Receiver can open the snap
+                            console.log(
+                              "🔵 [ChatScreen] Opening snap for receiver",
                             );
+                            navigation.navigate("SnapViewer", {
+                              messageId: message.id,
+                              chatId: chatId,
+                              storagePath: message.content,
+                            });
                           }
-                          return (
-                            <Text style={styles.messageText}>
-                              [Invalid scorecard]
-                            </Text>
-                          );
-                        })()
-                      ) : (
-                        <Text
+                        }}
+                        delayLongPress={300}
+                      >
+                        <View
                           style={[
-                            styles.messageText,
+                            styles.messageBubble,
                             message.sender === uid
-                              ? styles.sentText
-                              : styles.receivedText,
+                              ? [
+                                  styles.sentBubble,
+                                  { backgroundColor: theme.colors.primary },
+                                ]
+                              : [
+                                  styles.receivedBubble,
+                                  {
+                                    backgroundColor: theme.dark
+                                      ? theme.colors.surfaceVariant
+                                      : "#e8e8e8",
+                                  },
+                                ],
+                            message.status === "sending" &&
+                              styles.sendingBubble,
+                            message.status === "failed" && [
+                              styles.failedBubble,
+                              {
+                                backgroundColor: theme.colors.errorContainer,
+                                borderColor: theme.colors.error,
+                              },
+                            ],
                           ]}
                         >
-                          {message.content}
+                          {message.type === "image" ? (
+                            <Text style={{ fontSize: 24 }}>🔒</Text>
+                          ) : message.type === "scorecard" ? (
+                            (() => {
+                              const scorecard = parseScorecardContent(
+                                message.content,
+                              );
+                              if (scorecard) {
+                                return (
+                                  <ScorecardBubble
+                                    scorecard={scorecard}
+                                    isMine={message.sender === uid}
+                                  />
+                                );
+                              }
+                              return (
+                                <Text
+                                  style={[
+                                    styles.messageText,
+                                    { color: theme.colors.onSurface },
+                                  ]}
+                                >
+                                  [Invalid scorecard]
+                                </Text>
+                              );
+                            })()
+                          ) : (
+                            <Text
+                              style={[
+                                styles.messageText,
+                                message.sender === uid
+                                  ? { color: theme.colors.onPrimary }
+                                  : { color: theme.colors.onSurface },
+                              ]}
+                            >
+                              {message.content}
+                            </Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                      {/* Timestamp and status row - below the bubble */}
+                      <View
+                        style={[
+                          styles.timestampStatusRow,
+                          message.sender === uid
+                            ? styles.timestampStatusRowSent
+                            : styles.timestampStatusRowReceived,
+                        ]}
+                      >
+                        {/* For sent messages: checkmark then time */}
+                        {message.sender === uid && renderMessageStatus(message)}
+                        <Text
+                          style={[
+                            styles.timestamp,
+                            { color: theme.dark ? "#888" : "#666" },
+                          ]}
+                        >
+                          {new Date(message.createdAt).toLocaleTimeString(
+                            "en-US",
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            },
+                          )}
                         </Text>
-                      )}
-                    </Card.Content>
-                  </Card>
-                  {/* Phase 12: Message status indicator */}
-                  {renderMessageStatus(message)}
+                      </View>
+                    </View>
+                  </View>
                 </View>
-                <Text style={styles.timestamp}>
-                  {new Date(message.createdAt).toLocaleTimeString("en-US", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
               </View>
             </SwipeableMessage>
           )}
           keyExtractor={(item) => item.id}
-          {...LIST_PERFORMANCE_PROPS}
-          contentContainerStyle={{
-            paddingHorizontal: Spacing.sm,
-            paddingBottom: 16,
-          }}
+          // Infinite scroll: load older messages when scrolling up (inverted list)
+          onEndReached={handleLoadOlderMessages}
+          onEndReachedThreshold={INFINITE_SCROLL_THRESHOLD}
           ListHeaderComponent={
-            // Phase 12: Load older messages button
-            hasMoreToLoad ? (
-              <TouchableOpacity
+            // Loading indicator for older messages (spinner only, no button)
+            isLoadingMore ? (
+              <View
                 style={styles.loadMoreContainer}
-                onPress={handleLoadOlderMessages}
-                disabled={isLoadingMore}
+                accessible={true}
+                accessibilityLabel="Loading older messages"
+                accessibilityRole="progressbar"
               >
-                {isLoadingMore ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.colors.primary}
-                  />
-                ) : (
-                  <Text
-                    style={[
-                      styles.loadMoreText,
-                      { color: theme.colors.primary },
-                    ]}
-                  >
-                    Load older messages
-                  </Text>
-                )}
-              </TouchableOpacity>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              </View>
             ) : null
           }
           ListEmptyComponent={
@@ -1228,23 +1329,43 @@ export default function ChatScreen({
               subtitle="Send a message or snap to start the conversation!"
             />
           }
-          inverted={false}
-          onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
+          {...LIST_PERFORMANCE_PROPS}
+          // Static padding - composer handles keyboard avoidance via marginBottom
+          contentContainerStyle={{
+            paddingHorizontal: Spacing.sm,
+            // For inverted list, paddingTop = visual bottom (space for composer)
+            paddingTop: 60 + insets.bottom + 16,
           }}
+          // Maintain scroll position when content updates
           maintainVisibleContentPosition={{
-            minIndexForVisible: 0,
+            minIndexForVisible: 1,
+            autoscrollToTopThreshold: 100,
           }}
+          showsVerticalScrollIndicator={false}
         />
 
-        {/* Input area */}
-        <View
+        {/* Return to bottom pill */}
+        <ReturnToBottomPill
+          visible={autoscroll.showReturnPill}
+          unreadCount={autoscroll.unreadCount}
+          onPress={autoscroll.scrollToBottom}
+          bottomOffset={
+            chatKeyboard.isKeyboardOpen
+              ? chatKeyboard.finalKeyboardHeight + 70
+              : 70 + insets.bottom
+          }
+        />
+
+        {/* Input area - animated for keyboard tracking */}
+        <Animated.View
           style={[
             styles.inputAreaWrapper,
             {
               backgroundColor: theme.dark ? "#000" : "#fff",
-              paddingBottom: insets.bottom,
             },
+            Platform.OS === "ios" && composerAnimatedStyle,
+            // For Android, apply static padding (keyboard handled by windowSoftInputMode)
+            Platform.OS === "android" && { paddingBottom: insets.bottom },
           ]}
         >
           {/* H6: Reply preview bar above input */}
@@ -1290,7 +1411,7 @@ export default function ChatScreen({
               editable={!sendingLoading && !uploadingSnap}
               textAlignVertical="center"
             />
-            {/* Phase 17: Schedule Message Button */}
+            {/* Schedule Message Button */}
             <IconButton
               icon="clock-outline"
               size={22}
@@ -1309,8 +1430,8 @@ export default function ChatScreen({
               Send
             </Button>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </Animated.View>
+      </View>
 
       {/* Block User Modal */}
       <BlockUserModal
@@ -1328,7 +1449,7 @@ export default function ChatScreen({
         onCancel={() => setReportModalVisible(false)}
       />
 
-      {/* Phase 17: Schedule Message Modal */}
+      {/* Schedule Message Modal */}
       <ScheduleMessageModal
         visible={scheduleModalVisible}
         messagePreview={inputText}
@@ -1353,7 +1474,6 @@ export default function ChatScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor applied inline via theme
   },
 
   centerContainer: {
@@ -1363,58 +1483,81 @@ const styles = StyleSheet.create({
   },
 
   messageContainer: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs,
-    flexDirection: "row",
-    marginVertical: Spacing.xs,
-    alignItems: "flex-end",
-    gap: Spacing.sm,
+    marginBottom: 12,
+    width: "100%",
+    // Full width container - alignment handled by children
   },
 
   sentMessageContainer: {
-    justifyContent: "flex-end",
+    // No special styling needed - children handle alignment
   },
 
   receivedMessageContainer: {
-    justifyContent: "flex-start",
+    // No special styling needed - children handle alignment
+  },
+
+  messageBubbleWrapper: {
+    flexDirection: "column",
+    width: "100%",
+    // Children handle their own alignment
+  },
+
+  messageRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: Spacing.sm,
+    maxWidth: "80%",
+  },
+
+  sentMessageRow: {
+    alignSelf: "flex-end",
+  },
+
+  receivedMessageRow: {
+    alignSelf: "flex-start",
+  },
+
+  bubbleColumn: {
+    flexDirection: "column",
+    // Bubble and timestamp in a vertical column
   },
 
   messageBubble: {
-    maxWidth: "80%",
-    elevation: 0,
+    padding: 12,
+    borderRadius: 16,
+    maxWidth: "100%",
   },
 
   sentBubble: {
-    // backgroundColor applied inline via theme.colors.primary
+    borderBottomRightRadius: 4,
   },
 
   receivedBubble: {
-    // backgroundColor applied inline via theme.colors.surfaceVariant
-  },
-
-  messageContent: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    borderBottomLeftRadius: 4,
   },
 
   messageText: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 20,
   },
 
-  sentText: {
-    // color applied inline via theme.colors.onPrimary
-  },
-
-  receivedText: {
-    // color applied inline via theme.colors.onSurface
-  },
-
   timestamp: {
-    fontSize: 12,
-    marginTop: Spacing.xs,
-    marginHorizontal: Spacing.sm,
-    // color applied inline via theme
+    fontSize: 10,
+  },
+
+  timestampStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+    gap: 4,
+  },
+
+  timestampStatusRowSent: {
+    alignSelf: "flex-end",
+  },
+
+  timestampStatusRowReceived: {
+    alignSelf: "flex-start",
   },
 
   inputAreaWrapper: {
@@ -1474,31 +1617,22 @@ const styles = StyleSheet.create({
     // color applied inline via theme
   },
 
-  // Phase 12: Message status styles
-  messageBubbleWrapper: {
-    flexDirection: "column",
-    alignItems: "flex-end",
-    maxWidth: "80%",
-  },
-
+  // Message status styles
   statusContainer: {
-    marginTop: 2,
-    paddingHorizontal: Spacing.xs,
+    // Inline with timestamp, no extra margins needed
   },
 
   sentStatus: {
     fontSize: 10,
-    // color applied inline via theme
+    color: "#888",
   },
 
   deliveredStatus: {
     fontSize: 10,
-    // color applied inline via theme.colors.primary
   },
 
   failedStatus: {
     fontSize: 10,
-    // color applied inline via theme.colors.error
   },
 
   sendingBubble: {
@@ -1507,23 +1641,16 @@ const styles = StyleSheet.create({
 
   failedBubble: {
     borderWidth: 1,
-    // backgroundColor and borderColor applied inline via theme.colors.errorContainer
   },
 
   failedMessageContainer: {
     opacity: 0.8,
   },
 
-  // Phase 12: Load more styles
+  // Loading indicator for infinite scroll
   loadMoreContainer: {
     alignItems: "center",
     paddingVertical: Spacing.md,
     marginBottom: Spacing.sm,
-  },
-
-  loadMoreText: {
-    fontSize: 14,
-    fontWeight: "500",
-    // color applied inline via theme.colors.primary
   },
 });

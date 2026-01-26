@@ -1,6 +1,5 @@
 /**
  * Mention Parser Service
- * Phase H9: Mentions + notifyLevel
  *
  * Parses @mentions from text, generates spans for highlighting,
  * and handles mention insertion for the composer.

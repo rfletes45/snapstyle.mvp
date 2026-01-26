@@ -1,6 +1,5 @@
 /**
  * TasksScreen
- * Phase 18: Daily tasks and challenges with token rewards
  *
  * Features:
  * - Daily task list with progress tracking
@@ -9,41 +8,33 @@
  * - Real-time progress updates
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { formatTokenAmount, subscribeToWallet } from "@/services/economy";
+import { getAppInstance } from "@/services/firebase";
 import {
-  View,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  Platform,
-} from "react-native";
+  claimTaskReward,
+  getProgressPercentage,
+  getProgressText,
+  getTimeUntilReset,
+  subscribeToTasksWithProgress,
+} from "@/services/tasks";
+import { useAuth } from "@/store/AuthContext";
+import { TaskWithProgress, Wallet } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import React, { useCallback, useEffect, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import {
-  Text,
-  Card,
-  Button,
   Appbar,
+  Button,
+  Card,
   ProgressBar,
-  IconButton,
-  ActivityIndicator,
   Snackbar,
+  Text,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import {
-  subscribeToTasksWithProgress,
-  claimTaskReward,
-  getProgressText,
-  getProgressPercentage,
-  getTimeUntilReset,
-} from "@/services/tasks";
-import { formatTokenAmount, subscribeToWallet } from "@/services/economy";
-import { TaskWithProgress, Wallet } from "@/types/models";
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
-import { getAppInstance } from "@/services/firebase";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 export default function TasksScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();

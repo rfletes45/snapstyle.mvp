@@ -1,6 +1,5 @@
 /**
  * GroupInvitesScreen
- * Phase 20: Group Chat Invites Management
  *
  * Features:
  * - View pending group invites
@@ -8,26 +7,26 @@
  * - Real-time updates
  */
 
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, FlatList, RefreshControl } from "react-native";
+import { EmptyState, LoadingState } from "@/components/ui";
 import {
-  Text,
-  Button,
+  acceptGroupInvite,
+  declineGroupInvite,
+  subscribeToPendingInvites,
+} from "@/services/groups";
+import { useAuth } from "@/store/AuthContext";
+import { GroupInvite } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useEffect, useState } from "react";
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
+import {
   Appbar,
+  Button,
   Card,
   Snackbar,
+  Text,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import {
-  subscribeToPendingInvites,
-  acceptGroupInvite,
-  declineGroupInvite,
-} from "@/services/groups";
-import { GroupInvite } from "@/types/models";
-import { LoadingState, EmptyState } from "@/components/ui";
 
 export default function GroupInvitesScreen({ navigation }: any) {
   const theme = useTheme();

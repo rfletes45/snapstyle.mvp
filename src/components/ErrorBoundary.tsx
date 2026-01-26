@@ -1,32 +1,31 @@
 /**
  * ErrorBoundary Component
- * Phase F: Error Handling & Feedback - Branded error UI
  *
  * Catches JavaScript errors anywhere in the child component tree,
  * logs those errors, and displays a branded fallback UI using
  * the Catppuccin theme.
  */
 
+import { createLogger } from "@/utils/log";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
   Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
   useColorScheme,
+  View,
 } from "react-native";
 import {
-  Latte,
-  Mocha,
-  LightColors,
-  DarkColors,
-  Spacing,
   BorderRadius,
+  DarkColors,
   FontSizes,
   FontWeights,
+  Latte,
+  LightColors,
+  Mocha,
+  Spacing,
 } from "../../constants/theme";
-import { createLogger } from "@/utils/log";
 
 const log = createLogger("ErrorBoundary");
 

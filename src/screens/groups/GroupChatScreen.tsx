@@ -1,12 +1,5 @@
 /**
  * GroupChatScreen
- * Phase 20: Group Chat Messaging
- * Phase H6: Reply-to Threading
- * Phase H8: Emoji Reactions
- * Phase H9: Mentions + notifyLevel
- * Phase H10: Multi-Attachment Support
- * Phase H11: Voice Messages
- * Phase H12: Link Previews
  *
  * Features:
  * - Send/receive messages in group
@@ -14,12 +7,13 @@
  * - System messages (join/leave)
  * - Real-time updates
  * - Message pagination
- * - Reply-to threading (H6)
- * - Emoji reactions on messages (H8)
- * - @mention autocomplete (H9)
- * - Multi-attachment support (H10)
- * - Voice messages (H11)
- * - Link previews (H12)
+ * - Reply-to threading
+ * - Emoji reactions on messages
+ * - @mention autocomplete
+ * - Multi-attachment support
+ * - Voice messages
+ * - Link previews
+ * - Keyboard-attached composer
  */
 
 import {
@@ -29,13 +23,20 @@ import {
   MediaViewerModal,
   MessageActionsSheet,
   ReactionsSummary,
+  ReplyBubble,
   ReplyPreviewBar,
+  ReturnToBottomPill,
   SwipeableGroupMessage,
   VoiceMessagePlayer,
   VoiceRecordButton,
 } from "@/components/chat";
 import { MentionAutocomplete } from "@/components/chat/MentionAutocomplete";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import {
+  useAtBottom,
+  useChatKeyboard,
+  useNewMessageAutoscroll,
+} from "@/hooks/chat";
 import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
 import { useMentionAutocomplete } from "@/hooks/useMentionAutocomplete";
 import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
@@ -74,8 +75,6 @@ import {
   Alert,
   FlatList,
   Image,
-  Keyboard,
-  KeyboardAvoidingView,
   NativeSyntheticEvent,
   Platform,
   TextInput as RNTextInput,
@@ -92,11 +91,12 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { AppColors } from "../../../constants/theme";
+import { DEBUG_CHAT_KEYBOARD } from "../../../constants/featureFlags";
 
 interface Props {
   route: any;
@@ -159,6 +159,51 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   const flatListRef = useRef<FlatList>(null);
   const textInputRef = useRef<any>(null);
+
+  // ==========================================================================
+  // Keyboard & Scroll Hooks
+  // ==========================================================================
+
+  // Keyboard tracking for composer animation
+  const chatKeyboard = useChatKeyboard({
+    debug: DEBUG_CHAT_KEYBOARD,
+  });
+
+  // At-bottom detection for scroll behavior
+  const atBottom = useAtBottom({
+    threshold: 200,
+    debug: DEBUG_CHAT_KEYBOARD,
+  });
+
+  // Autoscroll behavior for new messages
+  const autoscroll = useNewMessageAutoscroll({
+    messageCount: messages.length,
+    isKeyboardOpen: chatKeyboard.isKeyboardOpen,
+    isAtBottom: atBottom.isAtBottom,
+    distanceFromBottom: atBottom.distanceFromBottom,
+    debug: DEBUG_CHAT_KEYBOARD,
+  });
+
+  // Set FlatList ref for autoscroll
+  useEffect(() => {
+    autoscroll.setFlatListRef(flatListRef.current);
+  }, [autoscroll]);
+
+  // Animated style for composer wrapper (iOS)
+  // Using marginBottom instead of transform for keyboard tracking
+  // Also animates paddingBottom to reduce safe area gap when keyboard is open
+  const composerAnimatedStyle = useAnimatedStyle(() => {
+    if (Platform.OS === "ios") {
+      // As keyboard opens (progress 0->1), reduce paddingBottom from insets.bottom to 0
+      const animatedPadding =
+        insets.bottom * (1 - chatKeyboard.keyboardProgress.value);
+      return {
+        marginBottom: -chatKeyboard.keyboardHeight.value,
+        paddingBottom: animatedPadding,
+      };
+    }
+    return {};
+  }, [insets.bottom]);
 
   // H10: Attachment picker hook
   const attachmentPicker = useAttachmentPicker({
@@ -232,31 +277,25 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!groupId || !uid || error) return;
 
-    const unsubscribe = subscribeToGroupMessages(groupId, (messagesData) => {
-      setMessages(messagesData);
-      setLoading(false);
+    const unsubscribe = subscribeToGroupMessages(
+      groupId,
+      (messagesData) => {
+        setMessages(messagesData);
+        setLoading(false);
 
-      // Update last read timestamp
-      updateLastRead(groupId, uid).catch(console.error);
-    });
+        // Update last read timestamp
+        updateLastRead(groupId, uid).catch(console.error);
+      },
+      30, // default limit
+      uid, // pass currentUid to filter hidden messages
+    );
 
     return () => unsubscribe();
   }, [groupId, uid, error]);
 
-  // Scroll to end when keyboard shows to keep latest messages visible
-  useEffect(() => {
-    const keyboardShowEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-
-    const keyboardListener = Keyboard.addListener(keyboardShowEvent, () => {
-      // Small delay to let layout adjust
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    });
-
-    return () => keyboardListener.remove();
-  }, []);
+  // Keyboard scroll behavior now handled by useChatKeyboard + useNewMessageAutoscroll
+  // The old Keyboard.addListener approach is replaced with smooth animated tracking
+  // and intelligent scroll rules (only scroll if at bottom, 30-message threshold, etc.)
 
   // Hide tab bar when this screen is focused
   useFocusEffect(
@@ -274,31 +313,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       };
     }, [navigation]),
   );
-
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages.length]);
-
-  // Scroll to bottom when keyboard opens
-  useEffect(() => {
-    const keyboardShowEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-
-    const keyboardShowListener = Keyboard.addListener(keyboardShowEvent, () => {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    });
-
-    return () => {
-      keyboardShowListener.remove();
-    };
-  }, []);
 
   // H12: Fetch link previews for text messages
   useEffect(() => {
@@ -431,6 +445,25 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     setActionsSheetVisible(true);
   }, []);
 
+  // H6: Scroll to a specific message (for reply tap)
+  const scrollToMessage = useCallback(
+    (messageId: string) => {
+      const index = messages.findIndex((m) => m.id === messageId);
+      if (index !== -1 && flatListRef.current) {
+        flatListRef.current.scrollToIndex({
+          index,
+          animated: true,
+          viewPosition: 0.5, // Center the message
+        });
+      } else {
+        console.log(
+          `[GroupChatScreen] Message ${messageId} not found in messages`,
+        );
+      }
+    },
+    [messages],
+  );
+
   // H7: Convert GroupMessage to MessageV2 format for actions sheet
   const selectedMessageAsV2: MessageV2 | null = selectedMessage
     ? {
@@ -490,7 +523,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const handleMessageDeleted = useCallback(
     (messageId: string, forAll: boolean) => {
       if (forAll) {
-        // Remove from local state
+        // For delete-for-all, update local state to show "deleted" placeholder
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, deletedForAll: { by: uid || "", at: Date.now() } }
+              : m,
+          ),
+        );
+      } else {
+        // For delete-for-me, remove from local state immediately
+        // (subscription will also filter it, but this is more responsive)
         setMessages((prev) => prev.filter((m) => m.id !== messageId));
       }
       setSnackbar({
@@ -498,7 +541,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         message: forAll ? "Message deleted" : "Message hidden",
       });
     },
-    [],
+    [uid],
   );
 
   // H10: Send message with attachments
@@ -514,16 +557,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     const { mentionUids } = extractMentionsExact(text, mentionableMembers);
 
     // H6: Convert replyTo to GroupMessage format
+    // Note: Only include attachmentKind if it exists (Firebase rejects undefined values)
     const replyToData = replyTo
       ? {
           messageId: replyTo.messageId,
           senderId: replyTo.senderId,
           senderName: replyTo.senderName || "Unknown",
           textSnippet: replyTo.textSnippet,
-          attachmentKind: replyTo.attachmentPreview?.kind as
-            | "image"
-            | "voice"
-            | undefined,
+          ...(replyTo.attachmentPreview?.kind && {
+            attachmentKind: replyTo.attachmentPreview.kind as "image" | "voice",
+          }),
         }
       : undefined;
 
@@ -590,6 +633,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           replyToData,
         );
       }
+
+      // Scroll to bottom after sending to show new message
+      setTimeout(() => {
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }, 100);
     } catch (error: any) {
       console.error("Error sending message:", error);
       if (hasText) {
@@ -746,7 +794,87 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     if (item.type === "system") {
       return (
         <View style={styles.systemMessage}>
-          <Text style={styles.systemMessageText}>{item.content}</Text>
+          <Text
+            style={[
+              styles.systemMessageText,
+              {
+                color: theme.dark ? "#888" : "#666",
+                backgroundColor: theme.dark ? "#1A1A1A" : "#e8e8e8",
+              },
+            ]}
+          >
+            {item.content}
+          </Text>
+        </View>
+      );
+    }
+
+    // H7: Deleted message (show placeholder)
+    if (item.deletedForAll) {
+      return (
+        <View
+          style={[
+            styles.messageContainer,
+            isOwnMessage && styles.ownMessageContainer,
+          ]}
+        >
+          <View
+            style={[
+              styles.messageRow,
+              isOwnMessage ? styles.ownMessageRow : styles.receivedMessageRow,
+            ]}
+          >
+            {!isOwnMessage && showSender && (
+              <Text
+                style={[styles.senderName, { color: theme.colors.primary }]}
+              >
+                {item.senderDisplayName}
+              </Text>
+            )}
+            <View style={styles.bubbleColumn}>
+              <View
+                style={[
+                  styles.messageBubble,
+                  styles.deletedMessage,
+                  {
+                    backgroundColor: theme.dark ? "#1A1A1A" : "#e8e8e8",
+                    borderStyle: "dashed",
+                    borderWidth: 1,
+                    borderColor: theme.dark ? "#333" : "#ccc",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.messageText,
+                    {
+                      color: theme.colors.onSurfaceVariant,
+                      fontStyle: "italic",
+                    },
+                  ]}
+                >
+                  This message was deleted
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.timestampRow,
+                  isOwnMessage
+                    ? styles.timestampRowSent
+                    : styles.timestampRowReceived,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.messageTime,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  {formatTime(item.createdAt)}
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
       );
     }
@@ -793,99 +921,170 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             isOwnMessage && styles.ownMessageContainer,
           ]}
         >
-          {!isOwnMessage && showSender && (
-            <Text style={[styles.senderName, { color: theme.colors.primary }]}>
-              {item.senderDisplayName}
-            </Text>
+          {/* H6: Reply preview - Apple Messages style (above main bubble) */}
+          {item.replyTo && (
+            <ReplyBubble
+              replyTo={{
+                messageId: item.replyTo.messageId,
+                senderId: item.replyTo.senderId,
+                senderName: item.replyTo.senderName,
+                // Map attachmentKind to MessageKind: "image" -> "media", "voice" stays "voice"
+                kind:
+                  item.replyTo.attachmentKind === "image"
+                    ? "media"
+                    : item.replyTo.attachmentKind || "text",
+                textSnippet: item.replyTo.textSnippet,
+              }}
+              isSentByMe={isOwnMessage}
+              isReplyToMe={item.replyTo.senderId === uid}
+              onPress={() => scrollToMessage(item.replyTo!.messageId)}
+            />
           )}
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={item.type === "image" ? handleImagePress : undefined}
-            onLongPress={() => handleMessageLongPress(item)}
-            delayLongPress={300}
+          {/* Message row - contains sender name + bubble column, constrained to 80% */}
+          <View
+            style={[
+              styles.messageRow,
+              isOwnMessage ? styles.ownMessageRow : styles.receivedMessageRow,
+            ]}
           >
-            <View
-              style={[
-                styles.messageBubble,
-                isOwnMessage
-                  ? [
-                      styles.ownMessage,
-                      { backgroundColor: theme.colors.primary },
-                    ]
-                  : styles.otherMessage,
-                item.type === "image" && styles.imageOnlyBubble,
-                item.type === "voice" && styles.voiceBubble,
-              ]}
-            >
-              {item.type === "image" ? (
-                <Image
-                  source={{ uri: item.content }}
-                  style={styles.standaloneImage}
-                  resizeMode="cover"
-                />
-              ) : item.type === "voice" ? (
-                // H11: Voice message player
-                <VoiceMessagePlayer
-                  url={item.content}
-                  durationMs={item.voiceMetadata?.durationMs || 0}
-                  isOwn={isOwnMessage}
-                />
-              ) : item.type === "scorecard" && item.scorecard ? (
-                <View style={styles.scorecardContent}>
-                  <MaterialCommunityIcons
-                    name="gamepad-variant"
-                    size={24}
-                    color={isOwnMessage ? "#000" : "#FFF"}
-                  />
-                  <Text
-                    style={[
-                      styles.scorecardGame,
-                      isOwnMessage && styles.ownMessageText,
-                    ]}
-                  >
-                    {item.scorecard.gameId === "reaction_tap"
-                      ? "Reaction Tap"
-                      : "Timed Tap"}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.scorecardScore,
-                      isOwnMessage && styles.ownMessageText,
-                    ]}
-                  >
-                    {item.scorecard.gameId === "reaction_tap"
-                      ? `${item.scorecard.score}ms`
-                      : `${item.scorecard.score} taps`}
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <Text
-                    style={[
-                      styles.messageText,
-                      isOwnMessage && styles.ownMessageText,
-                    ]}
-                  >
-                    {item.content}
-                  </Text>
-                  {/* H12: Link Preview */}
-                  {hasUrls(item.content) && (
-                    <LinkPreviewCard
-                      preview={
-                        linkPreviews.get(item.id) || {
-                          url: extractUrls(item.content)[0] || "",
-                          fetchedAt: Date.now(),
-                        }
-                      }
-                      isOwn={isOwnMessage}
-                      loading={loadingPreviews.has(item.id)}
+            {!isOwnMessage && showSender && (
+              <Text
+                style={[styles.senderName, { color: theme.colors.primary }]}
+              >
+                {item.senderDisplayName}
+              </Text>
+            )}
+            {/* Bubble column - contains bubble + timestamp row */}
+            <View style={styles.bubbleColumn}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={item.type === "image" ? handleImagePress : undefined}
+                onLongPress={() => handleMessageLongPress(item)}
+                delayLongPress={300}
+              >
+                <View
+                  style={[
+                    styles.messageBubble,
+                    isOwnMessage
+                      ? [
+                          styles.ownMessage,
+                          { backgroundColor: theme.colors.primary },
+                        ]
+                      : [
+                          styles.otherMessage,
+                          {
+                            backgroundColor: theme.dark ? "#1A1A1A" : "#e8e8e8",
+                          },
+                        ],
+                    item.type === "image" && styles.imageOnlyBubble,
+                    item.type === "voice" && styles.voiceBubble,
+                  ]}
+                >
+                  {item.type === "image" ? (
+                    <Image
+                      source={{ uri: item.content }}
+                      style={styles.standaloneImage}
+                      resizeMode="cover"
                     />
+                  ) : item.type === "voice" ? (
+                    // H11: Voice message player
+                    <VoiceMessagePlayer
+                      url={item.content}
+                      durationMs={item.voiceMetadata?.durationMs || 0}
+                      isOwn={isOwnMessage}
+                    />
+                  ) : item.type === "scorecard" && item.scorecard ? (
+                    <View style={styles.scorecardContent}>
+                      <MaterialCommunityIcons
+                        name="gamepad-variant"
+                        size={24}
+                        color={
+                          isOwnMessage
+                            ? theme.colors.onPrimary
+                            : theme.colors.onSurface
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.scorecardGame,
+                          {
+                            color: isOwnMessage
+                              ? theme.colors.onPrimary
+                              : theme.colors.onSurface,
+                          },
+                        ]}
+                      >
+                        {item.scorecard.gameId === "reaction_tap"
+                          ? "Reaction Tap"
+                          : "Timed Tap"}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.scorecardScore,
+                          {
+                            color: isOwnMessage
+                              ? theme.colors.onPrimary
+                              : theme.colors.onSurface,
+                          },
+                        ]}
+                      >
+                        {item.scorecard.gameId === "reaction_tap"
+                          ? `${item.scorecard.score}ms`
+                          : `${item.scorecard.score} taps`}
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Text
+                        style={[
+                          styles.messageText,
+                          {
+                            color: isOwnMessage
+                              ? theme.colors.onPrimary
+                              : theme.colors.onSurface,
+                          },
+                        ]}
+                      >
+                        {item.content}
+                      </Text>
+                      {/* H12: Link Preview */}
+                      {hasUrls(item.content) && (
+                        <LinkPreviewCard
+                          preview={
+                            linkPreviews.get(item.id) || {
+                              url: extractUrls(item.content)[0] || "",
+                              fetchedAt: Date.now(),
+                            }
+                          }
+                          isOwn={isOwnMessage}
+                          loading={loadingPreviews.has(item.id)}
+                        />
+                      )}
+                    </>
                   )}
-                </>
-              )}
+                </View>
+              </TouchableOpacity>
+              {/* Timestamp row - directly below the bubble */}
+              <View
+                style={[
+                  styles.timestampRow,
+                  isOwnMessage
+                    ? styles.timestampRowSent
+                    : styles.timestampRowReceived,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.messageTime,
+                    { color: theme.dark ? "#666" : "#888" },
+                  ]}
+                >
+                  {formatTime(item.createdAt)}
+                </Text>
+              </View>
             </View>
-          </TouchableOpacity>
+          </View>
 
           {/* H8: Reactions Summary (tap to open actions sheet) */}
           {(messageReactions.get(item.id) || []).length > 0 && (
@@ -903,12 +1102,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               onPress={() => handleMessageLongPress(item)}
             />
           )}
-
-          <Text
-            style={[styles.messageTime, isOwnMessage && styles.ownMessageTime]}
-          >
-            {formatTime(item.createdAt)}
-          </Text>
         </View>
       </SwipeableGroupMessage>
     );
@@ -916,8 +1109,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={[]}>
-        <Appbar.Header style={styles.header}>
+      <SafeAreaView
+        style={[
+          styles.container,
+          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+        ]}
+        edges={[]}
+      >
+        <Appbar.Header
+          style={[
+            styles.header,
+            { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+          ]}
+        >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title={initialGroupName || "Group Chat"} />
         </Appbar.Header>
@@ -928,8 +1132,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container} edges={[]}>
-        <Appbar.Header style={styles.header}>
+      <SafeAreaView
+        style={[
+          styles.container,
+          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+        ]}
+        edges={[]}
+      >
+        <Appbar.Header
+          style={[
+            styles.header,
+            { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+          ]}
+        >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title="Error" />
         </Appbar.Header>
@@ -944,32 +1159,58 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   return (
     <>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      {/* Main container - no KeyboardAvoidingView needed, using react-native-keyboard-controller */}
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+        ]}
       >
-        <Appbar.Header style={styles.header}>
+        <Appbar.Header
+          style={[
+            styles.header,
+            { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+          ]}
+        >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <TouchableOpacity
             style={styles.headerTitle}
             onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
           >
-            <View
-              style={[
-                styles.groupIcon,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="account-group"
-                size={20}
-                color={theme.colors.primary}
+            {group?.avatarUrl ? (
+              <Image
+                source={{ uri: group.avatarUrl }}
+                style={styles.groupAvatarImage}
               />
-            </View>
+            ) : (
+              <View
+                style={[
+                  styles.groupIcon,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account-group"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </View>
+            )}
             <View>
-              <Text style={styles.headerTitleText}>{group?.name}</Text>
-              <Text style={styles.headerSubtitle}>
+              <Text
+                style={[
+                  styles.headerTitleText,
+                  { color: theme.colors.onSurface },
+                ]}
+              >
+                {group?.name}
+              </Text>
+              <Text
+                style={[
+                  styles.headerSubtitle,
+                  { color: theme.dark ? "#888" : "#666" },
+                ]}
+              >
                 {group?.memberCount} members
               </Text>
             </View>
@@ -990,6 +1231,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           ) : (
             <FlatList
               ref={flatListRef}
+              // Inverted list: newest at bottom (visually) but index 0
+              inverted
+              // Scroll event handlers for at-bottom detection
+              onScroll={atBottom.onScroll}
+              onScrollEndDrag={atBottom.onScrollEndDrag}
+              onMomentumScrollEnd={atBottom.onMomentumScrollEnd}
+              scrollEventThrottle={16}
               data={messages}
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
@@ -997,29 +1245,46 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               keyboardShouldPersistTaps="handled"
               {...LIST_PERFORMANCE_PROPS}
               style={styles.messagesList}
+              // Static padding - composer handles keyboard avoidance via marginBottom
               contentContainerStyle={[
                 styles.messagesContent,
-                { paddingBottom: 16 },
+                {
+                  // For inverted list, paddingTop = visual bottom (space for composer)
+                  paddingTop: 60 + insets.bottom + 16,
+                },
               ]}
               showsVerticalScrollIndicator={false}
-              onContentSizeChange={() => {
-                flatListRef.current?.scrollToEnd({ animated: false });
-              }}
+              // Maintain scroll position when content updates
               maintainVisibleContentPosition={{
-                minIndexForVisible: 0,
+                minIndexForVisible: 1,
+                autoscrollToTopThreshold: 100,
               }}
             />
           )}
         </View>
 
-        {/* Message Input */}
-        <View
+        {/* Return to bottom pill */}
+        <ReturnToBottomPill
+          visible={autoscroll.showReturnPill}
+          unreadCount={autoscroll.unreadCount}
+          onPress={autoscroll.scrollToBottom}
+          bottomOffset={
+            chatKeyboard.isKeyboardOpen
+              ? chatKeyboard.finalKeyboardHeight + 70
+              : 70 + insets.bottom
+          }
+        />
+
+        {/* Message Input - animated for keyboard tracking */}
+        <Animated.View
           style={[
             styles.inputWrapper,
             {
               backgroundColor: theme.dark ? "#000" : "#fff",
-              paddingBottom: insets.bottom,
             },
+            Platform.OS === "ios" && composerAnimatedStyle,
+            // For Android, apply static padding (keyboard handled by windowSoftInputMode)
+            Platform.OS === "android" && { paddingBottom: insets.bottom },
           ]}
         >
           {/* H10: Attachment Tray */}
@@ -1126,8 +1391,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               />
             )}
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </Animated.View>
+      </View>
 
       {/* H10: Media Viewer Modal */}
       <MediaViewerModal
@@ -1171,10 +1436,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    // backgroundColor applied inline via theme
   },
   header: {
-    backgroundColor: "#000",
+    // backgroundColor applied inline via theme
   },
   headerTitle: {
     flex: 1,
@@ -1187,17 +1452,22 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#1A1A1A",
+    // backgroundColor applied inline via theme
     alignItems: "center",
     justifyContent: "center",
   },
+  groupAvatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
   headerTitleText: {
-    color: "#FFF",
+    // color applied inline via theme
     fontSize: 16,
     fontWeight: "600",
   },
   headerSubtitle: {
-    color: "#888",
+    // color applied inline via theme
     fontSize: 12,
   },
   chatContainer: {
@@ -1212,14 +1482,27 @@ const styles = StyleSheet.create({
   },
   messageContainer: {
     marginBottom: 12,
-    maxWidth: "80%",
-    alignSelf: "flex-start",
+    width: "100%",
+    // Full width container - alignment handled by children
   },
   ownMessageContainer: {
+    // No special styling needed - children handle alignment
+  },
+  messageRow: {
+    maxWidth: "80%",
+  },
+  ownMessageRow: {
     alignSelf: "flex-end",
   },
+  receivedMessageRow: {
+    alignSelf: "flex-start",
+  },
+  bubbleColumn: {
+    flexDirection: "column",
+    // Bubble and timestamp in a vertical column
+  },
   senderName: {
-    color: AppColors.primary,
+    // color applied inline via theme
     fontSize: 12,
     fontWeight: "600",
     marginBottom: 4,
@@ -1230,12 +1513,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   ownMessage: {
-    backgroundColor: AppColors.primary,
+    // backgroundColor applied inline via theme
     borderBottomRightRadius: 4,
   },
   otherMessage: {
-    backgroundColor: "#1A1A1A",
+    // backgroundColor applied inline via theme
     borderBottomLeftRadius: 4,
+  },
+  deletedMessage: {
+    // For deleted message placeholder styling
+    // Main styling (border, background) applied inline
   },
   imageOnlyBubble: {
     padding: 0,
@@ -1246,12 +1533,12 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   messageText: {
-    color: "#FFF",
+    // color applied inline via theme
     fontSize: 15,
     lineHeight: 20,
   },
   ownMessageText: {
-    color: "#000",
+    // color applied inline via theme
   },
   standaloneImage: {
     width: 200,
@@ -1268,34 +1555,40 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   scorecardGame: {
-    color: "#FFF",
+    // color applied inline via theme
     fontSize: 12,
     marginTop: 4,
   },
   scorecardScore: {
-    color: "#FFF",
+    // color applied inline via theme
     fontSize: 18,
     fontWeight: "bold",
     marginTop: 2,
   },
   messageTime: {
-    color: "#666",
+    // color applied inline via theme
     fontSize: 10,
-    marginTop: 4,
-    marginLeft: 12,
   },
-  ownMessageTime: {
-    textAlign: "right",
-    marginRight: 12,
+  timestampRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  timestampRowSent: {
+    alignSelf: "flex-end",
+    marginRight: 4,
+  },
+  timestampRowReceived: {
+    alignSelf: "flex-start",
+    marginLeft: 4,
   },
   systemMessage: {
     alignItems: "center",
     marginVertical: 12,
   },
   systemMessageText: {
-    color: "#888",
+    // color and backgroundColor applied inline via theme
     fontSize: 12,
-    backgroundColor: "#1A1A1A",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -1339,11 +1632,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   uploadProgressText: {
-    color: "#888",
+    // color applied inline via theme
     fontSize: 10,
     fontWeight: "600",
   },
   snackbar: {
-    backgroundColor: "#333",
+    // backgroundColor applied inline via theme
   },
 });

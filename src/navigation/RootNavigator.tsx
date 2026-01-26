@@ -18,43 +18,51 @@ import SignupScreen from "@/screens/auth/SignupScreen";
 import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 
 // App screens
-import ChatListScreen from "@/screens/chat/ChatListScreen";
+import ChatListScreen from "@/screens/chat/ChatListScreenV2";
 import ChatScreen from "@/screens/chat/ChatScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
 import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
 import AchievementsScreen from "@/screens/games/AchievementsScreen";
-import GamesHub from "@/screens/games/GamesHub";
+import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
+import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
+import ChessGameScreen from "@/screens/games/ChessGameScreen";
+import CrazyEightsGameScreen from "@/screens/games/CrazyEightsGameScreen";
+import FlappySnapGameScreen from "@/screens/games/FlappySnapGameScreen";
+import GamesHubScreen from "@/screens/games/GamesHubScreen";
 import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
+import MemorySnapGameScreen from "@/screens/games/MemorySnapGameScreen";
 import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
+import Snap2048GameScreen from "@/screens/games/Snap2048GameScreen";
+import SnapSnakeGameScreen from "@/screens/games/SnapSnakeGameScreen";
+import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
+import WordSnapGameScreen from "@/screens/games/WordSnapGameScreen";
 import ProfileScreen from "@/screens/profile/ProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
 import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
-// Phase D: DebugScreen only loaded in development
+// DebugScreen only loaded in development
 const DebugScreen = __DEV__
   ? require("@/screens/debug/DebugScreen").default
   : () => null;
 
-// Phase 18: Economy + Tasks
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
 
-// Phase 19: Shop
 import ShopScreen from "@/screens/shop/ShopScreen";
 
-// Phase 20: Group Chat
 import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
 import GroupChatScreen from "@/screens/groups/GroupChatScreen";
 import GroupInvitesScreen from "@/screens/groups/GroupInvitesScreen";
 
-// Phase H13: Chat Settings
 import ChatSettingsScreen from "@/screens/chat/ChatSettingsScreen";
 
-// Phase 21: Admin Screens
+import InboxSearchScreen from "@/screens/chat/InboxSearchScreen";
+import InboxSettingsScreen from "@/screens/chat/InboxSettingsScreen";
+
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
 
 const Stack = createNativeStackNavigator<any>();
@@ -99,7 +107,7 @@ function InboxStack() {
       <Stack.Screen
         name="ChatList"
         component={ChatListScreen}
-        options={{ title: "Inbox" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="ChatDetail"
@@ -142,6 +150,16 @@ function InboxStack() {
       <Stack.Screen
         name="ChatSettings"
         component={ChatSettingsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="InboxSettings"
+        component={InboxSettingsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="InboxSearch"
+        component={InboxSearchScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
@@ -207,7 +225,7 @@ function PlayStack() {
     >
       <Stack.Screen
         name="GamesHub"
-        component={GamesHub}
+        component={GamesHubScreen}
         options={{ title: "Play" }}
       />
       <Stack.Screen
@@ -221,6 +239,88 @@ function PlayStack() {
       <Stack.Screen
         name="TimedTapGame"
         component={TimedTapGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="FlappySnapGame"
+        component={FlappySnapGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="BounceBlitzGame"
+        component={BounceBlitzGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="MemorySnapGame"
+        component={MemorySnapGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="WordSnapGame"
+        component={WordSnapGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="Snap2048Game"
+        component={Snap2048GameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapSnakeGame"
+        component={SnapSnakeGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="TicTacToeGame"
+        component={TicTacToeGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="CheckersGame"
+        component={CheckersGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="ChessGame"
+        component={ChessGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="CrazyEightsGame"
+        component={CrazyEightsGameScreen}
         options={{
           headerShown: false,
           presentation: "card",
@@ -265,7 +365,7 @@ function ProfileStack() {
         component={ProfileScreen}
         options={{ headerShown: false }}
       />
-      {/* Phase D: Debug screen only available in development */}
+      {/* Debug screen only available in development */}
       {__DEV__ && (
         <Stack.Screen
           name="Debug"

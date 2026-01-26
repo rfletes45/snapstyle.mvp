@@ -7,11 +7,11 @@
  * @module components/chat/ReplyPreviewBar
  */
 
+import { MessageKind, ReplyToMetadata } from "@/types/messaging";
 import React from "react";
-import { View, StyleSheet, TouchableOpacity } from "react-native";
-import { Text, IconButton, useTheme } from "react-native-paper";
-import { ReplyToMetadata, MessageKind } from "@/types/messaging";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { IconButton, Text, useTheme } from "react-native-paper";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 // =============================================================================
 // Types
@@ -82,26 +82,34 @@ export function ReplyPreviewBar({
   const theme = useTheme();
 
   const previewText = getPreviewText(replyTo);
-  const senderLabel = isOwnMessage ? "You" : replyTo.senderName || "User";
+  const senderLabel = isOwnMessage ? "yourself" : replyTo.senderName || "User";
 
   return (
     <View
       style={[
         styles.container,
-        { backgroundColor: theme.colors.surfaceVariant },
+        {
+          backgroundColor: theme.dark
+            ? "rgba(60, 60, 60, 0.9)"
+            : "rgba(230, 230, 230, 0.95)",
+        },
       ]}
     >
-      {/* Accent bar */}
-      <View
-        style={[styles.accentBar, { backgroundColor: theme.colors.primary }]}
-      />
-
       {/* Content */}
       <View style={styles.content}>
+        {/* Reply icon */}
+        <View style={styles.iconContainer}>
+          <IconButton
+            icon="reply"
+            size={18}
+            iconColor={theme.colors.primary}
+            style={styles.replyIcon}
+          />
+        </View>
+
         {/* Thumbnail preview for media */}
         {replyTo.attachmentPreview?.thumbUrl && (
           <View style={styles.thumbnailContainer}>
-            {/* Placeholder for image - could be expo-image */}
             <View
               style={[
                 styles.thumbnail,
@@ -165,23 +173,24 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.sm,
     marginHorizontal: Spacing.sm,
     marginBottom: Spacing.xs,
-    borderRadius: BorderRadius.md,
-  },
-  accentBar: {
-    width: 3,
-    height: "100%",
-    borderRadius: 2,
-    marginRight: Spacing.sm,
-    minHeight: 36,
+    borderRadius: BorderRadius.lg,
   },
   content: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
+  },
+  iconContainer: {
+    marginRight: Spacing.xs,
+  },
+  replyIcon: {
+    margin: 0,
+    width: 28,
+    height: 28,
   },
   thumbnailContainer: {
     marginRight: Spacing.sm,

@@ -1,6 +1,5 @@
 /**
  * ScheduleMessageModal
- * Phase 17: Modal for scheduling a message to be sent later
  *
  * Features:
  * - Quick presets (1 hour, tomorrow morning, tomorrow evening)
@@ -8,25 +7,25 @@
  * - Preview of when message will be sent
  */
 
-import React, { useState, useMemo } from "react";
+import { formatScheduledTime } from "@/services/scheduledMessages";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useMemo, useState } from "react";
 import {
-  View,
-  StyleSheet,
   Modal,
-  TouchableOpacity,
-  ScrollView,
   Platform,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-  Text,
   Button,
   IconButton,
+  Text,
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { AppColors } from "../../constants/theme";
-import { formatScheduledTime } from "@/services/scheduledMessages";
 
 // =============================================================================
 // Types

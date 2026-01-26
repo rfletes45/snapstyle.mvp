@@ -1,6 +1,5 @@
 /**
  * VoiceMessagePlayer Component
- * Phase H11: Voice Messages
  *
  * Inline voice message player with waveform visualization.
  *

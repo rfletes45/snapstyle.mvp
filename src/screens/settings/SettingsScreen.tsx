@@ -1,6 +1,5 @@
 /**
  * SettingsScreen - User settings hub
- * Phase 15: Polish + Settings Hub
  *
  * Features:
  * - Notification toggles (local state, ready for persistence)
@@ -10,28 +9,28 @@
  * - Account management section
  */
 
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
-import {
-  Text,
-  Switch,
-  List,
-  Divider,
-  Button,
-  TextInput,
-  Portal,
-  Dialog,
-  useTheme,
-} from "react-native-paper";
+import { getAuthInstance } from "@/services/firebase";
+import { updateProfile } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
-import { useInAppNotifications } from "@/store/InAppNotificationsContext";
-import { updateProfile } from "@/services/users";
+import { useUser } from "@/store/UserContext";
 import { isValidDisplayName } from "@/utils/validators";
-import { signOut, deleteUser } from "firebase/auth";
-import { getAuthInstance } from "@/services/firebase";
+import { deleteUser, signOut } from "firebase/auth";
+import React, { useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+import {
+  Button,
+  Dialog,
+  Divider,
+  List,
+  Portal,
+  Switch,
+  Text,
+  TextInput,
+  useTheme,
+} from "react-native-paper";
 
 // =============================================================================
 // Types
@@ -167,7 +166,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     }
 
     try {
-      // Note: Full account deletion requires Cloud Function in Phase 22
+      // Note: Full account deletion requires Cloud Function
       // This just deletes the Firebase Auth user for now
       await deleteUser(currentFirebaseUser);
       showSuccess("Account deleted");

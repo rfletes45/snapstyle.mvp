@@ -1,6 +1,5 @@
 /**
  * SnackbarContext - App-wide snackbar/toast notifications
- * Phase F: Error Handling & Feedback - Theme-aware snackbar
  *
  * Features:
  * - Theme-aware colors (Catppuccin palette)
@@ -9,19 +8,19 @@
  * - Enhanced error display with suggestions
  */
 
+import { getErrorDisplayInfo } from "@/utils/errors";
 import React, {
   createContext,
+  ReactNode,
+  useCallback,
   useContext,
   useState,
-  useCallback,
-  ReactNode,
 } from "react";
-import { Snackbar, Portal } from "react-native-paper";
-import { StyleSheet, View, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { Portal, Snackbar } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BorderRadius, Latte, Mocha, Spacing } from "../../constants/theme";
 import { useAppTheme } from "./ThemeContext";
-import { Latte, Mocha, Spacing, BorderRadius } from "../../constants/theme";
-import { getErrorDisplayInfo } from "@/utils/errors";
 
 // =============================================================================
 // Types

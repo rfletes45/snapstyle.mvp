@@ -1,6 +1,5 @@
 /**
  * Logging Utility
- * Phase F: Error Handling & Feedback
  *
  * Centralized logging helper with:
  * - Environment-aware logging (verbose in dev, minimal in prod)
@@ -346,4 +345,4 @@ export const log = {
   child: globalLogger.child.bind(globalLogger),
 };
 
-export type { LogLevel, LogContext, LogConfig };
+export type { LogConfig, LogContext, LogLevel };

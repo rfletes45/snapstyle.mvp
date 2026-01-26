@@ -1,14 +1,14 @@
+import { getFirestoreInstance } from "@/services/firebase";
+import { User as AppUser } from "@/types/models";
+import { doc, getDoc } from "firebase/firestore";
 import React, {
   createContext,
-  useContext,
-  useState,
-  useEffect,
   useCallback,
+  useContext,
+  useEffect,
+  useState,
 } from "react";
-import { User as AppUser } from "@/types/models";
 import { useAuth } from "./AuthContext";
-import { getFirestoreInstance } from "@/services/firebase";
-import { doc, getDoc } from "firebase/firestore";
 
 export interface UserContextType {
   profile: AppUser | null;
@@ -39,22 +39,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
-      console.log(
-        "🔵 [UserContext] Fetching profile for:",
-        currentFirebaseUser.uid,
-      );
       const db = getFirestoreInstance();
       const userDoc = await getDoc(doc(db, "Users", currentFirebaseUser.uid));
 
       if (userDoc.exists()) {
-        console.log("✅ [UserContext] Profile found");
         setProfile(userDoc.data() as AppUser);
       } else {
-        console.log("ℹ️ [UserContext] No profile found - needs setup");
         setProfile(null);
       }
     } catch (err: any) {
-      console.error("❌ [UserContext] Error fetching profile:", err);
+      console.error("[UserContext] Error fetching profile:", err);
       setError(err.message);
     } finally {
       setLoading(false);

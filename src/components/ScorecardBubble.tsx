@@ -1,15 +1,13 @@
 /**
  * ScorecardBubble - Renders a scorecard message in chat
- * Phase 16.5: Share Scorecards to Chat
- * Phase D: Added React.memo for performance
  */
 
-import React, { memo } from "react";
-import { View, StyleSheet } from "react-native";
-import { Text, useTheme } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { GameType } from "@/types/models";
 import { formatScore, getGameDisplayName, getGameIcon } from "@/services/games";
+import { GameType } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { memo } from "react";
+import { StyleSheet, View } from "react-native";
+import { Text, useTheme } from "react-native-paper";
 import { AppColors } from "../../constants/theme";
 
 // =============================================================================

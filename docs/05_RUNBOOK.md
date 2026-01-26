@@ -242,12 +242,63 @@ AsyncStorage.getItem("@snapstyle/message_outbox_v2")
 firebase functions:log --only sendMessageV2
 ```
 
+**Delete-for-me not working**
+
+- Check Firestore rules allow `hiddenFor` arrayUnion operation
+- Verify user UID is being passed to subscription for filtering
+- Check `subscribeToGroupMessages` includes `currentUid` parameter
+- Firestore rule must handle both new field and existing field cases
+
+**Delete-for-all not working (only local)**
+
+- Check Cloud Function `deleteMessageForAllV2` logs
+- Verify `deletedForAll` field is being returned in message subscription
+- Check `renderMessage` handles `deletedForAll` field to show placeholder
+- Confirm scope is "group" for group messages, "dm" for DM messages
+
 **Push notifications not arriving**
 
 - iOS: Check APNs cert in Firebase Console
 - Android: Check FCM key
 - Check user has notification token saved
 - Check user notification settings
+
+### Keyboard / Composer Issues
+
+**Composer not following keyboard**
+
+- Ensure `KeyboardProvider` wraps app in `App.tsx`
+- Check `react-native-keyboard-controller` is installed
+- iOS: Verify pod install completed successfully
+- Android: Check Reanimated babel plugin in `babel.config.js`
+
+**Jumpy keyboard animation**
+
+- Never use `KeyboardAvoidingView` - use our keyboard hooks
+- Enable debug: set `DEBUG_CHAT_KEYBOARD = true` in `constants/featureFlags.ts`
+- Check console logs for `[ChatKeyboard]` entries
+
+**Messages auto-scroll unexpectedly**
+
+- User must be within 200px of bottom for auto-scroll
+- If >30 messages behind, shows "Return to bottom" pill instead
+- Check `useNewMessageAutoscroll` threshold values
+
+**Interactive dismiss not working**
+
+- Only works on iOS (Android lacks native support)
+- Ensure `keyboardDismissMode="interactive"` on FlatList
+- Check `simultaneousHandlers` if using gesture handlers
+
+**Debug keyboard behavior**
+
+```typescript
+// In constants/featureFlags.ts
+export const DEBUG_CHAT_KEYBOARD = true;
+
+// Then check console for:
+// [ChatKeyboard] height=XXX progress=X.XX isOpen=true/false
+```
 
 ### Firebase Issues
 

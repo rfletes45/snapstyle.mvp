@@ -1,22 +1,21 @@
 /**
  * Warning Modal Component
- * Phase 21: Trust & Safety - Display warnings to users
  *
  * Shows a modal when user has unread warnings that must be acknowledged
  * before continuing to use the app.
  */
 
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
-import { Portal, Modal, Text, Button, Divider } from "react-native-paper";
-import { AppColors, Spacing, BorderRadius } from "../../constants/theme";
-import { useAuth } from "@/store/AuthContext";
 import {
-  getUnreadWarnings,
   acknowledgeWarning,
   BAN_REASON_LABELS,
+  getUnreadWarnings,
 } from "@/services/moderation";
-import type { UserWarning, BanReason } from "@/types/models";
+import { useAuth } from "@/store/AuthContext";
+import type { BanReason, UserWarning } from "@/types/models";
+import React, { useEffect, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { Button, Divider, Modal, Portal, Text } from "react-native-paper";
+import { AppColors, BorderRadius, Spacing } from "../../constants/theme";
 
 export default function WarningModal() {
   const { currentFirebaseUser } = useAuth();

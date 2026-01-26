@@ -1,24 +1,23 @@
 /**
  * Cosmetics Service - Inventory management
- * Phase 7: Avatar + Cosmetics
  */
 
+import {
+  getFreeItems,
+  getItemById,
+  getStarterItems,
+  MILESTONE_REWARDS,
+} from "@/data/cosmetics";
+import type { AvatarConfig, InventoryItem } from "@/types/models";
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  setDoc,
   query,
+  setDoc,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import type { InventoryItem, AvatarConfig } from "@/types/models";
-import {
-  getItemById,
-  getStarterItems,
-  getFreeItems,
-  MILESTONE_REWARDS,
-} from "@/data/cosmetics";
 import { updateProfile } from "./users";
 
 // ============================================================

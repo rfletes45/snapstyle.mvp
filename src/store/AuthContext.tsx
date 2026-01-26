@@ -1,21 +1,21 @@
+import { getAuthInstance } from "@/services/firebase";
+import {
+  addNotificationReceivedListener,
+  addNotificationResponseListener,
+  registerForPushNotifications,
+  removePushToken,
+  savePushToken,
+} from "@/services/notifications";
+import * as Notifications from "expo-notifications";
+import { User as FirebaseUser } from "firebase/auth";
 import React, {
   createContext,
   useContext,
-  useState,
   useEffect,
   useRef,
+  useState,
 } from "react";
-import { User as FirebaseUser } from "firebase/auth";
 import { Platform } from "react-native";
-import { getAuthInstance } from "@/services/firebase";
-import {
-  registerForPushNotifications,
-  savePushToken,
-  removePushToken,
-  addNotificationReceivedListener,
-  addNotificationResponseListener,
-} from "@/services/notifications";
-import * as Notifications from "expo-notifications";
 
 export interface AuthContextType {
   currentFirebaseUser: FirebaseUser | null;
@@ -89,27 +89,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentFirebaseUser.uid !== previousUserIdRef.current
       ) {
         try {
-          console.log("🔵 [AuthContext] Registering for push notifications");
           const token = await registerForPushNotifications();
           if (token) {
             await savePushToken(currentFirebaseUser.uid, token);
-            console.log("✅ [AuthContext] Push token saved");
           }
           previousUserIdRef.current = currentFirebaseUser.uid;
         } catch (error) {
-          console.error(
-            "❌ [AuthContext] Error registering push token:",
-            error,
-          );
+          console.error("[AuthContext] Error registering push token:", error);
         }
       } else if (!currentFirebaseUser && previousUserIdRef.current) {
         // User logged out - remove push token
         try {
-          console.log("🔵 [AuthContext] Removing push token on logout");
           await removePushToken(previousUserIdRef.current);
           previousUserIdRef.current = null;
         } catch (error) {
-          console.error("❌ [AuthContext] Error removing push token:", error);
+          console.error("[AuthContext] Error removing push token:", error);
         }
       }
     };

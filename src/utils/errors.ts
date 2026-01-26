@@ -1,6 +1,5 @@
 /**
  * Error Handling Utilities
- * Phase 10: Centralized error handling framework
  *
  * Provides:
  * - AppError class for typed errors

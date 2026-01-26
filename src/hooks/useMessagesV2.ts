@@ -104,6 +104,12 @@ export function useMessagesV2(
   // Refs
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastWatermarkRef = useRef<number>(0);
+  const updateWatermarkRef = useRef<
+    ((timestamp: number) => Promise<void>) | undefined
+  >(undefined);
+  // Debounce ref for loadOlder to prevent rapid-fire calls from onEndReached
+  const lastLoadOlderTimeRef = useRef<number>(0);
+  const LOAD_OLDER_DEBOUNCE_MS = 500; // Minimum interval between load attempts
 
   // Combine server messages with outbox items
   const messages = mergeMessagesWithOutbox(
@@ -149,10 +155,8 @@ export function useMessagesV2(
             ...msgs.map((m) => m.serverReceivedAt),
           );
           if (latestTimestamp > lastWatermarkRef.current) {
-            // Only update public watermark if sendReadReceipts is enabled
-            if (sendReadReceipts) {
-              updateWatermark(latestTimestamp);
-            }
+            // Always update watermark to mark as read (uses ref to avoid stale closure)
+            updateWatermarkRef.current?.(latestTimestamp);
             lastWatermarkRef.current = latestTimestamp;
           }
         }
@@ -209,14 +213,33 @@ export function useMessagesV2(
     [scope, conversationId, currentUid],
   );
 
-  // Load older messages
+  // Keep ref updated for use in subscription callback
+  useEffect(() => {
+    updateWatermarkRef.current = updateWatermark;
+  }, [updateWatermark]);
+
+  // Load older messages (with debounce protection for onEndReached)
   const loadOlder = useCallback(async () => {
+    // Guard: already loading, no more messages, or no messages loaded yet
     if (isLoadingOlder || !hasMoreOlder || serverMessages.length === 0) return;
+
+    // Debounce: prevent rapid-fire calls from onEndReached
+    const now = Date.now();
+    if (now - lastLoadOlderTimeRef.current < LOAD_OLDER_DEBOUNCE_MS) {
+      log.debug("loadOlder debounced", {
+        operation: "loadOlder",
+        data: { timeSinceLastCall: now - lastLoadOlderTimeRef.current },
+      });
+      return;
+    }
+    lastLoadOlderTimeRef.current = now;
 
     setIsLoadingOlder(true);
 
     try {
-      const oldestMessage = serverMessages[0];
+      // With inverted FlatList, serverMessages is [newest, ..., oldest]
+      // So the oldest message is at the END of the array
+      const oldestMessage = serverMessages[serverMessages.length - 1];
       const result = await loadOlderMessages(
         scope,
         conversationId,
@@ -224,8 +247,9 @@ export function useMessagesV2(
         25,
       );
 
-      // Prepend older messages
-      setServerMessages((prev) => [...result.messages, ...prev]);
+      // Append older messages to the END (they're older, so higher index)
+      // result.messages is [next-newest, ..., next-oldest]
+      setServerMessages((prev) => [...prev, ...result.messages]);
       setHasMoreOlder(result.hasMore);
     } catch (err) {
       log.error("Failed to load older messages", err);

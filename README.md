@@ -18,14 +18,15 @@ npx expo start
 
 All project documentation lives in the [docs/](docs/) folder:
 
-| Document | Contents |
-|----------|----------|
-| [00_INDEX.md](docs/00_INDEX.md) | Quick reference for key paths and resources |
-| [01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | App structure, navigation, services |
-| [02_FIREBASE.md](docs/02_FIREBASE.md) | Firestore schema, rules, Cloud Functions |
-| [03_CHAT_V2.md](docs/03_CHAT_V2.md) | Messaging system specification |
-| [04_TESTING.md](docs/04_TESTING.md) | Test scenarios and validation |
-| [05_RUNBOOK.md](docs/05_RUNBOOK.md) | Commands, deployment, troubleshooting |
+| Document                                      | Contents                                    |
+| --------------------------------------------- | ------------------------------------------- |
+| [00_INDEX.md](docs/00_INDEX.md)               | Quick reference for key paths and resources |
+| [01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | App structure, navigation, services         |
+| [02_FIREBASE.md](docs/02_FIREBASE.md)         | Firestore schema, rules, Cloud Functions    |
+| [03_CHAT_V2.md](docs/03_CHAT_V2.md)           | Messaging system specification              |
+| [04_TESTING.md](docs/04_TESTING.md)           | Test scenarios and validation               |
+| [05_RUNBOOK.md](docs/05_RUNBOOK.md)           | Commands, deployment, troubleshooting       |
+| [06_GAMES.md](docs/06_GAMES.md)               | Games system: types, services, physics      |
 
 ## Tech Stack
 

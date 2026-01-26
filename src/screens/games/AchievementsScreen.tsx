@@ -1,23 +1,31 @@
 /**
  * AchievementsScreen.tsx
- * Phase 17: Display user achievements with progress
  *
  * Features:
- * - List all achievements by category
+ * - List all achievements by category (new game achievements system)
  * - Show earned vs locked achievements
- * - Display rarity and progress
+ * - Display tier-based rewards and progress
  */
 
+import { ErrorState, LoadingState } from "@/components/ui";
+import {
+  ALL_GAME_ACHIEVEMENTS,
+  getAchievementStats,
+  getAchievementsByCategory as getNewAchievementsByCategory,
+} from "@/data/gameAchievements";
+import { getUserAchievements } from "@/services/achievements";
+import { useAuth } from "@/store/AuthContext";
+import {
+  AchievementCategory,
+  GameAchievementDefinition,
+  TIER_COLORS,
+} from "@/types/achievements";
+import { Achievement } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useState } from "react";
+import { RefreshControl, SectionList, StyleSheet, View } from "react-native";
 import {
-  FlatList,
-  RefreshControl,
-  SectionList,
-  StyleSheet,
-  View,
-} from "react-native";
-import {
-  ActivityIndicator,
   Appbar,
   Card,
   Chip,
@@ -26,32 +34,44 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import {
-  getUserAchievements,
-  ACHIEVEMENT_DEFINITIONS,
-  getAchievementsByCategory,
-  getRarityColor,
-  getCompletionPercentage,
-  getTotalAchievementCount,
-} from "@/services/achievements";
-import {
-  Achievement,
-  AchievementDefinition,
-  AchievementType,
-} from "@/types/models";
-import { LoadingState, ErrorState } from "@/components/ui";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 type Props = NativeStackScreenProps<any, "Achievements">;
+
+// Category display configuration
+const CATEGORY_CONFIG: Record<
+  AchievementCategory,
+  { title: string; icon: string; order: number }
+> = {
+  general: { title: "General", icon: "gamepad-variant", order: 1 },
+  flappy_snap: { title: "Flappy Snap", icon: "bird", order: 2 },
+  bounce_blitz: { title: "Bounce Blitz", icon: "circle-multiple", order: 3 },
+  memory_snap: { title: "Memory Snap", icon: "cards", order: 4 },
+  snap_2048: { title: "2048", icon: "numeric", order: 5 },
+  snap_snake: { title: "Snake", icon: "snake", order: 6 },
+  word_snap: { title: "Word Snap", icon: "alphabetical", order: 7 },
+  multiplayer: { title: "Multiplayer", icon: "account-group", order: 8 },
+  tic_tac_toe: { title: "Tic-Tac-Toe", icon: "grid", order: 9 },
+  checkers: { title: "Checkers", icon: "checkerboard", order: 10 },
+  chess: { title: "Chess", icon: "chess-queen", order: 11 },
+  pool: { title: "8-Ball Pool", icon: "billiards", order: 12 },
+  crazy_eights: { title: "Crazy Eights", icon: "cards-playing", order: 13 },
+  streak: { title: "Streaks", icon: "fire", order: 14 },
+  social: { title: "Social", icon: "account-multiple", order: 15 },
+  daily: { title: "Daily", icon: "calendar-today", order: 16 },
+  seasonal: { title: "Seasonal", icon: "star", order: 17 },
+  casual_games: {
+    title: "Casual Games",
+    icon: "controller-classic",
+    order: 18,
+  },
+};
 
 interface SectionData {
   title: string;
   icon: string;
-  data: (AchievementDefinition & { earned?: Achievement })[];
+  category: AchievementCategory;
+  data: (GameAchievementDefinition & { earned?: Achievement })[];
 }
 
 export default function AchievementsScreen({ navigation }: Props) {
@@ -88,48 +108,43 @@ export default function AchievementsScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  // Build sections with earned status
-  const earnedTypes = new Set(userAchievements.map((a) => a.type));
+  // Build sections with earned status using new achievement system
+  // Map old achievement types to new IDs for compatibility
+  const earnedIds = new Set(userAchievements.map((a) => a.type));
   const earnedMap = new Map(userAchievements.map((a) => [a.type, a]));
 
-  const sections: SectionData[] = [
-    {
-      title: "Games",
-      icon: "gamepad-variant",
-      data: getAchievementsByCategory("game").map((def) => ({
-        ...def,
-        earned: earnedMap.get(def.type),
-      })),
-    },
-    {
-      title: "Streaks",
-      icon: "fire",
-      data: getAchievementsByCategory("streak").map((def) => ({
-        ...def,
-        earned: earnedMap.get(def.type),
-      })),
-    },
-    {
-      title: "Social",
-      icon: "account-group",
-      data: getAchievementsByCategory("social").map((def) => ({
-        ...def,
-        earned: earnedMap.get(def.type),
-      })),
-    },
-    {
-      title: "Collection",
-      icon: "palette",
-      data: getAchievementsByCategory("collection").map((def) => ({
-        ...def,
-        earned: earnedMap.get(def.type),
-      })),
-    },
-  ];
+  // Get unique categories from all achievements
+  const categories = new Set(ALL_GAME_ACHIEVEMENTS.map((a) => a.category));
 
-  const earnedCount = userAchievements.length;
-  const totalCount = getTotalAchievementCount();
-  const completionPercent = getCompletionPercentage(earnedCount);
+  // Build sections from the new achievement definitions
+  const sections: SectionData[] = Array.from(categories)
+    .map((category) => {
+      const config = CATEGORY_CONFIG[category] || {
+        title: category,
+        icon: "star",
+        order: 99,
+      };
+      const achievements = getNewAchievementsByCategory(category);
+
+      return {
+        title: config.title,
+        icon: config.icon,
+        category,
+        order: config.order,
+        data: achievements.map((def) => ({
+          ...def,
+          earned: earnedMap.get(def.id as any),
+        })),
+      };
+    })
+    .filter((section) => section.data.length > 0)
+    .sort((a, b) => (a as any).order - (b as any).order);
+
+  // Calculate stats using new system
+  const stats = getAchievementStats(earnedIds);
+  const earnedCount = stats.earned;
+  const totalCount = stats.total;
+  const completionPercent = stats.percentage;
 
   const renderSectionHeader = ({ section }: { section: SectionData }) => (
     <View style={styles.sectionHeader}>
@@ -149,10 +164,10 @@ export default function AchievementsScreen({ navigation }: Props) {
   const renderAchievement = ({
     item,
   }: {
-    item: AchievementDefinition & { earned?: Achievement };
+    item: GameAchievementDefinition & { earned?: Achievement };
   }) => {
     const isEarned = !!item.earned;
-    const rarityColor = getRarityColor(item.rarity);
+    const tierColor = TIER_COLORS[item.tier];
 
     return (
       <Card
@@ -171,14 +186,10 @@ export default function AchievementsScreen({ navigation }: Props) {
           <View
             style={[
               styles.iconContainer,
-              { backgroundColor: isEarned ? rarityColor + "30" : "#E0E0E0" },
+              { backgroundColor: isEarned ? tierColor + "30" : "#E0E0E0" },
             ]}
           >
-            <MaterialCommunityIcons
-              name={item.icon as any}
-              size={28}
-              color={isEarned ? rarityColor : "#9E9E9E"}
-            />
+            <Text style={{ fontSize: 24 }}>{item.icon}</Text>
           </View>
 
           {/* Details */}
@@ -192,19 +203,26 @@ export default function AchievementsScreen({ navigation }: Props) {
               <Chip
                 style={[
                   styles.rarityChip,
-                  { backgroundColor: rarityColor + "20" },
+                  { backgroundColor: tierColor + "20" },
                 ]}
-                textStyle={{ color: rarityColor, fontSize: 10 }}
+                textStyle={{ color: tierColor, fontSize: 10 }}
               >
-                {item.rarity.toUpperCase()}
+                {item.tier.toUpperCase()}
               </Chip>
             </View>
 
             <Text
               style={[styles.achievementDesc, !isEarned && styles.lockedText]}
             >
-              {item.description}
+              {item.secret && !isEarned ? "???" : item.description}
             </Text>
+
+            {/* Rewards */}
+            <View style={styles.rewardsRow}>
+              <Text style={styles.rewardText}>
+                🪙 {item.coinReward} • ⭐ {item.xpReward} XP
+              </Text>
+            </View>
 
             {isEarned && item.earned && (
               <Text style={styles.earnedDate}>
@@ -300,7 +318,7 @@ export default function AchievementsScreen({ navigation }: Props) {
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.type}
+          keyExtractor={(item) => item.id}
           renderItem={renderAchievement}
           renderSectionHeader={renderSectionHeader}
           ListHeaderComponent={renderHeader}
@@ -448,6 +466,16 @@ const styles = StyleSheet.create({
   achievementDesc: {
     fontSize: 13,
     // color applied inline
+  },
+
+  rewardsRow: {
+    flexDirection: "row",
+    marginTop: Spacing.xs,
+  },
+
+  rewardText: {
+    fontSize: 11,
+    color: "#888",
   },
 
   lockedText: {

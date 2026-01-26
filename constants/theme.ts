@@ -12,14 +12,14 @@
  * - Spacing, radius, typography, elevation
  */
 
+import type { Theme as NavigationTheme } from "@react-navigation/native";
 import { Platform } from "react-native";
+import type { MD3Theme } from "react-native-paper";
 import {
-  MD3LightTheme,
   MD3DarkTheme,
+  MD3LightTheme,
   configureFonts,
 } from "react-native-paper";
-import type { MD3Theme } from "react-native-paper";
-import type { Theme as NavigationTheme } from "@react-navigation/native";
 
 // ============================================================================
 // CATPPUCCIN-INSPIRED COLOR TOKENS
@@ -623,29 +623,3 @@ export function getTheme(isDark: boolean): AppTheme {
     isDark,
   };
 }
-
-// ============================================================================
-// LEGACY EXPORTS (deprecated, for migration)
-// ============================================================================
-
-/**
- * @deprecated Use LightColors/DarkColors directly
- */
-export const Colors = {
-  light: {
-    text: LightColors.text,
-    background: LightColors.background,
-    tint: LightColors.primary,
-    icon: LightColors.textMuted,
-    tabIconDefault: LightColors.tabInactive,
-    tabIconSelected: LightColors.tabActive,
-  },
-  dark: {
-    text: DarkColors.text,
-    background: DarkColors.background,
-    tint: DarkColors.primary,
-    icon: DarkColors.textMuted,
-    tabIconDefault: DarkColors.tabInactive,
-    tabIconSelected: DarkColors.tabActive,
-  },
-};

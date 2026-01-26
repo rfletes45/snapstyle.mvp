@@ -1,0 +1,198 @@
+/**
+ * useGameHaptics Hook
+ *
+ * Provides consistent haptic feedback across all games.
+ * Centralizes haptic patterns for common game events.
+ *
+ * @see docs/GAMES_IMPLEMENTATION_PLAN.md
+ */
+
+import * as Haptics from "expo-haptics";
+import { Platform } from "react-native";
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export type HapticFeedbackType =
+  | "selection" // Light tap for UI selections
+  | "success" // Success feedback (win, achievement)
+  | "error" // Error/failure feedback
+  | "warning" // Warning feedback
+  | "impact_light" // Light impact (move, tap)
+  | "impact_medium" // Medium impact (piece capture, tile merge)
+  | "impact_heavy" // Heavy impact (game over, checkmate)
+  | "move" // Piece/tile move
+  | "capture" // Capturing opponent piece
+  | "merge" // Tiles merging (2048)
+  | "eat" // Snake eating food
+  | "game_over" // Game over sequence
+  | "win" // Win celebration
+  | "lose" // Loss notification
+  | "turn_change" // Turn changed
+  | "card_play" // Playing a card
+  | "card_draw" // Drawing a card
+  | "check" // King in check
+  | "special_move"; // Special moves (castling, en passant)
+
+// =============================================================================
+// Hook
+// =============================================================================
+
+export function useGameHaptics() {
+  const isHapticsAvailable = Platform.OS !== "web";
+
+  /**
+   * Trigger haptic feedback based on game event type
+   */
+  const trigger = async (type: HapticFeedbackType) => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      switch (type) {
+        // Basic selections
+        case "selection":
+          await Haptics.selectionAsync();
+          break;
+
+        // Success states
+        case "success":
+        case "win":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success,
+          );
+          break;
+
+        // Error states
+        case "error":
+        case "lose":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Error,
+          );
+          break;
+
+        // Warning states
+        case "warning":
+        case "check":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Warning,
+          );
+          break;
+
+        // Light impacts
+        case "impact_light":
+        case "move":
+        case "card_draw":
+        case "turn_change":
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          break;
+
+        // Medium impacts
+        case "impact_medium":
+        case "capture":
+        case "merge":
+        case "eat":
+        case "card_play":
+        case "special_move":
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          break;
+
+        // Heavy impacts
+        case "impact_heavy":
+        case "game_over":
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          break;
+
+        default:
+          await Haptics.selectionAsync();
+      }
+    } catch (error) {
+      // Silently fail if haptics not supported
+      console.debug("Haptics not available:", error);
+    }
+  };
+
+  /**
+   * Play a celebration pattern for winning
+   */
+  const celebrationPattern = async () => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.debug("Haptics celebration failed:", error);
+    }
+  };
+
+  /**
+   * Play a game over pattern
+   */
+  const gameOverPattern = async (didWin: boolean) => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      if (didWin) {
+        await celebrationPattern();
+      } else {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    } catch (error) {
+      console.debug("Haptics game over failed:", error);
+    }
+  };
+
+  /**
+   * Play a quick double tap pattern
+   */
+  const doubleTap = async () => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.debug("Haptics double tap failed:", error);
+    }
+  };
+
+  /**
+   * Play an escalating pattern (good for combos/chains)
+   */
+  const escalatingPattern = async (count: number) => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      const styles = [
+        Haptics.ImpactFeedbackStyle.Light,
+        Haptics.ImpactFeedbackStyle.Medium,
+        Haptics.ImpactFeedbackStyle.Heavy,
+      ];
+
+      for (let i = 0; i < Math.min(count, 3); i++) {
+        await Haptics.impactAsync(styles[i]);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    } catch (error) {
+      console.debug("Haptics escalating failed:", error);
+    }
+  };
+
+  return {
+    trigger,
+    celebrationPattern,
+    gameOverPattern,
+    doubleTap,
+    escalatingPattern,
+    isHapticsAvailable,
+  };
+}
+
+export default useGameHaptics;

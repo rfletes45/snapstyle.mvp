@@ -13,30 +13,28 @@
  * @module services/messageList
  */
 
+import { MessageV2 } from "@/types/messaging";
+import { createLogger } from "@/utils/log";
 import {
   collection,
-  query,
-  orderBy,
-  limit,
-  startAfter,
-  endBefore,
-  onSnapshot,
-  getDocs,
-  getCountFromServer,
-  where,
-  DocumentSnapshot,
-  QueryDocumentSnapshot,
-  QueryConstraint,
-  Timestamp,
-  Query,
   DocumentData,
+  DocumentSnapshot,
+  getCountFromServer,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  Query,
+  QueryDocumentSnapshot,
+  startAfter,
+  Timestamp,
+  where,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
 // Lazy initialization - don't call at module load time
 const getDb = () => getFirestoreInstance();
-import { MessageV2 } from "@/types/messaging";
-import { createLogger } from "@/utils/log";
 
 const log = createLogger("messageList");
 
@@ -272,8 +270,9 @@ function subscribeToMessages(
       // Store cursors for pagination
       paginationCursors.set(cursorKey, { firstDoc, lastDoc });
 
-      // Reverse to get oldest-first for display (chat UI convention)
-      messages.reverse();
+      // NOTE: For inverted FlatList, we keep messages in "newest-first" order
+      // (index 0 = newest message, which appears at visual bottom in inverted list)
+      // Do NOT reverse here - the inverted FlatList handles the visual ordering
 
       // Determine if there are more older messages
       const hasMoreBefore = snapshot.docs.length >= initialLimit;
@@ -371,8 +370,9 @@ export async function loadOlderMessages(
       });
     }
 
-    // Reverse for display (oldest first)
-    messages.reverse();
+    // NOTE: For inverted FlatList, keep messages in "newest-first" order
+    // (loaded messages are already in DESC order from the query)
+    // Do NOT reverse here
 
     const hasMore = snapshot.docs.length >= messageLimit;
 

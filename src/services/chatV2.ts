@@ -9,26 +9,25 @@
  * @module services/chatV2
  */
 
+import {
+  AttachmentV2,
+  MessageKind,
+  MessageV2,
+  OutboxItem,
+  ReplyToMetadata,
+} from "@/types/messaging";
+import { createLogger } from "@/utils/log";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getAppInstance } from "./firebase";
 import {
-  MessageV2,
-  MessageKind,
-  ReplyToMetadata,
-  AttachmentV2,
-  OutboxItem,
-} from "@/types/messaging";
-import {
-  getClientId,
   enqueueMessage,
-  removeFromOutbox,
-  updateOutboxItem,
-  getOutboxItem,
-  processOutbox,
+  getClientId,
   getOutboxForConversation,
+  processOutbox,
+  removeFromOutbox,
   retryItem,
+  updateOutboxItem,
 } from "./outbox";
-import { createLogger } from "@/utils/log";
 
 const log = createLogger("chatV2");
 
@@ -396,12 +395,13 @@ export function mergeMessagesWithOutbox(
 
   // Combine: server messages + pending optimistic
   // Sort by serverReceivedAt (or createdAt for optimistic)
+  // For inverted FlatList: descending order (newest first, index 0 = newest)
   const combined = [...serverMessages, ...pendingOptimistic];
 
   combined.sort((a, b) => {
     const aTime = a.serverReceivedAt || a.createdAt;
     const bTime = b.serverReceivedAt || b.createdAt;
-    return aTime - bTime;
+    return bTime - aTime; // descending = newest first
   });
 
   return combined;
@@ -426,7 +426,9 @@ export async function getPendingForConversation(
 /**
  * Send a message with attachments
  *
- * TODO: Implement in H10
+ * NOTE: For H10, the attachment picker handles uploads.
+ * This function is kept for API compatibility but attachments
+ * should be uploaded via useAttachmentPicker hook first.
  *
  * @param params - Message parameters with local attachments
  */
@@ -445,9 +447,9 @@ export async function sendMessageWithAttachments(params: {
   }>;
 }): Promise<SendWithOutboxResult> {
   // For now, just enqueue without attachments
-  // H10 will add upload logic
+  // Attachments should be uploaded via useAttachmentPicker first
 
-  log.warn("sendMessageWithAttachments: Attachment upload not yet implemented");
+  log.warn("sendMessageWithAttachments: Use useAttachmentPicker for uploads");
 
   return sendMessageWithOutbox({
     conversationId: params.conversationId,
@@ -459,75 +461,6 @@ export async function sendMessageWithAttachments(params: {
 }
 
 // =============================================================================
-// Edit & Delete (Stubs for H7)
+// Edit & Delete - See src/services/messageActions.ts
+// Reactions - See src/services/reactions.ts
 // =============================================================================
-
-/**
- * Edit a message
- *
- * TODO: Implement in H7
- *
- * @param params - Edit parameters
- */
-export async function editMessage(params: {
-  conversationId: string;
-  scope: "dm" | "group";
-  messageId: string;
-  newText: string;
-}): Promise<{ success: boolean; error?: string }> {
-  log.warn("editMessage: Not yet implemented (H7)");
-  return { success: false, error: "Not implemented" };
-}
-
-/**
- * Delete a message for everyone
- *
- * TODO: Implement in H7
- *
- * @param params - Delete parameters
- */
-export async function deleteMessageForAll(params: {
-  conversationId: string;
-  scope: "dm" | "group";
-  messageId: string;
-}): Promise<{ success: boolean; error?: string }> {
-  log.warn("deleteMessageForAll: Not yet implemented (H7)");
-  return { success: false, error: "Not implemented" };
-}
-
-/**
- * Delete a message for self only
- *
- * TODO: Implement in H7
- *
- * @param params - Delete parameters
- */
-export async function deleteMessageForMe(params: {
-  conversationId: string;
-  scope: "dm" | "group";
-  messageId: string;
-}): Promise<{ success: boolean; error?: string }> {
-  log.warn("deleteMessageForMe: Not yet implemented (H7)");
-  return { success: false, error: "Not implemented" };
-}
-
-// =============================================================================
-// Reactions (Stub for H8)
-// =============================================================================
-
-/**
- * Toggle a reaction on a message
- *
- * TODO: Implement in H8
- *
- * @param params - Reaction parameters
- */
-export async function toggleReaction(params: {
-  conversationId: string;
-  scope: "dm" | "group";
-  messageId: string;
-  emoji: string;
-}): Promise<{ success: boolean; error?: string }> {
-  log.warn("toggleReaction: Not yet implemented (H8)");
-  return { success: false, error: "Not implemented" };
-}

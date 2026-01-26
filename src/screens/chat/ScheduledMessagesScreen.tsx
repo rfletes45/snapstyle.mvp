@@ -1,11 +1,23 @@
 /**
  * ScheduledMessagesScreen.tsx
- * Phase 17: View and manage scheduled messages
  *
  * Shows all pending scheduled messages for the current user
  * with options to cancel or edit them.
  */
 
+import { ErrorState, LoadingState } from "@/components/ui";
+import {
+  cancelScheduledMessage,
+  deleteScheduledMessage,
+  formatScheduledTime,
+  getScheduledMessages,
+  getTimeUntilDelivery,
+  subscribeToScheduledMessages,
+} from "@/services/scheduledMessages";
+import { useAuth } from "@/store/AuthContext";
+import { ScheduledMessage, ScheduledMessageStatus } from "@/types/models";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -16,9 +28,7 @@ import {
   View,
 } from "react-native";
 import {
-  ActivityIndicator,
   Appbar,
-  Button,
   Card,
   Chip,
   IconButton,
@@ -27,19 +37,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useAuth } from "@/store/AuthContext";
-import {
-  cancelScheduledMessage,
-  deleteScheduledMessage,
-  formatScheduledTime,
-  getScheduledMessages,
-  getTimeUntilDelivery,
-  subscribeToScheduledMessages,
-} from "@/services/scheduledMessages";
-import { ScheduledMessage, ScheduledMessageStatus } from "@/types/models";
-import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 
 type Props = NativeStackScreenProps<any, "ScheduledMessages">;
 

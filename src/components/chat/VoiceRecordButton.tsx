@@ -1,6 +1,5 @@
 /**
  * VoiceRecordButton Component
- * Phase H11: Voice Messages
  *
  * Hold-to-record button with visual feedback.
  *

@@ -1,19 +1,18 @@
 /**
  * Banned Screen
- * Phase 21: Trust & Safety - Shown to banned users
  *
  * Displays ban information and prevents access to the app
  */
 
-import React from "react";
-import { View, StyleSheet } from "react-native";
-import { Text, Button } from "react-native-paper";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { AppColors, Spacing, BorderRadius } from "../../../constants/theme";
-import { formatBanDuration, BAN_REASON_LABELS } from "@/services/moderation";
 import { logout } from "@/services/auth";
+import { BAN_REASON_LABELS, formatBanDuration } from "@/services/moderation";
 import type { Ban, BanReason } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import { Button, Text } from "react-native-paper";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { AppColors } from "../../../constants/theme";
 
 interface BannedScreenProps {
   ban: Ban;

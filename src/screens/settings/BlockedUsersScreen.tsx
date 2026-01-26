@@ -1,17 +1,16 @@
 /**
  * Blocked Users Screen
- * Phase 8: Safety features - Manage blocked users
  */
 
-import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, FlatList, Alert } from "react-native";
-import { Text, Card, Button, Divider, useTheme } from "react-native-paper";
-import { useFocusEffect } from "@react-navigation/native";
-import { useAuth } from "@/store/AuthContext";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { getBlockedUsersWithProfiles, unblockUser } from "@/services/blocking";
-import { LoadingState, EmptyState, ErrorState } from "@/components/ui";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { useAuth } from "@/store/AuthContext";
 import type { BlockedUser } from "@/types/models";
+import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useState } from "react";
+import { Alert, FlatList, StyleSheet, View } from "react-native";
+import { Button, Card, Text, useTheme } from "react-native-paper";
 
 interface BlockedUserWithProfile extends BlockedUser {
   username?: string;

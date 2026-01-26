@@ -1,3 +1,4 @@
+import { err, mapAuthError, ok, Result } from "@/utils/errors";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -5,7 +6,6 @@ import {
   UserCredential,
 } from "firebase/auth";
 import { getAuthInstance } from "./firebase";
-import { Result, AppError, mapAuthError, ok, err } from "@/utils/errors";
 
 /**
  * Sign up a new user with email and password
@@ -79,35 +79,4 @@ export async function logout(): Promise<Result<void>> {
 export function getCurrentUser() {
   const auth = getAuthInstance();
   return auth.currentUser;
-}
-
-// Legacy exports for backward compatibility (throws errors)
-// These can be gradually migrated
-export async function signUpLegacy(
-  email: string,
-  password: string,
-): Promise<UserCredential> {
-  const result = await signUp(email, password);
-  if (!result.ok) {
-    throw new Error(result.error.userMessage);
-  }
-  return result.data;
-}
-
-export async function loginLegacy(
-  email: string,
-  password: string,
-): Promise<UserCredential> {
-  const result = await login(email, password);
-  if (!result.ok) {
-    throw new Error(result.error.userMessage);
-  }
-  return result.data;
-}
-
-export async function logoutLegacy(): Promise<void> {
-  const result = await logout();
-  if (!result.ok) {
-    throw new Error(result.error.userMessage);
-  }
 }

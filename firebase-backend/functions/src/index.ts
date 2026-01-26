@@ -1,13 +1,14 @@
 /**
  * SnapStyle Cloud Functions
  * Handles:
- * - Automatic Storage cleanup when messages are deleted (Phase 4)
- * - Story auto-expiry and cleanup (Phase 5)
- * - Push notifications (Phase 6)
- * - Streak management (Phase 6)
- * - V2 Messaging with idempotent sends (Phase H3)
+ * - Automatic Storage cleanup when messages are deleted
+ * - Story auto-expiry and cleanup
+ * - Push notifications
+ * - Streak management
+ * - V2 Messaging with idempotent sends
+ * - Games: Turn-based games, matchmaking, achievements
  *
- * Security Note (Phase E):
+ * Security Note:
  * - All onCall functions require authentication via context.auth
  * - Admin functions verify context.auth.token.admin claim
  * - Input validation is performed on all user-supplied data
@@ -25,11 +26,35 @@ import {
   toggleReactionV2Function,
 } from "./messaging";
 
+// Import Games functions
+import {
+  cleanupOldGames,
+  createGameFromInvite,
+  expireGameInvites,
+  expireMatchmakingEntries,
+  makeMove,
+  processGameCompletion,
+  processMatchmakingQueue,
+  resignGame,
+} from "./games";
+
 // Re-export V2 Messaging functions
 export const sendMessageV2 = sendMessageV2Function;
 export const editMessageV2 = editMessageV2Function;
 export const deleteMessageForAllV2 = deleteMessageForAllV2Function;
 export const toggleReactionV2 = toggleReactionV2Function;
+
+// Re-export Games functions
+export {
+  cleanupOldGames,
+  createGameFromInvite,
+  expireGameInvites,
+  expireMatchmakingEntries,
+  makeMove,
+  processGameCompletion,
+  processMatchmakingQueue,
+  resignGame,
+};
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -40,7 +65,7 @@ const db = admin.firestore();
 const storage = admin.storage();
 
 // ============================================
-// INPUT VALIDATION HELPERS (Phase E Security)
+// INPUT VALIDATION HELPERS (Security)
 // ============================================
 
 /**
@@ -1102,7 +1127,7 @@ export const cleanupExpiredStories = functions.pubsub
   });
 
 // ============================================
-// PHASE 17: SCHEDULED MESSAGES
+// SCHEDULED MESSAGES
 // ============================================
 
 /**
@@ -1348,7 +1373,7 @@ export const cleanupOldScheduledMessages = functions.pubsub
   });
 
 // ============================================
-// PHASE 17: LEADERBOARDS + ACHIEVEMENTS
+// LEADERBOARDS + ACHIEVEMENTS
 // ============================================
 
 /**
@@ -1634,7 +1659,7 @@ export const weeklyLeaderboardReset = functions.pubsub
   });
 
 // ============================================
-// PHASE 18: ECONOMY + WALLET + TASKS
+// ECONOMY + WALLET + TASKS
 // ============================================
 
 /** Default starting tokens for new users */
@@ -1718,7 +1743,7 @@ export const claimTaskReward = functions.https.onCall(async (data, context) => {
   const uid = context.auth.uid;
   const { taskId, dayKey } = data;
 
-  // Enhanced input validation (Phase E Security)
+  // Enhanced input validation (Security)
   if (!isValidString(taskId, 1, 100)) {
     throw new functions.https.HttpsError(
       "invalid-argument",
@@ -2278,7 +2303,7 @@ export const initializeExistingWallets = functions.https.onRequest(
 );
 
 // ============================================
-// PHASE 19: SHOP + LIMITED-TIME DROPS
+// SHOP + LIMITED-TIME DROPS
 // ============================================
 
 /**
@@ -2690,7 +2715,7 @@ export const seedShopCatalog = functions.https.onRequest(
 );
 
 // ============================================
-// PHASE 21: TRUST & SAFETY V1.5
+// TRUST & SAFETY V1.5
 // Rate Limiting, Bans, Strikes, Admin Moderation
 // ============================================
 
@@ -2785,7 +2810,7 @@ export const sendFriendRequestWithRateLimit = functions.https.onCall(
     const uid = context.auth.uid;
     const { toUid } = data;
 
-    // Enhanced input validation (Phase E Security)
+    // Enhanced input validation (Security)
     if (!isValidUid(toUid)) {
       throw new functions.https.HttpsError(
         "invalid-argument",

@@ -7,17 +7,85 @@
 
 ## Project Timeline Summary
 
-| Phase       | Focus                         | Status                   |
-| ----------- | ----------------------------- | ------------------------ |
-| Phase 0-4   | Initial setup, auth, basic UI | ✅ Complete              |
-| Phase 5-8   | Profile, avatar, cosmetics    | ✅ Complete              |
-| Phase 9-11  | Chat V1 implementation        | ✅ Complete (Deprecated) |
-| Phase 12-14 | Groups, notifications         | ✅ Complete              |
-| Phase 15-17 | Chat V2 migration             | ✅ Complete              |
-| Phase 18-21 | V2 features, polish           | ✅ Complete              |
-| Phase A-G   | Avatar customization, theme   | ✅ Complete              |
-| Phase H     | Chat V1 decommission          | ✅ Complete              |
-| Cleanup     | Dead code removal             | ✅ Complete (PRs 8-11)   |
+| Phase       | Focus                            | Status                   |
+| ----------- | -------------------------------- | ------------------------ |
+| Phase 0-4   | Initial setup, auth, basic UI    | ✅ Complete              |
+| Phase 5-8   | Profile, avatar, cosmetics       | ✅ Complete              |
+| Phase 9-11  | Chat V1 implementation           | ✅ Complete (Deprecated) |
+| Phase 12-14 | Groups, notifications            | ✅ Complete              |
+| Phase 15-17 | Chat V2 migration                | ✅ Complete              |
+| Phase 18-21 | V2 features, polish              | ✅ Complete              |
+| Phase A-G   | Avatar customization, theme      | ✅ Complete              |
+| Phase H     | Chat V1 decommission             | ✅ Complete              |
+| Cleanup     | Dead code removal                | ✅ Complete (PRs 8-11)   |
+| Inbox       | Inbox screen overhaul (8 phases) | ✅ Complete (Jan 2026)   |
+
+---
+
+## Inbox Overhaul Summary
+
+**Completed**: January 2026
+
+### Overview
+
+Complete redesign of the ChatListScreen (now `ChatListScreenV2`) to create a modern messaging hub with:
+
+- Filter tabs (All, Unread, Groups, DMs, Requests)
+- Swipe actions (Pin, Mute, Delete)
+- Long-press context menu
+- Profile quick view modal
+- Integrated friend requests
+- Full-text search with filters
+- Dedicated settings screen
+
+### Files Created
+
+**Components** (`src/components/chat/inbox/`):
+
+- `ConversationItem.tsx` — Conversation row
+- `SwipeableConversation.tsx` — Swipe gesture wrapper
+- `ConversationContextMenu.tsx` — Long-press menu
+- `InboxHeader.tsx` — Header with avatar/search
+- `InboxTabs.tsx` — Filter tabs
+- `PinnedSection.tsx` — Collapsible pinned section
+- `FriendRequestItem.tsx` — Friend request row
+- `InboxFAB.tsx` — Multi-action FAB
+- `ProfilePreviewModal.tsx` — Quick profile view
+- `MuteOptionsSheet.tsx` — Mute duration picker
+- `DeleteConfirmDialog.tsx` — Delete confirmation
+- `EmptyState.tsx` — Contextual empty states
+- `index.ts` — Barrel exports
+
+**Hooks**:
+
+- `useInboxData.ts` — Unified inbox data with filters
+- `useConversationActions.ts` — Pin/mute/delete operations
+- `useFriendRequests.ts` — Friend request subscription
+
+**Services**:
+
+- `inboxSettings.ts` — Inbox settings (Firestore)
+
+**Screens**:
+
+- `ChatListScreenV2.tsx` — Main inbox (overhauled)
+- `InboxSearchScreen.tsx` — Full search screen
+- `InboxSettingsScreen.tsx` — Settings screen
+
+**Utilities**:
+
+- `animations.ts` — Reusable animation utilities
+- `haptics.ts` — Centralized haptic feedback
+
+### Documentation
+
+- [INBOX_OVERHAUL_PLAN.md](./INBOX_OVERHAUL_PLAN.md) — Implementation summary
+- [03_CHAT_V2.md](./03_CHAT_V2.md) — Includes Inbox Overhaul section
+
+> **Deleted during cleanup (Jan 2026):**
+>
+> - `INBOX_OVERHAUL_CHANGELOG.md` — Consolidated into this file
+> - `INBOX_OVERHAUL_PLAN_DETAILED.md` — 3500-line spec, obsolete after completion
 
 ---
 

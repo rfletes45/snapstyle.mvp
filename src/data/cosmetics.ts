@@ -1,6 +1,5 @@
 /**
  * Cosmetics Catalog - Static data for all cosmetic items
- * Phase 7: Avatar + Cosmetics
  */
 
 import type { CosmeticItem } from "@/types/models";

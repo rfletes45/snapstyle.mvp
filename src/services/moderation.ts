@@ -1,33 +1,32 @@
 /**
  * Moderation Service
- * Phase 21: Trust & Safety - Ban checking, strike tracking, warnings
  *
  * Note: Write operations (banning, striking, warning) are admin-only via Cloud Functions
  * This service handles client-side reads and enforcement
  */
 
+import type {
+  Ban,
+  BanReason,
+  Report,
+  UserStrike,
+  UserWarning,
+} from "@/types/models";
 import {
+  collection,
   doc,
   getDoc,
-  onSnapshot,
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
   getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
   Unsubscribe,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
-import type {
-  Ban,
-  UserStrike,
-  UserWarning,
-  Report,
-  BanReason,
-} from "@/types/models";
 
 // =============================================================================
 // BAN CHECKING

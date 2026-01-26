@@ -1,6 +1,5 @@
 /**
  * useAttachmentPicker Hook
- * Phase H10: Multi-Attachment Support
  *
  * Manages attachment selection, preview, and upload for chat messages.
  *

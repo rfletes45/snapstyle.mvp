@@ -1,14 +1,12 @@
 /**
  * Avatar Component - Displays user avatar with equipped cosmetics
- * Phase 7: Avatar + Cosmetics
- * Phase D: Added React.memo for performance
  */
 
-import React, { memo } from "react";
-import { View, StyleSheet, Text } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import type { AvatarConfig } from "@/types/models";
 import { getItemById } from "@/data/cosmetics";
+import type { AvatarConfig } from "@/types/models";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { memo } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 interface AvatarProps {
   config: AvatarConfig;
@@ -126,7 +124,7 @@ function AvatarBase({ config, size = 80, showBorder = true }: AvatarProps) {
 const Avatar = memo(AvatarBase);
 export default Avatar;
 
-// Mini avatar for lists - Phase D: Also memoized
+// Mini avatar for lists - Also memoized
 export const AvatarMini = memo(function AvatarMini({
   config,
   size = 40,

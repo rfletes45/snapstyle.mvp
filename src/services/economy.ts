@@ -1,6 +1,5 @@
 /**
  * Economy Service
- * Phase 18: Wallet and token economy management
  *
  * Handles:
  * - Reading wallet balance
@@ -11,20 +10,19 @@
  * via Cloud Functions for security and atomicity.
  */
 
+import { Transaction, TransactionType, Wallet } from "@/types/models";
 import {
   collection,
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
-  limit,
   where,
-  Timestamp,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { Wallet, Transaction, TransactionType } from "@/types/models";
 
 // =============================================================================
 // Constants

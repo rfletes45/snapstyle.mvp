@@ -1,6 +1,5 @@
 /**
  * Link Preview Service
- * Phase H12: Link Previews
  *
  * Generates and caches link previews for URLs in messages.
  * Uses a Cloud Function for server-side fetching.

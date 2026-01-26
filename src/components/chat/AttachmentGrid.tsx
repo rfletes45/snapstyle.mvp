@@ -1,6 +1,5 @@
 /**
  * AttachmentGrid Component
- * Phase H10: Multi-Attachment Support
  *
  * Displays message attachments in a responsive grid layout:
  * - 1 image: full width

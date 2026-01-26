@@ -1,6 +1,5 @@
 /**
  * AttachmentTray Component
- * Phase H10: Multi-Attachment Support
  *
  * Displays pending attachments above the chat composer with:
  * - Thumbnail previews

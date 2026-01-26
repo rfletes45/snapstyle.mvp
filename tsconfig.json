@@ -6,6 +6,7 @@
     "skipLibCheck": true,
     "jsx": "react-native",
     "baseUrl": ".",
+    "typeRoots": ["./node_modules/@types"],
     "paths": {
       "@/*": ["src/*"],
       "firebase/functions": ["node_modules/firebase/functions"],

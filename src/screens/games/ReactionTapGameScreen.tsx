@@ -1,7 +1,5 @@
 /**
  * ReactionTapGameScreen - Reaction Time Game
- * Phase 16: Real Games + Scorecards
- * Phase 16.5: Share Scorecards to Chat
  *
  * How to play:
  * 1. Wait for the screen to turn green
@@ -10,28 +8,28 @@
  * 4. Lower scores are better!
  */
 
-import React, { useState, useRef, useEffect } from "react";
+import FriendPickerModal from "@/components/FriendPickerModal";
 import {
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-  Vibration,
-  Platform,
-} from "react-native";
-import { Text, Button, Portal, Dialog } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
-import { useSnackbar } from "@/store/SnackbarContext";
-import {
-  recordGameSession,
   formatScore,
   getPersonalBest,
+  PersonalBest,
+  recordGameSession,
   sendScorecard,
 } from "@/services/games";
-import { PersonalBest } from "@/services/games";
-import FriendPickerModal from "@/components/FriendPickerModal";
+import { useAuth } from "@/store/AuthContext";
+import { useSnackbar } from "@/store/SnackbarContext";
+import { useUser } from "@/store/UserContext";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  Vibration,
+  View,
+} from "react-native";
+import { Button, Dialog, Portal, Text } from "react-native-paper";
 
 // =============================================================================
 // Types

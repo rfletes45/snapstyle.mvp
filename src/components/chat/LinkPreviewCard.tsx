@@ -1,6 +1,5 @@
 /**
  * LinkPreviewCard Component
- * Phase H12: Link Previews
  *
  * Displays Open Graph metadata for URLs in chat messages.
  *

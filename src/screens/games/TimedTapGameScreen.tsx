@@ -1,7 +1,5 @@
 /**
  * TimedTapGameScreen - Speed Tapping Game
- * Phase 16: Real Games + Scorecards
- * Phase 16.5: Share Scorecards to Chat
  *
  * How to play:
  * 1. Tap the button as many times as you can
@@ -9,35 +7,34 @@
  * 3. Higher tap counts are better!
  */
 
-import React, { useState, useRef, useEffect } from "react";
+import FriendPickerModal from "@/components/FriendPickerModal";
 import {
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-  Vibration,
-  Platform,
-} from "react-native";
-import {
-  Text,
-  Button,
-  Portal,
-  Dialog,
-  ProgressBar,
-  useTheme,
-} from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
-import { useSnackbar } from "@/store/SnackbarContext";
-import {
-  recordGameSession,
-  formatScore,
   getPersonalBest,
+  PersonalBest,
+  recordGameSession,
   sendScorecard,
 } from "@/services/games";
-import { PersonalBest } from "@/services/games";
-import FriendPickerModal from "@/components/FriendPickerModal";
+import { useAuth } from "@/store/AuthContext";
+import { useSnackbar } from "@/store/SnackbarContext";
+import { useUser } from "@/store/UserContext";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  Vibration,
+  View,
+} from "react-native";
+import {
+  Button,
+  Dialog,
+  Portal,
+  ProgressBar,
+  Text,
+  useTheme,
+} from "react-native-paper";
 import { AppColors } from "../../../constants/theme";
 
 // =============================================================================

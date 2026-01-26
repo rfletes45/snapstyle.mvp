@@ -1,6 +1,5 @@
 /**
  * Groups Service
- * Phase 20: Group Chat
  *
  * Handles:
  * - Group creation and management
@@ -583,6 +582,7 @@ export function subscribeToUserGroups(
           ownerId: data.ownerId,
           memberIds: data.memberIds || [],
           avatarPath: data.avatarPath,
+          avatarUrl: data.avatarUrl,
           memberCount: data.memberCount,
           createdAt:
             data.createdAt instanceof Timestamp
@@ -1123,6 +1123,15 @@ export async function getGroupMessages(
       scorecard: data.scorecard,
       systemType: data.systemType,
       systemMeta: data.systemMeta,
+      // H6: Reply-to threading
+      replyTo: data.replyTo,
+      // H11: Voice message metadata
+      voiceMetadata: data.voiceMetadata,
+      // H9: Mention UIDs
+      mentionUids: data.mentionUids,
+      // H7: Delete support
+      hiddenFor: data.hiddenFor,
+      deletedForAll: data.deletedForAll,
     } as GroupMessage;
   });
 
@@ -1139,6 +1148,7 @@ export function subscribeToGroupMessages(
   groupId: string,
   onUpdate: (messages: GroupMessage[]) => void,
   messageLimit: number = DEFAULT_PAGE_SIZE,
+  currentUid?: string,
 ): () => void {
   const db = getFirestoreInstance();
 
@@ -1168,11 +1178,27 @@ export function subscribeToGroupMessages(
           scorecard: data.scorecard,
           systemType: data.systemType,
           systemMeta: data.systemMeta,
+          // H6: Reply-to threading
+          replyTo: data.replyTo,
+          // H11: Voice message metadata
+          voiceMetadata: data.voiceMetadata,
+          // H9: Mention UIDs
+          mentionUids: data.mentionUids,
+          // H7: Delete support
+          hiddenFor: data.hiddenFor,
+          deletedForAll: data.deletedForAll,
         } as GroupMessage;
       });
 
-      // Reverse to show oldest first in chat
-      onUpdate(messages.reverse());
+      // Filter out messages hidden for current user
+      const filteredMessages = currentUid
+        ? messages.filter((msg) => !msg.hiddenFor?.includes(currentUid))
+        : messages;
+
+      // NOTE: For inverted FlatList, keep messages in "newest-first" order
+      // (query already returns DESC order from Firestore)
+      // Do NOT reverse here
+      onUpdate(filteredMessages);
     },
     (error) => {
       // Permission errors are expected after leaving a group - ignore them silently
@@ -1189,12 +1215,16 @@ export function subscribeToGroupMessages(
 
 /**
  * Update last read timestamp for a member
+ * Updates both public (for read receipts) and private (for unread badges) timestamps
  */
 export async function updateLastRead(
   groupId: string,
   uid: string,
 ): Promise<void> {
   const db = getFirestoreInstance();
+  const now = Date.now();
+
+  // Update public member state (for read receipts)
   const memberRef = doc(db, "Groups", groupId, "Members", uid);
 
   // Check if member document exists before updating
@@ -1205,8 +1235,20 @@ export async function updateLastRead(
   }
 
   await updateDoc(memberRef, {
-    lastReadAt: Date.now(),
+    lastReadAt: now,
   });
+
+  // Also update private member state (for unread badge computation)
+  const privateRef = doc(db, "Groups", groupId, "MembersPrivate", uid);
+  await setDoc(
+    privateRef,
+    {
+      uid,
+      lastSeenAtPrivate: now,
+      lastMarkedUnreadAt: null, // Clear manual unread marker
+    },
+    { merge: true },
+  );
 }
 
 // =============================================================================

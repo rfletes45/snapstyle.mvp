@@ -5,38 +5,37 @@
  * 1. View existing stories from friends
  * 2. Preview and post new stories (isNewStory mode)
  *
- * Phase 13: Performance optimizations
  * - Uses preloaded images if available
  * - Shows time remaining progress bar
  * - Handles expired stories gracefully
  */
 
+import { compressImage, downloadSnapImage } from "@/services/storage";
+import {
+  deleteStory,
+  getPreloadedImageUrl,
+  getStory,
+  getStoryTimeRemaining,
+  getStoryViewCount,
+  hasUserViewedStory,
+  markStoryViewed,
+  postStory,
+} from "@/services/stories";
+import { useAuth } from "@/store/AuthContext";
+import { Story } from "@/types/models";
 import React, { useEffect, useState } from "react";
 import {
-  View,
-  Image,
   ActivityIndicator,
   Alert,
-  TouchableOpacity,
+  Image,
+  Platform,
   Pressable,
   StyleSheet,
-  Platform,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAuth } from "@/store/AuthContext";
-import { downloadSnapImage, compressImage } from "@/services/storage";
-import {
-  getStory,
-  markStoryViewed,
-  deleteStory,
-  hasUserViewedStory,
-  getStoryViewCount,
-  postStory,
-  getPreloadedImageUrl,
-  getStoryTimeRemaining,
-} from "@/services/stories";
-import { Story } from "@/types/models";
 import { AppColors } from "../../../constants/theme";
 
 interface StoryViewerScreenProps {
@@ -58,7 +57,7 @@ export default function StoryViewerScreen({
   const [storyIndex, setStoryIndex] = useState(currentIndex || 0);
   const [currentStoryId, setCurrentStoryId] = useState(storyId);
 
-  // Phase 13: Try to use preloaded image first
+  // Try to use preloaded image first
   const preloadedImage = currentStoryId
     ? getPreloadedImageUrl(currentStoryId)
     : null;
@@ -89,7 +88,7 @@ export default function StoryViewerScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story, currentFirebaseUser]);
 
-  // Phase 13: Update time remaining every minute
+  // Update time remaining every minute
   const [timeRemaining, setTimeRemaining] = useState<string>("");
 
   useEffect(() => {
@@ -105,20 +104,12 @@ export default function StoryViewerScreen({
     return () => clearInterval(interval);
   }, [story, isNewStory]);
 
-  // Phase 13: Calculate expiration progress (0 to 1)
+  // Calculate expiration progress (0 to 1)
   const getExpirationProgress = (): number => {
     if (!story) return 1;
     const totalDuration = 24 * 60 * 60 * 1000; // 24 hours
     const elapsed = Date.now() - story.createdAt;
     const progress = Math.max(0, Math.min(1, 1 - elapsed / totalDuration));
-
-    // Debug log
-    console.log("🔵 [StoryViewer] Progress calculation:", {
-      elapsed: Math.floor(elapsed / 1000 / 60),
-      totalMinutes: Math.floor(totalDuration / 1000 / 60),
-      progress: progress.toFixed(2),
-      timeRemaining,
-    });
 
     return progress;
   };
@@ -127,12 +118,9 @@ export default function StoryViewerScreen({
     if (!currentStoryId) return;
 
     try {
-      console.log("🔵 [StoryViewerScreen] Loading story:", currentStoryId);
-
-      // Phase 13: If we have preloaded image, skip loading state
+      // If we have preloaded image, skip loading state
       const currentPreloadedImage = getPreloadedImageUrl(currentStoryId);
       if (currentPreloadedImage) {
-        console.log("✅ [StoryViewerScreen] Using preloaded image");
         setDisplayImage(currentPreloadedImage);
         setLoading(false);
       } else {
@@ -148,7 +136,7 @@ export default function StoryViewerScreen({
         return;
       }
 
-      // Phase 13: Check if story expired while loading
+      // Check if story expired while loading
       if (fetchedStory.expiresAt < Date.now()) {
         setError("This story has expired");
         setLoading(false);
@@ -157,13 +145,11 @@ export default function StoryViewerScreen({
 
       setStory(fetchedStory);
 
-      // Phase 13: Only download if not already preloaded
+      // Only download if not already preloaded
       if (!currentPreloadedImage) {
         const uri = await downloadSnapImage(fetchedStory.storagePath);
         setDisplayImage(uri);
       }
-
-      console.log("✅ [StoryViewerScreen] Story loaded successfully");
     } catch (err: any) {
       console.error("❌ [StoryViewerScreen] Failed to load story:", err);
       setError(err.message || "Failed to load story");
@@ -223,7 +209,6 @@ export default function StoryViewerScreen({
     if (!story || !currentFirebaseUser) return;
 
     try {
-      console.log("🔵 [StoryViewerScreen] Marking story as viewed");
       const alreadyViewed = await hasUserViewedStory(
         story.id,
         currentFirebaseUser.uid,
@@ -231,10 +216,9 @@ export default function StoryViewerScreen({
 
       if (!alreadyViewed) {
         await markStoryViewed(story.id, currentFirebaseUser.uid);
-        console.log("✅ [StoryViewerScreen] Story marked as viewed");
       }
     } catch (err: any) {
-      console.error("❌ [StoryViewerScreen] Error marking viewed:", err);
+      console.error("[StoryViewerScreen] Error marking viewed:", err);
     }
   };
 
@@ -256,21 +240,18 @@ export default function StoryViewerScreen({
     }
 
     try {
-      console.log("🔵 [StoryViewerScreen] Posting new story");
       setPosting(true);
 
       // Compress image
       const compressedUri = await compressImage(displayImage);
-      console.log("✅ [StoryViewerScreen] Image compressed");
 
       // Post story using service (handles upload + Firestore doc creation)
       const storyId = await postStory(currentFirebaseUser.uid, compressedUri);
-      console.log("✅ [StoryViewerScreen] Story posted with ID:", storyId);
 
       Alert.alert("Success", "Story posted successfully!");
       navigation.goBack();
     } catch (error: any) {
-      console.error("❌ [StoryViewerScreen] Error posting story:", error);
+      console.error("[StoryViewerScreen] Error posting story:", error);
       Alert.alert("Error", `Failed to post story: ${String(error)}`);
     } finally {
       setPosting(false);
@@ -279,16 +260,8 @@ export default function StoryViewerScreen({
 
   const handleDeleteStory = async () => {
     if (!story || !currentFirebaseUser) {
-      console.error(
-        "❌ [StoryViewerScreen] Cannot delete: story or user is null",
-      );
       return;
     }
-
-    console.log(
-      "🔵 [StoryViewerScreen] Delete button pressed for story:",
-      story.id,
-    );
 
     // Use window.confirm on web, Alert.alert on native
     if (Platform.OS === "web") {
@@ -300,13 +273,11 @@ export default function StoryViewerScreen({
       }
 
       try {
-        console.log("🔵 [StoryViewerScreen] Deleting story:", story.id);
         await deleteStory(story.id, story.storagePath);
-        console.log("✅ [StoryViewerScreen] Story deleted");
         window.alert("Story deleted");
         navigation.goBack();
       } catch (err: any) {
-        console.error("❌ [StoryViewerScreen] Error deleting story:", err);
+        console.error("[StoryViewerScreen] Error deleting story:", err);
         window.alert(`Failed to delete story: ${String(err)}`);
       }
     } else {
@@ -321,16 +292,11 @@ export default function StoryViewerScreen({
             style: "destructive",
             onPress: async () => {
               try {
-                console.log("🔵 [StoryViewerScreen] Deleting story:", story.id);
                 await deleteStory(story.id, story.storagePath);
-                console.log("✅ [StoryViewerScreen] Story deleted");
                 Alert.alert("Success", "Story deleted");
                 navigation.goBack();
               } catch (err: any) {
-                console.error(
-                  "❌ [StoryViewerScreen] Error deleting story:",
-                  err,
-                );
+                console.error("[StoryViewerScreen] Error deleting story:", err);
                 Alert.alert("Error", `Failed to delete story: ${String(err)}`);
               }
             },
@@ -341,18 +307,6 @@ export default function StoryViewerScreen({
   };
 
   const isAuthor = story && currentFirebaseUser?.uid === story.authorId;
-
-  // Debug logging for delete button visibility
-  React.useEffect(() => {
-    console.log("🔵 [StoryViewerScreen] Delete button state:", {
-      isNewStory,
-      hasStory: !!story,
-      currentUserUid: currentFirebaseUser?.uid,
-      authorId: story?.authorId,
-      isAuthor,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [story, currentFirebaseUser, isNewStory]);
 
   if (error && !isNewStory) {
     return (
@@ -421,7 +375,7 @@ export default function StoryViewerScreen({
         />
       )}
 
-      {/* Phase 13: Time Remaining Progress Bar */}
+      {/* Time Remaining Progress Bar */}
       {!isNewStory && story && (
         <View style={styles.progressContainer}>
           {/* Custom progress bar using nested Views for better control */}
@@ -491,7 +445,7 @@ export default function StoryViewerScreen({
 }
 
 const styles = StyleSheet.create({
-  // Phase 13: Progress bar for time remaining
+  // Progress bar for time remaining
   progressContainer: {
     position: "absolute",
     top: 8,

@@ -1,7 +1,5 @@
 /**
  * AppGate Component
- * Phase 9: App Hydration + Navigation Polish
- * Phase 21: Ban Enforcement
  *
  * Prevents navigating until:
  * - Auth state is resolved (not loading)
@@ -12,13 +10,13 @@
  * This component ensures no screen flickers due to async state changes.
  */
 
-import React, { useMemo, useState, useEffect } from "react";
-import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
 import LoadingScreen from "@/components/LoadingScreen";
 import BannedScreen from "@/screens/admin/BannedScreen";
-import { subscribeToUserBan, isUserBanned } from "@/services/moderation";
+import { subscribeToUserBan } from "@/services/moderation";
+import { useAuth } from "@/store/AuthContext";
+import { useUser } from "@/store/UserContext";
 import type { Ban } from "@/types/models";
+import React, { useEffect, useMemo, useState } from "react";
 
 /**
  * Hydration state machine states
@@ -64,7 +62,7 @@ export function AppGate({
     isHydrated: profileHydrated,
   } = useUser();
 
-  // Phase 21: Ban state
+  // Ban state
   const [ban, setBan] = useState<Ban | null>(null);
   const [banChecked, setBanChecked] = useState(false);
 

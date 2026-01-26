@@ -1,7 +1,5 @@
 /**
  * Games Service
- * Phase 16: Real Games + Scorecards
- * Phase 16.5: Share Scorecards to Chat
  *
  * Handles:
  * - Recording game sessions
@@ -282,11 +280,11 @@ export function getGameIcon(gameId: GameType): string {
 }
 
 // =============================================================================
-// Scorecard Sharing (Phase 16.5)
+// Scorecard Sharing
 // =============================================================================
 
 export interface ScorecardData {
-  gameId: GameType;
+  gameId: GameType | string; // Allow extended game types
   score: number;
   playerName: string;
 }

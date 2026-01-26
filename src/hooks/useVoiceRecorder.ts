@@ -1,6 +1,5 @@
 /**
  * useVoiceRecorder Hook
- * Phase H11: Voice Messages
  *
  * Manages voice recording state using expo-audio.
  *
