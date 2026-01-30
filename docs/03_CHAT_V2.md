@@ -1,14 +1,14 @@
-# Chat V2 Messaging System
+# Unified Messaging System
 
-> Specification, implementation details, and troubleshooting for the V2 messaging system
+> Specification, implementation details, and troubleshooting for the unified messaging system
 
 ---
 
 ## Overview
 
-Chat V2 is the current messaging implementation for both DM and Group chats. It enforces three hard rules:
+The unified messaging system handles both DM and Group chats through a single interface. It enforces three hard rules:
 
-1. **NO DUPLICATE SENDS** — Messages cannot be sent twice
+1. **NO DUPLICATE SENDS** — Messages cannot be sent twice (idempotency keys)
 2. **AUTHORITATIVE ORDERING** — Server timestamps define message order
 3. **READ/UNREAD WITHOUT EXPLOSIONS** — Watermark-based, not per-message flags
 
@@ -27,32 +27,59 @@ Chat V2 is the current messaging implementation for both DM and Group chats. It 
                                                onSnapshot ◀────────┘
 ```
 
+### Unified Service Layer
+
+The `services/messaging/` module provides a unified API for both DM and group messaging:
+
+```
+services/messaging/
+├── adapters/
+│   ├── groupAdapter.ts   # Converts GroupMessage ↔ MessageV2
+│   └── index.ts          # Barrel export
+├── index.ts              # Public API barrel
+├── memberState.ts        # Unified member state (mute, archive, notify)
+├── send.ts               # Unified message sending
+└── subscribe.ts          # Unified message subscription
+```
+
 ### Key Files
 
-| File                                          | Purpose                                  |
-| --------------------------------------------- | ---------------------------------------- |
-| `src/types/messaging.ts`                      | V2 type definitions                      |
-| `src/services/outbox.ts`                      | Offline message queue                    |
-| `src/services/chatV2.ts`                      | V2 send/receive operations               |
-| `src/services/messageList.ts`                 | Pagination, subscriptions, unread counts |
-| `src/services/messageActions.ts`              | Edit, delete operations (H7)             |
-| `src/services/reactions.ts`                   | Emoji reactions (H8)                     |
-| `src/services/chatMembers.ts`                 | DM member state (mute, archive)          |
-| `src/services/groupMembers.ts`                | Group member state                       |
-| `src/services/groups.ts`                      | Group CRUD, message subscription         |
-| `src/hooks/useMessagesV2.ts`                  | React hook for message subscription      |
-| `src/hooks/useOutboxProcessor.ts`             | Background outbox processing             |
-| `firebase-backend/functions/src/messaging.ts` | Cloud Functions                          |
+| File                                          | Purpose                               |
+| --------------------------------------------- | ------------------------------------- |
+| `src/types/messaging.ts`                      | V2 type definitions (MessageV2, etc.) |
+| `src/services/messaging/subscribe.ts`         | **Unified** message subscription      |
+| `src/services/messaging/send.ts`              | **Unified** message sending           |
+| `src/services/messaging/memberState.ts`       | **Unified** member state management   |
+| `src/services/outbox.ts`                      | Offline message queue                 |
+| `src/services/chatV2.ts`                      | V2 operations (being consolidated)    |
+| `src/services/groups.ts`                      | Group CRUD, legacy message functions  |
+| `src/hooks/useChat.ts`                        | **Master chat hook** - main interface |
+| `src/hooks/useUnifiedMessages.ts`             | Message subscription with outbox      |
+| `src/hooks/useChatComposer.ts`                | Composer state (reply, reactions)     |
+| `firebase-backend/functions/src/messaging.ts` | Cloud Functions                       |
+
+### React Hooks
+
+| Hook                 | Purpose                                              |
+| -------------------- | ---------------------------------------------------- |
+| `useChat`            | **Master hook** - combines all chat functionality    |
+| `useUnifiedMessages` | Message subscription, pagination, outbox integration |
+| `useChatComposer`    | Reply state, reaction state, input focus             |
+| `useChatKeyboard`    | Keyboard-aware animations                            |
+| `useAtBottom`        | Scroll position tracking for "new message" indicator |
 
 ---
 
 ## Message Types
 
 ```typescript
+type MessageScope = "dm" | "group";
 type MessageKind = "text" | "media" | "voice" | "scorecard" | "system";
 
 interface MessageV2 {
   id: string;
+  scope: MessageScope; // Indicates DM or group
+  conversationId: string; // Chat ID or Group ID
   senderId: string;
   senderName?: string;
 
@@ -122,6 +149,103 @@ processPendingMessages(): Promise<void>       // Background processor
 - App returns to foreground
 - Network reconnect
 - Manual retry button tap
+
+---
+
+## useChat Hook
+
+The `useChat` hook is the **master interface** for chat screens. It composes multiple specialized hooks:
+
+```typescript
+const {
+  // Messages
+  messages, // MessageV2[] - combined server + outbox
+  displayMessages, // MessageV2[] - sorted for display
+  isLoading,
+  error,
+
+  // Pagination
+  pagination: { hasMoreOlder, hasMoreNewer, isLoadingOlder, isLoadingNewer },
+  loadOlder,
+  loadNewer,
+
+  // Sending
+  sendMessage, // (text, options?) => Promise<SendResult>
+
+  // Reply state
+  replyTo, // ReplyToMetadata | null
+  setReplyTo, // (metadata) => void
+  clearReplyTo, // () => void
+
+  // Reactions
+  selectedReactionMessage,
+  openReactionPicker,
+  closeReactionPicker,
+  toggleReaction,
+
+  // Scroll tracking
+  scrollY, // SharedValue<number>
+  contentHeight, // SharedValue<number>
+
+  // Auto-scroll
+  shouldAutoScroll,
+  dismissAutoScroll,
+} = useChat({
+  scope: "dm" | "group", // Required: chat type
+  conversationId: string, // Required: chat/group ID
+  currentUserId: string, // Required: current user's UID
+  pageSize: 30, // Optional: messages per page
+});
+```
+
+### Usage in ChatScreen
+
+```tsx
+function ChatScreen({ friendUid }) {
+  const { uid } = useAuth();
+  const [chatId, setChatId] = useState<string | null>(null);
+
+  const unifiedChat = useChat({
+    scope: "dm",
+    conversationId: chatId || "",
+    currentUserId: uid || "",
+  });
+
+  // Send message
+  const handleSend = async () => {
+    const result = await unifiedChat.sendMessage(text, {
+      replyTo: unifiedChat.replyTo || undefined,
+      clearReplyOnSend: true,
+    });
+    if (!result.success) {
+      Alert.alert("Error", result.error);
+    }
+  };
+
+  return (
+    <FlatList
+      data={unifiedChat.displayMessages}
+      // ... rest of implementation
+    />
+  );
+}
+```
+
+### Usage in GroupChatScreen
+
+```tsx
+function GroupChatScreen({ groupId }) {
+  const { uid } = useAuth();
+
+  const unifiedChat = useChat({
+    scope: "group",
+    conversationId: groupId,
+    currentUserId: uid || "",
+  });
+
+  // Same API as DM chat
+}
+```
 
 ---
 
@@ -299,6 +423,112 @@ The reply system uses an **Apple Messages-inspired design**:
 | `src/components/chat/ReplyPreviewBar.tsx`       | Input area preview when composing reply         |
 | `src/components/chat/SwipeableMessage.tsx`      | Swipe gesture for DM reply                      |
 | `src/components/chat/SwipeableGroupMessage.tsx` | Swipe gesture for group reply                   |
+
+---
+
+## Message Grouping (Group Chats)
+
+> **Implemented**: January 2026
+
+Group chat messages are visually grouped when they're from the same sender within a short time window. This creates a cleaner, more readable conversation view similar to iMessage and other modern messaging apps.
+
+### Grouping Rules
+
+| Condition                     | Grouped? | Visual Effect                            |
+| ----------------------------- | -------- | ---------------------------------------- |
+| Same sender, within 2 minutes | ✅ Yes   | Tight spacing, single name/avatar        |
+| Same sender, >2 minutes apart | ❌ No    | Full spacing, name/avatar shown again    |
+| Different sender              | ❌ No    | Full spacing, new name/avatar            |
+| Message has `replyTo`         | ❌ No    | **Always standalone** - breaks the chain |
+| System message                | ❌ No    | Never grouped                            |
+
+### Visual Layout
+
+Within a group of messages from the same sender:
+
+```
+┌───────────────────────────────────────┐
+│  rfletes                              │  ← Sender name (TOP of group only)
+│  ┌─────────────────────────────────┐  │
+│  │ First message in group          │  │  ← 3px margin below
+│  └─────────────────────────────────┘  │
+│  ┌─────────────────────────────────┐  │
+│  │ Second message                  │  │  ← 3px margin below
+│  └─────────────────────────────────┘  │
+│  ┌─────────────────────────────────┐  │
+│  │ Third message                   │  │  ← 12px margin below (last in group)
+│  └─────────────────────────────────┘  │
+│  👤 02:15 PM                          │  ← Avatar + timestamp (BOTTOM of group)
+└───────────────────────────────────────┘
+```
+
+### Implementation (Inverted FlatList)
+
+The chat uses an **inverted FlatList** where index 0 is the newest message (visual bottom). This affects how grouping is calculated:
+
+| Array Direction       | Visual Direction      | Index        |
+| --------------------- | --------------------- | ------------ |
+| `messages[index - 1]` | Message BELOW (newer) | Lower index  |
+| `messages[index + 1]` | Message ABOVE (older) | Higher index |
+
+### Grouping Functions
+
+```typescript
+// Time threshold for grouping (2 minutes)
+const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000;
+
+// Check if two messages should be grouped
+const areMessagesGrouped = (msg1, msg2) => {
+  if (!msg1 || !msg2) return false;
+  if (msg1.type === "system" || msg2.type === "system") return false;
+  if (msg1.replyTo || msg2.replyTo) return false; // Replies break groups
+  if (msg1.sender !== msg2.sender) return false;
+  return Math.abs(msg1.createdAt - msg2.createdAt) < MESSAGE_GROUP_THRESHOLD_MS;
+};
+
+// Show sender name at visual TOP of group
+const shouldShowSender = (index, message) => {
+  const messageAbove = messages[index + 1]; // Higher index = older = above
+  return !areMessagesGrouped(message, messageAbove);
+};
+
+// Show avatar/timestamp at visual BOTTOM of group
+const shouldShowAvatar = (index, message) => {
+  const messageBelow = messages[index - 1]; // Lower index = newer = below
+  return !areMessagesGrouped(message, messageBelow);
+};
+
+// Use reduced margin when connected to message below
+const isGroupedMessage = (index, message) => {
+  const messageBelow = messages[index - 1];
+  return areMessagesGrouped(message, messageBelow);
+};
+```
+
+### Styling
+
+```typescript
+const styles = {
+  messageContainer: { marginBottom: 12 },      // Default spacing
+  groupedMessageContainer: { marginBottom: 3 }, // Tight spacing within group
+};
+
+// Applied conditionally
+<View style={[
+  styles.messageContainer,
+  isGrouped && styles.groupedMessageContainer,
+]}>
+```
+
+### Reply Messages as Standalone
+
+Messages with `replyTo` are **always treated as standalone**:
+
+- They display sender name, avatar, and timestamp regardless of surrounding messages
+- They break any ongoing group chain
+- The message before AND after a reply will start new groups
+
+This ensures replies are visually distinct and their context (the replied-to message) is always clear.
 
 ---
 

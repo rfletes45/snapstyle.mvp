@@ -30,8 +30,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   ScrollView,
   StyleSheet,
@@ -70,6 +70,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   const [newGroupName, setNewGroupName] = useState("");
   const [inviteModalVisible, setInviteModalVisible] = useState(false);
   const [invitableFriends, setInvitableFriends] = useState<any[]>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({ visible: false, message: "" });
   const [actionLoading, setActionLoading] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
@@ -194,6 +195,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   const loadInvitableFriends = useCallback(async () => {
     if (!uid) return;
 
+    setInviteLoading(true);
+
     try {
       const friendsData = await getFriends(uid);
       const memberUids = new Set(members.map((m) => m.uid));
@@ -223,7 +226,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
       setInvitableFriends(invitable);
     } catch (error) {
-      console.error("Error loading friends:", error);
+      console.error("[GroupChatInfo] Error loading friends:", error);
+    } finally {
+      setInviteLoading(false);
     }
   }, [uid, members]);
 
@@ -663,44 +668,47 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           onDismiss={() => setInviteModalVisible(false)}
           contentContainerStyle={styles.inviteModalContent}
         >
-          <Text style={styles.modalTitle}>Invite Friends</Text>
-          {invitableFriends.length === 0 ? (
+          <Text style={styles.inviteModalTitle}>Invite Friends</Text>
+          {inviteLoading ? (
+            <View style={styles.inviteLoadingContainer}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+              <Text style={styles.inviteLoadingText}>Loading friends...</Text>
+            </View>
+          ) : invitableFriends.length === 0 ? (
             <Text style={styles.noFriendsText}>
               No friends available to invite
             </Text>
           ) : (
-            <FlatList
-              data={invitableFriends}
-              keyExtractor={(item) => item.uid}
-              renderItem={({ item }) => (
-                <View style={styles.inviteFriendItem}>
+            <View style={styles.inviteFriendsContainer}>
+              {invitableFriends.map((item) => (
+                <View key={item.uid} style={styles.inviteFriendItem}>
                   <View style={styles.inviteFriendLeft}>
-                    <AvatarMini config={item.avatarConfig} size={40} />
-                    <Text style={styles.inviteFriendName}>
+                    <AvatarMini config={item.avatarConfig} size={44} />
+                    <Text style={styles.inviteFriendName} numberOfLines={1}>
                       {item.displayName}
                     </Text>
                   </View>
                   <Button
-                    mode="outlined"
+                    mode="contained"
                     onPress={() => handleInviteFriend(item)}
-                    textColor={theme.colors.primary}
-                    style={[
-                      styles.inviteButton,
-                      { borderColor: theme.colors.primary },
-                    ]}
+                    buttonColor={theme.colors.primary}
+                    textColor="#FFF"
+                    style={styles.inviteButton}
+                    labelStyle={{ fontWeight: "600", fontSize: 14 }}
+                    compact
                   >
                     Invite
                   </Button>
                 </View>
-              )}
-              style={styles.inviteFriendsList}
-            />
+              ))}
+            </View>
           )}
           <Button
             mode="text"
             onPress={() => setInviteModalVisible(false)}
-            textColor="#888"
+            textColor="#666"
             style={styles.closeButton}
+            labelStyle={{ fontSize: 15 }}
           >
             Close
           </Button>
@@ -996,6 +1004,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 16,
   },
+  inviteModalTitle: {
+    color: "#FFF",
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 20,
+  },
   modalInput: {
     backgroundColor: "#000",
     marginBottom: 16,
@@ -1008,10 +1023,27 @@ const styles = StyleSheet.create({
   },
   inviteModalContent: {
     backgroundColor: "#1A1A1A",
-    margin: 24,
-    padding: 24,
-    borderRadius: 16,
-    maxHeight: "70%",
+    marginHorizontal: 20,
+    marginVertical: 60,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 16,
+    borderRadius: 20,
+    maxHeight: "80%",
+  },
+  inviteLoadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 48,
+  },
+  inviteLoadingText: {
+    color: "#888",
+    marginTop: 16,
+    fontSize: 15,
+  },
+  inviteFriendsContainer: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   inviteFriendsList: {
     maxHeight: 300,
@@ -1020,30 +1052,35 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
   inviteFriendLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
+    flex: 1,
   },
   inviteFriendName: {
     color: "#FFF",
-    fontSize: 15,
-    fontWeight: "500",
+    fontSize: 16,
+    fontWeight: "600",
   },
   inviteButton: {
-    borderColor: AppColors.primary,
+    borderRadius: 20,
+    borderWidth: 1.5,
   },
   noFriendsText: {
     color: "#888",
     textAlign: "center",
-    marginVertical: 24,
+    marginVertical: 32,
+    fontSize: 15,
   },
   closeButton: {
-    marginTop: 16,
+    marginTop: 12,
+    alignSelf: "center",
   },
   snackbar: {
     backgroundColor: "#333",

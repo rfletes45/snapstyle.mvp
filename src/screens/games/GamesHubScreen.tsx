@@ -13,7 +13,15 @@
 
 import { ActiveGamesSection } from "@/components/ActiveGamesList";
 import { GameInviteBadge, GameInvitesList } from "@/components/GameInviteCard";
+import { UniversalInviteCard } from "@/components/games";
 import { ErrorState, LoadingState } from "@/components/ui";
+import {
+  cancelGameInvite,
+  claimInviteSlot,
+  joinAsSpectator,
+  subscribeToPlayPageInvites,
+  unclaimInviteSlot,
+} from "@/services/gameInvites";
 import {
   formatScore,
   getAllPersonalBests,
@@ -45,6 +53,7 @@ import {
   GameInvite,
   RealTimeGameType,
   TurnBasedGameType,
+  UniversalGameInvite,
 } from "@/types/turnBased";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
@@ -319,6 +328,9 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   // Multiplayer state
   const [activeGames, setActiveGames] = useState<AnyMatch[]>([]);
   const [pendingInvites, setPendingInvites] = useState<GameInvite[]>([]);
+  const [universalInvites, setUniversalInvites] = useState<
+    UniversalGameInvite[]
+  >([]);
 
   // Combine all high scores into a single map
   const highScoresMap = new Map<string, number>();
@@ -365,6 +377,20 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       currentFirebaseUser.uid,
       (invites) => {
         setPendingInvites(invites);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [currentFirebaseUser]);
+
+  // Subscribe to universal invites for Play page (DM invites)
+  useEffect(() => {
+    if (!currentFirebaseUser) return;
+
+    const unsubscribe = subscribeToPlayPageInvites(
+      currentFirebaseUser.uid,
+      (invites) => {
+        setUniversalInvites(invites);
       },
     );
 
@@ -442,6 +468,107 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     }
     loadData(); // Refresh the data
   };
+
+  // =========================================================================
+  // Universal Invite Handlers
+  // =========================================================================
+
+  const handleJoinUniversalInvite = useCallback(
+    async (invite: UniversalGameInvite) => {
+      if (!currentFirebaseUser) return;
+
+      const userName =
+        currentFirebaseUser.displayName || currentFirebaseUser.email || "User";
+
+      const result = await claimInviteSlot(
+        invite.id,
+        currentFirebaseUser.uid,
+        userName,
+        undefined, // avatar
+      );
+
+      if (!result.success) {
+        console.error("[GamesScreen] Failed to join invite:", result.error);
+      }
+    },
+    [currentFirebaseUser],
+  );
+
+  const handleLeaveUniversalInvite = useCallback(
+    async (invite: UniversalGameInvite) => {
+      if (!currentFirebaseUser) return;
+
+      const result = await unclaimInviteSlot(
+        invite.id,
+        currentFirebaseUser.uid,
+      );
+
+      if (!result.success) {
+        console.error("[GamesScreen] Failed to leave invite:", result.error);
+      }
+    },
+    [currentFirebaseUser],
+  );
+
+  const handleSpectateUniversalInvite = useCallback(
+    async (invite: UniversalGameInvite) => {
+      if (!currentFirebaseUser) return;
+
+      const userName =
+        currentFirebaseUser.displayName || currentFirebaseUser.email || "User";
+
+      const result = await joinAsSpectator(
+        invite.id,
+        currentFirebaseUser.uid,
+        userName,
+        undefined, // avatar
+      );
+
+      if (result.success && result.gameId) {
+        // Navigate to game in spectator mode
+        const screenMap: Record<string, string> = {
+          tic_tac_toe: "TicTacToeGame",
+          checkers: "CheckersGame",
+          chess: "ChessGame",
+          crazy_eights: "CrazyEightsGame",
+        };
+        const screen = screenMap[invite.gameType];
+        if (screen) {
+          navigation.navigate(screen, {
+            matchId: result.gameId,
+            spectatorMode: true,
+          });
+        }
+      }
+    },
+    [currentFirebaseUser, navigation],
+  );
+
+  const handleCancelUniversalInvite = useCallback(
+    async (invite: UniversalGameInvite) => {
+      if (!currentFirebaseUser) return;
+
+      await cancelGameInvite(invite.id, currentFirebaseUser.uid);
+      loadData();
+    },
+    [currentFirebaseUser, loadData],
+  );
+
+  const handlePlayUniversalInvite = useCallback(
+    (gameId: string, gameType: string) => {
+      const screenMap: Record<string, string> = {
+        tic_tac_toe: "TicTacToeGame",
+        checkers: "CheckersGame",
+        chess: "ChessGame",
+        crazy_eights: "CrazyEightsGame",
+      };
+      const screen = screenMap[gameType];
+      if (screen) {
+        navigation.navigate(screen, { matchId: gameId });
+      }
+    },
+    [navigation],
+  );
 
   // Game categories
   const quickPlayGames: ExtendedGameType[] = [
@@ -539,6 +666,46 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
             onAccept={handleAcceptInvite}
             onRefresh={loadData}
           />
+          <Divider style={styles.divider} />
+        </>
+      )}
+
+      {/* Universal Invites Section (Open Lobbies) */}
+      {universalInvites.length > 0 && (
+        <>
+          <View style={styles.invitesSectionHeader}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: theme.colors.onBackground },
+              ]}
+            >
+              🎮 Open Game Lobbies
+            </Text>
+            <GameInviteBadge count={universalInvites.length} />
+          </View>
+          <Text
+            style={[
+              styles.sectionSubtitle,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            Join a game with your friends!
+          </Text>
+          <View style={styles.universalInvitesList}>
+            {universalInvites.map((invite) => (
+              <UniversalInviteCard
+                key={invite.id}
+                invite={invite}
+                currentUserId={currentFirebaseUser?.uid || ""}
+                onJoin={() => handleJoinUniversalInvite(invite)}
+                onLeave={() => handleLeaveUniversalInvite(invite)}
+                onSpectate={() => handleSpectateUniversalInvite(invite)}
+                onCancel={() => handleCancelUniversalInvite(invite)}
+                onPlay={handlePlayUniversalInvite}
+              />
+            ))}
+          </View>
           <Divider style={styles.divider} />
         </>
       )}
@@ -899,5 +1066,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+  },
+  universalInvitesList: {
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
   },
 });

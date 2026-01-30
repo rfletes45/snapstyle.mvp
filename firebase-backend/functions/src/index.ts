@@ -33,10 +33,18 @@ import {
   expireGameInvites,
   expireMatchmakingEntries,
   makeMove,
+  onUniversalInviteUpdate,
   processGameCompletion,
   processMatchmakingQueue,
   resignGame,
 } from "./games";
+
+// Import Migration functions
+import {
+  migrateGameInvites,
+  migrateGameInvitesDryRun,
+  rollbackGameInvitesMigration,
+} from "./migrations/migrateGameInvites";
 
 // Re-export V2 Messaging functions
 export const sendMessageV2 = sendMessageV2Function;
@@ -51,9 +59,17 @@ export {
   expireGameInvites,
   expireMatchmakingEntries,
   makeMove,
+  onUniversalInviteUpdate,
   processGameCompletion,
   processMatchmakingQueue,
   resignGame,
+};
+
+// Re-export Migration functions
+export {
+  migrateGameInvites,
+  migrateGameInvitesDryRun,
+  rollbackGameInvitesMigration,
 };
 
 // Initialize Firebase Admin SDK

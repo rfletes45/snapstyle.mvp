@@ -1,6 +1,26 @@
 /**
  * useMessagesV2 Hook
  *
+ * @deprecated Use `useChat` or `useUnifiedMessages` instead (ARCH-D06).
+ *
+ * This hook will be removed after Phase E cleanup. The new unified hooks provide:
+ * - Unified DM/Group subscription via services/messaging/subscribe.ts
+ * - Better hook composition via useChat
+ * - Consistent outbox integration
+ *
+ * Migration:
+ * ```typescript
+ * // Before:
+ * const { messages, loading, loadOlder } = useMessagesV2(options);
+ *
+ * // After (simple):
+ * const { messages, loading, loadOlder } = useUnifiedMessages(options);
+ *
+ * // After (full featured):
+ * const chat = useChat(options);
+ * // Access: chat.messages, chat.loading, chat.loadOlder, etc.
+ * ```
+ *
  * React hook for subscribing to V2 messages with:
  * - Real-time updates ordered by serverReceivedAt
  * - Optimistic message merging from outbox
@@ -79,6 +99,10 @@ interface UseMessagesV2Return {
 // Hook Implementation
 // =============================================================================
 
+/**
+ * @deprecated Use `useChat` or `useUnifiedMessages` instead.
+ * This hook will be removed in Phase E cleanup.
+ */
 export function useMessagesV2(
   options: UseMessagesV2Options,
 ): UseMessagesV2Return {

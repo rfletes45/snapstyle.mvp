@@ -242,6 +242,60 @@ AsyncStorage.getItem("@snapstyle/message_outbox_v2")
 firebase functions:log --only sendMessageV2
 ```
 
+### Unified Messaging Debugging
+
+**Enable debug logging**
+
+```typescript
+// In constants/featureFlags.ts
+export const DEBUG_UNIFIED_MESSAGING = true;
+export const DEBUG_CHAT_V2 = true;
+
+// Console outputs:
+// [messaging/subscribe] Subscribed to dm:xxxxx
+// [messaging/send] Sending message via unified service
+// [groupAdapter] Converting GroupMessage to MessageV2
+```
+
+**Messages not appearing (DM)**
+
+- Check `useChat` hook is initialized with correct `conversationId`
+- Verify subscription: look for `[messaging/subscribe]` logs
+- Check `displayMessages` array in React DevTools
+- Verify `scope: "dm"` is passed correctly
+
+**Messages not appearing (Group)**
+
+- Check GroupAdapter is converting messages correctly
+- Look for `[groupAdapter]` console logs
+- Verify `subscribeToGroupMessages` is called
+- Check member array includes current user
+
+**Outbox messages stuck in "sending"**
+
+```typescript
+// Get current outbox state
+import { getOutboxItems } from "@/services/outbox";
+const items = await getOutboxItems("conversationId");
+console.log(items);
+
+// Retry stuck messages
+import { retryFailedMessage } from "@/services/chatV2";
+await retryFailedMessage("messageId");
+```
+
+**useChat hook not updating**
+
+- Check `conversationId` is not empty string
+- Verify `currentUserId` is valid
+- Check hook dependencies aren't causing re-subscriptions
+
+**Reply state not clearing**
+
+- Verify `clearReplyOnSend: true` is passed to `sendMessage`
+- Check `unifiedChat.clearReplyTo()` is being called
+- Check for multiple hook instances (should be single per screen)
+
 **Delete-for-me not working**
 
 - Check Firestore rules allow `hiddenFor` arrayUnion operation

@@ -2,13 +2,14 @@
 /**
  * SnapStyle Cloud Functions
  * Handles:
- * - Automatic Storage cleanup when messages are deleted (Phase 4)
- * - Story auto-expiry and cleanup (Phase 5)
- * - Push notifications (Phase 6)
- * - Streak management (Phase 6)
- * - V2 Messaging with idempotent sends (Phase H3)
+ * - Automatic Storage cleanup when messages are deleted
+ * - Story auto-expiry and cleanup
+ * - Push notifications
+ * - Streak management
+ * - V2 Messaging with idempotent sends
+ * - Games: Turn-based games, matchmaking, achievements
  *
- * Security Note (Phase E):
+ * Security Note:
  * - All onCall functions require authentication via context.auth
  * - Admin functions verify context.auth.token.admin claim
  * - Input validation is performed on all user-supplied data
@@ -48,11 +49,23 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.purchaseWithTokens = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.purchaseWithTokens = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.resignGame = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.makeMove = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupOldGames = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 // Import V2 Messaging functions
 const messaging_1 = require("./messaging");
+// Import Games functions
+const games_1 = require("./games");
+Object.defineProperty(exports, "cleanupOldGames", { enumerable: true, get: function () { return games_1.cleanupOldGames; } });
+Object.defineProperty(exports, "createGameFromInvite", { enumerable: true, get: function () { return games_1.createGameFromInvite; } });
+Object.defineProperty(exports, "expireGameInvites", { enumerable: true, get: function () { return games_1.expireGameInvites; } });
+Object.defineProperty(exports, "expireMatchmakingEntries", { enumerable: true, get: function () { return games_1.expireMatchmakingEntries; } });
+Object.defineProperty(exports, "makeMove", { enumerable: true, get: function () { return games_1.makeMove; } });
+Object.defineProperty(exports, "onUniversalInviteUpdate", { enumerable: true, get: function () { return games_1.onUniversalInviteUpdate; } });
+Object.defineProperty(exports, "processGameCompletion", { enumerable: true, get: function () { return games_1.processGameCompletion; } });
+Object.defineProperty(exports, "processMatchmakingQueue", { enumerable: true, get: function () { return games_1.processMatchmakingQueue; } });
+Object.defineProperty(exports, "resignGame", { enumerable: true, get: function () { return games_1.resignGame; } });
 // Re-export V2 Messaging functions
 exports.sendMessageV2 = messaging_1.sendMessageV2Function;
 exports.editMessageV2 = messaging_1.editMessageV2Function;
@@ -65,7 +78,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const storage = admin.storage();
 // ============================================
-// INPUT VALIDATION HELPERS (Phase E Security)
+// INPUT VALIDATION HELPERS (Security)
 // ============================================
 /**
  * Validate that a string is safe (non-empty, reasonable length, no control chars)
@@ -921,7 +934,7 @@ exports.cleanupExpiredStories = functions.pubsub
     }
 });
 // ============================================
-// PHASE 17: SCHEDULED MESSAGES
+// SCHEDULED MESSAGES
 // ============================================
 /**
  * processScheduledMessages: Runs every minute to check for scheduled messages
@@ -1111,7 +1124,7 @@ exports.cleanupOldScheduledMessages = functions.pubsub
     }
 });
 // ============================================
-// PHASE 17: LEADERBOARDS + ACHIEVEMENTS
+// LEADERBOARDS + ACHIEVEMENTS
 // ============================================
 /**
  * Helper: Get current ISO week key (e.g., "2026-W03")
@@ -1348,7 +1361,7 @@ exports.weeklyLeaderboardReset = functions.pubsub
     return;
 });
 // ============================================
-// PHASE 18: ECONOMY + WALLET + TASKS
+// ECONOMY + WALLET + TASKS
 // ============================================
 /** Default starting tokens for new users */
 const DEFAULT_STARTING_TOKENS = 100;
@@ -1416,7 +1429,7 @@ exports.claimTaskReward = functions.https.onCall(async (data, context) => {
     }
     const uid = context.auth.uid;
     const { taskId, dayKey } = data;
-    // Enhanced input validation (Phase E Security)
+    // Enhanced input validation (Security)
     if (!isValidString(taskId, 1, 100)) {
         throw new functions.https.HttpsError("invalid-argument", "Invalid taskId format");
     }
@@ -1870,7 +1883,7 @@ exports.initializeExistingWallets = functions.https.onRequest(async (req, res) =
     }
 });
 // ============================================
-// PHASE 19: SHOP + LIMITED-TIME DROPS
+// SHOP + LIMITED-TIME DROPS
 // ============================================
 /**
  * purchaseWithTokens: Callable function to purchase shop items
@@ -2209,7 +2222,7 @@ exports.seedShopCatalog = functions.https.onRequest(async (req, res) => {
     res.json({ success: true, itemsCreated: shopItems.length });
 });
 // ============================================
-// PHASE 21: TRUST & SAFETY V1.5
+// TRUST & SAFETY V1.5
 // Rate Limiting, Bans, Strikes, Admin Moderation
 // ============================================
 /**
@@ -2281,7 +2294,7 @@ exports.sendFriendRequestWithRateLimit = functions.https.onCall(async (data, con
     }
     const uid = context.auth.uid;
     const { toUid } = data;
-    // Enhanced input validation (Phase E Security)
+    // Enhanced input validation (Security)
     if (!isValidUid(toUid)) {
         throw new functions.https.HttpsError("invalid-argument", "Invalid recipient ID");
     }

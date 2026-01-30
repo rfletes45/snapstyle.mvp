@@ -7,6 +7,27 @@
  * - Provides optimistic UI helpers
  *
  * @module services/chatV2
+ *
+ * @deprecated This module is being consolidated into `@/services/messaging`.
+ * For new code, import from `@/services/messaging` instead:
+ *
+ * ```typescript
+ * // OLD (deprecated):
+ * import { sendMessageWithOutbox, retryFailedMessage } from "@/services/chatV2";
+ *
+ * // NEW (recommended):
+ * import { sendMessage, retryMessage } from "@/services/messaging";
+ * ```
+ *
+ * Migration notes:
+ * - `sendMessageWithOutbox` → `sendMessage`
+ * - `retryFailedMessage` → `retryMessage`
+ * - `processPendingMessages` → `processPendingMessages` (same name)
+ * - `getPendingMessages` → `getPendingMessages` (same name)
+ * - `getFailedMessages` → `getFailedMessages` (same name)
+ *
+ * The unified module provides the same functionality with a cleaner API
+ * that works consistently for both DM and Group conversations.
  */
 
 import {
@@ -143,6 +164,9 @@ export async function sendMessageV2(
  * 3. Attempts send in background
  * 4. Handles retry on failure
  *
+ * @deprecated Use `sendMessage` from `@/services/messaging` instead.
+ * This function will be removed in a future version.
+ *
  * @param params - Message parameters
  * @returns Outbox item and send promise
  *
@@ -263,6 +287,8 @@ export async function sendMessageWithOutbox(params: {
 /**
  * Retry sending a failed message
  *
+ * @deprecated Use `retryMessage` from `@/services/messaging` instead.
+ *
  * @param messageId - Message ID to retry
  * @returns True if sent successfully
  */
@@ -294,6 +320,8 @@ export async function retryFailedMessage(messageId: string): Promise<boolean> {
  * - On app startup
  * - When network connectivity is restored
  * - Periodically in background
+ *
+ * @deprecated Use `processPendingMessages` from `@/services/messaging` instead.
  *
  * @returns Send statistics
  */

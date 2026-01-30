@@ -26,3 +26,12 @@ export const SHOW_V2_BADGE = __DEV__;
  * Enables detailed logging for keyboard behavior debugging
  */
 export const DEBUG_CHAT_KEYBOARD = __DEV__;
+
+/**
+ * Debug logging for unified messaging
+ *
+ * Logs adapter conversions, subscription events, outbox operations.
+ *
+ * @default __DEV__
+ */
+export const DEBUG_UNIFIED_MESSAGING = __DEV__;

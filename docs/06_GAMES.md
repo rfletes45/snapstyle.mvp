@@ -356,6 +356,147 @@ await sendGameInvite(fromUid, toUid, gameType);
 await respondToInvite(inviteId, "accepted");
 ```
 
+### Universal Game Invites (Multi-Player)
+
+**File:** `src/services/gameInvites.ts`
+
+The Universal Game Invites system supports flexible multiplayer games with 2-8 players plus spectators.
+
+#### Key Features
+
+- **Flexible Slots**: Support for 2-8 player games with configurable slot counts
+- **Smart Targeting**: Invites can target public lobby, friends-only, specific users, or a conversation
+- **Spectator Mode**: Up to 20 spectators can watch without playing
+- **Real-time Sync**: Cloud Functions automatically create games and sync spectators
+
+#### Creating a Universal Invite
+
+```typescript
+import { sendUniversalInvite } from "@/services/gameInvites";
+
+// Create a 4-player poker game for friends
+const inviteId = await sendUniversalInvite(
+  userId,
+  "crazy_eights", // gameType
+  4, // maxSlots (2-8)
+  {
+    targeting: { type: "friends_only" },
+    spectators: { enabled: true, maxCount: 10 },
+    settings: { isRated: true, chatEnabled: true },
+  },
+);
+```
+
+#### Claiming/Unclaiming Slots
+
+```typescript
+import { claimInviteSlot, unclaimInviteSlot } from "@/services/gameInvites";
+
+// Join a game
+await claimInviteSlot(inviteId, userId, "PlayerName", "avatar_url");
+
+// Leave before game starts
+await unclaimInviteSlot(inviteId, userId);
+```
+
+#### Spectator Functions
+
+```typescript
+import { joinAsSpectator, leaveAsSpectator } from "@/services/gameInvites";
+
+// Watch a game
+await joinAsSpectator(inviteId, userId, "SpectatorName");
+
+// Stop watching
+await leaveAsSpectator(inviteId, userId);
+```
+
+#### Querying Universal Invites
+
+```typescript
+import {
+  getPublicUniversalInvites,
+  getFriendsUniversalInvites,
+  getMyUniversalInvites,
+} from "@/services/gameInvites";
+
+// Get public lobby games
+const publicInvites = await getPublicUniversalInvites("chess", 20);
+
+// Get invites from friends
+const friendsInvites = await getFriendsUniversalInvites(userId, friendIds);
+
+// Get my active invites
+const myInvites = await getMyUniversalInvites(userId);
+```
+
+#### Universal Invite Status Flow
+
+```
+pending → ready → active → completed
+   ↓                         ↓
+expired                   cancelled
+```
+
+#### Cloud Function Triggers
+
+**File:** `firebase-backend/functions/src/games.ts`
+
+The `onUniversalInviteUpdate` Cloud Function handles:
+
+1. **Game Creation**: When all slots are filled (status → "ready"), automatically creates the game
+2. **Spectator Sync**: When spectators join/leave, syncs to the game document
+
+```typescript
+// Firestore trigger path
+GameInvites / { inviteId };
+```
+
+#### Migration from Legacy Invites
+
+**File:** `firebase-backend/functions/src/migrations/migrateGameInvites.ts`
+
+The migration script adds universal invite fields to existing legacy `GameInvites` documents.
+
+**Running the Migration:**
+
+```bash
+# Step 1: Deploy the migration functions
+cd firebase-backend/functions
+npm run deploy
+
+# Step 2: Run dry-run to preview changes
+firebase functions:call migrateGameInvitesDryRun
+
+# Step 3: Execute the actual migration
+firebase functions:call migrateGameInvites
+
+# Step 4: If issues occur, rollback (requires confirmation)
+firebase functions:call rollbackGameInvitesMigration --data '{"confirm": true}'
+```
+
+**What the Migration Does:**
+
+| Legacy Field  | Universal Field   | Transformation                       |
+| ------------- | ----------------- | ------------------------------------ |
+| `recipientId` | `targetType`      | Set to `"specific"` (1:1 DM invites) |
+| `recipientId` | `eligibleUserIds` | `[senderId, recipientId]`            |
+| N/A           | `context`         | Set to `"dm"` for legacy invites     |
+| N/A           | `conversationId`  | Generated from sorted user IDs       |
+| `senderId`    | `claimedSlots`    | Host added with `isHost: true`       |
+| N/A           | `requiredPlayers` | Set to `2` (legacy invites were 1:1) |
+| N/A           | `maxPlayers`      | Set to `2`                           |
+| N/A           | `showInPlayPage`  | Set to `true` for visibility         |
+| `settings`    | `settings`        | Merged with game-specific defaults   |
+
+**Migration Safety Features:**
+
+- ✅ Idempotent: Skips already-migrated documents
+- ✅ Batched: Processes 500 documents at a time
+- ✅ Dry-run: Preview changes before applying
+- ✅ Rollback: Remove migration fields if needed
+- ✅ Error handling: Logs failures without blocking
+
 ---
 
 ## 8. Achievement System
@@ -435,6 +576,10 @@ __tests__/
 │   ├── chess.validation.test.ts
 │   ├── checkers.validation.test.ts
 │   └── ticTacToe.validation.test.ts
+├── integration/
+│   ├── gameInvites.test.ts           # Legacy invite tests
+│   ├── universalGameInvites.test.ts  # Universal invite tests (39 tests)
+│   └── turnBasedGame.test.ts
 ├── achievements/
 │   └── gameAchievements.test.ts
 └── performance/
@@ -452,6 +597,9 @@ npm test -- --coverage
 
 # Specific test
 npm test -- __tests__/physics/flappyPhysics.test.ts
+
+# Universal invites tests
+npm test -- __tests__/integration/universalGameInvites.test.ts
 ```
 
 ### Coverage Thresholds

@@ -43,11 +43,13 @@ const MAX_SCHEDULE_DELAY_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface CreateScheduledMessageInput {
   senderId: string;
-  recipientId: string;
-  chatId: string;
+  recipientId?: string; // Required for DM, not used for groups
+  chatId: string; // chatId for DM, groupId for groups
+  scope: "dm" | "group";
   content: string;
   type: "text" | "image";
   scheduledFor: Date;
+  mentionUids?: string[]; // Mentioned users (groups only)
 }
 
 /**
@@ -60,8 +62,22 @@ export async function scheduleMessage(
   const db = getFirestoreInstance();
 
   try {
-    const { senderId, recipientId, chatId, content, type, scheduledFor } =
-      input;
+    const {
+      senderId,
+      recipientId,
+      chatId,
+      scope,
+      content,
+      type,
+      scheduledFor,
+      mentionUids,
+    } = input;
+
+    // Validate scope-specific requirements
+    if (scope === "dm" && !recipientId) {
+      console.error("[scheduledMessages] recipientId required for DM scope.");
+      return null;
+    }
 
     // Validate scheduled time
     const now = Date.now();
@@ -100,13 +116,15 @@ export async function scheduleMessage(
     const scheduledMessage: ScheduledMessage = {
       id: messageId,
       senderId,
-      recipientId,
+      ...(scope === "dm" && recipientId ? { recipientId } : {}),
       chatId,
+      scope,
       content,
       type,
       scheduledFor: scheduledTime,
       createdAt: now,
       status: "pending",
+      ...(mentionUids && mentionUids.length > 0 ? { mentionUids } : {}),
     };
 
     // Write to Firestore with Timestamp
@@ -174,6 +192,7 @@ export async function getScheduledMessages(
         senderId: data.senderId,
         recipientId: data.recipientId,
         chatId: data.chatId,
+        scope: data.scope || "dm", // Default to dm for backwards compatibility
         content: data.content,
         type: data.type,
         scheduledFor: data.scheduledFor?.toMillis?.() || data.scheduledFor,
@@ -181,6 +200,7 @@ export async function getScheduledMessages(
         status: data.status,
         sentAt: data.sentAt?.toMillis?.() || data.sentAt,
         failReason: data.failReason,
+        mentionUids: data.mentionUids,
       } as ScheduledMessage;
     });
   } catch (error) {
@@ -220,11 +240,13 @@ export async function getScheduledMessagesForChat(
         senderId: data.senderId,
         recipientId: data.recipientId,
         chatId: data.chatId,
+        scope: data.scope || "dm", // Default to dm for backwards compatibility
         content: data.content,
         type: data.type,
         scheduledFor: data.scheduledFor?.toMillis?.() || data.scheduledFor,
         createdAt: data.createdAt?.toMillis?.() || data.createdAt,
         status: data.status,
+        mentionUids: data.mentionUids,
       } as ScheduledMessage;
     });
   } catch (error) {

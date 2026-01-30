@@ -27,10 +27,10 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
   resignMatch,
-  sendGameInvite,
   submitMove,
   subscribeToMatch,
 } from "@/services/turnBasedGames";
@@ -44,7 +44,6 @@ import {
   TicTacToeMatch,
   TicTacToeMove,
   TicTacToePosition,
-  TurnBasedMatchConfig,
 } from "@/types/turnBased";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 
@@ -486,20 +485,21 @@ export default function TicTacToeGameScreen({
 
     setLoading(true);
     try {
-      const config: TurnBasedMatchConfig = {
-        isRated: false,
-        allowSpectators: false,
-        chatEnabled: false,
-      };
-
       await sendGameInvite(
-        "tic_tac_toe",
         currentFirebaseUser.uid,
         userProfile.displayName || "Player",
-        friend.friendUid,
-        friend.displayName,
-        config,
-        "Let's play Tic-Tac-Toe!",
+        userProfile.avatarConfig
+          ? JSON.stringify(userProfile.avatarConfig)
+          : undefined,
+        {
+          gameType: "tic_tac_toe",
+          recipientId: friend.friendUid,
+          recipientName: friend.displayName,
+          settings: {
+            isRated: false,
+            chatEnabled: false,
+          },
+        },
       );
 
       Alert.alert(

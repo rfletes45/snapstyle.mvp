@@ -422,8 +422,9 @@ export type ScheduledMessageStatus =
 export interface ScheduledMessage {
   id: string;
   senderId: string; // Who scheduled the message
-  recipientId: string; // Target recipient
-  chatId: string; // Target chat
+  recipientId?: string; // Target recipient (DM only)
+  chatId: string; // Target chat (DM chatId or Group groupId)
+  scope: "dm" | "group"; // Whether this is for DM or Group chat
   content: string; // Message content (text or storage path)
   type: "text" | "image"; // Message type (scorecard not supported for scheduling)
   scheduledFor: number; // When to send (UTC timestamp)
@@ -431,6 +432,7 @@ export interface ScheduledMessage {
   status: ScheduledMessageStatus;
   sentAt?: number; // When actually sent (if status is 'sent')
   failReason?: string; // Why it failed (if status is 'failed')
+  mentionUids?: string[]; // Mentioned users (groups only)
 }
 
 // =============================================================================
@@ -833,6 +835,7 @@ export interface GroupMessage {
   groupId: string;
   sender: string;
   senderDisplayName: string; // Denormalized for display
+  senderAvatarConfig?: AvatarConfig; // Avatar config for display in group chats
   type: "text" | "image" | "scorecard" | "system" | "voice"; // system for join/leave notifications, voice for H11
   content: string;
   createdAt: number;

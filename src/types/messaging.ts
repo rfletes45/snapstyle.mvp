@@ -682,60 +682,8 @@ export function isOwnMessage(message: MessageV2, currentUid: string): boolean {
 }
 
 // =============================================================================
-// Conversion Helpers
+// Display Helpers
 // =============================================================================
-
-/**
- * Convert legacy Message to MessageV2 format
- */
-export function convertLegacyMessage(
-  legacy: {
-    id: string;
-    sender: string;
-    type?: string;
-    content?: string;
-    createdAt: number;
-    read?: boolean;
-    status?: string;
-    mediaUrl?: string;
-    clientMessageId?: string;
-  },
-  conversationId: string,
-  scope: "dm" | "group",
-): MessageV2 {
-  const attachments: AttachmentV2[] = [];
-
-  if (legacy.mediaUrl) {
-    attachments.push({
-      id: `${legacy.id}_0`,
-      kind: "image",
-      mime: "image/jpeg",
-      url: legacy.mediaUrl,
-      path: "",
-      sizeBytes: 0,
-    });
-  }
-
-  return {
-    id: legacy.id,
-    scope,
-    conversationId,
-    senderId: legacy.sender,
-    kind: legacy.type === "image" ? "media" : "text",
-    text: legacy.content,
-    createdAt: legacy.createdAt,
-    serverReceivedAt: legacy.createdAt, // Fallback for legacy
-    attachments: attachments.length > 0 ? attachments : undefined,
-    clientId: "legacy",
-    idempotencyKey: `legacy:${legacy.clientMessageId || legacy.id}`,
-    // Legacy fields for backwards compat
-    content: legacy.content,
-    type: legacy.type as "text" | "image" | "scorecard",
-    read: legacy.read,
-    status: legacy.status as any,
-    clientMessageId: legacy.clientMessageId,
-  };
-}
 
 /**
  * Get display text for a message (for previews/notifications)

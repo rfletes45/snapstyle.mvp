@@ -324,13 +324,29 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     // 8. Build message document
     const serverNow = Date.now();
     const idempotencyKey = `${clientId}:${messageId}`;
+    // Map kind to legacy type field
+    const legacyTypeMap = {
+        text: "text",
+        media: "image",
+        voice: "voice",
+        scorecard: "scorecard",
+        system: "system",
+        file: "text", // files shown as text in legacy
+    };
+    const legacyType = legacyTypeMap[kind] || "text";
     const messageData = {
         id: messageId,
         scope,
         conversationId,
+        // New unified field names
         senderId,
         kind,
         text: text || "",
+        // Legacy field names for backward compatibility with groups.ts subscription
+        sender: senderId,
+        type: legacyType,
+        content: text || "",
+        // Timestamps
         createdAt: createdAt || serverNow,
         serverReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
         idempotencyKey,
@@ -351,6 +367,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         const senderProfile = await getUserProfile(senderId);
         if (senderProfile) {
             messageData.senderName = senderProfile.displayName;
+            messageData.senderDisplayName = senderProfile.displayName; // Legacy field
             messageData.senderAvatarConfig = senderProfile.avatarConfig;
         }
     }

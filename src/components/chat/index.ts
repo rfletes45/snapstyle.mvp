@@ -1,12 +1,12 @@
 /**
- * Chat Components Index (H6/H7/H8/H9/H10/H11/H12)
+ * Chat Components Index (H6/H7/H8/H9/H10/H11/H12/ARCH-C)
  *
  * Exports all chat-related components for easy importing.
  *
  * @module components/chat
  */
 
-// Reply-to components (H6)
+// Reply-to components (H6) & Swipeable Wrapper (ARCH-C01)
 export { ReplyBubble, default as ReplyBubbleDefault } from "./ReplyBubble";
 export {
   ReplyPreviewBar,
@@ -21,6 +21,11 @@ export {
   SwipeableMessage,
   default as SwipeableMessageDefault,
 } from "./SwipeableMessage";
+export {
+  SwipeableMessageWrapper,
+  default as SwipeableMessageWrapperDefault,
+} from "./SwipeableMessageWrapper";
+export type { SwipeableMessageWrapperProps } from "./SwipeableMessageWrapper";
 
 // Message actions (H7)
 export {
@@ -91,9 +96,9 @@ export {
   default as CameraLongPressButtonDefault,
 } from "./CameraLongPressButton";
 
-// Keyboard-aware Chat Components
+// Keyboard-aware Chat Components (ARCH-C04)
 export { ChatComposer, default as ChatComposerDefault } from "./ChatComposer";
-export type { ChatComposerProps } from "./ChatComposer";
+export type { ChatComposerProps, ChatScope } from "./ChatComposer";
 export {
   ChatMessageList,
   default as ChatMessageListDefault,
@@ -107,6 +112,13 @@ export {
   default as ReturnToBottomPillDefault,
 } from "./ReturnToBottomPill";
 export type { ReturnToBottomPillProps } from "./ReturnToBottomPill";
+
+// Game Invites in Chat (Universal Game Invites)
+export {
+  ChatGameInvites,
+  default as ChatGameInvitesDefault,
+} from "./ChatGameInvites";
+export type { ChatGameInvitesProps } from "./ChatGameInvites";
 
 // Inbox Components
 export {

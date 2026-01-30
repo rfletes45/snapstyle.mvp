@@ -36,8 +36,8 @@ import {
 } from "../types/games";
 import { getFirestoreInstance } from "./firebase";
 
-// Get Firestore instance
-const db = getFirestoreInstance();
+// Lazy getter to avoid calling getFirestoreInstance at module load time
+const getDb = () => getFirestoreInstance();
 
 // =============================================================================
 // Types
@@ -293,7 +293,7 @@ function createEmptyStatsDocument(playerId: string): PlayerGameStatsDocument {
 export async function getOrCreatePlayerStats(
   playerId: string,
 ): Promise<PlayerGameStatsDocument> {
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
   const docSnap = await getDoc(docRef);
 
   if (docSnap.exists()) {
@@ -314,9 +314,9 @@ export async function recordGameResult(
   playerId: string,
   input: RecordGameResultInput,
 ): Promise<PlayerGameStatsDocument> {
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
 
-  const result = await runTransaction(db, async (transaction) => {
+  const result = await runTransaction(getDb(), async (transaction) => {
     const docSnap = await transaction.get(docRef);
 
     let statsDoc: PlayerGameStatsDocument;
@@ -511,7 +511,7 @@ export async function getRatingLeaderboard(
   // This would ideally use a separate leaderboard collection
   // For now, query player stats
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     orderBy(`gameStats.${gameType}.rating`, "desc"),
     limit(limitCount),
   );
@@ -548,7 +548,7 @@ export async function getHighScoreLeaderboard(
   limitCount: number = 100,
 ): Promise<LeaderboardEntry[]> {
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     orderBy(`gameStats.${gameType}.highScore`, "desc"),
     limit(limitCount),
   );
@@ -607,7 +607,7 @@ export async function getPlayerRank(
 
   // Count players with higher values
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where(`gameStats.${gameType}.${metric}`, ">", value),
   );
 
@@ -627,7 +627,7 @@ export function subscribeToPlayerStats(
   onUpdate: (stats: PlayerGameStatsDocument) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
 
   return onSnapshot(
     docRef,
@@ -657,7 +657,7 @@ export async function incrementAchievementCount(
   playerId: string,
   count: number = 1,
 ): Promise<void> {
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
 
   await updateDoc(docRef, {
     "overall.achievementsUnlocked": increment(count),
@@ -674,7 +674,7 @@ export async function resetDailyPlayCounts(): Promise<number> {
   const yesterdayStr = yesterday.toISOString().split("T")[0];
 
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("overall.lastDayPlayed", "==", yesterdayStr),
   );
 

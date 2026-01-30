@@ -51,6 +51,9 @@ export type { DeleteConfirmDialogProps } from "./DeleteConfirmDialog";
 export { FriendRequestItem } from "./FriendRequestItem";
 export type { FriendRequestItemProps } from "./FriendRequestItem";
 
+export { GroupInviteItem } from "./GroupInviteItem";
+export type { GroupInviteItemProps } from "./GroupInviteItem";
+
 // Visual Polish Components
 export { ProfilePreviewModal } from "./ProfilePreviewModal";
 export type { ProfilePreviewModalProps } from "./ProfilePreviewModal";

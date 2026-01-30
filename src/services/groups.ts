@@ -204,10 +204,11 @@ export async function sendGroupInvite(
     throw new Error("User is already a member of this group");
   }
 
-  // Check for existing pending invite
+  // Check for existing pending invite (that hasn't expired)
   console.log(
     `[sendGroupInvite] Step 3: Checking for existing pending invites...`,
   );
+  const now = Date.now();
   const existingInvites = await getDocs(
     query(
       collection(db, "GroupInvites"),
@@ -216,11 +217,22 @@ export async function sendGroupInvite(
       where("status", "==", "pending"),
     ),
   );
+
+  // Filter out expired invites
+  const validPendingInvites = existingInvites.docs.filter((docSnap) => {
+    const data = docSnap.data();
+    const expiresAt =
+      data.expiresAt instanceof Timestamp
+        ? data.expiresAt.toMillis()
+        : data.expiresAt;
+    return expiresAt > now;
+  });
+
   console.log(
-    `[sendGroupInvite] Step 3 complete: existingInvites.empty=${existingInvites.empty}`,
+    `[sendGroupInvite] Step 3 complete: existingInvites=${existingInvites.docs.length}, validPending=${validPendingInvites.length}`,
   );
 
-  if (!existingInvites.empty) {
+  if (validPendingInvites.length > 0) {
     throw new Error("User already has a pending invite to this group");
   }
 
@@ -232,7 +244,6 @@ export async function sendGroupInvite(
     throw new Error("Sender profile not found");
   }
 
-  const now = Date.now();
   const inviteRef = doc(collection(db, "GroupInvites"));
 
   const inviteData: Omit<GroupInvite, "id"> = {
@@ -268,6 +279,8 @@ export async function getPendingInvites(uid: string): Promise<GroupInvite[]> {
   const db = getFirestoreInstance();
   const now = Date.now();
 
+  console.log(`[getPendingInvites] Fetching invites for uid: ${uid}`);
+
   const invitesQuery = query(
     collection(db, "GroupInvites"),
     where("toUid", "==", uid),
@@ -276,21 +289,37 @@ export async function getPendingInvites(uid: string): Promise<GroupInvite[]> {
   );
 
   const snapshot = await getDocs(invitesQuery);
+  console.log(
+    `[getPendingInvites] Raw snapshot count: ${snapshot.docs.length}`,
+  );
 
-  return snapshot.docs
-    .map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt:
-        doc.data().createdAt instanceof Timestamp
-          ? doc.data().createdAt.toMillis()
-          : doc.data().createdAt,
-      expiresAt:
-        doc.data().expiresAt instanceof Timestamp
-          ? doc.data().expiresAt.toMillis()
-          : doc.data().expiresAt,
-    }))
-    .filter((invite) => invite.expiresAt > now) as GroupInvite[];
+  const invites = snapshot.docs
+    .map((doc) => {
+      const data = doc.data();
+      console.log(`[getPendingInvites] Doc ${doc.id}:`, data);
+      return {
+        id: doc.id,
+        ...data,
+        createdAt:
+          data.createdAt instanceof Timestamp
+            ? data.createdAt.toMillis()
+            : data.createdAt,
+        expiresAt:
+          data.expiresAt instanceof Timestamp
+            ? data.expiresAt.toMillis()
+            : data.expiresAt,
+      };
+    })
+    .filter((invite) => {
+      const notExpired = invite.expiresAt > now;
+      console.log(
+        `[getPendingInvites] Invite ${invite.id} expiresAt=${invite.expiresAt}, now=${now}, notExpired=${notExpired}`,
+      );
+      return notExpired;
+    }) as GroupInvite[];
+
+  console.log(`[getPendingInvites] Final invites count: ${invites.length}`);
+  return invites;
 }
 
 /**
@@ -999,6 +1028,29 @@ export async function transferOwnership(
 
 /**
  * Send a message to a group
+ *
+ * @deprecated Use `sendMessage` from `@/services/messaging` instead:
+ *
+ * ```typescript
+ * // OLD (deprecated):
+ * import { sendGroupMessage } from "@/services/groups";
+ * await sendGroupMessage(groupId, senderUid, text, "text");
+ *
+ * // NEW (recommended):
+ * import { sendMessage } from "@/services/messaging";
+ * await sendMessage({
+ *   scope: "group",
+ *   conversationId: groupId,
+ *   kind: "text",
+ *   text: text,
+ * });
+ * ```
+ *
+ * The unified API provides:
+ * - Offline support via outbox
+ * - Optimistic UI patterns
+ * - Consistent API for DM and Group
+ *
  * @param mentionUids - Array of mentioned user UIDs (H9)
  * @param replyTo - Reply-to metadata (H6)
  */
@@ -1143,6 +1195,28 @@ export async function getGroupMessages(
 
 /**
  * Subscribe to group messages (real-time)
+ *
+ * @deprecated Use `subscribeToMessages` from `@/services/messaging` instead:
+ *
+ * ```typescript
+ * // OLD (deprecated):
+ * import { subscribeToGroupMessages } from "@/services/groups";
+ * const unsubscribe = subscribeToGroupMessages(groupId, setMessages);
+ *
+ * // NEW (recommended):
+ * import { subscribeToMessages } from "@/services/messaging";
+ * const unsubscribe = subscribeToMessages("group", groupId, {
+ *   onMessages: setMessages,
+ *   onPaginationState: setPagination,
+ *   currentUid: user.uid,
+ * });
+ * ```
+ *
+ * The unified subscription provides:
+ * - MessageV2 format (consistent with DMs)
+ * - Built-in pagination support
+ * - Hidden message filtering
+ * - Proper cursor-based pagination
  */
 export function subscribeToGroupMessages(
   groupId: string,
@@ -1168,6 +1242,7 @@ export function subscribeToGroupMessages(
           groupId: data.groupId,
           sender: data.sender,
           senderDisplayName: data.senderDisplayName,
+          senderAvatarConfig: data.senderAvatarConfig,
           type: data.type,
           content: data.content,
           createdAt:

@@ -27,10 +27,10 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
   resignMatch,
-  sendGameInvite,
   submitMove,
   subscribeToMatch,
 } from "@/services/turnBasedGames";
@@ -44,7 +44,6 @@ import {
   CheckersPiece,
   CheckersPosition,
   createInitialCheckersBoard,
-  TurnBasedMatchConfig,
 } from "@/types/turnBased";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 
@@ -700,20 +699,21 @@ export default function CheckersGameScreen({
 
     setLoading(true);
     try {
-      const config: TurnBasedMatchConfig = {
-        isRated: false,
-        allowSpectators: false,
-        chatEnabled: false,
-      };
-
       await sendGameInvite(
-        "checkers",
         currentFirebaseUser.uid,
         userProfile.displayName || "Player",
-        friend.friendUid,
-        friend.displayName,
-        config,
-        "Let's play Checkers!",
+        userProfile.avatarConfig
+          ? JSON.stringify(userProfile.avatarConfig)
+          : undefined,
+        {
+          gameType: "checkers",
+          recipientId: friend.friendUid,
+          recipientName: friend.displayName,
+          settings: {
+            isRated: false,
+            chatEnabled: false,
+          },
+        },
       );
 
       Alert.alert(

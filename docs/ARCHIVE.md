@@ -7,18 +7,145 @@
 
 ## Project Timeline Summary
 
-| Phase       | Focus                            | Status                   |
-| ----------- | -------------------------------- | ------------------------ |
-| Phase 0-4   | Initial setup, auth, basic UI    | ✅ Complete              |
-| Phase 5-8   | Profile, avatar, cosmetics       | ✅ Complete              |
-| Phase 9-11  | Chat V1 implementation           | ✅ Complete (Deprecated) |
-| Phase 12-14 | Groups, notifications            | ✅ Complete              |
-| Phase 15-17 | Chat V2 migration                | ✅ Complete              |
-| Phase 18-21 | V2 features, polish              | ✅ Complete              |
-| Phase A-G   | Avatar customization, theme      | ✅ Complete              |
-| Phase H     | Chat V1 decommission             | ✅ Complete              |
-| Cleanup     | Dead code removal                | ✅ Complete (PRs 8-11)   |
-| Inbox       | Inbox screen overhaul (8 phases) | ✅ Complete (Jan 2026)   |
+| Phase       | Focus                                | Status                   |
+| ----------- | ------------------------------------ | ------------------------ |
+| Phase 0-4   | Initial setup, auth, basic UI        | ✅ Complete              |
+| Phase 5-8   | Profile, avatar, cosmetics           | ✅ Complete              |
+| Phase 9-11  | Chat V1 implementation               | ✅ Complete (Deprecated) |
+| Phase 12-14 | Groups, notifications                | ✅ Complete              |
+| Phase 15-17 | Chat V2 migration                    | ✅ Complete              |
+| Phase 18-21 | V2 features, polish                  | ✅ Complete              |
+| Phase A-G   | Avatar customization, theme          | ✅ Complete              |
+| Phase H     | Chat V1 decommission                 | ✅ Complete              |
+| Cleanup     | Dead code removal                    | ✅ Complete (PRs 8-11)   |
+| Inbox       | Inbox screen overhaul (8 phases)     | ✅ Complete (Jan 2026)   |
+| UNI         | Unified messaging architecture       | ✅ Complete (Jan 2026)   |
+| Polish      | Group chat polish & message grouping | ✅ Complete (Jan 2026)   |
+
+---
+
+## Unified Messaging Architecture Summary
+
+**Completed**: January 2026
+
+### Overview
+
+Complete unification of DM and Group chat systems through shared abstractions:
+
+- **Single `useChat` hook** for both DM and Group messaging
+- **Unified `ChatComposer`** component for input handling
+- **Unified `ChatMessageList`** component for message display
+- **Scope-aware services** (`scope: "dm" | "group"`)
+
+### Key Achievements
+
+| Metric                        | Before       | After      |
+| ----------------------------- | ------------ | ---------- |
+| `ChatScreen.tsx`              | ~1,700 lines | ~800 lines |
+| `GroupChatScreen.tsx`         | ~1,700 lines | ~600 lines |
+| Duplicate components          | 2            | 0          |
+| Message subscription patterns | 4            | 2          |
+
+### New Unified Modules
+
+**`src/services/messaging/`**:
+
+- `send.ts` — Unified message sending
+- `subscribe.ts` — Unified message subscriptions
+- `memberState.ts` — Unified mute/archive/notify
+- `adapters/groupAdapter.ts` — GroupMessage ↔ MessageV2 conversion
+
+**`src/hooks/`**:
+
+- `useChat.ts` — Master chat hook combining all functionality
+- `useUnifiedMessages.ts` — Message subscription + outbox
+- `useChatComposer.ts` — Composer state management
+
+**`src/components/chat/`**:
+
+- `ChatComposer.tsx` — Unified input component
+- `ChatMessageList.tsx` — Unified message list
+
+### Documentation Consolidated
+
+The following phase documentation was consolidated and deleted:
+
+- `PHASE1_DISCOVERY_REPORT.md` — Initial architecture mapping
+- `PHASE2_INCONSISTENCY_REPORT.md` — DM vs Group differences
+- `PHASE3_REDUNDANCY_REPORT.md` — Service layer duplication
+- `ARCHITECTURE_PROPOSAL.md` — Unification proposal
+- `ARCHITECTURE_REVIEW_PROMPT.md` — Review guidelines
+- `IMPLEMENTATION_TICKETS.md` — Implementation tasks
+- `UNIFIED_COMPOSER_PLAN.md` — Composer unification plan
+- `CHAT_INFINITE_SCROLL_PROMPT.md` — Infinite scroll plan
+- `REORGANIZATION_PROMPT.md` — Reorganization guidelines
+
+---
+
+## Universal Game Invites Summary
+
+**Completed**: January 2026
+
+### Overview
+
+Complete redesign of the game invitation system to support universal (non-person-specific) invites:
+
+- **Group Chat Invites**: First N players to join lock in the game
+- **Variable Player Games**: Support for 2-8 player games with slot-based joining
+- **Spectator Mode**: Unlimited spectators after game is full
+- **Smart Visibility**: Group invites stay in chat, DM invites appear in Play page
+
+### Key Changes
+
+| Component                  | Change                                                    |
+| -------------------------- | --------------------------------------------------------- |
+| `UniversalGameInvite` type | New comprehensive invite model with slots and spectators  |
+| `gameInvites.ts` service   | Refactored with lazy Firestore getters, new query methods |
+| Firestore security rules   | Updated for `eligibleUserIds` array-contains queries      |
+| Firestore indexes          | Added composite indexes for universal invite queries      |
+| Migration script           | `migrateGameInvites.ts` for legacy invite migration       |
+
+### Visibility Rules
+
+| Context | Target    | Show in Chat | Show in Play Page |
+| ------- | --------- | ------------ | ----------------- |
+| DM      | specific  | ✅           | ✅                |
+| Group   | universal | ✅           | ❌                |
+
+### Implementation Files
+
+- `src/services/gameInvites.ts` — Main invite service (refactored)
+- `src/types/turnBased.ts` — Universal invite type definitions
+- `firebase-backend/firestore.rules` — Security rules for invites
+- `firebase-backend/functions/src/games.ts` — Cloud Functions
+- `firebase-backend/functions/src/migrations/migrateGameInvites.ts` — Migration
+
+---
+
+## Group Chat Polish Summary
+
+**Completed**: January 2026
+
+### Message Grouping System
+
+Implemented visual message grouping for group chats:
+
+- Messages from same sender within 2 minutes are grouped
+- Single name shown at top of group
+- Single avatar + timestamp shown at bottom of group
+- Reply messages always standalone (break group chains)
+- 3px spacing within groups, 12px between groups
+
+### Group Invite Improvements
+
+- Fixed expired invite detection (7-day expiry)
+- Filter expired invites when checking for pending duplicates
+- Proper Timestamp comparison for invite expiry
+
+### Reply Bubble Alignment
+
+- Fixed 40px indent for reply bubbles on received messages
+- Proper avatar spacing maintained
 
 ---
 
@@ -287,6 +414,25 @@ These patterns were removed and should not be reintroduced:
 | QUICKSTART.md                   | docs/05_RUNBOOK.md      |
 | INDEX.md                        | docs/00_INDEX.md        |
 | All PHASE\_\*.md files          | docs/ARCHIVE.md         |
+
+### Deleted January 2026 (Completed Work)
+
+| File                           | Reason                        |
+| ------------------------------ | ----------------------------- |
+| PHASE1_DISCOVERY_REPORT.md     | Unified architecture complete |
+| PHASE2_INCONSISTENCY_REPORT.md | Inconsistencies resolved      |
+| PHASE3_REDUNDANCY_REPORT.md    | Redundancy eliminated         |
+| ARCHITECTURE_PROPOSAL.md       | Proposal implemented          |
+| ARCHITECTURE_REVIEW_PROMPT.md  | Review complete               |
+| IMPLEMENTATION_TICKETS.md      | All tickets completed         |
+| UNIFIED_COMPOSER_PLAN.md       | Composer unified              |
+| CHAT_INFINITE_SCROLL_PROMPT.md | Infinite scroll implemented   |
+| REORGANIZATION_PROMPT.md       | Reorganization complete       |
+| GAME_IMPLEMENTATION_PROMPT.md  | Games implemented             |
+| GAME_REBUILD_RESEARCH.md       | Research consolidated to 06   |
+| GAME_RESEARCH_FINDINGS.md      | Findings consolidated to 06   |
+| REORGANIZATION_CHANGELOG.md    | Cleanup complete              |
+| UNIVERSAL_GAME_INVITES_PLAN.md | Universal invites implemented |
 
 ### Deleted (No Longer Relevant)
 

@@ -1,6 +1,8 @@
 # Vibe App — Documentation Index
 
 > **For Claude / LLM Context:** This index maps all project documentation. Use this to quickly find answers.
+>
+> **Last Updated**: January 2026
 
 ---
 
@@ -11,10 +13,13 @@
 | How do I run the app?               | [README.md](../README.md)                | Quick Start      |
 | What's the app structure?           | [01_ARCHITECTURE.md](01_ARCHITECTURE.md) | Folder Structure |
 | What are the Firestore collections? | [02_FIREBASE.md](02_FIREBASE.md)         | Data Model       |
-| How does Chat V2 messaging work?    | [03_CHAT_V2.md](03_CHAT_V2.md)           | Implementation   |
+| How does the unified chat work?     | [03_CHAT_V2.md](03_CHAT_V2.md)           | Architecture     |
+| How does message grouping work?     | [03_CHAT_V2.md](03_CHAT_V2.md)           | Message Grouping |
 | How do the games work?              | [06_GAMES.md](06_GAMES.md)               | All Sections     |
+| How do game invites work?           | [06_GAMES.md](06_GAMES.md)               | Services         |
 | How do I debug an issue?            | [05_RUNBOOK.md](05_RUNBOOK.md)           | Troubleshooting  |
 | What tests should I run?            | [04_TESTING.md](04_TESTING.md)           | Test Matrix      |
+| What was completed in each phase?   | [ARCHIVE.md](ARCHIVE.md)                 | Timeline Summary |
 
 ---
 
@@ -27,18 +32,17 @@
 | [README.md](../README.md)                | Project overview, quick start, commands                    | First time setup       |
 | [01_ARCHITECTURE.md](01_ARCHITECTURE.md) | App structure, navigation, state, services                 | Understanding codebase |
 | [02_FIREBASE.md](02_FIREBASE.md)         | Firestore schema, security rules, Cloud Functions, indexes | Backend changes        |
-| [03_CHAT_V2.md](03_CHAT_V2.md)           | Chat/messaging V2 specification and implementation         | Chat feature work      |
+| [03_CHAT_V2.md](03_CHAT_V2.md)           | Unified chat system, message grouping, composer, keyboard  | Chat feature work      |
 | [04_TESTING.md](04_TESTING.md)           | Security test matrix, QA procedures                        | Before deploying       |
 | [05_RUNBOOK.md](05_RUNBOOK.md)           | Common issues, debugging, deployment                       | When things break      |
 | [06_GAMES.md](06_GAMES.md)               | Games system: architecture, types, services, testing       | Games feature work     |
 
-### Reference
+### Reference & History
 
-| File                                                       | Purpose                                            |
-| ---------------------------------------------------------- | -------------------------------------------------- |
-| [ARCHIVE.md](ARCHIVE.md)                                   | Historical/legacy information retained for context |
-| [REORGANIZATION_CHANGELOG.md](REORGANIZATION_CHANGELOG.md) | Record of codebase cleanup and reorganization      |
-| [../BRANDING.md](../BRANDING.md)                           | Vibe brand guide, terminology, design tokens       |
+| File                             | Purpose                                          |
+| -------------------------------- | ------------------------------------------------ |
+| [ARCHIVE.md](ARCHIVE.md)         | Development history, completed phases, decisions |
+| [../BRANDING.md](../BRANDING.md) | Vibe brand guide, terminology, design tokens     |
 
 ---
 
@@ -86,7 +90,11 @@
 
 ### Hooks (src/hooks/)
 
-- `useMessagesV2.ts` — V2 message subscription
+- `useChat.ts` — **Master chat hook** (unified DM & Group)
+- `useUnifiedMessages.ts` — Unified message subscription + outbox
+- `useChatComposer.ts` — Composer state management
+- `useUnifiedChatScreen.ts` — Combined hook for chat screens
+- `useMessagesV2.ts` — V2 message subscription (legacy, re-exports unified)
 - `useOutboxProcessor.ts` — Offline message queue processing
 - `useInboxData.ts` — Unified inbox data with filters
 - `useConversationActions.ts` — Pin/mute/delete actions

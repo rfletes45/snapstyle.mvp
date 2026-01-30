@@ -24,9 +24,11 @@ import {
   PanResponderGestureState,
   Platform,
   Pressable,
+  StyleProp,
   StyleSheet,
   Text,
   View,
+  ViewStyle,
 } from "react-native";
 import { useTheme } from "react-native-paper";
 
@@ -45,6 +47,8 @@ export interface VoiceRecordButtonProps {
   size?: number;
   /** Maximum recording duration in seconds */
   maxDuration?: number;
+  /** Container style */
+  style?: StyleProp<ViewStyle>;
 }
 
 // =============================================================================
@@ -65,6 +69,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
   disabled = false,
   size = DEFAULT_SIZE,
   maxDuration = 60,
+  style,
 }: VoiceRecordButtonProps) {
   const theme = useTheme();
   const [slideOffset, setSlideOffset] = useState(0);
@@ -273,7 +278,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
   // Web: Use click-to-toggle pattern (more reliable than PanResponder on web)
   if (Platform.OS === "web") {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, style]}>
         {/* Recording overlay with cancel button */}
         {voiceRecorder.isRecording && (
           <View style={styles.recordingOverlay}>
@@ -337,7 +342,7 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
   // Native: Use PanResponder for hold-to-record
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       {/* Recording overlay */}
       {voiceRecorder.isRecording && (
         <View style={styles.recordingOverlay}>

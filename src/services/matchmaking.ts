@@ -34,8 +34,8 @@ import {
 } from "../types/games";
 import { getFirestoreInstance } from "./firebase";
 
-// Get Firestore instance
-const db = getFirestoreInstance();
+// Lazy getter to avoid calling getFirestoreInstance at module load time
+const getDb = () => getFirestoreInstance();
 
 // =============================================================================
 // Types
@@ -261,7 +261,7 @@ export async function joinQueue(
   };
 
   // Save to Firestore
-  const entryRef = doc(db, COLLECTION_NAME, queueId);
+  const entryRef = doc(getDb(), COLLECTION_NAME, queueId);
   await setDoc(entryRef, entry);
 
   return entry;
@@ -284,7 +284,7 @@ export async function leaveQueue(
     throw new Error(`Queue entry is ${entry.status}, cannot cancel`);
   }
 
-  const entryRef = doc(db, COLLECTION_NAME, entry.id);
+  const entryRef = doc(getDb(), COLLECTION_NAME, entry.id);
   await updateDoc(entryRef, {
     status: "cancelled",
     updatedAt: serverTimestamp(),
@@ -317,7 +317,7 @@ export async function findMatch(
   );
 
   // Update current range
-  const playerEntryRef = doc(db, COLLECTION_NAME, playerEntry.id);
+  const playerEntryRef = doc(getDb(), COLLECTION_NAME, playerEntry.id);
   await updateDoc(playerEntryRef, {
     currentRatingRange: currentRange,
     updatedAt: serverTimestamp(),
@@ -325,7 +325,7 @@ export async function findMatch(
 
   // Query for potential matches
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("gameType", "==", gameType),
     where("isRated", "==", playerEntry.isRated),
     where("status", "==", "searching"),
@@ -383,10 +383,10 @@ export async function findMatch(
 
   // Create match using transaction to prevent race conditions
   try {
-    const matchResult = await runTransaction(db, async (transaction) => {
+    const matchResult = await runTransaction(getDb(), async (transaction) => {
       // Re-read both entries to ensure they're still searching
-      const playerRef = doc(db, COLLECTION_NAME, playerEntry.id);
-      const matchRef = doc(db, COLLECTION_NAME, bestMatch!.id);
+      const playerRef = doc(getDb(), COLLECTION_NAME, playerEntry.id);
+      const matchRef = doc(getDb(), COLLECTION_NAME, bestMatch!.id);
 
       const [playerSnap, matchSnap] = await Promise.all([
         transaction.get(playerRef),
@@ -456,7 +456,7 @@ export async function getPlayerQueueEntry(
   gameType: MatchmakingGameType,
 ): Promise<MatchmakingQueueEntry | null> {
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("playerId", "==", playerId),
     where("gameType", "==", gameType),
     where("status", "==", "searching"),
@@ -478,7 +478,7 @@ export async function getPlayerActiveQueues(
   playerId: string,
 ): Promise<MatchmakingQueueEntry[]> {
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("playerId", "==", playerId),
     where("status", "==", "searching"),
   );
@@ -494,7 +494,7 @@ export async function getQueueStats(
   gameType: MatchmakingGameType,
 ): Promise<QueueStats> {
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("gameType", "==", gameType),
     where("status", "==", "searching"),
   );
@@ -548,7 +548,7 @@ export function subscribeToQueueEntry(
   onError?: (error: Error) => void,
 ): Unsubscribe {
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("playerId", "==", playerId),
     where("gameType", "==", gameType),
     limit(1),
@@ -581,7 +581,7 @@ export function subscribeToQueueStats(
   onError?: (error: Error) => void,
 ): Unsubscribe {
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("gameType", "==", gameType),
     where("status", "==", "searching"),
   );
@@ -611,7 +611,7 @@ export async function expireQueueEntries(): Promise<number> {
   const now = Timestamp.now();
 
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("status", "==", "searching"),
     where("expiresAt", "<", now),
   );
@@ -641,7 +641,7 @@ export async function deleteOldQueueEntries(
   );
 
   const q = query(
-    collection(db, COLLECTION_NAME),
+    collection(getDb(), COLLECTION_NAME),
     where("status", "in", ["matched", "cancelled", "expired"]),
     where("createdAt", "<", cutoff),
   );

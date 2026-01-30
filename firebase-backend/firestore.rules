@@ -1122,38 +1122,106 @@ service cloud.firestore {
       }
     }
 
-    // GAME INVITES COLLECTION
-    // Handles invitations for multiplayer games
+    // GAME INVITES COLLECTION (UNIVERSAL INVITES)
+    // Supports both legacy person-specific and new universal invites
     match /GameInvites/{inviteId} {
-      // Helper: Check if user is sender or recipient
-      function isInviteSenderOrRecipient() {
-        return resource.data.senderId == request.auth.uid || 
-               resource.data.recipientId == request.auth.uid;
+
+      // Helper: Check if user can access this invite (for document-level access)
+      function canAccessInvite() {
+        let data = resource.data;
+        // Sender always has access
+        return data.senderId == request.auth.uid ||
+          // Specific recipient has access (legacy DM behavior)
+          (data.get('targetType', 'specific') == 'specific' &&
+           data.get('recipientId', '') == request.auth.uid) ||
+          // Universal: check eligibleUserIds array
+          (data.get('targetType', 'specific') == 'universal' &&
+           request.auth.uid in data.get('eligibleUserIds', [])) ||
+          // Legacy support: check recipientId for old invites
+          data.get('recipientId', '') == request.auth.uid ||
+          // QUERY SUPPORT: Allow if user is in eligibleUserIds (simplifies queries)
+          request.auth.uid in data.get('eligibleUserIds', []);
       }
-      
-      // Read: sender or recipient can read invite
-      allow read: if isAuth() && isInviteSenderOrRecipient();
-      
-      // Create: authenticated users can send invites
-      // TEMPORARILY SIMPLIFIED FOR DEBUGGING
+
+      // Helper: Check if invite is full
+      function isFull() {
+        return resource.data.get('claimedSlots', []).size() >=
+               resource.data.get('requiredPlayers', 2);
+      }
+
+      // Read: users who can access the invite
+      // Supports queries with eligibleUserIds array-contains filter
+      allow read: if isAuth() && canAccessInvite();
+
+      // Create: authenticated users can create invites
       allow create: if isAuth() &&
-                      request.resource.data.senderId == request.auth.uid &&
-                      request.resource.data.status == 'pending';
-      
-      // Update: recipient can accept/decline, sender can cancel
+        request.resource.data.senderId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        // Must have at least sender in claimedSlots (for universal) OR be legacy invite
+        (request.resource.data.get('claimedSlots', []).size() >= 1 ||
+         request.resource.data.get('recipientId', '') != '');
+
+      // Update: Various actions allowed
       allow update: if isAuth() && (
-                      // Recipient accepting/declining
-                      (resource.data.recipientId == request.auth.uid &&
-                       resource.data.status == 'pending' &&
-                       request.resource.data.status in ['accepted', 'declined']) ||
-                      // Sender cancelling
-                      (resource.data.senderId == request.auth.uid &&
-                       resource.data.status == 'pending' &&
-                       request.resource.data.status == 'cancelled')
-                    );
-      
-      // Delete: sender or recipient can delete old invites
-      allow delete: if isAuth() && isInviteSenderOrRecipient();
+        // CLAIM SLOT: Eligible user joining
+        (canAccessInvite() &&
+         resource.data.status in ['pending', 'filling'] &&
+         request.resource.data.get('claimedSlots', []).size() >
+           resource.data.get('claimedSlots', []).size()) ||
+
+        // UNCLAIM SLOT: User leaving (not host)
+        (canAccessInvite() &&
+         resource.data.status in ['pending', 'filling'] &&
+         resource.data.get('claimedSlots', [])[0].playerId != request.auth.uid &&
+         request.resource.data.get('claimedSlots', []).size() <
+           resource.data.get('claimedSlots', []).size()) ||
+
+        // STATUS CHANGE: Filling when players join
+        (canAccessInvite() &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status == 'filling') ||
+
+        // STATUS CHANGE: Ready when full
+        (canAccessInvite() &&
+         resource.data.status in ['pending', 'filling'] &&
+         request.resource.data.status == 'ready') ||
+
+        // DECLINE: Specific recipient declining
+        (resource.data.get('targetType', 'specific') == 'specific' &&
+         resource.data.get('recipientId', '') == request.auth.uid &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status == 'declined') ||
+
+        // CANCEL: Sender cancelling
+        (resource.data.senderId == request.auth.uid &&
+         resource.data.status in ['pending', 'filling'] &&
+         request.resource.data.status == 'cancelled') ||
+
+        // JOIN AS SPECTATOR
+        (canAccessInvite() &&
+         resource.data.get('spectatingEnabled', true) == true &&
+         resource.data.status in ['ready', 'active'] &&
+         request.resource.data.get('spectators', []).size() >
+           resource.data.get('spectators', []).size()) ||
+
+        // LEAVE AS SPECTATOR
+        (canAccessInvite() &&
+         request.resource.data.get('spectators', []).size() <
+           resource.data.get('spectators', []).size()) ||
+
+        // LEGACY: Old accept/decline behavior
+        (resource.data.get('recipientId', '') == request.auth.uid &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status in ['accepted', 'declined']) ||
+
+        // LEGACY: Old cancel behavior
+        (resource.data.senderId == request.auth.uid &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status == 'cancelled')
+      );
+
+      // Delete: sender can delete
+      allow delete: if isAuth() && resource.data.senderId == request.auth.uid;
     }
 
     // MATCHMAKING QUEUE COLLECTION

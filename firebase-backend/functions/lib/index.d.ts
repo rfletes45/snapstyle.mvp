@@ -1,23 +1,26 @@
 /**
  * SnapStyle Cloud Functions
  * Handles:
- * - Automatic Storage cleanup when messages are deleted (Phase 4)
- * - Story auto-expiry and cleanup (Phase 5)
- * - Push notifications (Phase 6)
- * - Streak management (Phase 6)
- * - V2 Messaging with idempotent sends (Phase H3)
+ * - Automatic Storage cleanup when messages are deleted
+ * - Story auto-expiry and cleanup
+ * - Push notifications
+ * - Streak management
+ * - V2 Messaging with idempotent sends
+ * - Games: Turn-based games, matchmaking, achievements
  *
- * Security Note (Phase E):
+ * Security Note:
  * - All onCall functions require authentication via context.auth
  * - Admin functions verify context.auth.token.admin claim
  * - Input validation is performed on all user-supplied data
  * - Structured logging includes context for debugging/audit
  */
 import * as functions from "firebase-functions";
+import { cleanupOldGames, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame } from "./games";
 export declare const sendMessageV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const editMessageV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const deleteMessageForAllV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const toggleReactionV2: functions.HttpsFunction & functions.Runnable<any>;
+export { cleanupOldGames, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame, };
 /**
  * onNewMessage: Triggered when a new message is created
  * Sends push notification to recipient and updates streak tracking

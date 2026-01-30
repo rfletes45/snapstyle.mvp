@@ -47,7 +47,11 @@ snapstyle-mvp/
 │   │   ├── gameAchievements.ts # Achievement definitions
 │   │   └── index.ts           # Barrel export
 │   ├── hooks/                 # Custom React hooks
-│   │   ├── useMessagesV2.ts   # V2 message subscription
+│   │   ├── useChat.ts         # **Master chat hook** (unified DM & Group)
+│   │   ├── useUnifiedMessages.ts # Message subscription + outbox integration
+│   │   ├── useChatComposer.ts # Composer state management
+│   │   ├── useUnifiedChatScreen.ts # Combined hook for chat screens
+│   │   ├── useMessagesV2.ts   # V2 message subscription (legacy)
 │   │   ├── useOutboxProcessor.ts # Offline message queue
 │   │   ├── useAttachmentPicker.ts # Multi-attachment selection
 │   │   ├── useVoiceRecorder.ts # Voice message recording
@@ -83,9 +87,19 @@ snapstyle-mvp/
 │   │   ├── tasks/             # Daily tasks
 │   │   └── wallet/            # Token wallet
 │   ├── services/              # Firebase/backend operations
+│   │   ├── messaging/         # **Unified messaging module**
+│   │   │   ├── adapters/      # Message type adapters
+│   │   │   │   ├── groupAdapter.ts # GroupMessage ↔ MessageV2
+│   │   │   │   └── index.ts   # Barrel export
+│   │   │   ├── index.ts       # Public API barrel
+│   │   │   ├── memberState.ts # Unified member state
+│   │   │   ├── send.ts        # Unified message sending
+│   │   │   └── subscribe.ts   # Unified subscriptions
 │   │   ├── games/             # Game logic (chess, snake, 2048, etc.)
 │   │   ├── gameValidation/    # Move validators
 │   │   ├── inboxSettings.ts   # Inbox settings service
+│   │   ├── chatV2.ts          # DM operations (uses unified)
+│   │   ├── groups.ts          # Group operations (uses unified)
 │   │   ├── index.ts           # Barrel export (non-conflicting)
 │   │   └── ...
 │   ├── store/                 # Context providers
@@ -234,29 +248,68 @@ RootNavigator
 
 ## Service Layer (src/services/)
 
-| Service             | Purpose           | Key Functions                                      |
-| ------------------- | ----------------- | -------------------------------------------------- |
-| `auth.ts`           | Authentication    | `signupUser`, `loginUser`, `logoutUser`            |
-| `users.ts`          | User profiles     | `createUserProfile`, `updateProfile`, `getUser`    |
-| `friends.ts`        | Connections       | `sendFriendRequest`, `acceptRequest`, `unfriend`   |
-| `chat.ts`           | DM messaging      | `getOrCreateChat`, `getUserChats`                  |
-| `chatV2.ts`         | V2 messaging      | `sendMessageWithOutbox`, `processPendingMessages`  |
-| `messageActions.ts` | Edit/Delete (H7)  | `editMessage`, `deleteMessageForAll/Me`            |
-| `reactions.ts`      | Reactions (H8)    | `toggleReaction`, `subscribeToReactions`           |
-| `groups.ts`         | Group chats       | `createGroup`, `sendGroupMessage`, role management |
-| `stories.ts`        | Moments           | `postStory`, `getStoriesForUser`, `markAsViewed`   |
-| `games.ts`          | Mini-games        | `submitGameScore`, `sendScorecard`                 |
-| `shop.ts`           | Purchases         | `purchaseItem`, `getShopCatalog`                   |
-| `economy.ts`        | Wallet            | `getWallet`, `awardTokens`                         |
-| `tasks.ts`          | Daily tasks       | `getTasks`, `claimReward`                          |
-| `moderation.ts`     | Reports/bans      | `submitReport`, admin functions                    |
-| `notifications.ts`  | Push tokens       | `registerPushToken`                                |
-| `storage.ts`        | File uploads      | `uploadImage`, `uploadVoiceMessage`                |
-| `inboxSettings.ts`  | Inbox preferences | `getInboxSettings`, `updateInboxSettings`          |
+### Unified Messaging (`services/messaging/`)
+
+The messaging module provides a unified API for both DM and group chats:
+
+| File                       | Purpose                 | Key Functions                               |
+| -------------------------- | ----------------------- | ------------------------------------------- |
+| `send.ts`                  | Unified message sending | `sendMessage({ scope, conversationId })`    |
+| `subscribe.ts`             | Unified subscriptions   | `subscribeToMessages(scope, id)`            |
+| `memberState.ts`           | Unified member state    | `setMuted`, `setArchived`, `setNotifyLevel` |
+| `adapters/groupAdapter.ts` | Type conversion         | `fromGroupMessage`, `toGroupMessage`        |
+
+### Core Services
+
+| Service             | Purpose            | Key Functions                                       |
+| ------------------- | ------------------ | --------------------------------------------------- |
+| `auth.ts`           | Authentication     | `signupUser`, `loginUser`, `logoutUser`             |
+| `users.ts`          | User profiles      | `createUserProfile`, `updateProfile`, `getUser`     |
+| `friends.ts`        | Connections        | `sendFriendRequest`, `acceptRequest`, `unfriend`    |
+| `chat.ts`           | DM chat CRUD       | `getOrCreateChat`, `getUserChats`                   |
+| `chatV2.ts`         | DM messaging       | `sendMessageWithOutbox`, `processPendingMessages`   |
+| `messageList.ts`    | Subscriptions      | `subscribeToDMMessages`, `subscribeToGroupMessages` |
+| `messageActions.ts` | Edit/Delete        | `editMessage`, `deleteMessageForAll/Me`             |
+| `reactions.ts`      | Reactions          | `toggleReaction`, `subscribeToReactions`            |
+| `groups.ts`         | Group chats        | `createGroup`, `sendGroupMessage`, role management  |
+| `chatMembers.ts`    | DM member state    | `updateReadWatermark`, `setMuted`, `setArchived`    |
+| `groupMembers.ts`   | Group member state | `updateGroupReadWatermark`, `setGroupMuted`         |
+| `outbox.ts`         | Offline queue      | `enqueueMessage`, `processOutbox`, `retryItem`      |
+| `stories.ts`        | Moments            | `postStory`, `getStoriesForUser`, `markAsViewed`    |
+| `games.ts`          | Mini-games         | `submitGameScore`, `sendScorecard`                  |
+| `turnBasedGames.ts` | Multiplayer games  | `createGame`, `makeMove`, `resignGame`              |
+| `shop.ts`           | Purchases          | `purchaseItem`, `getShopCatalog`                    |
+| `economy.ts`        | Wallet             | `getWallet`, `awardTokens`                          |
+| `tasks.ts`          | Daily tasks        | `getTasks`, `claimReward`                           |
+| `moderation.ts`     | Reports/bans       | `submitReport`, admin functions                     |
+| `notifications.ts`  | Push tokens        | `registerPushToken`                                 |
+| `storage.ts`        | File uploads       | `uploadImage`, `uploadVoiceMessage`                 |
+| `inboxSettings.ts`  | Inbox preferences  | `getInboxSettings`, `updateInboxSettings`           |
 
 ---
 
 ## Key Patterns
+
+### Unified Chat Hooks
+
+Chat screens use a layered hook architecture:
+
+```typescript
+// Master hook - composes all chat functionality
+const chat = useChat({
+  scope: "dm" | "group",
+  conversationId: string,
+  currentUserId: string,
+});
+
+// Provides:
+// - messages, displayMessages (with outbox merge)
+// - sendMessage, loadOlder, loadNewer
+// - replyTo state management
+// - reaction handling
+// - scroll position tracking
+// - auto-scroll behavior
+```
 
 ### Optimistic Updates + Outbox
 

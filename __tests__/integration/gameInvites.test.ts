@@ -98,10 +98,11 @@ async function acceptGameInvite(
 ): Promise<string> {
   const invite = invites.get(inviteId);
   if (!invite) throw new Error("Invite not found");
-  if (invite.toUserId !== userId)
-    throw new Error("Cannot accept invite meant for another user");
+  // Check for own invite first (more specific error)
   if (invite.fromUserId === userId)
     throw new Error("Cannot accept your own invite");
+  if (invite.toUserId !== userId)
+    throw new Error("Cannot accept invite meant for another user");
   if (invite.status !== "pending") throw new Error("Invite is not pending");
   if (getCurrentTime() > invite.expiresAt)
     throw new Error("Invite has expired");

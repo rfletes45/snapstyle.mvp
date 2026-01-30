@@ -35,6 +35,7 @@ import {
 } from "@react-navigation/native";
 import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
+import { Text } from "react-native-paper";
 
 // Components
 import BlockUserModal from "@/components/BlockUserModal";
@@ -45,6 +46,7 @@ import {
   DeleteConfirmDialog,
   EmptyState,
   FriendRequestItem,
+  GroupInviteItem,
   InboxFAB,
   InboxHeader,
   InboxTabs,
@@ -54,6 +56,7 @@ import {
   SwipeableConversation,
 } from "@/components/chat/inbox";
 import { ErrorState, LoadingState } from "@/components/ui";
+import { acceptGroupInvite, declineGroupInvite } from "@/services/groups";
 
 // Theme
 
@@ -179,9 +182,16 @@ export default function ChatListScreen() {
 
       const loadInvites = async () => {
         try {
+          console.log("[ChatListScreen] Loading group invites for uid:", uid);
           const invites = await getPendingInvites(uid);
+          console.log(
+            "[ChatListScreen] Loaded group invites:",
+            invites.length,
+            invites,
+          );
           setPendingInvites(invites);
         } catch (e) {
+          console.error("[ChatListScreen] Error loading group invites:", e);
           log.warn("Could not fetch group invites", {
             data: { error: e instanceof Error ? e.message : String(e) },
           });
@@ -312,6 +322,43 @@ export default function ChatListScreen() {
     setProfilePreviewUserId(request.fromUserId);
     setProfilePreviewVisible(true);
   }, []);
+
+  // =============================================================================
+  // Group Invite Handlers
+  // =============================================================================
+
+  const handleAcceptGroupInvite = useCallback(
+    async (invite: GroupInvite) => {
+      if (!uid) return;
+      try {
+        await acceptGroupInvite(invite.id, uid);
+        // Remove from local state
+        setPendingInvites((prev) => prev.filter((i) => i.id !== invite.id));
+        // Navigate to the group
+        navigation.navigate("GroupChat", {
+          groupId: invite.groupId,
+          groupName: invite.groupName,
+        });
+      } catch (e) {
+        log.error("Failed to accept group invite", e);
+      }
+    },
+    [uid, navigation],
+  );
+
+  const handleDeclineGroupInvite = useCallback(
+    async (invite: GroupInvite) => {
+      if (!uid) return;
+      try {
+        await declineGroupInvite(invite.id, uid);
+        // Remove from local state
+        setPendingInvites((prev) => prev.filter((i) => i.id !== invite.id));
+      } catch (e) {
+        log.error("Failed to decline group invite", e);
+      }
+    },
+    [uid],
+  );
 
   // =============================================================================
   // Swipe Action Handlers
@@ -671,26 +718,93 @@ export default function ChatListScreen() {
         />
       )}
 
-      {/* Friend Requests List (when Requests tab is active) */}
+      {/* Requests List (Friend Requests + Group Invites when Requests tab is active) */}
       {showRequestsTab ? (
-        <FlatList
-          data={friendRequests}
-          renderItem={renderFriendRequestItem}
-          ListEmptyComponent={
+        friendRequests.length === 0 && pendingInvites.length === 0 ? (
+          <View style={styles.emptyContainer}>
             <EmptyState
               type="noRequests"
               showAction={true}
               onAction={() => navigation.navigate("Connections")}
               actionLabel="Find Friends"
             />
-          }
-          keyExtractor={(item) => `request-${item.id}`}
-          contentContainerStyle={
-            friendRequests.length === 0 ? styles.emptyContainer : undefined
-          }
-          refreshing={requestsLoading}
-          onRefresh={refresh}
-        />
+          </View>
+        ) : (
+          <FlatList
+            data={[
+              // Group invites section header
+              ...(pendingInvites.length > 0
+                ? [{ type: "header" as const, title: "Group Invites" }]
+                : []),
+              // Group invites
+              ...pendingInvites.map((invite) => ({
+                type: "invite" as const,
+                data: invite,
+              })),
+              // Friend requests section header
+              ...(friendRequests.length > 0
+                ? [{ type: "header" as const, title: "Friend Requests" }]
+                : []),
+              // Friend requests
+              ...friendRequests.map((request) => ({
+                type: "request" as const,
+                data: request,
+              })),
+            ]}
+            renderItem={({ item }) => {
+              if (item.type === "header") {
+                return (
+                  <View
+                    style={[
+                      styles.sectionHeader,
+                      { backgroundColor: colors.background },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.sectionHeaderText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {item.title}
+                    </Text>
+                  </View>
+                );
+              }
+              if (item.type === "invite") {
+                const invite = item.data as GroupInvite;
+                return (
+                  <GroupInviteItem
+                    invite={invite}
+                    onAccept={() => handleAcceptGroupInvite(invite)}
+                    onDecline={() => handleDeclineGroupInvite(invite)}
+                  />
+                );
+              }
+              // Friend request
+              const request = item.data as FriendRequestWithUser;
+              return (
+                <FriendRequestItem
+                  request={request}
+                  onAccept={() => handleAcceptRequest(request.id)}
+                  onDecline={() => handleDeclineRequest(request.id)}
+                  onPress={() => handleRequestPress(request)}
+                />
+              );
+            }}
+            keyExtractor={(item, index) => {
+              if (item.type === "header") {
+                return `header-${item.title}`;
+              }
+              if (item.type === "invite") {
+                return `invite-${(item.data as GroupInvite).id}`;
+              }
+              return `request-${(item.data as FriendRequestWithUser).id}`;
+            }}
+            refreshing={requestsLoading}
+            onRefresh={refresh}
+          />
+        )
       ) : (
         /* Conversation List */
         <FlatList
@@ -788,5 +902,16 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingTop: 16,
+  },
+  sectionHeaderText: {
+    fontSize: 13,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

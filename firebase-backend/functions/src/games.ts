@@ -13,7 +13,7 @@
  */
 
 import * as admin from "firebase-admin";
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import * as functions from "firebase-functions";
 
 // Initialize if not already
@@ -84,6 +84,68 @@ interface TurnBasedGame {
   startedAt?: Timestamp;
   endedAt?: Timestamp;
   turnExpiresAt?: Timestamp;
+
+  // NEW: Universal invite support
+  inviteId?: string; // Reference to originating invite
+  spectatorIds?: string[]; // Users watching the game
+  turnOrder?: string[]; // Order of players for turn-based games
+  playerCount?: number; // Number of players (2-7)
+}
+
+// =============================================================================
+// Universal Invite Types (for slot-based multi-player invites)
+// =============================================================================
+
+interface PlayerSlot {
+  playerId: string;
+  playerName: string;
+  playerAvatar?: string;
+  claimedAt: number;
+  isHost: boolean;
+}
+
+interface SpectatorEntry {
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  joinedAt: number;
+}
+
+interface UniversalGameInvite {
+  id: string;
+  gameType: TurnBasedGameType;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  context: "dm" | "group";
+  conversationId: string;
+  conversationName?: string;
+  targetType: "universal" | "specific";
+  recipientId?: string;
+  recipientName?: string;
+  recipientAvatar?: string;
+  eligibleUserIds: string[];
+  requiredPlayers: number;
+  maxPlayers: number;
+  claimedSlots: PlayerSlot[];
+  filledAt?: number;
+  spectatingEnabled: boolean;
+  spectatorOnly: boolean;
+  spectators: SpectatorEntry[];
+  maxSpectators?: number;
+  status: string;
+  gameId?: string;
+  settings: {
+    isRated: boolean;
+    timeControl?: { type: string; seconds: number };
+    chatEnabled: boolean;
+  };
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  respondedAt?: number;
+  showInPlayPage: boolean;
+  chatMessageId?: string;
 }
 
 interface GameStats {
@@ -376,6 +438,235 @@ async function getPlayerStats(
 ): Promise<PlayerGameStatsDoc | null> {
   const doc = await db.collection("PlayerGameStats").doc(playerId).get();
   return doc.exists ? (doc.data() as PlayerGameStatsDoc) : null;
+}
+
+// =============================================================================
+// Universal Invite Triggers (NEW)
+// =============================================================================
+
+/**
+ * Trigger when a universal invite is updated
+ *
+ * Handles:
+ * 1. Auto-creating game when all slots are filled (status -> 'ready')
+ * 2. Syncing spectators to game document
+ */
+export const onUniversalInviteUpdate = functions.firestore
+  .document("GameInvites/{inviteId}")
+  .onUpdate(async (change, context) => {
+    const before = change.before.data() as UniversalGameInvite | undefined;
+    const after = change.after.data() as UniversalGameInvite;
+    const inviteId = context.params.inviteId;
+
+    // Skip if not a universal invite (no claimedSlots means legacy invite)
+    if (!after.claimedSlots || after.claimedSlots.length === 0) {
+      return;
+    }
+
+    const beforeSlotCount = before?.claimedSlots?.length ?? 0;
+    const afterSlotCount = after.claimedSlots.length;
+    const beforeStatus = before?.status;
+    const afterStatus = after.status;
+
+    functions.logger.info("Universal invite updated", {
+      inviteId,
+      beforeSlotCount,
+      afterSlotCount,
+      beforeStatus,
+      afterStatus,
+    });
+
+    // CASE 1: Status changed to ready - create the game
+    if (afterStatus === "ready" && beforeStatus !== "ready") {
+      await createGameFromUniversalInvite(change.after.ref, after);
+      return;
+    }
+
+    // CASE 2: New spectator joined - sync to game document
+    if (
+      after.gameId &&
+      after.spectators.length > (before?.spectators?.length ?? 0)
+    ) {
+      const newSpectator = after.spectators[after.spectators.length - 1];
+
+      try {
+        await db
+          .collection("TurnBasedGames")
+          .doc(after.gameId)
+          .update({
+            spectatorIds: FieldValue.arrayUnion(newSpectator.userId),
+            updatedAt: Timestamp.now(),
+          });
+
+        functions.logger.info("Spectator synced to game", {
+          gameId: after.gameId,
+          spectatorId: newSpectator.userId,
+        });
+      } catch (error) {
+        functions.logger.error("Failed to sync spectator to game", {
+          gameId: after.gameId,
+          error,
+        });
+      }
+      return;
+    }
+
+    // CASE 3: Spectator left - sync removal to game document
+    if (
+      after.gameId &&
+      before?.spectators &&
+      after.spectators.length < before.spectators.length
+    ) {
+      // Find who left by comparing spectator arrays
+      const beforeIds = new Set(before.spectators.map((s) => s.userId));
+      const afterIds = new Set(after.spectators.map((s) => s.userId));
+      const leftIds = [...beforeIds].filter((id) => !afterIds.has(id));
+
+      try {
+        for (const leftId of leftIds) {
+          await db
+            .collection("TurnBasedGames")
+            .doc(after.gameId)
+            .update({
+              spectatorIds: FieldValue.arrayRemove(leftId),
+              updatedAt: Timestamp.now(),
+            });
+        }
+
+        functions.logger.info("Spectator(s) removed from game", {
+          gameId: after.gameId,
+          leftIds,
+        });
+      } catch (error) {
+        functions.logger.error("Failed to remove spectator from game", {
+          gameId: after.gameId,
+          error,
+        });
+      }
+      return;
+    }
+  });
+
+/**
+ * Create a game from a universal invite when all slots are filled
+ *
+ * This is called when the invite status changes to 'ready'.
+ * It builds the game document from the claimed slots and starts the game.
+ */
+async function createGameFromUniversalInvite(
+  inviteRef: FirebaseFirestore.DocumentReference,
+  invite: UniversalGameInvite,
+): Promise<void> {
+  const gameId = `game_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+  const now = Timestamp.now();
+
+  functions.logger.info("Creating game from universal invite", {
+    inviteId: invite.id,
+    gameId,
+    gameType: invite.gameType,
+    playerCount: invite.claimedSlots.length,
+  });
+
+  try {
+    // Build players object from claimed slots
+    // For 2-player games, use player1/player2 format for compatibility
+    // For 3+ player games, use playerN format
+    const playerIds: string[] = [];
+    const players: Record<string, Player> = {};
+
+    invite.claimedSlots.forEach((slot, index) => {
+      const playerKey = `player${index + 1}`;
+      players[playerKey] = {
+        id: slot.playerId,
+        name: slot.playerName,
+        avatar: slot.playerAvatar,
+        rating: DEFAULT_RATING, // TODO: Could look up actual rating
+      };
+      playerIds.push(slot.playerId);
+    });
+
+    // Determine who goes first (host/sender goes first)
+    const firstPlayerId = invite.claimedSlots[0].playerId;
+
+    // Build turn order for multi-player games
+    const turnOrder = playerIds.slice(); // Copy of player IDs in join order
+
+    // Get initial game state
+    const gameState = getInitialGameState(invite.gameType);
+
+    // For multi-player card games, add player order to state
+    if (invite.gameType === "crazy_eights" && gameState) {
+      gameState.playerOrder = turnOrder;
+      gameState.playerCount = playerIds.length;
+
+      // Initialize hands for each player
+      for (let i = 0; i < playerIds.length; i++) {
+        gameState[`player${i + 1}Hand`] = [];
+      }
+    }
+
+    // Build the game document
+    // Use type assertion since we're extending the interface
+    const game: TurnBasedGame = {
+      id: gameId,
+      gameType: invite.gameType,
+      status: "active",
+      playerIds,
+      players: players as any, // Allow dynamic player keys
+      currentTurn: firstPlayerId,
+      gameState,
+      settings: {
+        isRated: invite.settings.isRated,
+        chatEnabled: invite.settings.chatEnabled,
+      },
+      createdAt: now,
+      updatedAt: now,
+      startedAt: now,
+      // Extended fields for universal invites
+      inviteId: invite.id,
+      spectatorIds: invite.spectators.map((s) => s.userId),
+      turnOrder,
+      playerCount: playerIds.length,
+    };
+
+    // Add turn timeout if time control exists
+    if (invite.settings.timeControl?.seconds) {
+      game.turnExpiresAt = Timestamp.fromMillis(
+        now.toMillis() + invite.settings.timeControl.seconds * 1000,
+      );
+    }
+
+    // Write game and update invite in a batch
+    const batch = db.batch();
+
+    // Create the game document
+    batch.set(db.collection("TurnBasedGames").doc(gameId), game);
+
+    // Update invite with game ID and active status
+    batch.update(inviteRef, {
+      status: "active",
+      gameId,
+      updatedAt: now.toMillis(),
+    });
+
+    await batch.commit();
+
+    functions.logger.info("Game created from universal invite", {
+      gameId,
+      inviteId: invite.id,
+      players: playerIds,
+      spectators: invite.spectators.map((s) => s.userId),
+    });
+
+    // TODO: Send push notifications to all players
+    // await sendGameStartNotifications(playerIds, gameId, invite.gameType);
+  } catch (error) {
+    functions.logger.error("Failed to create game from universal invite", {
+      inviteId: invite.id,
+      error,
+    });
+    throw error;
+  }
 }
 
 // =============================================================================

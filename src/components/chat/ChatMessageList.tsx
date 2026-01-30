@@ -4,7 +4,7 @@
  * Keyboard-aware inverted FlatList for chat messages.
  * Handles:
  * - Inverted list rendering (newest at bottom)
- * - Dynamic content inset based on keyboard/composer
+ * - Dynamic content inset based on keyboard/composer (60fps via Reanimated)
  * - "At bottom" detection for smart scroll
  * - Performance optimizations
  *
@@ -33,18 +33,11 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  type SharedValue,
-} from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { ReturnToBottomPill } from "./ReturnToBottomPill";
 
 const log = createLogger("ChatMessageList");
-
-// Create animated FlatList
-const AnimatedFlatList = Animated.createAnimatedComponent(
-  FlatList,
-) as typeof FlatList;
 
 // =============================================================================
 // Types
@@ -114,6 +107,15 @@ function ChatMessageListInner<T>(
 
   const flatListRef = useRef<FlatList<T>>(null);
 
+  // Animated spacer style for smooth 60fps keyboard tracking
+  // In an inverted list, ListHeaderComponent appears at the bottom,
+  // so we use it as an animated spacer
+  const animatedSpacerStyle = useAnimatedStyle(() => {
+    "worklet";
+    const height = listBottomInset?.value ?? staticBottomInset;
+    return { height };
+  }, [listBottomInset, staticBottomInset]);
+
   // At bottom detection
   const atBottom = useAtBottom({
     threshold: 200,
@@ -129,38 +131,46 @@ function ChatMessageListInner<T>(
     debug,
   });
 
-  // Set FlatList ref for autoscroll
+  // Set FlatList ref for autoscroll - use stable ref setter
+  const { setFlatListRef } = autoscroll;
   useEffect(() => {
-    autoscroll.setFlatListRef(flatListRef.current);
-  }, [autoscroll]);
+    setFlatListRef(flatListRef.current);
+  }, [setFlatListRef]);
 
   // Notify parent of at bottom changes
   useEffect(() => {
     onAtBottomChange?.(atBottom.isAtBottom);
   }, [atBottom.isAtBottom, onAtBottomChange]);
 
-  // Animated content container style
-  const animatedContentStyle = useAnimatedStyle(() => {
-    if (!listBottomInset) {
-      return {
-        paddingTop: staticBottomInset, // Inverted: paddingTop = visual bottom
-      };
-    }
-
-    return {
-      paddingTop: listBottomInset.value,
-    };
-  }, [staticBottomInset]);
-
-  // Combined content container style
-  const combinedContentStyle = useMemo(
-    () => [
-      styles.contentContainer,
-      animatedContentStyle,
-      contentContainerStyle,
-    ],
-    [animatedContentStyle, contentContainerStyle],
+  // Content container style - static styles only
+  const dynamicContentStyle = useMemo(
+    () => [styles.contentContainer, contentContainerStyle],
+    [contentContainerStyle],
   );
+
+  // Animated spacer component that appears at the bottom of inverted list
+  // This creates smooth 60fps keyboard-following padding
+  const AnimatedSpacer = useCallback(
+    () => <Animated.View style={animatedSpacerStyle} />,
+    [animatedSpacerStyle],
+  );
+
+  // Combine user's ListHeaderComponent with our animated spacer
+  const combinedListHeader = useMemo(() => {
+    if (ListHeaderComponent) {
+      return (
+        <>
+          {typeof ListHeaderComponent === "function" ? (
+            <ListHeaderComponent />
+          ) : (
+            ListHeaderComponent
+          )}
+          <AnimatedSpacer />
+        </>
+      );
+    }
+    return <AnimatedSpacer />;
+  }, [ListHeaderComponent, AnimatedSpacer]);
 
   // Scroll to bottom (for inverted list, this is offset 0)
   const scrollToBottom = useCallback((animated = true) => {
@@ -234,44 +244,50 @@ function ChatMessageListInner<T>(
     [],
   );
 
+  // Common FlatList props
+  const flatListCommonProps = {
+    data,
+    renderItem,
+    keyExtractor,
+    // Inverted list: newest messages at bottom (visually), but at index 0
+    inverted: true,
+    // Keyboard handling
+    keyboardDismissMode: "interactive" as const,
+    keyboardShouldPersistTaps: "handled" as const,
+    // Scroll events
+    onScroll: handleScroll,
+    onScrollEndDrag: handleScrollEndDrag,
+    onMomentumScrollEnd: handleMomentumScrollEnd,
+    scrollEventThrottle: 16,
+    // Content - use combined header with animated spacer for smooth 60fps keyboard tracking
+    ListHeaderComponent: combinedListHeader,
+    ListEmptyComponent,
+    // Performance
+    ...LIST_PERFORMANCE_PROPS,
+    // Maintain scroll position when content changes
+    maintainVisibleContentPosition: {
+      minIndexForVisible: 1,
+      autoscrollToTopThreshold: 100,
+    },
+    // Handle scroll failures
+    onScrollToIndexFailed: handleScrollToIndexFailed,
+    // Styles
+    style: styles.list,
+    showsVerticalScrollIndicator: false,
+    // Extra props
+    ...flatListProps,
+  };
+
   return (
     <View style={[styles.container, style]}>
-      <AnimatedFlatList
-        ref={flatListRef as any}
-        data={data}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        // Inverted list: newest messages at bottom (visually), but at index 0
-        inverted
-        // Keyboard handling
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        // Scroll events
-        onScroll={handleScroll}
-        onScrollEndDrag={handleScrollEndDrag}
-        onMomentumScrollEnd={handleMomentumScrollEnd}
-        scrollEventThrottle={16}
-        // Content
-        ListHeaderComponent={ListHeaderComponent}
-        ListEmptyComponent={ListEmptyComponent}
-        // Performance
-        {...LIST_PERFORMANCE_PROPS}
-        // Maintain scroll position when content changes
-        maintainVisibleContentPosition={{
-          minIndexForVisible: 1,
-          autoscrollToTopThreshold: 100,
-        }}
-        // Handle scroll failures
-        onScrollToIndexFailed={handleScrollToIndexFailed}
-        // Styles
-        style={styles.list}
-        contentContainerStyle={combinedContentStyle}
-        showsVerticalScrollIndicator={false}
-        // Extra props
-        {...flatListProps}
+      <FlatList
+        ref={flatListRef}
+        {...flatListCommonProps}
+        contentContainerStyle={dynamicContentStyle}
       />
 
-      {/* Return to bottom pill */}
+      {/* Return to bottom pill - positioned above the composer
+          Uses staticBottomInset as base; the pill handles its own animation */}
       <ReturnToBottomPill
         visible={autoscroll.showReturnPill}
         unreadCount={autoscroll.unreadCount}

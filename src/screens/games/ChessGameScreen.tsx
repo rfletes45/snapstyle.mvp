@@ -32,6 +32,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { sendGameInvite } from "@/services/gameInvites";
 import {
   createChessMove,
   createInitialChessState,
@@ -44,7 +45,6 @@ import {
 import {
   endMatch,
   resignMatch,
-  sendGameInvite,
   submitMove,
   subscribeToMatch,
 } from "@/services/turnBasedGames";
@@ -60,7 +60,6 @@ import {
   ChessPieceType,
   ChessPosition,
   createInitialChessBoard,
-  TurnBasedMatchConfig,
 } from "@/types/turnBased";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 
@@ -734,20 +733,21 @@ export default function ChessGameScreen({
 
     setLoading(true);
     try {
-      const config: TurnBasedMatchConfig = {
-        isRated: false,
-        allowSpectators: false,
-        chatEnabled: false,
-      };
-
       await sendGameInvite(
-        "chess",
         currentFirebaseUser.uid,
         userProfile.displayName || "Player",
-        friend.friendUid,
-        friend.displayName,
-        config,
-        "Let's play Chess!",
+        userProfile.avatarConfig
+          ? JSON.stringify(userProfile.avatarConfig)
+          : undefined,
+        {
+          gameType: "chess",
+          recipientId: friend.friendUid,
+          recipientName: friend.displayName,
+          settings: {
+            isRated: false,
+            chatEnabled: false,
+          },
+        },
       );
 
       Alert.alert(

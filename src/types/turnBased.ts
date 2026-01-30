@@ -461,6 +461,165 @@ export interface GameInvite {
 export type RealTimeGameType = "8ball_pool" | "air_hockey";
 
 // =============================================================================
+// Universal Game Invite Types (NEW)
+// =============================================================================
+
+/** Where the invite was sent */
+export type InviteContext = "dm" | "group";
+
+/** Invite status (expanded for universal invites) */
+export type UniversalInviteStatus =
+  | "pending" // Waiting for first player to join (after sender)
+  | "filling" // Some players joined, not full yet
+  | "ready" // All required slots filled, game starting
+  | "active" // Game in progress
+  | "completed" // Game finished
+  | "declined" // Recipient declined (DM/specific only)
+  | "expired" // Time limit exceeded
+  | "cancelled"; // Sender cancelled
+
+/** A claimed player slot in the invite */
+export interface PlayerSlot {
+  playerId: string;
+  playerName: string;
+  playerAvatar?: string;
+  claimedAt: number; // Unix timestamp
+  isHost: boolean; // true for sender/first player
+}
+
+/** A spectator watching the game */
+export interface SpectatorEntry {
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  joinedAt: number; // Unix timestamp
+}
+
+/**
+ * Universal Game Invite - supports both DM and group contexts
+ *
+ * Key differences from legacy GameInvite:
+ * - `context` determines if DM or group
+ * - `targetType` determines if specific recipient or anyone can join
+ * - `claimedSlots` replaces accept/decline for multi-player
+ * - `spectators` allows watching after game starts
+ * - `showInPlayPage` controls visibility in Play tab
+ */
+export interface UniversalGameInvite {
+  // ============= IDENTITY =============
+  id: string;
+  gameType: TurnBasedGameType | RealTimeGameType;
+
+  // ============= SENDER =============
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+
+  // ============= CONTEXT =============
+  /** Where was this invite sent? "dm" for 1:1 chat, "group" for group chat */
+  context: InviteContext;
+
+  /** The conversation ID (chatId for DM, groupId for group) */
+  conversationId: string;
+
+  /** Display name of conversation (group name or recipient name) */
+  conversationName?: string;
+
+  // ============= TARGETING =============
+  /**
+   * Who can claim this invite?
+   * - "universal": Anyone in eligibleUserIds can claim a slot
+   * - "specific": Only the recipientId can claim (legacy DM behavior)
+   */
+  targetType: "universal" | "specific";
+
+  /** For specific targeting (DM invites) */
+  recipientId?: string;
+  recipientName?: string;
+  recipientAvatar?: string;
+
+  /** All users who can see/claim this invite */
+  eligibleUserIds: string[];
+
+  // ============= PLAYER SLOTS =============
+  /** Minimum players needed to start game */
+  requiredPlayers: number;
+
+  /** Maximum players allowed */
+  maxPlayers: number;
+
+  /** Players who have claimed slots (sender is always index 0) */
+  claimedSlots: PlayerSlot[];
+
+  /** When all required slots were filled */
+  filledAt?: number;
+
+  // ============= SPECTATING =============
+  /** Is spectating enabled? Default true */
+  spectatingEnabled: boolean;
+
+  /** Is this invite ONLY for spectating an existing game? */
+  spectatorOnly: boolean;
+
+  /** Users currently spectating */
+  spectators: SpectatorEntry[];
+
+  /** Max spectators allowed (undefined = unlimited) */
+  maxSpectators?: number;
+
+  // ============= STATUS =============
+  status: UniversalInviteStatus;
+
+  // ============= GAME REFERENCE =============
+  /** Game ID once created (status becomes 'active') */
+  gameId?: string;
+
+  // ============= SETTINGS =============
+  settings: {
+    isRated: boolean;
+    timeControl?: {
+      type: "none" | "per_turn" | "total";
+      seconds: number;
+    };
+    chatEnabled: boolean;
+  };
+
+  // ============= TIMESTAMPS =============
+  createdAt: number; // Unix timestamp
+  updatedAt: number; // Unix timestamp
+  expiresAt: number; // Unix timestamp
+  respondedAt?: number;
+
+  // ============= VISIBILITY =============
+  /** Show in Play page? true for DM invites, false for group invites */
+  showInPlayPage: boolean;
+
+  /** Message ID in chat (for linking invite to message) */
+  chatMessageId?: string;
+}
+
+/** Parameters for creating a universal invite */
+export interface SendUniversalInviteParams {
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  gameType: TurnBasedGameType | RealTimeGameType;
+  context: InviteContext;
+  conversationId: string;
+  conversationName?: string;
+  /** Required for group invites - all group member IDs */
+  eligibleUserIds?: string[];
+  /** Required for DM (specific) invites */
+  recipientId?: string;
+  recipientName?: string;
+  recipientAvatar?: string;
+  /** Override default player count (for games like Crazy Eights) */
+  requiredPlayers?: number;
+  settings?: Partial<UniversalGameInvite["settings"]>;
+  expirationMinutes?: number;
+}
+
+// =============================================================================
 // Matchmaking Types
 // =============================================================================
 

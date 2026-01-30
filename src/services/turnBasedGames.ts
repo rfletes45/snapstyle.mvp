@@ -22,7 +22,6 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  Timestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -46,7 +45,6 @@ import {
   MatchmakingQueueEntry,
   MatchStatus,
   RatingUpdate,
-  RealTimeGameType,
   shuffleArray,
   Spectator,
   TicTacToeGameState,
@@ -502,48 +500,9 @@ export async function getMatchHistory(
 
 // =============================================================================
 // Game Invites
+// NOTE: sendGameInvite has been moved to gameInvites.ts to avoid duplication.
+// Use gameInvites.sendGameInvite() or the new sendUniversalInvite() instead.
 // =============================================================================
-
-/**
- * Send a game invite
- */
-export async function sendGameInvite(
-  gameType: TurnBasedGameType | RealTimeGameType,
-  senderId: string,
-  senderName: string,
-  recipientId: string,
-  recipientName: string,
-  config: TurnBasedMatchConfig,
-  message?: string,
-  senderAvatar?: string,
-): Promise<string> {
-  // Firestore rules require createdAt and expiresAt to be Firestore Timestamps
-  const now = Timestamp.now();
-  const expiresAt = Timestamp.fromMillis(now.toMillis() + 24 * 60 * 60 * 1000); // 24 hours
-
-  const invite: Record<string, unknown> = {
-    gameType,
-    senderId,
-    senderName,
-    recipientId,
-    recipientName,
-    status: "pending",
-    config,
-    createdAt: now,
-    expiresAt: expiresAt,
-  };
-
-  // Only add optional fields if they have values (Firestore rejects undefined)
-  if (senderAvatar) {
-    invite.senderAvatar = senderAvatar;
-  }
-  if (message) {
-    invite.message = message;
-  }
-
-  const docRef = await addDoc(collection(getDb(), COLLECTIONS.invites), invite);
-  return docRef.id;
-}
 
 /**
  * Get pending invites for a user
@@ -589,23 +548,6 @@ export function subscribeToInvites(
       console.error("[turnBasedGames] subscribeToInvites - Error:", error);
     },
   );
-}
-
-/**
- * Debug: Get invite by ID (for testing if document exists)
- */
-export async function debugGetInviteById(inviteId: string): Promise<unknown> {
-  try {
-    const docRef = doc(getDb(), COLLECTIONS.invites, inviteId);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      return { id: snapshot.id, ...snapshot.data() };
-    }
-    return null;
-  } catch (error) {
-    console.error("[turnBasedGames] debugGetInviteById - Error:", error);
-    return null;
-  }
 }
 
 /**
@@ -1146,8 +1088,7 @@ export const turnBasedGameService = {
   getActiveMatches,
   getMatchHistory,
 
-  // Invites
-  sendGameInvite,
+  // Invites (NOTE: sendGameInvite moved to gameInvites.ts)
   getPendingInvites,
   subscribeToInvites,
   respondToInvite,

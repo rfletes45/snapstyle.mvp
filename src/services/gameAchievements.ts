@@ -22,8 +22,8 @@ import {
 import { getFirestoreInstance } from "./firebase";
 import { StatsGameType } from "./gameStats";
 
-// Get Firestore instance
-const db = getFirestoreInstance();
+// Lazy getter to avoid calling getFirestoreInstance at module load time
+const getDb = () => getFirestoreInstance();
 
 // =============================================================================
 // Types
@@ -733,7 +733,7 @@ export function getAchievementsForGame(gameType: StatsGameType): Achievement[] {
 export async function getOrCreatePlayerAchievements(
   playerId: string,
 ): Promise<PlayerAchievementsDocument> {
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
   const docSnap = await getDoc(docRef);
 
   if (docSnap.exists()) {
@@ -760,9 +760,9 @@ export async function checkAchievement(
     throw new Error(`Achievement ${achievementId} not found`);
   }
 
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
 
-  const result = await runTransaction(db, async (transaction) => {
+  const result = await runTransaction(getDb(), async (transaction) => {
     const docSnap = await transaction.get(docRef);
 
     let achievementsDoc: PlayerAchievementsDocument;
@@ -869,9 +869,9 @@ export async function claimAchievementRewards(
     throw new Error(`Achievement ${achievementId} not found`);
   }
 
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
 
-  return await runTransaction(db, async (transaction) => {
+  return await runTransaction(getDb(), async (transaction) => {
     const docSnap = await transaction.get(docRef);
 
     if (!docSnap.exists()) {
@@ -954,7 +954,7 @@ export function subscribeToPlayerAchievements(
   onUpdate: (achievements: PlayerAchievementsDocument) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
-  const docRef = doc(db, COLLECTION_NAME, playerId);
+  const docRef = doc(getDb(), COLLECTION_NAME, playerId);
 
   return onSnapshot(
     docRef,

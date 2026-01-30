@@ -94,3 +94,14 @@ export {
   type GameOfflineOverlayProps,
   type OfflineIndicatorProps,
 } from "./OfflineIndicator";
+
+// =============================================================================
+// Universal Invite Components (NEW)
+// =============================================================================
+
+export { PlayerSlots, type PlayerSlotsProps } from "./PlayerSlots";
+
+export {
+  UniversalInviteCard,
+  type UniversalInviteCardProps,
+} from "./UniversalInviteCard";

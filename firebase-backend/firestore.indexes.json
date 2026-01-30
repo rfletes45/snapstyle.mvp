@@ -382,6 +382,61 @@
       ]
     },
     {
+      "collectionGroup": "GameInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eligibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "GameInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "GameInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "showInPlayPage", "order": "ASCENDING" },
+        { "fieldPath": "eligibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "GameInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "context", "order": "ASCENDING" },
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "GameInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "eligibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "GameInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eligibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "showInPlayPage", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "MatchmakingQueue",
       "queryScope": "COLLECTION",
       "fields": [

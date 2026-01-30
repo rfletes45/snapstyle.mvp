@@ -2,7 +2,12 @@
  * Hooks Index
  *
  * Exports:
- * - useMessagesV2: V2 message subscription with pagination
+ * - useChat: Unified chat hook (ARCH-D02) - composes all chat functionality
+ * - useUnifiedMessages: Unified message subscription (ARCH-D01)
+ * - useChatComposer: Chat composer state management (ARCH-D03)
+ * - useUnifiedChatScreen: Screen-ready hook that composes useChat + useChatComposer (UNI-04)
+ * - useSnapCapture: Snap/photo capture and upload hook (UNI-05)
+ * - useMessagesV2: @deprecated - Use useChat or useUnifiedMessages instead
  * - useUnreadCount: Unread count calculation
  * - useMentionAutocomplete: @mention autocomplete state management
  * - useAttachmentPicker: Multi-attachment selection and upload management
@@ -13,7 +18,49 @@
  * - useFriendRequests: Friend requests subscription with actions
  */
 
+// =============================================================================
+// Unified Chat Hooks (Phase D)
+// =============================================================================
+
+export { useChat, default as useChatDefault } from "./useChat";
+export type {
+  SendMessageOptions,
+  UseChatConfig,
+  UseChatReturn,
+} from "./useChat";
+
+export { useUnifiedMessages } from "./useUnifiedMessages";
+export type {
+  UseUnifiedMessagesOptions,
+  UseUnifiedMessagesReturn,
+} from "./useUnifiedMessages";
+
+export { useChatComposer } from "./useChatComposer";
+export type {
+  ComposerSendOptions,
+  UseChatComposerConfig,
+  UseChatComposerReturn,
+} from "./useChatComposer";
+
+export { useUnifiedChatScreen } from "./useUnifiedChatScreen";
+export type {
+  UseUnifiedChatScreenConfig,
+  UseUnifiedChatScreenReturn,
+} from "./useUnifiedChatScreen";
+
+export { useSnapCapture } from "./useSnapCapture";
+export type {} from "./useSnapCapture";
+
+// =============================================================================
+// Legacy Hooks (Deprecated)
+// =============================================================================
+
+/** @deprecated Use useChat or useUnifiedMessages instead */
 export { useMessagesV2, useUnreadCount } from "./useMessagesV2";
+
+// =============================================================================
+// Feature-Specific Hooks
+// =============================================================================
 
 export { useMentionAutocomplete } from "./useMentionAutocomplete";
 export type {

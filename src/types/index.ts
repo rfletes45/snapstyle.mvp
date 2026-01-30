@@ -12,9 +12,24 @@
  *
  * Models exports ExtendedGameType, RealTimeGameType, etc. which conflict with games.ts
  * Import game types from ./games directly when needed.
+ *
+ * For message adapters, import from:
+ * - @/services/messaging/adapters - GroupMessage ↔ MessageV2 conversion
  */
 
 export * from "./achievements";
 export * from "./messaging";
 export * from "./models";
 export * from "./poolGame";
+
+// =============================================================================
+// Re-export message adapters for convenience
+// =============================================================================
+// Note: These are runtime functions, not just types, so we re-export from services
+export {
+  fromGroupMessage,
+  fromGroupMessages,
+  isLegacyGroupMessage,
+  isMessageV2,
+  toGroupMessage,
+} from "@/services/messaging/adapters";
