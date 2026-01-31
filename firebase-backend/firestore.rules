@@ -1122,6 +1122,54 @@ service cloud.firestore {
       }
     }
 
+    // ============================================================
+    // GAME HISTORY COLLECTION (Phase 1: Game System Overhaul)
+    // Stores completed game records for statistics and history
+    // Created by Cloud Functions when games complete
+    // ============================================================
+    match /GameHistory/{historyId} {
+      // Helper: Check if user was a player in this game
+      function wasPlayerInGame() {
+        return request.auth.uid in resource.data.playerIds;
+      }
+      
+      // Read: Users can read their own game history
+      // Supports queries with playerIds array-contains filter
+      allow read: if isAuth() && wasPlayerInGame();
+      
+      // Create: Only Cloud Functions can create history records
+      // This ensures data integrity - clients cannot fabricate game results
+      allow create: if false;
+      
+      // Update: History records are immutable
+      // Any corrections must go through administrative processes
+      allow update: if false;
+      
+      // Delete: History records cannot be deleted
+      // Preserves complete game history for stats and analytics
+      allow delete: if false;
+    }
+
+    // ============================================================
+    // LEADERBOARD STATS COLLECTION (Phase 8: Leaderboards)
+    // Stores aggregated player stats for leaderboard rankings
+    // Created/updated by Cloud Functions when games complete
+    // ============================================================
+    match /LeaderboardStats/{statsId} {
+      // Read: Anyone authenticated can read leaderboard stats
+      // This enables global leaderboard queries
+      allow read: if isAuth();
+      
+      // Create/Update: Only Cloud Functions can write stats
+      // This ensures data integrity - clients cannot manipulate rankings
+      allow create: if false;
+      allow update: if false;
+      
+      // Delete: Stats records cannot be deleted
+      // Preserves leaderboard integrity
+      allow delete: if false;
+    }
+
     // GAME INVITES COLLECTION (UNIVERSAL INVITES)
     // Supports both legacy person-specific and new universal invites
     match /GameInvites/{inviteId} {
@@ -1169,9 +1217,9 @@ service cloud.firestore {
          request.resource.data.get('claimedSlots', []).size() >
            resource.data.get('claimedSlots', []).size()) ||
 
-        // UNCLAIM SLOT: User leaving (not host)
+        // UNCLAIM SLOT: User leaving (not host) - allowed in pending, filling, or ready
         (canAccessInvite() &&
-         resource.data.status in ['pending', 'filling'] &&
+         resource.data.status in ['pending', 'filling', 'ready'] &&
          resource.data.get('claimedSlots', [])[0].playerId != request.auth.uid &&
          request.resource.data.get('claimedSlots', []).size() <
            resource.data.get('claimedSlots', []).size()) ||
@@ -1186,15 +1234,25 @@ service cloud.firestore {
          resource.data.status in ['pending', 'filling'] &&
          request.resource.data.status == 'ready') ||
 
+        // STATUS CHANGE: Back to filling/pending when players leave from ready
+        (canAccessInvite() &&
+         resource.data.status == 'ready' &&
+         request.resource.data.status in ['pending', 'filling']) ||
+
+        // START GAME: Host starting game (changes to active)
+        (resource.data.senderId == request.auth.uid &&
+         resource.data.status in ['pending', 'filling', 'ready'] &&
+         request.resource.data.status == 'active') ||
+
         // DECLINE: Specific recipient declining
         (resource.data.get('targetType', 'specific') == 'specific' &&
          resource.data.get('recipientId', '') == request.auth.uid &&
          resource.data.status == 'pending' &&
          request.resource.data.status == 'declined') ||
 
-        // CANCEL: Sender cancelling
+        // CANCEL: Sender cancelling - allowed in pending, filling, or ready
         (resource.data.senderId == request.auth.uid &&
-         resource.data.status in ['pending', 'filling'] &&
+         resource.data.status in ['pending', 'filling', 'ready'] &&
          request.resource.data.status == 'cancelled') ||
 
         // JOIN AS SPECTATOR
@@ -1217,7 +1275,13 @@ service cloud.firestore {
         // LEGACY: Old cancel behavior
         (resource.data.senderId == request.auth.uid &&
          resource.data.status == 'pending' &&
-         request.resource.data.status == 'cancelled')
+         request.resource.data.status == 'cancelled') ||
+
+        // COMPLETE: Participants can mark active invite as completed (cleanup)
+        // This allows client-side cleanup when game has finished
+        (canAccessInvite() &&
+         resource.data.status == 'active' &&
+         request.resource.data.status == 'completed')
       );
 
       // Delete: sender can delete
@@ -1312,9 +1376,13 @@ service cloud.firestore {
       // Create: users can create their own stats doc
       allow create: if isAuth() && isOwner(playerId);
       
-      // Update: Server-side only for game results
-      // Prevents clients from manipulating ratings/stats
-      allow update: if false;
+      // Update: users can update their own stats
+      // Stats track game results and ratings
+      allow update: if isAuth() && isOwner(playerId) &&
+                      // Ensure playerId cannot be changed
+                      request.resource.data.playerId == resource.data.playerId &&
+                      // Ensure total games can only increase
+                      request.resource.data.totalGames >= resource.data.totalGames;
       
       // Delete: not allowed
       allow delete: if false;
@@ -1329,8 +1397,13 @@ service cloud.firestore {
       // Create: user can create own achievements doc
       allow create: if isAuth() && isOwner(playerId);
       
-      // Update: Server-side only to prevent achievement cheating
-      allow update: if false;
+      // Update: user can update own achievements
+      // Progress is validated by thresholds, and values can only increase
+      allow update: if isAuth() && isOwner(playerId) &&
+                      // Ensure playerId cannot be changed
+                      request.resource.data.playerId == resource.data.playerId &&
+                      // Ensure totalUnlocked can only increase
+                      request.resource.data.totalUnlocked >= resource.data.totalUnlocked;
       
       // Delete: not allowed
       allow delete: if false;

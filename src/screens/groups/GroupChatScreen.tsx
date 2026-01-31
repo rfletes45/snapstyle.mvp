@@ -96,6 +96,11 @@ import {
 } from "@/services/scheduledMessages";
 import { uploadVoiceMessage } from "@/services/storage";
 
+// Game Picker
+import { GamePickerModal } from "@/components/games/GamePickerModal";
+import { GAME_SCREEN_MAP } from "@/config/gameCategories";
+import { ExtendedGameType } from "@/types/games";
+
 // Types
 import {
   AttachmentV2,
@@ -185,6 +190,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
@@ -440,17 +446,37 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       };
       const screen = screenMap[gameType];
       if (screen) {
-        navigation.navigate(screen, { matchId: gameId });
+        // Navigate to Play tab first, then to the specific game screen
+        navigation.navigate("Play", {
+          screen,
+          params: { matchId: gameId, entryPoint: "chat" },
+        });
       }
     },
     [navigation],
   );
 
-  // Game button press handler - TODO: Open game picker modal
+  // Game button press handler - Opens game picker modal
   const handleGamePress = useCallback(() => {
-    // TODO: Implement game picker modal
-    console.log("[GroupChatScreen] Game button pressed");
+    setGamePickerVisible(true);
   }, []);
+
+  // Handle single-player game selection - navigate directly to game
+  const handleSinglePlayerGame = useCallback(
+    (gameType: ExtendedGameType) => {
+      const screenName = GAME_SCREEN_MAP[gameType];
+      if (screenName) {
+        navigation.navigate(screenName as any);
+      }
+    },
+    [navigation],
+  );
+
+  // Compute eligible user IDs from group members
+  const groupMemberIds = useMemo(
+    () => groupMembers.map((m) => m.uid),
+    [groupMembers],
+  );
 
   // ==========================================================================
   // Schedule Message (UNI-09)
@@ -1378,6 +1404,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         messagePreview={screen.composer.text}
         onSchedule={handleScheduleMessage}
         onClose={() => setScheduleModalVisible(false)}
+      />
+
+      <GamePickerModal
+        visible={gamePickerVisible}
+        onDismiss={() => setGamePickerVisible(false)}
+        context="group"
+        conversationId={groupId}
+        conversationName={group?.name}
+        eligibleUserIds={groupMemberIds}
+        onSinglePlayerGame={handleSinglePlayerGame}
+        onInviteCreated={() => {}}
+        onError={(error) => Alert.alert("Error", error)}
       />
     </>
   );

@@ -53,6 +53,11 @@ import {
   scheduleMessage,
 } from "@/services/scheduledMessages";
 
+// Game Picker
+import { GamePickerModal } from "@/components/games/GamePickerModal";
+import { GAME_SCREEN_MAP } from "@/config/gameCategories";
+import { ExtendedGameType } from "@/types/games";
+
 // Types & Utils
 import type { ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
@@ -98,6 +103,7 @@ export default function ChatScreen({
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [gamePickerVisible, setGamePickerVisible] = useState(false);
 
   // Message actions state
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
@@ -317,16 +323,36 @@ export default function ChatScreen({
       };
       const screen = screenMap[gameType];
       if (screen) {
-        navigation.navigate(screen, { matchId: gameId });
+        // Navigate to Play tab first, then to the specific game screen
+        navigation.navigate("Play", {
+          screen,
+          params: { matchId: gameId, entryPoint: "chat" },
+        });
       }
     },
     [navigation],
   );
 
-  // Game button press handler - TODO: Open game picker modal
+  // Game button press handler - Opens game picker modal
   const handleGamePress = useCallback(() => {
-    // TODO: Implement game picker modal
-    console.log("[ChatScreen] Game button pressed");
+    setGamePickerVisible(true);
+  }, []);
+
+  // Handle single-player game selection - navigate directly to game
+  const handleSinglePlayerGame = useCallback(
+    (gameType: ExtendedGameType) => {
+      const screen = GAME_SCREEN_MAP[gameType];
+      if (screen) {
+        navigation.navigate(screen as any);
+      }
+    },
+    [navigation],
+  );
+
+  // Handle multiplayer invite creation
+  const handleInviteCreated = useCallback(() => {
+    // Invite will appear via ChatGameInvites subscription
+    // Optionally show a toast or haptic feedback here
   }, []);
 
   const handleBlockConfirm = async (reason?: string) => {
@@ -526,6 +552,20 @@ export default function ChatScreen({
         onReply={handleReply}
         onEdited={() => {}}
         onDeleted={() => {}}
+      />
+
+      <GamePickerModal
+        visible={gamePickerVisible}
+        onDismiss={() => setGamePickerVisible(false)}
+        context="dm"
+        conversationId={chatId || ""}
+        conversationName={friendProfile?.username}
+        recipientId={friendUid}
+        recipientName={friendProfile?.username}
+        recipientAvatar={friendProfile?.avatar}
+        onSinglePlayerGame={handleSinglePlayerGame}
+        onInviteCreated={handleInviteCreated}
+        onError={(error) => Alert.alert("Error", error)}
       />
     </>
   );

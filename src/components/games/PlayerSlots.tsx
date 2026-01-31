@@ -1,14 +1,18 @@
 /**
- * PlayerSlots Component
+ * PlayerSlots - OVERHAULED
  *
- * Displays visual slots for a multi-player game invite.
- * Shows filled slots with avatars and empty slots with placeholder.
+ * Visual representation of players in a game queue.
+ * Shows filled slots with avatars, empty slots as placeholders.
+ * Includes "You" indicator and host badge.
+ *
+ * @file src/components/games/PlayerSlots.tsx
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
+import Animated, { FadeIn, Layout } from "react-native-reanimated";
 
 import Avatar from "@/components/Avatar";
 import type { AvatarConfig } from "@/types/models";
@@ -20,30 +24,26 @@ import { BorderRadius, Spacing } from "../../../constants/theme";
 // =============================================================================
 
 export interface PlayerSlotsProps {
-  /** Array of players who have claimed slots */
+  /** Players who have claimed slots */
   slots: PlayerSlot[];
-  /** Minimum players needed to start game */
+  /** Minimum players needed (determines empty slot count) */
   requiredPlayers: number;
-  /** Maximum players allowed (for display purposes) */
+  /** Maximum players allowed */
   maxPlayers: number;
-  /** Current user's ID to highlight their slot */
+  /** Current user's ID (for "You" indicator) */
   currentUserId?: string;
-  /** Use compact layout (smaller avatars, no names) */
+  /** Compact layout mode */
   compact?: boolean;
+  /** Show position numbers */
+  showPositions?: boolean;
 }
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-/**
- * Parse avatar string to AvatarConfig
- * Returns default config if parsing fails
- */
 function parseAvatarConfig(avatarString?: string): AvatarConfig {
-  if (!avatarString) {
-    return { baseColor: "#ccd5ae" };
-  }
+  if (!avatarString) return { baseColor: "#ccd5ae" };
   try {
     return JSON.parse(avatarString) as AvatarConfig;
   } catch {
@@ -52,7 +52,152 @@ function parseAvatarConfig(avatarString?: string): AvatarConfig {
 }
 
 // =============================================================================
-// Component
+// Sub-Components
+// =============================================================================
+
+interface FilledSlotProps {
+  slot: PlayerSlot;
+  isCurrentUser: boolean;
+  size: number;
+  compact: boolean;
+  position?: number;
+}
+
+function FilledSlot({
+  slot,
+  isCurrentUser,
+  size,
+  compact,
+  position,
+}: FilledSlotProps) {
+  const theme = useTheme();
+
+  return (
+    <Animated.View
+      entering={FadeIn.duration(300)}
+      layout={Layout.springify()}
+      style={[
+        styles.slot,
+        compact && styles.slotCompact,
+        isCurrentUser && {
+          borderColor: theme.colors.primary,
+          borderWidth: 2,
+          borderRadius: BorderRadius.md,
+        },
+      ]}
+    >
+      {/* Position Number */}
+      {position !== undefined && (
+        <View
+          style={[
+            styles.positionBadge,
+            { backgroundColor: theme.colors.surfaceVariant },
+          ]}
+        >
+          <Text
+            style={[
+              styles.positionText,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            {position}
+          </Text>
+        </View>
+      )}
+
+      {/* Avatar */}
+      <Avatar config={parseAvatarConfig(slot.playerAvatar)} size={size} />
+
+      {/* Name */}
+      {!compact && (
+        <Text
+          style={[styles.playerName, { color: theme.colors.onSurface }]}
+          numberOfLines={1}
+        >
+          {isCurrentUser ? "You" : slot.playerName}
+        </Text>
+      )}
+
+      {/* Host Badge */}
+      {slot.isHost && (
+        <View
+          style={[styles.hostBadge, { backgroundColor: theme.colors.primary }]}
+        >
+          <MaterialCommunityIcons name="crown" size={10} color="#fff" />
+        </View>
+      )}
+    </Animated.View>
+  );
+}
+
+interface EmptySlotProps {
+  size: number;
+  compact: boolean;
+  position?: number;
+}
+
+function EmptySlot({ size, compact, position }: EmptySlotProps) {
+  const theme = useTheme();
+
+  return (
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      layout={Layout.springify()}
+      style={[
+        styles.slot,
+        styles.emptySlot,
+        compact && styles.slotCompact,
+        { borderColor: theme.colors.outlineVariant },
+      ]}
+    >
+      {position !== undefined && (
+        <View
+          style={[
+            styles.positionBadge,
+            { backgroundColor: theme.colors.surfaceVariant },
+          ]}
+        >
+          <Text
+            style={[
+              styles.positionText,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            {position}
+          </Text>
+        </View>
+      )}
+
+      <View
+        style={[
+          styles.emptyAvatar,
+          {
+            width: size,
+            height: size,
+            backgroundColor: theme.colors.surfaceVariant,
+          },
+        ]}
+      >
+        <Text
+          style={{ color: theme.colors.onSurfaceVariant, fontSize: size * 0.4 }}
+        >
+          ?
+        </Text>
+      </View>
+
+      {!compact && (
+        <Text
+          style={[styles.waitingText, { color: theme.colors.onSurfaceVariant }]}
+        >
+          Waiting...
+        </Text>
+      )}
+    </Animated.View>
+  );
+}
+
+// =============================================================================
+// Main Component
 // =============================================================================
 
 export function PlayerSlots({
@@ -61,86 +206,57 @@ export function PlayerSlots({
   maxPlayers,
   currentUserId,
   compact = false,
+  showPositions = false,
 }: PlayerSlotsProps) {
-  const theme = useTheme();
-  const emptySlots = Math.max(0, requiredPlayers - slots.length);
   const size = compact ? 32 : 44;
+  const emptySlotCount = Math.max(0, requiredPlayers - slots.length);
+
+  // Create array of slot items (filled + empty)
+  const slotItems = useMemo(() => {
+    const items: Array<
+      { type: "filled"; slot: PlayerSlot } | { type: "empty" }
+    > = [];
+
+    // Add filled slots
+    slots.forEach((slot) => {
+      items.push({ type: "filled", slot });
+    });
+
+    // Add empty slots
+    for (let i = 0; i < emptySlotCount; i++) {
+      items.push({ type: "empty" });
+    }
+
+    return items;
+  }, [slots, emptySlotCount]);
 
   return (
     <View style={styles.container}>
-      {/* Filled Slots */}
-      {slots.map((slot) => (
-        <View
-          key={slot.playerId}
-          style={[
-            styles.slot,
-            compact && styles.slotCompact,
-            slot.playerId === currentUserId && {
-              borderColor: theme.colors.primary,
-              borderWidth: 2,
-              borderRadius: BorderRadius.md,
-            },
-          ]}
-        >
-          <Avatar config={parseAvatarConfig(slot.playerAvatar)} size={size} />
-          {!compact && (
-            <Text
-              style={[styles.playerName, { color: theme.colors.onSurface }]}
-              numberOfLines={1}
-            >
-              {slot.playerName}
-            </Text>
-          )}
-          {slot.isHost && (
-            <View
-              style={[
-                styles.hostBadge,
-                { backgroundColor: theme.colors.primary },
-              ]}
-            >
-              <MaterialCommunityIcons name="crown" size={10} color="#fff" />
-            </View>
-          )}
-        </View>
-      ))}
+      {slotItems.map((item, index) => {
+        const position = showPositions ? index + 1 : undefined;
 
-      {/* Empty Slots */}
-      {Array(emptySlots)
-        .fill(null)
-        .map((_, index) => (
-          <View
+        if (item.type === "filled") {
+          return (
+            <FilledSlot
+              key={item.slot.playerId}
+              slot={item.slot}
+              isCurrentUser={item.slot.playerId === currentUserId}
+              size={size}
+              compact={compact}
+              position={position}
+            />
+          );
+        }
+
+        return (
+          <EmptySlot
             key={`empty-${index}`}
-            style={[
-              styles.slot,
-              styles.emptySlot,
-              compact && styles.slotCompact,
-              { borderColor: theme.colors.outlineVariant },
-            ]}
-          >
-            <View
-              style={[
-                styles.emptyAvatar,
-                {
-                  width: size,
-                  height: size,
-                  backgroundColor: theme.colors.surfaceVariant,
-                },
-              ]}
-            >
-              <Text style={{ color: theme.colors.onSurfaceVariant }}>?</Text>
-            </View>
-            {!compact && (
-              <Text
-                style={[
-                  styles.waitingText,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Waiting...
-              </Text>
-            )}
-          </View>
-        ))}
+            size={size}
+            compact={compact}
+            position={position}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -195,6 +311,20 @@ const styles = StyleSheet.create({
     height: 16,
     alignItems: "center",
     justifyContent: "center",
+  },
+  positionBadge: {
+    position: "absolute",
+    top: -4,
+    left: -4,
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  positionText: {
+    fontSize: 9,
+    fontWeight: "bold",
   },
 });
 

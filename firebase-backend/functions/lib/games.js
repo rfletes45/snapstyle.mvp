@@ -46,7 +46,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resignGame = exports.makeMove = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
+exports.resignGame = exports.makeMove = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-admin/firestore");
 const functions = __importStar(require("firebase-functions"));
@@ -237,6 +237,7 @@ exports.createGameFromInvite = functions.firestore
                 createdAt: now,
                 updatedAt: now,
                 startedAt: now,
+                inviteId: context.params.inviteId,
             };
             // Add turn timeout if time control exists
             if (invite.settings.timeControl?.seconds) {
@@ -467,22 +468,41 @@ async function createGameFromUniversalInvite(inviteRef, invite) {
 // =============================================================================
 /**
  * Process game completion
- * Updates stats, ratings, achievements
+ * Updates stats, ratings, achievements, and invite status
  */
 exports.processGameCompletion = functions.firestore
     .document("TurnBasedGames/{gameId}")
     .onUpdate(async (change, context) => {
     const before = change.before.data();
     const after = change.after.data();
-    // Only process when game ends
-    if (before.status === "active" && after.status === "completed") {
+    // Only process when game ends (any terminal state)
+    const terminalStates = [
+        "completed",
+        "resigned",
+        "draw",
+        "timeout",
+        "abandoned",
+    ];
+    const wasActive = before.status === "active";
+    const isTerminal = terminalStates.includes(after.status);
+    if (wasActive && isTerminal) {
         try {
+            // Update player stats and check achievements
             await updatePlayerStats(after);
             await checkAchievements(after);
+            // Update invite status to "completed" if game was created from an invite
+            if (after.inviteId) {
+                await updateInviteStatusOnGameCompletion(after.inviteId, after.status);
+            }
+            else {
+                // Fallback: Try to find invite by gameId
+                await updateInviteStatusByGameId(context.params.gameId, after.status);
+            }
             functions.logger.info("Game completion processed", {
                 gameId: context.params.gameId,
                 gameType: after.gameType,
                 winner: after.winner?.playerId,
+                inviteId: after.inviteId,
             });
         }
         catch (error) {
@@ -491,6 +511,354 @@ exports.processGameCompletion = functions.firestore
                 error,
             });
         }
+    }
+});
+/**
+ * Update invite status when the associated game completes
+ */
+async function updateInviteStatusOnGameCompletion(inviteId, gameStatus) {
+    try {
+        const inviteRef = db.collection("GameInvites").doc(inviteId);
+        const inviteSnap = await inviteRef.get();
+        if (!inviteSnap.exists) {
+            functions.logger.warn("Invite not found for game completion update", {
+                inviteId,
+            });
+            return;
+        }
+        const invite = inviteSnap.data();
+        // Only update if invite is still in "active" status
+        if (invite?.status === "active") {
+            await inviteRef.update({
+                status: "completed",
+                completedAt: firestore_1.Timestamp.now().toMillis(),
+                gameEndStatus: gameStatus,
+                updatedAt: firestore_1.Timestamp.now().toMillis(),
+            });
+            functions.logger.info("Invite status updated to completed", {
+                inviteId,
+                gameStatus,
+            });
+        }
+    }
+    catch (error) {
+        functions.logger.error("Failed to update invite status on game completion", {
+            inviteId,
+            error,
+        });
+    }
+}
+/**
+ * Update invite status by searching for the gameId
+ * Fallback when inviteId is not stored on the game
+ */
+async function updateInviteStatusByGameId(gameId, gameStatus) {
+    try {
+        // Search for invites with this gameId
+        const invitesSnapshot = await db
+            .collection("GameInvites")
+            .where("gameId", "==", gameId)
+            .get();
+        if (invitesSnapshot.empty) {
+            // No invite found - game may have been created without an invite
+            return;
+        }
+        const batch = db.batch();
+        for (const inviteDoc of invitesSnapshot.docs) {
+            const invite = inviteDoc.data();
+            // Only update if invite is in an active state
+            if (invite.status === "active" || invite.status === "ready") {
+                batch.update(inviteDoc.ref, {
+                    status: "completed",
+                    completedAt: firestore_1.Timestamp.now().toMillis(),
+                    gameEndStatus: gameStatus,
+                    updatedAt: firestore_1.Timestamp.now().toMillis(),
+                });
+            }
+        }
+        await batch.commit();
+        functions.logger.info("Invite(s) status updated to completed via gameId", {
+            gameId,
+            gameStatus,
+            inviteCount: invitesSnapshot.size,
+        });
+    }
+    catch (error) {
+        functions.logger.error("Failed to update invite status by gameId", {
+            gameId,
+            error,
+        });
+    }
+}
+/**
+ * Create GameHistory record when a game completes
+ *
+ * Triggers when a TurnBasedGame document's status changes to a terminal state.
+ * Creates a permanent record in the GameHistory collection for:
+ * - Player history and statistics
+ * - Head-to-head records
+ * - Achievement tracking
+ *
+ * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 1
+ */
+exports.onGameCompletedCreateHistory = functions.firestore
+    .document("TurnBasedGames/{gameId}")
+    .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    // Terminal states that should create history records
+    const terminalStates = [
+        "completed",
+        "resigned",
+        "draw",
+        "timeout",
+        "abandoned",
+    ];
+    const wasTerminal = terminalStates.includes(before.status);
+    const isTerminal = terminalStates.includes(after.status);
+    // Only process when transitioning TO a terminal state
+    if (wasTerminal || !isTerminal)
+        return;
+    const gameId = context.params.gameId;
+    functions.logger.info(`Creating GameHistory for game ${gameId}`, {
+        status: after.status,
+        gameType: after.gameType,
+    });
+    try {
+        // Determine end reason from status and game state
+        let endReason = "completion";
+        if (after.status === "abandoned") {
+            endReason = "abandonment";
+        }
+        else if (after.winner?.reason === "resignation") {
+            endReason = "resignation";
+        }
+        else if (after.winner?.reason === "timeout") {
+            endReason = "timeout";
+        }
+        else if (after.status === "draw") {
+            // Note: 'draw' status may be added in future, using 'any' for forward compatibility
+            endReason = "draw_agreement";
+        }
+        else if (after.gameType === "chess") {
+            // Chess-specific end reasons
+            if (after.gameState?.isCheckmate) {
+                endReason = "checkmate";
+            }
+            else if (after.gameState?.isStalemate) {
+                endReason = "stalemate";
+            }
+        }
+        else if (after.gameType === "checkers" && !after.winner) {
+            endReason = "no_moves";
+        }
+        const { player1, player2 } = after.players;
+        const winnerId = after.winner?.playerId;
+        // Calculate move counts per player
+        const moves = after.gameState?.moveHistory || [];
+        const player1Moves = moves.filter((m) => m.playerId === player1.id).length;
+        const player2Moves = moves.filter((m) => m.playerId === player2.id).length;
+        // Build player records for history
+        const players = [
+            {
+                userId: player1.id,
+                displayName: player1.name,
+                avatarUrl: player1.avatar,
+                isWinner: winnerId === player1.id,
+                finalScore: undefined, // Could be populated for scored games
+                movesPlayed: player1Moves,
+                ratingBefore: player1.rating,
+                ratingAfter: undefined, // Set by updatePlayerStats
+            },
+            {
+                userId: player2.id,
+                displayName: player2.name,
+                avatarUrl: player2.avatar,
+                isWinner: winnerId === player2.id,
+                finalScore: undefined,
+                movesPlayed: player2Moves,
+                ratingBefore: player2.rating,
+                ratingAfter: undefined,
+            },
+        ];
+        // Calculate timestamps and duration
+        const createdAtValue = after.createdAt;
+        const startedAt = typeof createdAtValue === "number"
+            ? createdAtValue
+            : createdAtValue?.toMillis?.() || Date.now();
+        const endedAtValue = after.endedAt;
+        const completedAt = typeof endedAtValue === "number"
+            ? endedAtValue
+            : endedAtValue?.toMillis?.() || Date.now();
+        const duration = completedAt - startedAt;
+        // Create history record
+        const historyRecord = {
+            gameType: after.gameType,
+            matchId: gameId,
+            players,
+            playerIds: [player1.id, player2.id], // For array-contains queries
+            winnerId: winnerId || null,
+            status: after.status,
+            endReason,
+            conversationId: after.inviteId
+                ? undefined
+                : after.conversationId, // Will be set when context tracking is added
+            conversationType: after.conversationType,
+            startedAt,
+            completedAt,
+            duration,
+            totalMoves: moves.length,
+            isRated: after.settings?.isRated || false,
+            createdAt: Date.now(),
+        };
+        // Write to GameHistory collection
+        const historyRef = db.collection("GameHistory").doc();
+        await historyRef.set({
+            ...historyRecord,
+            id: historyRef.id,
+        });
+        functions.logger.info(`GameHistory created: ${historyRef.id}`, {
+            gameId,
+            gameType: after.gameType,
+            winnerId,
+            duration,
+        });
+    }
+    catch (error) {
+        functions.logger.error(`Failed to create GameHistory for ${gameId}`, {
+            error,
+            gameType: after.gameType,
+        });
+        // Don't throw - this is a non-critical operation
+    }
+});
+// =============================================================================
+// Phase 8: Leaderboard Stats Update
+// =============================================================================
+/**
+ * Update LeaderboardStats when a GameHistory record is created
+ *
+ * This function maintains the LeaderboardStats collection which powers
+ * the multiplayer leaderboards. It updates stats for both players and
+ * for both game-specific and "all" categories.
+ *
+ * Triggered when a new GameHistory document is created.
+ *
+ * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 8
+ */
+exports.onGameHistoryCreatedUpdateLeaderboard = functions.firestore
+    .document("GameHistory/{historyId}")
+    .onCreate(async (snapshot, context) => {
+    const history = snapshot.data();
+    if (!history)
+        return;
+    const historyId = context.params.historyId;
+    functions.logger.info(`Updating LeaderboardStats for history ${historyId}`, {
+        gameType: history.gameType,
+        playerCount: history.players?.length,
+    });
+    try {
+        const batch = db.batch();
+        const now = firestore_1.Timestamp.now();
+        const gameType = history.gameType;
+        // Process each player
+        for (const player of history.players || []) {
+            const userId = player.userId;
+            const displayName = player.displayName;
+            const avatarUrl = player.avatarUrl;
+            const isWinner = player.isWinner;
+            const isDraw = !history.winnerId;
+            // Update stats for: game-specific + "all" combined
+            const gameTypes = [gameType, "all"];
+            // Update for all timeframes
+            const timeframes = ["all-time", "monthly", "weekly"];
+            for (const gt of gameTypes) {
+                for (const timeframe of timeframes) {
+                    const docId = `${userId}_${gt}_${timeframe}`;
+                    const statsRef = db.collection("LeaderboardStats").doc(docId);
+                    // Get current stats
+                    const currentDoc = await statsRef.get();
+                    const current = currentDoc.exists
+                        ? currentDoc.data()
+                        : {
+                            userId,
+                            displayName,
+                            avatarUrl,
+                            gameType: gt,
+                            timeframe,
+                            rating: DEFAULT_RATING,
+                            wins: 0,
+                            losses: 0,
+                            draws: 0,
+                            gamesPlayed: 0,
+                            winRate: 0,
+                            currentStreak: 0,
+                            longestStreak: 0,
+                            lastGameAt: now.toMillis(),
+                            createdAt: now.toMillis(),
+                            updatedAt: now.toMillis(),
+                        };
+                    // Calculate new stats
+                    const newGamesPlayed = (current.gamesPlayed || 0) + 1;
+                    let newWins = current.wins || 0;
+                    let newLosses = current.losses || 0;
+                    let newDraws = current.draws || 0;
+                    let newCurrentStreak = current.currentStreak || 0;
+                    let newLongestStreak = current.longestStreak || 0;
+                    if (isDraw) {
+                        newDraws++;
+                        newCurrentStreak = 0; // Streak resets on draw
+                    }
+                    else if (isWinner) {
+                        newWins++;
+                        newCurrentStreak = Math.max(1, newCurrentStreak + 1);
+                        newLongestStreak = Math.max(newLongestStreak, newCurrentStreak);
+                    }
+                    else {
+                        newLosses++;
+                        newCurrentStreak = Math.min(-1, newCurrentStreak - 1);
+                    }
+                    const newWinRate = newGamesPlayed > 0 ? (newWins / newGamesPlayed) * 100 : 0;
+                    // Calculate new rating (only for game-specific, not "all")
+                    let newRating = current.rating || DEFAULT_RATING;
+                    if (gt !== "all" && player.ratingAfter) {
+                        newRating = player.ratingAfter;
+                    }
+                    // Prepare update
+                    const update = {
+                        userId,
+                        displayName,
+                        avatarUrl,
+                        gameType: gt,
+                        timeframe,
+                        rating: newRating,
+                        wins: newWins,
+                        losses: newLosses,
+                        draws: newDraws,
+                        gamesPlayed: newGamesPlayed,
+                        winRate: Math.round(newWinRate * 100) / 100,
+                        currentStreak: newCurrentStreak,
+                        longestStreak: newLongestStreak,
+                        lastGameAt: now.toMillis(),
+                        updatedAt: now.toMillis(),
+                        createdAt: current.createdAt || now.toMillis(),
+                    };
+                    batch.set(statsRef, update);
+                }
+            }
+        }
+        await batch.commit();
+        functions.logger.info(`LeaderboardStats updated for history ${historyId}`, {
+            gameType: history.gameType,
+            players: history.players?.map((p) => p.userId),
+        });
+    }
+    catch (error) {
+        functions.logger.error(`Failed to update LeaderboardStats for ${historyId}`, {
+            error,
+            gameType: history.gameType,
+        });
+        // Don't throw - this is a non-critical operation
     }
 });
 /**

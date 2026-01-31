@@ -10,6 +10,7 @@
  * @see docs/07_GAMES_ARCHITECTURE.md Section 4
  */
 
+import { getGameAchievementById } from "@/data/gameAchievements";
 import {
   doc,
   getDoc,
@@ -754,7 +755,56 @@ export async function checkAchievement(
   achievementId: string,
   newValue: number,
 ): Promise<AchievementCheckResult> {
-  const achievement = getAchievementById(achievementId);
+  // Try legacy achievement system first
+  let achievement = getAchievementById(achievementId);
+
+  // If not found, try new achievement system
+  if (!achievement) {
+    const newAchievement = getGameAchievementById(achievementId);
+    if (newAchievement) {
+      // Map new trigger types to legacy trigger types
+      const triggerTypeMap: Record<string, AchievementTrigger> = {
+        game_played: "game_count",
+        multiplayer_game: "game_count",
+        multiplayer_win: "win_count",
+        multiplayer_win_streak: "streak",
+        chess_win: "win_count",
+        chess_rating: "rating",
+        checkers_win: "win_count",
+        tic_tac_toe_win: "win_count",
+        crazy_eights_win: "win_count",
+        score_reached: "score",
+        flappy_score: "score",
+        bounce_round: "score",
+        snake_score: "score",
+        "2048_score": "score",
+        "2048_tile": "score",
+        game_streak: "streak",
+      };
+
+      const legacyTrigger =
+        triggerTypeMap[newAchievement.trigger.type] || "custom";
+
+      // Convert new format to legacy format for compatibility
+      achievement = {
+        id: newAchievement.id,
+        name: newAchievement.name,
+        description: newAchievement.description,
+        icon: newAchievement.icon,
+        tier: newAchievement.tier,
+        category: newAchievement.category as AchievementCategory,
+        trigger: legacyTrigger,
+        threshold:
+          newAchievement.progressTarget ??
+          newAchievement.trigger.conditions?.count ??
+          1,
+        coinReward: newAchievement.coinReward,
+        xpReward: newAchievement.xpReward,
+        hidden: newAchievement.secret,
+        order: 0,
+      };
+    }
+  }
 
   if (!achievement) {
     throw new Error(`Achievement ${achievementId} not found`);

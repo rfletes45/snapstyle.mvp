@@ -35,6 +35,7 @@ import {
   RealTimeGameType,
   TurnBasedGameType,
 } from "../types/games";
+import type { TurnBasedMatchConfig, TurnBasedPlayer } from "../types/turnBased";
 import {
   PlayerSlot,
   SendUniversalInviteParams,
@@ -42,10 +43,12 @@ import {
   UniversalGameInvite,
   UniversalInviteStatus,
 } from "../types/turnBased";
-import { getFirestoreInstance } from "./firebase";
+import { getAuthInstance, getFirestoreInstance } from "./firebase";
+import { createMatch } from "./turnBasedGames";
 
 // Lazy getter to avoid calling getFirestoreInstance at module load time
 const getDb = () => getFirestoreInstance();
+const getAuth = () => getAuthInstance();
 
 // =============================================================================
 // Types
@@ -700,13 +703,13 @@ export async function claimInviteSlot(
         return { success: false, error: "Invite has expired" };
       }
 
-      // Build new slot
+      // Build new slot (omit undefined fields for Firestore compatibility)
       const newSlot: PlayerSlot = {
         playerId: userId,
         playerName: userName,
-        playerAvatar: userAvatar,
         claimedAt: Date.now(),
         isHost: false,
+        ...(userAvatar !== undefined && { playerAvatar: userAvatar }),
       };
 
       const newClaimedSlots = [...invite.claimedSlots, newSlot];
@@ -776,8 +779,8 @@ export async function unclaimInviteSlot(
 
       const invite = inviteSnap.data() as UniversalGameInvite;
 
-      // Validation
-      if (!["pending", "filling"].includes(invite.status)) {
+      // Validation - allow leaving in pending, filling, or ready status
+      if (!["pending", "filling", "ready"].includes(invite.status)) {
         return {
           success: false,
           error: `Cannot leave - game is ${invite.status}`,
@@ -803,10 +806,14 @@ export async function unclaimInviteSlot(
         (s) => s.playerId !== userId,
       );
 
-      // Determine new status
-      let newStatus: UniversalInviteStatus = invite.status;
+      // Determine new status based on remaining players
+      let newStatus: UniversalInviteStatus;
       if (newClaimedSlots.length === 1) {
         newStatus = "pending"; // Back to just the host
+      } else if (newClaimedSlots.length < invite.requiredPlayers) {
+        newStatus = "filling"; // No longer have required players
+      } else {
+        newStatus = "ready"; // Still have enough players
       }
 
       transaction.update(inviteRef, {
@@ -819,7 +826,13 @@ export async function unclaimInviteSlot(
       return { success: true };
     });
 
-    console.log(`[GameInvites] Slot unclaimed: ${inviteId} by ${userId}`);
+    if (result.success) {
+      console.log(`[GameInvites] Slot unclaimed: ${inviteId} by ${userId}`);
+    } else {
+      console.log(
+        `[GameInvites] Unclaim failed: ${inviteId} - ${result.error}`,
+      );
+    }
     return result;
   } catch (error) {
     console.error(`[GameInvites] Error unclaiming slot:`, error);
@@ -887,12 +900,12 @@ export async function joinAsSpectator(
         return { success: false, error: "Maximum spectators reached" };
       }
 
-      // Add spectator
+      // Add spectator (omit undefined fields for Firestore compatibility)
       const newSpectator: SpectatorEntry = {
         userId,
         userName,
-        userAvatar,
         joinedAt: Date.now(),
+        ...(userAvatar !== undefined && { userAvatar }),
       };
 
       transaction.update(inviteRef, {
@@ -940,6 +953,180 @@ export async function leaveSpectator(
   } catch (error) {
     console.error(`[GameInvites] Error leaving spectator:`, error);
     return { success: false, error: "Failed to leave spectator mode" };
+  }
+}
+
+// =============================================================================
+// HOST CONTROL FUNCTIONS
+// =============================================================================
+
+/**
+ * Start a game early (host only)
+ *
+ * Allows the host to start the game when:
+ * - Status is "pending" or "filling"
+ * - At least minPlayers have joined (from GAME_METADATA)
+ *
+ * This function:
+ * 1. Validates host permissions
+ * 2. Checks minimum player count
+ * 3. Creates the actual game match via turnBasedGames.createMatch()
+ * 4. Updates invite status to "active" with gameId
+ *
+ * @param inviteId - The universal invite ID
+ * @param hostId - The user ID of the host (must match first slot)
+ * @returns Object with success status, gameId if successful, or error message
+ */
+export async function startGameEarly(
+  inviteId: string,
+  hostId: string,
+): Promise<{ success: boolean; gameId?: string; error?: string }> {
+  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
+
+  try {
+    const result = await runTransaction(getDb(), async (transaction) => {
+      const inviteSnap = await transaction.get(inviteRef);
+
+      if (!inviteSnap.exists()) {
+        return { success: false, error: "Invite not found" };
+      }
+
+      const invite = inviteSnap.data() as UniversalGameInvite;
+
+      // Validation: Must be host (first slot)
+      if (invite.claimedSlots[0]?.playerId !== hostId) {
+        return { success: false, error: "Only the host can start the game" };
+      }
+
+      // Validation: Must be in startable status
+      if (!["pending", "filling", "ready"].includes(invite.status)) {
+        return {
+          success: false,
+          error: `Cannot start - game is ${invite.status}`,
+        };
+      }
+
+      // Validation: Check minimum players from GAME_METADATA
+      const metadata = GAME_METADATA[invite.gameType as ExtendedGameType];
+      if (!metadata) {
+        return { success: false, error: "Unknown game type" };
+      }
+
+      if (invite.claimedSlots.length < metadata.minPlayers) {
+        return {
+          success: false,
+          error: `Need at least ${metadata.minPlayers} players to start`,
+        };
+      }
+
+      // Build player objects from claimed slots
+      const player1: TurnBasedPlayer = {
+        userId: invite.claimedSlots[0].playerId,
+        displayName: invite.claimedSlots[0].playerName,
+        avatarUrl: invite.claimedSlots[0].playerAvatar,
+        color: "white" as const,
+      };
+      const player2: TurnBasedPlayer = {
+        userId: invite.claimedSlots[1].playerId,
+        displayName: invite.claimedSlots[1].playerName,
+        avatarUrl: invite.claimedSlots[1].playerAvatar,
+        color: "black" as const,
+      };
+
+      // Create the actual game match
+      const matchConfig: TurnBasedMatchConfig = {
+        isRated: invite.settings?.isRated ?? false,
+        allowSpectators: invite.spectatingEnabled ?? false,
+        chatEnabled: invite.settings?.chatEnabled ?? true,
+        timeControl: invite.settings?.timeControl?.seconds,
+      };
+
+      // Build conversation context for game tracking (Phase 1: Game System Overhaul)
+      const conversationContext = invite.conversationId
+        ? {
+            conversationId: invite.conversationId,
+            conversationType: invite.context as "dm" | "group",
+          }
+        : undefined;
+
+      const gameId = await createMatch(
+        invite.gameType as TurnBasedGameType,
+        player1,
+        player2,
+        matchConfig,
+        conversationContext,
+        inviteId, // Pass inviteId so game can reference back to invite
+      );
+
+      // Update invite with game reference
+      transaction.update(inviteRef, {
+        status: "active" as UniversalInviteStatus,
+        gameId,
+        updatedAt: Date.now(),
+        filledAt: Date.now(),
+      });
+
+      return { success: true, gameId };
+    });
+
+    console.log(`[GameInvites] Game started early: ${inviteId}`, result);
+    return result;
+  } catch (error) {
+    console.error(`[GameInvites] Error starting game early:`, error);
+    return { success: false, error: "Failed to start game" };
+  }
+}
+
+/**
+ * Cancel a universal game invite (host only)
+ *
+ * Sets invite status to "cancelled".
+ * Can only be called by the host (first slot).
+ * Can only cancel invites in pending/filling/ready status.
+ *
+ * @param inviteId - The universal invite ID
+ * @param hostId - The user ID of the host (must match first slot)
+ * @returns Object with success status or error message
+ */
+export async function cancelUniversalInvite(
+  inviteId: string,
+  hostId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
+
+  try {
+    const inviteSnap = await getDoc(inviteRef);
+
+    if (!inviteSnap.exists()) {
+      return { success: false, error: "Invite not found" };
+    }
+
+    const invite = inviteSnap.data() as UniversalGameInvite;
+
+    // Validation: Must be host (first slot)
+    if (invite.claimedSlots[0]?.playerId !== hostId) {
+      return { success: false, error: "Only the host can cancel" };
+    }
+
+    // Validation: Must be in cancellable status
+    if (!["pending", "filling", "ready"].includes(invite.status)) {
+      return {
+        success: false,
+        error: `Cannot cancel - game is ${invite.status}`,
+      };
+    }
+
+    // Update status to cancelled
+    await updateDoc(inviteRef, {
+      status: "cancelled" as UniversalInviteStatus,
+      updatedAt: Date.now(),
+    });
+
+    console.log(`[GameInvites] Universal invite cancelled: ${inviteId}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`[GameInvites] Error cancelling invite:`, error);
+    return { success: false, error: "Failed to cancel invite" };
   }
 }
 
@@ -1383,6 +1570,109 @@ export async function deleteOldInvites(daysOld: number = 30): Promise<number> {
   return snapshot.size;
 }
 
+/**
+ * Clean up invites for games that have already completed
+ * This handles the case where game completion didn't update the invite
+ *
+ * @param conversationId - The conversation to clean up invites for
+ * @returns Number of invites cleaned up
+ */
+export async function cleanupCompletedGameInvites(
+  conversationId: string,
+): Promise<number> {
+  // Get current user - required for Firestore security rules
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) {
+    console.warn("[GameInvites] Cannot cleanup invites - not authenticated");
+    return 0;
+  }
+
+  // Query invites in "active" status for this conversation
+  // IMPORTANT: Must include eligibleUserIds constraint for Firestore security rules
+  // Without this, the query fails because Firestore can't verify the user has access
+  const q = query(
+    collection(getDb(), COLLECTION_NAME),
+    where("conversationId", "==", conversationId),
+    where("status", "==", "active"),
+    where("eligibleUserIds", "array-contains", currentUser.uid),
+  );
+
+  const snapshot = await getDocs(q);
+  let cleanedUp = 0;
+
+  for (const inviteDoc of snapshot.docs) {
+    const invite = inviteDoc.data() as UniversalGameInvite;
+
+    // Check if this invite has a gameId
+    if (invite.gameId) {
+      // Check the game status
+      try {
+        const gameDoc = await getDoc(
+          doc(getDb(), "TurnBasedGames", invite.gameId),
+        );
+
+        if (!gameDoc.exists()) {
+          // Game doesn't exist - mark invite as completed
+          await updateDoc(inviteDoc.ref, {
+            status: "completed",
+            completedAt: Date.now(),
+            gameEndStatus: "game_not_found",
+            updatedAt: Date.now(),
+          });
+          cleanedUp++;
+          continue;
+        }
+
+        const game = gameDoc.data();
+        const terminalStates = [
+          "completed",
+          "resigned",
+          "draw",
+          "timeout",
+          "abandoned",
+        ];
+
+        if (terminalStates.includes(game?.status)) {
+          // Game is completed - update invite status
+          await updateDoc(inviteDoc.ref, {
+            status: "completed",
+            completedAt: Date.now(),
+            gameEndStatus: game?.status,
+            updatedAt: Date.now(),
+          });
+          cleanedUp++;
+        }
+      } catch (error: unknown) {
+        // Handle permission errors gracefully - user may not be a participant in this game
+        // This can happen if:
+        // 1. User declined the invite but invite still has a gameId reference
+        // 2. Invite data is stale/inconsistent
+        // 3. Game was created but user never joined
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("permission")) {
+          console.log(
+            `[GameInvites] Skipping invite ${invite.id} - no permission to read game (user may not be participant)`,
+          );
+        } else {
+          console.error(
+            `[GameInvites] Error checking game status for invite ${invite.id}:`,
+            error,
+          );
+        }
+      }
+    }
+  }
+
+  if (cleanedUp > 0) {
+    console.log(
+      `[GameInvites] Cleaned up ${cleanedUp} completed game invites for conversation ${conversationId}`,
+    );
+  }
+
+  return cleanedUp;
+}
+
 // =============================================================================
 // Export
 // =============================================================================
@@ -1407,6 +1697,7 @@ export const gameInvites = {
   // Cleanup
   markExpired: markExpiredInvites,
   deleteOld: deleteOldInvites,
+  cleanupCompleted: cleanupCompletedGameInvites,
 
   // NEW: Universal invite functions
   sendUniversal: sendUniversalInvite,
@@ -1414,6 +1705,10 @@ export const gameInvites = {
   unclaimSlot: unclaimInviteSlot,
   joinSpectator: joinAsSpectator,
   leaveSpectator: leaveSpectator,
+
+  // NEW: Host Controls
+  startEarly: startGameEarly,
+  cancelUniversal: cancelUniversalInvite,
   getPlayPage: getPlayPageInvites,
   getConversation: getConversationInvites,
   getUniversalById: getUniversalInviteById,

@@ -1,44 +1,57 @@
 /**
- * UniversalInviteCard Component
+ * UniversalInviteCard - OVERHAULED
  *
- * Displays a universal game invite with:
- * - Game type info (icon, name)
- * - Player slots visualization
+ * Unified game invite card with:
+ * - Queue progress visualization
+ * - Player slots display
+ * - Host controls (start early, cancel)
  * - Join/Leave/Spectate actions
- * - Status indicators
- * - Spectator count
+ *
+ * REPLACES: Legacy GameInviteCard.tsx
+ *
+ * @file src/components/games/UniversalInviteCard.tsx
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { Button, Card, Chip, Text, useTheme } from "react-native-paper";
+import {
+  Button,
+  Card,
+  Chip,
+  Divider,
+  Text,
+  useTheme,
+} from "react-native-paper";
 
 import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
 import type { UniversalGameInvite } from "@/types/turnBased";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 import { PlayerSlots } from "./PlayerSlots";
+import { QueueProgressBar } from "./QueueProgressBar";
 
 // =============================================================================
 // Types
 // =============================================================================
 
 export interface UniversalInviteCardProps {
-  /** The universal invite to display */
+  /** The invite to display */
   invite: UniversalGameInvite;
   /** Current user's ID */
   currentUserId: string;
-  /** Called when user wants to join the game */
+  /** Join the game queue */
   onJoin: () => Promise<void>;
-  /** Called when user wants to leave (before game starts) */
+  /** Leave the game queue */
   onLeave: () => Promise<void>;
-  /** Called when user wants to spectate */
+  /** Join as spectator */
   onSpectate: () => Promise<void>;
-  /** Called when host wants to cancel the invite */
+  /** Start game early (host only) - optional until Phase 3 */
+  onStartEarly?: () => Promise<void>;
+  /** Cancel the invite (host only) */
   onCancel: () => Promise<void>;
-  /** Called when user wants to play (game is active) */
+  /** Navigate to active game */
   onPlay?: (gameId: string, gameType: string) => void;
-  /** Use compact layout */
+  /** Compact mode */
   compact?: boolean;
 }
 
@@ -46,15 +59,39 @@ export interface UniversalInviteCardProps {
 // Helper Functions
 // =============================================================================
 
-/**
- * Get game metadata with fallback
- */
 function getGameInfo(gameType: string): { name: string; icon: string } {
   const metadata = GAME_METADATA[gameType as ExtendedGameType];
-  if (metadata) {
-    return { name: metadata.name, icon: metadata.icon };
+  return metadata
+    ? { name: metadata.name, icon: metadata.icon }
+    : { name: gameType, icon: "🎮" };
+}
+
+function getStatusInfo(
+  status: string,
+  slotsRemaining: number,
+): { text: string; color: string } {
+  switch (status) {
+    case "pending":
+      return {
+        text:
+          slotsRemaining === 1 ? "1 spot left" : `${slotsRemaining} spots left`,
+        color: "#FFA500",
+      };
+    case "filling":
+      return { text: `${slotsRemaining} more needed`, color: "#FFA500" };
+    case "ready":
+      return { text: "Ready to start!", color: "#4CAF50" };
+    case "active":
+      return { text: "In Progress", color: "#2196F3" };
+    case "completed":
+      return { text: "Finished", color: "#9E9E9E" };
+    case "expired":
+      return { text: "Expired", color: "#F44336" };
+    case "cancelled":
+      return { text: "Cancelled", color: "#F44336" };
+    default:
+      return { text: status, color: "#9E9E9E" };
   }
-  return { name: gameType, icon: "🎮" };
 }
 
 // =============================================================================
@@ -67,6 +104,7 @@ export function UniversalInviteCard({
   onJoin,
   onLeave,
   onSpectate,
+  onStartEarly,
   onCancel,
   onPlay,
   compact = false,
@@ -74,45 +112,98 @@ export function UniversalInviteCard({
   const theme = useTheme();
   const [loading, setLoading] = useState<string | null>(null);
 
-  // Computed state
+  // -------------------------------------------------------------------------
+  // Computed State
+  // -------------------------------------------------------------------------
   const isHost = invite.claimedSlots[0]?.playerId === currentUserId;
   const hasJoined = invite.claimedSlots.some(
     (s) => s.playerId === currentUserId,
   );
-  const isSpectating = invite.spectators.some(
-    (s) => s.userId === currentUserId,
-  );
+  const isSpectating =
+    invite.spectators?.some((s) => s.userId === currentUserId) ?? false;
   const isFull = invite.claimedSlots.length >= invite.requiredPlayers;
   const slotsRemaining = invite.requiredPlayers - invite.claimedSlots.length;
   const isExpired = Date.now() > invite.expiresAt;
 
-  // Determine what actions are available
+  // Get game metadata for min players check
+  const metadata = GAME_METADATA[invite.gameType as ExtendedGameType];
+  const minPlayers = metadata?.minPlayers ?? 2;
+
+  // Action availability
   const canJoin =
     !hasJoined &&
     !isFull &&
     !isExpired &&
     ["pending", "filling"].includes(invite.status);
   const canLeave =
-    hasJoined && !isHost && ["pending", "filling"].includes(invite.status);
+    hasJoined &&
+    !isHost &&
+    ["pending", "filling", "ready"].includes(invite.status);
   const canSpectate =
     !hasJoined &&
     !isSpectating &&
     invite.spectatingEnabled &&
     ["ready", "active"].includes(invite.status);
-  const canCancel = isHost && ["pending", "filling"].includes(invite.status);
+  // Can start early if host and have minimum players, OR can start if game is ready
+  const canStartEarly =
+    isHost &&
+    onStartEarly &&
+    ["pending", "filling"].includes(invite.status) &&
+    invite.claimedSlots.length >= minPlayers;
+  const canStartGame = isHost && onStartEarly && invite.status === "ready";
+  const canCancel =
+    isHost && ["pending", "filling", "ready"].includes(invite.status);
   const canPlay = hasJoined && invite.gameId && invite.status === "active";
 
-  // Game info
+  // Game & status info
   const { name: gameName, icon: gameIcon } = getGameInfo(invite.gameType);
+  const statusInfo = getStatusInfo(invite.status, slotsRemaining);
 
-  // Action handler with loading state
+  // -------------------------------------------------------------------------
+  // Auto-Navigation Effect (Phase 4: Chat Integration)
+  // -------------------------------------------------------------------------
+  // Track previous status to detect transitions
+  const prevStatusRef = useRef(invite.status);
+
+  // Auto-navigate when game becomes ready/active
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current;
+    prevStatusRef.current = invite.status;
+
+    // Only auto-navigate if:
+    // 1. User has joined the game
+    // 2. Status just changed to 'active'
+    // 3. We have a gameId (match was created)
+    // 4. onPlay callback is provided
+    if (
+      hasJoined &&
+      prevStatus !== "active" &&
+      invite.status === "active" &&
+      invite.gameId &&
+      onPlay
+    ) {
+      // Small delay to ensure game document is ready in Firestore
+      const timer = setTimeout(() => {
+        console.log(
+          `[UniversalInviteCard] Auto-navigating to ${invite.gameType} game: ${invite.gameId}`,
+        );
+        onPlay(invite.gameId!, invite.gameType);
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }
+  }, [invite.status, invite.gameId, invite.gameType, hasJoined, onPlay]);
+
+  // -------------------------------------------------------------------------
+  // Handlers
+  // -------------------------------------------------------------------------
   const handleAction = useCallback(
-    async (action: string, fn: () => Promise<void>) => {
-      setLoading(action);
+    async (actionName: string, action: () => Promise<void>) => {
+      setLoading(actionName);
       try {
-        await fn();
+        await action();
       } catch (error) {
-        console.error(`[UniversalInviteCard] ${action} error:`, error);
+        console.error(`[UniversalInviteCard] ${actionName} failed:`, error);
       } finally {
         setLoading(null);
       }
@@ -120,53 +211,9 @@ export function UniversalInviteCard({
     [],
   );
 
-  // Status color based on invite status
-  const getStatusColor = useCallback(() => {
-    switch (invite.status) {
-      case "pending":
-        return theme.colors.primary;
-      case "filling":
-        return "#FFA500"; // Orange
-      case "ready":
-        return "#4CAF50"; // Green
-      case "active":
-        return "#2196F3"; // Blue
-      case "completed":
-        return theme.colors.outline;
-      case "expired":
-        return theme.colors.error;
-      case "cancelled":
-        return theme.colors.error;
-      default:
-        return theme.colors.outline;
-    }
-  }, [invite.status, theme]);
-
-  // Status text
-  const getStatusText = useCallback(() => {
-    switch (invite.status) {
-      case "pending":
-        return slotsRemaining === 1
-          ? "1 spot left"
-          : `${slotsRemaining} spots left`;
-      case "filling":
-        return `${slotsRemaining} more needed`;
-      case "ready":
-        return "Starting...";
-      case "active":
-        return "In Progress";
-      case "completed":
-        return "Finished";
-      case "expired":
-        return "Expired";
-      case "cancelled":
-        return "Cancelled";
-      default:
-        return invite.status;
-    }
-  }, [invite.status, slotsRemaining]);
-
-  // Compact layout
+  // -------------------------------------------------------------------------
+  // Compact Render
+  // -------------------------------------------------------------------------
   if (compact) {
     return (
       <Card
@@ -174,6 +221,7 @@ export function UniversalInviteCard({
       >
         <View style={styles.compactContent}>
           <Text style={styles.gameIconCompact}>{gameIcon}</Text>
+
           <View style={styles.compactInfo}>
             <Text
               style={[
@@ -183,10 +231,12 @@ export function UniversalInviteCard({
             >
               {gameName}
             </Text>
-            <Text style={[styles.statusCompact, { color: getStatusColor() }]}>
-              {getStatusText()}
+            <Text style={[styles.statusCompact, { color: statusInfo.color }]}>
+              {invite.claimedSlots.length}/{invite.requiredPlayers} •{" "}
+              {statusInfo.text}
             </Text>
           </View>
+
           <PlayerSlots
             slots={invite.claimedSlots}
             requiredPlayers={invite.requiredPlayers}
@@ -194,32 +244,95 @@ export function UniversalInviteCard({
             currentUserId={currentUserId}
             compact
           />
-          {canJoin && (
-            <Button
-              mode="contained"
-              compact
-              onPress={() => handleAction("join", onJoin)}
-              loading={loading === "join"}
-              disabled={loading !== null}
-            >
-              Join
-            </Button>
-          )}
-          {canPlay && onPlay && (
-            <Button
-              mode="contained"
-              compact
-              onPress={() => onPlay(invite.gameId!, invite.gameType)}
-            >
-              Play
-            </Button>
-          )}
+
+          {/* Action Buttons for Compact Mode */}
+          <View style={styles.compactActions}>
+            {/* Join Button */}
+            {canJoin && (
+              <Button
+                mode="contained"
+                compact
+                onPress={() => handleAction("join", onJoin)}
+                loading={loading === "join"}
+                disabled={loading !== null}
+              >
+                Join
+              </Button>
+            )}
+
+            {/* Leave Button (non-host) */}
+            {canLeave && (
+              <Button
+                mode="outlined"
+                compact
+                onPress={() => handleAction("leave", onLeave)}
+                loading={loading === "leave"}
+                disabled={loading !== null}
+              >
+                Leave
+              </Button>
+            )}
+
+            {/* Start Game Button (host, when ready) */}
+            {canStartGame && onStartEarly && (
+              <Button
+                mode="contained"
+                compact
+                icon="play"
+                onPress={() => handleAction("start", onStartEarly)}
+                loading={loading === "start"}
+                disabled={loading !== null}
+              >
+                Start
+              </Button>
+            )}
+
+            {/* Start Early Button (host, when filling but min players met) */}
+            {canStartEarly && !canStartGame && onStartEarly && (
+              <Button
+                mode="contained"
+                compact
+                onPress={() => handleAction("start", onStartEarly)}
+                loading={loading === "start"}
+                disabled={loading !== null}
+              >
+                Start
+              </Button>
+            )}
+
+            {/* Cancel Button (host only) */}
+            {canCancel && (
+              <Button
+                mode="outlined"
+                compact
+                textColor={theme.colors.error}
+                onPress={() => handleAction("cancel", onCancel)}
+                loading={loading === "cancel"}
+                disabled={loading !== null}
+              >
+                Cancel
+              </Button>
+            )}
+
+            {/* Play Button (when game is active) */}
+            {canPlay && onPlay && (
+              <Button
+                mode="contained"
+                compact
+                onPress={() => onPlay(invite.gameId!, invite.gameType)}
+              >
+                Play
+              </Button>
+            )}
+          </View>
         </View>
       </Card>
     );
   }
 
-  // Full layout
+  // -------------------------------------------------------------------------
+  // Full Render
+  // -------------------------------------------------------------------------
   return (
     <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
       <Card.Content>
@@ -239,30 +352,32 @@ export function UniversalInviteCard({
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                Hosted by {invite.senderName}
+                {isHost ? "You're the host" : `Hosted by ${invite.senderName}`}
               </Text>
             </View>
           </View>
+
           <Chip
-            mode="flat"
             compact
-            style={{ backgroundColor: getStatusColor() + "20" }}
-            textStyle={{ color: getStatusColor(), fontSize: 11 }}
+            mode="flat"
+            style={{ backgroundColor: statusInfo.color + "20" }}
+            textStyle={{ color: statusInfo.color, fontSize: 11 }}
           >
-            {getStatusText()}
+            {statusInfo.text}
           </Chip>
+        </View>
+
+        {/* Queue Progress */}
+        <View style={styles.queueSection}>
+          <QueueProgressBar
+            current={invite.claimedSlots.length}
+            required={invite.requiredPlayers}
+            max={invite.maxPlayers}
+          />
         </View>
 
         {/* Player Slots */}
         <View style={styles.slotsSection}>
-          <Text
-            style={[
-              styles.slotsLabel,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Players ({invite.claimedSlots.length}/{invite.requiredPlayers})
-          </Text>
           <PlayerSlots
             slots={invite.claimedSlots}
             requiredPlayers={invite.requiredPlayers}
@@ -272,7 +387,7 @@ export function UniversalInviteCard({
         </View>
 
         {/* Spectators */}
-        {invite.spectators.length > 0 && (
+        {invite.spectators && invite.spectators.length > 0 && (
           <View style={styles.spectatorsRow}>
             <MaterialCommunityIcons
               name="eye"
@@ -289,6 +404,8 @@ export function UniversalInviteCard({
             </Text>
           </View>
         )}
+
+        <Divider style={styles.divider} />
 
         {/* Actions */}
         <View style={styles.actions}>
@@ -319,34 +436,21 @@ export function UniversalInviteCard({
           {canSpectate && (
             <Button
               mode="outlined"
+              icon="eye"
               onPress={() => handleAction("spectate", onSpectate)}
               loading={loading === "spectate"}
               disabled={loading !== null}
-              icon="eye"
               style={styles.actionButton}
             >
               Spectate
             </Button>
           )}
 
-          {canCancel && (
-            <Button
-              mode="outlined"
-              textColor={theme.colors.error}
-              onPress={() => handleAction("cancel", onCancel)}
-              loading={loading === "cancel"}
-              disabled={loading !== null}
-              style={styles.actionButton}
-            >
-              Cancel
-            </Button>
-          )}
-
           {canPlay && onPlay && (
             <Button
               mode="contained"
-              onPress={() => onPlay(invite.gameId!, invite.gameType)}
               icon="play"
+              onPress={() => onPlay(invite.gameId!, invite.gameType)}
               style={styles.actionButton}
             >
               Play Now
@@ -356,7 +460,7 @@ export function UniversalInviteCard({
           {hasJoined && !canLeave && !canPlay && (
             <Text
               style={[
-                styles.waitingMessage,
+                styles.waitingText,
                 { color: theme.colors.onSurfaceVariant },
               ]}
             >
@@ -366,15 +470,85 @@ export function UniversalInviteCard({
 
           {isSpectating && (
             <Text
-              style={[
-                styles.spectatingMessage,
-                { color: theme.colors.primary },
-              ]}
+              style={[styles.spectatingText, { color: theme.colors.primary }]}
             >
-              👁 You&apos;re spectating
+              👁 You're spectating
             </Text>
           )}
         </View>
+
+        {/* Host Controls */}
+        {isHost && ["pending", "filling", "ready"].includes(invite.status) && (
+          <>
+            <Divider style={styles.divider} />
+            <View style={styles.hostControls}>
+              <Text
+                style={[
+                  styles.hostControlsLabel,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Host Controls
+              </Text>
+
+              <View style={styles.hostActions}>
+                {/* Start Game button when game is ready */}
+                {canStartGame && onStartEarly && (
+                  <Button
+                    mode="contained"
+                    icon="play"
+                    onPress={() => handleAction("start", onStartEarly)}
+                    loading={loading === "start"}
+                    disabled={loading !== null}
+                    style={styles.hostButton}
+                  >
+                    Start Game
+                  </Button>
+                )}
+
+                {/* Start Early button when still filling but have min players */}
+                {canStartEarly && !canStartGame && onStartEarly && (
+                  <Button
+                    mode="contained"
+                    onPress={() => handleAction("start", onStartEarly)}
+                    loading={loading === "start"}
+                    disabled={loading !== null}
+                    style={styles.hostButton}
+                  >
+                    Start Now ({invite.claimedSlots.length}/{minPlayers} min)
+                  </Button>
+                )}
+
+                {onStartEarly &&
+                  !canStartEarly &&
+                  !canStartGame &&
+                  ["pending", "filling"].includes(invite.status) && (
+                    <Text
+                      style={[
+                        styles.minPlayersHint,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                    >
+                      Need {minPlayers - invite.claimedSlots.length} more to
+                      start early
+                    </Text>
+                  )}
+
+                {canCancel && (
+                  <Button
+                    mode="outlined"
+                    textColor={theme.colors.error}
+                    onPress={() => handleAction("cancel", onCancel)}
+                    loading={loading === "cancel"}
+                    disabled={loading !== null}
+                  >
+                    Cancel Game
+                  </Button>
+                )}
+              </View>
+            </View>
+          </>
+        )}
       </Card.Content>
     </Card>
   );
@@ -401,6 +575,11 @@ const styles = StyleSheet.create({
   },
   compactInfo: {
     flex: 1,
+  },
+  compactActions: {
+    flexDirection: "row",
+    gap: Spacing.xs,
+    flexWrap: "wrap",
   },
   gameIconCompact: {
     fontSize: 24,
@@ -433,12 +612,11 @@ const styles = StyleSheet.create({
   hostText: {
     fontSize: 12,
   },
-  slotsSection: {
+  queueSection: {
     marginBottom: Spacing.md,
   },
-  slotsLabel: {
-    fontSize: 12,
-    marginBottom: Spacing.xs,
+  slotsSection: {
+    marginBottom: Spacing.sm,
   },
   spectatorsRow: {
     flexDirection: "row",
@@ -449,22 +627,44 @@ const styles = StyleSheet.create({
   spectatorsText: {
     fontSize: 12,
   },
+  divider: {
+    marginVertical: Spacing.sm,
+  },
   actions: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.sm,
-    marginTop: Spacing.sm,
+    alignItems: "center",
   },
   actionButton: {
     minWidth: 100,
   },
-  waitingMessage: {
+  waitingText: {
     fontSize: 13,
     fontStyle: "italic",
   },
-  spectatingMessage: {
+  spectatingText: {
     fontSize: 13,
     fontWeight: "500",
+  },
+  hostControls: {
+    marginTop: Spacing.xs,
+  },
+  hostControlsLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: Spacing.sm,
+  },
+  hostActions: {
+    gap: Spacing.sm,
+  },
+  hostButton: {
+    marginBottom: Spacing.xs,
+  },
+  minPlayersHint: {
+    fontSize: 12,
+    fontStyle: "italic",
+    marginBottom: Spacing.sm,
   },
 });
 

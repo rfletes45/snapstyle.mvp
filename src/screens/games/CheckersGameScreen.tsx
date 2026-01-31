@@ -27,6 +27,7 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
@@ -76,6 +77,8 @@ interface CheckersGameScreenProps {
     params?: {
       matchId?: string;
       inviteId?: string;
+      /** Where the user entered from - determines back navigation */
+      entryPoint?: "play" | "chat";
     };
   };
 }
@@ -377,6 +380,21 @@ export default function CheckersGameScreen({
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
 
+  // Online game state (declared early for navigation hook)
+  const [match, setMatch] = useState<CheckersMatch | null>(null);
+
+  // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
+  const {
+    exitGame,
+    handleGameCompletion,
+    notifications: achievementNotifications,
+  } = useGameCompletion({
+    match,
+    currentUserId: currentFirebaseUser?.uid,
+    gameType: "checkers",
+    entryPoint: route.params?.entryPoint,
+  });
+
   // Game state
   const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [board, setBoard] = useState<CheckersBoard>(createInitialCheckersBoard);
@@ -398,7 +416,6 @@ export default function CheckersGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-  const [match, setMatch] = useState<CheckersMatch | null>(null);
   const [myColor, setMyColor] = useState<"red" | "black" | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
 
@@ -446,6 +463,9 @@ export default function CheckersGameScreen({
         setWinner(winnerColor);
         setShowGameOverModal(true);
         Vibration.vibrate([0, 100, 50, 100]);
+
+        // Phase 7: Check achievements on game completion
+        handleGameCompletion(typedMatch as any);
       }
     });
 
@@ -742,7 +762,7 @@ export default function CheckersGameScreen({
           onPress: async () => {
             try {
               await resignMatch(matchId, currentFirebaseUser.uid);
-              navigation.goBack();
+              exitGame();
             } catch (error) {
               console.error("[Checkers] Error resigning:", error);
             }
@@ -757,16 +777,14 @@ export default function CheckersGameScreen({
       resetGame();
     } else {
       setShowGameOverModal(false);
-      navigation.goBack();
+      exitGame();
     }
   };
 
   const handleGoBack = () => {
-    if (gameMode === "online" && match && match.status === "active") {
-      handleResign();
-    } else {
-      navigation.goBack();
-    }
+    // Allow users to leave active games without resigning
+    // They can return to continue playing at their own pace
+    exitGame();
   };
 
   // ==========================================================================
@@ -829,7 +847,7 @@ export default function CheckersGameScreen({
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity onPress={() => exitGame()}>
             <MaterialCommunityIcons
               name="arrow-left"
               size={28}
@@ -1026,31 +1044,44 @@ export default function CheckersGameScreen({
       {/* Game Board */}
       <View style={styles.boardContainer}>
         <View style={[styles.board, { borderColor: theme.colors.outline }]}>
-          {board.map((row, rowIndex) => (
-            <View key={rowIndex} style={styles.row}>
-              {row.map((cell, colIndex) => {
-                const { isValid, isJump } = isValidMoveCell(rowIndex, colIndex);
-                return (
-                  <CellComponent
-                    key={`${rowIndex}-${colIndex}`}
-                    row={rowIndex}
-                    col={colIndex}
-                    piece={cell}
-                    isSelected={
-                      selectedPiece?.row === rowIndex &&
-                      selectedPiece?.col === colIndex
-                    }
-                    isValidMove={isValid}
-                    isJumpMove={isJump}
-                    onPress={() => handleCellPress(rowIndex, colIndex)}
-                    disabled={
-                      !!winner || (gameMode === "online" && !isMyTurn())
-                    }
-                  />
-                );
-              })}
-            </View>
-          ))}
+          {board.map((row, rowIndex) => {
+            // Flip board for red player so their pieces are at the bottom
+            const shouldFlip = gameMode === "online" && myColor === "red";
+            const displayRowIndex = shouldFlip ? 7 - rowIndex : rowIndex;
+            const displayRow = board[displayRowIndex];
+
+            return (
+              <View key={rowIndex} style={styles.row}>
+                {displayRow.map((cell, colIndex) => {
+                  const displayColIndex = shouldFlip ? 7 - colIndex : colIndex;
+                  const actualRow = displayRowIndex;
+                  const actualCol = displayColIndex;
+                  const { isValid, isJump } = isValidMoveCell(
+                    actualRow,
+                    actualCol,
+                  );
+                  return (
+                    <CellComponent
+                      key={`${rowIndex}-${colIndex}`}
+                      row={actualRow}
+                      col={actualCol}
+                      piece={board[actualRow][actualCol]}
+                      isSelected={
+                        selectedPiece?.row === actualRow &&
+                        selectedPiece?.col === actualCol
+                      }
+                      isValidMove={isValid}
+                      isJumpMove={isJump}
+                      onPress={() => handleCellPress(actualRow, actualCol)}
+                      disabled={
+                        !!winner || (gameMode === "online" && !isMyTurn())
+                      }
+                    />
+                  );
+                })}
+              </View>
+            );
+          })}
         </View>
       </View>
 

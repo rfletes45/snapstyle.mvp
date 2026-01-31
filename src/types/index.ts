@@ -9,6 +9,8 @@
  * - ./turnBased - Turn-based match and game state types
  * - ./singlePlayerGames - Single player session types
  * - ./poolGame - Pool/billiards specific types
+ * - ./gameHistory - Completed game history records
+ * - ./multiplayerLeaderboard - Multiplayer leaderboard types (Phase 8)
  *
  * Models exports ExtendedGameType, RealTimeGameType, etc. which conflict with games.ts
  * Import game types from ./games directly when needed.
@@ -18,8 +20,11 @@
  */
 
 export * from "./achievements";
+export * from "./gameFilters";
+export * from "./gameHistory";
 export * from "./messaging";
 export * from "./models";
+export * from "./multiplayerLeaderboard";
 export * from "./poolGame";
 
 // =============================================================================

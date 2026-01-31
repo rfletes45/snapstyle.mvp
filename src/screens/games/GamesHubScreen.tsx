@@ -7,12 +7,12 @@
  * - Recent game history
  * - Navigation to individual game screens
  * - Coming soon badges for future games
- * - Active multiplayer games section
+ * - Active multiplayer games section with filtering
  * - Game invites handling
+ * - Archive/resign/rematch quick actions
  */
 
-import { ActiveGamesSection } from "@/components/ActiveGamesList";
-import { GameInviteBadge, GameInvitesList } from "@/components/GameInviteCard";
+import { GameInviteBadge } from "@/components/GameInviteCard";
 import { UniversalInviteCard } from "@/components/games";
 import { ErrorState, LoadingState } from "@/components/ui";
 import {
@@ -36,11 +36,18 @@ import {
   PlayerHighScore,
 } from "@/services/singlePlayerSessions";
 import {
+  archiveGame,
   getActiveMatches,
-  getPendingInvites,
-  subscribeToInvites,
+  resignGame,
+  subscribeToActiveMatches,
 } from "@/services/turnBasedGames";
 import { useAuth } from "@/store/AuthContext";
+import {
+  countGamesByTurn,
+  DEFAULT_GAME_FILTERS,
+  filterGames,
+  GameFilters,
+} from "@/types/gameFilters";
 import {
   ExtendedGameType,
   GAME_METADATA,
@@ -50,13 +57,12 @@ import { GameSession } from "@/types/models";
 import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
 import {
   AnyMatch,
-  GameInvite,
   RealTimeGameType,
   TurnBasedGameType,
   UniversalGameInvite,
 } from "@/types/turnBased";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -66,6 +72,7 @@ import {
 } from "react-native";
 import { Card, Chip, Divider, Text, useTheme } from "react-native-paper";
 import { BorderRadius, Spacing } from "../../../constants/theme";
+import { ActiveGamesSection, GameFilterBar } from "./components";
 
 // =============================================================================
 // Types
@@ -327,10 +334,13 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   // Multiplayer state
   const [activeGames, setActiveGames] = useState<AnyMatch[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<GameInvite[]>([]);
   const [universalInvites, setUniversalInvites] = useState<
     UniversalGameInvite[]
   >([]);
+
+  // Game filter state
+  const [gameFilters, setGameFilters] =
+    useState<GameFilters>(DEFAULT_GAME_FILTERS);
 
   // Combine all high scores into a single map
   const highScoresMap = new Map<string, number>();
@@ -339,27 +349,37 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     highScoresMap.set(hs.gameType, hs.highScore),
   );
 
+  // Calculate filtered games and counts
+  const filteredActiveGames = useMemo(() => {
+    if (!currentFirebaseUser) return [];
+    return filterGames(activeGames, gameFilters, currentFirebaseUser.uid);
+  }, [activeGames, gameFilters, currentFirebaseUser]);
+
+  const gameCounts = useMemo(() => {
+    if (!currentFirebaseUser) return { yourTurn: 0, theirTurn: 0, total: 0 };
+    return countGamesByTurn(activeGames, currentFirebaseUser.uid);
+  }, [activeGames, currentFirebaseUser]);
+
   const loadData = useCallback(async () => {
     if (!currentFirebaseUser) return;
 
     try {
       setError(null);
-      const [bests, recent, spHighScores, spRecent, active, invites] =
-        await Promise.all([
+      const [bests, recent, spHighScores, spRecent, active] = await Promise.all(
+        [
           getAllPersonalBests(currentFirebaseUser.uid),
           getRecentGames(currentFirebaseUser.uid, undefined, 5),
           getAllHighScores(currentFirebaseUser.uid),
           getRecentSessions(currentFirebaseUser.uid, undefined, 5),
           getActiveMatches(currentFirebaseUser.uid).catch(() => []),
-          getPendingInvites(currentFirebaseUser.uid).catch(() => []),
-        ]);
+        ],
+      );
 
       setPersonalBests(bests);
       setRecentGames(recent);
       setSinglePlayerHighScores(spHighScores);
       setRecentSinglePlayerGames(spRecent);
       setActiveGames(active);
-      setPendingInvites(invites);
     } catch (err) {
       console.error("[GamesScreen] Error loading data:", err);
       setError("Couldn't load games");
@@ -370,13 +390,20 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   }, [currentFirebaseUser]);
 
   // Subscribe to real-time invite updates
+  // Subscribe to real-time active matches updates
   useEffect(() => {
     if (!currentFirebaseUser) return;
 
-    const unsubscribe = subscribeToInvites(
+    const unsubscribe = subscribeToActiveMatches(
       currentFirebaseUser.uid,
-      (invites) => {
-        setPendingInvites(invites);
+      (matches) => {
+        setActiveGames(matches);
+      },
+      (error) => {
+        console.error(
+          "[GamesScreen] Active matches subscription error:",
+          error,
+        );
       },
     );
 
@@ -447,7 +474,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
     const screen = screenMap[game.gameType];
     if (screen) {
-      navigation.navigate(screen, { matchId: game.id });
+      navigation.navigate(screen, { matchId: game.id, entryPoint: "play" });
     }
   };
 
@@ -464,10 +491,74 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
     const screen = screenMap[gameType];
     if (screen) {
-      navigation.navigate(screen, { matchId });
+      navigation.navigate(screen, { matchId, entryPoint: "play" });
     }
     loadData(); // Refresh the data
   };
+
+  // =========================================================================
+  // Game Action Handlers (Archive, Resign, Rematch)
+  // =========================================================================
+
+  const handleArchiveGame = useCallback(
+    async (gameId: string) => {
+      if (!currentFirebaseUser) return;
+      try {
+        await archiveGame(gameId, currentFirebaseUser.uid);
+        loadData(); // Refresh to update the list
+      } catch (err) {
+        console.error("[GamesScreen] Failed to archive game:", err);
+      }
+    },
+    [currentFirebaseUser, loadData],
+  );
+
+  const handleResignGame = useCallback(
+    async (gameId: string) => {
+      console.log("[GamesScreen] handleResignGame called with gameId:", gameId);
+      if (!currentFirebaseUser) {
+        console.warn("[GamesScreen] No current user, cannot resign");
+        return;
+      }
+      try {
+        console.log("[GamesScreen] Calling resignGame...");
+        await resignGame(gameId, currentFirebaseUser.uid);
+        console.log("[GamesScreen] resignGame succeeded, refreshing data...");
+        loadData(); // Refresh to update the list
+      } catch (err) {
+        console.error("[GamesScreen] Failed to resign game:", err);
+      }
+    },
+    [currentFirebaseUser, loadData],
+  );
+
+  const handleRematchGame = useCallback(
+    (game: AnyMatch) => {
+      // Navigate to game screen with rematch flag
+      const screenMap: Record<string, string> = {
+        tic_tac_toe: "TicTacToeGame",
+        checkers: "CheckersGame",
+        chess: "ChessGame",
+        crazy_eights: "CrazyEightsGame",
+      };
+
+      const screen = screenMap[game.gameType];
+      if (screen) {
+        // Get opponent ID for rematch
+        const opponentId =
+          game.players.player1.userId === currentFirebaseUser?.uid
+            ? game.players.player2.userId
+            : game.players.player1.userId;
+
+        navigation.navigate(screen, {
+          rematchOpponentId: opponentId,
+          gameType: game.gameType,
+          entryPoint: "play",
+        });
+      }
+    },
+    [currentFirebaseUser, navigation],
+  );
 
   // =========================================================================
   // Universal Invite Handlers
@@ -537,6 +628,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
           navigation.navigate(screen, {
             matchId: result.gameId,
             spectatorMode: true,
+            entryPoint: "play",
           });
         }
       }
@@ -564,7 +656,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       };
       const screen = screenMap[gameType];
       if (screen) {
-        navigation.navigate(screen, { matchId: gameId });
+        navigation.navigate(screen, { matchId: gameId, entryPoint: "play" });
       }
     },
     [navigation],
@@ -630,47 +722,29 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       {/* Active Games Section - Show first if there are any */}
       {activeGames.length > 0 && currentFirebaseUser && (
         <>
+          {/* Game Filter Bar */}
+          <GameFilterBar
+            filters={gameFilters}
+            onFiltersChange={setGameFilters}
+            yourTurnCount={gameCounts.yourTurn}
+            theirTurnCount={gameCounts.theirTurn}
+            invitesCount={universalInvites.length}
+          />
+
+          {/* Active Games */}
           <ActiveGamesSection
-            games={activeGames}
+            games={filteredActiveGames}
             currentUserId={currentFirebaseUser.uid}
             onSelectGame={handleSelectActiveGame}
+            onArchiveGame={handleArchiveGame}
+            onResignGame={handleResignGame}
+            onRematchGame={handleRematchGame}
           />
           <Divider style={styles.divider} />
         </>
       )}
 
-      {/* Pending Invites Section */}
-      {pendingInvites.length > 0 && (
-        <>
-          <View style={styles.invitesSectionHeader}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                { color: theme.colors.onBackground },
-              ]}
-            >
-              📬 Game Invites
-            </Text>
-            <GameInviteBadge count={pendingInvites.length} />
-          </View>
-          <Text
-            style={[
-              styles.sectionSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Your friends want to play!
-          </Text>
-          <GameInvitesList
-            invites={pendingInvites}
-            onAccept={handleAcceptInvite}
-            onRefresh={loadData}
-          />
-          <Divider style={styles.divider} />
-        </>
-      )}
-
-      {/* Universal Invites Section (Open Lobbies) */}
+      {/* Universal Invites Section (Open Invites) */}
       {universalInvites.length > 0 && (
         <>
           <View style={styles.invitesSectionHeader}>
@@ -680,7 +754,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                 { color: theme.colors.onBackground },
               ]}
             >
-              🎮 Open Game Lobbies
+              📬 Open Invites
             </Text>
             <GameInviteBadge count={universalInvites.length} />
           </View>
@@ -749,7 +823,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         onPlayGame={navigateToGame}
       />
 
-      {/* Leaderboards & Achievements Section */}
+      {/* Leaderboards, Achievements & History Section */}
       <Divider style={styles.divider} />
       <Text style={[styles.sectionTitle, { color: theme.colors.onBackground }]}>
         Compete & Collect
@@ -811,6 +885,42 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
             Unlock badges
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Second row with Game History */}
+      <View style={styles.navCardsRow}>
+        <TouchableOpacity
+          style={[
+            styles.navCard,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              borderColor: theme.colors.outlineVariant,
+            },
+          ]}
+          onPress={() => navigation.navigate("GameHistory")}
+        >
+          <MaterialCommunityIcons
+            name="history"
+            size={32}
+            color={theme.colors.secondary}
+          />
+          <Text
+            style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
+          >
+            Game History
+          </Text>
+          <Text
+            style={[
+              styles.navCardSubtitle,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            Past matches & stats
+          </Text>
+        </TouchableOpacity>
+
+        {/* Placeholder for future card - keeps layout balanced */}
+        <View style={[styles.navCard, { opacity: 0 }]} />
       </View>
 
       {/* Recent Games Section */}

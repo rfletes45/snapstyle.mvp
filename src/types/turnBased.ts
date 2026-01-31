@@ -62,6 +62,29 @@ export interface TurnBasedMatch<
 
   /** Time control state */
   timeControl?: TimeControlState;
+
+  // =========================================================================
+  // Phase 1: Conversation Context & Archive Support (Game System Overhaul)
+  // =========================================================================
+
+  /** Conversation context - where this game originated */
+  conversationId?: string;
+
+  /** Type of conversation (DM or group chat) */
+  conversationType?: "dm" | "group";
+
+  /** Per-player archive status (playerUid -> timestamp when archived) */
+  playerArchivedAt?: Record<string, number>;
+
+  // =========================================================================
+  // Phase 3: Draw Offer System (Game System Overhaul)
+  // =========================================================================
+
+  /** User ID of player who offered the draw */
+  drawOfferedBy?: string;
+
+  /** Timestamp when draw was offered */
+  drawOfferedAt?: number;
 }
 
 /**

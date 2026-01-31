@@ -14,9 +14,11 @@ import { Text, useTheme } from "react-native-paper";
 
 import { UniversalInviteCard } from "@/components/games";
 import {
-  cancelGameInvite,
+  cancelUniversalInvite,
   claimInviteSlot,
+  cleanupCompletedGameInvites,
   joinAsSpectator,
+  startGameEarly,
   subscribeToConversationInvites,
   unclaimInviteSlot,
 } from "@/services/gameInvites";
@@ -67,6 +69,20 @@ export function ChatGameInvites({
   const [invites, setInvites] = useState<UniversalGameInvite[]>([]);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [loading, setLoading] = useState(false);
+
+  // -------------------------------------------------------------------------
+  // Cleanup completed game invites on mount
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!conversationId) return;
+
+    // Clean up any invites for games that have already completed
+    // This handles the case where the Cloud Function didn't update the invite
+    cleanupCompletedGameInvites(conversationId).catch((error) => {
+      console.error("[ChatGameInvites] Cleanup error:", error);
+    });
+  }, [conversationId]);
 
   // -------------------------------------------------------------------------
   // Subscription
@@ -130,9 +146,32 @@ export function ChatGameInvites({
     [currentUserId, currentUserName, currentUserAvatar, onNavigateToGame],
   );
 
+  const handleStartEarly = useCallback(
+    async (invite: UniversalGameInvite) => {
+      if (!currentUserId) return;
+
+      const result = await startGameEarly(invite.id, currentUserId);
+
+      if (result.success && result.gameId) {
+        onNavigateToGame(result.gameId, invite.gameType);
+      } else if (result.error) {
+        console.error("[ChatGameInvites] Start early failed:", result.error);
+        // Invite will update via subscription if there's an error
+      }
+    },
+    [currentUserId, onNavigateToGame],
+  );
+
   const handleCancel = useCallback(
     async (invite: UniversalGameInvite) => {
-      await cancelGameInvite(invite.id, currentUserId);
+      if (!currentUserId) return;
+
+      const result = await cancelUniversalInvite(invite.id, currentUserId);
+
+      if (!result.success) {
+        console.error("[ChatGameInvites] Cancel failed:", result.error);
+        // Invite will update via subscription
+      }
     },
     [currentUserId],
   );
@@ -209,6 +248,7 @@ export function ChatGameInvites({
               onJoin={() => handleJoin(invite)}
               onLeave={() => handleLeave(invite)}
               onSpectate={() => handleSpectate(invite)}
+              onStartEarly={() => handleStartEarly(invite)}
               onCancel={() => handleCancel(invite)}
               onPlay={handlePlay}
               compact={compact}

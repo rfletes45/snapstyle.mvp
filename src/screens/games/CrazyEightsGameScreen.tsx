@@ -30,6 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
@@ -83,6 +84,8 @@ interface CrazyEightsGameScreenProps {
     params?: {
       matchId?: string;
       inviteId?: string;
+      /** Where the user entered from - determines back navigation */
+      entryPoint?: "play" | "chat";
     };
   };
 }
@@ -351,6 +354,21 @@ export default function CrazyEightsGameScreen({
   const { profile: userProfile } = useUser();
   const haptics = useGameHaptics();
 
+  // Online game state (declared early for navigation hook)
+  const [match, setMatch] = useState<CrazyEightsMatch | null>(null);
+
+  // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
+  const {
+    exitGame,
+    handleGameCompletion,
+    notifications: achievementNotifications,
+  } = useGameCompletion({
+    match,
+    currentUserId: currentFirebaseUser?.uid,
+    gameType: "crazy_eights",
+    entryPoint: route.params?.entryPoint,
+  });
+
   // Game state
   const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [gameState, setGameState] = useState<CrazyEightsGameState | null>(null);
@@ -376,7 +394,6 @@ export default function CrazyEightsGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-  const [match, setMatch] = useState<CrazyEightsMatch | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
   const [opponentHandSize, setOpponentHandSize] = useState(7);
 
@@ -457,6 +474,9 @@ export default function CrazyEightsGameScreen({
         const didWin = typedMatch.winnerId === currentFirebaseUser?.uid;
         setGameResult(didWin ? "win" : "loss");
         setShowGameOverModal(true);
+
+        // Phase 7: Check achievements on game completion
+        handleGameCompletion(typedMatch as any);
       }
     });
 
@@ -876,7 +896,7 @@ export default function CrazyEightsGameScreen({
           onPress: async () => {
             try {
               await resignMatch(matchId, currentFirebaseUser.uid);
-              navigation.goBack();
+              exitGame();
             } catch (error) {
               console.error("[CrazyEights] Error resigning:", error);
             }
@@ -891,16 +911,14 @@ export default function CrazyEightsGameScreen({
       resetGame();
     } else {
       setShowGameOverModal(false);
-      navigation.goBack();
+      exitGame();
     }
   };
 
   const handleGoBack = () => {
-    if (gameMode === "online" && match && match.status === "active") {
-      handleResign();
-    } else {
-      navigation.goBack();
-    }
+    // Allow users to leave active games without resigning
+    // They can return to continue playing at their own pace
+    exitGame();
   };
 
   // ==========================================================================
@@ -1088,7 +1106,7 @@ export default function CrazyEightsGameScreen({
 
             <Button
               mode="outlined"
-              onPress={() => navigation.goBack()}
+              onPress={() => exitGame()}
               style={styles.menuButton}
               icon="arrow-left"
             >
@@ -1353,7 +1371,7 @@ export default function CrazyEightsGameScreen({
         onExit={() => {
           setShowGameOverModal(false);
           if (gameMode === "online") {
-            navigation.goBack();
+            exitGame();
           } else {
             setGameMode("menu");
           }

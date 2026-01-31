@@ -15,12 +15,14 @@
  * - Structured logging includes context for debugging/audit
  */
 import * as functions from "firebase-functions";
-import { cleanupOldGames, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame } from "./games";
+import { cleanupOldGames, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame } from "./games";
+import { migrateGameInvites, migrateGameInvitesDryRun, rollbackGameInvitesMigration } from "./migrations/migrateGameInvites";
 export declare const sendMessageV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const editMessageV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const deleteMessageForAllV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const toggleReactionV2: functions.HttpsFunction & functions.Runnable<any>;
-export { cleanupOldGames, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame, };
+export { cleanupOldGames, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame, };
+export { migrateGameInvites, migrateGameInvitesDryRun, rollbackGameInvitesMigration, };
 /**
  * onNewMessage: Triggered when a new message is created
  * Sends push notification to recipient and updates streak tracking

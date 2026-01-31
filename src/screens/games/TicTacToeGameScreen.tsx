@@ -27,6 +27,7 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
@@ -113,6 +114,8 @@ interface TicTacToeGameScreenProps {
     params?: {
       matchId?: string;
       inviteId?: string;
+      /** Where the user entered from - determines back navigation */
+      entryPoint?: "play" | "chat";
     };
   };
 }
@@ -260,6 +263,21 @@ export default function TicTacToeGameScreen({
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
 
+  // Online game state (declared early for navigation hook)
+  const [match, setMatch] = useState<TicTacToeMatch | null>(null);
+
+  // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
+  const {
+    exitGame,
+    handleGameCompletion,
+    notifications: achievementNotifications,
+  } = useGameCompletion({
+    match,
+    currentUserId: currentFirebaseUser?.uid,
+    gameType: "tic_tac_toe",
+    entryPoint: route.params?.entryPoint,
+  });
+
   // Game state
   const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [board, setBoard] = useState<TicTacToeBoard>(
@@ -277,7 +295,6 @@ export default function TicTacToeGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-  const [match, setMatch] = useState<TicTacToeMatch | null>(null);
   const [mySymbol, setMySymbol] = useState<"X" | "O" | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
 
@@ -328,6 +345,9 @@ export default function TicTacToeGameScreen({
         Vibration.vibrate(
           gameState.winner === "draw" ? 100 : [0, 100, 50, 100],
         );
+
+        // Phase 7: Check achievements on game completion
+        handleGameCompletion(typedMatch as any);
       }
     });
 
@@ -528,7 +548,7 @@ export default function TicTacToeGameScreen({
           onPress: async () => {
             try {
               await resignMatch(matchId, currentFirebaseUser.uid);
-              navigation.goBack();
+              exitGame();
             } catch (error) {
               console.error("[TicTacToe] Error resigning:", error);
             }
@@ -544,16 +564,14 @@ export default function TicTacToeGameScreen({
     } else {
       // For online, need to send a rematch invite
       setShowGameOverModal(false);
-      navigation.goBack();
+      exitGame();
     }
   };
 
   const handleGoBack = () => {
-    if (gameMode === "online" && match && match.status === "active") {
-      handleResign();
-    } else {
-      navigation.goBack();
-    }
+    // Allow users to leave active games without resigning
+    // They can return to continue playing at their own pace
+    exitGame();
   };
 
   // ==========================================================================
@@ -602,7 +620,7 @@ export default function TicTacToeGameScreen({
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity onPress={() => exitGame()}>
             <MaterialCommunityIcons
               name="arrow-left"
               size={28}

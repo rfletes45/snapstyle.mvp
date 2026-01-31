@@ -4,9 +4,12 @@
  * Features:
  * - Global top 100 leaderboard
  * - Friends-only leaderboard
- * - Game selector (all available games)
- * - Week navigation
+ * - Game selector (all available games - single player and multiplayer)
+ * - Week navigation (for single player games)
  * - User's rank highlight
+ * - ELO rating display for multiplayer games
+ *
+ * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 8
  */
 
 import { AvatarMini } from "@/components/Avatar";
@@ -22,6 +25,14 @@ import {
   LeaderboardResult,
 } from "@/services/leaderboards";
 import {
+  getMultiplayerFriendsLeaderboard,
+  getMultiplayerGlobalLeaderboard,
+  getMultiplayerUserRank,
+  MultiplayerLeaderboardData,
+  MultiplayerLeaderboardEntry,
+  MultiplayerLeaderboardTimeframe,
+} from "@/services/multiplayerLeaderboard";
+import {
   formatScore as formatSinglePlayerScore,
   getLeaderboard as getSinglePlayerLeaderboard,
   getPlayerRank as getSinglePlayerRank,
@@ -34,6 +45,8 @@ import {
   LeaderboardEntry,
   WeekKey,
 } from "@/types/models";
+import { getRatingTier } from "@/types/multiplayerLeaderboard";
+import { TurnBasedGameType } from "@/types/turnBased";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -52,31 +65,76 @@ type Props = NativeStackScreenProps<any, "Leaderboard">;
 
 type LeaderboardType = "global" | "friends";
 
-// Extended game type that includes both legacy and new games
-type ExtendedLeaderboardGameType = GameType | SinglePlayerGameType;
+// Extended game type that includes legacy, new single-player, and multiplayer games
+type ExtendedLeaderboardGameType =
+  | GameType
+  | SinglePlayerGameType
+  | TurnBasedGameType;
 
-// Games that have leaderboards
-const LEADERBOARD_GAMES: {
+// Game category for display purposes
+type GameCategory = "legacy" | "single-player" | "multiplayer";
+
+interface LeaderboardGame {
   id: ExtendedLeaderboardGameType;
   name: string;
   icon: string;
-  isLegacy: boolean;
-}[] = [
+  category: GameCategory;
+}
+
+// Games that have leaderboards
+const LEADERBOARD_GAMES: LeaderboardGame[] = [
+  // Single-player games (legacy)
   {
     id: "reaction_tap",
     name: "Reaction",
     icon: "lightning-bolt",
-    isLegacy: true,
+    category: "legacy",
   },
-  { id: "timed_tap", name: "Speed Tap", icon: "timer-outline", isLegacy: true },
-  { id: "flappy_snap", name: "Flappy", icon: "bird", isLegacy: false },
+  {
+    id: "timed_tap",
+    name: "Speed Tap",
+    icon: "timer-outline",
+    category: "legacy",
+  },
+  // Single-player games (new)
+  {
+    id: "flappy_snap",
+    name: "Flappy",
+    icon: "bird",
+    category: "single-player",
+  },
   {
     id: "bounce_blitz",
     name: "Bounce",
     icon: "circle-multiple",
-    isLegacy: false,
+    category: "single-player",
   },
-  { id: "memory_snap", name: "Memory", icon: "cards", isLegacy: false },
+  {
+    id: "memory_snap",
+    name: "Memory",
+    icon: "cards",
+    category: "single-player",
+  },
+  // Multiplayer games
+  { id: "chess", name: "Chess", icon: "chess-king", category: "multiplayer" },
+  {
+    id: "checkers",
+    name: "Checkers",
+    icon: "checkerboard",
+    category: "multiplayer",
+  },
+  {
+    id: "tic_tac_toe",
+    name: "Tic Tac Toe",
+    icon: "grid",
+    category: "multiplayer",
+  },
+  {
+    id: "crazy_eights",
+    name: "Crazy 8s",
+    icon: "cards-playing-outline",
+    category: "multiplayer",
+  },
 ];
 
 export default function LeaderboardScreen({ navigation, route }: Props) {
@@ -91,18 +149,29 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
   const [leaderboardType, setLeaderboardType] =
     useState<LeaderboardType>("global");
   const [weekKey, setWeekKey] = useState<WeekKey>(getCurrentWeekKey());
+
+  // Legacy/single-player state
   const [result, setResult] = useState<LeaderboardResult | null>(null);
   const [singlePlayerEntries, setSinglePlayerEntries] = useState<
     LeaderboardEntry[]
   >([]);
+
+  // Multiplayer state
+  const [multiplayerData, setMultiplayerData] =
+    useState<MultiplayerLeaderboardData | null>(null);
+  const [multiplayerTimeframe, setMultiplayerTimeframe] =
+    useState<MultiplayerLeaderboardTimeframe>("all-time");
+
   const [userRank, setUserRank] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Check if current game is a legacy game (uses old leaderboard system)
-  const isLegacyGame =
-    LEADERBOARD_GAMES.find((g) => g.id === gameId)?.isLegacy ?? false;
+  // Check game category
+  const gameConfig = LEADERBOARD_GAMES.find((g) => g.id === gameId);
+  const gameCategory = gameConfig?.category || "legacy";
+  const isLegacyGame = gameCategory === "legacy";
+  const isMultiplayerGame = gameCategory === "multiplayer";
 
   const loadLeaderboard = useCallback(async () => {
     if (!userId) return;
@@ -110,7 +179,40 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
     try {
       setError(null);
 
-      if (isLegacyGame) {
+      if (isMultiplayerGame) {
+        // Use multiplayer leaderboard system
+        let data: MultiplayerLeaderboardData;
+
+        if (leaderboardType === "friends") {
+          data = await getMultiplayerFriendsLeaderboard(
+            userId,
+            gameId as TurnBasedGameType,
+            multiplayerTimeframe,
+          );
+        } else {
+          data = await getMultiplayerGlobalLeaderboard(
+            gameId as TurnBasedGameType,
+            multiplayerTimeframe,
+            100,
+          );
+
+          // Also get user's rank
+          const rankResult = await getMultiplayerUserRank(
+            userId,
+            gameId as TurnBasedGameType,
+            multiplayerTimeframe,
+          );
+          if (rankResult) {
+            data.userEntry = rankResult.entry;
+            data.userGlobalRank = rankResult.globalRank;
+          }
+        }
+
+        setMultiplayerData(data);
+        setResult(null);
+        setSinglePlayerEntries([]);
+        setUserRank(data.userGlobalRank || data.userEntry?.rank || null);
+      } else if (isLegacyGame) {
         // Use old leaderboard system for legacy games
         let data: LeaderboardResult;
 
@@ -126,6 +228,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
         setResult(data);
         setSinglePlayerEntries([]);
+        setMultiplayerData(null);
 
         // Get user's global rank if viewing global leaderboard
         if (leaderboardType === "global") {
@@ -169,6 +272,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
         setSinglePlayerEntries(convertedEntries);
         setResult(null);
+        setMultiplayerData(null);
 
         // Get user's rank
         const rank = await getSinglePlayerRank(
@@ -182,7 +286,15 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
       console.error("Error loading leaderboard:", err);
       setError("Couldn't load leaderboard");
     }
-  }, [userId, gameId, leaderboardType, weekKey, isLegacyGame]);
+  }, [
+    userId,
+    gameId,
+    leaderboardType,
+    weekKey,
+    isLegacyGame,
+    isMultiplayerGame,
+    multiplayerTimeframe,
+  ]);
 
   useEffect(() => {
     setLoading(true);
@@ -205,6 +317,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
   const isCurrentWeek = weekKey === getCurrentWeekKey();
 
+  // Render a single-player/legacy entry
   const renderEntry = ({
     item,
     index,
@@ -264,6 +377,70 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
     );
   };
 
+  // Render a multiplayer entry with ELO rating
+  const renderMultiplayerEntry = ({
+    item,
+    index,
+  }: {
+    item: MultiplayerLeaderboardEntry;
+    index: number;
+  }) => {
+    const isCurrentUser = item.userId === userId;
+    const rank = item.rank || index + 1;
+    const tier = getRatingTier(item.rating);
+
+    return (
+      <Card
+        style={[styles.entryCard, isCurrentUser && styles.currentUserCard]}
+        mode={isCurrentUser ? "elevated" : "outlined"}
+      >
+        <Card.Content style={styles.entryContent}>
+          {/* Rank */}
+          <View style={styles.rankContainer}>
+            <Text style={[styles.rankText, rank <= 3 && styles.topRankText]}>
+              {getRankDisplay(rank)}
+            </Text>
+          </View>
+
+          {/* Avatar */}
+          <AvatarMini
+            config={item.avatarConfig || { baseColor: "#6200EE" }}
+            size={40}
+          />
+
+          {/* Name and Stats */}
+          <View style={styles.nameContainer}>
+            <Text
+              style={[
+                styles.displayName,
+                isCurrentUser && styles.currentUserName,
+              ]}
+              numberOfLines={1}
+            >
+              {item.displayName}
+              {isCurrentUser && " (You)"}
+            </Text>
+            <Text style={styles.statsSubtext}>
+              {item.wins}W - {item.losses}L ({item.winRate.toFixed(0)}%)
+            </Text>
+          </View>
+
+          {/* Rating with tier */}
+          <View style={styles.ratingContainer}>
+            <View
+              style={[styles.tierBadge, { backgroundColor: tier.color + "30" }]}
+            >
+              <Text style={styles.tierIcon}>{tier.icon}</Text>
+            </View>
+            <Text style={[styles.ratingText, { color: tier.color }]}>
+              {item.rating}
+            </Text>
+          </View>
+        </Card.Content>
+      </Card>
+    );
+  };
+
   const renderHeader = () => (
     <View style={styles.headerContainer}>
       {/* Game Selector - Scrollable */}
@@ -286,8 +463,8 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
         ))}
       </ScrollView>
 
-      {/* Leaderboard Type Selector - only for legacy games */}
-      {isLegacyGame && (
+      {/* Leaderboard Type Selector - for legacy and multiplayer games */}
+      {(isLegacyGame || isMultiplayerGame) && (
         <SegmentedButtons
           value={leaderboardType}
           onValueChange={(value) =>
@@ -324,6 +501,22 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {/* Timeframe selector - only for multiplayer games */}
+      {isMultiplayerGame && (
+        <SegmentedButtons
+          value={multiplayerTimeframe}
+          onValueChange={(value) =>
+            setMultiplayerTimeframe(value as MultiplayerLeaderboardTimeframe)
+          }
+          buttons={[
+            { value: "all-time", label: "All Time" },
+            { value: "monthly", label: "Monthly" },
+            { value: "weekly", label: "Weekly" },
+          ]}
+          style={styles.segmentedButtons}
+        />
+      )}
+
       {/* User Rank Summary */}
       {userRank && (
         <Card style={styles.rankSummaryCard} mode="elevated">
@@ -332,6 +525,11 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
             <Text style={styles.rankSummaryText}>
               Your Rank: {getRankDisplay(userRank)}
             </Text>
+            {isMultiplayerGame && multiplayerData?.userEntry && (
+              <Text style={styles.rankSummarySubtext}>
+                Rating: {multiplayerData.userEntry.rating}
+              </Text>
+            )}
           </Card.Content>
         </Card>
       )}
@@ -378,6 +576,19 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
           title="Something went wrong"
           message={error}
           onRetry={loadLeaderboard}
+        />
+      ) : isMultiplayerGame ? (
+        <FlatList
+          data={multiplayerData?.entries || []}
+          keyExtractor={(item) => item.userId}
+          renderItem={renderMultiplayerEntry}
+          {...LIST_PERFORMANCE_PROPS}
+          ListHeaderComponent={renderHeader}
+          ListEmptyComponent={renderEmptyState}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          }
         />
       ) : (
         <FlatList
@@ -469,12 +680,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    flexWrap: "wrap",
   },
 
   rankSummaryText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#FF8F00",
+  },
+
+  rankSummarySubtext: {
+    fontSize: 14,
+    color: "#666",
+    marginLeft: 8,
   },
 
   entryCard: {
@@ -524,6 +742,12 @@ const styles = StyleSheet.create({
     color: "#2196F3",
   },
 
+  statsSubtext: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
+  },
+
   scoreContainer: {
     alignItems: "flex-end",
   },
@@ -532,5 +756,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#4CAF50",
+  },
+
+  // Multiplayer rating styles
+  ratingContainer: {
+    alignItems: "center",
+    minWidth: 60,
+  },
+
+  tierBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+
+  tierIcon: {
+    fontSize: 16,
+  },
+
+  ratingText: {
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

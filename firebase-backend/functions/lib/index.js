@@ -49,8 +49,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.purchaseWithTokens = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.resignGame = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.makeMove = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupOldGames = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
-exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = void 0;
+exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.purchaseWithTokens = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.rollbackGameInvitesMigration = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = exports.resignGame = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.makeMove = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupOldGames = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 // Import V2 Messaging functions
@@ -62,10 +62,17 @@ Object.defineProperty(exports, "createGameFromInvite", { enumerable: true, get: 
 Object.defineProperty(exports, "expireGameInvites", { enumerable: true, get: function () { return games_1.expireGameInvites; } });
 Object.defineProperty(exports, "expireMatchmakingEntries", { enumerable: true, get: function () { return games_1.expireMatchmakingEntries; } });
 Object.defineProperty(exports, "makeMove", { enumerable: true, get: function () { return games_1.makeMove; } });
+Object.defineProperty(exports, "onGameCompletedCreateHistory", { enumerable: true, get: function () { return games_1.onGameCompletedCreateHistory; } });
+Object.defineProperty(exports, "onGameHistoryCreatedUpdateLeaderboard", { enumerable: true, get: function () { return games_1.onGameHistoryCreatedUpdateLeaderboard; } });
 Object.defineProperty(exports, "onUniversalInviteUpdate", { enumerable: true, get: function () { return games_1.onUniversalInviteUpdate; } });
 Object.defineProperty(exports, "processGameCompletion", { enumerable: true, get: function () { return games_1.processGameCompletion; } });
 Object.defineProperty(exports, "processMatchmakingQueue", { enumerable: true, get: function () { return games_1.processMatchmakingQueue; } });
 Object.defineProperty(exports, "resignGame", { enumerable: true, get: function () { return games_1.resignGame; } });
+// Import Migration functions
+const migrateGameInvites_1 = require("./migrations/migrateGameInvites");
+Object.defineProperty(exports, "migrateGameInvites", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvites; } });
+Object.defineProperty(exports, "migrateGameInvitesDryRun", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvitesDryRun; } });
+Object.defineProperty(exports, "rollbackGameInvitesMigration", { enumerable: true, get: function () { return migrateGameInvites_1.rollbackGameInvitesMigration; } });
 // Re-export V2 Messaging functions
 exports.sendMessageV2 = messaging_1.sendMessageV2Function;
 exports.editMessageV2 = messaging_1.editMessageV2Function;

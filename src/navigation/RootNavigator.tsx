@@ -29,6 +29,7 @@ import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
 import ChessGameScreen from "@/screens/games/ChessGameScreen";
 import CrazyEightsGameScreen from "@/screens/games/CrazyEightsGameScreen";
 import FlappySnapGameScreen from "@/screens/games/FlappySnapGameScreen";
+import GameHistoryScreen from "@/screens/games/GameHistoryScreen";
 import GamesHubScreen from "@/screens/games/GamesHubScreen";
 import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
 import MemorySnapGameScreen from "@/screens/games/MemorySnapGameScreen";
@@ -335,6 +336,11 @@ function PlayStack() {
         name="Achievements"
         component={AchievementsScreen}
         options={{ title: "Achievements" }}
+      />
+      <Stack.Screen
+        name="GameHistory"
+        component={GameHistoryScreen}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

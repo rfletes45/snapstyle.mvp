@@ -102,6 +102,17 @@ export {
 export { PlayerSlots, type PlayerSlotsProps } from "./PlayerSlots";
 
 export {
+  QueueProgressBar,
+  type QueueProgressBarProps,
+} from "./QueueProgressBar";
+
+export {
   UniversalInviteCard,
   type UniversalInviteCardProps,
 } from "./UniversalInviteCard";
+
+// =============================================================================
+// Game Picker Modal
+// =============================================================================
+
+export { GamePickerModal, type GamePickerModalProps } from "./GamePickerModal";

@@ -118,3 +118,24 @@ export type { HapticFeedbackType } from "./useGameHaptics";
 
 export { useGameSounds } from "./useGameSounds";
 export type { GameSoundType, GameSoundsConfig } from "./useGameSounds";
+
+// =============================================================================
+// Game Navigation Hook (Phase 6)
+// =============================================================================
+
+export { useGameNavigation } from "./useGameNavigation";
+export type {
+  UseGameNavigationOptions,
+  UseGameNavigationReturn,
+} from "./useGameNavigation";
+
+// =============================================================================
+// Game Completion Hook (Phase 6 & 7 Integration)
+// =============================================================================
+
+export { useGameCompletion } from "./useGameCompletion";
+export type {
+  GameCompletionResult,
+  UseGameCompletionOptions,
+  UseGameCompletionReturn,
+} from "./useGameCompletion";

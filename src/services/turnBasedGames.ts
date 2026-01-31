@@ -14,6 +14,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -231,13 +232,52 @@ function firestoreToGameState<T extends AnyGameState>(
 // =============================================================================
 
 /**
+ * Options for creating a new match
+ * Supports conversation context tracking for games originated from chats
+ */
+export interface CreateMatchOptions {
+  gameType: TurnBasedGameType;
+  player1: TurnBasedPlayer;
+  player2: TurnBasedPlayer;
+  config: TurnBasedMatchConfig;
+  /** Optional conversation context for tracking game origin */
+  context?: {
+    conversationId: string;
+    conversationType: "dm" | "group";
+  };
+  /** Optional invite ID that spawned this game */
+  inviteId?: string;
+}
+
+/**
  * Create a new turn-based match
+ *
+ * @param gameType - Type of game to create
+ * @param player1 - First player (typically goes first)
+ * @param player2 - Second player
+ * @param config - Match configuration
+ * @param context - Optional conversation context
+ * @param inviteId - Optional invite ID for tracking
+ * @returns The new match ID
+ *
+ * @example
+ * // Simple creation
+ * const matchId = await createMatch('chess', player1, player2, config);
+ *
+ * @example
+ * // With conversation context
+ * const matchId = await createMatch('chess', player1, player2, config, {
+ *   conversationId: 'chat123',
+ *   conversationType: 'dm'
+ * });
  */
 export async function createMatch(
   gameType: TurnBasedGameType,
   player1: TurnBasedPlayer,
   player2: TurnBasedPlayer,
   config: TurnBasedMatchConfig,
+  context?: CreateMatchOptions["context"],
+  inviteId?: string,
 ): Promise<string> {
   try {
     const gameState = createInitialGameState(
@@ -278,6 +318,17 @@ export async function createMatch(
         player2TimeMs: config.timeControl * 1000,
         lastMoveTimestamp: Date.now(),
       };
+    }
+
+    // Add conversation context if provided (Phase 1: Game System Overhaul)
+    if (context) {
+      match.conversationId = context.conversationId;
+      match.conversationType = context.conversationType;
+    }
+
+    // Add invite ID if provided (for invite status updates on game completion)
+    if (inviteId) {
+      match.inviteId = inviteId;
     }
 
     const docRef = await addDoc(
@@ -412,8 +463,132 @@ export async function resignMatch(
   await endMatch(matchId, winnerId, "resignation");
 }
 
+// =============================================================================
+// Game Archive Functions
+// =============================================================================
+
 /**
- * Offer a draw
+ * Archive a game for a user
+ *
+ * The game will be hidden from the user's active games list but can
+ * still be accessed via archived games or direct link.
+ *
+ * @param matchId - The match ID to archive
+ * @param userId - The user who is archiving the game
+ */
+export async function archiveGame(
+  matchId: string,
+  userId: string,
+): Promise<void> {
+  const docRef = doc(getDb(), COLLECTIONS.matches, matchId);
+
+  await updateDoc(docRef, {
+    [`playerArchivedAt.${userId}`]: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Unarchive a game for a user
+ *
+ * The game will reappear in the user's active games list.
+ *
+ * @param matchId - The match ID to unarchive
+ * @param userId - The user who is unarchiving the game
+ */
+export async function unarchiveGame(
+  matchId: string,
+  userId: string,
+): Promise<void> {
+  const docRef = doc(getDb(), COLLECTIONS.matches, matchId);
+
+  await updateDoc(docRef, {
+    [`playerArchivedAt.${userId}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Resign from a game (wrapper for resignMatch for UI consistency)
+ *
+ * @param matchId - The match ID to resign from
+ * @param userId - The user who is resigning
+ */
+export async function resignGame(
+  matchId: string,
+  userId: string,
+): Promise<void> {
+  return resignMatch(matchId, userId);
+}
+
+// =============================================================================
+// Game Cancellation
+// =============================================================================
+
+/**
+ * Cancel a game - only allowed if no moves have been made
+ *
+ * This removes the game entirely rather than marking it as resigned.
+ * Use this when a game was started by mistake or before any moves.
+ *
+ * @param matchId - The match ID to cancel
+ * @param userId - The user requesting cancellation
+ * @returns Success status and optional error message
+ */
+export async function cancelGame(
+  matchId: string,
+  userId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const db = getDb();
+  const matchRef = doc(db, COLLECTIONS.matches, matchId);
+  const matchDoc = await getDoc(matchRef);
+
+  if (!matchDoc.exists()) {
+    return { success: false, error: "Game not found" };
+  }
+
+  const match = matchDoc.data() as AnyMatch;
+
+  // Check if user is a player in this game
+  const isPlayer =
+    match.players.player1.userId === userId ||
+    match.players.player2.userId === userId;
+
+  if (!isPlayer) {
+    return { success: false, error: "Not a player in this game" };
+  }
+
+  // Only allow cancel if no moves have been made
+  if (match.moveHistory && match.moveHistory.length > 0) {
+    return {
+      success: false,
+      error: "Cannot cancel after moves have been made. Use resign instead.",
+    };
+  }
+
+  // Also check turnNumber as a backup
+  if (match.turnNumber > 1) {
+    return {
+      success: false,
+      error: "Cannot cancel after the game has progressed. Use resign instead.",
+    };
+  }
+
+  // Delete the match document
+  await deleteDoc(matchRef);
+
+  return { success: true };
+}
+
+// =============================================================================
+// Draw Offer System
+// =============================================================================
+
+/**
+ * Offer a draw to the opponent
+ *
+ * @param matchId - The match ID
+ * @param userId - The user offering the draw
  */
 export async function offerDraw(
   matchId: string,
@@ -423,15 +598,155 @@ export async function offerDraw(
 
   await updateDoc(docRef, {
     drawOfferedBy: userId,
+    drawOfferedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 }
 
 /**
- * Accept a draw offer
+ * Accept a pending draw offer
+ *
+ * Validates that there is a valid draw offer from the opponent.
+ *
+ * @param matchId - The match ID
+ * @param userId - The user accepting the draw
  */
-export async function acceptDraw(matchId: string): Promise<void> {
-  await endMatch(matchId, null, "draw_agreement");
+export async function acceptDraw(
+  matchId: string,
+  userId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const db = getDb();
+  const matchRef = doc(db, COLLECTIONS.matches, matchId);
+  const matchDoc = await getDoc(matchRef);
+
+  if (!matchDoc.exists()) {
+    return { success: false, error: "Match not found" };
+  }
+
+  const match = matchDoc.data() as AnyMatch & {
+    drawOfferedBy?: string;
+    drawOfferedAt?: number;
+  };
+
+  // Verify there's a pending draw offer from the OTHER player
+  if (!match.drawOfferedBy) {
+    return { success: false, error: "No draw offer to accept" };
+  }
+
+  if (match.drawOfferedBy === userId) {
+    return { success: false, error: "Cannot accept your own draw offer" };
+  }
+
+  // Verify user is a player in this game
+  const isPlayer =
+    match.players.player1.userId === userId ||
+    match.players.player2.userId === userId;
+
+  if (!isPlayer) {
+    return { success: false, error: "Not a player in this game" };
+  }
+
+  // End the match as a draw
+  await updateDoc(matchRef, {
+    status: "completed",
+    endReason: "draw_agreement",
+    completedAt: serverTimestamp(),
+    drawOfferedBy: deleteField(),
+    drawOfferedAt: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { success: true };
+}
+
+/**
+ * Decline a pending draw offer
+ *
+ * @param matchId - The match ID
+ * @param userId - The user declining the draw
+ */
+export async function declineDraw(
+  matchId: string,
+  userId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const db = getDb();
+  const matchRef = doc(db, COLLECTIONS.matches, matchId);
+  const matchDoc = await getDoc(matchRef);
+
+  if (!matchDoc.exists()) {
+    return { success: false, error: "Match not found" };
+  }
+
+  const match = matchDoc.data() as AnyMatch & {
+    drawOfferedBy?: string;
+    drawOfferedAt?: number;
+  };
+
+  // Verify there's a pending draw offer
+  if (!match.drawOfferedBy) {
+    return { success: false, error: "No draw offer to decline" };
+  }
+
+  // Cannot decline your own offer (use withdraw instead)
+  if (match.drawOfferedBy === userId) {
+    return { success: false, error: "Cannot decline your own draw offer" };
+  }
+
+  // Verify user is a player in this game
+  const isPlayer =
+    match.players.player1.userId === userId ||
+    match.players.player2.userId === userId;
+
+  if (!isPlayer) {
+    return { success: false, error: "Not a player in this game" };
+  }
+
+  // Remove the draw offer
+  await updateDoc(matchRef, {
+    drawOfferedBy: deleteField(),
+    drawOfferedAt: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { success: true };
+}
+
+/**
+ * Withdraw a draw offer you made
+ *
+ * @param matchId - The match ID
+ * @param userId - The user withdrawing their draw offer
+ */
+export async function withdrawDrawOffer(
+  matchId: string,
+  userId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const db = getDb();
+  const matchRef = doc(db, COLLECTIONS.matches, matchId);
+  const matchDoc = await getDoc(matchRef);
+
+  if (!matchDoc.exists()) {
+    return { success: false, error: "Match not found" };
+  }
+
+  const match = matchDoc.data() as AnyMatch & {
+    drawOfferedBy?: string;
+    drawOfferedAt?: number;
+  };
+
+  // Verify the user is the one who offered the draw
+  if (match.drawOfferedBy !== userId) {
+    return { success: false, error: "You have not offered a draw" };
+  }
+
+  // Remove the draw offer
+  await updateDoc(matchRef, {
+    drawOfferedBy: deleteField(),
+    drawOfferedAt: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { success: true };
 }
 
 /**
@@ -456,6 +771,56 @@ export async function getActiveMatches(userId: string): Promise<AnyMatch[]> {
     }
     return { id: docSnap.id, ...data } as AnyMatch;
   });
+}
+
+/**
+ * Subscribe to active matches for a user (real-time)
+ *
+ * Provides real-time updates when:
+ * - A new game is started (from invite or matchmaking)
+ * - A game is completed or resigned
+ * - A turn is made (updatedAt changes)
+ *
+ * @param userId - The user to get active matches for
+ * @param onUpdate - Callback with updated matches list
+ * @param onError - Optional error callback
+ * @returns Unsubscribe function
+ */
+export function subscribeToActiveMatches(
+  userId: string,
+  onUpdate: (matches: AnyMatch[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const q = query(
+    collection(getDb(), COLLECTIONS.matches),
+    where("playerIds", "array-contains", userId),
+    where("status", "==", "active"),
+    orderBy("updatedAt", "desc"),
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const matches = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        // Convert game state back from Firestore format
+        if (data.gameState) {
+          data.gameState = firestoreToGameState(
+            data.gameState as Record<string, unknown>,
+          );
+        }
+        return { id: docSnap.id, ...data } as AnyMatch;
+      });
+      onUpdate(matches);
+    },
+    (error) => {
+      console.error(
+        "[turnBasedGames] Active matches subscription error:",
+        error,
+      );
+      onError?.(error);
+    },
+  );
 }
 
 /**
@@ -1080,13 +1445,24 @@ export const turnBasedGameService = {
   createMatch,
   getMatch,
   subscribeToMatch,
+  subscribeToActiveMatches,
   submitMove,
   endMatch,
   resignMatch,
-  offerDraw,
-  acceptDraw,
   getActiveMatches,
   getMatchHistory,
+
+  // Archive & Cancel functions
+  archiveGame,
+  unarchiveGame,
+  resignGame,
+  cancelGame,
+
+  // Draw offer system
+  offerDraw,
+  acceptDraw,
+  declineDraw,
+  withdrawDrawOffer,
 
   // Invites (NOTE: sendGameInvite moved to gameInvites.ts)
   getPendingInvites,

@@ -31,6 +31,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
@@ -94,6 +95,8 @@ interface ChessGameScreenProps {
     params?: {
       matchId?: string;
       inviteId?: string;
+      /** Where the user entered from - determines back navigation */
+      entryPoint?: "play" | "chat";
     };
   };
 }
@@ -392,6 +395,28 @@ export default function ChessGameScreen({
   const { profile: userProfile } = useUser();
   const haptics = useGameHaptics();
 
+  // Online game state (declared early for navigation hook)
+  const [match, setMatch] = useState<ChessMatch | null>(null);
+
+  // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
+  const {
+    exitGame,
+    handleGameCompletion,
+    notifications: achievementNotifications,
+    dismissNotification,
+  } = useGameCompletion({
+    match,
+    currentUserId: currentFirebaseUser?.uid,
+    gameType: "chess",
+    entryPoint: route.params?.entryPoint,
+    onAchievementsAwarded: (achievements) => {
+      console.log(
+        "[Chess] Achievements awarded:",
+        achievements.map((a) => a.name),
+      );
+    },
+  });
+
   // Game state
   const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [gameState, setGameState] = useState<ChessGameState>(() =>
@@ -427,7 +452,6 @@ export default function ChessGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-  const [match, setMatch] = useState<ChessMatch | null>(null);
   const [myColor, setMyColor] = useState<ChessColor | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
   const [flipped, setFlipped] = useState(false);
@@ -486,6 +510,16 @@ export default function ChessGameScreen({
         setGameResult(didWin ? "win" : typedMatch.winnerId ? "loss" : "draw");
         setShowGameOverModal(true);
         haptics.gameOverPattern(didWin);
+
+        // Phase 7: Check achievements on game completion
+        handleGameCompletion(typedMatch as any).then((result) => {
+          if (result.achievementsAwarded.length > 0) {
+            console.log(
+              "[Chess] Game complete, achievements:",
+              result.achievementsAwarded.map((a) => a.name),
+            );
+          }
+        });
       }
     });
 
@@ -776,7 +810,7 @@ export default function ChessGameScreen({
           onPress: async () => {
             try {
               await resignMatch(matchId, currentFirebaseUser.uid);
-              navigation.goBack();
+              exitGame();
             } catch (error) {
               console.error("[Chess] Error resigning:", error);
             }
@@ -791,16 +825,14 @@ export default function ChessGameScreen({
       resetGame();
     } else {
       setShowGameOverModal(false);
-      navigation.goBack();
+      exitGame();
     }
   };
 
   const handleGoBack = () => {
-    if (gameMode === "online" && match && match.status === "active") {
-      handleResign();
-    } else {
-      navigation.goBack();
-    }
+    // Allow users to leave active games without resigning
+    // They can return to continue playing at their own pace
+    exitGame();
   };
 
   // ==========================================================================
@@ -940,7 +972,7 @@ export default function ChessGameScreen({
 
             <Button
               mode="outlined"
-              onPress={() => navigation.goBack()}
+              onPress={() => exitGame()}
               style={styles.menuButton}
               icon="arrow-left"
             >

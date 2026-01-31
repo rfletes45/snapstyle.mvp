@@ -27,9 +27,33 @@ export declare const createGameFromInvite: functions.CloudFunction<functions.Cha
 export declare const onUniversalInviteUpdate: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
 /**
  * Process game completion
- * Updates stats, ratings, achievements
+ * Updates stats, ratings, achievements, and invite status
  */
 export declare const processGameCompletion: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
+/**
+ * Create GameHistory record when a game completes
+ *
+ * Triggers when a TurnBasedGame document's status changes to a terminal state.
+ * Creates a permanent record in the GameHistory collection for:
+ * - Player history and statistics
+ * - Head-to-head records
+ * - Achievement tracking
+ *
+ * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 1
+ */
+export declare const onGameCompletedCreateHistory: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
+/**
+ * Update LeaderboardStats when a GameHistory record is created
+ *
+ * This function maintains the LeaderboardStats collection which powers
+ * the multiplayer leaderboards. It updates stats for both players and
+ * for both game-specific and "all" categories.
+ *
+ * Triggered when a new GameHistory document is created.
+ *
+ * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 8
+ */
+export declare const onGameHistoryCreatedUpdateLeaderboard: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
 /**
  * Scheduled function to process matchmaking queue
  * Runs every minute to find and create matches
