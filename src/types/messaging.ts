@@ -77,6 +77,13 @@ export interface MessageV2 {
   /** Text content (for text messages or captions) */
   text?: string;
 
+  /** Scorecard data (for kind: "scorecard") */
+  scorecard?: {
+    gameId: string;
+    score: number;
+    metadata?: Record<string, unknown>;
+  };
+
   /** Client-side timestamp when user tapped send (for intent/UI) */
   createdAt: number;
 
@@ -455,6 +462,9 @@ export interface LocalAttachment {
 
   /** Optional caption */
   caption?: string;
+
+  /** Duration in milliseconds (for audio/video) */
+  durationMs?: number;
 }
 
 // =============================================================================

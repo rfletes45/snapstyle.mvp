@@ -7,7 +7,8 @@
  */
 
 // Reply-to components (H6) & Swipeable Wrapper (ARCH-C01)
-export { ReplyBubble, default as ReplyBubbleDefault } from "./ReplyBubble";
+// Using enhanced ReplyBubble with polished design
+export { ReplyBubble, default as ReplyBubbleDefault } from "./ReplyBubbleNew";
 export {
   ReplyPreviewBar,
   default as ReplyPreviewBarDefault,
@@ -26,6 +27,12 @@ export {
   default as SwipeableMessageWrapperDefault,
 } from "./SwipeableMessageWrapper";
 export type { SwipeableMessageWrapperProps } from "./SwipeableMessageWrapper";
+
+// Scroll return button for reply navigation
+export { ScrollReturnButton } from "./ScrollReturnButton";
+
+// Message highlight overlay for reply navigation
+export { MessageHighlightOverlay } from "./MessageHighlightOverlay";
 
 // Message actions (H7)
 export {
@@ -96,6 +103,14 @@ export {
   default as CameraLongPressButtonDefault,
 } from "./CameraLongPressButton";
 
+// Chat Skeleton for loading states (OPTIMIZATION)
+export {
+  ChatSkeleton,
+  default as ChatSkeletonDefault,
+  ConversationListSkeleton,
+  ConversationSkeleton,
+} from "./ChatSkeleton";
+
 // Keyboard-aware Chat Components (ARCH-C04)
 export { ChatComposer, default as ChatComposerDefault } from "./ChatComposer";
 export type { ChatComposerProps, ChatScope } from "./ChatComposer";
@@ -119,6 +134,9 @@ export {
   default as ChatGameInvitesDefault,
 } from "./ChatGameInvites";
 export type { ChatGameInvitesProps } from "./ChatGameInvites";
+
+// Typing Indicator
+export { TypingIndicator } from "./TypingIndicator";
 
 // Inbox Components
 export {

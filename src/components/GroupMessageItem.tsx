@@ -12,12 +12,20 @@
  * - Reactions summary (H8)
  * - Long press for actions
  * - Swipe to reply
+ * - Message highlighting for reply navigation
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 
 import {
   LinkPreviewCard,
@@ -69,6 +77,8 @@ interface GroupMessageItemProps {
   linkPreviewLoading?: boolean;
   /** Reactions for this message */
   reactions?: ReactionSummary[];
+  /** Whether this message should be highlighted (reply navigation) */
+  isHighlighted?: boolean;
 }
 
 // =============================================================================
@@ -131,10 +141,38 @@ export const GroupMessageItem: React.FC<GroupMessageItemProps> = React.memo(
     linkPreview,
     linkPreviewLoading,
     reactions = [],
+    isHighlighted = false,
   }) => {
     const theme = useTheme();
     const isOwnMessage = message.sender === currentUid;
     const showSender = shouldShowSender(index, message, allMessages);
+
+    // Highlight animation
+    const highlightOpacity = useSharedValue(0);
+
+    useEffect(() => {
+      if (isHighlighted) {
+        // Animate: fade in → hold → fade out
+        highlightOpacity.value = withSequence(
+          withTiming(1, { duration: 200 }),
+          withDelay(1500, withTiming(0, { duration: 400 })),
+        );
+      } else {
+        highlightOpacity.value = 0;
+      }
+    }, [isHighlighted, highlightOpacity]);
+
+    const highlightStyle = useAnimatedStyle(() => ({
+      position: "absolute" as const,
+      top: -4,
+      left: -8,
+      right: -8,
+      bottom: -4,
+      backgroundColor: theme.colors.primary,
+      opacity: highlightOpacity.value * 0.15,
+      borderRadius: 12,
+      zIndex: -1,
+    }));
 
     // Handle image press
     const handleImagePress = useCallback(() => {
@@ -197,6 +235,9 @@ export const GroupMessageItem: React.FC<GroupMessageItemProps> = React.memo(
             isOwnMessage && styles.ownMessageContainer,
           ]}
         >
+          {/* Highlight overlay for reply navigation */}
+          <Animated.View style={highlightStyle} pointerEvents="none" />
+
           {/* Reply preview - Apple Messages style (above main bubble) */}
           {replyToMetadata && (
             <ReplyBubble

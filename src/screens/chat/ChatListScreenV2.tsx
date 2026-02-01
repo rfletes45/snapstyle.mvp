@@ -237,11 +237,24 @@ export default function ChatListScreen() {
       if (conversation.type === "dm") {
         navigation.navigate("ChatDetail", {
           friendUid: conversation.otherUserId,
+          // OPTIMIZATION: Pass cached data for instant display
+          // This eliminates refetching when opening a chat
+          initialData: {
+            chatId: conversation.id,
+            friendName: conversation.name,
+            friendAvatar: conversation.avatarUrl,
+            friendAvatarConfig: conversation.avatarConfig,
+          },
         });
       } else {
         navigation.navigate("GroupChat", {
           groupId: conversation.id,
           groupName: conversation.name,
+          // OPTIMIZATION: Pass cached group data for instant display
+          initialGroupData: {
+            name: conversation.name,
+            avatarUrl: conversation.avatarUrl,
+          },
         });
       }
     },

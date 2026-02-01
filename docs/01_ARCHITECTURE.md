@@ -6,7 +6,17 @@
 
 ## Overview
 
-Vibe is a React Native + Expo social app with Firebase backend. Features include real-time messaging (1:1 and groups), disappearing photos (Shots), 24-hour stories (Moments), friend streaks (Rituals), mini-games, avatar customization, and virtual economy.
+Vibe is a React Native + Expo social app with Firebase backend and **local-first storage**. Features include real-time messaging (1:1 and groups), disappearing photos (Shots), 24-hour stories (Moments), friend streaks (Rituals), mini-games, avatar customization, and virtual economy.
+
+### Architecture Pattern
+
+```
+User Action → SQLite (instant) → UI Update
+                    ↓
+         Background Sync → Firestore (eventual)
+```
+
+The app uses a **local-first architecture** where messages are stored in SQLite immediately, providing instant UI updates. Background sync ensures eventual consistency with Firebase.
 
 ---
 
@@ -17,7 +27,8 @@ snapstyle-mvp/
 ├── App.tsx                    # Root component with providers
 ├── app.config.ts              # Expo configuration
 ├── constants/
-│   └── theme.ts               # Catppuccin colors, spacing, typography
+│   ├── theme.ts               # Catppuccin colors, spacing, typography
+│   └── featureFlags.ts        # Feature toggles (USE_LOCAL_STORAGE, etc.)
 ├── src/
 │   ├── components/            # Reusable UI components
 │   │   ├── chat/              # Chat-specific components (V2)
@@ -95,6 +106,16 @@ snapstyle-mvp/
 │   │   │   ├── memberState.ts # Unified member state
 │   │   │   ├── send.ts        # Unified message sending
 │   │   │   └── subscribe.ts   # Unified subscriptions
+│   │   ├── database/          # **SQLite local storage (NEW)**
+│   │   │   ├── index.ts       # Database singleton, schema init
+│   │   │   ├── messageRepository.ts  # Message CRUD
+│   │   │   ├── conversationRepository.ts # Conversation CRUD
+│   │   │   ├── maintenance.ts # Vacuum, prune, reset utilities
+│   │   │   └── repositories.ts # Barrel export
+│   │   ├── sync/              # **Background sync engine (NEW)**
+│   │   │   ├── index.ts       # Public API
+│   │   │   └── syncEngine.ts  # Firestore sync state machine
+│   │   ├── mediaCache.ts      # **Local media caching (NEW)**
 │   │   ├── games/             # Game logic (chess, snake, 2048, etc.)
 │   │   ├── gameValidation/    # Move validators
 │   │   ├── inboxSettings.ts   # Inbox settings service
@@ -107,6 +128,7 @@ snapstyle-mvp/
 │   ├── types/
 │   │   ├── models.ts          # Core TypeScript interfaces
 │   │   ├── messaging.ts       # V2 messaging types
+│   │   ├── database.ts        # SQLite row types (NEW)
 │   │   └── index.ts           # Barrel export (non-conflicting)
 │   └── utils/                 # Pure utility functions
 │       ├── animations.ts      # Reusable animation utilities
@@ -234,15 +256,80 @@ RootNavigator
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                        SERVICES (src/services/)                  │
-│  auth.ts │ users.ts │ chat.ts │ chatV2.ts │ groups.ts │ ...     │
+│  auth.ts │ users.ts │ database/ │ sync/ │ mediaCache.ts │ ...   │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    FIREBASE BACKEND                              │
-│  Firestore │ Storage │ Cloud Functions │ Auth                   │
-└─────────────────────────────────────────────────────────────────┘
+               ┌──────────────┴──────────────┐
+               ▼                              ▼
+┌─────────────────────────────┐  ┌─────────────────────────────────┐
+│    LOCAL STORAGE            │  │    FIREBASE BACKEND             │
+│  SQLite (expo-sqlite)       │  │  Firestore │ Storage │ Auth    │
+│  File System (expo-file)    │  │  Cloud Functions                │
+└─────────────────────────────┘  └─────────────────────────────────┘
 ```
+
+---
+
+## Local Storage Layer (NEW)
+
+The app uses a **local-first architecture** for messaging. Messages are stored in SQLite immediately, then synced to Firebase in the background.
+
+### SQLite Database (`services/database/`)
+
+| File                        | Purpose              | Key Functions                                                |
+| --------------------------- | -------------------- | ------------------------------------------------------------ |
+| `index.ts`                  | Database singleton   | `getDatabase()`, schema initialization                       |
+| `messageRepository.ts`      | Message CRUD         | `insertMessage()`, `getMessagesForConversation()`            |
+| `conversationRepository.ts` | Conversation CRUD    | `getOrCreateDMConversation()`, `getConversations()`          |
+| `maintenance.ts`            | Database maintenance | `vacuumDatabase()`, `pruneOldMessages()`, `resetLocalData()` |
+
+### Database Schema
+
+```sql
+-- Core tables
+conversations (id, scope, name, last_message_*, is_archived, is_muted, ...)
+messages (id, conversation_id, sender_id, kind, text, sync_status, ...)
+attachments (id, message_id, kind, local_uri, remote_url, upload_status, ...)
+reactions (id, message_id, user_id, emoji, sync_status)
+sync_cursors (conversation_id, last_synced_at, sync_token)
+```
+
+### Sync Engine (`services/sync/`)
+
+| File            | Purpose          | Key Functions                                    |
+| --------------- | ---------------- | ------------------------------------------------ |
+| `syncEngine.ts` | Background sync  | `syncPendingMessages()`, `pullMessages()`        |
+|                 | State management | `getSyncState()`, `subscribeSyncState()`         |
+|                 | Online/offline   | `setOnlineStatus()`, `isBackgroundSyncRunning()` |
+
+### Media Cache (`services/mediaCache.ts`)
+
+| Function                 | Purpose                  |
+| ------------------------ | ------------------------ |
+| `initializeMediaCache()` | Create cache directories |
+| `cacheMediaFile()`       | Download and cache media |
+| `getCachedMediaPath()`   | Get local path for media |
+| `getCacheStats()`        | Get cache size/counts    |
+| `clearMediaCache()`      | Remove all cached files  |
+
+### Feature Flag
+
+Toggle local storage on/off via `constants/featureFlags.ts`:
+
+```typescript
+export const USE_LOCAL_STORAGE = true; // Set false to rollback
+```
+
+### Sync States
+
+Messages have a `sync_status` field:
+
+| Status     | Meaning                                  |
+| ---------- | ---------------------------------------- |
+| `pending`  | Awaiting sync to server                  |
+| `synced`   | Successfully synced                      |
+| `failed`   | Sync failed (will retry)                 |
+| `conflict` | Server/local conflict (needs resolution) |
 
 ---
 

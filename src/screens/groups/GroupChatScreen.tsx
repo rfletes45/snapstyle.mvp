@@ -15,11 +15,14 @@
  * - @mention autocomplete (H9)
  * - Reply-to threading (H6)
  *
+ * Enhanced Features:
+ * - Message highlight animation when navigating to replied messages
+ * - Jump-back button after scrolling to a reply target
+ *
  * @module screens/groups/GroupChatScreen
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
 import React, {
   useCallback,
   useEffect,
@@ -61,24 +64,24 @@ import {
   MediaViewerModal,
   MentionAutocomplete,
   MessageActionsSheet,
+  MessageHighlightOverlay,
   ReactionsSummary,
   ReplyBubble,
-  SwipeableGroupMessage,
+  ScrollReturnButton,
+  SwipeableMessage,
   VoiceMessagePlayer,
   VoiceRecordButton,
 } from "@/components/chat";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
+import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { EmptyState, ErrorState } from "@/components/ui";
 
 // Services
 import {
   getGroup,
   getGroupMembers,
-  getGroupMessages,
   isGroupMember,
-  sendGroupMessage,
-  subscribeToGroupMessages,
   updateLastRead,
 } from "@/services/groups";
 import { extractUrls, fetchPreview, hasUrls } from "@/services/linkPreview";
@@ -94,7 +97,6 @@ import {
   getScheduledMessagesForChat,
   scheduleMessage,
 } from "@/services/scheduledMessages";
-import { uploadVoiceMessage } from "@/services/storage";
 
 // Game Picker
 import { GamePickerModal } from "@/components/games/GamePickerModal";
@@ -108,12 +110,7 @@ import {
   MessageV2,
   ReplyToMetadata,
 } from "@/types/messaging";
-import {
-  Group,
-  GroupMember,
-  GroupMessage,
-  ScheduledMessage,
-} from "@/types/models";
+import { Group, GroupMember, ScheduledMessage } from "@/types/models";
 import { DEBUG_CHAT_V2 } from "../../../constants/featureFlags";
 
 // =============================================================================
@@ -140,12 +137,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const uid = currentFirebaseUser?.uid;
 
   // ==========================================================================
-  // Screen State
+  // Screen State (No message state - uses unified hook)
   // ==========================================================================
 
   const [group, setGroup] = useState<Group | null>(null);
-  const [messages, setMessages] = useState<GroupMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [groupLoading, setGroupLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ visible: false, message: "" });
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
@@ -171,7 +167,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Message actions state (H7)
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
-  const [selectedMessage, setSelectedMessage] = useState<GroupMessage | null>(
+  const [selectedMessage, setSelectedMessage] = useState<MessageV2 | null>(
     null,
   );
   const [userRole, setUserRole] = useState<
@@ -183,17 +179,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     Map<string, ReactionSummary[]>
   >(new Map());
 
-  // Pagination state
-  const [hasMoreOlder, setHasMoreOlder] = useState(true);
-  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-  const lastLoadOlderTimeRef = useRef<number>(0);
-
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
+
+  // Reply navigation state (highlight + jump-back)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const [showReturnButton, setShowReturnButton] = useState(false);
+  const returnIndexRef = useRef<number | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // ==========================================================================
   // Mentionable Members
@@ -228,6 +229,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     debug: DEBUG_CHAT_V2,
   });
 
+  // Messages come directly from the unified hook (SQLite-backed)
+  const messages = screen.messages;
+
   // ==========================================================================
   // Attachment & Voice Hooks
   // ==========================================================================
@@ -244,7 +248,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   });
 
   // ==========================================================================
-  // Initialization
+  // Initialization (Group metadata only - messages via unified hook)
   // ==========================================================================
 
   useEffect(() => {
@@ -252,7 +256,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       if (!groupId || !uid) return;
 
       try {
-        setLoading(true);
+        setGroupLoading(true);
         setError(null);
 
         const isMember = await isGroupMember(groupId, uid);
@@ -276,33 +280,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         console.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
       } finally {
-        setLoading(false);
+        setGroupLoading(false);
       }
     }
 
     loadGroup();
   }, [groupId, uid, navigation]);
 
+  // Update last read when messages change
   useEffect(() => {
-    if (!groupId || !uid || error) return;
-
-    const unsubscribe = subscribeToGroupMessages(groupId, (messagesData) => {
-      setMessages(messagesData);
-      setLoading(false);
+    if (groupId && uid && messages.length > 0) {
       updateLastRead(groupId, uid).catch(console.error);
-    });
+    }
+  }, [groupId, uid, messages.length]);
 
-    return () => unsubscribe();
-  }, [groupId, uid, error]);
-
-  useFocusEffect(
-    useCallback(() => {
-      navigation.getParent()?.setOptions({ tabBarStyle: { display: "none" } });
-      return () => {
-        navigation.getParent()?.setOptions({ tabBarStyle: undefined });
-      };
-    }, [navigation]),
-  );
+  // NOTE: Tab bar visibility is now handled at the navigator level
+  // in RootNavigator.tsx using getFocusedRouteNameFromRoute.
+  // This eliminates flicker during navigation transitions.
 
   // Load scheduled messages (UNI-09)
   useEffect(() => {
@@ -319,12 +313,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   useEffect(() => {
     const fetchLinkPreviews = async () => {
       for (const message of messages) {
-        if (message.type !== "text") continue;
+        if (message.kind !== "text") continue;
+        if (!message.text) continue;
         if (linkPreviews.has(message.id)) continue;
         if (loadingPreviews.has(message.id)) continue;
-        if (!hasUrls(message.content)) continue;
+        if (!hasUrls(message.text)) continue;
 
-        const urls = extractUrls(message.content);
+        const urls = extractUrls(message.text);
         if (urls.length === 0) continue;
 
         setLoadingPreviews((prev) => new Set([...prev, message.id]));
@@ -386,20 +381,56 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
-  const handleMessageLongPress = useCallback((message: GroupMessage) => {
+  const handleMessageLongPress = useCallback((message: MessageV2) => {
     setSelectedMessage(message);
     setActionsSheetVisible(true);
   }, []);
 
+  // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
-      const index = messages.findIndex((m) => m.id === messageId);
-      if (index !== -1 && messageListRef.current) {
-        messageListRef.current.scrollToIndex(index, true);
+      const targetIndex = messages.findIndex((m) => m.id === messageId);
+      if (targetIndex === -1 || !messageListRef.current) return;
+
+      // Clear any existing highlight timeout
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
       }
+
+      // Store current position for return navigation
+      returnIndexRef.current = 0;
+      setShowReturnButton(true);
+
+      // Scroll to target message
+      messageListRef.current.scrollToIndex(targetIndex, true);
+
+      // Highlight the target message after scroll settles
+      setTimeout(() => {
+        setHighlightedMessageId(messageId);
+
+        // Auto-clear highlight after animation
+        highlightTimeoutRef.current = setTimeout(() => {
+          setHighlightedMessageId(null);
+        }, 2100);
+      }, 300);
     },
     [messages],
   );
+
+  // Handle return button press
+  const handleReturnToReply = useCallback(() => {
+    if (returnIndexRef.current !== null && messageListRef.current) {
+      messageListRef.current.scrollToIndex(returnIndexRef.current, true);
+    }
+    setShowReturnButton(false);
+    returnIndexRef.current = null;
+  }, []);
+
+  // Auto-hide return button callback
+  const handleReturnButtonAutoHide = useCallback(() => {
+    setShowReturnButton(false);
+    returnIndexRef.current = null;
+  }, []);
 
   const handleReply = useCallback(
     (replyToData: ReplyToMetadata) => {
@@ -414,20 +445,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   }, [screen.chat]);
 
   const handleMessageEdited = useCallback(
-    (messageId: string, newText: string) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, content: newText } : m)),
-      );
+    (_messageId: string, _newText: string) => {
+      // Messages auto-refresh from SQLite via unified hook
       setSnackbar({ visible: true, message: "Message edited" });
     },
     [],
   );
 
   const handleMessageDeleted = useCallback(
-    (messageId: string, forAll: boolean) => {
-      if (forAll) {
-        setMessages((prev) => prev.filter((m) => m.id !== messageId));
-      }
+    (_messageId: string, forAll: boolean) => {
+      // Messages auto-refresh from SQLite via unified hook
       setSnackbar({
         visible: true,
         message: forAll ? "Message deleted" : "Message hidden",
@@ -560,56 +587,36 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
     screen.chat.clearReplyTo();
 
-    const replyToData = currentReplyTo
-      ? {
-          messageId: currentReplyTo.messageId,
-          senderId: currentReplyTo.senderId,
-          senderName: currentReplyTo.senderName || "Unknown",
-          textSnippet: currentReplyTo.textSnippet,
-          ...(currentReplyTo.attachmentPreview?.kind && {
-            attachmentKind: currentReplyTo.attachmentPreview.kind as
-              | "image"
-              | "voice",
-          }),
-        }
-      : undefined;
-
     try {
       if (hasAttachments) {
-        const basePath = `groups/${groupId}/attachments`;
-        const { successful, failed } =
-          await attachmentPicker.uploadAttachments(basePath);
-
-        if (failed.length > 0) {
-          console.warn(`${failed.length} attachments failed to upload`);
-        }
-
-        for (const attachment of successful) {
-          await sendGroupMessage(
-            groupId,
-            uid,
-            attachment.url,
-            "image",
-            undefined,
-            mentionUids,
-            undefined,
-            replyToData,
-          );
-        }
-
+        // Get local attachments before clearing
+        const localAttachments = [...attachmentPicker.attachments];
         attachmentPicker.clearAttachments();
 
-        if (hasText) {
-          await sendGroupMessage(
-            groupId,
-            uid,
-            text,
-            "text",
-            undefined,
+        // Send each attachment as a media message with local URI
+        // The sync engine will handle uploading
+        for (const attachment of localAttachments) {
+          await screen.chat.sendMessage("", {
+            replyTo: currentReplyTo || undefined,
             mentionUids,
-            undefined,
-            replyToData,
-          );
+            kind: "media",
+            attachments: [
+              {
+                id: attachment.id,
+                uri: attachment.uri,
+                kind: attachment.kind,
+                mime: attachment.mime || "image/jpeg",
+              },
+            ],
+          });
+        }
+
+        // Send text if present (separate message)
+        if (hasText) {
+          await screen.chat.sendMessage(text, {
+            replyTo: currentReplyTo || undefined,
+            mentionUids,
+          });
         }
       }
     } catch (error: any) {
@@ -642,26 +649,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       if (!uid || screen.sending) return;
 
       try {
-        const messageId = `voice_${Date.now()}_${uid}`;
-        const result = await uploadVoiceMessage(groupId, messageId, recording);
-
-        if (!result.success || !result.url) {
-          throw new Error(result.error || "Voice upload failed");
-        }
-
-        await sendGroupMessage(
-          groupId,
-          uid,
-          result.url,
-          "voice",
-          undefined,
-          [],
-          {
-            durationMs: recording.durationMs,
-            storagePath: result.path,
-            sizeBytes: result.sizeBytes,
-          },
-        );
+        // Send voice message via unified path
+        await screen.chat.sendMessage("", {
+          kind: "voice",
+          attachments: [
+            {
+              id: `voice_${Date.now()}_${uid}`,
+              uri: recording.uri,
+              kind: "audio",
+              mime: "audio/m4a",
+              durationMs: recording.durationMs,
+            },
+          ],
+        });
       } catch (error: any) {
         setSnackbar({
           visible: true,
@@ -669,102 +669,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         });
       }
     },
-    [uid, groupId, screen.sending],
+    [uid, screen.chat, screen.sending],
   );
 
-  const loadOlderMessages = useCallback(async () => {
-    const now = Date.now();
-    if (now - lastLoadOlderTimeRef.current < LOAD_OLDER_DEBOUNCE_MS) return;
-    lastLoadOlderTimeRef.current = now;
-
-    if (isLoadingOlder || !hasMoreOlder || !groupId) return;
-
-    try {
-      setIsLoadingOlder(true);
-      const result = await getGroupMessages(groupId, PAGINATION_PAGE_SIZE);
-
-      if (result.messages.length === 0) {
-        setHasMoreOlder(false);
-        return;
-      }
-
-      if (result.messages.length < PAGINATION_PAGE_SIZE) {
-        setHasMoreOlder(false);
-      }
-
-      const filteredMessages = uid
-        ? result.messages.filter((msg) => !msg.hiddenFor?.includes(uid))
-        : result.messages;
-
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map((m) => m.id));
-        const newMessages = filteredMessages.filter(
-          (m) => !existingIds.has(m.id),
-        );
-        return [...prev, ...newMessages];
-      });
-    } catch (err) {
-      console.error("[GroupChatScreen] Error loading older messages:", err);
-    } finally {
-      setIsLoadingOlder(false);
-    }
-  }, [groupId, isLoadingOlder, hasMoreOlder, uid]);
-
   // ==========================================================================
-  // Message Conversion
+  // Message Grouping Logic (for inverted FlatList with MessageV2)
   // ==========================================================================
 
-  const selectedMessageAsV2: MessageV2 | null = selectedMessage
-    ? {
-        id: selectedMessage.id,
-        scope: "group",
-        conversationId: groupId,
-        senderId: selectedMessage.sender,
-        senderName: selectedMessage.senderDisplayName,
-        kind: selectedMessage.type === "image" ? "media" : "text",
-        text:
-          selectedMessage.type === "text" ? selectedMessage.content : undefined,
-        attachments:
-          selectedMessage.type === "image"
-            ? [
-                {
-                  id: selectedMessage.id,
-                  kind: "image" as const,
-                  mime: "image/jpeg",
-                  url: selectedMessage.content,
-                  path: selectedMessage.imagePath || "",
-                  sizeBytes: 0,
-                },
-              ]
-            : undefined,
-        createdAt: selectedMessage.createdAt,
-        serverReceivedAt: selectedMessage.createdAt,
-        clientId: "",
-        idempotencyKey: "",
-      }
-    : null;
-
-  // ==========================================================================
-  // Message Grouping Logic (for inverted FlatList)
-  // ==========================================================================
-
-  /**
-   * Time threshold for grouping messages (2 minutes in milliseconds)
-   * Messages from the same sender within this window are grouped together
-   */
   const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000;
 
-  /**
-   * Helper to check if two messages should be grouped together
-   * Messages with replies are ALWAYS standalone and break the chain
-   */
   const areMessagesGrouped = useCallback(
-    (msg1: GroupMessage | null, msg2: GroupMessage | null): boolean => {
+    (msg1: MessageV2 | null, msg2: MessageV2 | null): boolean => {
       if (!msg1 || !msg2) return false;
-      if (msg1.type === "system" || msg2.type === "system") return false;
-      // Reply messages are always standalone - they break the group chain
+      if (msg1.kind === "system" || msg2.kind === "system") return false;
       if (msg1.replyTo || msg2.replyTo) return false;
-      if (msg1.sender !== msg2.sender) return false;
+      if (msg1.senderId !== msg2.senderId) return false;
       return (
         Math.abs(msg1.createdAt - msg2.createdAt) < MESSAGE_GROUP_THRESHOLD_MS
       );
@@ -772,70 +691,37 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
-  /**
-   * Determines if sender name should be shown (at visual TOP of group)
-   *
-   * In an inverted list:
-   * - index 0 = newest message (visual bottom)
-   * - Higher index = older messages (visual top)
-   * - messages[index + 1] = message ABOVE visually (older)
-   *
-   * Show name when this message is the TOP of a visual group
-   * (not connected to the message above it)
-   */
   const shouldShowSender = useCallback(
-    (index: number, message: GroupMessage) => {
-      if (message.type === "system") return false;
-      // Get message above (older, higher index)
+    (index: number, message: MessageV2) => {
+      if (message.kind === "system") return false;
       const messageAbove =
         index < messages.length - 1 ? messages[index + 1] : null;
-      // Show name if NOT grouped with message above
       return !areMessagesGrouped(message, messageAbove);
     },
     [messages, areMessagesGrouped],
   );
 
-  /**
-   * Determines if timestamp should be shown (at visual BOTTOM of group)
-   *
-   * Show timestamp when this message is the BOTTOM of a visual group
-   * (not connected to the message below it)
-   */
   const shouldShowTimestamp = useCallback(
-    (index: number, message: GroupMessage) => {
-      if (message.type === "system") return false;
-      // Get message below (newer, lower index)
+    (index: number, message: MessageV2) => {
+      if (message.kind === "system") return false;
       const messageBelow = index > 0 ? messages[index - 1] : null;
-      // Show timestamp if NOT grouped with message below
       return !areMessagesGrouped(message, messageBelow);
     },
     [messages, areMessagesGrouped],
   );
 
-  /**
-   * Determines if avatar should be shown (at visual BOTTOM of group)
-   * Only for received messages - show on bottom message of the visual group
-   */
   const shouldShowAvatar = useCallback(
-    (index: number, message: GroupMessage) => {
-      if (message.type === "system") return false;
-      // Get message below (newer, lower index)
+    (index: number, message: MessageV2) => {
+      if (message.kind === "system") return false;
       const messageBelow = index > 0 ? messages[index - 1] : null;
-      // Show avatar if NOT grouped with message below
       return !areMessagesGrouped(message, messageBelow);
     },
     [messages, areMessagesGrouped],
   );
 
-  /**
-   * Determines if this message should have reduced bottom margin
-   * A message uses reduced margin if it's connected to the message BELOW it
-   * (since marginBottom controls spacing to the next item in the inverted list)
-   */
   const isGroupedMessage = useCallback(
-    (index: number, message: GroupMessage) => {
-      if (message.type === "system") return false;
-      // Get message below (newer, lower index) - this is what marginBottom spaces to
+    (index: number, message: MessageV2) => {
+      if (message.kind === "system") return false;
       const messageBelow = index > 0 ? messages[index - 1] : null;
       return areMessagesGrouped(message, messageBelow);
     },
@@ -848,20 +734,41 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   };
 
   // ==========================================================================
-  // Render Message Item
+  // Get sender info from group members
+  // ==========================================================================
+
+  const getSenderAvatarConfig = useCallback(
+    (senderId: string) => {
+      const member = groupMembers.find((m) => m.uid === senderId);
+      return member?.avatarConfig || { baseColor: "#6200EE" };
+    },
+    [groupMembers],
+  );
+
+  const getSenderDisplayName = useCallback(
+    (message: MessageV2) => {
+      if (message.senderName) return message.senderName;
+      const member = groupMembers.find((m) => m.uid === message.senderId);
+      return member?.displayName || member?.username || "Unknown";
+    },
+    [groupMembers],
+  );
+
+  // ==========================================================================
+  // Render Message Item (MessageV2)
   // ==========================================================================
 
   const renderMessage = useCallback(
-    ({ item, index }: { item: GroupMessage; index: number }) => {
-      const isOwnMessage = item.sender === uid;
+    ({ item, index }: { item: MessageV2; index: number }) => {
+      const isOwnMessage = item.senderId === uid;
       const showSender = shouldShowSender(index, item);
       const showTimestamp = shouldShowTimestamp(index, item);
       const showAvatar = shouldShowAvatar(index, item);
-
-      // Determine if this message is part of a group (for reduced spacing)
       const isGrouped = isGroupedMessage(index, item);
+      const senderDisplayName = getSenderDisplayName(item);
+      const senderAvatarConfig = getSenderAvatarConfig(item.senderId);
 
-      if (item.type === "system") {
+      if (item.kind === "system") {
         return (
           <View style={styles.systemMessage}>
             <Text
@@ -873,34 +780,29 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 },
               ]}
             >
-              {item.content}
+              {item.text}
             </Text>
           </View>
         );
       }
 
+      // Get image attachment if present
+      const imageAttachment = item.attachments?.find((a) => a.kind === "image");
+      const voiceAttachment = item.attachments?.find((a) => a.kind === "audio");
+
       const handleImagePress = () => {
-        if (item.type === "image") {
+        if (item.kind === "media" && imageAttachment) {
           handleOpenMediaViewer(
-            [
-              {
-                id: item.id,
-                kind: "image",
-                mime: "image/jpeg",
-                url: item.content,
-                path: item.imagePath || "",
-                sizeBytes: 0,
-              },
-            ],
+            [imageAttachment],
             0,
-            item.senderDisplayName,
+            senderDisplayName,
             item.createdAt,
           );
         }
       };
 
       return (
-        <SwipeableGroupMessage
+        <SwipeableMessage
           message={item}
           onReply={handleReply}
           enabled={true}
@@ -913,23 +815,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               isGrouped && styles.groupedMessageContainer,
             ]}
           >
+            {/* Highlight overlay for reply navigation */}
+            <MessageHighlightOverlay
+              isHighlighted={item.id === highlightedMessageId}
+            />
+
             {item.replyTo && (
               <View
                 style={!isOwnMessage ? styles.replyBubbleIndent : undefined}
               >
                 <ReplyBubble
-                  replyTo={{
-                    messageId: item.replyTo.messageId,
-                    senderId: item.replyTo.senderId,
-                    senderName: item.replyTo.senderName,
-                    kind:
-                      item.replyTo.attachmentKind === "image"
-                        ? "media"
-                        : item.replyTo.attachmentKind === "voice"
-                          ? "voice"
-                          : "text",
-                    textSnippet: item.replyTo.textSnippet,
-                  }}
+                  replyTo={item.replyTo}
                   isSentByMe={isOwnMessage}
                   isReplyToMe={item.replyTo.senderId === uid}
                   onPress={() => scrollToMessage(item.replyTo!.messageId)}
@@ -948,9 +844,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 <View style={styles.avatarColumn}>
                   {showAvatar ? (
                     <AvatarMini
-                      config={
-                        item.senderAvatarConfig || { baseColor: "#6200EE" }
-                      }
+                      config={senderAvatarConfig || { baseColor: "#6200EE" }}
                       size={32}
                     />
                   ) : (
@@ -964,13 +858,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   <Text
                     style={[styles.senderName, { color: theme.colors.primary }]}
                   >
-                    {item.senderDisplayName}
+                    {senderDisplayName}
                   </Text>
                 )}
 
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={item.type === "image" ? handleImagePress : undefined}
+                  onPress={item.kind === "media" ? handleImagePress : undefined}
                   onLongPress={() => handleMessageLongPress(item)}
                   delayLongPress={300}
                 >
@@ -990,23 +884,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                                 : "#e8e8e8",
                             },
                           ],
-                      item.type === "image" && styles.imageOnlyBubble,
-                      item.type === "voice" && styles.voiceBubble,
+                      item.kind === "media" && styles.imageOnlyBubble,
+                      item.kind === "voice" && styles.voiceBubble,
                     ]}
                   >
-                    {item.type === "image" ? (
+                    {item.kind === "media" && imageAttachment ? (
                       <Image
-                        source={{ uri: item.content }}
+                        source={{ uri: imageAttachment.url }}
                         style={styles.standaloneImage}
                         resizeMode="cover"
                       />
-                    ) : item.type === "voice" ? (
+                    ) : item.kind === "voice" && voiceAttachment ? (
                       <VoiceMessagePlayer
-                        url={item.content}
-                        durationMs={item.voiceMetadata?.durationMs || 0}
+                        url={voiceAttachment.url}
+                        durationMs={voiceAttachment.durationMs || 0}
                         isOwn={isOwnMessage}
                       />
-                    ) : item.type === "scorecard" && item.scorecard ? (
+                    ) : item.kind === "scorecard" && item.scorecard ? (
                       <View style={styles.scorecardContent}>
                         <MaterialCommunityIcons
                           name="gamepad-variant"
@@ -1058,13 +952,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                             },
                           ]}
                         >
-                          {item.content}
+                          {item.text}
                         </Text>
-                        {hasUrls(item.content) && (
+                        {hasUrls(item.text || "") && (
                           <LinkPreviewCard
                             preview={
                               linkPreviews.get(item.id) || {
-                                url: extractUrls(item.content)[0] || "",
+                                url: extractUrls(item.text || "")[0] || "",
                                 fetchedAt: Date.now(),
                               }
                             }
@@ -1116,7 +1010,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               />
             )}
           </View>
-        </SwipeableGroupMessage>
+        </SwipeableMessage>
       );
     },
     [
@@ -1140,28 +1034,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Loading/Error States
   // ==========================================================================
 
-  if (loading) {
-    return (
-      <SafeAreaView
-        style={[
-          styles.container,
-          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-        ]}
-        edges={[]}
-      >
-        <Appbar.Header
-          style={[
-            styles.header,
-            { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-          ]}
-        >
-          <Appbar.BackAction onPress={() => navigation.goBack()} />
-          <Appbar.Content title={initialGroupName || "Group Chat"} />
-        </Appbar.Header>
-        <LoadingState message="Loading messages..." />
-      </SafeAreaView>
-    );
-  }
+  // OPTIMIZATION: Show skeleton instead of full-screen loading
+  // Shell (header, composer) renders immediately to prevent flicker
+  const showSkeleton = groupLoading || screen.loading;
 
   if (error) {
     return (
@@ -1250,8 +1125,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           />
         </Appbar.Header>
 
-        {/* Game Invites Section */}
-        {groupId && uid && (
+        {/* Game Invites Section - only show when ready */}
+        {groupId && uid && !showSkeleton && (
           <ChatGameInvites
             conversationId={groupId}
             currentUserId={uid}
@@ -1265,40 +1140,50 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           />
         )}
 
-        <ChatMessageList
-          ref={messageListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          listBottomInset={screen.keyboard.listBottomInset}
-          staticBottomInset={60 + insets.bottom + 16}
-          isKeyboardOpen={screen.keyboard.isKeyboardOpen}
-          ListHeaderComponent={
-            isLoadingOlder ? (
-              <View style={styles.loadMoreContainer}>
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon="chat-outline"
-              title="No Messages Yet"
-              subtitle="Be the first to send a message!"
-            />
-          }
-          flatListProps={{
-            onEndReached: loadOlderMessages,
-            onEndReachedThreshold: 0.3,
-          }}
-        />
+        {/* OPTIMIZATION: Show skeleton during loading, messages when ready */}
+        {showSkeleton ? (
+          <ChatSkeleton bubbleCount={8} />
+        ) : (
+          <ChatMessageList
+            ref={messageListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            listBottomInset={screen.keyboard.listBottomInset}
+            staticBottomInset={60 + insets.bottom + 16}
+            isKeyboardOpen={screen.keyboard.isKeyboardOpen}
+            ListHeaderComponent={
+              screen.chat.pagination.isLoadingOlder ? (
+                <View style={styles.loadMoreContainer}>
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.primary}
+                  />
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={
+              <EmptyState
+                icon="chat-outline"
+                title="No Messages Yet"
+                subtitle="Be the first to send a message!"
+              />
+            }
+            flatListProps={{
+              onEndReached: screen.chat.loadOlder,
+              onEndReachedThreshold: 0.3,
+            }}
+          />
+        )}
 
         <ChatComposer
           scope="group"
           value={screen.composer.text}
           onChangeText={screen.composer.setText}
           onSend={handleSendMessage}
+          hasAttachments={attachmentPicker.attachments.length > 0}
           sendDisabled={
+            showSkeleton ||
             (!screen.composer.text.trim() &&
               attachmentPicker.attachments.length === 0) ||
             screen.sending ||
@@ -1366,6 +1251,15 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           keyboardHeight={screen.keyboard.keyboardHeight}
           safeAreaBottom={insets.bottom}
           textInputRef={textInputRef}
+          absolutePosition={true}
+        />
+
+        {/* Jump-back button for reply navigation */}
+        <ScrollReturnButton
+          visible={showReturnButton}
+          onPress={handleReturnToReply}
+          onAutoHide={handleReturnButtonAutoHide}
+          autoHideDelay={5000}
         />
       </View>
 
@@ -1380,7 +1274,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
       <MessageActionsSheet
         visible={actionsSheetVisible}
-        message={selectedMessageAsV2}
+        message={selectedMessage}
         currentUid={uid || ""}
         userRole={userRole}
         onClose={() => setActionsSheetVisible(false)}

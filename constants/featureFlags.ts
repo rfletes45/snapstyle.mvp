@@ -8,6 +8,28 @@
  */
 
 // =============================================================================
+// Storage Features
+// =============================================================================
+
+/**
+ * Enable SQLite-based local message storage
+ *
+ * When enabled:
+ * - Messages are stored in SQLite first (instant)
+ * - Background sync to Firestore
+ * - Offline-first architecture
+ *
+ * When disabled:
+ * - Uses legacy AsyncStorage outbox
+ * - Falls back to original chatV2 implementation
+ *
+ * Set to `false` to rollback to old behavior if issues occur.
+ *
+ * @default true
+ */
+export const USE_LOCAL_STORAGE = true;
+
+// =============================================================================
 // Debug Features
 // =============================================================================
 

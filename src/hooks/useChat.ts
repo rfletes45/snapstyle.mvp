@@ -48,7 +48,16 @@
  * @module hooks/useChat
  */
 
+import {
+  getOrCreateDMConversation,
+  getOrCreateGroupConversation,
+} from "@/services/database/conversationRepository";
+import {
+  insertMessage,
+  rowToMessageV2,
+} from "@/services/database/messageRepository";
 import { sendMessage as sendMessageService } from "@/services/messaging/send";
+import { syncPendingMessages } from "@/services/sync/syncEngine";
 import {
   LocalAttachment,
   MessageKind,
@@ -59,6 +68,7 @@ import {
 import { createLogger } from "@/utils/log";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
+import { USE_LOCAL_STORAGE } from "../../constants/featureFlags";
 import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
 import {
   useChatKeyboard,
@@ -68,6 +78,7 @@ import {
   useNewMessageAutoscroll,
   type AutoscrollState,
 } from "./chat/useNewMessageAutoscroll";
+import { useLocalMessages } from "./useLocalMessages";
 import { useUnifiedMessages } from "./useUnifiedMessages";
 
 const log = createLogger("useChat");
@@ -259,8 +270,18 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // Composed Hooks
   // -------------------------------------------------------------------------
 
-  // Messages subscription
-  const messagesHook = useUnifiedMessages({
+  // === LOCAL STORAGE MODE ===
+  // Use SQLite-based message storage when USE_LOCAL_STORAGE is enabled
+  const localMessagesHook = useLocalMessages({
+    conversationId,
+    scope,
+    initialLimit,
+    autoRefresh: true,
+  });
+
+  // === FIRESTORE MODE (fallback) ===
+  // Use Firestore subscription when USE_LOCAL_STORAGE is disabled
+  const firestoreMessagesHook = useUnifiedMessages({
     scope,
     conversationId,
     currentUid,
@@ -270,6 +291,43 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     sendReadReceipts,
     debug,
   });
+
+  // Convert local messages to MessageV2 format
+  const localMessages = useMemo<MessageV2[]>(() => {
+    if (!USE_LOCAL_STORAGE) return [];
+    return localMessagesHook.messages
+      .map((row) => rowToMessageV2(row, currentUid))
+      .filter((m): m is MessageV2 => m !== null);
+  }, [localMessagesHook.messages, currentUid]);
+
+  // Select which data source to use based on feature flag
+  const messagesHook = useMemo(() => {
+    if (USE_LOCAL_STORAGE) {
+      return {
+        messages: localMessages,
+        loading: localMessagesHook.isLoading,
+        error: localMessagesHook.error
+          ? new Error(localMessagesHook.error)
+          : null,
+        pagination: {
+          hasMoreOlder: localMessagesHook.hasMore,
+          isLoadingOlder: false,
+        },
+        loadOlder: async () => localMessagesHook.loadMore(),
+        refresh: localMessagesHook.refresh,
+        pendingItems: [] as OutboxItem[],
+      };
+    }
+    return firestoreMessagesHook;
+  }, [
+    localMessages,
+    localMessagesHook.isLoading,
+    localMessagesHook.error,
+    localMessagesHook.hasMore,
+    localMessagesHook.loadMore,
+    localMessagesHook.refresh,
+    firestoreMessagesHook,
+  ]);
 
   // Keyboard animation
   const keyboard = useChatKeyboard({ debug });
@@ -381,6 +439,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
             operation: "send",
             data: {
               scope,
+              useLocalStorage: USE_LOCAL_STORAGE,
               textLength: text.length,
               hasReply: !!replyToUse,
               mentionCount: mentionUids?.length ?? 0,
@@ -389,6 +448,51 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           });
         }
 
+        // === LOCAL STORAGE MODE ===
+        if (USE_LOCAL_STORAGE) {
+          // Ensure conversation exists in SQLite
+          if (scope === "dm") {
+            getOrCreateDMConversation(conversationId);
+          } else {
+            getOrCreateGroupConversation(conversationId, "");
+          }
+
+          // Insert message into SQLite first (optimistic)
+          const messageRow = insertMessage({
+            conversationId,
+            scope,
+            senderId: currentUid,
+            senderName: currentUserName,
+            kind,
+            text: text.trim(),
+            replyTo: replyToUse ?? undefined,
+            mentions: mentionUids,
+            localAttachments: attachments, // Pass local attachments for upload
+          });
+
+          if (debug) {
+            log.debug("Message saved to SQLite", {
+              operation: "localInsert",
+              data: { messageId: messageRow.id.substring(0, 8) },
+            });
+          }
+
+          // Refresh local messages to show the new one
+          localMessagesHook.refresh();
+
+          if (clearReplyOnSend) {
+            clearReplyTo();
+          }
+
+          // Trigger background sync to push to Firestore
+          syncPendingMessages().catch((err) => {
+            log.error("Background sync failed", err);
+          });
+
+          return { success: true };
+        }
+
+        // === FIRESTORE MODE (fallback) ===
         const { sendPromise } = await sendMessageService({
           scope,
           conversationId,
@@ -421,7 +525,16 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         setSending(false);
       }
     },
-    [scope, conversationId, replyTo, clearReplyTo, debug],
+    [
+      scope,
+      conversationId,
+      currentUid,
+      currentUserName,
+      replyTo,
+      clearReplyTo,
+      localMessagesHook,
+      debug,
+    ],
   );
 
   // -------------------------------------------------------------------------

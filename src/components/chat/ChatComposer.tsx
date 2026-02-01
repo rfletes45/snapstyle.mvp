@@ -57,6 +57,8 @@ export interface ChatComposerProps {
   sendDisabled?: boolean;
   /** Whether currently sending */
   isSending?: boolean;
+  /** Whether there are attachments ready to send */
+  hasAttachments?: boolean;
   /** Placeholder text */
   placeholder?: string;
   /** Left accessory (camera button, etc.) */
@@ -97,6 +99,13 @@ export interface ChatComposerProps {
   safeAreaBottom?: number;
   /** Whether to use animated positioning */
   animated?: boolean;
+  /**
+   * Whether to use absolute positioning at the bottom of the screen.
+   * When true, the composer will be fixed at the bottom and slide in
+   * with the screen transition, covering other UI elements if needed.
+   * This prevents the composer from jumping when the tab bar disappears.
+   */
+  absolutePosition?: boolean;
   /** Custom container style */
   style?: StyleProp<ViewStyle>;
   /** TextInput props passthrough */
@@ -116,6 +125,7 @@ export function ChatComposer({
   onSend,
   sendDisabled = false,
   isSending = false,
+  hasAttachments = false,
   placeholder = "Message...",
   leftAccessory,
   rightAccessory,
@@ -136,6 +146,7 @@ export function ChatComposer({
   keyboardHeight,
   safeAreaBottom: customSafeAreaBottom,
   animated = true,
+  absolutePosition = false,
   style,
   textInputProps,
   textInputRef,
@@ -209,13 +220,14 @@ export function ChatComposer({
 
   // Determine if send button should be visible vs other actions
   const hasText = value.trim().length > 0;
-  const canSend = hasText && !sendDisabled;
+  const hasContent = hasText || hasAttachments;
+  const canSend = hasContent && !sendDisabled;
 
-  // Show voice button for groups when no text and not recording
+  // Show voice button for groups when no content and not recording
   // Can use custom voiceButtonComponent or built-in VoiceRecordButton
   const showVoiceButton =
     scope === "group" &&
-    !hasText &&
+    !hasContent &&
     !rightAccessory &&
     (onVoicePress || onVoiceComplete || voiceButtonComponent);
 
@@ -234,9 +246,15 @@ export function ChatComposer({
   const placeholderColor = theme.dark ? "#888" : "#999";
 
   // Static container style (non-animated properties)
+  // When absolutePosition is true, position at bottom of screen to prevent jumping
   const staticContainerStyle = useMemo(
-    () => [styles.container, { backgroundColor: containerBg }, style],
-    [containerBg, style],
+    () => [
+      styles.container,
+      { backgroundColor: containerBg },
+      absolutePosition && styles.absoluteContainer,
+      style,
+    ],
+    [containerBg, absolutePosition, style],
   );
 
   return (
@@ -365,6 +383,15 @@ export function ChatComposer({
 const styles = StyleSheet.create({
   container: {
     // Background and padding set dynamically
+  },
+  // Absolute positioning for the composer to prevent jumping during screen transitions
+  // This ensures the composer slides in at the exact correct position
+  absoluteContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
   },
   inputRow: {
     flexDirection: "row",

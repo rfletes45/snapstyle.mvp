@@ -6,6 +6,7 @@ import {
   removePushToken,
   savePushToken,
 } from "@/services/notifications";
+import { cleanupPresence, initializePresence } from "@/services/presence";
 import * as Notifications from "expo-notifications";
 import { User as FirebaseUser } from "firebase/auth";
 import React, {
@@ -140,6 +141,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 "🔵 [AuthContext] Admin status:",
                 idTokenResult.claims.admin,
               );
+
+              // Initialize presence tracking
+              initializePresence(user.uid);
             } catch (error) {
               console.error(
                 "❌ [AuthContext] Error fetching custom claims:",
@@ -148,6 +152,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setCustomClaims(null);
             }
           } else {
+            // Clean up presence when logging out
+            cleanupPresence();
             setCustomClaims(null);
           }
 

@@ -8,12 +8,22 @@
  * - useSnapCapture: Snap/photo capture and upload logic
  * - DMMessageItem: Message rendering component
  * - messageAdapters: V1↔V2 message conversion utilities
+ *
+ * Enhanced Features:
+ * - Message highlight animation when navigating to replied messages
+ * - Jump-back button after scrolling to a reply target
  */
 
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { Badge, IconButton, Menu, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -22,7 +32,10 @@ import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 
 // Unified chat hooks (UNI-04, UNI-05)
+import { usePresence } from "@/hooks/usePresence";
+import { useReadReceipts } from "@/hooks/useReadReceipts";
 import { useSnapCapture } from "@/hooks/useSnapCapture";
+import { useTypingStatus } from "@/hooks/useTypingStatus";
 import { useUnifiedChatScreen } from "@/hooks/useUnifiedChatScreen";
 
 // Chat components
@@ -31,16 +44,19 @@ import {
   ChatGameInvites,
   ChatMessageList,
   MessageActionsSheet,
+  TypingIndicator,
 } from "@/components/chat";
 import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
+import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
 
 // UI components
 import BlockUserModal from "@/components/BlockUserModal";
 import { DMMessageItem, MessageWithProfile } from "@/components/DMMessageItem";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
-import { EmptyState, LoadingState } from "@/components/ui";
+import { EmptyState, PresenceIndicator } from "@/components/ui";
 
 // Services
 import { blockUser } from "@/services/blocking";
@@ -75,6 +91,22 @@ import { Spacing } from "../../../constants/theme";
 const DEBUG_CHAT = DEBUG_CHAT_V2;
 
 // ==========================================================================
+// Types
+// ==========================================================================
+
+interface InitialChatData {
+  chatId?: string;
+  friendName?: string;
+  friendAvatar?: string | null;
+  friendAvatarConfig?: any;
+}
+
+interface ChatScreenParams {
+  friendUid: string;
+  initialData?: InitialChatData;
+}
+
+// ==========================================================================
 // ChatScreen Component
 // ==========================================================================
 
@@ -87,15 +119,27 @@ export default function ChatScreen({
   const { currentFirebaseUser } = useAuth();
   const { setCurrentChatId } = useInAppNotifications();
   const uid = currentFirebaseUser?.uid;
-  const { friendUid } = route.params as { friendUid: string };
+
+  // OPTIMIZATION: Extract initial data passed from inbox for instant display
+  const { friendUid, initialData } = route.params as ChatScreenParams;
 
   // ==========================================================================
   // Screen State
   // ==========================================================================
 
-  // Core state
-  const [chatId, setChatId] = useState<string | null>(null);
-  const [friendProfile, setFriendProfile] = useState<any>(null);
+  // OPTIMIZATION: Initialize with cached data to prevent flicker
+  const [chatId, setChatId] = useState<string | null>(
+    initialData?.chatId || null,
+  );
+  const [friendProfile, setFriendProfile] = useState<any>(
+    initialData
+      ? {
+          username: initialData.friendName,
+          avatar: initialData.friendAvatar,
+          avatarConfig: initialData.friendAvatarConfig,
+        }
+      : null,
+  );
   const messageListRef = React.useRef<ChatMessageListRef>(null);
 
   // Modal state
@@ -114,6 +158,16 @@ export default function ChatScreen({
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
+
+  // Reply navigation state (highlight + jump-back)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
+  const [showReturnButton, setShowReturnButton] = useState(false);
+  const returnIndexRef = useRef<number | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // ==========================================================================
   // Unified Hooks (UNI-04, UNI-05)
@@ -140,6 +194,30 @@ export default function ChatScreen({
     debug: DEBUG_CHAT,
   });
 
+  // Typing indicator
+  const typing = useTypingStatus({
+    scope: "dm",
+    conversationId: chatId || "",
+    currentUid: uid || "",
+    otherUid: friendUid,
+    debug: DEBUG_CHAT,
+  });
+
+  // Presence (online status, last seen)
+  const presence = usePresence({
+    userId: friendUid,
+    currentUserId: uid,
+    debug: DEBUG_CHAT,
+  });
+
+  // Read receipts
+  const readReceipts = useReadReceipts({
+    chatId: chatId || "",
+    currentUid: uid || "",
+    otherUid: friendUid,
+    debug: DEBUG_CHAT,
+  });
+
   // ==========================================================================
   // Derived State
   // ==========================================================================
@@ -147,11 +225,26 @@ export default function ChatScreen({
   const displayMessages: MessageWithProfile[] = useMemo(
     () =>
       chatId
-        ? screen.messages.map((msg) =>
-            messageV2ToWithProfile(msg, friendUid, friendProfile),
-          )
+        ? screen.messages.map((msg) => {
+            const converted = messageV2ToWithProfile(
+              msg,
+              friendUid,
+              friendProfile,
+            );
+            // Apply read receipt status for messages sent by current user
+            if (msg.senderId === uid && converted.serverReceivedAt) {
+              // Exclude "read" from status check since getMessageStatus will determine it
+              const baseStatus =
+                converted.status !== "read" ? converted.status : "delivered";
+              converted.status = readReceipts.getMessageStatus(
+                converted.serverReceivedAt,
+                baseStatus,
+              );
+            }
+            return converted;
+          })
         : [],
-    [chatId, screen.messages, friendUid, friendProfile],
+    [chatId, screen.messages, friendUid, friendProfile, uid, readReceipts],
   );
 
   const selectedMessageAsV2 = useMemo(
@@ -163,28 +256,39 @@ export default function ChatScreen({
   // Initialization
   // ==========================================================================
 
-  // Hide tab bar when focused
-  useFocusEffect(
-    useCallback(() => {
-      navigation.getParent()?.setOptions({ tabBarStyle: { display: "none" } });
-      return () => {
-        navigation.getParent()?.setOptions({ tabBarStyle: undefined });
-      };
-    }, [navigation]),
-  );
+  // NOTE: Tab bar visibility is now handled at the navigator level
+  // in RootNavigator.tsx using getFocusedRouteNameFromRoute.
+  // This eliminates flicker during navigation transitions.
 
-  // Initialize chat
+  // Initialize chat - OPTIMIZATION: Skip Firestore calls if we have cached data
   useFocusEffect(
     useCallback(() => {
       const initializeChat = async () => {
         if (!uid) return;
 
         try {
-          const id = await getOrCreateChat(uid, friendUid);
-          setChatId(id);
-          setCurrentChatId(id);
+          // OPTIMIZATION: If we have both chatId and friendProfile from initialData,
+          // only fetch fresh data in background (non-blocking)
+          if (chatId && friendProfile) {
+            setCurrentChatId(chatId);
 
-          const profile = await getUserProfileByUid(friendUid);
+            // Background refresh - don't block
+            getUserProfileByUid(friendUid)
+              .then(setFriendProfile)
+              .catch(console.warn);
+            return;
+          }
+
+          // OPTIMIZATION: Parallelize fetch operations
+          const promises: [Promise<string>, Promise<any>] = [
+            chatId ? Promise.resolve(chatId) : getOrCreateChat(uid, friendUid),
+            getUserProfileByUid(friendUid),
+          ];
+
+          const [resolvedChatId, profile] = await Promise.all(promises);
+
+          setChatId(resolvedChatId);
+          setCurrentChatId(resolvedChatId);
           setFriendProfile(profile);
         } catch (error: any) {
           console.error("❌ [ChatScreen] Init error:", error);
@@ -197,7 +301,7 @@ export default function ChatScreen({
 
       initializeChat();
       return () => setCurrentChatId(null);
-    }, [uid, friendUid, setCurrentChatId, navigation]),
+    }, [uid, friendUid, chatId, friendProfile, setCurrentChatId, navigation]),
   );
 
   // Load scheduled messages
@@ -212,8 +316,59 @@ export default function ChatScreen({
   useEffect(() => {
     if (!friendProfile) return;
 
+    // Determine header subtitle based on presence
+    const getSubtitle = () => {
+      if (typing.isOtherUserTyping && typing.typingIndicatorsEnabled) {
+        return "typing...";
+      }
+      if (presence.shouldShowOnlineIndicator && presence.isOnline) {
+        return "Online";
+      }
+      if (presence.shouldShowLastSeen && presence.lastSeen) {
+        return `Last seen ${presence.lastSeenFormatted}`;
+      }
+      return undefined;
+    };
+
+    const subtitle = getSubtitle();
+
     navigation.setOptions({
-      title: friendProfile.username,
+      headerTitle: () => (
+        <View style={{ alignItems: "center" }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {presence.shouldShowOnlineIndicator && (
+              <PresenceIndicator
+                online={presence.isOnline}
+                size={8}
+                position="inline"
+              />
+            )}
+            <Text
+              style={{
+                fontSize: 17,
+                fontWeight: "600",
+                color: theme.colors.onSurface,
+              }}
+            >
+              {friendProfile.username}
+            </Text>
+          </View>
+          {subtitle && (
+            <Text
+              style={{
+                fontSize: 12,
+                color:
+                  typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+                    ? theme.colors.primary
+                    : theme.colors.onSurfaceVariant,
+                marginTop: 2,
+              }}
+            >
+              {subtitle}
+            </Text>
+          )}
+        </View>
+      ),
       headerRight: () => (
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           {SHOW_V2_BADGE && (
@@ -268,20 +423,42 @@ export default function ChatScreen({
         </View>
       ),
     });
-  }, [friendProfile, navigation, menuVisible, theme.colors.surface, chatId]);
+  }, [
+    friendProfile,
+    navigation,
+    menuVisible,
+    theme.colors.surface,
+    theme.colors.onSurface,
+    theme.colors.onSurfaceVariant,
+    theme.colors.primary,
+    chatId,
+    presence,
+    typing,
+  ]);
 
   // ==========================================================================
   // Handlers
   // ==========================================================================
 
+  const handleTextChange = useCallback(
+    (text: string) => {
+      screen.composer.setText(text);
+      // Update typing status
+      typing.setTyping(text.length > 0);
+    },
+    [screen.composer, typing],
+  );
+
   const handleSendMessage = useCallback(async () => {
     if (!uid || !chatId || !screen.composer.text.trim()) return;
     try {
+      // Clear typing indicator when sending
+      typing.setTyping(false);
       await screen.composer.send();
     } catch (error) {
       console.error("❌ [ChatScreen] Send error:", error);
     }
-  }, [uid, chatId, screen.composer]);
+  }, [uid, chatId, screen.composer, typing]);
 
   const handleReply = useCallback(
     (replyMetadata: ReplyToMetadata) => {
@@ -303,15 +480,52 @@ export default function ChatScreen({
     await retryFailedMessageV2(msg.id);
   }, []);
 
+  // Enhanced scroll-to-message with highlight animation
   const scrollToMessage = useCallback(
     (messageId: string) => {
-      const index = displayMessages.findIndex((m) => m.id === messageId);
-      if (index !== -1 && messageListRef.current) {
-        messageListRef.current.scrollToIndex(index, true);
+      const targetIndex = displayMessages.findIndex((m) => m.id === messageId);
+      if (targetIndex === -1 || !messageListRef.current) return;
+
+      // Clear any existing highlight timeout
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
       }
+
+      // Store current position for return navigation (rough estimate from visible messages)
+      // In inverted list, index 0 is at the bottom
+      returnIndexRef.current = 0;
+      setShowReturnButton(true);
+
+      // Scroll to target message
+      messageListRef.current.scrollToIndex(targetIndex, true);
+
+      // Highlight the target message after scroll settles
+      setTimeout(() => {
+        setHighlightedMessageId(messageId);
+
+        // Auto-clear highlight after animation
+        highlightTimeoutRef.current = setTimeout(() => {
+          setHighlightedMessageId(null);
+        }, 2100); // Match animation duration
+      }, 300); // Wait for scroll to settle
     },
     [displayMessages],
   );
+
+  // Handle return button press
+  const handleReturnToReply = useCallback(() => {
+    if (returnIndexRef.current !== null && messageListRef.current) {
+      messageListRef.current.scrollToIndex(returnIndexRef.current, true);
+    }
+    setShowReturnButton(false);
+    returnIndexRef.current = null;
+  }, []);
+
+  // Auto-hide return button callback
+  const handleReturnButtonAutoHide = useCallback(() => {
+    setShowReturnButton(false);
+    returnIndexRef.current = null;
+  }, []);
 
   const handleNavigateToGame = useCallback(
     (gameId: string, gameType: string) => {
@@ -420,9 +634,10 @@ export default function ChatScreen({
   // Render
   // ==========================================================================
 
-  if (screen.loading) {
-    return <LoadingState message="Loading chat..." />;
-  }
+  // OPTIMIZATION: Show shell immediately, skeleton only for message area
+  // This eliminates UI flicker by always rendering header and composer
+  const isInitializing = !chatId || !friendProfile;
+  const showSkeleton = screen.loading || isInitializing;
 
   const renderMessageItem = ({ item }: { item: MessageWithProfile }) => (
     <DMMessageItem
@@ -434,6 +649,7 @@ export default function ChatScreen({
       onLongPress={handleMessageLongPress}
       onScrollToMessage={scrollToMessage}
       onRetry={handleRetryMessage}
+      isHighlighted={item.id === highlightedMessageId}
     />
   );
 
@@ -446,23 +662,26 @@ export default function ChatScreen({
     />
   );
 
-  const scheduleButton = (
+  const scheduleButton = screen.composer.text.trim() ? (
     <IconButton
       icon="clock-outline"
       size={22}
       onPress={() => setScheduleModalVisible(true)}
-      disabled={
-        !screen.composer.text.trim() || screen.sending || snap.uploadingSnap
-      }
-      style={styles.iconButton}
+      disabled={screen.sending || snap.uploadingSnap}
+      style={styles.scheduleButton}
     />
-  );
+  ) : null;
 
   return (
     <>
-      <View style={styles.container}>
-        {/* Game Invites Section */}
-        {chatId && uid && (
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
+        ]}
+      >
+        {/* Game Invites Section - only show when ready */}
+        {chatId && uid && !showSkeleton && (
           <ChatGameInvites
             conversationId={chatId}
             currentUserId={uid}
@@ -476,40 +695,62 @@ export default function ChatScreen({
           />
         )}
 
-        <ChatMessageList
-          ref={messageListRef}
-          data={displayMessages}
-          renderItem={renderMessageItem}
-          keyExtractor={(item) => item.id}
-          listBottomInset={screen.keyboard.listBottomInset}
-          staticBottomInset={60 + insets.bottom + 16}
-          isKeyboardOpen={screen.keyboard.isKeyboardOpen}
-          ListHeaderComponent={
-            screen.chat.pagination.isLoadingOlder ? (
-              <View style={styles.loadMoreContainer}>
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon="chat-outline"
-              title="No messages yet"
-              subtitle="Send a message or snap to start the conversation!"
-            />
-          }
-          flatListProps={{
-            onEndReached: screen.loadOlder,
-            onEndReachedThreshold: 0.3,
-          }}
+        {/* OPTIMIZATION: Show skeleton during initialization, messages when ready */}
+        {showSkeleton ? (
+          <ChatSkeleton bubbleCount={8} />
+        ) : (
+          <ChatMessageList
+            ref={messageListRef}
+            data={displayMessages}
+            renderItem={renderMessageItem}
+            keyExtractor={(item) => item.id}
+            listBottomInset={screen.keyboard.listBottomInset}
+            staticBottomInset={60 + insets.bottom + 16}
+            isKeyboardOpen={screen.keyboard.isKeyboardOpen}
+            ListHeaderComponent={
+              screen.chat.pagination.isLoadingOlder ? (
+                <View style={styles.loadMoreContainer}>
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.primary}
+                  />
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={
+              <EmptyState
+                icon="chat-outline"
+                title="No messages yet"
+                subtitle="Send a message or snap to start the conversation!"
+              />
+            }
+            flatListProps={{
+              onEndReached: screen.loadOlder,
+              onEndReachedThreshold: 0.3,
+            }}
+          />
+        )}
+
+        {/* Typing Indicator */}
+        <TypingIndicator
+          userName={friendProfile?.username}
+          visible={typing.isOtherUserTyping && typing.typingIndicatorsEnabled}
+        />
+
+        {/* Jump-back button for reply navigation */}
+        <ScrollReturnButton
+          visible={showReturnButton}
+          onPress={handleReturnToReply}
+          onAutoHide={handleReturnButtonAutoHide}
+          autoHideDelay={5000}
         />
 
         <ChatComposer
           scope="dm"
           value={screen.composer.text}
-          onChangeText={screen.composer.setText}
+          onChangeText={handleTextChange}
           onSend={handleSendMessage}
-          sendDisabled={!screen.canSend || snap.uploadingSnap}
+          sendDisabled={!screen.canSend || snap.uploadingSnap || showSkeleton}
           isSending={screen.sending}
           placeholder="Message..."
           leftAccessory={cameraButton}
@@ -520,6 +761,7 @@ export default function ChatScreen({
           onGamePress={handleGamePress}
           keyboardHeight={screen.keyboard.keyboardHeight}
           safeAreaBottom={insets.bottom}
+          absolutePosition={true}
         />
       </View>
 
@@ -584,7 +826,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     marginBottom: Spacing.sm,
   },
-  iconButton: {
+  scheduleButton: {
     margin: 0,
     width: 40,
     height: 40,

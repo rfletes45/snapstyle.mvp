@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import {
+  getFocusedRouteNameFromRoute,
   NavigationContainer,
   NavigationContainerRef,
 } from "@react-navigation/native";
@@ -44,9 +45,12 @@ import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
 import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
-// DebugScreen only loaded in development
+// DebugScreens only loaded in development
 const DebugScreen = __DEV__
   ? require("@/screens/debug/DebugScreen").default
+  : () => null;
+const LocalStorageDebugScreen = __DEV__
+  ? require("@/screens/debug/LocalStorageDebugScreen").default
   : () => null;
 
 import TasksScreen from "@/screens/tasks/TasksScreen";
@@ -69,11 +73,49 @@ import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
 const Stack = createNativeStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
 
+/**
+ * Routes that should hide the bottom tab bar.
+ * NOTE: Most full-screen routes (ChatDetail, GroupChat, etc.) are now at the
+ * root stack level and naturally overlay the tabs. This set is only for
+ * routes that remain nested within tab stacks.
+ */
+const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
+  // Moments stack routes
+  "StoryViewer",
+  "CreateStory",
+]);
+
+/**
+ * Helper to get the tab bar style based on the focused route in a nested stack.
+ * NOTE: With the new architecture where chat screens are at the root level,
+ * this is only needed for screens that remain in nested stacks (like StoryViewer).
+ */
+function getTabBarStyle(route: any, defaultStyle: any) {
+  const routeName = getFocusedRouteNameFromRoute(route);
+
+  // If we're on a route that should hide the tab bar, return hidden style
+  if (routeName && ROUTES_WITH_HIDDEN_TAB_BAR.has(routeName)) {
+    return {
+      display: "none" as const,
+      height: 0,
+    };
+  }
+
+  // Otherwise return the default tab bar style
+  return defaultStyle;
+}
+
 function AuthStack() {
+  const { colors } = useAppTheme();
+
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+        animation: "simple_push",
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
@@ -86,7 +128,8 @@ function AuthStack() {
 
 /**
  * Inbox Stack (rebranded from Chat)
- * Contains: Inbox list, DM chat, Shot viewer, scheduled, groups
+ * Contains only the list screen - chat detail screens are at root level
+ * to allow them to slide over the tab bar smoothly.
  */
 function InboxStack() {
   const { colors } = useAppTheme();
@@ -103,6 +146,10 @@ function InboxStack() {
           fontSize: 18,
         },
         headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+        animation: "simple_push",
       }}
     >
       <Stack.Screen
@@ -111,46 +158,13 @@ function InboxStack() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
-        name="ChatDetail"
-        component={ChatScreen}
-        options={{ title: "Message" }}
-      />
-      <Stack.Screen
-        name="SnapViewer"
-        component={SnapViewerScreen}
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
-      />
-      <Stack.Screen
         name="ScheduledMessages"
         component={ScheduledMessagesScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
-        name="GroupChatCreate"
-        component={GroupChatCreateScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="GroupChat"
-        component={GroupChatScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="GroupChatInfo"
-        component={GroupChatInfoScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
         name="GroupInvites"
         component={GroupInvitesScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="ChatSettings"
-        component={ChatSettingsScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
@@ -185,6 +199,10 @@ function MomentsStack() {
           fontSize: 18,
         },
         headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+        animation: "simple_push",
       }}
     >
       <Stack.Screen
@@ -222,6 +240,10 @@ function PlayStack() {
           fontSize: 18,
         },
         headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+        animation: "simple_push",
       }}
     >
       <Stack.Screen
@@ -364,6 +386,10 @@ function ProfileStack() {
           fontSize: 18,
         },
         headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+        animation: "simple_push",
       }}
     >
       <Stack.Screen
@@ -371,12 +397,19 @@ function ProfileStack() {
         component={ProfileScreen}
         options={{ headerShown: false }}
       />
-      {/* Debug screen only available in development */}
+      {/* Debug screens only available in development */}
       {__DEV__ && (
         <Stack.Screen
           name="Debug"
           component={DebugScreen}
           options={{ title: "Debug Info" }}
+        />
+      )}
+      {__DEV__ && (
+        <Stack.Screen
+          name="LocalStorageDebug"
+          component={LocalStorageDebugScreen}
+          options={{ title: "Local Storage Debug" }}
         />
       )}
       <Stack.Screen
@@ -420,6 +453,13 @@ function ProfileStack() {
 function AppTabs() {
   const { colors } = useAppTheme();
 
+  // Default tab bar style
+  const defaultTabBarStyle = {
+    backgroundColor: colors.surface,
+    borderTopColor: colors.border,
+    borderTopWidth: 1,
+  };
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -435,11 +475,13 @@ function AppTabs() {
         headerShadowVisible: false,
         tabBarActiveTintColor: colors.tabActive,
         tabBarInactiveTintColor: colors.tabInactive,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-        },
+        // Hide tab bar when keyboard is shown (prevents jump on iOS)
+        tabBarHideOnKeyboard: true,
+        tabBarStyle: defaultTabBarStyle,
+        // Set scene container background to prevent white flicker
+        sceneStyle: { backgroundColor: colors.background },
+        // Improves performance by keeping screens mounted but frozen
+        lazy: true,
         tabBarIcon: ({ color, size }) => {
           let iconName: string = "message-outline";
 
@@ -474,17 +516,26 @@ function AppTabs() {
       <Tab.Screen
         name="Inbox"
         component={InboxStack}
-        options={{ headerShown: false }}
+        options={{
+          headerShown: false,
+          // Tab bar always visible - chat screens slide over from root level
+        }}
       />
       <Tab.Screen
         name="Moments"
         component={MomentsStack}
-        options={{ headerShown: false }}
+        options={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
+        })}
       />
       <Tab.Screen
         name="Play"
         component={PlayStack}
-        options={{ headerShown: false }}
+        options={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
+        })}
       />
       <Tab.Screen
         name="Connections"
@@ -494,9 +545,89 @@ function AppTabs() {
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ headerShown: false }}
+        options={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
+        })}
       />
     </Tab.Navigator>
+  );
+}
+
+/**
+ * Main App Stack
+ * Contains AppTabs as the base and full-screen overlay screens.
+ * This architecture ensures chat/game screens slide OVER the tab bar
+ * instead of being constrained within the tab's content area.
+ */
+function MainStack() {
+  const { colors } = useAppTheme();
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: colors.headerBackground,
+        },
+        headerTintColor: colors.headerText,
+        headerTitleStyle: {
+          fontWeight: "600",
+          fontSize: 18,
+        },
+        headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+        // Use simple_push animation - no rounded corners like iOS card style
+        animation: "simple_push",
+      }}
+    >
+      {/* Main tabs as the base screen */}
+      <Stack.Screen
+        name="MainTabs"
+        component={AppTabs}
+        options={{ headerShown: false }}
+      />
+
+      {/* Full-screen chat screens - slide over tabs */}
+      <Stack.Screen
+        name="ChatDetail"
+        component={ChatScreen}
+        options={{
+          title: "Message",
+        }}
+      />
+      <Stack.Screen
+        name="GroupChat"
+        component={GroupChatScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="GroupChatCreate"
+        component={GroupChatCreateScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="GroupChatInfo"
+        component={GroupChatInfoScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChatSettings"
+        component={ChatSettingsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SnapViewer"
+        component={SnapViewerScreen}
+        options={{
+          headerShown: false,
+          presentation: "modal",
+        }}
+      />
+    </Stack.Navigator>
   );
 }
 
@@ -517,7 +648,7 @@ interface RootNavigatorProps {
  * - During hydration: LoadingScreen (via AppGate)
  * - Unauthenticated: AuthStack (Welcome, Login, Signup)
  * - Needs profile: ProfileSetupStack
- * - Ready: AppTabs (main app)
+ * - Ready: MainStack (tabs + full-screen overlays)
  */
 export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
   const { theme } = useAppTheme();
@@ -531,11 +662,17 @@ export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
         Login: "login",
         Signup: "signup",
         ProfileSetup: "profile-setup",
-        Inbox: "inbox",
-        Moments: "moments",
-        Play: "play",
-        Connections: "connections",
-        Profile: "profile",
+        MainTabs: {
+          screens: {
+            Inbox: "inbox",
+            Moments: "moments",
+            Play: "play",
+            Connections: "connections",
+            Profile: "profile",
+          },
+        },
+        ChatDetail: "chat/:friendUid",
+        GroupChat: "group/:groupId",
       },
     },
   };
@@ -550,13 +687,17 @@ export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
         >
           {hydrationState === "ready" ? (
             <>
-              <AppTabs />
+              <MainStack />
               <WarningModal />
             </>
           ) : hydrationState === "needs_profile" ? (
             <Stack.Navigator
               screenOptions={{
                 headerShown: false,
+                contentStyle: {
+                  backgroundColor: theme.navigation.colors.background,
+                },
+                animation: "simple_push",
               }}
             >
               <Stack.Screen

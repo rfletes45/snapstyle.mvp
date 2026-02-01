@@ -4,6 +4,16 @@
  * Persistent offline message queue using AsyncStorage.
  * Ensures messages are not lost on network failures or app restarts.
  *
+ * @deprecated This module is being replaced by SQLite-based storage.
+ * For new code, use:
+ * - `@/services/database/messageRepository` for message queue storage
+ * - `@/services/sync/syncEngine` for syncing pending messages
+ *
+ * The SQLite-based approach provides:
+ * - Faster message storage (synchronous writes)
+ * - Better query capabilities
+ * - Unified storage for all message data
+ *
  * Features:
  * - Persistent storage of pending messages
  * - Automatic retry with exponential backoff

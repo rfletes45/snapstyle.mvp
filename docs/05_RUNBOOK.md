@@ -516,6 +516,15 @@ node scripts/fix-cosmetics.js <userId>
 1. Update feature flag in `constants/featureFlags.ts`
 2. Push and rebuild (fast track via EAS)
 
+### Disable Local Storage (Rollback to Server-Only)
+
+If local storage causes issues:
+
+```typescript
+// constants/featureFlags.ts
+export const USE_LOCAL_STORAGE = false; // Set to false for server-only mode
+```
+
 ### Rollback Cloud Functions
 
 ```bash
@@ -528,6 +537,28 @@ firebase functions:delete <functionName>
 1. Firebase Console → Firestore
 2. Can manually edit/delete documents
 3. Export data first if major change
+
+### Local SQLite Database Issues
+
+**Debug Screen Access:**
+Settings → Developer → Local Storage Debug
+
+**Common Issues:**
+
+| Issue                   | Solution                                             |
+| ----------------------- | ---------------------------------------------------- |
+| Messages not showing    | Check sync status in Debug screen                    |
+| Duplicate messages      | Run "Clear Pending Messages" maintenance             |
+| Database locked error   | Restart app (kills all DB connections)               |
+| Out of sync with server | Use "Force Full Sync" in Debug screen                |
+| Corrupt database        | Clear app data (Settings → Apps → Vibe → Clear Data) |
+
+**Maintenance Actions (Debug Screen):**
+
+- **Clear All Data**: Wipes local database completely
+- **Clear Media Cache**: Frees storage by removing cached images
+- **Clear Pending Messages**: Removes stuck messages from sync queue
+- **Vacuum Database**: Reclaims storage and optimizes performance
 
 ---
 

@@ -63,6 +63,30 @@ service firebase.storage {
     }
 
     // ============================================================
+    // DM VOICE: Voice messages between two users
+    // ============================================================
+    
+    // Path: /dm-voice/{chatId}/{filename}
+    // Chat ID format is uid1_uid2 (sorted alphabetically)
+    match /dm-voice/{chatId}/{allPaths=**} {
+      // Read: Only chat members (UID in chatId)
+      allow read: if isAuth() && (
+                    chatId.matches(request.auth.uid + '_.*') ||
+                    chatId.matches('.*_' + request.auth.uid)
+                  );
+      
+      // Write: Only chat members, with validation
+      allow write: if isAuth() && (
+                     chatId.matches(request.auth.uid + '_.*') ||
+                     chatId.matches('.*_' + request.auth.uid)
+                   ) &&
+                   // Must be audio
+                   request.resource.contentType.matches('audio/.*') &&
+                   // Max 10MB per voice message
+                   validFileSize(10 * 1024 * 1024);
+    }
+
+    // ============================================================
     // STORIES: User-posted stories visible to friends
     // ============================================================
     

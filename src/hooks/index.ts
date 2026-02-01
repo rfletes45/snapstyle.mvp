@@ -4,10 +4,11 @@
  * Exports:
  * - useChat: Unified chat hook (ARCH-D02) - composes all chat functionality
  * - useUnifiedMessages: Unified message subscription (ARCH-D01)
+ * - useLocalMessages: SQLite-based local message access (Phase 5)
  * - useChatComposer: Chat composer state management (ARCH-D03)
  * - useUnifiedChatScreen: Screen-ready hook that composes useChat + useChatComposer (UNI-04)
  * - useSnapCapture: Snap/photo capture and upload hook (UNI-05)
- * - useMessagesV2: @deprecated - Use useChat or useUnifiedMessages instead
+ * - useMessagesV2: @deprecated - Use useChat or useLocalMessages instead
  * - useUnreadCount: Unread count calculation
  * - useMentionAutocomplete: @mention autocomplete state management
  * - useAttachmentPicker: Multi-attachment selection and upload management
@@ -17,6 +18,20 @@
  * - useConversationActions: Action handlers for inbox items
  * - useFriendRequests: Friend requests subscription with actions
  */
+
+// =============================================================================
+// Local Storage Hooks (Phase 5 - SQLite-first)
+// =============================================================================
+
+export {
+  useFailedMessages,
+  useLocalMessages,
+  usePendingMessages,
+} from "./useLocalMessages";
+export type {
+  UseLocalMessagesOptions,
+  UseLocalMessagesReturn,
+} from "./useLocalMessages";
 
 // =============================================================================
 // Unified Chat Hooks (Phase D)
@@ -51,11 +66,22 @@ export type {
 export { useSnapCapture } from "./useSnapCapture";
 export type {} from "./useSnapCapture";
 
+export { useTypingStatus } from "./useTypingStatus";
+export type {} from "./useTypingStatus";
+
+export { usePresence } from "./usePresence";
+export type {} from "./usePresence";
+
+export { useReadReceipts } from "./useReadReceipts";
+export type {} from "./useReadReceipts";
+
+export { useHighlightedMessage } from "./useHighlightedMessage";
+
 // =============================================================================
 // Legacy Hooks (Deprecated)
 // =============================================================================
 
-/** @deprecated Use useChat or useUnifiedMessages instead */
+/** @deprecated Use useChat or useLocalMessages instead */
 export { useMessagesV2, useUnreadCount } from "./useMessagesV2";
 
 // =============================================================================

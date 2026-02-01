@@ -164,22 +164,26 @@ export async function updateReadWatermark(
   chatId: string,
   uid: string,
   timestamp: number,
+  options: { sendPublicReceipt?: boolean } = { sendPublicReceipt: true },
 ): Promise<void> {
   try {
     const db = getFirestoreInstance();
+    const { sendPublicReceipt = true } = options;
 
-    // Update public watermark (for read receipts)
-    const publicDocRef = doc(db, "Chats", chatId, "Members", uid);
-    await setDoc(
-      publicDocRef,
-      {
-        uid,
-        lastReadAtPublic: timestamp,
-      },
-      { merge: true },
-    );
+    // Update public watermark (for read receipts) - only if enabled
+    if (sendPublicReceipt) {
+      const publicDocRef = doc(db, "Chats", chatId, "Members", uid);
+      await setDoc(
+        publicDocRef,
+        {
+          uid,
+          lastReadAtPublic: timestamp,
+        },
+        { merge: true },
+      );
+    }
 
-    // Also update private last seen (for unread badge computation)
+    // Always update private last seen (for unread badge computation)
     const privateDocRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
     await setDoc(
       privateDocRef,
@@ -191,7 +195,10 @@ export async function updateReadWatermark(
       { merge: true },
     );
 
-    log.debug("Updated read watermark", ctx({ chatId, uid, timestamp }));
+    log.debug(
+      "Updated read watermark",
+      ctx({ chatId, uid, timestamp, sendPublicReceipt }),
+    );
   } catch (error) {
     log.error("Failed to update read watermark", ctx({ chatId, uid, error }));
     // Don't throw - read receipts are not critical
@@ -355,6 +362,55 @@ export function subscribeToAllTyping(
     (error) => {
       log.error("All typing subscription error", ctx({ chatId, error }));
       callback([]);
+    },
+  );
+}
+
+/**
+ * Subscribe to other member's read receipt watermark
+ *
+ * This allows you to know which messages have been read by the other user.
+ * Use this to show "read" status (blue checkmarks) on your sent messages.
+ *
+ * @param chatId - Chat document ID
+ * @param otherUid - Other user's ID
+ * @param callback - Called with their lastReadAtPublic timestamp (or null)
+ * @returns Unsubscribe function
+ *
+ * @example
+ * ```typescript
+ * const unsubscribe = subscribeToReadReceipt(chatId, friendUid, (watermark) => {
+ *   // Messages with serverReceivedAt <= watermark have been read
+ *   setOtherUserReadWatermark(watermark);
+ * });
+ * ```
+ */
+export function subscribeToReadReceipt(
+  chatId: string,
+  otherUid: string,
+  callback: (readWatermark: number | null) => void,
+): () => void {
+  const db = getFirestoreInstance();
+  const docRef = doc(db, "Chats", chatId, "Members", otherUid);
+
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        callback(null);
+        return;
+      }
+
+      const data = snapshot.data();
+      const lastReadAtPublic = toMillis(data.lastReadAtPublic);
+      callback(lastReadAtPublic ?? null);
+    },
+    (error) => {
+      log.error(
+        "Read receipt subscription error",
+        ctx({ chatId, otherUid, error }),
+      );
+      callback(null);
     },
   );
 }

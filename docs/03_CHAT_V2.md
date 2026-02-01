@@ -50,23 +50,69 @@ services/messaging/
 | `src/services/messaging/subscribe.ts`         | **Unified** message subscription      |
 | `src/services/messaging/send.ts`              | **Unified** message sending           |
 | `src/services/messaging/memberState.ts`       | **Unified** member state management   |
+| `src/services/database/messageRepository.ts`  | **SQLite** message CRUD               |
+| `src/services/sync/syncEngine.ts`             | **Bidirectional** Firestore sync      |
 | `src/services/outbox.ts`                      | Offline message queue                 |
 | `src/services/chatV2.ts`                      | V2 operations (being consolidated)    |
 | `src/services/groups.ts`                      | Group CRUD, legacy message functions  |
 | `src/hooks/useChat.ts`                        | **Master chat hook** - main interface |
+| `src/hooks/useLocalMessages.ts`               | **SQLite** subscription hook          |
+| `src/hooks/useUnifiedChatScreen.ts`           | **Screen-level** composed hook        |
 | `src/hooks/useUnifiedMessages.ts`             | Message subscription with outbox      |
 | `src/hooks/useChatComposer.ts`                | Composer state (reply, reactions)     |
 | `firebase-backend/functions/src/messaging.ts` | Cloud Functions                       |
 
 ### React Hooks
 
-| Hook                 | Purpose                                              |
-| -------------------- | ---------------------------------------------------- |
-| `useChat`            | **Master hook** - combines all chat functionality    |
-| `useUnifiedMessages` | Message subscription, pagination, outbox integration |
-| `useChatComposer`    | Reply state, reaction state, input focus             |
-| `useChatKeyboard`    | Keyboard-aware animations                            |
-| `useAtBottom`        | Scroll position tracking for "new message" indicator |
+| Hook                   | Purpose                                                |
+| ---------------------- | ------------------------------------------------------ |
+| `useChat`              | **Master hook** - combines all chat functionality      |
+| `useUnifiedChatScreen` | **Screen hook** - composes useChat + keyboard + scroll |
+| `useLocalMessages`     | SQLite message subscription (local-first)              |
+| `useUnifiedMessages`   | Message subscription, pagination, outbox integration   |
+| `useChatComposer`      | Reply state, reaction state, input focus               |
+| `useChatKeyboard`      | Keyboard-aware animations                              |
+| `useAtBottom`          | Scroll position tracking for "new message" indicator   |
+
+### Unified Hooks Stack
+
+> **Updated**: January 2026
+
+Both `ChatScreen` (DM) and `GroupChatScreen` use the same hooks stack for consistency:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     useUnifiedChatScreen                         │
+│  (Composes all hooks for screen-level use)                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+       ┌──────────────────────┼──────────────────────┐
+       ▼                      ▼                      ▼
+┌─────────────┐      ┌─────────────┐      ┌─────────────────────┐
+│  useChat    │      │useChatKeyboard│    │useNewMessageAutoscroll│
+│ (messages,  │      │ (keyboard   │      │ (smart scroll       │
+│  sendMessage│      │  tracking)  │      │  behavior)          │
+│  pagination)│      └─────────────┘      └─────────────────────┘
+└─────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      useLocalMessages                            │
+│  (SQLite subscription, sync engine integration)                  │
+└─────────────────────────────────────────────────────────────────┘
+       │
+       ├───────────────────────────┐
+       ▼                           ▼
+┌─────────────────────┐   ┌─────────────────────────────────────┐
+│  messageRepository  │   │         syncEngine                   │
+│  (SQLite CRUD)      │   │  (Firestore ↔ SQLite bidirectional) │
+└─────────────────────┘   └─────────────────────────────────────┘
+```
+
+**Data Flow:**
+
+1. **Send**: User sends message → SQLite (instant) → UI updates → Background sync to Firestore
+2. **Receive**: Firestore subscription → syncEngine → SQLite → useLocalMessages → UI
 
 ---
 
@@ -74,7 +120,8 @@ services/messaging/
 
 ```typescript
 type MessageScope = "dm" | "group";
-type MessageKind = "text" | "media" | "voice" | "scorecard" | "system";
+type MessageKind = "text" | "media" | "voice" | "file" | "scorecard" | "system";
+type AttachmentKind = "image" | "video" | "audio" | "file";
 
 interface MessageV2 {
   id: string;
@@ -82,13 +129,17 @@ interface MessageV2 {
   conversationId: string; // Chat ID or Group ID
   senderId: string;
   senderName?: string;
+  senderAvatarConfig?: AvatarConfig; // For group messages
 
-  // Content (one of these based on kind)
+  // Content (based on kind)
   text?: string;
-  attachments?: AttachmentV2[];
-  voiceMetadata?: VoiceMetadata;
-  scorecardData?: ScorecardData;
-  systemEvent?: SystemEvent;
+  attachments?: AttachmentV2[]; // For media/voice/file
+  scorecard?: {
+    // For scorecard messages
+    gameId: string;
+    score: number;
+    metadata?: Record<string, unknown>;
+  };
 
   kind: MessageKind;
 
@@ -99,14 +150,24 @@ interface MessageV2 {
 
   // Interactions
   replyTo?: ReplyToMetadata;
-  reactions?: Record<string, string[]>; // emoji → uids
+  reactionsSummary?: Record<string, number>; // Denormalized: { "🔥": 2 }
   mentionUids?: string[];
-  linkPreview?: LinkPreviewData;
+  linkPreview?: LinkPreviewV2;
 
   // Deletion
   hiddenFor?: string[]; // Delete-for-me UIDs
   deletedForAll?: { by: string; at: number };
   editedAt?: number;
+}
+
+// Local attachment for sending (before upload)
+interface LocalAttachment {
+  id: string;
+  kind: AttachmentKind;
+  uri: string; // Local file URI
+  mime: string;
+  caption?: string;
+  durationMs?: number; // For audio/video
 }
 ```
 
@@ -233,19 +294,70 @@ function ChatScreen({ friendUid }) {
 
 ### Usage in GroupChatScreen
 
+> **Updated**: January 2026 - GroupChatScreen now uses fully unified architecture
+
 ```tsx
 function GroupChatScreen({ groupId }) {
   const { uid } = useAuth();
 
-  const unifiedChat = useChat({
+  // useUnifiedChatScreen composes useChat + useLocalMessages for full feature set
+  const screen = useUnifiedChatScreen({
     scope: "group",
     conversationId: groupId,
-    currentUserId: uid || "",
   });
 
-  // Same API as DM chat
+  // Messages come from SQLite (local-first)
+  const messages = screen.messages;
+
+  // Send text, attachments, or voice through unified path
+  const handleSend = async () => {
+    await screen.chat.sendMessage(screen.composer.text, {
+      replyTo: screen.replyTo || undefined,
+      attachments: attachmentPicker.attachments,
+    });
+  };
+
+  // Voice messages also use unified path
+  const handleVoiceRecordingComplete = async (recording) => {
+    await screen.chat.sendMessage("", {
+      kind: "voice",
+      attachments: [
+        {
+          id: `voice_${Date.now()}_${uid}`,
+          uri: recording.uri,
+          kind: "audio",
+          mime: "audio/m4a",
+          durationMs: recording.durationMs,
+        },
+      ],
+    });
+  };
+
+  return (
+    <ChatMessageList
+      data={messages}
+      renderItem={renderMessage}
+      flatListProps={{
+        onEndReached: screen.chat.loadOlder, // Pagination through unified hook
+      }}
+    />
+  );
 }
 ```
+
+### GroupChatScreen Architecture (Unified)
+
+GroupChatScreen now follows the same SQLite-first architecture as ChatScreen:
+
+| Aspect           | Old (Legacy)                                    | New (Unified)                                             |
+| ---------------- | ----------------------------------------------- | --------------------------------------------------------- |
+| Message source   | `subscribeToGroupMessages()` (Firestore direct) | `screen.messages` (SQLite via useUnifiedChatScreen)       |
+| Send text        | `sendGroupMessage()`                            | `screen.chat.sendMessage()`                               |
+| Send attachments | `sendGroupMessage()` (bypass)                   | `screen.chat.sendMessage({ attachments })`                |
+| Send voice       | `uploadVoiceMessage()`                          | `screen.chat.sendMessage({ kind: "voice", attachments })` |
+| Pagination       | Local state + `getGroupMessages()`              | `screen.chat.pagination` + `screen.chat.loadOlder()`      |
+| Message type     | `GroupMessage`                                  | `MessageV2`                                               |
+| Swipe-to-reply   | `SwipeableGroupMessage`                         | `SwipeableMessage`                                        |
 
 ---
 
@@ -353,6 +465,228 @@ reactions?: {
 
 ---
 
+## Chat Privacy Features
+
+> **Implemented**: January-February 2026
+
+The chat system includes four privacy features that users can toggle in Inbox Settings. All follow a **reciprocal privacy model**: if you disable a feature, you neither send nor receive that information.
+
+### Privacy Settings Summary
+
+| Setting           | Storage                      | Reciprocal | Implementation Status |
+| ----------------- | ---------------------------- | ---------- | --------------------- |
+| Read Receipts     | `Users/{uid}/settings/inbox` | ✅ Yes     | ✅ Complete           |
+| Typing Indicators | `Users/{uid}/settings/inbox` | ✅ Yes     | ✅ Complete           |
+| Online Status     | `Users/{uid}/settings/inbox` | ✅ Yes     | ✅ Complete           |
+| Last Seen         | `Users/{uid}/settings/inbox` | ✅ Yes     | ✅ Complete           |
+
+### Key Files
+
+| File                                      | Purpose                                  |
+| ----------------------------------------- | ---------------------------------------- |
+| `src/services/inboxSettings.ts`           | Settings CRUD and real-time subscription |
+| `src/services/chatMembers.ts`             | Read/typing watermarks and subscriptions |
+| `src/services/presence.ts`                | Firebase RTDB presence tracking          |
+| `src/hooks/useReadReceipts.ts`            | Read receipt hook for DMs                |
+| `src/hooks/useTypingStatus.ts`            | Typing indicator hook                    |
+| `src/hooks/usePresence.ts`                | Online status and last seen hook         |
+| `src/components/chat/TypingIndicator.tsx` | Animated typing dots component           |
+| `src/components/ui/PresenceIndicator.tsx` | Green/gray online dot component          |
+
+---
+
+### Read Receipts
+
+Read receipts show when messages have been read by the recipient (blue ✓✓).
+
+#### Privacy Model (Reciprocal)
+
+- If you **disable** `showReadReceipts`: You won't send OR see read receipts
+- This matches WhatsApp/iMessage behavior
+
+#### Data Flow
+
+```
+User A reads message → useUnifiedMessages (autoMarkRead)
+                     → updateReadWatermark()
+                     → Firestore: Chats/{chatId}/Members/{uid}.lastReadAtPublic
+                     → User B subscribes via useReadReceipts
+                     → DMMessageItem renders blue ✓✓
+```
+
+#### Message Status Indicators
+
+| Status      | Icon | Color          | Description                    |
+| ----------- | ---- | -------------- | ------------------------------ |
+| `sending`   | ○    | Gray           | Message being sent             |
+| `sent`      | ✓    | Gray           | Delivered to server            |
+| `delivered` | ✓✓   | Gray           | Received by recipient's device |
+| `read`      | ✓✓   | Blue (#3B82F6) | Read by recipient              |
+| `failed`    | ⚠️   | Red            | Failed to send                 |
+
+#### Key Functions
+
+```typescript
+// Subscribe to other user's read watermark
+subscribeToReadReceipt(chatId, otherUid, callback): () => void
+
+// Update read watermark (respects privacy setting)
+updateReadWatermark(chatId, uid, timestamp, { sendPublicReceipt }): Promise<void>
+
+// Hook for managing read receipt display
+useReadReceipts({ chatId, currentUid, otherUid }): {
+  otherUserReadWatermark,
+  shouldShowReadReceipts,
+  isMessageRead(serverReceivedAt),
+  getMessageStatus(serverReceivedAt, currentStatus)
+}
+```
+
+---
+
+### Typing Indicators
+
+Shows "X is typing..." with animated dots when the other user is composing a message.
+
+#### Privacy Model (Reciprocal)
+
+- If you **disable** `showTypingIndicators`: You won't send OR see typing status
+- Typing status auto-clears after 5 seconds of no input
+
+#### Data Flow
+
+```
+User types in composer → useTypingStatus.setTyping(true)
+                       → updateTypingIndicator() [throttled 2s]
+                       → Firestore: Chats/{chatId}/Members/{uid}.typingAt
+                       → Other user subscribes
+                       → TypingIndicator component renders
+```
+
+#### Key Functions
+
+```typescript
+// Hook for typing status
+useTypingStatus({ scope, conversationId, currentUid, otherUid }): {
+  isOtherUserTyping,
+  typingIndicatorsEnabled,
+  setTyping(isTyping)
+}
+
+// Service functions
+updateTypingIndicator(chatId, uid): Promise<void>  // Throttled
+clearTypingIndicator(chatId, uid): Promise<void>
+subscribeToTypingStatus(chatId, otherUid, callback): () => void
+```
+
+#### UI Component
+
+```tsx
+<TypingIndicator
+  username={friendProfile.username}
+  visible={typing.isOtherUserTyping && typing.typingIndicatorsEnabled}
+/>
+```
+
+---
+
+### Online Status & Last Seen
+
+Shows a green dot when users are online, and "Last seen X ago" when offline.
+
+#### Privacy Model (Reciprocal)
+
+- If you **disable** `showOnlineStatus`: You won't broadcast OR see online status
+- If you **disable** `showLastSeen`: You won't broadcast OR see last seen timestamps
+- These are independent settings
+
+#### Architecture (Firebase RTDB)
+
+Uses Firebase Realtime Database for real-time presence (lower latency than Firestore):
+
+```
+/presence/{uid}
+├── online: boolean
+├── lastSeen: timestamp
+└── showOnlineStatus: boolean (cached from settings)
+```
+
+#### Data Flow
+
+```
+User opens app → presence.ts connects to RTDB
+              → Sets online: true
+              → Schedules onDisconnect() to set online: false, lastSeen: timestamp
+
+Other user → usePresence() subscribes to /presence/{uid}
+           → Loads privacy settings for both users
+           → Returns shouldShowOnlineIndicator, shouldShowLastSeen
+```
+
+#### Key Functions
+
+```typescript
+// Presence service
+initializePresence(uid): Promise<void>
+disconnectPresence(uid): Promise<void>
+subscribeToPresence(uid, callback): () => void
+
+// Hook
+usePresence({ userId, currentUserId }): {
+  isOnline,
+  lastSeen,
+  lastSeenFormatted,       // "5 minutes ago"
+  shouldShowOnlineIndicator,
+  shouldShowLastSeen
+}
+```
+
+#### UI Integration (Chat Header)
+
+```tsx
+// Header title with presence
+<View style={{ alignItems: "center" }}>
+  <View style={{ flexDirection: "row", alignItems: "center" }}>
+    {presence.shouldShowOnlineIndicator && (
+      <PresenceIndicator
+        online={presence.isOnline}
+        size={8}
+        position="inline"
+      />
+    )}
+    <Text>{friendProfile.username}</Text>
+  </View>
+  {/* Subtitle: "typing...", "Online", or "Last seen X ago" */}
+  {subtitle && <Text style={{ fontSize: 12 }}>{subtitle}</Text>}
+</View>
+```
+
+---
+
+### Settings Storage Schema
+
+```typescript
+// Firestore: Users/{uid}/settings/inbox
+interface InboxSettings {
+  // Privacy
+  showReadReceipts: boolean; // Default: true
+  showTypingIndicators: boolean; // Default: true
+  showOnlineStatus: boolean; // Default: true
+  showLastSeen: boolean; // Default: true
+
+  // Notifications
+  defaultNotifyLevel: "all" | "mentions" | "none";
+  muteAllNotifications: boolean;
+
+  // UI Preferences
+  swipeActionsEnabled: boolean;
+  confirmBeforeDelete: boolean;
+  maxPinnedConversations: number;
+}
+```
+
+---
+
 ## Reply/Threading
 
 ### Data Model
@@ -417,12 +751,50 @@ The reply system uses an **Apple Messages-inspired design**:
 
 ### Key Files
 
-| File                                            | Purpose                                         |
-| ----------------------------------------------- | ----------------------------------------------- |
-| `src/components/chat/ReplyBubble.tsx`           | Apple-style reply preview with curved connector |
-| `src/components/chat/ReplyPreviewBar.tsx`       | Input area preview when composing reply         |
-| `src/components/chat/SwipeableMessage.tsx`      | Swipe gesture for DM reply                      |
-| `src/components/chat/SwipeableGroupMessage.tsx` | Swipe gesture for group reply                   |
+| File                                              | Purpose                                              |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| `src/components/chat/ReplyBubble.tsx`             | Polished reply preview with accent bar and connector |
+| `src/components/chat/ReplyPreviewBar.tsx`         | Input area preview when composing reply              |
+| `src/components/chat/SwipeableMessage.tsx`        | Swipe gesture for **both DM and Group** replies      |
+| `src/components/chat/SwipeableMessageWrapper.tsx` | Generic swipe wrapper (MessageV2-based)              |
+| `src/components/chat/ScrollReturnButton.tsx`      | Jump-back button after navigating to replied message |
+| `src/components/chat/MessageHighlightOverlay.tsx` | Animated highlight when scrolling to a message       |
+| `src/hooks/useHighlightedMessage.ts`              | Hook for managing message highlight state            |
+
+> **Note**: `SwipeableGroupMessage.tsx` is deprecated. GroupChatScreen now uses `SwipeableMessage` which accepts `MessageV2`.
+
+### Reply Navigation Features
+
+> **Implemented**: 2025
+
+When tapping on a reply bubble:
+
+1. **Scroll to Original**: Automatically scrolls to the replied-to message
+2. **Highlight Animation**: Target message gets a blue pulse animation (2 seconds)
+3. **Jump-Back Button**: A floating "Back to reply" button appears for 5 seconds
+4. **Return Navigation**: Tapping the button scrolls back to where you were
+
+**Implementation Flow:**
+
+```
+User taps reply bubble
+        ↓
+scrollToMessage(messageId)
+        ↓
+Store current scroll position → Show return button
+        ↓
+Scroll to target message
+        ↓
+Highlight animation (200ms fade in → 1.5s hold → 400ms fade out)
+        ↓
+User can tap "Back to reply" to return
+```
+
+**Key Properties:**
+
+- `highlightedMessageId` — Currently highlighted message ID
+- `showReturnButton` — Whether the jump-back button is visible
+- `returnIndexRef` — Stored position for return navigation
 
 ---
 
@@ -477,29 +849,29 @@ The chat uses an **inverted FlatList** where index 0 is the newest message (visu
 // Time threshold for grouping (2 minutes)
 const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000;
 
-// Check if two messages should be grouped
-const areMessagesGrouped = (msg1, msg2) => {
+// Check if two messages should be grouped (uses MessageV2)
+const areMessagesGrouped = (msg1: MessageV2 | null, msg2: MessageV2 | null) => {
   if (!msg1 || !msg2) return false;
-  if (msg1.type === "system" || msg2.type === "system") return false;
+  if (msg1.kind === "system" || msg2.kind === "system") return false;
   if (msg1.replyTo || msg2.replyTo) return false; // Replies break groups
-  if (msg1.sender !== msg2.sender) return false;
+  if (msg1.senderId !== msg2.senderId) return false;
   return Math.abs(msg1.createdAt - msg2.createdAt) < MESSAGE_GROUP_THRESHOLD_MS;
 };
 
 // Show sender name at visual TOP of group
-const shouldShowSender = (index, message) => {
+const shouldShowSender = (index: number, message: MessageV2) => {
   const messageAbove = messages[index + 1]; // Higher index = older = above
   return !areMessagesGrouped(message, messageAbove);
 };
 
 // Show avatar/timestamp at visual BOTTOM of group
-const shouldShowAvatar = (index, message) => {
+const shouldShowAvatar = (index: number, message: MessageV2) => {
   const messageBelow = messages[index - 1]; // Lower index = newer = below
   return !areMessagesGrouped(message, messageBelow);
 };
 
 // Use reduced margin when connected to message below
-const isGroupedMessage = (index, message) => {
+const isGroupedMessage = (index: number, message: MessageV2) => {
   const messageBelow = messages[index - 1];
   return areMessagesGrouped(message, messageBelow);
 };

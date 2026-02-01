@@ -53,6 +53,7 @@ export function messageV2ToWithProfile(
     type,
     createdAt: createdAtDate as Date,
     status,
+    serverReceivedAt: msg.serverReceivedAt,
     replyTo: msg.replyTo,
   };
 }

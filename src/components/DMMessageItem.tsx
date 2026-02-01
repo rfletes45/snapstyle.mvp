@@ -3,13 +3,24 @@
  *
  * Renders a single message in the DM chat screen.
  * Extracted from ChatScreen to reduce complexity and enable reuse.
+ *
+ * Enhanced with:
+ * - Highlight animation when navigating to a replied message
+ * - Polished visual design
  */
 
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import ScorecardBubble from "@/components/ScorecardBubble";
@@ -31,7 +42,9 @@ export interface MessageWithProfile {
   content: string;
   type: "text" | "image" | "scorecard";
   createdAt: Date;
-  status?: "sending" | "sent" | "delivered" | "failed";
+  status?: "sending" | "sent" | "delivered" | "read" | "failed";
+  /** Server received timestamp for read receipt calculation */
+  serverReceivedAt?: number;
   replyTo?: ReplyToMetadata;
 }
 
@@ -56,6 +69,8 @@ interface DMMessageItemProps {
   onScrollToMessage: (messageId: string) => void;
   /** Callback to retry sending a failed message */
   onRetry: (message: MessageWithProfile) => Promise<void>;
+  /** Whether this message should be highlighted (reply navigation) */
+  isHighlighted?: boolean;
 }
 
 export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
@@ -68,10 +83,38 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     onLongPress,
     onScrollToMessage,
     onRetry,
+    isHighlighted = false,
   }) => {
     const theme = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const isSentByMe = message.sender === currentUid;
+
+    // Highlight animation
+    const highlightOpacity = useSharedValue(0);
+
+    useEffect(() => {
+      if (isHighlighted) {
+        // Animate: fade in → hold → fade out
+        highlightOpacity.value = withSequence(
+          withTiming(1, { duration: 200 }),
+          withDelay(1500, withTiming(0, { duration: 400 })),
+        );
+      } else {
+        highlightOpacity.value = 0;
+      }
+    }, [isHighlighted, highlightOpacity]);
+
+    const highlightStyle = useAnimatedStyle(() => ({
+      position: "absolute" as const,
+      top: -4,
+      left: -8,
+      right: -8,
+      bottom: -4,
+      backgroundColor: theme.colors.primary,
+      opacity: highlightOpacity.value * 0.15,
+      borderRadius: 12,
+      zIndex: -1,
+    }));
 
     // Handle message tap
     const handlePress = useCallback(() => {
@@ -125,6 +168,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           return (
             <View style={styles.statusContainer}>
               <Text style={styles.deliveredStatus}>✓✓</Text>
+            </View>
+          );
+        case "read":
+          return (
+            <View style={styles.statusContainer}>
+              <Text style={styles.readStatus}>✓✓</Text>
             </View>
           );
         default:
@@ -202,6 +251,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             message.status === "failed" && styles.failedMessageContainer,
           ]}
         >
+          {/* Highlight overlay for reply navigation */}
+          <Animated.View style={highlightStyle} pointerEvents="none" />
+
           <View style={styles.messageBubbleWrapper}>
             {/* Reply preview - Apple Messages style (above main bubble) */}
             {message.replyTo && (
@@ -358,6 +410,10 @@ const styles = StyleSheet.create({
   },
   deliveredStatus: {
     fontSize: 10,
+  },
+  readStatus: {
+    fontSize: 10,
+    color: "#3B82F6", // Blue color for read receipts
   },
   failedStatus: {
     fontSize: 10,

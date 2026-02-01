@@ -1,24 +1,28 @@
 /**
  * useMessagesV2 Hook
  *
- * @deprecated Use `useChat` or `useUnifiedMessages` instead (ARCH-D06).
+ * @deprecated Use `useLocalMessages` for SQLite-first storage or `useChat` for unified API.
  *
- * This hook will be removed after Phase E cleanup. The new unified hooks provide:
- * - Unified DM/Group subscription via services/messaging/subscribe.ts
- * - Better hook composition via useChat
- * - Consistent outbox integration
+ * This hook will be removed after full migration to SQLite-first storage.
+ * The new hooks provide:
+ * - SQLite-first local storage via useLocalMessages
+ * - Background Firestore sync via syncEngine
+ * - Instant offline support
+ * - Better performance (no Firestore reads on app start)
  *
  * Migration:
  * ```typescript
  * // Before:
  * const { messages, loading, loadOlder } = useMessagesV2(options);
  *
- * // After (simple):
- * const { messages, loading, loadOlder } = useUnifiedMessages(options);
+ * // After (SQLite-first):
+ * const { messages, isLoading, loadMore } = useLocalMessages({
+ *   conversationId,
+ *   scope: "dm" | "group",
+ * });
  *
- * // After (full featured):
+ * // After (unified):
  * const chat = useChat(options);
- * // Access: chat.messages, chat.loading, chat.loadOlder, etc.
  * ```
  *
  * React hook for subscribing to V2 messages with:

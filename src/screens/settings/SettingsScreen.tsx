@@ -433,6 +433,14 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           right={(props) => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => navigation.navigate("Debug")}
         />
+
+        <List.Item
+          title="Local Storage Debug"
+          description="SQLite database, sync & cache testing"
+          left={(props) => <List.Icon {...props} icon="database" />}
+          right={(props) => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => navigation.navigate("LocalStorageDebug")}
+        />
       </List.Section>
 
       <Divider />

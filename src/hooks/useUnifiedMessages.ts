@@ -1,6 +1,10 @@
 /**
  * useUnifiedMessages Hook (ARCH-D01)
  *
+ * @deprecated Use `useLocalMessages` for SQLite-first storage.
+ * This hook will continue to work but uses Firestore-first architecture.
+ * For better offline support and performance, migrate to useLocalMessages.
+ *
  * Unified hook for message subscription that works for both DM and Group
  * conversations. Handles:
  * - Real-time message subscription
@@ -13,19 +17,17 @@
  *
  * @example
  * ```typescript
- * const {
- *   messages,
- *   loading,
- *   error,
- *   pagination,
- *   loadOlder,
- *   refresh,
- *   pendingItems,
- * } = useUnifiedMessages({
+ * // NEW (SQLite-first):
+ * const { messages, isLoading, loadMore } = useLocalMessages({
+ *   conversationId: groupId,
+ *   scope: "group",
+ * });
+ *
+ * // OLD (Firestore-first):
+ * const { messages, loading, loadOlder } = useUnifiedMessages({
  *   scope: "group",
  *   conversationId: groupId,
  *   currentUid: user.uid,
- *   currentUserName: user.displayName,
  * });
  * ```
  */
@@ -36,12 +38,18 @@ import {
   mergeMessagesWithOutbox,
 } from "@/services/chatV2";
 import { updateGroupReadWatermark } from "@/services/groupMembers";
+import { subscribeToInboxSettings } from "@/services/inboxSettings";
 import {
   loadOlderMessages,
   resetPaginationCursor,
   subscribeToMessages,
 } from "@/services/messaging/subscribe";
-import { MessageV2, OutboxItem } from "@/types/messaging";
+import {
+  DEFAULT_INBOX_SETTINGS,
+  InboxSettings,
+  MessageV2,
+  OutboxItem,
+} from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -120,13 +128,10 @@ export function useUnifiedMessages(
     currentUserName,
     initialLimit = 50,
     autoMarkRead = true,
-    // sendReadReceipts - available in options for future use
+    sendReadReceipts: sendReadReceiptsOption,
     onMessagesChange,
     debug = false,
   } = options;
-
-  // Note: sendReadReceipts option available for future use when we add
-  // optional read receipt hiding. Currently watermarks are always updated.
 
   // State
   const [serverMessages, setServerMessages] = useState<MessageV2[]>([]);
@@ -135,6 +140,9 @@ export function useUnifiedMessages(
   const [error, setError] = useState<Error | null>(null);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [inboxSettings, setInboxSettings] = useState<InboxSettings>(
+    DEFAULT_INBOX_SETTINGS,
+  );
 
   // Refs
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -143,6 +151,29 @@ export function useUnifiedMessages(
     ((timestamp: number) => Promise<void>) | undefined
   >(undefined);
   const lastLoadOlderTimeRef = useRef<number>(0);
+
+  // Compute sendReadReceipts: use option if provided, else use user's setting
+  // For DMs, we respect the user's showReadReceipts setting
+  const sendReadReceipts =
+    sendReadReceiptsOption ??
+    (scope === "dm" ? inboxSettings.showReadReceipts : false);
+
+  // Subscribe to user's inbox settings for dynamic read receipt control
+  useEffect(() => {
+    if (!currentUid || scope !== "dm") return;
+
+    const unsubscribe = subscribeToInboxSettings(currentUid, (settings) => {
+      setInboxSettings(settings);
+      if (debug) {
+        log.debug("Inbox settings updated", {
+          operation: "inboxSettings",
+          data: { showReadReceipts: settings.showReadReceipts },
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [currentUid, scope, debug]);
 
   // Merge server messages with outbox items for optimistic UI
   const messages = useMemo(() => {
@@ -242,9 +273,10 @@ export function useUnifiedMessages(
       if (!conversationId || !currentUid) return;
       try {
         if (scope === "dm") {
-          // Note: updateDMReadWatermark updates both public and private watermarks
-          // The shouldSendReceipts option could be added to the service in future
-          await updateDMReadWatermark(conversationId, currentUid, timestamp);
+          // Pass sendReadReceipts option to control public watermark updates
+          await updateDMReadWatermark(conversationId, currentUid, timestamp, {
+            sendPublicReceipt: sendReadReceipts,
+          });
         } else {
           await updateGroupReadWatermark(conversationId, currentUid, timestamp);
         }
@@ -252,7 +284,7 @@ export function useUnifiedMessages(
         log.error("Failed to update watermark", err);
       }
     },
-    [scope, conversationId, currentUid],
+    [scope, conversationId, currentUid, sendReadReceipts],
   );
 
   // Keep ref updated for use in subscription callback

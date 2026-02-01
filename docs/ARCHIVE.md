@@ -21,6 +21,79 @@
 | Inbox       | Inbox screen overhaul (8 phases)     | ✅ Complete (Jan 2026)   |
 | UNI         | Unified messaging architecture       | ✅ Complete (Jan 2026)   |
 | Polish      | Group chat polish & message grouping | ✅ Complete (Jan 2026)   |
+| Storage     | Client-side SQLite storage migration | ✅ Complete (Jan 2026)   |
+
+---
+
+## Client-Side Storage Migration Summary
+
+**Completed**: January 31, 2026
+
+### Overview
+
+Complete migration from server-first (Firebase Firestore) to **local-first architecture** using SQLite for messages and file system for media caching.
+
+### Architecture Change
+
+```
+BEFORE (Server-First):
+  User Action → Cloud Function → Firestore → Real-time Listener → UI
+
+AFTER (Local-First):
+  User Action → SQLite → UI (immediate)
+                     ↓
+              Background Sync → Firestore (eventual)
+```
+
+### Implementation Summary
+
+| Phase   | Component       | Files Created                                                             |
+| ------- | --------------- | ------------------------------------------------------------------------- |
+| Phase 1 | Database Setup  | `src/services/database/index.ts` (schema, singleton)                      |
+| Phase 2 | Message Storage | `src/services/database/messageRepository.ts`, `conversationRepository.ts` |
+| Phase 3 | Media Caching   | `src/services/mediaCache.ts`                                              |
+| Phase 4 | Sync Engine     | `src/services/sync/syncEngine.ts`                                         |
+| Phase 5 | Feature Flags   | `constants/featureFlags.ts` (USE_LOCAL_STORAGE)                           |
+| Phase 6 | Maintenance     | `src/services/database/maintenance.ts`                                    |
+
+### Key Technologies
+
+- **expo-sqlite** (~15.0.3) — SQLite database
+- **expo-file-system** (19.0.21) — Media file caching
+- **expo-crypto** — UUID generation (replaced `uuid` package for RN compatibility)
+
+### Database Schema
+
+```sql
+conversations (id, scope, name, last_message_*, is_archived, is_muted, ...)
+messages (id, conversation_id, sender_id, kind, text, sync_status, ...)
+attachments (id, message_id, kind, local_uri, remote_url, upload_status, ...)
+reactions (id, message_id, user_id, emoji, sync_status)
+sync_cursors (conversation_id, last_synced_at, sync_token)
+```
+
+### Feature Flag
+
+```typescript
+// constants/featureFlags.ts
+export const USE_LOCAL_STORAGE = true; // Set false to rollback
+```
+
+### Debug Screen
+
+Added `LocalStorageDebugScreen` (Settings → Developer → Local Storage Debug) with:
+
+- Database statistics
+- Test message insertion (local-only)
+- Sync controls
+- Media cache management
+- Maintenance actions
+
+### Documentation Updates
+
+- `01_ARCHITECTURE.md` — Added Local Storage Layer section
+- `00_INDEX.md` — Added local storage references
+- `CLIENT_SIDE_STORAGE_MIGRATION_PLAN.md` — Archived (plan completed)
 
 ---
 
@@ -36,6 +109,33 @@ Complete unification of DM and Group chat systems through shared abstractions:
 - **Unified `ChatComposer`** component for input handling
 - **Unified `ChatMessageList`** component for message display
 - **Scope-aware services** (`scope: "dm" | "group"`)
+
+### GroupChatScreen Refactor (January 31, 2026)
+
+**Goal**: Make GroupChatScreen use the same SQLite-first architecture as ChatScreen
+
+**Changes Made**:
+
+| Component        | Before (Legacy)                                 | After (Unified)                                           |
+| ---------------- | ----------------------------------------------- | --------------------------------------------------------- |
+| Message source   | `subscribeToGroupMessages()` (Firestore direct) | `screen.messages` (SQLite via useUnifiedChatScreen)       |
+| Send text        | `sendGroupMessage()`                            | `screen.chat.sendMessage()`                               |
+| Send attachments | `sendGroupMessage()` (bypass)                   | `screen.chat.sendMessage({ attachments })`                |
+| Send voice       | `uploadVoiceMessage()`                          | `screen.chat.sendMessage({ kind: "voice", attachments })` |
+| Pagination       | Local state + `getGroupMessages()`              | `screen.chat.pagination` + `screen.chat.loadOlder()`      |
+| Message type     | `GroupMessage`                                  | `MessageV2`                                               |
+| Swipe-to-reply   | `SwipeableGroupMessage`                         | `SwipeableMessage`                                        |
+
+**Files Modified**:
+
+- `src/screens/groups/GroupChatScreen.tsx` — Removed legacy imports, switched to unified hooks
+- `src/types/messaging.ts` — Added `scorecard` to `MessageV2`, `durationMs` to `LocalAttachment`
+
+**Deprecated** (no longer used by GroupChatScreen):
+
+- `SwipeableGroupMessage.tsx` — Use `SwipeableMessage` instead
+- `subscribeToGroupMessages()` — Use `useUnifiedChatScreen` instead
+- `sendGroupMessage()` for attachments — Use unified `sendMessage({ attachments })`
 
 ### Key Achievements
 

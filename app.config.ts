@@ -22,5 +22,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: "./src/assets/favicon.png",
   },
   scheme: "vibe",
-  plugins: ["expo-audio"],
+  plugins: ["expo-audio", "expo-sqlite"],
 });

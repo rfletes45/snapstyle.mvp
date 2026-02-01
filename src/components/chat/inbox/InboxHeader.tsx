@@ -84,9 +84,11 @@ export function InboxHeader({
         {
           backgroundColor: colors.surface,
           paddingTop: insets.top,
-          height: 56 + insets.top,
+          height: 48 + insets.top,
+          minHeight: 48 + insets.top,
         },
       ]}
+      statusBarHeight={0}
     >
       {/* Left: User Avatar */}
       <TouchableOpacity

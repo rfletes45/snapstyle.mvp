@@ -61,7 +61,6 @@ import {
   generateMessageId,
   getClientId,
   getFailedItems,
-  getOutboxForConversation,
   getPendingItems,
 } from "../outbox";
 
@@ -297,7 +296,8 @@ export async function getPendingForConversation(
   scope: ConversationScope,
   conversationId: string,
 ): Promise<OutboxItem[]> {
-  return getOutboxForConversation(conversationId);
+  const pending = await getPendingItems();
+  return pending.filter((item) => item.conversationId === conversationId);
 }
 
 /**

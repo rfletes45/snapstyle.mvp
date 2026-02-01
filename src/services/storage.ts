@@ -422,8 +422,17 @@ export async function uploadAttachmentV2(
     onProgress?.(id, 0, "uploading");
 
     const storage = getStorage();
+    // Determine file extension based on kind and mime
     const extension =
-      kind === "image" ? "jpg" : kind === "video" ? "mp4" : "bin";
+      kind === "image"
+        ? "jpg"
+        : kind === "video"
+          ? "mp4"
+          : kind === "audio"
+            ? mime?.includes("m4a") || mime?.includes("mp4")
+              ? "m4a"
+              : "aac"
+            : "bin";
     const storagePath = `${basePath}/${id}.${extension}`;
     const storageRef = ref(storage, storagePath);
 

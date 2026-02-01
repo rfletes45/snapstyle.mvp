@@ -37,7 +37,7 @@ function handleError(error: Error, errorInfo: React.ErrorInfo): void {
  * Inner app component that consumes theme context
  */
 function AppContent() {
-  const { theme, isDark } = useAppTheme();
+  const { theme, isDark, colors } = useAppTheme();
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   /**
@@ -66,7 +66,12 @@ function AppContent() {
           <UserProvider>
             <InAppNotificationsProvider>
               <OutboxProcessorProvider />
-              <View style={styles.container}>
+              <View
+                style={[
+                  styles.container,
+                  { backgroundColor: colors.background },
+                ]}
+              >
                 <RootNavigator navigationRef={navigationRef} />
                 <InAppToast onNavigate={handleToastNavigate} />
               </View>
@@ -89,17 +94,32 @@ function OutboxProcessorProvider(): null {
   return null;
 }
 
+/**
+ * Themed root wrapper that applies background color from theme context.
+ * This ensures no white flashing during screen transitions.
+ */
+function ThemedRootWrapper({ children }: { children: React.ReactNode }) {
+  const { colors } = useAppTheme();
+  return (
+    <GestureHandlerRootView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
+      {children}
+    </GestureHandlerRootView>
+  );
+}
+
 export default function App() {
   return (
-    <GestureHandlerRootView style={styles.container}>
-      <KeyboardProvider>
-        <ErrorBoundary onError={handleError}>
-          <ThemeProvider initialMode="system">
+    <KeyboardProvider>
+      <ErrorBoundary onError={handleError}>
+        <ThemeProvider initialMode="system">
+          <ThemedRootWrapper>
             <AppContent />
-          </ThemeProvider>
-        </ErrorBoundary>
-      </KeyboardProvider>
-    </GestureHandlerRootView>
+          </ThemedRootWrapper>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </KeyboardProvider>
   );
 }
 
