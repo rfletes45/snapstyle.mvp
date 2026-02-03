@@ -724,8 +724,8 @@ replyTo?: {
 ### UI Components
 
 - `ReplyPreviewBar.tsx` — Shows above input when composing a reply (with reply icon)
-- `ReplyBubble.tsx` — Apple Messages-style reply preview above the message bubble
-- `SwipeableMessage.tsx` / `SwipeableGroupMessage.tsx` — Swipe-to-reply gesture
+- `ReplyBubbleNew.tsx` — Apple Messages-style reply preview above the message bubble (exported as `ReplyBubble`)
+- `SwipeableMessage.tsx` — Unified swipe-to-reply gesture for both DM and Group
 
 ### Apple Messages-Style Design
 
@@ -753,7 +753,7 @@ The reply system uses an **Apple Messages-inspired design**:
 
 | File                                              | Purpose                                              |
 | ------------------------------------------------- | ---------------------------------------------------- |
-| `src/components/chat/ReplyBubble.tsx`             | Polished reply preview with accent bar and connector |
+| `src/components/chat/ReplyBubbleNew.tsx`          | Polished reply preview with accent bar and connector |
 | `src/components/chat/ReplyPreviewBar.tsx`         | Input area preview when composing reply              |
 | `src/components/chat/SwipeableMessage.tsx`        | Swipe gesture for **both DM and Group** replies      |
 | `src/components/chat/SwipeableMessageWrapper.tsx` | Generic swipe wrapper (MessageV2-based)              |
@@ -761,7 +761,7 @@ The reply system uses an **Apple Messages-inspired design**:
 | `src/components/chat/MessageHighlightOverlay.tsx` | Animated highlight when scrolling to a message       |
 | `src/hooks/useHighlightedMessage.ts`              | Hook for managing message highlight state            |
 
-> **Note**: `SwipeableGroupMessage.tsx` is deprecated. GroupChatScreen now uses `SwipeableMessage` which accepts `MessageV2`.
+> **Note**: `SwipeableGroupMessage.tsx` and the original `ReplyBubble.tsx` have been deleted. `SwipeableMessage` and `ReplyBubbleNew` are the unified components.
 
 ### Reply Navigation Features
 

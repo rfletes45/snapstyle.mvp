@@ -653,7 +653,15 @@ function GameScreen() {
 
 ## Related Documentation
 
+### Core Documentation
+
 - [01_ARCHITECTURE.md](01_ARCHITECTURE.md) — App structure overview
 - [02_FIREBASE.md](02_FIREBASE.md) — Firestore schema details
 - [04_TESTING.md](04_TESTING.md) — General testing guide
 - [05_RUNBOOK.md](05_RUNBOOK.md) — Troubleshooting guide
+
+### Active Planning Documents
+
+- [GAME_SYSTEM_OVERHAUL_PLAN.md](GAME_SYSTEM_OVERHAUL_PLAN.md) — Game history, stats, navigation improvements (Phase 1 Complete, 2-8 Pending)
+- [GAME_PICKER_PLAN.md](GAME_PICKER_PLAN.md) — Game picker modal and queue visualization
+- [PLAY_SCREEN_OVERHAUL_PLAN.md](PLAY_SCREEN_OVERHAUL_PLAN.md) — Play screen UI/UX redesign

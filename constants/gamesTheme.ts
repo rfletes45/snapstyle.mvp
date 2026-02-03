@@ -689,6 +689,261 @@ export function getTurnStatusColors(
   };
 }
 
+// Note: PLAY_SCREEN_TOKENS is defined below and exported at the bottom of the file
+
+// =============================================================================
+// Play Screen Design Tokens (Phase 1)
+// =============================================================================
+
+/**
+ * Design tokens for the Play Screen UI overhaul
+ *
+ * These tokens define the modern, tight, sleek aesthetic
+ * with reduced border-radius and subtle shadows.
+ *
+ * @see docs/PLAY_SCREEN_OVERHAUL_PLAN.md - Phase 1
+ */
+export const PLAY_SCREEN_TOKENS = {
+  // =========================================================================
+  // Spacing
+  // =========================================================================
+  spacing: {
+    /** Height of the custom header */
+    headerHeight: 56,
+    /** Height of the search bar input */
+    searchBarHeight: 44,
+    /** Gap between major sections */
+    sectionGap: 24,
+    /** Gap between cards in a list */
+    cardGap: 10,
+    /** Standard horizontal padding */
+    horizontalPadding: 16,
+    /** Gap between filter chips */
+    chipGap: 8,
+    /** Internal card padding */
+    cardPadding: 12,
+    /** Icon button touch target size */
+    iconButtonSize: 40,
+  },
+
+  // =========================================================================
+  // Border Radius (tighter/modern)
+  // =========================================================================
+  borderRadius: {
+    /** Standard card border radius */
+    card: 6,
+    /** Larger card variants */
+    cardLarge: 8,
+    /** Buttons and small elements */
+    button: 4,
+    /** Chip/pill elements */
+    chip: 16,
+    /** Icon containers */
+    icon: 6,
+    /** Section containers */
+    container: 12,
+    /** Badge elements */
+    badge: 10,
+  },
+
+  // =========================================================================
+  // Shadows (subtle)
+  // =========================================================================
+  shadows: {
+    /** Standard card shadow */
+    card: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    /** Card hover/pressed state */
+    cardHover: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    /** Floating elements (FAB, banners) */
+    floating: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    /** No shadow */
+    none: {
+      shadowColor: "transparent",
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      elevation: 0,
+    },
+  },
+
+  // =========================================================================
+  // Typography
+  // =========================================================================
+  typography: {
+    /** Header title style */
+    headerTitle: {
+      fontSize: 24,
+      fontWeight: "700" as const,
+      lineHeight: 28,
+    },
+    /** Section title style */
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: "700" as const,
+      lineHeight: 22,
+    },
+    /** Section subtitle style */
+    sectionSubtitle: {
+      fontSize: 13,
+      fontWeight: "400" as const,
+      lineHeight: 18,
+    },
+    /** Card title style */
+    cardTitle: {
+      fontSize: 15,
+      fontWeight: "600" as const,
+      lineHeight: 20,
+    },
+    /** Card subtitle style */
+    cardSubtitle: {
+      fontSize: 12,
+      fontWeight: "400" as const,
+      lineHeight: 16,
+    },
+    /** Button text style */
+    buttonText: {
+      fontSize: 12,
+      fontWeight: "700" as const,
+      lineHeight: 16,
+    },
+    /** Search input text */
+    searchInput: {
+      fontSize: 16,
+      fontWeight: "400" as const,
+      lineHeight: 22,
+    },
+    /** Filter chip text */
+    chipText: {
+      fontSize: 13,
+      fontWeight: "500" as const,
+      lineHeight: 18,
+    },
+    /** Badge text */
+    badgeText: {
+      fontSize: 10,
+      fontWeight: "700" as const,
+      lineHeight: 12,
+    },
+  },
+
+  // =========================================================================
+  // Colors (semantic)
+  // =========================================================================
+  colors: {
+    /** Your turn indicator accent */
+    yourTurnAccent: "#FF3B30",
+    /** Waiting/their turn indicator accent */
+    waitingAccent: "#8E8E93",
+    /** New item badge background */
+    newBadge: "#FF3B30",
+    /** Invite badge background */
+    inviteBadge: "#FF9500",
+    /** Success color */
+    success: "#34C759",
+    /** Warning color */
+    warning: "#FF9500",
+    /** Search bar background (light) */
+    searchBgLight: "#F2F2F7",
+    /** Search bar background (dark) */
+    searchBgDark: "#2C2C2E",
+  },
+
+  // =========================================================================
+  // Icon Sizes
+  // =========================================================================
+  iconSizes: {
+    /** Header action icons */
+    headerIcon: 24,
+    /** Search bar icon */
+    searchIcon: 20,
+    /** Card icons */
+    cardIcon: 24,
+    /** Compact card icons */
+    cardIconSmall: 18,
+    /** Featured card icons */
+    cardIconLarge: 32,
+    /** Game emoji in card */
+    gameEmoji: 24,
+    /** Badge icon */
+    badgeIcon: 16,
+  },
+
+  // =========================================================================
+  // Card Dimensions
+  // =========================================================================
+  cardDimensions: {
+    /** Default card height */
+    defaultHeight: 72,
+    /** Compact card height */
+    compactHeight: 56,
+    /** Featured card height */
+    featuredHeight: 140,
+    /** Icon container size (default) */
+    iconSize: 48,
+    /** Icon container size (compact) */
+    iconSizeCompact: 36,
+    /** Icon container size (featured) */
+    iconSizeFeatured: 64,
+    /** Carousel tile width */
+    tileWidth: 100,
+    /** Carousel tile height */
+    tileHeight: 110,
+    /** Compact invite card width */
+    inviteCardWidth: 140,
+    /** Compact invite card height */
+    inviteCardHeight: 100,
+  },
+
+  // =========================================================================
+  // Animation Config
+  // =========================================================================
+  animation: {
+    /** Spring config for press animations */
+    pressSpring: {
+      damping: 15,
+      stiffness: 300,
+    },
+    /** Scale value when pressed */
+    pressScale: 0.98,
+    /** Duration for fade animations */
+    fadeDuration: 200,
+    /** Duration for slide animations */
+    slideDuration: 300,
+  },
+} as const;
+
+/**
+ * Get play screen token value with type safety
+ */
+export function getPlayScreenToken<
+  K extends keyof typeof PLAY_SCREEN_TOKENS,
+  SK extends keyof (typeof PLAY_SCREEN_TOKENS)[K],
+>(category: K, key: SK): (typeof PLAY_SCREEN_TOKENS)[K][SK] {
+  return PLAY_SCREEN_TOKENS[category][key];
+}
+
+// =============================================================================
+// Default Export
+// =============================================================================
+
 export default {
   GAME_CATEGORY_COLORS,
   GAME_PALETTES,
@@ -700,8 +955,10 @@ export default {
   GAME_STATUS_COLORS,
   ACHIEVEMENT_TIER_COLORS,
   LEADERBOARD_COLORS,
+  PLAY_SCREEN_TOKENS,
   getThemedColor,
   getGamePalette,
   getCategoryColor,
   getTurnStatusColors,
+  getPlayScreenToken,
 };

@@ -20,6 +20,7 @@ import {
   Timestamp,
   Unsubscribe,
 } from "firebase/firestore";
+import { checkAndGrantBadgeForAchievement } from "./badges";
 import { getFirestoreInstance } from "./firebase";
 import { StatsGameType } from "./gameStats";
 
@@ -881,6 +882,27 @@ export async function checkAchievement(
       rewards,
     };
   });
+
+  // Check if achievement was newly unlocked and grant associated badge
+  if (result.unlocked) {
+    try {
+      const badge = await checkAndGrantBadgeForAchievement(
+        playerId,
+        achievementId,
+      );
+      if (badge) {
+        console.log(
+          "[gameAchievements] Badge granted for achievement:",
+          achievementId,
+          "->",
+          badge.id,
+        );
+      }
+    } catch (error) {
+      // Log but don't fail the achievement unlock if badge grant fails
+      console.error("[gameAchievements] Failed to grant badge:", error);
+    }
+  }
 
   return result;
 }

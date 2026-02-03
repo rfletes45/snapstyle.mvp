@@ -58,7 +58,14 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Appbar, Card, Chip, SegmentedButtons, Text } from "react-native-paper";
+import {
+  Appbar,
+  Card,
+  Chip,
+  SegmentedButtons,
+  Text,
+  useTheme,
+} from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type Props = NativeStackScreenProps<any, "Leaderboard">;
@@ -140,6 +147,7 @@ const LEADERBOARD_GAMES: LeaderboardGame[] = [
 export default function LeaderboardScreen({ navigation, route }: Props) {
   const { currentFirebaseUser } = useAuth();
   const userId = currentFirebaseUser?.uid;
+  const theme = useTheme();
 
   // Get initial game from route params or default
   const initialGame = (route.params as any)?.gameId || "reaction_tap";
@@ -330,13 +338,27 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
     return (
       <Card
-        style={[styles.entryCard, isCurrentUser && styles.currentUserCard]}
+        style={[
+          styles.entryCard,
+          { backgroundColor: theme.colors.surface },
+          isCurrentUser && {
+            backgroundColor: theme.colors.primaryContainer,
+            borderColor: theme.colors.primary,
+            borderWidth: 2,
+          },
+        ]}
         mode={isCurrentUser ? "elevated" : "outlined"}
       >
         <Card.Content style={styles.entryContent}>
           {/* Rank */}
           <View style={styles.rankContainer}>
-            <Text style={[styles.rankText, rank <= 3 && styles.topRankText]}>
+            <Text
+              style={[
+                styles.rankText,
+                { color: theme.colors.onSurfaceVariant },
+                rank <= 3 && styles.topRankText,
+              ]}
+            >
               {getRankDisplay(rank)}
             </Text>
           </View>
@@ -352,7 +374,11 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
             <Text
               style={[
                 styles.displayName,
-                isCurrentUser && styles.currentUserName,
+                { color: theme.colors.onSurface },
+                isCurrentUser && {
+                  color: theme.colors.primary,
+                  fontWeight: "600",
+                },
               ]}
               numberOfLines={1}
             >
@@ -363,7 +389,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
           {/* Score */}
           <View style={styles.scoreContainer}>
-            <Text style={styles.scoreText}>
+            <Text style={[styles.scoreText, { color: theme.colors.primary }]}>
               {isLegacyGame
                 ? formatScore(gameId as GameType, item.score)
                 : formatSinglePlayerScore(
@@ -391,13 +417,27 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
     return (
       <Card
-        style={[styles.entryCard, isCurrentUser && styles.currentUserCard]}
+        style={[
+          styles.entryCard,
+          { backgroundColor: theme.colors.surface },
+          isCurrentUser && {
+            backgroundColor: theme.colors.primaryContainer,
+            borderColor: theme.colors.primary,
+            borderWidth: 2,
+          },
+        ]}
         mode={isCurrentUser ? "elevated" : "outlined"}
       >
         <Card.Content style={styles.entryContent}>
           {/* Rank */}
           <View style={styles.rankContainer}>
-            <Text style={[styles.rankText, rank <= 3 && styles.topRankText]}>
+            <Text
+              style={[
+                styles.rankText,
+                { color: theme.colors.onSurfaceVariant },
+                rank <= 3 && styles.topRankText,
+              ]}
+            >
               {getRankDisplay(rank)}
             </Text>
           </View>
@@ -413,14 +453,23 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
             <Text
               style={[
                 styles.displayName,
-                isCurrentUser && styles.currentUserName,
+                { color: theme.colors.onSurface },
+                isCurrentUser && {
+                  color: theme.colors.primary,
+                  fontWeight: "600",
+                },
               ]}
               numberOfLines={1}
             >
               {item.displayName}
               {isCurrentUser && " (You)"}
             </Text>
-            <Text style={styles.statsSubtext}>
+            <Text
+              style={[
+                styles.statsSubtext,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               {item.wins}W - {item.losses}L ({item.winRate.toFixed(0)}%)
             </Text>
           </View>
@@ -488,7 +537,9 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
           >
             Previous
           </Chip>
-          <Text style={styles.weekText}>{formatWeekKey(weekKey)}</Text>
+          <Text style={[styles.weekText, { color: theme.colors.onSurface }]}>
+            {formatWeekKey(weekKey)}
+          </Text>
           {!isCurrentWeek && (
             <Chip
               icon="calendar-today"
@@ -519,14 +570,30 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
       {/* User Rank Summary */}
       {userRank && (
-        <Card style={styles.rankSummaryCard} mode="elevated">
+        <Card
+          style={[
+            styles.rankSummaryCard,
+            { backgroundColor: theme.colors.tertiaryContainer },
+          ]}
+          mode="elevated"
+        >
           <Card.Content style={styles.rankSummaryContent}>
             <MaterialCommunityIcons name="trophy" size={24} color="#FFD700" />
-            <Text style={styles.rankSummaryText}>
+            <Text
+              style={[
+                styles.rankSummaryText,
+                { color: theme.colors.onTertiaryContainer },
+              ]}
+            >
               Your Rank: {getRankDisplay(userRank)}
             </Text>
             {isMultiplayerGame && multiplayerData?.userEntry && (
-              <Text style={styles.rankSummarySubtext}>
+              <Text
+                style={[
+                  styles.rankSummarySubtext,
+                  { color: theme.colors.onTertiaryContainer },
+                ]}
+              >
                 Rating: {multiplayerData.userEntry.rating}
               </Text>
             )}
@@ -554,17 +621,24 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 
   if (!userId) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
         <View style={styles.centerContainer}>
-          <Text>Please sign in to view leaderboards</Text>
+          <Text style={{ color: theme.colors.onBackground }}>
+            Please sign in to view leaderboards
+          </Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <Appbar.Header>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      edges={["bottom"]}
+    >
+      <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Leaderboards" />
       </Appbar.Header>
@@ -611,7 +685,6 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
   },
 
   centerContainer: {
@@ -667,11 +740,9 @@ const styles = StyleSheet.create({
   weekText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#333",
   },
 
   rankSummaryCard: {
-    backgroundColor: "#FFF8E1",
     marginBottom: 16,
   },
 
@@ -686,24 +757,15 @@ const styles = StyleSheet.create({
   rankSummaryText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#FF8F00",
   },
 
   rankSummarySubtext: {
     fontSize: 14,
-    color: "#666",
     marginLeft: 8,
   },
 
   entryCard: {
     marginBottom: 8,
-    backgroundColor: "#fff",
-  },
-
-  currentUserCard: {
-    backgroundColor: "#E3F2FD",
-    borderColor: "#2196F3",
-    borderWidth: 2,
   },
 
   entryContent: {
@@ -720,7 +782,6 @@ const styles = StyleSheet.create({
   rankText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#666",
   },
 
   topRankText: {
@@ -734,17 +795,10 @@ const styles = StyleSheet.create({
 
   displayName: {
     fontSize: 16,
-    color: "#333",
-  },
-
-  currentUserName: {
-    fontWeight: "600",
-    color: "#2196F3",
   },
 
   statsSubtext: {
     fontSize: 12,
-    color: "#666",
     marginTop: 2,
   },
 
@@ -755,7 +809,6 @@ const styles = StyleSheet.create({
   scoreText: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#4CAF50",
   },
 
   // Multiplayer rating styles

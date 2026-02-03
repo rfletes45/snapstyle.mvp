@@ -6,6 +6,7 @@
  * - Title ("Inbox" or "Archive")
  * - Archive toggle button
  * - Search button
+ * - Connections button (opens Connections screen)
  * - Settings button
  *
  * @module components/chat/inbox/InboxHeader
@@ -77,6 +78,16 @@ export function InboxHeader({
     onArchiveToggle();
   }, [onArchiveToggle]);
 
+  const handleConnectionsPress = useCallback(() => {
+    haptics.buttonPress();
+    // Navigate to Connections screen at root stack level
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: "Connections",
+      }),
+    );
+  }, [navigation]);
+
   return (
     <Appbar.Header
       style={[
@@ -129,6 +140,13 @@ export function InboxHeader({
         size={24}
         onPress={handleSearchPress}
         accessibilityLabel="Search conversations"
+      />
+      <IconButton
+        icon="account-group-outline"
+        iconColor={colors.textSecondary}
+        size={24}
+        onPress={handleConnectionsPress}
+        accessibilityLabel="Connections"
       />
       <IconButton
         icon="cog"

@@ -165,3 +165,103 @@ export type {
   UseGameCompletionOptions,
   UseGameCompletionReturn,
 } from "./useGameCompletion";
+
+// =============================================================================
+// Badge System Hook (Profile Overhaul Phase 2)
+// =============================================================================
+
+export { useBadges } from "./useBadges";
+
+// =============================================================================
+// Profile Data Hook (Profile Overhaul Phase 3)
+// =============================================================================
+
+export { useProfileData } from "./useProfileData";
+
+// =============================================================================
+// Customization Hook (Profile Overhaul Phase 4)
+// =============================================================================
+
+export { useCustomization } from "./useCustomization";
+export type {
+  UseCustomizationConfig,
+  UseCustomizationReturn,
+} from "./useCustomization";
+
+// =============================================================================
+// Animation Hooks (Profile Overhaul Phase 7)
+// =============================================================================
+
+export {
+  useAnimatedValue,
+  useAnimationQueue,
+  useBadgeEarnAnimation,
+  useLevelUpAnimation,
+  useProfileAnimations,
+} from "./useAnimations";
+export type {
+  AnimationQueueItem,
+  BadgeEarnAnimationState,
+  LevelUpAnimationState,
+  ProfileAnimationsState,
+} from "./useAnimations";
+
+// =============================================================================
+// Shop Hooks (Shop Overhaul Phase 2)
+// =============================================================================
+
+export { usePointsShop } from "./usePointsShop";
+export type { UsePointsShopReturn } from "./usePointsShop";
+
+// Premium Shop Hooks (Shop Overhaul Phase 3)
+// =============================================================================
+
+export { usePremiumShop } from "./usePremiumShop";
+export type { UsePremiumShopReturn } from "./usePremiumShop";
+
+// =============================================================================
+// Phase 4: Additional Shop Features
+// =============================================================================
+
+export { useWishlist } from "./useWishlist";
+export type { UseWishlistReturn } from "./useWishlist";
+
+export {
+  getPerspective,
+  getPreviewImageUrl,
+  getRotationTransform,
+  useItemPreview,
+} from "./useItemPreview";
+export type {
+  ItemPreviewState,
+  ItemVariation,
+  UseItemPreviewReturn,
+} from "./useItemPreview";
+
+// =============================================================================
+// Avatar Customization Hook (Digital Avatar System Phase 6)
+// =============================================================================
+
+export { useAvatarCustomization } from "./useAvatarCustomization";
+export type {
+  UseAvatarCustomizationOptions,
+  UseAvatarCustomizationReturn,
+  ValidationResult,
+} from "./useAvatarCustomization";
+
+// =============================================================================
+// Avatar Rollout Hooks (Digital Avatar System Phase 8)
+// =============================================================================
+
+export {
+  AvatarRolloutProvider,
+  useAvatarRollout,
+  useAvatarRolloutContext,
+  useIsCustomizerEnabled,
+  useIsDigitalAvatarEnabled,
+  useNeedsMigration,
+} from "./useAvatarRollout";
+export type {
+  AvatarRolloutState,
+  UseAvatarRolloutReturn,
+} from "./useAvatarRollout";

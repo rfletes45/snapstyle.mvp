@@ -9,9 +9,11 @@
  * - Pagination support for large history sets
  * - Head-to-head records between players
  * - Statistics calculation
+ * - Unified history including single-player games
  *
- * Note: GameHistory documents are READ-ONLY from the client.
+ * Note: Multiplayer GameHistory documents are READ-ONLY from the client.
  * All writes happen via Cloud Functions for data integrity.
+ * Single-player sessions are read from Users/{uid}/GameSessions.
  *
  * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 1
  */
@@ -36,6 +38,8 @@ import {
   GameTypeStats,
   HeadToHeadRecord,
 } from "../types/gameHistory";
+import { SinglePlayerGameType } from "../types/games";
+import { SinglePlayerGameSession } from "../types/singlePlayerGames";
 import { TurnBasedGameType } from "../types/turnBased";
 import { getFirestoreInstance } from "./firebase";
 
@@ -46,13 +50,173 @@ import { getFirestoreInstance } from "./firebase";
 const GAME_HISTORY_COLLECTION = "GameHistory";
 const DEFAULT_QUERY_LIMIT = 20;
 const MAX_QUERY_LIMIT = 100;
-const STATS_CALCULATION_LIMIT = 500; // Max games to fetch for stats calculation
+const STATS_CALCULATION_LIMIT = 100; // Reduced from 500 for better performance
+const SINGLE_PLAYER_FETCH_LIMIT = 50; // Reasonable limit for single-player sessions
+
+// Single-player game types for type checking
+const SINGLE_PLAYER_GAME_TYPES: SinglePlayerGameType[] = [
+  "flappy_snap",
+  "bounce_blitz",
+  "snap_2048",
+  "snap_snake",
+  "memory_snap",
+  "word_snap",
+  "reaction_tap",
+  "timed_tap",
+];
+
+/**
+ * Check if a game type is a single-player game
+ */
+function isSinglePlayerGame(
+  gameType: string,
+): gameType is SinglePlayerGameType {
+  return SINGLE_PLAYER_GAME_TYPES.includes(gameType as SinglePlayerGameType);
+}
+
+/**
+ * Convert a SinglePlayerGameSession to GameHistoryRecord format
+ * This allows single-player games to be displayed in the unified game history
+ */
+function convertSinglePlayerToHistoryRecord(
+  session: SinglePlayerGameSession,
+  playerName?: string,
+): GameHistoryRecord {
+  // Determine win/loss for single-player games based on game-specific logic
+  const isWin = determineSinglePlayerWin(session);
+
+  return {
+    id: `sp_${session.id}`, // Prefix with sp_ to distinguish from multiplayer
+    gameType: session.gameType as unknown as TurnBasedGameType, // Cast for compatibility
+    matchId: session.id,
+    players: [
+      {
+        userId: session.playerId,
+        displayName: playerName || "You",
+        isWinner: isWin,
+        finalScore: session.finalScore,
+        movesPlayed: 0, // Not applicable for single-player
+      },
+    ],
+    playerIds: [session.playerId],
+    winnerId: isWin ? session.playerId : null,
+    status: "completed",
+    endReason: isWin ? "completion" : "normal",
+    startedAt: session.startedAt,
+    completedAt: session.endedAt,
+    duration: session.duration * 1000, // Convert seconds to ms
+    totalMoves: 0,
+    isRated: false,
+    createdAt: session.endedAt,
+    // Additional single-player specific data
+    isSinglePlayer: true,
+    singlePlayerScore: session.finalScore,
+    isNewHighScore: session.isNewHighScore,
+    singlePlayerStats: session.stats, // Include full game-specific stats
+  } as GameHistoryRecord & {
+    isSinglePlayer: boolean;
+    singlePlayerScore: number;
+    isNewHighScore: boolean;
+    singlePlayerStats: SinglePlayerGameSession["stats"];
+  };
+}
+
+/**
+ * Determine if a single-player game session was a "win"
+ * Different games have different win conditions
+ */
+function determineSinglePlayerWin(session: SinglePlayerGameSession): boolean {
+  const stats = session.stats;
+
+  switch (session.gameType) {
+    case "word_snap":
+      // Word Snap: win if word was guessed
+      return "wordGuessed" in stats && stats.wordGuessed === true;
+
+    case "memory_snap":
+      // Memory Snap: always a "win" if completed (matched all pairs)
+      return "pairsMatched" in stats && stats.pairsMatched > 0;
+
+    case "flappy_snap":
+    case "bounce_blitz":
+    case "snap_2048":
+    case "snap_snake":
+      // Score-based games: win if score > 0 (completed at least something)
+      return session.finalScore > 0;
+
+    case "reaction_tap":
+    case "timed_tap":
+      // Tap games: always record as completed, show score
+      return session.finalScore > 0;
+
+    default:
+      return session.finalScore > 0;
+  }
+}
 
 /**
  * Get Firestore instance (lazy load)
  */
 function getDb() {
   return getFirestoreInstance();
+}
+
+// =============================================================================
+// Single-Player Session Fetching
+// =============================================================================
+
+/**
+ * Get single-player game sessions for a user
+ * Returns sessions converted to GameHistoryRecord format
+ *
+ * Note: We fetch ALL sessions and filter client-side for gameType to avoid
+ * needing a composite Firestore index (gameType + endedAt). This is acceptable
+ * because GameSessions is a user-scoped subcollection with limited records.
+ */
+async function getSinglePlayerSessions(
+  userId: string,
+  gameType?: string,
+  limitCount: number = DEFAULT_QUERY_LIMIT,
+): Promise<GameHistoryRecord[]> {
+  try {
+    // Fetch all sessions ordered by endedAt, then filter client-side
+    // This avoids the composite index requirement for gameType + endedAt
+    const q = query(
+      collection(getDb(), "Users", userId, "GameSessions"),
+      orderBy("endedAt", "desc"),
+      limit(limitCount * 3), // Fetch more to account for filtering
+    );
+
+    const snapshot = await getDocs(q);
+    const records: GameHistoryRecord[] = [];
+    const seenIds = new Set<string>();
+
+    snapshot.forEach((docSnapshot) => {
+      const session = docSnapshot.data() as SinglePlayerGameSession;
+
+      // Apply gameType filter client-side
+      if (gameType && session.gameType !== gameType) {
+        return;
+      }
+
+      // Use document ID as the unique identifier to prevent duplicates
+      const uniqueId = `sp_${docSnapshot.id}`;
+
+      if (!seenIds.has(uniqueId)) {
+        seenIds.add(uniqueId);
+        const record = convertSinglePlayerToHistoryRecord(session);
+        // Override the ID with the document ID for true uniqueness
+        record.id = uniqueId;
+        records.push(record);
+      }
+    });
+
+    // Return only up to limitCount records after filtering
+    return records.slice(0, limitCount);
+  } catch (error) {
+    console.error("[gameHistory] getSinglePlayerSessions failed:", error);
+    return [];
+  }
 }
 
 // =============================================================================
@@ -90,86 +254,166 @@ export async function getGameHistory(
     outcome,
     limit: queryLimit = DEFAULT_QUERY_LIMIT,
     startAfter: startAfterId,
+    scope,
   } = params;
 
   // Validate and cap limit
   const effectiveLimit = Math.min(queryLimit, MAX_QUERY_LIMIT);
 
-  // Build query constraints
-  const constraints: QueryConstraint[] = [
-    where("playerIds", "array-contains", userId),
-    orderBy("completedAt", "desc"),
-    limit(effectiveLimit + 1), // +1 to check if there are more
-  ];
+  // Check if we're querying a single-player game type specifically
+  const isSinglePlayerQuery = gameType && isSinglePlayerGame(gameType);
 
-  // Add optional Firestore-compatible filters
-  // Note: Some filters must be done client-side due to Firestore limitations
-  if (gameType) {
-    constraints.push(where("gameType", "==", gameType));
-  }
+  // Determine what to include based on scope
+  const includeMultiplayer = scope !== "singleplayer" && !isSinglePlayerQuery;
+  const includeSinglePlayer =
+    (scope !== "multiplayer" || isSinglePlayerQuery) &&
+    !opponentId &&
+    !conversationId;
 
-  if (conversationId) {
-    constraints.push(where("conversationId", "==", conversationId));
-  }
+  let multiplayerRecords: GameHistoryRecord[] = [];
+  let singlePlayerRecords: GameHistoryRecord[] = [];
 
-  if (dateFrom) {
-    constraints.push(where("completedAt", ">=", dateFrom));
-  }
+  // Parse pagination info from startAfterId
+  // Format: "mp_<id>_<timestamp>" for multiplayer or "sp_<id>_<timestamp>" for single-player
+  let lastMultiplayerTimestamp: number | undefined;
+  let lastSinglePlayerTimestamp: number | undefined;
+  let lastMultiplayerId: string | undefined;
 
-  if (dateTo) {
-    constraints.push(where("completedAt", "<=", dateTo));
-  }
-
-  // Build query
-  let q = query(collection(getDb(), GAME_HISTORY_COLLECTION), ...constraints);
-
-  // Handle pagination
   if (startAfterId) {
-    const startAfterDoc = await getDoc(
-      doc(getDb(), GAME_HISTORY_COLLECTION, startAfterId),
-    );
-    if (startAfterDoc.exists()) {
-      q = query(q, startAfter(startAfterDoc));
+    // Extract timestamp from the last record to use for pagination
+    // We'll parse the timestamp from a special format or use the ID
+    if (startAfterId.startsWith("sp_")) {
+      // For single-player, we need to track the timestamp separately
+      // The timestamp will be passed via a query parameter in future, for now we skip duplicates client-side
+    } else {
+      lastMultiplayerId = startAfterId;
     }
   }
 
-  // Execute query
-  const snapshot = await getDocs(q);
-  const records: GameHistoryRecord[] = [];
+  // Fetch multiplayer history (if not a single-player specific query and not scope=singleplayer)
+  if (includeMultiplayer) {
+    try {
+      // Build query constraints
+      const constraints: QueryConstraint[] = [
+        where("playerIds", "array-contains", userId),
+        orderBy("completedAt", "desc"),
+        limit(effectiveLimit + 1), // +1 to check if there are more
+      ];
 
-  snapshot.forEach((docSnapshot) => {
-    const data = docSnapshot.data() as Omit<GameHistoryRecord, "id">;
-    const record: GameHistoryRecord = { ...data, id: docSnapshot.id };
+      // Add optional Firestore-compatible filters
+      if (gameType) {
+        constraints.push(where("gameType", "==", gameType));
+      }
 
-    // Client-side filter for opponent (can't do compound array-contains queries)
-    if (opponentId) {
-      const hasOpponent = record.playerIds.includes(opponentId);
-      if (!hasOpponent) return;
+      if (conversationId) {
+        constraints.push(where("conversationId", "==", conversationId));
+      }
+
+      if (dateFrom) {
+        constraints.push(where("completedAt", ">=", dateFrom));
+      }
+
+      if (dateTo) {
+        constraints.push(where("completedAt", "<=", dateTo));
+      }
+
+      // Build query
+      let q = query(
+        collection(getDb(), GAME_HISTORY_COLLECTION),
+        ...constraints,
+      );
+
+      // Handle pagination for multiplayer records
+      if (lastMultiplayerId) {
+        const startAfterDoc = await getDoc(
+          doc(getDb(), GAME_HISTORY_COLLECTION, lastMultiplayerId),
+        );
+        if (startAfterDoc.exists()) {
+          q = query(q, startAfter(startAfterDoc));
+        }
+      }
+
+      // Execute query
+      const snapshot = await getDocs(q);
+
+      snapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data() as Omit<GameHistoryRecord, "id">;
+        const record: GameHistoryRecord = { ...data, id: docSnapshot.id };
+
+        // Client-side filter for opponent
+        if (opponentId) {
+          const hasOpponent = record.playerIds.includes(opponentId);
+          if (!hasOpponent) return;
+        }
+
+        // Client-side filter for outcome
+        if (outcome) {
+          const userIsWinner = record.winnerId === userId;
+          const isDraw = !record.winnerId;
+
+          if (outcome === "win" && !userIsWinner) return;
+          if (outcome === "loss" && (userIsWinner || isDraw)) return;
+          if (outcome === "draw" && !isDraw) return;
+        }
+
+        multiplayerRecords.push(record);
+      });
+    } catch (error) {
+      console.error("[gameHistory] Multiplayer query failed:", error);
     }
+  }
 
-    // Client-side filter for outcome
-    if (outcome) {
-      const userIsWinner = record.winnerId === userId;
-      const isDraw = !record.winnerId;
+  // Fetch single-player sessions (only on initial load, not pagination)
+  // This is a simplified approach - we load all single-player in one go since they're user-scoped
+  if (includeSinglePlayer && !startAfterId) {
+    try {
+      singlePlayerRecords = await getSinglePlayerSessions(
+        userId,
+        isSinglePlayerQuery ? gameType : undefined,
+        effectiveLimit * 2, // Only fetch what we need, not STATS_CALCULATION_LIMIT
+      );
 
-      if (outcome === "win" && !userIsWinner) return;
-      if (outcome === "loss" && (userIsWinner || isDraw)) return;
-      if (outcome === "draw" && !isDraw) return;
+      // Apply outcome filter to single-player records
+      if (outcome) {
+        singlePlayerRecords = singlePlayerRecords.filter((record) => {
+          const isWin = record.winnerId === userId;
+          if (outcome === "win" && !isWin) return false;
+          if (outcome === "loss" && isWin) return false;
+          if (outcome === "draw") return false; // Single-player games don't have draws
+          return true;
+        });
+      }
+    } catch (error) {
+      console.error("[gameHistory] Single-player query failed:", error);
     }
+  }
 
-    records.push(record);
+  // Merge and sort all records by completedAt (most recent first)
+  let allRecords = [...multiplayerRecords, ...singlePlayerRecords];
+
+  // Remove duplicates based on ID
+  const seenIds = new Set<string>();
+  allRecords = allRecords.filter((record) => {
+    if (seenIds.has(record.id)) {
+      return false;
+    }
+    seenIds.add(record.id);
+    return true;
   });
 
-  // Check if there are more results
-  const hasMore = records.length > effectiveLimit;
+  allRecords.sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+
+  // Apply limit
+  const hasMore = allRecords.length > effectiveLimit;
   if (hasMore) {
-    records.pop(); // Remove the extra one
+    allRecords = allRecords.slice(0, effectiveLimit);
   }
 
   return {
-    records,
+    records: allRecords,
     hasMore,
-    lastId: records.length > 0 ? records[records.length - 1].id : undefined,
+    lastId:
+      allRecords.length > 0 ? allRecords[allRecords.length - 1].id : undefined,
   };
 }
 
@@ -351,26 +595,17 @@ export async function getHeadToHeadRecord(
 // =============================================================================
 
 /**
- * Calculate comprehensive stats for a user from their game history
+ * Calculate stats from an array of already-fetched records
+ * This avoids a redundant database query when records are already loaded
  *
- * Note: For production with many games, consider using pre-aggregated
- * stats stored in a separate collection and updated by Cloud Functions.
- *
- * @param userId - The user to calculate stats for
- * @param gameType - Optional filter by game type
- * @returns Aggregated statistics for the user
+ * @param records - Array of game history records
+ * @param userId - User ID to determine win/loss
+ * @returns Aggregated statistics
  */
-export async function calculateUserStats(
+export function calculateStatsFromRecords(
+  records: GameHistoryRecord[],
   userId: string,
-  gameType?: TurnBasedGameType,
-): Promise<GameHistoryStats> {
-  // Fetch history for stats calculation
-  const result = await getGameHistory({
-    userId,
-    gameType,
-    limit: STATS_CALCULATION_LIMIT,
-  });
-
+): GameHistoryStats {
   const stats: GameHistoryStats = {
     totalGames: 0,
     wins: 0,
@@ -388,17 +623,16 @@ export async function calculateUserStats(
   let totalDuration = 0;
   let currentStreakType: "win" | "loss" | "none" = "none";
   let currentStreakCount = 0;
-  let streakLocked = false; // Once a streak is broken, stop counting
+  let streakLocked = false;
   let longestWinStreak = 0;
   let tempWinStreak = 0;
 
-  for (const record of result.records) {
+  for (const record of records) {
     stats.totalGames++;
     totalDuration += record.duration || 0;
 
     const gt = record.gameType;
 
-    // Initialize per-game-type stats
     if (!stats.byGameType[gt]) {
       stats.byGameType[gt] = {
         played: 0,
@@ -411,27 +645,19 @@ export async function calculateUserStats(
     const gtStats = stats.byGameType[gt] as GameTypeStats;
     gtStats.played++;
 
-    // Determine outcome
     const isWin = record.winnerId === userId;
     const isDraw = !record.winnerId;
 
     if (isDraw) {
-      // Draw
       stats.draws++;
       gtStats.draws++;
       tempWinStreak = 0;
-
-      if (!streakLocked) {
-        // Draws break the current streak
-        streakLocked = true;
-      }
+      if (!streakLocked) streakLocked = true;
     } else if (isWin) {
-      // Win
       stats.wins++;
       gtStats.wins++;
       tempWinStreak++;
       longestWinStreak = Math.max(longestWinStreak, tempWinStreak);
-
       if (!streakLocked) {
         if (currentStreakType === "win" || currentStreakType === "none") {
           currentStreakType = "win";
@@ -441,11 +667,9 @@ export async function calculateUserStats(
         }
       }
     } else {
-      // Loss
       stats.losses++;
       gtStats.losses++;
       tempWinStreak = 0;
-
       if (!streakLocked) {
         if (currentStreakType === "loss" || currentStreakType === "none") {
           currentStreakType = "loss";
@@ -456,7 +680,6 @@ export async function calculateUserStats(
       }
     }
 
-    // Track duration for game type
     if (record.duration) {
       const avgDuration = gtStats.averageDuration || 0;
       gtStats.averageDuration =
@@ -464,7 +687,6 @@ export async function calculateUserStats(
     }
   }
 
-  // Calculate overall rates
   stats.winRate =
     stats.totalGames > 0 ? (stats.wins / stats.totalGames) * 100 : 0;
   stats.totalPlayTime = totalDuration;
@@ -473,7 +695,6 @@ export async function calculateUserStats(
   stats.longestWinStreak = longestWinStreak;
   stats.currentStreak = { type: currentStreakType, count: currentStreakCount };
 
-  // Calculate per-game-type win rates
   for (const gt of Object.keys(stats.byGameType) as TurnBasedGameType[]) {
     const gtStats = stats.byGameType[gt] as GameTypeStats;
     gtStats.winRate =
@@ -481,6 +702,34 @@ export async function calculateUserStats(
   }
 
   return stats;
+}
+
+/**
+ * Calculate comprehensive stats for a user from their game history
+ *
+ * Note: For production with many games, consider using pre-aggregated
+ * stats stored in a separate collection and updated by Cloud Functions.
+ *
+ * @param userId - The user to calculate stats for
+ * @param gameType - Optional filter by game type (supports both multiplayer and single-player)
+ * @param scope - Optional scope to filter multiplayer or single-player only
+ * @returns Aggregated statistics for the user
+ */
+export async function calculateUserStats(
+  userId: string,
+  gameType?: TurnBasedGameType | SinglePlayerGameType,
+  scope?: "multiplayer" | "singleplayer",
+): Promise<GameHistoryStats> {
+  // Fetch history for stats calculation
+  const result = await getGameHistory({
+    userId,
+    gameType: gameType as TurnBasedGameType, // Cast for query compatibility
+    limit: STATS_CALCULATION_LIMIT,
+    scope,
+  });
+
+  // Use the shared stats calculation function
+  return calculateStatsFromRecords(result.records, userId);
 }
 
 /**

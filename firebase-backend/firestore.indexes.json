@@ -53,6 +53,14 @@
       "collectionGroup": "GameSessions",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "gameType", "order": "ASCENDING" },
+        { "fieldPath": "endedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "GameSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "playerId", "order": "ASCENDING" },
         { "fieldPath": "gameId", "order": "ASCENDING" },
         { "fieldPath": "score", "order": "ASCENDING" }
@@ -574,6 +582,38 @@
       "fields": [
         { "fieldPath": "gameType", "order": "ASCENDING" },
         { "fieldPath": "finalScore", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "PointsShopCatalog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "PurchaseHistory",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "refundedAt", "order": "ASCENDING" },
+        { "fieldPath": "purchasedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "PurchaseHistory",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "purchasedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "PurchaseHistory",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "paymentMethod", "order": "ASCENDING" },
+        { "fieldPath": "purchasedAt", "order": "DESCENDING" }
       ]
     }
   ],

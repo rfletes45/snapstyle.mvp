@@ -48,6 +48,23 @@ import {
   rollbackGameInvitesMigration,
 } from "./migrations/migrateGameInvites";
 
+// Import Shop functions
+import { grantItem, purchaseWithTokens } from "./shop";
+
+// Import IAP functions
+import { getPurchaseHistory, restorePurchases, validateReceipt } from "./iap";
+
+// Import Gifting functions (Phase 4)
+import { expireGifts, getGiftHistory, openGift, sendGift } from "./gifting";
+
+// Import Daily Deals functions (Phase 4)
+import {
+  cleanupOldDeals,
+  generateDailyDeals,
+  generateWeeklyDeals,
+  triggerDailyDeals,
+} from "./dailyDeals";
+
 // Re-export V2 Messaging functions
 export const sendMessageV2 = sendMessageV2Function;
 export const editMessageV2 = editMessageV2Function;
@@ -74,6 +91,23 @@ export {
   migrateGameInvites,
   migrateGameInvitesDryRun,
   rollbackGameInvitesMigration,
+};
+
+// Re-export Shop functions
+export { grantItem, purchaseWithTokens };
+
+// Re-export IAP functions
+export { getPurchaseHistory, restorePurchases, validateReceipt };
+
+// Re-export Gifting functions (Phase 4)
+export { expireGifts, getGiftHistory, openGift, sendGift };
+
+// Re-export Daily Deals functions (Phase 4)
+export {
+  cleanupOldDeals,
+  generateDailyDeals,
+  generateWeeklyDeals,
+  triggerDailyDeals,
 };
 
 // Initialize Firebase Admin SDK

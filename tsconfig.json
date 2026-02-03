@@ -9,6 +9,7 @@
     "typeRoots": ["./node_modules/@types"],
     "paths": {
       "@/*": ["src/*"],
+      "@/constants/*": ["constants/*"],
       "firebase/functions": ["node_modules/firebase/functions"],
       "firebase/firestore": ["node_modules/firebase/firestore"],
       "firebase/auth": ["node_modules/firebase/auth"],

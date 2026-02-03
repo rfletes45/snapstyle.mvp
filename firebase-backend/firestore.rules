@@ -45,6 +45,87 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // DIGITAL AVATAR VALIDATION HELPERS
+    // ============================================================
+
+    // Validate skin tone is a valid ID format
+    function validSkinTone(tone) {
+      return tone is string && tone.size() > 0 && tone.size() < 20 &&
+             tone.matches('skin_[0-9]+');
+    }
+
+    // Validate body config structure and values
+    function validBodyConfig(body) {
+      return body is map &&
+             body.keys().hasAll(['skinTone', 'shape', 'height']) &&
+             validSkinTone(body.skinTone) &&
+             body.shape is string && body.shape.size() > 0 &&
+             body.height is number &&
+             body.height >= 0.7 &&
+             body.height <= 1.3;
+    }
+
+    // Validate face config structure and values
+    function validFaceConfig(face) {
+      return face is map &&
+             face.keys().hasAll(['shape', 'width']) &&
+             face.shape is string && face.shape.size() > 0 &&
+             face.width is number &&
+             face.width >= 0.7 &&
+             face.width <= 1.3;
+    }
+
+    // Validate eyes config structure and values
+    function validEyesConfig(eyes) {
+      return eyes is map &&
+             eyes.keys().hasAll(['style', 'color', 'size', 'spacing', 'tilt']) &&
+             eyes.style is string && eyes.style.size() > 0 &&
+             eyes.color is string && eyes.color.size() > 0 &&
+             eyes.size is number && eyes.size >= 0.7 && eyes.size <= 1.3 &&
+             eyes.spacing is number && eyes.spacing >= 0.7 && eyes.spacing <= 1.3 &&
+             eyes.tilt is number && eyes.tilt >= -15 && eyes.tilt <= 15;
+    }
+
+    // Validate hair config structure
+    function validHairConfig(hair) {
+      return hair is map &&
+             hair.keys().hasAll(['style', 'color']) &&
+             hair.style is string && hair.style.size() > 0 &&
+             hair.color is string && hair.color.size() > 0;
+    }
+
+    // Validate nose config structure
+    function validNoseConfig(nose) {
+      return nose is map &&
+             nose.keys().hasAll(['style', 'size']) &&
+             nose.style is string &&
+             nose.size is number && nose.size >= 0.7 && nose.size <= 1.3;
+    }
+
+    // Validate mouth config structure
+    function validMouthConfig(mouth) {
+      return mouth is map &&
+             mouth.keys().hasAll(['style', 'size', 'lipColor', 'lipThickness']) &&
+             mouth.style is string &&
+             mouth.size is number && mouth.size >= 0.7 && mouth.size <= 1.3 &&
+             mouth.lipColor is string &&
+             mouth.lipThickness is number && mouth.lipThickness >= 0.7 && mouth.lipThickness <= 1.3;
+    }
+
+    // Main digital avatar validator
+    function validDigitalAvatar(avatar) {
+      return avatar is map &&
+             avatar.version == 2 &&
+             avatar.keys().hasAll(['body', 'face', 'eyes', 'nose', 'mouth', 'hair']) &&
+             validBodyConfig(avatar.body) &&
+             validFaceConfig(avatar.face) &&
+             validEyesConfig(avatar.eyes) &&
+             validNoseConfig(avatar.nose) &&
+             validMouthConfig(avatar.mouth) &&
+             validHairConfig(avatar.hair);
+    }
+
+    // ============================================================
     // USERS COLLECTION
     // ============================================================
 
@@ -65,7 +146,10 @@ service cloud.firestore {
                       (!request.resource.data.keys().hasAll(['username']) || 
                        validStringLength(request.resource.data.username, 3, 20)) &&
                       (!request.resource.data.keys().hasAll(['displayName']) || 
-                       validStringLength(request.resource.data.displayName, 1, 50));
+                       validStringLength(request.resource.data.displayName, 1, 50)) &&
+                      // Validate digital avatar if present in update
+                      (!request.resource.data.keys().hasAll(['digitalAvatar']) ||
+                       validDigitalAvatar(request.resource.data.digitalAvatar));
       
       allow delete: if isAuth() && isOwner(uid);
 
@@ -103,6 +187,31 @@ service cloud.firestore {
         
         // Achievements are immutable once earned
         allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Badges subcollection (Profile Screen Overhaul)
+      // Stores earned badges with display preferences
+      // --------------------------------------------------------
+      match /Badges/{badgeId} {
+        // User can read their own badges, others can read for profile display
+        allow read: if isAuth();
+        
+        // Badges created via server-side function when earned
+        // Client can update showcase position for display customization
+        allow create: if isAuth() && isOwner(uid) &&
+                        request.resource.data.keys().hasAll(['badgeId', 'earnedAt']) &&
+                        request.resource.data.badgeId == badgeId &&
+                        validTimestamp(request.resource.data.earnedAt);
+        
+        // Allow user to update their own badge display settings (showcase position, pinned)
+        allow update: if isAuth() && isOwner(uid) &&
+                        // Only allow updating display-related fields
+                        request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['showcasePosition', 'pinned', 'displayOrder']);
+        
+        // Badges are never deleted (permanent accomplishments)
+        allow delete: if false;
       }
 
       // TaskProgress subcollection (Phase 18 - Daily Tasks)
@@ -192,6 +301,45 @@ service cloud.firestore {
         
         // Sessions are immutable once recorded
         allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Wishlist subcollection (Shop Overhaul)
+      // Stores items user wants to purchase later
+      // Users/{uid}/Wishlist/{itemId}
+      // --------------------------------------------------------
+      match /Wishlist/{itemId} {
+        // User can only read their own wishlist
+        allow read: if isAuth() && isOwner(uid);
+        
+        // User can add items to their wishlist
+        allow create: if isAuth() && isOwner(uid) &&
+          request.resource.data.itemId == itemId &&
+          request.resource.data.uid == uid &&
+          request.resource.data.addedAt is number;
+        
+        // User can update wishlist items (e.g., priority, notes)
+        allow update: if isAuth() && isOwner(uid) &&
+          // Cannot change core fields
+          request.resource.data.itemId == resource.data.itemId &&
+          request.resource.data.uid == resource.data.uid;
+        
+        // User can remove items from wishlist
+        allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // PurchaseHistory subcollection (Shop Overhaul)
+      // Stores user's purchase records
+      // Users/{uid}/PurchaseHistory/{purchaseId}
+      // --------------------------------------------------------
+      match /PurchaseHistory/{purchaseId} {
+        // User can only read their own purchase history
+        allow read: if isAuth() && isOwner(uid);
+        
+        // All purchase writes must be server-side
+        // This ensures integrity with payment processing
+        allow create, update, delete: if false;
       }
     }
 
@@ -668,7 +816,7 @@ service cloud.firestore {
     // PHASE 19: SHOP + LIMITED-TIME DROPS
     // ============================================================
 
-    // SHOP CATALOG COLLECTION
+    // SHOP CATALOG COLLECTION (Legacy - token-based shop)
     // Public read for browsing, server-only writes
     match /ShopCatalog/{itemId} {
       // Anyone authenticated can read shop items
@@ -676,6 +824,89 @@ service cloud.firestore {
       
       // Shop catalog management is admin-only (via console or Cloud Function)
       allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // POINTS SHOP CATALOG (Shop Overhaul)
+    // Token-based items purchasable with in-app currency
+    // ============================================================
+    match /PointsShopCatalog/{itemId} {
+      // Anyone authenticated can read shop items for browsing
+      allow read: if isAuth();
+      
+      // Catalog management is admin-only (via Firebase Console or Cloud Functions)
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // PREMIUM PRODUCTS (Shop Overhaul)
+    // Real-money items: token packs, bundles, exclusives
+    // ============================================================
+    match /PremiumProducts/{productId} {
+      // Anyone authenticated can read premium products for browsing
+      allow read: if isAuth();
+      
+      // Product management is admin-only (via Firebase Console or Cloud Functions)
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // PROMOTIONS (Shop Overhaul)
+    // Time-limited promotions, sales, and special offers
+    // ============================================================
+    match /Promotions/{promoId} {
+      // Anyone authenticated can read promotions
+      // Note: Active/time filtering is done client-side and server-side
+      // Using resource.data checks would block list queries
+      allow read: if isAuth();
+      
+      // Promotion management is admin-only
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // DAILY DEALS (Shop Overhaul)
+    // Rotating daily deals with limited availability
+    // ============================================================
+    match /DailyDeals/{dealId} {
+      // Anyone authenticated can read daily deals
+      // Note: Time validity filtering is done client-side and server-side
+      // Using resource.data checks would block list queries
+      allow read: if isAuth();
+      
+      // Deal management is server-only (scheduled Cloud Function)
+      allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // GIFTS (Shop Overhaul)
+    // Sent gifts between users
+    // ============================================================
+    match /Gifts/{giftId} {
+      // Helper: Check if user is involved in this gift
+      function isGiftParticipant() {
+        return resource.data.senderUid == request.auth.uid ||
+               resource.data.recipientUid == request.auth.uid;
+      }
+      
+      // Sender or recipient can read the gift
+      allow read: if isAuth() && isGiftParticipant();
+      
+      // Gifts are created server-side after payment validation
+      allow create: if false;
+      
+      // Recipient can update status to 'claimed' (once only)
+      allow update: if isAuth() &&
+                      resource.data.recipientUid == request.auth.uid &&
+                      resource.data.status == 'sent' &&
+                      request.resource.data.status == 'claimed' &&
+                      // Cannot change other fields
+                      request.resource.data.senderUid == resource.data.senderUid &&
+                      request.resource.data.recipientUid == resource.data.recipientUid &&
+                      request.resource.data.itemId == resource.data.itemId;
+      
+      // Gifts cannot be deleted
+      allow delete: if false;
     }
 
     // PURCHASES COLLECTION

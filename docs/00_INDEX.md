@@ -8,23 +8,29 @@
 
 ## Quick Reference
 
-| Question                            | Document                                 | Section               |
-| ----------------------------------- | ---------------------------------------- | --------------------- |
-| How do I run the app?               | [README.md](../README.md)                | Quick Start           |
-| What's the app structure?           | [01_ARCHITECTURE.md](01_ARCHITECTURE.md) | Folder Structure      |
-| How does local storage work?        | [01_ARCHITECTURE.md](01_ARCHITECTURE.md) | Local Storage Layer   |
-| What are the Firestore collections? | [02_FIREBASE.md](02_FIREBASE.md)         | Data Model            |
-| How does the unified chat work?     | [03_CHAT_V2.md](03_CHAT_V2.md)           | Architecture          |
-| How does message grouping work?     | [03_CHAT_V2.md](03_CHAT_V2.md)           | Message Grouping      |
-| How do read receipts work?          | [03_CHAT_V2.md](03_CHAT_V2.md)           | Chat Privacy Features |
-| How do typing indicators work?      | [03_CHAT_V2.md](03_CHAT_V2.md)           | Chat Privacy Features |
-| How does presence/online work?      | [03_CHAT_V2.md](03_CHAT_V2.md)           | Chat Privacy Features |
-| How does the reply system work?     | [03_CHAT_V2.md](03_CHAT_V2.md)           | Reply/Threading       |
-| How do the games work?              | [06_GAMES.md](06_GAMES.md)               | All Sections          |
-| How do game invites work?           | [06_GAMES.md](06_GAMES.md)               | Services              |
-| How do I debug an issue?            | [05_RUNBOOK.md](05_RUNBOOK.md)           | Troubleshooting       |
-| What tests should I run?            | [04_TESTING.md](04_TESTING.md)           | Test Matrix           |
-| What was completed in each phase?   | [ARCHIVE.md](ARCHIVE.md)                 | Timeline Summary      |
+| Question                             | Document                                                           | Section                |
+| ------------------------------------ | ------------------------------------------------------------------ | ---------------------- |
+| How do I run the app?                | [README.md](../README.md)                                          | Quick Start            |
+| What's the app structure?            | [01_ARCHITECTURE.md](01_ARCHITECTURE.md)                           | Folder Structure       |
+| How does local storage work?         | [01_ARCHITECTURE.md](01_ARCHITECTURE.md)                           | Local Storage Layer    |
+| What are the Firestore collections?  | [02_FIREBASE.md](02_FIREBASE.md)                                   | Data Model             |
+| How does the unified chat work?      | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Architecture           |
+| How does message grouping work?      | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Message Grouping       |
+| How do read receipts work?           | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Chat Privacy Features  |
+| How do typing indicators work?       | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Chat Privacy Features  |
+| How does presence/online work?       | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Chat Privacy Features  |
+| How does the reply system work?      | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Reply/Threading        |
+| How does keyboard handling work?     | [03_CHAT_V2.md](03_CHAT_V2.md)                                     | Keyboard & Composer    |
+| How do the games work?               | [06_GAMES.md](06_GAMES.md)                                         | All Sections           |
+| How do game invites work?            | [06_GAMES.md](06_GAMES.md)                                         | Universal Game Invites |
+| How does Tank Battle work?           | [TANK_BATTLE_GAME_PLAN.md](TANK_BATTLE_GAME_PLAN.md)               | All Sections           |
+| How does Cart Course work?           | [CART_COURSE_GAME_PLAN.md](CART_COURSE_GAME_PLAN.md)               | All Sections           |
+| How do I debug an issue?             | [05_RUNBOOK.md](05_RUNBOOK.md)                                     | Troubleshooting        |
+| What tests should I run?             | [04_TESTING.md](04_TESTING.md)                                     | Test Matrix            |
+| What was completed in each phase?    | [ARCHIVE.md](ARCHIVE.md)                                           | Timeline Summary       |
+| What are the profile redesign plans? | [PROFILE_SCREEN_OVERHAUL_PLAN.md](PROFILE_SCREEN_OVERHAUL_PLAN.md) | All Sections           |
+| What are the shop redesign plans?    | [SHOP_OVERHAUL_PLAN.md](SHOP_OVERHAUL_PLAN.md)                     | All Sections           |
+| What are the Play screen plans?      | [PLAY_SCREEN_OVERHAUL_PLAN.md](PLAY_SCREEN_OVERHAUL_PLAN.md)       | All Sections           |
 
 ---
 
@@ -51,18 +57,24 @@
 
 ### Active Implementation Plans
 
-| File                                                         | Purpose                                      | Status                          |
-| ------------------------------------------------------------ | -------------------------------------------- | ------------------------------- |
-| [GAME_SYSTEM_OVERHAUL_PLAN.md](GAME_SYSTEM_OVERHAUL_PLAN.md) | Game history, stats, navigation improvements | Phase 1 Complete, 2-8 Pending   |
-| [GAME_PICKER_PLAN.md](GAME_PICKER_PLAN.md)                   | Game picker modal, queue visualization       | Core Complete, Enhancements TBD |
+| File                                                               | Purpose                                          | Status                        |
+| ------------------------------------------------------------------ | ------------------------------------------------ | ----------------------------- |
+| [PROFILE_SCREEN_OVERHAUL_PLAN.md](PROFILE_SCREEN_OVERHAUL_PLAN.md) | Profile redesign, badges, cosmetics integration  | Planning Phase                |
+| [SHOP_OVERHAUL_PLAN.md](SHOP_OVERHAUL_PLAN.md)                     | Points shop + premium shop, IAP integration      | Planning Phase                |
+| [PLAY_SCREEN_OVERHAUL_PLAN.md](PLAY_SCREEN_OVERHAUL_PLAN.md)       | Play screen UI/UX redesign, search, categories   | Planning Phase                |
+| [GAME_SYSTEM_OVERHAUL_PLAN.md](GAME_SYSTEM_OVERHAUL_PLAN.md)       | Game history, stats, navigation improvements     | Phase 1 Complete, 2-8 Pending |
+| [GAME_PICKER_PLAN.md](GAME_PICKER_PLAN.md)                         | Game picker modal, queue visualization           | Core Complete, TBD            |
+| [TANK_BATTLE_GAME_PLAN.md](TANK_BATTLE_GAME_PLAN.md)               | Wii Tanks-style 2-player multiplayer combat game | **NEW** - Planning Phase      |
+| [CART_COURSE_GAME_PLAN.md](CART_COURSE_GAME_PLAN.md)               | DK Crash Course-style tilt-based obstacle course | **NEW** - Planning Phase      |
 
 ### Archived/Completed Plans
 
-| File                                                   | Purpose                              | Status      |
-| ------------------------------------------------------ | ------------------------------------ | ----------- |
-| [CHAT_SETTINGS_AUDIT.md](CHAT_SETTINGS_AUDIT.md)       | Chat privacy features implementation | ✅ Complete |
-| [CHAT_OPTIMIZATION_PLAN.md](CHAT_OPTIMIZATION_PLAN.md) | Chat performance improvements        | ✅ Complete |
-| [REPLY_SYSTEM_DESIGN.md](REPLY_SYSTEM_DESIGN.md)       | Enhanced reply system design         | ✅ Complete |
+> **Note**: Completed plan summaries are consolidated in [ARCHIVE.md](ARCHIVE.md).
+
+| File                                                           | Purpose                                 | Status    |
+| -------------------------------------------------------------- | --------------------------------------- | --------- |
+| [AVATAR_ROLLOUT_GUIDE.md](AVATAR_ROLLOUT_GUIDE.md)             | Digital avatar rollout strategy         | ⏸️ Paused |
+| [DIGITAL_AVATAR_SYSTEM_PLAN.md](DIGITAL_AVATAR_SYSTEM_PLAN.md) | Full digital avatar implementation plan | ⏸️ Paused |
 
 ---
 

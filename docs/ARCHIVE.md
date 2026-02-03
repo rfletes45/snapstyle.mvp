@@ -22,6 +22,9 @@
 | UNI         | Unified messaging architecture       | ✅ Complete (Jan 2026)   |
 | Polish      | Group chat polish & message grouping | ✅ Complete (Jan 2026)   |
 | Storage     | Client-side SQLite storage migration | ✅ Complete (Jan 2026)   |
+| Privacy     | Chat privacy features (4 settings)   | ✅ Complete (Feb 2026)   |
+| Perf        | Chat loading optimization            | ✅ Complete (Jan 2026)   |
+| Reply       | Enhanced reply system design         | ✅ Complete (2025)       |
 
 ---
 
@@ -131,9 +134,14 @@ Complete unification of DM and Group chat systems through shared abstractions:
 - `src/screens/groups/GroupChatScreen.tsx` — Removed legacy imports, switched to unified hooks
 - `src/types/messaging.ts` — Added `scorecard` to `MessageV2`, `durationMs` to `LocalAttachment`
 
-**Deprecated** (no longer used by GroupChatScreen):
+**Deleted** (deprecated files removed during cleanup):
 
-- `SwipeableGroupMessage.tsx` — Use `SwipeableMessage` instead
+- `SwipeableGroupMessage.tsx` — Deleted, use `SwipeableMessage` instead
+- `GroupMessageItem.tsx` — Deleted, component was never used after unified refactor
+- `ReplyBubble.tsx` (original) — Deleted, superseded by `ReplyBubbleNew.tsx`
+
+**Deprecated Services** (kept for migration, will be removed later):
+
 - `subscribeToGroupMessages()` — Use `useUnifiedChatScreen` instead
 - `sendGroupMessage()` for attachments — Use unified `sendMessage({ attachments })`
 
@@ -473,6 +481,97 @@ All three rules verified:
 
 ---
 
+## Chat Privacy Features Summary
+
+**Completed**: February 2026
+
+### Overview
+
+Implemented four privacy features with reciprocal privacy model (if you disable, you neither send nor receive).
+
+### Features Implemented
+
+| Setting           | Files Created                                        | Status      |
+| ----------------- | ---------------------------------------------------- | ----------- |
+| Read Receipts     | `useReadReceipts.ts`, `chatMembers.ts` updates       | ✅ Complete |
+| Typing Indicators | `useTypingStatus.ts`, `TypingIndicator.tsx`          | ✅ Complete |
+| Online Status     | `usePresence.ts`, `presence.ts`, RTDB integration    | ✅ Complete |
+| Last Seen         | `PresenceIndicator.tsx`, integrated with usePresence | ✅ Complete |
+
+### Technical Details
+
+- Storage: `Users/{uid}/settings/inbox`
+- RTDB used for presence (low-latency): `/presence/{uid}`
+- All features follow reciprocal privacy model
+
+**Full documentation**: [03_CHAT_V2.md - Chat Privacy Features](03_CHAT_V2.md#chat-privacy-features)
+
+---
+
+## Chat Loading Optimization Summary
+
+**Completed**: January 2026
+
+### Overview
+
+Optimizations to achieve instant chat loading and eliminate UI flickering.
+
+### Key Improvements
+
+| Phase   | Change                   | Result                     |
+| ------- | ------------------------ | -------------------------- |
+| Phase 1 | ChatSkeleton component   | No more loading spinners   |
+| Phase 2 | Navigation data passing  | Instant header rendering   |
+| Phase 3 | Parallel Firestore calls | ~50% init time reduction   |
+| Phase 4 | Profile cache service    | ~87% faster repeated opens |
+
+### Performance Results
+
+| Metric                        | Before | After  | Improvement |
+| ----------------------------- | ------ | ------ | ----------- |
+| Time to first message visible | ~500ms | <100ms | ~80%        |
+| Loading spinner duration      | ~300ms | 0ms    | 100%        |
+| Repeated chat open latency    | ~400ms | <50ms  | ~87%        |
+
+### Files Created
+
+- `src/components/chat/ChatSkeleton.tsx` — Shimmer skeleton components
+- `src/services/cache/profileCache.ts` — LRU profile caching (5-min TTL)
+
+---
+
+## Reply System Design Summary
+
+**Completed**: 2025
+
+### Overview
+
+Enhanced reply system with Apple Messages-style design and advanced features.
+
+### Features Implemented
+
+| Feature             | Description                                      |
+| ------------------- | ------------------------------------------------ |
+| Swipe-to-Reply      | Unified `SwipeableMessage` for DM and Group      |
+| Reply Bubble        | Outline-style bubble above main message          |
+| Curved Connector    | Line connecting reply bubble to message          |
+| Highlight Animation | Blue pulse when scrolling to replied message     |
+| Jump-Back Button    | "Back to reply" floating button after navigation |
+
+### Key Components
+
+- `SwipeableMessage.tsx` — Unified swipe gesture (replaced SwipeableGroupMessage)
+- `ReplyBubbleNew.tsx` — Enhanced reply preview (exported as ReplyBubble)
+- `ScrollReturnButton.tsx` — Jump-back navigation
+- `MessageHighlightOverlay.tsx` — Highlight animation
+
+### Deleted (Superseded)
+
+- `SwipeableGroupMessage.tsx` — Replaced by unified SwipeableMessage
+- `ReplyBubble.tsx` (original) — Replaced by ReplyBubbleNew
+
+---
+
 ## Migration Notes
 
 ### If Restoring Old Features
@@ -533,6 +632,14 @@ These patterns were removed and should not be reintroduced:
 | GAME_RESEARCH_FINDINGS.md      | Findings consolidated to 06   |
 | REORGANIZATION_CHANGELOG.md    | Cleanup complete              |
 | UNIVERSAL_GAME_INVITES_PLAN.md | Universal invites implemented |
+
+### Deleted February 2026 (Consolidation)
+
+| File                      | Reason                                          |
+| ------------------------- | ----------------------------------------------- |
+| CHAT_SETTINGS_AUDIT.md    | Summarized in ARCHIVE.md, details in 03_CHAT_V2 |
+| CHAT_OPTIMIZATION_PLAN.md | Summarized in ARCHIVE.md                        |
+| REPLY_SYSTEM_DESIGN.md    | Summarized in ARCHIVE.md, details in 03_CHAT_V2 |
 
 ### Deleted (No Longer Relevant)
 

@@ -37,3 +37,31 @@ export * from "./economy";
 
 // Tasks
 export * from "./tasks";
+
+// Badge service (Profile Overhaul)
+export * from "./badges";
+
+// Profile Frames service (Profile Overhaul Phase 4)
+export * from "./profileFrames";
+
+// Profile Themes service (Profile Overhaul Phase 5)
+export * from "./profileThemes";
+
+// Chat Bubbles service (Profile Overhaul Phase 5)
+export * from "./chatBubbles";
+
+// IAP and Bundles service (Profile Overhaul Phase 6)
+export * from "./bundles";
+export * from "./iap";
+
+// Avatar service (Digital Avatar System Phase 6)
+export * from "./avatarService";
+
+// Avatar analytics and deprecation (Digital Avatar System Phase 8)
+export * from "./avatarAnalytics";
+export * from "./avatarDeprecation";
+
+// Shop services (Shop Overhaul)
+// Note: Import pointsShop and premiumShop directly due to potential naming conflicts
+// export * from "./pointsShop";
+// export * from "./premiumShop";

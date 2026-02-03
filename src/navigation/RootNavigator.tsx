@@ -40,6 +40,7 @@ import SnapSnakeGameScreen from "@/screens/games/SnapSnakeGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
 import WordSnapGameScreen from "@/screens/games/WordSnapGameScreen";
+import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import ProfileScreen from "@/screens/profile/ProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
@@ -56,6 +57,11 @@ const LocalStorageDebugScreen = __DEV__
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
 
+import { SHOP_FEATURES } from "@/constants/featureFlags";
+import PointsShopScreen from "@/screens/shop/PointsShopScreen";
+import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
+import PurchaseHistoryScreen from "@/screens/shop/PurchaseHistoryScreen";
+import ShopHubScreen from "@/screens/shop/ShopHubScreen";
 import ShopScreen from "@/screens/shop/ShopScreen";
 
 import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
@@ -249,7 +255,7 @@ function PlayStack() {
       <Stack.Screen
         name="GamesHub"
         component={GamesHubScreen}
-        options={{ title: "Play" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="ReactionTapGame"
@@ -352,12 +358,12 @@ function PlayStack() {
       <Stack.Screen
         name="Leaderboard"
         component={LeaderboardScreen}
-        options={{ title: "Leaderboard" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Achievements"
         component={AchievementsScreen}
-        options={{ title: "Achievements" }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="GameHistory"
@@ -418,6 +424,11 @@ function ProfileStack() {
         options={{ title: "Blocked" }}
       />
       <Stack.Screen
+        name="BadgeCollection"
+        component={BadgeCollectionScreen}
+        options={{ title: "Badges" }}
+      />
+      <Stack.Screen
         name="Settings"
         component={SettingsScreen}
         options={{ title: "Settings" }}
@@ -448,7 +459,7 @@ function ProfileStack() {
 
 /**
  * Main App Tabs - Rebranded
- * Inbox | Moments | Play | Connections | Profile
+ * Shop | Play | Inbox | Moments | Profile
  */
 function AppTabs() {
   const { colors } = useAppTheme();
@@ -486,17 +497,17 @@ function AppTabs() {
           let iconName: string = "message-outline";
 
           switch (route.name) {
+            case "Shop":
+              iconName = "store-outline";
+              break;
+            case "Play":
+              iconName = "gamepad-variant-outline";
+              break;
             case "Inbox":
               iconName = "message-outline";
               break;
             case "Moments":
               iconName = "image-multiple-outline";
-              break;
-            case "Play":
-              iconName = "gamepad-variant-outline";
-              break;
-            case "Connections":
-              iconName = "account-group-outline";
               break;
             case "Profile":
               iconName = "account-circle-outline";
@@ -514,6 +525,19 @@ function AppTabs() {
       })}
     >
       <Tab.Screen
+        name="Shop"
+        component={SHOP_FEATURES.SHOP_HUB ? ShopHubScreen : ShopScreen}
+        options={{ headerShown: false }}
+      />
+      <Tab.Screen
+        name="Play"
+        component={PlayStack}
+        options={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
+        })}
+      />
+      <Tab.Screen
         name="Inbox"
         component={InboxStack}
         options={{
@@ -528,19 +552,6 @@ function AppTabs() {
           headerShown: false,
           tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
         })}
-      />
-      <Tab.Screen
-        name="Play"
-        component={PlayStack}
-        options={({ route }) => ({
-          headerShown: false,
-          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
-        })}
-      />
-      <Tab.Screen
-        name="Connections"
-        component={FriendsScreen}
-        options={{ title: "Connections" }}
       />
       <Tab.Screen
         name="Profile"
@@ -627,6 +638,30 @@ function MainStack() {
           presentation: "modal",
         }}
       />
+
+      {/* Connections screen - accessible from Inbox header */}
+      <Stack.Screen
+        name="Connections"
+        component={FriendsScreen}
+        options={{ title: "Connections" }}
+      />
+
+      {/* Shop Overhaul Screens - accessible from Shop tab */}
+      <Stack.Screen
+        name="PointsShop"
+        component={PointsShopScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PremiumShop"
+        component={PremiumShopScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PurchaseHistory"
+        component={PurchaseHistoryScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }
@@ -642,7 +677,7 @@ interface RootNavigatorProps {
 /**
  * RootNavigator
  * Uses AppGate for hydration-safe navigation
- * Rebranded: Vibe app with Inbox, Moments, Play, Connections, Profile
+ * Rebranded: Vibe app with Shop, Play, Inbox, Moments, Profile
  *
  * Navigation flow:
  * - During hydration: LoadingScreen (via AppGate)
@@ -664,13 +699,14 @@ export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
         ProfileSetup: "profile-setup",
         MainTabs: {
           screens: {
+            Shop: "shop",
+            Play: "play",
             Inbox: "inbox",
             Moments: "moments",
-            Play: "play",
-            Connections: "connections",
             Profile: "profile",
           },
         },
+        Connections: "connections",
         ChatDetail: "chat/:friendUid",
         GroupChat: "group/:groupId",
       },

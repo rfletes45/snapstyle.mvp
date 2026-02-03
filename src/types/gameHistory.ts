@@ -15,6 +15,7 @@
  * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 1
  */
 
+import { SinglePlayerGameType } from "./games";
 import { MatchStatus, TurnBasedGameType } from "./turnBased";
 
 // =============================================================================
@@ -171,8 +172,8 @@ export interface GameHistoryQuery {
   /** Required: User ID to get history for */
   userId: string;
 
-  /** Filter by game type */
-  gameType?: TurnBasedGameType;
+  /** Filter by game type (supports both multiplayer and single-player game types) */
+  gameType?: TurnBasedGameType | SinglePlayerGameType;
 
   /** Filter to games with specific opponent */
   opponentId?: string;
@@ -194,6 +195,9 @@ export interface GameHistoryQuery {
 
   /** Cursor for pagination - ID of last record from previous query */
   startAfter?: string;
+
+  /** Scope to filter multiplayer or single-player only */
+  scope?: "multiplayer" | "singleplayer";
 }
 
 /**

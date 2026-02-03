@@ -1,11 +1,15 @@
 // User model
 
+import type { DigitalAvatarConfig } from "./avatar";
+
 export interface User {
   uid: string;
   usernameLower: string;
   username: string;
   displayName: string;
   avatarConfig: AvatarConfig;
+  /** Digital avatar configuration (new Bitmoji-style system) */
+  digitalAvatar?: DigitalAvatarConfig;
   expoPushToken?: string;
   createdAt: number;
   lastActive: number;
@@ -195,6 +199,54 @@ export interface CosmeticItem {
 export interface InventoryItem {
   itemId: string;
   acquiredAt: number;
+}
+
+// =============================================================================
+// Badge System (Profile Overhaul)
+// =============================================================================
+
+/**
+ * User badge record stored in Users/{uid}/Badges/{badgeId}
+ * @see src/types/profile.ts for full Badge definition
+ */
+export interface UserBadgeRecord {
+  badgeId: string;
+  earnedAt: number;
+  featured: boolean;
+  displayOrder?: number;
+  earnedVia?: {
+    achievementId?: string;
+    eventId?: string;
+    meta?: Record<string, unknown>;
+  };
+}
+
+/**
+ * User stats cache for profile display
+ * Stored in Users/{uid}.statsCache
+ */
+export interface UserStatsCache {
+  gamesPlayed: number;
+  gamesWon: number;
+  winRate: number;
+  highestStreak: number;
+  currentStreak: number;
+  totalBadges: number;
+  achievementProgress: number;
+  friendCount: number;
+  daysActive: number;
+  lastUpdated: number;
+}
+
+/**
+ * User level data
+ * Stored in Users/{uid}.level
+ */
+export interface UserLevelData {
+  current: number;
+  xp: number;
+  xpToNextLevel: number;
+  totalXp: number;
 }
 
 // Blocked User (stored in Users/{userId}/blockedUsers/{blockedUserId})
@@ -666,17 +718,48 @@ export interface TaskWithProgress extends Task {
 /**
  * Shop item rarity determines visual styling and scarcity
  */
-export type ShopItemRarity = "common" | "rare" | "epic" | "legendary";
+export type ShopItemRarity =
+  | "common"
+  | "rare"
+  | "epic"
+  | "legendary"
+  | "mythic";
 
 /**
  * Shop item categories for filtering
+ * Extended for Phase 6 to include new cosmetic types
  */
 export type ShopCategory =
   | "hat"
   | "glasses"
   | "background"
   | "bundle"
-  | "featured";
+  | "featured"
+  // New Phase 6 categories
+  | "profile_frame"
+  | "chat_bubble"
+  | "profile_theme"
+  | "clothing"
+  | "accessory"
+  | "token_pack";
+
+/**
+ * Extended cosmetic slot types for shop items
+ */
+export type ShopItemSlot =
+  | "hat"
+  | "glasses"
+  | "background"
+  | "clothing_top"
+  | "clothing_bottom"
+  | "accessory_neck"
+  | "accessory_ear"
+  | "accessory_hand"
+  | "profile_frame"
+  | "profile_banner"
+  | "profile_theme"
+  | "chat_bubble"
+  | "name_effect";
 
 /**
  * Shop catalog item (admin-created, stored in ShopCatalog collection)
@@ -688,8 +771,9 @@ export interface ShopItem {
   name: string; // Display name
   description?: string;
   category: ShopCategory;
-  slot: "hat" | "glasses" | "background"; // For equipping
+  slot: ShopItemSlot; // For equipping
   priceTokens: number; // Cost in tokens
+  priceUSD?: number; // Real money price (optional)
   rarity: ShopItemRarity;
   imagePath: string; // Preview image path
   // Limited-time availability
@@ -703,6 +787,10 @@ export interface ShopItem {
   active: boolean; // Whether item is visible in shop
   sortOrder: number;
   createdAt: number;
+  // Phase 6 additions
+  bundleItems?: string[]; // For bundles: array of cosmetic IDs included
+  discountPercent?: number; // Bundle discount percentage
+  originalPriceTokens?: number; // Original price before discount
 }
 
 /**

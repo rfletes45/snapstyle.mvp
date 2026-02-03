@@ -1,32 +1,125 @@
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
-import { Text, Button, TextInput, useTheme } from "react-native-paper";
+/**
+ * ProfileScreen
+ *
+ * Redesigned profile screen with:
+ * - Profile header with avatar and level
+ * - Featured badges showcase
+ * - Stats dashboard
+ * - Action buttons for navigation
+ * - Digital Avatar Customization (Phase 6)
+ *
+ * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md
+ * @see docs/DIGITAL_AVATAR_SYSTEM_PLAN.md
+ */
+
 import { signOut } from "firebase/auth";
-import { getAuthInstance } from "@/services/firebase";
-import { useAuth } from "@/store/AuthContext";
-import { useUser } from "@/store/UserContext";
-import { updateProfile } from "@/services/users";
-import { isValidDisplayName } from "@/utils/validators";
+import React, { useCallback, useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Button, Divider, Text, TextInput, useTheme } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import Avatar from "@/components/Avatar";
 import AvatarCustomizer from "@/components/AvatarCustomizer";
+import { AvatarCustomizerModal } from "@/components/avatar/AvatarCustomizer";
+import { BadgeShowcase } from "@/components/badges";
+import {
+  ProfileActions,
+  ProfileHeader,
+  ProfileStats,
+} from "@/components/profile";
 import { LoadingState } from "@/components/ui";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { useProfileData } from "@/hooks/useProfileData";
+import { saveDigitalAvatar } from "@/services/avatarService";
+import { getAuthInstance } from "@/services/firebase";
+import { updateProfile } from "@/services/users";
+import { useAuth } from "@/store/AuthContext";
+import { useUser } from "@/store/UserContext";
+import type { DigitalAvatarConfig } from "@/types/avatar";
 import type { AvatarConfig } from "@/types/models";
+import type { ProfileAction } from "@/types/profile";
+import { getDefaultAvatarConfig } from "@/utils/avatarHelpers";
+import { isValidDisplayName } from "@/utils/validators";
+import {
+  AVATAR_FEATURES,
+  PROFILE_FEATURES,
+} from "../../../constants/featureFlags";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 export default function ProfileScreen({ navigation }: any) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
-  const { profile, refreshProfile } = useUser();
+  const { profile: baseProfile, refreshProfile } = useUser();
+  const {
+    profile,
+    loading: profileDataLoading,
+    refresh,
+  } = useProfileData(currentFirebaseUser?.uid);
 
-  const [isEditing, setIsEditing] = useState(false);
+  // Avatar customizer state - supports both legacy and digital
   const [showCustomizer, setShowCustomizer] = useState(false);
+  const [showDigitalCustomizer, setShowDigitalCustomizer] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Legacy state for edit mode
+  const [isEditing, setIsEditing] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState(
-    profile?.displayName || "",
+    baseProfile?.displayName || "",
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // Determine if we should use digital avatar system
+  const useDigitalAvatar =
+    AVATAR_FEATURES.DIGITAL_AVATAR_ENABLED && AVATAR_FEATURES.AVATAR_CUSTOMIZER;
+
+  // Get current digital avatar config (or create default)
+  const currentDigitalAvatarConfig: DigitalAvatarConfig = useMemo(() => {
+    // Use existing digital avatar if available
+    if (baseProfile?.digitalAvatar) {
+      return baseProfile.digitalAvatar as DigitalAvatarConfig;
+    }
+    // Otherwise create default
+    return getDefaultAvatarConfig();
+  }, [baseProfile?.digitalAvatar]);
+
+  // Handle opening the appropriate customizer
+  const handleOpenCustomizer = useCallback(() => {
+    if (useDigitalAvatar) {
+      setShowDigitalCustomizer(true);
+    } else {
+      setShowCustomizer(true);
+    }
+  }, [useDigitalAvatar]);
+
+  // Handle saving digital avatar
+  const handleSaveDigitalAvatar = useCallback(
+    async (config: DigitalAvatarConfig) => {
+      if (!currentFirebaseUser?.uid) return;
+
+      try {
+        await saveDigitalAvatar(currentFirebaseUser.uid, config);
+        await refreshProfile();
+        setSuccess("Avatar updated!");
+        setTimeout(() => setSuccess(""), 2000);
+      } catch (err) {
+        console.error("Error saving digital avatar:", err);
+        setError("Failed to save avatar. Please try again.");
+        setTimeout(() => setError(""), 3000);
+      }
+    },
+    [currentFirebaseUser?.uid, refreshProfile],
+  );
+
+  // Handle pull-to-refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  }, [refresh]);
+
+  // Handle legacy save changes
   const handleSaveChanges = async () => {
     setError("");
     setSuccess("");
@@ -50,11 +143,11 @@ export default function ProfileScreen({ navigation }: any) {
     setLoading(true);
 
     try {
-      const success = await updateProfile(currentFirebaseUser.uid, {
+      const updateSuccess = await updateProfile(currentFirebaseUser.uid, {
         displayName: editDisplayName,
       });
 
-      if (success) {
+      if (updateSuccess) {
         await refreshProfile();
         setSuccess("All set!");
         setIsEditing(false);
@@ -71,16 +164,72 @@ export default function ProfileScreen({ navigation }: any) {
     }
   };
 
-  const handleSignOut = async () => {
+  // Handle sign out
+  const handleSignOut = useCallback(async () => {
     try {
       const auth = getAuthInstance();
       await signOut(auth);
     } catch (error: any) {
       console.error("Sign out error:", error);
     }
-  };
+  }, []);
 
-  if (!profile) {
+  // Action buttons configuration for new layout
+  const actions = useMemo<ProfileAction[]>(
+    () => [
+      {
+        id: "customize",
+        label: useDigitalAvatar ? "Customize Avatar" : "Customize Profile",
+        icon: useDigitalAvatar ? "account-edit" : "palette",
+        onPress: handleOpenCustomizer,
+      },
+      {
+        id: "wallet",
+        label: "My Wallet",
+        icon: "wallet",
+        onPress: () => navigation.navigate("Wallet"),
+      },
+      {
+        id: "shop",
+        label: "Shop",
+        icon: "shopping",
+        onPress: () => navigation.navigate("Shop"),
+      },
+      {
+        id: "tasks",
+        label: "Daily Tasks",
+        icon: "clipboard-check",
+        onPress: () => navigation.navigate("Tasks"),
+        badge: 3, // TODO: Get actual count from tasks service
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        icon: "cog",
+        onPress: () => navigation.navigate("Settings"),
+      },
+      ...(__DEV__
+        ? [
+            {
+              id: "debug",
+              label: "Debug",
+              icon: "bug",
+              onPress: () => navigation.navigate("Debug"),
+            },
+          ]
+        : []),
+      {
+        id: "blocked",
+        label: "Blocked Users",
+        icon: "account-cancel",
+        onPress: () => navigation.navigate("BlockedUsers"),
+      },
+    ],
+    [navigation, useDigitalAvatar, handleOpenCustomizer],
+  );
+
+  // Loading state (for both new and legacy)
+  if (!baseProfile) {
     return (
       <View
         style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -90,10 +239,112 @@ export default function ProfileScreen({ navigation }: any) {
     );
   }
 
+  // ========================================
+  // NEW PROFILE LAYOUT (feature flag enabled)
+  // ========================================
+  if (PROFILE_FEATURES.NEW_PROFILE_LAYOUT && profile) {
+    return (
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        contentContainerStyle={[
+          styles.newLayoutContent,
+          { paddingTop: insets.top },
+        ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        {/* Profile Header */}
+        <ProfileHeader
+          displayName={profile.displayName}
+          username={profile.username}
+          avatarConfig={
+            useDigitalAvatar && baseProfile?.digitalAvatar
+              ? baseProfile.digitalAvatar
+              : profile.avatarConfig
+          }
+          level={profile.level}
+          onAvatarPress={handleOpenCustomizer}
+          onEditPress={() => navigation.navigate("Settings")}
+        />
+
+        {/* Featured Badges */}
+        {PROFILE_FEATURES.BADGE_SHOWCASE && (
+          <>
+            <BadgeShowcase
+              badges={profile.featuredBadges}
+              onBadgePress={(badge) => {
+                // TODO: Open badge detail modal
+                console.log("Badge pressed:", badge.badgeId);
+              }}
+              onViewAll={() => navigation.navigate("BadgeCollection")}
+            />
+            <Divider style={styles.divider} />
+          </>
+        )}
+
+        {/* Stats Dashboard */}
+        {PROFILE_FEATURES.PROFILE_STATS && (
+          <>
+            <ProfileStats stats={profile.stats} expanded={false} />
+            <Divider style={styles.divider} />
+          </>
+        )}
+
+        {/* Action Buttons */}
+        <ProfileActions actions={actions} />
+
+        {/* Sign Out */}
+        <View style={styles.signOutContainer}>
+          <Button
+            mode="contained"
+            onPress={handleSignOut}
+            buttonColor={theme.colors.error}
+            textColor={theme.colors.onError}
+            style={styles.signOutButton}
+          >
+            Sign Out
+          </Button>
+        </View>
+
+        {/* Digital Avatar Customizer Modal (new system) */}
+        {useDigitalAvatar && (
+          <AvatarCustomizerModal
+            visible={showDigitalCustomizer}
+            onDismiss={() => setShowDigitalCustomizer(false)}
+            initialConfig={currentDigitalAvatarConfig}
+            onSave={handleSaveDigitalAvatar}
+            userId={currentFirebaseUser?.uid}
+          />
+        )}
+
+        {/* Legacy Avatar Customizer Modal (fallback) */}
+        {!useDigitalAvatar && (
+          <AvatarCustomizer
+            visible={showCustomizer}
+            onClose={() => setShowCustomizer(false)}
+            userId={currentFirebaseUser?.uid || ""}
+            currentConfig={
+              baseProfile?.avatarConfig || { baseColor: theme.colors.primary }
+            }
+            onSave={async (newConfig: AvatarConfig) => {
+              await refreshProfile();
+              setSuccess("Avatar updated!");
+              setTimeout(() => setSuccess(""), 2000);
+            }}
+          />
+        )}
+      </ScrollView>
+    );
+  }
+
+  // ========================================
+  // LEGACY LAYOUT (feature flag disabled)
+  // ========================================
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.legacyContent, { paddingTop: insets.top }]}
     >
       {/* Profile Header */}
       <Text style={[styles.title, { color: theme.colors.onBackground }]}>
@@ -104,34 +355,53 @@ export default function ProfileScreen({ navigation }: any) {
       {!isEditing && (
         <View style={styles.avatarSection}>
           <Avatar
-            config={profile.avatarConfig || { baseColor: theme.colors.primary }}
+            config={
+              useDigitalAvatar && baseProfile.digitalAvatar
+                ? baseProfile.digitalAvatar
+                : baseProfile.avatarConfig || {
+                    baseColor: theme.colors.primary,
+                  }
+            }
             size={120}
           />
           <Button
             mode="outlined"
-            onPress={() => setShowCustomizer(true)}
+            onPress={handleOpenCustomizer}
             style={styles.customizeButton}
-            icon="palette"
+            icon={useDigitalAvatar ? "account-edit" : "palette"}
           >
-            Customize Avatar
+            {useDigitalAvatar ? "Customize Avatar" : "Customize Profile"}
           </Button>
         </View>
       )}
 
-      {/* Avatar Customizer Modal */}
-      <AvatarCustomizer
-        visible={showCustomizer}
-        onClose={() => setShowCustomizer(false)}
-        userId={currentFirebaseUser?.uid || ""}
-        currentConfig={
-          profile.avatarConfig || { baseColor: theme.colors.primary }
-        }
-        onSave={async (newConfig: AvatarConfig) => {
-          await refreshProfile();
-          setSuccess("Avatar updated!");
-          setTimeout(() => setSuccess(""), 2000);
-        }}
-      />
+      {/* Digital Avatar Customizer Modal (new system) */}
+      {useDigitalAvatar && (
+        <AvatarCustomizerModal
+          visible={showDigitalCustomizer}
+          onDismiss={() => setShowDigitalCustomizer(false)}
+          initialConfig={currentDigitalAvatarConfig}
+          onSave={handleSaveDigitalAvatar}
+          userId={currentFirebaseUser?.uid}
+        />
+      )}
+
+      {/* Legacy Avatar Customizer Modal (fallback) */}
+      {!useDigitalAvatar && (
+        <AvatarCustomizer
+          visible={showCustomizer}
+          onClose={() => setShowCustomizer(false)}
+          userId={currentFirebaseUser?.uid || ""}
+          currentConfig={
+            baseProfile.avatarConfig || { baseColor: theme.colors.primary }
+          }
+          onSave={async (newConfig: AvatarConfig) => {
+            await refreshProfile();
+            setSuccess("Avatar updated!");
+            setTimeout(() => setSuccess(""), 2000);
+          }}
+        />
+      )}
 
       {/* Profile Info */}
       <View style={styles.infoSection}>
@@ -147,7 +417,7 @@ export default function ProfileScreen({ navigation }: any) {
             },
           ]}
         >
-          {profile.username}
+          {baseProfile.username}
         </Text>
 
         <Text style={[styles.label, { color: theme.colors.onSurfaceVariant }]}>
@@ -181,7 +451,7 @@ export default function ProfileScreen({ navigation }: any) {
                 },
               ]}
             >
-              {profile.displayName}
+              {baseProfile.displayName}
             </Text>
           </>
         ) : (
@@ -319,7 +589,7 @@ export default function ProfileScreen({ navigation }: any) {
               mode="outlined"
               onPress={() => {
                 setIsEditing(false);
-                setEditDisplayName(profile.displayName);
+                setEditDisplayName(baseProfile.displayName);
                 setError("");
               }}
               disabled={loading}
@@ -348,7 +618,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  // New layout styles
+  newLayoutContent: {
+    paddingBottom: 32,
+  },
+  divider: {
+    marginVertical: 16,
+    marginHorizontal: 16,
+  },
+  signOutContainer: {
+    paddingHorizontal: 16,
+    marginTop: 24,
+  },
+  // Legacy layout styles
+  legacyContent: {
     padding: Spacing.xl,
   },
   title: {

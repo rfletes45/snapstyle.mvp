@@ -20,6 +20,7 @@
  */
 
 export * from "./achievements";
+export * from "./avatar";
 export * from "./database";
 export * from "./gameFilters";
 export * from "./gameHistory";
@@ -27,6 +28,7 @@ export * from "./messaging";
 export * from "./models";
 export * from "./multiplayerLeaderboard";
 export * from "./poolGame";
+export * from "./profile";
 
 // =============================================================================
 // Re-export message adapters for convenience

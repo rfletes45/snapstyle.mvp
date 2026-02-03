@@ -76,6 +76,8 @@ export interface GameMetadata {
   hasAchievements: boolean;
   isAvailable: boolean; // Feature flag for gradual rollout
   comingSoon?: boolean;
+  /** Mark as newly added game (shows NEW badge) */
+  isNew?: boolean;
 }
 
 /**
@@ -182,6 +184,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasLeaderboard: true,
     hasAchievements: true,
     isAvailable: true,
+    isNew: true,
   },
 
   // Single-player: Daily
@@ -198,6 +201,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasLeaderboard: false,
     hasAchievements: true,
     isAvailable: true,
+    isNew: true,
   },
 
   // Multiplayer: Turn-based

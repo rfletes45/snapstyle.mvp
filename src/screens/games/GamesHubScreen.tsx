@@ -10,6 +10,10 @@
  * - Active multiplayer games section with filtering
  * - Game invites handling
  * - Archive/resign/rematch quick actions
+ * - NEW: PlayHeader with navigation shortcuts (Phase 1)
+ * - NEW: PlaySearchBar for game discovery (Phase 1)
+ * - NEW: Search logic and filtering (Phase 2)
+ * - NEW: ModernGameCard and SearchResultsView (Phase 2)
  */
 
 import { GameInviteBadge } from "@/components/GameInviteCard";
@@ -54,6 +58,12 @@ import {
   SinglePlayerGameType,
 } from "@/types/games";
 import { GameSession } from "@/types/models";
+import {
+  CATEGORY_CONFIGS,
+  DEFAULT_SEARCH_FILTERS,
+  FeaturedGame,
+  GameSearchFilters,
+} from "@/types/playScreen";
 import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
 import {
   AnyMatch,
@@ -61,6 +71,7 @@ import {
   TurnBasedGameType,
   UniversalGameInvite,
 } from "@/types/turnBased";
+import { searchGames } from "@/utils/gameSearch";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -71,8 +82,25 @@ import {
   View,
 } from "react-native";
 import { Card, Chip, Divider, Text, useTheme } from "react-native-paper";
+import { PLAY_SCREEN_FEATURES } from "../../../constants/featureFlags";
 import { BorderRadius, Spacing } from "../../../constants/theme";
-import { ActiveGamesSection, GameFilterBar } from "./components";
+import {
+  ActiveGamesMini,
+  ActiveGamesSection,
+  DailyChallengeCard,
+  FeaturedGameBanner,
+  FriendsPlayingNow,
+  GameCategoryCarousel,
+  GameFilterBar,
+  GameInvitesBanner,
+  GameRecommendations,
+  GameStatsSummary,
+  ModernGameCard,
+  PlayHeader,
+  PlaySearchBar,
+  QuickMatchFAB,
+  SearchResultsView,
+} from "./components";
 
 // =============================================================================
 // Types
@@ -88,6 +116,22 @@ interface GameCardProps {
   onPlay: () => void;
   isComingSoon?: boolean;
 }
+
+// =============================================================================
+// Phase 4: Featured Game Configuration
+// =============================================================================
+
+/**
+ * Current featured game for the promotional banner.
+ * Update this to promote new games or seasonal content.
+ */
+const FEATURED_GAME: FeaturedGame = {
+  gameType: "memory_snap",
+  headline: "New! Memory Snap",
+  subheadline: "Test your memory in this exciting new puzzle game!",
+  backgroundColor: "#4ECDC4",
+  gradientEndColor: "#2D9F9A",
+};
 
 // =============================================================================
 // Game Card Component
@@ -271,6 +315,7 @@ interface CategorySectionProps {
   subtitle: string;
   games: ExtendedGameType[];
   highScores: Map<string, number>;
+  highScoresFormatted: Map<string, string>;
   onPlayGame: (gameId: ExtendedGameType) => void;
 }
 
@@ -279,9 +324,11 @@ function CategorySection({
   subtitle,
   games,
   highScores,
+  highScoresFormatted,
   onPlayGame,
 }: CategorySectionProps) {
   const theme = useTheme();
+  const useModernCards = PLAY_SCREEN_FEATURES.CATEGORY_MODERN_CARDS;
 
   return (
     <>
@@ -298,13 +345,42 @@ function CategorySection({
       </Text>
       {games.map((gameId) => {
         const metadata = GAME_METADATA[gameId];
+        const isAvailable = metadata?.isAvailable ?? false;
+        const isNew = metadata?.isNew ?? false;
+
+        // Phase 3: Use ModernGameCard when feature flag is enabled
+        if (useModernCards) {
+          return (
+            <ModernGameCard
+              key={gameId}
+              gameType={gameId}
+              personalBest={
+                PLAY_SCREEN_FEATURES.CARD_PERSONAL_BEST
+                  ? (highScoresFormatted.get(gameId) ?? null)
+                  : null
+              }
+              onPress={() => onPlayGame(gameId)}
+              variant={
+                PLAY_SCREEN_FEATURES.COMPACT_BROWSE_CARDS
+                  ? "compact"
+                  : "default"
+              }
+              showPlayButton={PLAY_SCREEN_FEATURES.CARD_PLAY_BUTTON}
+              isNew={isNew}
+              isLocked={!isAvailable}
+              style={styles.modernGameCard}
+            />
+          );
+        }
+
+        // Legacy: Use old GameCard component
         return (
           <GameCard
             key={gameId}
             gameId={gameId}
             personalBest={highScores.get(gameId) ?? null}
             onPlay={() => onPlayGame(gameId)}
-            isComingSoon={!metadata?.isAvailable}
+            isComingSoon={!isAvailable}
           />
         );
       })}
@@ -342,12 +418,57 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   const [gameFilters, setGameFilters] =
     useState<GameFilters>(DEFAULT_GAME_FILTERS);
 
+  // =========================================================================
+  // Phase 1 & 2: Search State and Logic
+  // =========================================================================
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFilters, setSearchFilters] = useState<GameSearchFilters>(
+    DEFAULT_SEARCH_FILTERS,
+  );
+  const [selectedFilterChip, setSelectedFilterChip] = useState("all");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // Phase 2: Calculate if search is active (has query or non-default filters)
+  const isSearchActive = useMemo(() => {
+    return (
+      searchQuery.trim().length > 0 ||
+      searchFilters.category !== undefined ||
+      (searchFilters.playerCount !== undefined &&
+        searchFilters.playerCount !== "all")
+    );
+  }, [searchQuery, searchFilters]);
+
+  // Phase 2: Search results
+  const searchResults = useMemo(() => {
+    if (!isSearchActive && !PLAY_SCREEN_FEATURES.SEARCH_LOGIC) return [];
+    return searchGames(searchQuery, searchFilters);
+  }, [searchQuery, searchFilters, isSearchActive]);
+
   // Combine all high scores into a single map
   const highScoresMap = new Map<string, number>();
   personalBests.forEach((pb) => highScoresMap.set(pb.gameId, pb.bestScore));
   singlePlayerHighScores.forEach((hs) =>
     highScoresMap.set(hs.gameType, hs.highScore),
   );
+
+  // Phase 2: Format high scores as strings for new components
+  const highScoresFormatted = useMemo(() => {
+    const formatted = new Map<string, string>();
+
+    // Format personal bests from legacy games service
+    personalBests.forEach((pb) => {
+      const score = formatScore(pb.gameId as any, pb.bestScore);
+      formatted.set(pb.gameId, score);
+    });
+
+    // Format single player high scores
+    singlePlayerHighScores.forEach((hs) => {
+      const score = formatSinglePlayerScore(hs.gameType, hs.highScore);
+      formatted.set(hs.gameType, score);
+    });
+
+    return formatted;
+  }, [personalBests, singlePlayerHighScores]);
 
   // Calculate filtered games and counts
   const filteredActiveGames = useMemo(() => {
@@ -682,6 +803,54 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     "crazy_eights",
   ];
 
+  // =========================================================================
+  // Phase 1: Header Navigation Handlers
+  // =========================================================================
+  const handleLeaderboardPress = useCallback(() => {
+    navigation.navigate("Leaderboard");
+  }, [navigation]);
+
+  const handleAchievementsPress = useCallback(() => {
+    navigation.navigate("Achievements");
+  }, [navigation]);
+
+  const handleHistoryPress = useCallback(() => {
+    navigation.navigate("GameHistory");
+  }, [navigation]);
+
+  // =========================================================================
+  // Phase 6: View All Active Games Handler
+  // =========================================================================
+  const [showExpandedActiveGames, setShowExpandedActiveGames] = useState(false);
+
+  const handleViewAllActiveGames = useCallback(() => {
+    // Toggle to show the full ActiveGamesSection
+    setShowExpandedActiveGames(true);
+  }, []);
+
+  // =========================================================================
+  // Phase 1 & 2: Search Handlers
+  // =========================================================================
+  const handleSearchFocus = useCallback(() => {
+    setIsSearchFocused(true);
+  }, []);
+
+  const handleSearchBlur = useCallback(() => {
+    setIsSearchFocused(false);
+  }, []);
+
+  const handleChipSelect = useCallback((chipId: string) => {
+    setSelectedFilterChip(chipId);
+    // Phase 2: Filters are now applied automatically via onFiltersChange callback
+  }, []);
+
+  // Phase 2: Clear search handler
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchFilters(DEFAULT_SEARCH_FILTERS);
+    setSelectedFilterChip("all");
+  }, []);
+
   if (loading) {
     return (
       <View
@@ -707,291 +876,472 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   }
 
   return (
-    <ScrollView
+    <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
-        />
-      }
     >
-      {/* Active Games Section - Show first if there are any */}
-      {activeGames.length > 0 && currentFirebaseUser && (
-        <>
-          {/* Game Filter Bar */}
-          <GameFilterBar
-            filters={gameFilters}
-            onFiltersChange={setGameFilters}
-            yourTurnCount={gameCounts.yourTurn}
-            theirTurnCount={gameCounts.theirTurn}
-            invitesCount={universalInvites.length}
-          />
-
-          {/* Active Games */}
-          <ActiveGamesSection
-            games={filteredActiveGames}
-            currentUserId={currentFirebaseUser.uid}
-            onSelectGame={handleSelectActiveGame}
-            onArchiveGame={handleArchiveGame}
-            onResignGame={handleResignGame}
-            onRematchGame={handleRematchGame}
-          />
-          <Divider style={styles.divider} />
-        </>
+      {/* Phase 1: New Header with Navigation Shortcuts */}
+      {PLAY_SCREEN_FEATURES.NEW_HEADER && (
+        <PlayHeader
+          onLeaderboardPress={handleLeaderboardPress}
+          onAchievementsPress={handleAchievementsPress}
+          onHistoryPress={handleHistoryPress}
+          inviteCount={universalInvites.length}
+          yourTurnCount={gameCounts.yourTurn}
+          showBadges
+        />
       )}
 
-      {/* Universal Invites Section (Open Invites) */}
-      {universalInvites.length > 0 && (
-        <>
-          <View style={styles.invitesSectionHeader}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                { color: theme.colors.onBackground },
-              ]}
-            >
-              📬 Open Invites
-            </Text>
-            <GameInviteBadge count={universalInvites.length} />
-          </View>
-          <Text
-            style={[
-              styles.sectionSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Join a game with your friends!
-          </Text>
-          <View style={styles.universalInvitesList}>
-            {universalInvites.map((invite) => (
-              <UniversalInviteCard
-                key={invite.id}
-                invite={invite}
-                currentUserId={currentFirebaseUser?.uid || ""}
-                onJoin={() => handleJoinUniversalInvite(invite)}
-                onLeave={() => handleLeaveUniversalInvite(invite)}
-                onSpectate={() => handleSpectateUniversalInvite(invite)}
-                onCancel={() => handleCancelUniversalInvite(invite)}
-                onPlay={handlePlayUniversalInvite}
-              />
-            ))}
-          </View>
-          <Divider style={styles.divider} />
-        </>
+      {/* Phase 1: Search Bar (UI only, logic in Phase 2) */}
+      {PLAY_SCREEN_FEATURES.SEARCH_BAR && (
+        <View style={styles.searchBarContainer}>
+          <PlaySearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={handleSearchFocus}
+            onBlur={handleSearchBlur}
+            filters={searchFilters}
+            onFiltersChange={setSearchFilters}
+            isFocused={isSearchFocused}
+            selectedChip={selectedFilterChip}
+            onChipSelect={handleChipSelect}
+            showChips
+          />
+        </View>
       )}
 
-      {/* Quick Play Games Section */}
-      <CategorySection
-        title="⚡ Quick Play"
-        subtitle="Fast-paced action games"
-        games={quickPlayGames}
-        highScores={highScoresMap}
-        onPlayGame={navigateToGame}
-      />
-
-      {/* Puzzle Games Section */}
-      <Divider style={styles.divider} />
-      <CategorySection
-        title="🧩 Puzzle"
-        subtitle="Test your brain"
-        games={puzzleGames}
-        highScores={highScoresMap}
-        onPlayGame={navigateToGame}
-      />
-
-      {/* Multiplayer Games Section */}
-      <Divider style={styles.divider} />
-      <CategorySection
-        title="👥 Multiplayer"
-        subtitle="Challenge your friends!"
-        games={multiplayerGames}
-        highScores={highScoresMap}
-        onPlayGame={navigateToGame}
-      />
-
-      {/* Daily Games Section */}
-      <Divider style={styles.divider} />
-      <CategorySection
-        title="📅 Daily Challenge"
-        subtitle="New puzzle every day!"
-        games={dailyGames}
-        highScores={highScoresMap}
-        onPlayGame={navigateToGame}
-      />
-
-      {/* Leaderboards, Achievements & History Section */}
-      <Divider style={styles.divider} />
-      <Text style={[styles.sectionTitle, { color: theme.colors.onBackground }]}>
-        Compete & Collect
-      </Text>
-
-      <View style={styles.navCardsRow}>
-        <TouchableOpacity
-          style={[
-            styles.navCard,
-            {
-              backgroundColor: theme.colors.surfaceVariant,
-              borderColor: theme.colors.outlineVariant,
-            },
-          ]}
-          onPress={() => navigation.navigate("Leaderboard")}
+      {/* Phase 2: Show search results when search is active */}
+      {PLAY_SCREEN_FEATURES.SEARCH_LOGIC && isSearchActive ? (
+        <SearchResultsView
+          query={searchQuery}
+          results={searchResults}
+          highScores={highScoresFormatted}
+          onGamePress={navigateToGame}
+          style={styles.searchResults}
+          testID="play-search-results"
+        />
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+            />
+          }
+          keyboardShouldPersistTaps="handled"
         >
-          <MaterialCommunityIcons name="trophy" size={32} color="#FFD700" />
-          <Text
-            style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
-          >
-            Leaderboards
-          </Text>
-          <Text
-            style={[
-              styles.navCardSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Weekly rankings
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.navCard,
-            {
-              backgroundColor: theme.colors.surfaceVariant,
-              borderColor: theme.colors.outlineVariant,
-            },
-          ]}
-          onPress={() => navigation.navigate("Achievements")}
-        >
-          <MaterialCommunityIcons
-            name="medal"
-            size={32}
-            color={theme.colors.primary}
-          />
-          <Text
-            style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
-          >
-            Achievements
-          </Text>
-          <Text
-            style={[
-              styles.navCardSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Unlock badges
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Second row with Game History */}
-      <View style={styles.navCardsRow}>
-        <TouchableOpacity
-          style={[
-            styles.navCard,
-            {
-              backgroundColor: theme.colors.surfaceVariant,
-              borderColor: theme.colors.outlineVariant,
-            },
-          ]}
-          onPress={() => navigation.navigate("GameHistory")}
-        >
-          <MaterialCommunityIcons
-            name="history"
-            size={32}
-            color={theme.colors.secondary}
-          />
-          <Text
-            style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
-          >
-            Game History
-          </Text>
-          <Text
-            style={[
-              styles.navCardSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Past matches & stats
-          </Text>
-        </TouchableOpacity>
-
-        {/* Placeholder for future card - keeps layout balanced */}
-        <View style={[styles.navCard, { opacity: 0 }]} />
-      </View>
-
-      {/* Recent Games Section */}
-      {(() => {
-        // Combine and sort recent games from both sources
-        const allRecentGames: UnifiedRecentGame[] = [
-          ...recentGames.map((s) => ({
-            id: s.id,
-            gameType: s.gameId as ExtendedGameType,
-            score: s.score,
-            playedAt: s.playedAt,
-          })),
-          ...recentSinglePlayerGames.map((s) => ({
-            id: s.id,
-            gameType: s.gameType as ExtendedGameType,
-            score: s.finalScore,
-            playedAt: s.endedAt,
-          })),
-        ]
-          .sort((a, b) => b.playedAt - a.playedAt)
-          .slice(0, 5);
-
-        if (allRecentGames.length > 0) {
-          return (
+          {/* Active Games Section - Show first if there are any */}
+          {activeGames.length > 0 && currentFirebaseUser && (
             <>
-              <Divider style={styles.divider} />
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  { color: theme.colors.onBackground },
-                ]}
-              >
-                Recent Games
-              </Text>
+              {/* Phase 6: New compact mini view OR legacy full view */}
+              {PLAY_SCREEN_FEATURES.ACTIVE_GAMES_MINI &&
+              !showExpandedActiveGames ? (
+                <>
+                  <ActiveGamesMini
+                    games={activeGames}
+                    currentUserId={currentFirebaseUser.uid}
+                    onGamePress={handleSelectActiveGame}
+                    onViewAllPress={handleViewAllActiveGames}
+                    testID="active-games-mini"
+                  />
+                  <Divider style={styles.divider} />
+                </>
+              ) : (
+                <>
+                  {/* Game Filter Bar */}
+                  <GameFilterBar
+                    filters={gameFilters}
+                    onFiltersChange={setGameFilters}
+                    yourTurnCount={gameCounts.yourTurn}
+                    theirTurnCount={gameCounts.theirTurn}
+                    invitesCount={universalInvites.length}
+                  />
 
-              <View
-                style={[
-                  styles.recentGamesContainer,
-                  { backgroundColor: theme.colors.surfaceVariant },
-                ]}
-              >
-                {allRecentGames.map((session) => (
-                  <RecentGameItem key={session.id} session={session} />
-                ))}
-              </View>
+                  {/* Active Games (Legacy Full View) */}
+                  <ActiveGamesSection
+                    games={filteredActiveGames}
+                    currentUserId={currentFirebaseUser.uid}
+                    onSelectGame={handleSelectActiveGame}
+                    onArchiveGame={handleArchiveGame}
+                    onResignGame={handleResignGame}
+                    onRematchGame={handleRematchGame}
+                  />
+                  <Divider style={styles.divider} />
+                </>
+              )}
             </>
-          );
-        }
+          )}
 
-        return (
-          <>
-            <Divider style={styles.divider} />
-            <View style={styles.noGamesContainer}>
-              <MaterialCommunityIcons
-                name="gamepad-variant-outline"
-                size={48}
-                color={theme.colors.onSurfaceVariant}
+          {/* Universal Invites Section (Open Invites) */}
+          {universalInvites.length > 0 && (
+            <>
+              {/* Phase 5: New compact invite banner OR legacy full cards */}
+              {PLAY_SCREEN_FEATURES.INVITES_BANNER ? (
+                <GameInvitesBanner
+                  invites={universalInvites}
+                  currentUserId={currentFirebaseUser?.uid || ""}
+                  onJoinInvite={handleJoinUniversalInvite}
+                  onDeclineInvite={handleCancelUniversalInvite}
+                  testID="game-invites-banner"
+                />
+              ) : (
+                <>
+                  <View style={styles.invitesSectionHeader}>
+                    <Text
+                      style={[
+                        styles.sectionTitle,
+                        { color: theme.colors.onBackground },
+                      ]}
+                    >
+                      📬 Open Invites
+                    </Text>
+                    <GameInviteBadge count={universalInvites.length} />
+                  </View>
+                  <Text
+                    style={[
+                      styles.sectionSubtitle,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    Join a game with your friends!
+                  </Text>
+                  <View style={styles.universalInvitesList}>
+                    {universalInvites.map((invite) => (
+                      <UniversalInviteCard
+                        key={invite.id}
+                        invite={invite}
+                        currentUserId={currentFirebaseUser?.uid || ""}
+                        onJoin={() => handleJoinUniversalInvite(invite)}
+                        onLeave={() => handleLeaveUniversalInvite(invite)}
+                        onSpectate={() => handleSpectateUniversalInvite(invite)}
+                        onCancel={() => handleCancelUniversalInvite(invite)}
+                        onPlay={handlePlayUniversalInvite}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+              <Divider style={styles.divider} />
+            </>
+          )}
+
+          {/* Phase 4: Featured Game Banner */}
+          {PLAY_SCREEN_FEATURES.FEATURED_BANNER && (
+            <FeaturedGameBanner
+              featuredGame={FEATURED_GAME}
+              onPress={() => navigateToGame(FEATURED_GAME.gameType)}
+              testID="featured-game-banner"
+            />
+          )}
+
+          {/* Phase 7: Game Stats Summary */}
+          {PLAY_SCREEN_FEATURES.GAME_STATS_SUMMARY && (
+            <GameStatsSummary
+              onViewDetails={() => navigation.navigate("GameHistory")}
+              testID="game-stats-summary"
+            />
+          )}
+
+          {/* Phase 7: Friends Playing Now */}
+          {PLAY_SCREEN_FEATURES.FRIENDS_PLAYING_NOW && (
+            <FriendsPlayingNow
+              onFriendPress={(friendId, gameType) => {
+                // Navigate to friend's profile or spectate their game
+                console.log("Friend pressed:", friendId, gameType);
+              }}
+              testID="friends-playing-now"
+            />
+          )}
+
+          {/* Phase 7: Game Recommendations */}
+          {PLAY_SCREEN_FEATURES.GAME_RECOMMENDATIONS && (
+            <GameRecommendations
+              onGamePress={navigateToGame}
+              testID="game-recommendations"
+            />
+          )}
+
+          {/* Phase 4: Category Carousels Mode vs Legacy Vertical Lists */}
+          {PLAY_SCREEN_FEATURES.CATEGORY_CAROUSELS ? (
+            <>
+              {/* Carousel-based Categories */}
+              {CATEGORY_CONFIGS.map((category) => {
+                // Special treatment for daily challenges
+                if (
+                  category.layout === "single" &&
+                  category.games.length === 1
+                ) {
+                  const gameType = category.games[0];
+                  return (
+                    <DailyChallengeCard
+                      key={category.id}
+                      gameType={gameType}
+                      personalBest={highScoresFormatted.get(gameType)}
+                      onPress={() => navigateToGame(gameType)}
+                      testID={`daily-challenge-${gameType}`}
+                    />
+                  );
+                }
+
+                // Regular carousel for multi-game categories
+                return (
+                  <GameCategoryCarousel
+                    key={category.id}
+                    category={category}
+                    highScores={highScoresFormatted}
+                    onGamePress={navigateToGame}
+                    showSeeAll={false}
+                    testID={`category-carousel-${category.id}`}
+                  />
+                );
+              })}
+            </>
+          ) : (
+            <>
+              {/* Legacy: Vertical Category Sections */}
+              {/* Quick Play Games Section */}
+              <CategorySection
+                title="⚡ Quick Play"
+                subtitle="Fast-paced action games"
+                games={quickPlayGames}
+                highScores={highScoresMap}
+                highScoresFormatted={highScoresFormatted}
+                onPlayGame={navigateToGame}
               />
+
+              {/* Puzzle Games Section */}
+              <Divider style={styles.divider} />
+              <CategorySection
+                title="🧩 Puzzle"
+                subtitle="Test your brain"
+                games={puzzleGames}
+                highScores={highScoresMap}
+                highScoresFormatted={highScoresFormatted}
+                onPlayGame={navigateToGame}
+              />
+
+              {/* Multiplayer Games Section */}
+              <Divider style={styles.divider} />
+              <CategorySection
+                title="👥 Multiplayer"
+                subtitle="Challenge your friends!"
+                games={multiplayerGames}
+                highScores={highScoresMap}
+                highScoresFormatted={highScoresFormatted}
+                onPlayGame={navigateToGame}
+              />
+
+              {/* Daily Games Section */}
+              <Divider style={styles.divider} />
+              <CategorySection
+                title="📅 Daily Challenge"
+                subtitle="New puzzle every day!"
+                games={dailyGames}
+                highScores={highScoresMap}
+                highScoresFormatted={highScoresFormatted}
+                onPlayGame={navigateToGame}
+              />
+            </>
+          )}
+
+          {/* Leaderboards, Achievements & History Section */}
+          <Divider style={styles.divider} />
+          <Text
+            style={[styles.sectionTitle, { color: theme.colors.onBackground }]}
+          >
+            Compete & Collect
+          </Text>
+
+          <View style={styles.navCardsRow}>
+            <TouchableOpacity
+              style={[
+                styles.navCard,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+              onPress={() => navigation.navigate("Leaderboard")}
+            >
+              <MaterialCommunityIcons name="trophy" size={32} color="#FFD700" />
+              <Text
+                style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
+              >
+                Leaderboards
+              </Text>
               <Text
                 style={[
-                  styles.noGamesText,
+                  styles.navCardSubtitle,
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                Play your first game to see your history here!
+                Weekly rankings
               </Text>
-            </View>
-          </>
-        );
-      })()}
-    </ScrollView>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.navCard,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+              onPress={() => navigation.navigate("Achievements")}
+            >
+              <MaterialCommunityIcons
+                name="medal"
+                size={32}
+                color={theme.colors.primary}
+              />
+              <Text
+                style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
+              >
+                Achievements
+              </Text>
+              <Text
+                style={[
+                  styles.navCardSubtitle,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Unlock badges
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Second row with Game History */}
+          <View style={styles.navCardsRow}>
+            <TouchableOpacity
+              style={[
+                styles.navCard,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+              onPress={() => navigation.navigate("GameHistory")}
+            >
+              <MaterialCommunityIcons
+                name="history"
+                size={32}
+                color={theme.colors.secondary}
+              />
+              <Text
+                style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
+              >
+                Game History
+              </Text>
+              <Text
+                style={[
+                  styles.navCardSubtitle,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Past matches & stats
+              </Text>
+            </TouchableOpacity>
+
+            {/* Placeholder for future card - keeps layout balanced */}
+            <View style={[styles.navCard, { opacity: 0 }]} />
+          </View>
+
+          {/* Recent Games Section - Hidden when Phase 6 REMOVE_RECENT_GAMES is enabled */}
+          {!PLAY_SCREEN_FEATURES.REMOVE_RECENT_GAMES &&
+            (() => {
+              // Combine and sort recent games from both sources
+              const allRecentGames: UnifiedRecentGame[] = [
+                ...recentGames.map((s) => ({
+                  id: s.id,
+                  gameType: s.gameId as ExtendedGameType,
+                  score: s.score,
+                  playedAt: s.playedAt,
+                })),
+                ...recentSinglePlayerGames.map((s) => ({
+                  id: s.id,
+                  gameType: s.gameType as ExtendedGameType,
+                  score: s.finalScore,
+                  playedAt: s.endedAt,
+                })),
+              ]
+                .sort((a, b) => b.playedAt - a.playedAt)
+                .slice(0, 5);
+
+              if (allRecentGames.length > 0) {
+                return (
+                  <>
+                    <Divider style={styles.divider} />
+                    <Text
+                      style={[
+                        styles.sectionTitle,
+                        { color: theme.colors.onBackground },
+                      ]}
+                    >
+                      Recent Games
+                    </Text>
+
+                    <View
+                      style={[
+                        styles.recentGamesContainer,
+                        { backgroundColor: theme.colors.surfaceVariant },
+                      ]}
+                    >
+                      {allRecentGames.map((session) => (
+                        <RecentGameItem key={session.id} session={session} />
+                      ))}
+                    </View>
+                  </>
+                );
+              }
+
+              return (
+                <>
+                  <Divider style={styles.divider} />
+                  <View style={styles.noGamesContainer}>
+                    <MaterialCommunityIcons
+                      name="gamepad-variant-outline"
+                      size={48}
+                      color={theme.colors.onSurfaceVariant}
+                    />
+                    <Text
+                      style={[
+                        styles.noGamesText,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                    >
+                      Play your first game to see your history here!
+                    </Text>
+                  </View>
+                </>
+              );
+            })()}
+        </ScrollView>
+      )}
+
+      {/* Phase 7: Quick Match FAB */}
+      {PLAY_SCREEN_FEATURES.QUICK_MATCH_FAB && (
+        <QuickMatchFAB
+          onQuickMatch={(gameType) => {
+            // Navigate to the game screen - the game menu will handle friend selection
+            const screenMap: Record<string, string> = {
+              tic_tac_toe: "TicTacToeGame",
+              checkers: "CheckersGame",
+              chess: "ChessGame",
+              crazy_eights: "CrazyEightsGame",
+            };
+
+            const screen = screenMap[gameType];
+            if (screen) {
+              navigation.navigate(screen, { entryPoint: "quick-match" });
+            }
+          }}
+          testID="quick-match-fab"
+        />
+      )}
+    </View>
   );
 }
 
@@ -1018,8 +1368,16 @@ const styles = StyleSheet.create({
     flex: 1,
     // backgroundColor applied inline via theme
   },
+  scrollView: {
+    flex: 1,
+  },
   content: {
     padding: Spacing.lg,
+  },
+  // Phase 1: Search bar container
+  searchBarContainer: {
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
   sectionTitle: {
     fontSize: 20,
@@ -1180,5 +1538,13 @@ const styles = StyleSheet.create({
   universalInvitesList: {
     gap: Spacing.md,
     marginTop: Spacing.sm,
+  },
+  // Phase 2: Search results view
+  searchResults: {
+    flex: 1,
+  },
+  // Phase 3: Modern game card in category sections
+  modernGameCard: {
+    marginBottom: Spacing.md,
   },
 });
