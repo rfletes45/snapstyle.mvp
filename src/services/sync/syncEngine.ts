@@ -484,13 +484,23 @@ export async function pullMessages(
 
 /**
  * Full sync for a conversation (used on first load)
+ * NOTE: This function requires SQLite and should not be called on web.
+ * Returns 0 if SQLite is not available.
  */
 export async function fullSyncConversation(
   scope: "dm" | "group",
   conversationId: string,
   messageLimit: number = 50,
 ): Promise<number> {
+  // Check if SQLite is available (not on web)
   const db = getDatabase();
+  if (!db) {
+    console.warn(
+      "[SyncEngine] fullSyncConversation called on web - SQLite not available",
+    );
+    return 0;
+  }
+
   const firestore = getFirestoreInstance();
 
   // Both DM and Group messages use uppercase 'Messages'
@@ -620,12 +630,23 @@ export async function fullSyncConversation(
 
 /**
  * Subscribe to real-time message updates for a conversation
+ * NOTE: This function requires SQLite and should not be called on web.
+ * Returns a no-op unsubscribe function if SQLite is not available.
  */
 export function subscribeToConversation(
   scope: "dm" | "group",
   conversationId: string,
   onNewMessage?: (message: MessageV2) => void,
 ): () => void {
+  // Check if SQLite is available (not on web)
+  const db = getDatabase();
+  if (!db) {
+    console.warn(
+      "[SyncEngine] subscribeToConversation called on web - SQLite not available",
+    );
+    return () => {}; // Return no-op unsubscribe
+  }
+
   // Unsubscribe from existing if any
   const existingUnsub = activeSubscriptions.get(conversationId);
   if (existingUnsub) {
@@ -633,7 +654,6 @@ export function subscribeToConversation(
   }
 
   const firestore = getFirestoreInstance();
-  const db = getDatabase();
 
   // Get last synced timestamp
   const cursor = db.getFirstSync<{ last_synced_at: number | null }>(

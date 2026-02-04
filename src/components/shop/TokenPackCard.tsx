@@ -7,6 +7,7 @@
  * @see src/services/iap.ts for token pack definitions
  */
 
+import { useColors } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { memo } from "react";
@@ -40,6 +41,7 @@ function TokenPackCardBase({
   purchasing = false,
 }: TokenPackCardProps) {
   const theme = useTheme();
+  const colors = useColors();
 
   const totalTokens = tokens + bonusTokens;
   const bonusPercent =
@@ -58,6 +60,7 @@ function TokenPackCardBase({
       style={[
         styles.card,
         {
+          backgroundColor: colors.surface,
           borderColor: popular ? "#FFD700" : theme.colors.outline,
           borderWidth: popular ? 2 : 1,
         },
@@ -92,10 +95,12 @@ function TokenPackCardBase({
       {/* Bonus indicator */}
       {bonusTokens > 0 && (
         <View style={styles.bonusContainer}>
-          <Text style={styles.bonusText}>
+          <Text style={[styles.bonusText, { color: colors.success }]}>
             +{bonusTokens.toLocaleString()} Bonus!
           </Text>
-          <Text style={styles.bonusPercent}>(+{bonusPercent}%)</Text>
+          <Text style={[styles.bonusPercent, { color: colors.success }]}>
+            (+{bonusPercent}%)
+          </Text>
         </View>
       )}
 
@@ -115,8 +120,10 @@ function TokenPackCardBase({
 
       {/* Value indicator for larger packs */}
       {bonusPercent >= 10 && (
-        <View style={styles.valueTag}>
-          <Text style={styles.valueText}>Best Value</Text>
+        <View style={[styles.valueTag, { backgroundColor: colors.warning }]}>
+          <Text style={[styles.valueText, { color: colors.onPrimary }]}>
+            Best Value
+          </Text>
         </View>
       )}
     </TouchableOpacity>
@@ -126,7 +133,6 @@ function TokenPackCardBase({
 const styles = StyleSheet.create({
   card: {
     width: 110,
-    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 12,
     alignItems: "center",
@@ -179,11 +185,9 @@ const styles = StyleSheet.create({
   bonusText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#4CAF50",
   },
   bonusPercent: {
     fontSize: 10,
-    color: "#4CAF50",
   },
   priceContainer: {
     marginTop: 12,
@@ -201,14 +205,12 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 8,
     right: -8,
-    backgroundColor: "#FF5722",
     paddingVertical: 2,
     paddingHorizontal: 6,
     borderRadius: 8,
     transform: [{ rotate: "15deg" }],
   },
   valueText: {
-    color: "#fff",
     fontSize: 8,
     fontWeight: "700",
   },

@@ -33,7 +33,14 @@ export type HapticFeedbackType =
   | "card_play" // Playing a card
   | "card_draw" // Drawing a card
   | "check" // King in check
-  | "special_move"; // Special moves (castling, en passant)
+  | "special_move" // Special moves (castling, en passant)
+  // New single-player game haptics
+  | "tile_slide" // Tile sliding in puzzle
+  | "brick_hit" // Ball hitting a brick
+  | "brick_destroy" // Brick destroyed
+  | "powerup_collect" // Power-up collected
+  | "ball_launch" // Ball launched
+  | "combo"; // Combo achieved
 
 // =============================================================================
 // Hook
@@ -84,6 +91,8 @@ export function useGameHaptics() {
         case "move":
         case "card_draw":
         case "turn_change":
+        case "tile_slide":
+        case "brick_hit":
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           break;
 
@@ -94,13 +103,24 @@ export function useGameHaptics() {
         case "eat":
         case "card_play":
         case "special_move":
+        case "brick_destroy":
+        case "combo":
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           break;
 
         // Heavy impacts
         case "impact_heavy":
         case "game_over":
+        case "ball_launch":
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          break;
+
+        // Path complete uses success notification
+        case "path_complete":
+        case "powerup_collect":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success,
+          );
           break;
 
         default:
@@ -185,12 +205,110 @@ export function useGameHaptics() {
     }
   };
 
+  /**
+   * Play a combo multiplier pattern for Hex Collapse and similar games
+   * Intensity scales with combo count (1-5+)
+   */
+  const comboPattern = async (comboCount: number) => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      const baseDelay = 80;
+      const pulses = Math.min(comboCount, 5);
+
+      for (let i = 0; i < pulses; i++) {
+        const style =
+          i < 2
+            ? Haptics.ImpactFeedbackStyle.Light
+            : i < 4
+              ? Haptics.ImpactFeedbackStyle.Medium
+              : Haptics.ImpactFeedbackStyle.Heavy;
+        await Haptics.impactAsync(style);
+        await new Promise((resolve) => setTimeout(resolve, baseDelay - i * 10));
+      }
+
+      if (comboCount >= 3) {
+        await Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+      }
+    } catch (error) {
+      console.debug("Haptics combo pattern failed:", error);
+    }
+  };
+
+  /**
+   * Play a brick break cascade pattern for Brick Breaker
+   * Used when multiple bricks are destroyed in quick succession
+   */
+  const brickCascadePattern = async (brickCount: number) => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      const bursts = Math.min(brickCount, 4);
+      for (let i = 0; i < bursts; i++) {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (brickCount >= 3) {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch (error) {
+      console.debug("Haptics brick cascade failed:", error);
+    }
+  };
+
+  /**
+   * Play a puzzle solved pattern for Tile Slide and Color Flow
+   * Satisfying completion feedback
+   */
+  const puzzleSolvedPattern = async () => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.debug("Haptics puzzle solved failed:", error);
+    }
+  };
+
+  /**
+   * Play a level complete pattern with escalating intensity
+   */
+  const levelCompletePattern = async () => {
+    if (!isHapticsAvailable) return;
+
+    try {
+      // Quick ascending taps
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.debug("Haptics level complete failed:", error);
+    }
+  };
+
   return {
     trigger,
     celebrationPattern,
     gameOverPattern,
     doubleTap,
     escalatingPattern,
+    // New specialized patterns
+    comboPattern,
+    brickCascadePattern,
+    puzzleSolvedPattern,
+    levelCompletePattern,
     isHapticsAvailable,
   };
 }

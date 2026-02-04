@@ -276,7 +276,7 @@ service cloud.firestore {
         // User can create/update their own high scores with validation
         allow create, update: if isAuth() && isOwner(uid) &&
           // gameType must be valid single-player game
-          gameType in ['flappy_snap', 'bounce_blitz', 'snap_2048', 'snap_snake', 'memory_snap', 'word_snap', 'reaction_tap', 'timed_tap'] &&
+          gameType in ['flappy_snap', 'bounce_blitz', 'snap_2048', 'snap_snake', 'memory_snap', 'word_snap', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'] &&
           // Must have required fields
           request.resource.data.gameType == gameType &&
           request.resource.data.highScore is number &&
@@ -764,7 +764,7 @@ service cloud.firestore {
                                 request.auth.uid == playerId &&
                                 request.resource.data.playerId == playerId &&
                                 request.resource.data.score >= 0 &&
-                                leaderboardId in ['word_snap', 'bounce_blitz', 'tic_tac_toe', 'snap_2048', 'snap_snake'];
+                                leaderboardId in ['word_snap', 'bounce_blitz', 'tic_tac_toe', 'snap_2048', 'snap_snake', 'flappy_snap', 'memory_snap', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'];
         
         // No deletes from client
         allow delete: if false;
@@ -1667,6 +1667,84 @@ service cloud.firestore {
       
       // Write: Server-side only via Cloud Functions
       allow create, update, delete: if false;
+    }
+
+    // ============================================================
+    // CALL SYSTEM
+    // ============================================================
+
+    // CALLS COLLECTION
+    // Stores active and completed call documents
+    match /Calls/{callId} {
+      // Helper: Check if user is a participant in the call
+      function isParticipant() {
+        return request.auth.uid in resource.data.participants;
+      }
+      
+      function isParticipantInNew() {
+        return request.auth.uid in request.resource.data.participants;
+      }
+      
+      // Helper: Check if user is the caller
+      function isCaller() {
+        return request.auth.uid == resource.data.callerId;
+      }
+      
+      function isCallerInNew() {
+        return request.auth.uid == request.resource.data.callerId;
+      }
+      
+      // Read: only participants can read call documents
+      allow read: if isAuth() && isParticipant();
+      
+      // Create: authenticated users can create calls where they are the caller
+      allow create: if isAuth() && 
+                      isCallerInNew() &&
+                      isParticipantInNew() &&
+                      request.resource.data.status == 'ringing' &&
+                      request.resource.data.type in ['audio', 'video'] &&
+                      request.resource.data.scope in ['dm', 'group'];
+      
+      // Update: participants can update call (answer, end, update media state)
+      allow update: if isAuth() && isParticipant() &&
+                      // Cannot change immutable fields
+                      request.resource.data.callerId == resource.data.callerId &&
+                      request.resource.data.conversationId == resource.data.conversationId &&
+                      request.resource.data.type == resource.data.type &&
+                      request.resource.data.scope == resource.data.scope &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+      
+      // Delete: never delete calls, use status field
+      allow delete: if false;
+    }
+
+    // CALL HISTORY SUBCOLLECTION
+    // Stores denormalized call history per user for fast queries
+    match /Users/{userId}/CallHistory/{callId} {
+      // Read: user can only read their own call history
+      allow read: if isAuth() && isOwner(userId);
+      
+      // Write: Cloud Functions only (created when call ends)
+      allow create, update, delete: if false;
+    }
+
+    // CALL SIGNALING COLLECTION
+    // WebRTC signaling messages (offers, answers, ICE candidates)
+    match /CallSignaling/{callId}/Signals/{signalId} {
+      // Read: authenticated users can read signals addressed to them
+      allow read: if isAuth() && resource.data.to == request.auth.uid;
+      
+      // Create: authenticated users can create signals from themselves
+      allow create: if isAuth() && 
+                      request.resource.data.from == request.auth.uid &&
+                      request.resource.data.type in ['offer', 'answer', 'ice-candidate', 'bye'] &&
+                      request.resource.data.callId == callId;
+      
+      // Update: not allowed (signals are immutable)
+      allow update: if false;
+      
+      // Delete: recipient can delete after processing
+      allow delete: if isAuth() && resource.data.to == request.auth.uid;
     }
 
     // ============================================================

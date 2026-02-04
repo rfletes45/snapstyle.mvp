@@ -74,6 +74,9 @@ import { GamePickerModal } from "@/components/games/GamePickerModal";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
 import { ExtendedGameType } from "@/types/games";
 
+// Call buttons
+import { CallButtonGroup } from "@/components/calls";
+
 // Types & Utils
 import type { ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
@@ -371,6 +374,15 @@ export default function ChatScreen({
       ),
       headerRight: () => (
         <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {/* Call buttons */}
+          <CallButtonGroup
+            recipientId={friendUid}
+            recipientName={friendProfile?.username || "Friend"}
+            conversationId={chatId || ""}
+            scope="dm"
+            size={22}
+            iconColor={theme.colors.onSurface}
+          />
           {SHOW_V2_BADGE && (
             <Badge
               size={20}
@@ -528,7 +540,11 @@ export default function ChatScreen({
   }, []);
 
   const handleNavigateToGame = useCallback(
-    (gameId: string, gameType: string) => {
+    (
+      gameId: string,
+      gameType: string,
+      options?: { inviteId?: string; spectatorMode?: boolean },
+    ) => {
       const screenMap: Record<string, string> = {
         tic_tac_toe: "TicTacToeGame",
         checkers: "CheckersGame",
@@ -537,10 +553,18 @@ export default function ChatScreen({
       };
       const screen = screenMap[gameType];
       if (screen) {
-        // Navigate to Play tab first, then to the specific game screen
-        navigation.navigate("Play", {
-          screen,
-          params: { matchId: gameId, entryPoint: "chat" },
+        // Navigate through MainTabs -> Play tab -> specific game screen
+        navigation.navigate("MainTabs", {
+          screen: "Play",
+          params: {
+            screen,
+            params: {
+              matchId: gameId,
+              inviteId: options?.inviteId,
+              spectatorMode: options?.spectatorMode,
+              entryPoint: "chat",
+            },
+          },
         });
       }
     },
@@ -557,7 +581,16 @@ export default function ChatScreen({
     (gameType: ExtendedGameType) => {
       const screen = GAME_SCREEN_MAP[gameType];
       if (screen) {
-        navigation.navigate(screen as any);
+        // Navigate through MainTabs -> Play tab -> specific game screen
+        navigation.navigate("MainTabs", {
+          screen: "Play",
+          params: {
+            screen,
+            params: {
+              entryPoint: "chat",
+            },
+          },
+        });
       }
     },
     [navigation],

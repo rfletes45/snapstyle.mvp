@@ -13,6 +13,7 @@
 
 import type { BundleWithStatus } from "@/services/bundles";
 import { formatTimeRemaining } from "@/services/shop";
+import { useColors } from "@/store/ThemeContext";
 import { RARITY_COLORS } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -44,6 +45,7 @@ function ShopBundleCardBase({
   compact = false,
 }: ShopBundleCardProps) {
   const theme = useTheme();
+  const colors = useColors();
   const rarityColor = RARITY_COLORS[bundle.rarity] || "#9E9E9E";
 
   // Format prices
@@ -126,7 +128,11 @@ function ShopBundleCardBase({
               { backgroundColor: bundle.highlightColor || rarityColor },
             ]}
           >
-            <Text style={styles.compactBadgeText}>{bundle.badgeText}</Text>
+            <Text
+              style={[styles.compactBadgeText, { color: colors.onPrimary }]}
+            >
+              {bundle.badgeText}
+            </Text>
           </View>
         )}
 
@@ -157,8 +163,12 @@ function ShopBundleCardBase({
 
         {/* Discount Badge */}
         {bundle.discountPercent > 0 && (
-          <View style={[styles.discountBadge, { backgroundColor: "#4CAF50" }]}>
-            <Text style={styles.discountText}>-{bundle.discountPercent}%</Text>
+          <View
+            style={[styles.discountBadge, { backgroundColor: colors.success }]}
+          >
+            <Text style={[styles.discountText, { color: colors.onPrimary }]}>
+              -{bundle.discountPercent}%
+            </Text>
           </View>
         )}
       </LinearGradient>
@@ -199,14 +209,20 @@ function ShopBundleCardBase({
               { backgroundColor: bundle.highlightColor || rarityColor },
             ]}
           >
-            <Text style={styles.badgeText}>{bundle.badgeText}</Text>
+            <Text style={[styles.badgeText, { color: colors.onPrimary }]}>
+              {bundle.badgeText}
+            </Text>
           </View>
         )}
 
         {/* Discount Badge */}
         {bundle.discountPercent > 0 && (
-          <View style={[styles.discountBadge, { backgroundColor: "#4CAF50" }]}>
-            <Text style={styles.discountText}>-{bundle.discountPercent}%</Text>
+          <View
+            style={[styles.discountBadge, { backgroundColor: colors.success }]}
+          >
+            <Text style={[styles.discountText, { color: colors.onPrimary }]}>
+              -{bundle.discountPercent}%
+            </Text>
           </View>
         )}
 
@@ -218,9 +234,9 @@ function ShopBundleCardBase({
                 <MaterialCommunityIcons
                   name="clock-outline"
                   size={14}
-                  color="#fff"
+                  color={colors.onPrimary}
                 />
-                <Text style={styles.limitedText}>
+                <Text style={[styles.limitedText, { color: colors.onPrimary }]}>
                   {formatTimeRemaining(bundle.timeRemaining)}
                 </Text>
               </View>
@@ -230,9 +246,9 @@ function ShopBundleCardBase({
                 <MaterialCommunityIcons
                   name="package-variant"
                   size={14}
-                  color="#fff"
+                  color={colors.onPrimary}
                 />
-                <Text style={styles.limitedText}>
+                <Text style={[styles.limitedText, { color: colors.onPrimary }]}>
                   {bundle.stockRemaining} left
                 </Text>
               </View>
@@ -457,7 +473,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   badgeText: {
-    color: "#fff",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -470,7 +485,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   discountText: {
-    color: "#fff",
     fontSize: 12,
     fontWeight: "700",
   },
@@ -492,7 +506,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   limitedText: {
-    color: "#fff",
     fontSize: 11,
     fontWeight: "600",
   },
@@ -621,7 +634,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   compactBadgeText: {
-    color: "#fff",
     fontSize: 9,
     fontWeight: "700",
   },

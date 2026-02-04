@@ -25,7 +25,7 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { AppColors } from "../../constants/theme";
+import { useColors } from "../store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -100,6 +100,7 @@ export default function ScheduleMessageModal({
   messagePreview,
 }: ScheduleMessageModalProps) {
   const theme = useTheme();
+  const colors = useColors();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
 
@@ -273,8 +274,10 @@ export default function ScheduleMessageModal({
                     styles.quickOption,
                     selectedDate &&
                       formatScheduledTime(selectedDate.getTime()) ===
-                        formatScheduledTime(option.getDate().getTime()) &&
-                      styles.quickOptionSelected,
+                        formatScheduledTime(option.getDate().getTime()) && [
+                        styles.quickOptionSelected,
+                        { borderColor: colors.primary },
+                      ],
                   ]}
                   onPress={() => handleQuickOption(option)}
                 >
@@ -294,8 +297,10 @@ export default function ScheduleMessageModal({
                       styles.quickOptionText,
                       selectedDate &&
                         formatScheduledTime(selectedDate.getTime()) ===
-                          formatScheduledTime(option.getDate().getTime()) &&
-                        styles.quickOptionTextSelected,
+                          formatScheduledTime(option.getDate().getTime()) && [
+                          styles.quickOptionTextSelected,
+                          { color: colors.primary },
+                        ],
                     ]}
                   >
                     {option.label}
@@ -370,7 +375,12 @@ export default function ScheduleMessageModal({
 
             {/* Selected Time Preview */}
             {selectedDate && (
-              <View style={styles.selectedPreview}>
+              <View
+                style={[
+                  styles.selectedPreview,
+                  { borderColor: colors.primary },
+                ]}
+              >
                 <MaterialCommunityIcons
                   name="clock-check-outline"
                   size={24}
@@ -378,7 +388,9 @@ export default function ScheduleMessageModal({
                 />
                 <View style={styles.selectedPreviewText}>
                   <Text style={styles.selectedLabel}>Will be sent</Text>
-                  <Text style={styles.selectedTime}>
+                  <Text
+                    style={[styles.selectedTime, { color: colors.primary }]}
+                  >
                     {formatScheduledTime(selectedDate.getTime())}
                   </Text>
                 </View>
@@ -484,16 +496,13 @@ const styles = StyleSheet.create({
     borderColor: "#333",
   },
   quickOptionSelected: {
-    borderColor: AppColors.primary,
     backgroundColor: "rgba(180, 190, 254, 0.1)",
   },
   quickOptionText: {
     color: "#888",
     fontSize: 14,
   },
-  quickOptionTextSelected: {
-    color: AppColors.primary,
-  },
+  quickOptionTextSelected: {},
   customToggle: {
     flexDirection: "row",
     alignItems: "center",
@@ -542,7 +551,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: AppColors.primary,
   },
   selectedPreviewText: {
     flex: 1,
@@ -552,7 +560,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   selectedTime: {
-    color: AppColors.primary,
     fontSize: 18,
     fontWeight: "bold",
   },

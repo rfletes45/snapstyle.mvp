@@ -5,6 +5,12 @@
  * Subscribes to both DM and Group conversations and provides
  * unified filtering, sorting, and unread count computation.
  *
+ * PERFORMANCE OPTIMIZATIONS:
+ * - Parallel fetching of member states and user profiles
+ * - In-memory caching for user profile data
+ * - AsyncStorage caching for immediate display on screen load
+ * - Immediate rendering with cached data, background refresh
+ *
  * @module hooks/useInboxData
  */
 
@@ -13,6 +19,7 @@ import { getFirestoreInstance } from "@/services/firebase";
 import { isGroupVisible } from "@/services/groupMembers";
 import { InboxConversation, MemberStatePrivate } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   collection,
   doc,
@@ -22,9 +29,64 @@ import {
   Timestamp,
   where,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useInboxData");
+
+// =============================================================================
+// AsyncStorage Cache Keys & Config
+// =============================================================================
+
+const INBOX_CACHE_KEY = "@inbox_cache:";
+const INBOX_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache validity
+
+interface InboxCacheData {
+  dmConversations: InboxConversation[];
+  groupConversations: InboxConversation[];
+  timestamp: number;
+}
+
+/**
+ * Load cached inbox data from AsyncStorage
+ */
+async function loadInboxCache(uid: string): Promise<InboxCacheData | null> {
+  try {
+    const cached = await AsyncStorage.getItem(`${INBOX_CACHE_KEY}${uid}`);
+    if (cached) {
+      const data = JSON.parse(cached) as InboxCacheData;
+      // Check if cache is still valid
+      if (Date.now() - data.timestamp < INBOX_CACHE_TTL) {
+        return data;
+      }
+    }
+  } catch (e) {
+    log.warn("Failed to load inbox cache", { error: e });
+  }
+  return null;
+}
+
+/**
+ * Save inbox data to AsyncStorage cache
+ */
+async function saveInboxCache(
+  uid: string,
+  dmConversations: InboxConversation[],
+  groupConversations: InboxConversation[],
+): Promise<void> {
+  try {
+    const data: InboxCacheData = {
+      dmConversations,
+      groupConversations,
+      timestamp: Date.now(),
+    };
+    await AsyncStorage.setItem(
+      `${INBOX_CACHE_KEY}${uid}`,
+      JSON.stringify(data),
+    );
+  } catch (e) {
+    log.warn("Failed to save inbox cache", { error: e });
+  }
+}
 
 // =============================================================================
 // Types
@@ -76,6 +138,83 @@ export interface UseInboxDataResult {
 
   /** Optimistically mark a conversation as read (updates local state immediately) */
   markConversationReadOptimistic: (conversationId: string) => void;
+}
+
+// =============================================================================
+// User Profile Cache (In-Memory)
+// =============================================================================
+
+interface CachedUserProfile {
+  displayName: string;
+  avatarUrl: string | null;
+  avatarConfig: any;
+  fetchedAt: number;
+}
+
+// Global in-memory cache for user profiles (shared across hook instances)
+const userProfileCache = new Map<string, CachedUserProfile>();
+const USER_PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get cached user profile or fetch from Firestore
+ * Returns cached data immediately if available, fetches in background if stale
+ */
+async function getCachedUserProfile(
+  db: ReturnType<typeof getFirestoreInstance>,
+  userId: string,
+): Promise<CachedUserProfile> {
+  const cached = userProfileCache.get(userId);
+  const now = Date.now();
+
+  // Return cached if fresh
+  if (cached && now - cached.fetchedAt < USER_PROFILE_CACHE_TTL) {
+    return cached;
+  }
+
+  // Fetch from Firestore
+  try {
+    const userRef = doc(db, "Users", userId);
+    const userSnap = await getDoc(userRef);
+
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      const profile: CachedUserProfile = {
+        displayName: userData.displayName || userData.username || "User",
+        avatarUrl: userData.avatarUrl || null,
+        avatarConfig: userData.avatarConfig || undefined,
+        fetchedAt: now,
+      };
+      userProfileCache.set(userId, profile);
+      return profile;
+    }
+  } catch (e) {
+    // Return stale cache if fetch fails
+    if (cached) return cached;
+  }
+
+  // Return default if no cache and fetch failed
+  return {
+    displayName: "User",
+    avatarUrl: null,
+    avatarConfig: undefined,
+    fetchedAt: now,
+  };
+}
+
+/**
+ * Batch fetch multiple user profiles in parallel
+ */
+async function batchFetchUserProfiles(
+  db: ReturnType<typeof getFirestoreInstance>,
+  userIds: string[],
+): Promise<Map<string, CachedUserProfile>> {
+  const results = new Map<string, CachedUserProfile>();
+  const fetchPromises = userIds.map(async (userId) => {
+    const profile = await getCachedUserProfile(db, userId);
+    results.set(userId, profile);
+  });
+  await Promise.all(fetchPromises);
+  return results;
 }
 
 // =============================================================================
@@ -132,7 +271,38 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const loading = dmLoading || groupLoading;
+  // Track if we've loaded cached data (to avoid double-loading)
+  const cacheLoadedRef = useRef(false);
+
+  // Loading is false if we have cached data OR both subscriptions are done
+  const hasCachedData =
+    dmConversations.length > 0 || groupConversations.length > 0;
+  const loading = !hasCachedData && (dmLoading || groupLoading);
+
+  // =============================================================================
+  // Load Cached Data on Mount (INSTANT LOAD)
+  // =============================================================================
+
+  useEffect(() => {
+    if (!uid || cacheLoadedRef.current) return;
+
+    const loadCache = async () => {
+      const cached = await loadInboxCache(uid);
+      if (cached) {
+        log.debug("Loaded inbox from cache", {
+          data: {
+            dmCount: cached.dmConversations.length,
+            groupCount: cached.groupConversations.length,
+          },
+        });
+        setDmConversations(cached.dmConversations);
+        setGroupConversations(cached.groupConversations);
+        cacheLoadedRef.current = true;
+      }
+    };
+
+    loadCache();
+  }, [uid]);
 
   // Manual refresh trigger
   const refresh = useCallback(() => {
@@ -181,7 +351,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   );
 
   // =============================================================================
-  // DM Subscription
+  // DM Subscription (OPTIMIZED - Parallel fetching)
   // =============================================================================
 
   useEffect(() => {
@@ -202,20 +372,26 @@ export function useInboxData(uid: string): UseInboxDataResult {
       dmQuery,
       async (snapshot) => {
         try {
-          const conversations: InboxConversation[] = [];
+          // STEP 1: Extract all chat data and user IDs first (synchronous)
+          const chatEntries: Array<{
+            chatId: string;
+            chatData: any;
+            otherUserId: string;
+          }> = [];
 
           for (const chatDoc of snapshot.docs) {
             const chatData = chatDoc.data();
             const chatId = chatDoc.id;
-
-            // Get other user's ID
             const otherUserId = (chatData.members as string[]).find(
               (m) => m !== uid,
             );
-            if (!otherUserId) continue;
+            if (otherUserId) {
+              chatEntries.push({ chatId, chatData, otherUserId });
+            }
+          }
 
-            // Get member private state
-            let memberState: MemberStatePrivate = getDefaultMemberState(uid);
+          // STEP 2: Fetch all member states in PARALLEL
+          const memberStatePromises = chatEntries.map(async ({ chatId }) => {
             try {
               const privateRef = doc(
                 db,
@@ -227,24 +403,47 @@ export function useInboxData(uid: string): UseInboxDataResult {
               const privateSnap = await getDoc(privateRef);
               if (privateSnap.exists()) {
                 const privateData = privateSnap.data();
-                memberState = {
-                  uid,
-                  archived: privateData.archived ?? false,
-                  mutedUntil: privateData.mutedUntil ?? null,
-                  notifyLevel: privateData.notifyLevel ?? "all",
-                  sendReadReceipts: privateData.sendReadReceipts ?? true,
-                  lastSeenAtPrivate: toMillis(privateData.lastSeenAtPrivate),
-                  lastMarkedUnreadAt:
-                    toMillis(privateData.lastMarkedUnreadAt) || undefined,
-                  pinnedAt: toMillis(privateData.pinnedAt) || null,
-                  deletedAt: toMillis(privateData.deletedAt) || null,
-                  hiddenUntilNewMessage:
-                    privateData.hiddenUntilNewMessage ?? false,
+                return {
+                  chatId,
+                  memberState: {
+                    uid,
+                    archived: privateData.archived ?? false,
+                    mutedUntil: privateData.mutedUntil ?? null,
+                    notifyLevel: privateData.notifyLevel ?? "all",
+                    sendReadReceipts: privateData.sendReadReceipts ?? true,
+                    lastSeenAtPrivate: toMillis(privateData.lastSeenAtPrivate),
+                    lastMarkedUnreadAt:
+                      toMillis(privateData.lastMarkedUnreadAt) || undefined,
+                    pinnedAt: toMillis(privateData.pinnedAt) || null,
+                    deletedAt: toMillis(privateData.deletedAt) || null,
+                    hiddenUntilNewMessage:
+                      privateData.hiddenUntilNewMessage ?? false,
+                  } as MemberStatePrivate,
                 };
               }
             } catch (e) {
               // Private doc may not exist yet
             }
+            return { chatId, memberState: getDefaultMemberState(uid) };
+          });
+
+          const memberStatesResults = await Promise.all(memberStatePromises);
+          const memberStatesMap = new Map(
+            memberStatesResults.map((r) => [r.chatId, r.memberState]),
+          );
+
+          // STEP 3: Fetch all user profiles in PARALLEL (with caching)
+          const uniqueUserIds = [
+            ...new Set(chatEntries.map((e) => e.otherUserId)),
+          ];
+          const userProfiles = await batchFetchUserProfiles(db, uniqueUserIds);
+
+          // STEP 4: Build conversations (synchronous)
+          const conversations: InboxConversation[] = [];
+
+          for (const { chatId, chatData, otherUserId } of chatEntries) {
+            const memberState =
+              memberStatesMap.get(chatId) || getDefaultMemberState(uid);
 
             // Check visibility
             if (!isDMVisible(memberState)) continue;
@@ -261,30 +460,19 @@ export function useInboxData(uid: string): UseInboxDataResult {
               unreadCount = 1; // Has new messages
             }
 
-            // Get other user's profile for display
-            let displayName = "User";
-            let avatarUrl: string | null = null;
-            let avatarConfig = undefined;
-            try {
-              const userRef = doc(db, "Users", otherUserId);
-              const userSnap = await getDoc(userRef);
-              if (userSnap.exists()) {
-                const userData = userSnap.data();
-                displayName =
-                  userData.displayName || userData.username || "User";
-                avatarUrl = userData.avatarUrl || null;
-                avatarConfig = userData.avatarConfig || undefined;
-              }
-            } catch (e) {
-              // User doc may not exist
-            }
+            // Get user profile from cache
+            const profile = userProfiles.get(otherUserId) || {
+              displayName: "User",
+              avatarUrl: null,
+              avatarConfig: undefined,
+            };
 
             conversations.push({
               id: chatId,
               type: "dm",
-              name: displayName,
-              avatarUrl,
-              avatarConfig,
+              name: profile.displayName,
+              avatarUrl: profile.avatarUrl,
+              avatarConfig: profile.avatarConfig,
               otherUserId,
               lastMessage: chatData.lastMessageText
                 ? {
@@ -320,7 +508,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   }, [uid, refreshKey]);
 
   // =============================================================================
-  // Group Subscription
+  // Group Subscription (OPTIMIZED - Parallel fetching)
   // =============================================================================
 
   useEffect(() => {
@@ -341,14 +529,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
       groupQuery,
       async (snapshot) => {
         try {
-          const conversations: InboxConversation[] = [];
+          // STEP 1: Extract all group data (synchronous)
+          const groupEntries = snapshot.docs.map((groupDoc) => ({
+            groupId: groupDoc.id,
+            groupData: groupDoc.data(),
+          }));
 
-          for (const groupDoc of snapshot.docs) {
-            const groupData = groupDoc.data();
-            const groupId = groupDoc.id;
-
-            // Get member private state
-            let memberState: MemberStatePrivate = getDefaultMemberState(uid);
+          // STEP 2: Fetch all member states in PARALLEL
+          const memberStatePromises = groupEntries.map(async ({ groupId }) => {
             try {
               const privateRef = doc(
                 db,
@@ -360,24 +548,41 @@ export function useInboxData(uid: string): UseInboxDataResult {
               const privateSnap = await getDoc(privateRef);
               if (privateSnap.exists()) {
                 const privateData = privateSnap.data();
-                memberState = {
-                  uid,
-                  archived: privateData.archived ?? false,
-                  mutedUntil: privateData.mutedUntil ?? null,
-                  notifyLevel: privateData.notifyLevel ?? "all",
-                  sendReadReceipts: privateData.sendReadReceipts ?? true,
-                  lastSeenAtPrivate: toMillis(privateData.lastSeenAtPrivate),
-                  lastMarkedUnreadAt:
-                    toMillis(privateData.lastMarkedUnreadAt) || undefined,
-                  pinnedAt: toMillis(privateData.pinnedAt) || null,
-                  deletedAt: toMillis(privateData.deletedAt) || null,
-                  hiddenUntilNewMessage:
-                    privateData.hiddenUntilNewMessage ?? false,
+                return {
+                  groupId,
+                  memberState: {
+                    uid,
+                    archived: privateData.archived ?? false,
+                    mutedUntil: privateData.mutedUntil ?? null,
+                    notifyLevel: privateData.notifyLevel ?? "all",
+                    sendReadReceipts: privateData.sendReadReceipts ?? true,
+                    lastSeenAtPrivate: toMillis(privateData.lastSeenAtPrivate),
+                    lastMarkedUnreadAt:
+                      toMillis(privateData.lastMarkedUnreadAt) || undefined,
+                    pinnedAt: toMillis(privateData.pinnedAt) || null,
+                    deletedAt: toMillis(privateData.deletedAt) || null,
+                    hiddenUntilNewMessage:
+                      privateData.hiddenUntilNewMessage ?? false,
+                  } as MemberStatePrivate,
                 };
               }
             } catch (e) {
               // Private doc may not exist yet
             }
+            return { groupId, memberState: getDefaultMemberState(uid) };
+          });
+
+          const memberStatesResults = await Promise.all(memberStatePromises);
+          const memberStatesMap = new Map(
+            memberStatesResults.map((r) => [r.groupId, r.memberState]),
+          );
+
+          // STEP 3: Build conversations (synchronous)
+          const conversations: InboxConversation[] = [];
+
+          for (const { groupId, groupData } of groupEntries) {
+            const memberState =
+              memberStatesMap.get(groupId) || getDefaultMemberState(uid);
 
             // Check visibility
             if (!isGroupVisible(memberState)) continue;
@@ -393,9 +598,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
             } else if (lastMessageAt > memberState.lastSeenAtPrivate) {
               unreadCount = 1; // Has new messages
             }
-
-            // Check for mentions
-            // TODO: Implement mention tracking
 
             conversations.push({
               id: groupId,
@@ -510,6 +712,22 @@ export function useInboxData(uid: string): UseInboxDataResult {
     () => conversations.reduce((sum, c) => sum + c.unreadCount, 0),
     [conversations],
   );
+
+  // =============================================================================
+  // Save to Cache when Data Changes
+  // =============================================================================
+
+  useEffect(() => {
+    // Only save to cache if we have loaded fresh data from Firestore
+    // (not just cached data, and both subscriptions have completed)
+    if (!uid || dmLoading || groupLoading) return;
+
+    // Only cache if we have at least some data
+    if (dmConversations.length === 0 && groupConversations.length === 0) return;
+
+    // Save to cache in background
+    saveInboxCache(uid, dmConversations, groupConversations);
+  }, [uid, dmConversations, groupConversations, dmLoading, groupLoading]);
 
   return {
     conversations,

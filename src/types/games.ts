@@ -19,14 +19,17 @@
  * Single-player games that can be played solo
  */
 export type SinglePlayerGameType =
-  | "flappy_snap" // Flappy Bird-style
   | "bounce_blitz" // Ballz-style
   | "snap_2048" // 2048 puzzle
   | "snap_snake" // Classic snake
   | "memory_snap" // Memory matching
   | "word_snap" // Daily word puzzle (Wordle-style)
   | "reaction_tap" // Existing - tap when green
-  | "timed_tap"; // Existing - tap count in 10s
+  | "timed_tap" // Existing - tap count in 10s
+  | "cart_course" // DK Crash Course-style tilt game
+  // New single-player games (Phase 1)
+  | "brick_breaker" // Classic Breakout/Arkanoid
+  | "tile_slide"; // Classic 15-puzzle sliding tiles
 
 /**
  * Turn-based multiplayer games
@@ -113,20 +116,6 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasAchievements: true,
     isAvailable: true,
   },
-  flappy_snap: {
-    id: "flappy_snap",
-    name: "Flappy Snap",
-    shortName: "Flappy",
-    description: "Tap to fly through the pipes!",
-    icon: "🐦",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-  },
   bounce_blitz: {
     id: "bounce_blitz",
     name: "Bounce Blitz",
@@ -186,6 +175,22 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
+  cart_course: {
+    id: "cart_course",
+    name: "Cart Course",
+    shortName: "Cart",
+    description:
+      "Tilt to guide your cart through challenging obstacle courses!",
+    icon: "🛒",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
 
   // Single-player: Daily
   word_snap: {
@@ -199,6 +204,38 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     maxPlayers: 1,
     isMultiplayer: false,
     hasLeaderboard: false,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+
+  // New Single-player Games (Phase 1)
+  brick_breaker: {
+    id: "brick_breaker",
+    name: "Brick Breaker",
+    shortName: "Bricks",
+    description: "Bounce the ball to destroy all bricks!",
+    icon: "🧱",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  tile_slide: {
+    id: "tile_slide",
+    name: "Tile Slide",
+    shortName: "Slide",
+    description: "Slide tiles to solve the puzzle!",
+    icon: "🔢",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
     hasAchievements: true,
     isAvailable: true,
     isNew: true,
@@ -328,11 +365,6 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
   },
 
   // New single-player games
-  flappy_snap: {
-    minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher", // Higher score is better
-  },
   bounce_blitz: {
     minScore: 0,
     maxScore: 999999,
@@ -353,6 +385,12 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 9999,
     maxDuration: 300000, // 5 minutes max
     scoreDirection: "lower", // Lower time is better (in seconds)
+  },
+  cart_course: {
+    minScore: 0,
+    maxScore: 999999,
+    maxDuration: 600000, // 10 minutes max
+    scoreDirection: "higher", // Higher score is better
   },
   word_snap: {
     minScore: 1,
@@ -443,7 +481,6 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return `${score}ms`;
     case "timed_tap":
       return `${score} taps`;
-    case "flappy_snap":
     case "bounce_blitz":
     case "snap_2048":
     case "snap_snake":

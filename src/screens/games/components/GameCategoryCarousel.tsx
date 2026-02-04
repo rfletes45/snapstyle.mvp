@@ -44,6 +44,8 @@ export interface GameCategoryCarouselProps {
   highScores?: Map<string, string>;
   /** Called when a game is pressed */
   onGamePress: (gameType: ExtendedGameType) => void;
+  /** Called when a game is long-pressed */
+  onGameLongPress?: (gameType: ExtendedGameType) => void;
   /** Called when "See All" is pressed */
   onSeeAllPress?: () => void;
   /** Additional container styles */
@@ -71,6 +73,7 @@ function GameCategoryCarouselComponent({
   category,
   highScores,
   onGamePress,
+  onGameLongPress,
   onSeeAllPress,
   style,
   showSeeAll = true,
@@ -90,6 +93,9 @@ function GameCategoryCarouselComponent({
           gameType={gameType}
           personalBest={personalBest}
           onPress={() => onGamePress(gameType)}
+          onLongPress={
+            onGameLongPress ? () => onGameLongPress(gameType) : undefined
+          }
           width={tileWidth}
           height={tileHeight}
           style={styles.tile}
@@ -97,7 +103,7 @@ function GameCategoryCarouselComponent({
         />
       );
     },
-    [highScores, onGamePress, tileWidth, tileHeight, testID],
+    [highScores, onGamePress, onGameLongPress, tileWidth, tileHeight, testID],
   );
 
   // Key extractor

@@ -7,7 +7,7 @@
  * @file src/services/database/index.ts
  */
 
-import * as SQLite from "expo-sqlite";
+import { Platform } from "react-native";
 
 // =============================================================================
 // Constants
@@ -16,18 +16,49 @@ import * as SQLite from "expo-sqlite";
 const DATABASE_NAME = "snapstyle.db";
 const DATABASE_VERSION = 1;
 
+/**
+ * Check if SQLite is available on this platform
+ * SQLite sync operations require SharedArrayBuffer on web, which needs COOP/COEP headers
+ * Also not fully supported in Expo Go for certain operations
+ */
+const IS_SQLITE_AVAILABLE = Platform.OS !== "web";
+
+// =============================================================================
+// Lazy-loaded SQLite module
+// We lazy-load expo-sqlite to avoid accessing native modules before the runtime
+// is fully initialized, which can cause issues in Expo Go
+// =============================================================================
+
+let SQLite: typeof import("expo-sqlite") | null = null;
+
+function getSQLiteModule(): typeof import("expo-sqlite") {
+  if (!SQLite) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    SQLite = require("expo-sqlite");
+  }
+  return SQLite;
+}
+
 // =============================================================================
 // Singleton Instance
 // =============================================================================
 
-let db: SQLite.SQLiteDatabase | null = null;
+// Use 'any' for the db type to avoid importing expo-sqlite types at module level
+let db: any = null;
 
 /**
  * Get or create the database instance
+ * Returns null on web platform where SQLite sync operations are not available
  */
-export function getDatabase(): SQLite.SQLiteDatabase {
+export function getDatabase(): any {
+  // SQLite sync operations are not available on web
+  if (!IS_SQLITE_AVAILABLE) {
+    return null;
+  }
+
   if (!db) {
-    db = SQLite.openDatabaseSync(DATABASE_NAME);
+    const sqlite = getSQLiteModule();
+    db = sqlite.openDatabaseSync(DATABASE_NAME);
     initializeSchema(db);
   }
   return db;
@@ -47,7 +78,8 @@ export function closeDatabase(): void {
 // Schema Initialization
 // =============================================================================
 
-function initializeSchema(database: SQLite.SQLiteDatabase): void {
+// Use 'any' for the database parameter since we're lazy-loading the module
+function initializeSchema(database: any): void {
   const currentVersion =
     database.getFirstSync<{ user_version: number }>("PRAGMA user_version")
       ?.user_version ?? 0;

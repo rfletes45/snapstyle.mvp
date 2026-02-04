@@ -6,6 +6,20 @@
 **Inspiration:** Wii Play: Tanks!
 **Platform:** React Native / Expo with Firebase for multiplayer sync
 
+### Technology Stack
+
+| Package                      | Version | Purpose                                             |
+| ---------------------------- | ------- | --------------------------------------------------- |
+| `matter-js`                  | ^0.19.0 | 2D physics engine (collisions, ricochets, movement) |
+| `react-native-game-engine`   | ^1.2.0  | Entity-component game loop (60fps updates)          |
+| `@shopify/react-native-skia` | ^1.0.0  | GPU-accelerated canvas rendering                    |
+| `firebase`                   | ^12.x   | Real-time multiplayer state sync                    |
+
+```bash
+# Already installed in project
+npm install matter-js @types/matter-js react-native-game-engine @shopify/react-native-skia
+```
+
 ---
 
 ## Table of Contents
@@ -443,60 +457,206 @@ const ARENA_TEMPLATES: Arena[] = [
 
 ---
 
-## 5. Physics & Collision System
+## 5. Physics & Collision System (Matter.js)
 
-### 5.1 Collision Detection
+### 5.1 Matter.js World Setup
 
 ```typescript
-interface CollisionSystem {
-  // Spatial partitioning for performance
-  gridSize: number; // Size of collision grid cells
+import Matter from "matter-js";
 
-  // Collision layers
-  layers: {
-    tanks: CollisionLayer;
-    bullets: CollisionLayer;
-    mines: CollisionLayer;
-    walls: CollisionLayer;
-  };
+// Create Matter.js engine and world
+const engine = Matter.Engine.create({
+  gravity: { x: 0, y: 0 }, // Top-down game, no gravity
+  enableSleeping: false,
+});
 
-  // Collision matrix (what collides with what)
-  collisionMatrix: {
-    "tank-tank": true;
-    "tank-wall": true;
-    "tank-bullet": true;
-    "tank-mine": true; // Proximity trigger
-    "bullet-wall": true; // Ricochet or destroy
-    "bullet-bullet": true; // Bullets destroy each other
-    "bullet-mine": true; // Triggers mine
-    "mine-mine": false; // Mines don't chain
-  };
+const world = engine.world;
+
+// Collision categories (bitmask)
+const COLLISION_CATEGORIES = {
+  WALL: 0x0001,
+  TANK: 0x0002,
+  BULLET: 0x0004,
+  MINE: 0x0008,
+  DESTRUCTIBLE: 0x0010,
+};
+
+// Collision filters - what collides with what
+const COLLISION_FILTERS = {
+  wall: {
+    category: COLLISION_CATEGORIES.WALL,
+    mask: COLLISION_CATEGORIES.TANK | COLLISION_CATEGORIES.BULLET,
+  },
+  tank: {
+    category: COLLISION_CATEGORIES.TANK,
+    mask:
+      COLLISION_CATEGORIES.WALL |
+      COLLISION_CATEGORIES.TANK |
+      COLLISION_CATEGORIES.BULLET |
+      COLLISION_CATEGORIES.MINE,
+  },
+  bullet: {
+    category: COLLISION_CATEGORIES.BULLET,
+    mask:
+      COLLISION_CATEGORIES.WALL |
+      COLLISION_CATEGORIES.TANK |
+      COLLISION_CATEGORIES.BULLET |
+      COLLISION_CATEGORIES.MINE,
+  },
+  mine: {
+    category: COLLISION_CATEGORIES.MINE,
+    mask: COLLISION_CATEGORIES.TANK | COLLISION_CATEGORIES.BULLET,
+  },
+};
+```
+
+### 5.2 Tank Body Creation with Matter.js
+
+```typescript
+function createTankBody(config: TankConfig): Matter.Body {
+  const tankBody = Matter.Bodies.rectangle(
+    config.x,
+    config.y,
+    TANK_WIDTH,
+    TANK_HEIGHT,
+    {
+      label: `tank_${config.id}`,
+      friction: 0.1,
+      frictionAir: 0.05, // Drag when moving
+      restitution: 0.2, // Slight bounce on collision
+      collisionFilter: COLLISION_FILTERS.tank,
+      // Custom data attached to body
+      plugin: {
+        tankId: config.id,
+        tankType: config.type,
+        isPlayer: config.isPlayer,
+      },
+    },
+  );
+
+  Matter.World.add(world, tankBody);
+  return tankBody;
 }
 
-// Bullet ricochet calculation
-function handleBulletWallCollision(
-  bullet: Bullet,
-  wall: Block,
-  collisionPoint: Vector2D,
-  collisionNormal: Vector2D,
-): Bullet | null {
-  if (bullet.ricochetsRemaining <= 0) {
-    return null; // Bullet destroyed
+// Tank movement using Matter.js forces
+function moveTank(tank: TankEntity, input: { x: number; y: number }): void {
+  const force = Matter.Vector.mult(
+    Matter.Vector.normalise({ x: input.x, y: input.y }),
+    tank.config.maxSpeed * 0.001, // Convert to force
+  );
+
+  Matter.Body.applyForce(tank.body, tank.body.position, force);
+
+  // Clamp velocity to max speed
+  const speed = Matter.Vector.magnitude(tank.body.velocity);
+  if (speed > tank.config.maxSpeed) {
+    Matter.Body.setVelocity(
+      tank.body,
+      Matter.Vector.mult(
+        Matter.Vector.normalise(tank.body.velocity),
+        tank.config.maxSpeed,
+      ),
+    );
+  }
+}
+```
+
+### 5.3 Bullet Ricochet System with Matter.js
+
+```typescript
+function createBulletBody(config: BulletConfig): Matter.Body {
+  const bullet = Matter.Bodies.circle(config.x, config.y, BULLET_RADIUS, {
+    label: `bullet_${config.id}`,
+    friction: 0,
+    frictionAir: 0,
+    restitution: 1.0, // Perfect bounce for ricochets
+    collisionFilter: COLLISION_FILTERS.bullet,
+    isSensor: false,
+    plugin: {
+      bulletId: config.id,
+      ownerId: config.ownerId,
+      ricochetsRemaining: config.maxRicochets,
+      createdAt: Date.now(),
+    },
+  });
+
+  // Set initial velocity
+  Matter.Body.setVelocity(bullet, {
+    x: Math.cos(config.angle) * config.speed,
+    y: Math.sin(config.angle) * config.speed,
+  });
+
+  Matter.World.add(world, bullet);
+  return bullet;
+}
+
+// Handle bullet collision events
+Matter.Events.on(engine, "collisionStart", (event) => {
+  event.pairs.forEach((pair) => {
+    const bodyA = pair.bodyA;
+    const bodyB = pair.bodyB;
+
+    // Bullet-Wall collision (ricochet)
+    if (isBullet(bodyA) && isWall(bodyB)) {
+      handleBulletRicochet(bodyA, pair.collision.normal);
+    } else if (isBullet(bodyB) && isWall(bodyA)) {
+      handleBulletRicochet(bodyB, pair.collision.normal);
+    }
+
+    // Bullet-Tank collision (destroy both)
+    if (isBullet(bodyA) && isTank(bodyB)) {
+      destroyBullet(bodyA);
+      destroyTank(bodyB);
+    } else if (isBullet(bodyB) && isTank(bodyA)) {
+      destroyBullet(bodyB);
+      destroyTank(bodyA);
+    }
+
+    // Bullet-Bullet collision (both destroyed)
+    if (isBullet(bodyA) && isBullet(bodyB)) {
+      destroyBullet(bodyA);
+      destroyBullet(bodyB);
+    }
+
+    // Bullet-Mine collision (trigger explosion)
+    if (isBullet(bodyA) && isMine(bodyB)) {
+      destroyBullet(bodyA);
+      triggerMineExplosion(bodyB);
+    } else if (isBullet(bodyB) && isMine(bodyA)) {
+      destroyBullet(bodyB);
+      triggerMineExplosion(bodyA);
+    }
+  });
+});
+
+function handleBulletRicochet(
+  bullet: Matter.Body,
+  normal: Matter.Vector,
+): void {
+  const ricochets = bullet.plugin.ricochetsRemaining;
+
+  if (ricochets <= 0) {
+    destroyBullet(bullet);
+    return;
   }
 
-  // Reflect velocity across collision normal
-  const dot = Vector2D.dot(bullet.velocity, collisionNormal);
-  const reflectedVelocity = {
-    x: bullet.velocity.x - 2 * dot * collisionNormal.x,
-    y: bullet.velocity.y - 2 * dot * collisionNormal.y,
-  };
+  // Decrement ricochet count
+  bullet.plugin.ricochetsRemaining = ricochets - 1;
 
-  return {
-    ...bullet,
-    position: collisionPoint,
-    velocity: reflectedVelocity,
-    ricochetsRemaining: bullet.ricochetsRemaining - 1,
-  };
+  // Matter.js handles velocity reflection automatically with restitution: 1.0
+  // But we ensure it maintains constant speed
+  const speed = Matter.Vector.magnitude(bullet.velocity);
+  const targetSpeed = BULLET_SPEEDS[bullet.plugin.bulletType] || 300;
+
+  if (Math.abs(speed - targetSpeed) > 1) {
+    Matter.Body.setVelocity(
+      bullet,
+      Matter.Vector.mult(Matter.Vector.normalise(bullet.velocity), targetSpeed),
+    );
+  }
+
+  // Play ricochet sound
+  playSound("ricochet");
 }
 ```
 
@@ -984,174 +1144,409 @@ const UNLOCKABLES = {
 
 ## 10. Technical Implementation
 
-### 10.1 Game Loop Architecture
+### 10.1 Game Loop Architecture (react-native-game-engine + Matter.js)
 
 ```typescript
-// Main game loop using requestAnimationFrame
-class TankBattleGame {
-  private lastFrameTime: number = 0;
-  private accumulator: number = 0;
-  private readonly FIXED_TIMESTEP: number = 1000 / 60; // 60 FPS physics
+import { GameEngine } from "react-native-game-engine";
+import Matter from "matter-js";
 
-  public start(): void {
-    this.lastFrameTime = performance.now();
-    requestAnimationFrame(this.gameLoop.bind(this));
-  }
-
-  private gameLoop(currentTime: number): void {
-    const deltaTime = currentTime - this.lastFrameTime;
-    this.lastFrameTime = currentTime;
-    this.accumulator += deltaTime;
-
-    // Process input
-    this.processInput();
-
-    // Fixed timestep physics
-    while (this.accumulator >= this.FIXED_TIMESTEP) {
-      this.updatePhysics(this.FIXED_TIMESTEP);
-      this.accumulator -= this.FIXED_TIMESTEP;
-    }
-
-    // Interpolate for smooth rendering
-    const alpha = this.accumulator / this.FIXED_TIMESTEP;
-    this.render(alpha);
-
-    // Sync with server (if multiplayer)
-    if (this.isMultiplayer) {
-      this.syncWithServer();
-    }
-
-    requestAnimationFrame(this.gameLoop.bind(this));
-  }
-
-  private updatePhysics(dt: number): void {
-    // Update all tanks
-    this.updateTanks(dt);
-
-    // Update all bullets
-    this.updateBullets(dt);
-
-    // Update mines
-    this.updateMines(dt);
-
-    // Process AI
-    this.updateAI(dt);
-
-    // Check collisions
-    this.processCollisions();
-
-    // Check win/lose conditions
-    this.checkMissionStatus();
-  }
+// Entity-Component System using react-native-game-engine
+interface GameEntities {
+  physics: { engine: Matter.Engine; world: Matter.World };
+  playerTank: TankEntity;
+  opponentTank?: TankEntity;
+  enemyTanks: Map<string, TankEntity>;
+  bullets: Map<string, BulletEntity>;
+  mines: Map<string, MineEntity>;
+  arena: ArenaEntity;
 }
-```
 
-### 10.2 React Native Canvas Rendering
+// Systems run every frame (60fps)
+const PhysicsSystem = (
+  entities: GameEntities,
+  { time }: { time: { delta: number } },
+) => {
+  const { engine } = entities.physics;
 
-```typescript
-// Using react-native-skia for high-performance 2D rendering
-import { Canvas, useFrame } from '@shopify/react-native-skia';
+  // Update Matter.js physics (handles all collisions automatically)
+  Matter.Engine.update(engine, time.delta);
 
-const TankBattleCanvas: React.FC<{ game: TankBattleGame }> = ({ game }) => {
-  const [gameState, setGameState] = useState<GameState>(game.getState());
+  return entities;
+};
 
-  useFrame((info) => {
-    // Update game state for rendering
-    setGameState(game.getState());
+const TankMovementSystem = (
+  entities: GameEntities,
+  { touches, time }: GameEngineUpdateProps,
+) => {
+  const { playerTank } = entities;
+  const joystickInput = getJoystickInput(touches);
+
+  if (joystickInput.magnitude > 0.1) {
+    moveTank(playerTank, joystickInput);
+    rotateTankTowards(playerTank, joystickInput.angle);
+  }
+
+  return entities;
+};
+
+const TurretAimSystem = (
+  entities: GameEntities,
+  { touches }: GameEngineUpdateProps,
+) => {
+  const { playerTank } = entities;
+  const aimInput = getAimInput(touches);
+
+  if (aimInput) {
+    rotateTurretTowards(playerTank, aimInput);
+  }
+
+  return entities;
+};
+
+const AISystem = (entities: GameEntities, { time }: GameEngineUpdateProps) => {
+  entities.enemyTanks.forEach((enemy) => {
+    updateEnemyAI(enemy, entities, time.delta);
   });
 
-  return (
-    <Canvas style={{ flex: 1 }}>
-      {/* Render arena */}
-      <ArenaRenderer arena={gameState.arena} />
+  return entities;
+};
 
-      {/* Render track marks */}
-      <TrackRenderer tracks={gameState.tracks} />
+const BulletLifetimeSystem = (
+  entities: GameEntities,
+  { time }: GameEngineUpdateProps,
+) => {
+  const now = Date.now();
+
+  entities.bullets.forEach((bullet, id) => {
+    // Remove expired bullets
+    if (now - bullet.createdAt > BULLET_LIFETIME_MS) {
+      destroyBullet(bullet.body);
+      entities.bullets.delete(id);
+    }
+  });
+
+  return entities;
+};
+
+const MineTimerSystem = (
+  entities: GameEntities,
+  { time }: GameEngineUpdateProps,
+) => {
+  const now = Date.now();
+
+  entities.mines.forEach((mine, id) => {
+    // Check auto-detonation timer
+    if (now - mine.deployedAt > MINE_DETONATION_TIME_MS) {
+      triggerMineExplosion(mine.body);
+      entities.mines.delete(id);
+    }
+
+    // Check proximity trigger (if armed)
+    if (mine.isArmed) {
+      checkMineProximity(mine, entities);
+    }
+  });
+
+  return entities;
+};
+
+const MissionStatusSystem = (
+  entities: GameEntities,
+  { dispatch }: GameEngineUpdateProps,
+) => {
+  // Check if all enemies destroyed
+  const aliveEnemies = Array.from(entities.enemyTanks.values()).filter(
+    (e) => e.isAlive,
+  );
+
+  if (aliveEnemies.length === 0) {
+    dispatch({ type: "mission-complete" });
+  }
+
+  // Check if player destroyed
+  if (!entities.playerTank.isAlive) {
+    dispatch({ type: "player-destroyed" });
+  }
+
+  return entities;
+};
+
+// Multiplayer sync system
+const MultiplayerSyncSystem = (
+  entities: GameEntities,
+  { time }: GameEngineUpdateProps,
+) => {
+  // Send local state to Firebase every 50ms (20Hz)
+  if (time.current % 50 < time.delta) {
+    syncStateToFirebase(entities);
+  }
+
+  // Apply received remote state
+  applyRemoteState(entities);
+
+  return entities;
+};
+
+// All systems in execution order
+const GAME_SYSTEMS = [
+  TankMovementSystem,
+  TurretAimSystem,
+  AISystem,
+  PhysicsSystem, // Matter.js updates here
+  BulletLifetimeSystem,
+  MineTimerSystem,
+  MissionStatusSystem,
+  MultiplayerSyncSystem,
+];
+```
+
+````
+
+### 10.2 React Native Game Engine + Skia Rendering
+
+```typescript
+import { GameEngine } from 'react-native-game-engine';
+import { Canvas, useValue, runTiming } from '@shopify/react-native-skia';
+import Matter from 'matter-js';
+
+// Main game component using react-native-game-engine
+const TankBattleScreen: React.FC = () => {
+  const [running, setRunning] = useState(true);
+  const gameEngineRef = useRef<GameEngine>(null);
+
+  // Initialize Matter.js world and entities
+  const entities = useMemo(() => initializeGameEntities(missionConfig), []);
+
+  // Handle game events
+  const onEvent = (event: GameEvent) => {
+    switch (event.type) {
+      case 'mission-complete':
+        setRunning(false);
+        onMissionComplete();
+        break;
+      case 'player-destroyed':
+        handlePlayerDeath();
+        break;
+      case 'fire-bullet':
+        fireBullet(entities, event.data);
+        break;
+      case 'deploy-mine':
+        deployMine(entities, event.data);
+        break;
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Game Engine handles systems and game loop */}
+      <GameEngine
+        ref={gameEngineRef}
+        style={styles.gameContainer}
+        systems={GAME_SYSTEMS}
+        entities={entities}
+        running={running}
+        onEvent={onEvent}
+        renderer={SkiaRenderer} // Custom Skia renderer
+      />
+
+      {/* Touch controls overlay */}
+      <TankBattleControls
+        onFirePress={() => gameEngineRef.current?.dispatch({ type: 'fire-bullet' })}
+        onMinePress={() => gameEngineRef.current?.dispatch({ type: 'deploy-mine' })}
+      />
+
+      {/* HUD */}
+      <TankBattleHUD
+        lives={entities.playerTank.lives}
+        score={entities.score}
+        mission={currentMission}
+      />
+    </View>
+  );
+};
+
+// Custom Skia renderer for react-native-game-engine
+const SkiaRenderer = (entities: GameEntities, screen: { width: number; height: number }) => {
+  return (
+    <Canvas style={{ width: screen.width, height: screen.height }}>
+      {/* Render arena floor and walls */}
+      <ArenaRenderer arena={entities.arena} />
+
+      {/* Render track marks (behind tanks) */}
+      <TrackRenderer tracks={entities.trackHistory} />
 
       {/* Render mines */}
-      {gameState.mines.map(mine => (
+      {Array.from(entities.mines.values()).map(mine => (
         <MineRenderer key={mine.id} mine={mine} />
       ))}
 
-      {/* Render tanks */}
-      {gameState.tanks.map(tank => (
-        <TankRenderer key={tank.id} tank={tank} />
-      ))}
+      {/* Render enemy tanks */}
+      {Array.from(entities.enemyTanks.values())
+        .filter(tank => tank.isAlive)
+        .map(tank => (
+          <TankRenderer key={tank.id} tank={tank} />
+        ))}
+
+      {/* Render player tank */}
+      {entities.playerTank.isAlive && (
+        <TankRenderer tank={entities.playerTank} isPlayer />
+      )}
+
+      {/* Render opponent tank (multiplayer) */}
+      {entities.opponentTank?.isAlive && (
+        <TankRenderer tank={entities.opponentTank} isPlayer />
+      )}
 
       {/* Render bullets */}
-      {gameState.bullets.map(bullet => (
+      {Array.from(entities.bullets.values()).map(bullet => (
         <BulletRenderer key={bullet.id} bullet={bullet} />
       ))}
 
       {/* Render explosions */}
-      {gameState.explosions.map(explosion => (
+      {entities.explosions.map(explosion => (
         <ExplosionRenderer key={explosion.id} explosion={explosion} />
       ))}
     </Canvas>
   );
 };
+
+// Individual renderers using Skia
+const TankRenderer: React.FC<{ tank: TankEntity; isPlayer?: boolean }> = ({ tank, isPlayer }) => {
+  const { body, turretAngle, type } = tank;
+  const pos = body.position;
+  const bodyAngle = body.angle;
+
+  return (
+    <Group transform={[{ translateX: pos.x }, { translateY: pos.y }]}>
+      {/* Tank body */}
+      <Group transform={[{ rotate: bodyAngle }]}>
+        <RoundedRect
+          x={-TANK_WIDTH / 2}
+          y={-TANK_HEIGHT / 2}
+          width={TANK_WIDTH}
+          height={TANK_HEIGHT}
+          r={4}
+          color={isPlayer ? PLAYER_COLORS[type] : ENEMY_COLORS[type]}
+        />
+        {/* Track details */}
+        <Rect x={-TANK_WIDTH / 2 - 2} y={-TANK_HEIGHT / 2} width={4} height={TANK_HEIGHT} color="#333" />
+        <Rect x={TANK_WIDTH / 2 - 2} y={-TANK_HEIGHT / 2} width={4} height={TANK_HEIGHT} color="#333" />
+      </Group>
+
+      {/* Turret (rotates independently) */}
+      <Group transform={[{ rotate: turretAngle }]}>
+        <Circle cx={0} cy={0} r={8} color={isPlayer ? '#1E90FF' : ENEMY_COLORS[type]} />
+        <Rect x={-2} y={-20} width={4} height={20} color="#444" />
+      </Group>
+    </Group>
+  );
+};
+
+const BulletRenderer: React.FC<{ bullet: BulletEntity }> = ({ bullet }) => {
+  const pos = bullet.body.position;
+
+  return (
+    <Group>
+      {/* Bullet trail */}
+      <Line
+        p1={{ x: pos.x - bullet.body.velocity.x * 0.1, y: pos.y - bullet.body.velocity.y * 0.1 }}
+        p2={pos}
+        color="rgba(255, 200, 0, 0.5)"
+        strokeWidth={3}
+      />
+      {/* Bullet */}
+      <Circle cx={pos.x} cy={pos.y} r={BULLET_RADIUS} color="#FFD700" />
+    </Group>
+  );
+};
+````
+
 ```
 
 ---
 
-## 11. Component Architecture
+## 11. Component Architecture (Matter.js + react-native-game-engine)
 
 ```
+
 src/
 ├── components/
-│   └── games/
-│       └── TankBattle/
-│           ├── index.tsx                 # Main game component
-│           ├── TankBattleGame.ts        # Core game engine class
-│           ├── TankBattleCanvas.tsx     # Rendering component
-│           ├── TankBattleControls.tsx   # Touch controls
-│           ├── TankBattleHUD.tsx        # Health, score, mission info
-│           ├── TankBattlePauseMenu.tsx  # Pause screen
-│           ├── TankBattleResults.tsx    # End of mission/game screen
-│           │
-│           ├── engine/
-│           │   ├── GameLoop.ts          # Main game loop
-│           │   ├── PhysicsEngine.ts     # Movement, collision
-│           │   ├── CollisionSystem.ts   # Spatial partitioning, detection
-│           │   ├── BulletSystem.ts      # Bullet physics, ricochets
-│           │   ├── MineSystem.ts        # Mine logic, explosions
-│           │   ├── AIController.ts      # Enemy AI state machine
-│           │   └── InputHandler.ts      # Touch input processing
-│           │
-│           ├── entities/
-│           │   ├── Tank.ts              # Tank entity class
-│           │   ├── Bullet.ts            # Bullet entity class
-│           │   ├── Mine.ts              # Mine entity class
-│           │   └── Block.ts             # Arena block class
-│           │
-│           ├── renderers/
-│           │   ├── ArenaRenderer.tsx    # Floor, walls, decorations
-│           │   ├── TankRenderer.tsx     # Tank body + turret
-│           │   ├── BulletRenderer.tsx   # Bullet trails
-│           │   ├── MineRenderer.tsx     # Mine + warning indicators
-│           │   ├── ExplosionRenderer.tsx # Explosion effects
-│           │   └── TrackRenderer.tsx    # Tank track marks
-│           │
-│           ├── data/
-│           │   ├── tankTypes.ts         # Tank configurations
-│           │   ├── arenas.ts            # Level layouts
-│           │   ├── missions.ts          # Mission configurations
-│           │   └── aiProfiles.ts        # AI behavior profiles
-│           │
-│           ├── hooks/
-│           │   ├── useTankBattleGame.ts # Game state management
-│           │   ├── useTankBattleSync.ts # Multiplayer sync
-│           │   └── useTankBattleAudio.ts # Audio management
-│           │
-│           └── types/
-│               └── tankBattle.types.ts  # TypeScript interfaces
+│ └── games/
+│ └── TankBattle/
+│ ├── index.tsx # Main GameEngine component
+│ ├── TankBattleScreen.tsx # Screen wrapper with HUD
+│ ├── TankBattleControls.tsx # Touch controls (joystick, buttons)
+│ ├── TankBattleHUD.tsx # Health, score, mission info
+│ ├── TankBattlePauseMenu.tsx # Pause screen
+│ ├── TankBattleResults.tsx # End of mission/game screen
+│ │
+│ ├── engine/
+│ │ ├── MatterWorld.ts # Matter.js world setup & config
+│ │ ├── CollisionHandler.ts # Matter.js collision event handlers
+│ │ ├── EntityFactory.ts # Create Matter.js bodies for entities
+│ │ └── PhysicsHelpers.ts # Movement, ricochet calculations
+│ │
+│ ├── systems/ # react-native-game-engine systems
+│ │ ├── PhysicsSystem.ts # Matter.Engine.update() each frame
+│ │ ├── TankMovementSystem.ts # Apply forces from joystick input
+│ │ ├── TurretAimSystem.ts # Rotate turret toward touch
+│ │ ├── AISystem.ts # Enemy AI state machine updates
+│ │ ├── BulletSystem.ts # Bullet lifetime & cleanup
+│ │ ├── MineSystem.ts # Mine timers & proximity
+│ │ ├── MissionSystem.ts # Win/lose condition checks
+│ │ └── MultiplayerSystem.ts # Firebase sync (20Hz)
+│ │
+│ ├── entities/
+│ │ ├── TankEntity.ts # Tank with Matter.Body + game state
+│ │ ├── BulletEntity.ts # Bullet with Matter.Body + ricochet count
+│ │ ├── MineEntity.ts # Mine with Matter.Body + timers
+│ │ ├── WallEntity.ts # Static Matter.Body for walls
+│ │ └── ArenaEntity.ts # All static bodies for arena
+│ │
+│ ├── ai/
+│ │ ├── AIStateMachine.ts # State machine base class
+│ │ ├── behaviors/
+│ │ │ ├── BrownTankAI.ts # Stationary, simple aim
+│ │ │ ├── AshTankAI.ts # Defensive retreat
+│ │ │ ├── MarineTankAI.ts # Fast bullets, defensive
+│ │ │ ├── YellowTankAI.ts # Mine layer
+│ │ │ ├── PinkTankAI.ts # Aggressive pursuer
+│ │ │ ├── GreenTankAI.ts # Predictive aiming
+│ │ │ ├── VioletTankAI.ts # Overwhelm with bullets
+│ │ │ ├── WhiteTankAI.ts # Invisible, tracks only
+│ │ │ └── BlackTankAI.ts # Elite, all abilities
+│ │ └── PredictiveAiming.ts # Math for leading shots
+│ │
+│ ├── renderers/ # Skia rendering components
+│ │ ├── SkiaRenderer.tsx # Main renderer for GameEngine
+│ │ ├── ArenaRenderer.tsx # Floor, walls, decorations
+│ │ ├── TankRenderer.tsx # Tank body + turret
+│ │ ├── BulletRenderer.tsx # Bullet with trail
+│ │ ├── MineRenderer.tsx # Mine + warning indicators
+│ │ ├── ExplosionRenderer.tsx # Particle explosion effects
+│ │ └── TrackRenderer.tsx # Tank track marks
+│ │
+│ ├── data/
+│ │ ├── tankTypes.ts # Tank configurations (speed, bullets, etc)
+│ │ ├── arenas.ts # Level layouts (wall positions)
+│ │ ├── missions.ts # Mission configs (which enemies)
+│ │ └── constants.ts # Physics constants, collision categories
+│ │
+│ ├── hooks/
+│ │ ├── useTankBattleGame.ts # Initialize entities & Matter.js
+│ │ ├── useTankBattleSync.ts # Multiplayer Firebase sync
+│ │ └── useTankBattleAudio.ts # Audio management
+│ │
+│ └── types/
+│ └── tankBattle.types.ts # TypeScript interfaces
 │
 ├── services/
-│   └── tankBattleService.ts             # Firebase integration
+│ └── tankBattleService.ts # Firebase integration
 │
 └── types/
-    └── games.ts                         # Add TankBattle game types
-```
+└── games.ts # Add TankBattle game types
+
+````
 
 ---
 
@@ -1214,72 +1609,95 @@ interface TankBattleProgress {
   achievements: string[];
   unlocks: string[];
 }
-```
+````
 
 ---
 
 ## 13. Development Phases
 
-### Phase 1: Core Engine (Week 1-2)
+### Phase 1: Core Engine Setup (Week 1-2)
 
-- [ ] Set up game canvas with react-native-skia
-- [ ] Implement basic tank movement and rotation
-- [ ] Add turret independent rotation
-- [ ] Basic bullet firing and movement
-- [ ] Wall collision detection
-- [ ] Bullet ricochet physics
+- [ ] Install and configure Matter.js, react-native-game-engine, Skia
+- [ ] Set up Matter.js world with zero gravity (top-down)
+- [ ] Create collision categories and filters
+- [ ] Implement basic GameEngine with Skia renderer
+- [ ] Create tank entity with Matter.Body
+- [ ] Basic tank movement using Matter.Body.applyForce()
+- [ ] Tank rotation and independent turret rotation
+- [ ] Wall creation and tank-wall collisions
 
-### Phase 2: Combat Systems (Week 2-3)
+### Phase 2: Bullet & Combat Systems (Week 2-3)
 
-- [ ] Mine deployment and detonation
-- [ ] Explosion effects and damage
-- [ ] Tank destruction
-- [ ] Lives system
-- [ ] Score tracking
+- [ ] Bullet entity with Matter.Body (restitution: 1.0 for bounce)
+- [ ] Bullet firing from turret position
+- [ ] Bullet-wall collision with ricochet handling
+- [ ] Ricochet counter decrement and bullet destruction
+- [ ] Bullet-tank collision detection
+- [ ] Tank destruction effects
+- [ ] Bullet-bullet collision (both destroyed)
 
-### Phase 3: AI System (Week 3-4)
+### Phase 3: Mine & Explosion System (Week 3-4)
 
-- [ ] Implement AI state machine
-- [ ] Brown tank (stationary) behavior
-- [ ] Ash tank (defensive) behavior
-- [ ] Marine tank (fast bullets) behavior
-- [ ] Yellow tank (mine layer) behavior
-- [ ] Pink tank (aggressive) behavior
-- [ ] Green tank (predictive aiming) behavior
-- [ ] Violet tank (pursuer) behavior
-- [ ] White tank (invisible) behavior
-- [ ] Black tank (elite) behavior
+- [ ] Mine entity with Matter.Body (sensor for proximity)
+- [ ] Mine deployment by player
+- [ ] Mine arming delay timer
+- [ ] Proximity trigger detection
+- [ ] Auto-detonation timer
+- [ ] Explosion radius damage calculation
+- [ ] Chain reaction prevention (intentional)
 
-### Phase 4: Level System (Week 4-5)
+### Phase 4: AI System (Week 4-5)
 
-- [ ] Arena rendering system
-- [ ] Create 20 preset arena layouts
-- [ ] Mission configuration system
-- [ ] Progressive unlocking
+- [ ] AI state machine base class
+- [ ] Brown tank (stationary) - simple line-of-sight firing
+- [ ] Ash tank (defensive) - retreat when player approaches
+- [ ] Marine tank - fast non-bouncing bullets
+- [ ] Yellow tank - mine laying behavior
+- [ ] Pink tank - aggressive pursuit
+- [ ] Green tank - predictive aiming (lead target)
+- [ ] Violet tank - overwhelming fire
+- [ ] White tank - invisible body, visible tracks only
+- [ ] Black tank - elite combining all abilities
+
+### Phase 5: Level System (Week 5-6)
+
+- [ ] Arena data structure with wall positions
+- [ ] Create Matter.js static bodies from arena data
+- [ ] Implement 20 preset arena layouts
+- [ ] Mission configuration (which enemies, spawn positions)
+- [ ] Progressive difficulty unlock
 - [ ] Random arena selection for missions 21+
+- [ ] Destructible blocks with explosion interaction
 
-### Phase 5: Multiplayer (Week 5-6)
+### Phase 6: Multiplayer Integration (Week 6-7)
 
 - [ ] Firebase game session management
-- [ ] Real-time state synchronization
-- [ ] Latency compensation
-- [ ] Player 2 integration
-- [ ] Score comparison
+- [ ] Real-time state synchronization (20Hz)
+- [ ] Input prediction for local player
+- [ ] State interpolation for remote player
+- [ ] Latency compensation for hit detection
+- [ ] Player 2 tank integration
+- [ ] Score comparison and lives tracking
 
-### Phase 6: Polish (Week 6-7)
+### Phase 7: Polish & Effects (Week 7-8)
 
-- [ ] Touch control refinement
-- [ ] Visual effects (particles, screen shake)
-- [ ] Dynamic music system
-- [ ] Sound effects
-- [ ] HUD design
+- [ ] Touch control refinement (joystick + aim)
+- [ ] Tank track mark rendering
+- [ ] Particle effects for explosions
+- [ ] Muzzle flash on firing
+- [ ] Screen shake on explosions
+- [ ] Dynamic music system (layers based on enemies)
+- [ ] Sound effects integration
+- [ ] HUD design and animations
 - [ ] Pause/resume functionality
 
-### Phase 7: Integration (Week 7-8)
+### Phase 8: Integration & Testing (Week 8)
 
 - [ ] Game invitation system integration
 - [ ] Achievement system integration
 - [ ] Statistics tracking
+- [ ] Performance optimization
+- [ ] E2E testing with react-native-game-engine
 - [ ] App store screenshots/marketing
 
 ---

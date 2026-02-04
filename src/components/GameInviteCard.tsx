@@ -14,6 +14,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Button, Card, Text, useTheme } from "react-native-paper";
 
 import { cancelInvite, respondToInvite } from "@/services/turnBasedGames";
+import { useColors } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import {
   GameInvite,
@@ -390,12 +391,15 @@ interface GameInviteBadgeProps {
 
 export function GameInviteBadge({ count }: GameInviteBadgeProps) {
   const theme = useTheme();
+  const colors = useColors();
 
   if (count === 0) return null;
 
   return (
     <View style={[styles.badge, { backgroundColor: theme.colors.error }]}>
-      <Text style={styles.badgeText}>{count > 99 ? "99+" : count}</Text>
+      <Text style={[styles.badgeText, { color: colors.onPrimary }]}>
+        {count > 99 ? "99+" : count}
+      </Text>
     </View>
   );
 }
@@ -491,7 +495,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   badgeText: {
-    color: "#FFFFFF",
     fontSize: 11,
     fontWeight: "bold",
   },

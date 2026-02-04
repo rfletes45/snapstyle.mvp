@@ -27,7 +27,9 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorBanner from "@/components/games/SpectatorBanner";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useSpectatorMode } from "@/hooks/useSpectatorMode";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
@@ -79,6 +81,8 @@ interface CheckersGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
+      /** Whether user is spectating (watching only) */
+      spectatorMode?: boolean;
     };
   };
 }
@@ -383,6 +387,25 @@ export default function CheckersGameScreen({
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<CheckersMatch | null>(null);
 
+  // Online game state
+  const [matchId, setMatchId] = useState<string | null>(
+    route.params?.matchId || null,
+  );
+
+  // Spectator mode hook
+  const {
+    isSpectator,
+    spectatorCount,
+    leaveSpectatorMode,
+    loading: spectatorLoading,
+  } = useSpectatorMode({
+    matchId,
+    inviteId: route.params?.inviteId,
+    spectatorMode: route.params?.spectatorMode,
+    userId: currentFirebaseUser?.uid,
+    userName: currentFirebaseUser?.displayName || "Spectator",
+  });
+
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
     exitGame,
@@ -412,17 +435,21 @@ export default function CheckersGameScreen({
   const [winner, setWinner] = useState<"red" | "black" | null>(null);
   const [scores, setScores] = useState({ red: 0, black: 0 });
 
-  // Online game state
-  const [matchId, setMatchId] = useState<string | null>(
-    route.params?.matchId || null,
-  );
   const [myColor, setMyColor] = useState<"red" | "black" | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
+  const [player1Name, setPlayer1Name] = useState<string>("Red");
+  const [player2Name, setPlayer2Name] = useState<string>("Black");
 
   // UI state
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+
+  // Handle spectator leave
+  const handleLeaveSpectator = useCallback(async () => {
+    await leaveSpectatorMode();
+    navigation.goBack();
+  }, [leaveSpectatorMode, navigation]);
 
   // ==========================================================================
   // Online Game Subscription
@@ -442,6 +469,10 @@ export default function CheckersGameScreen({
       setBoard(gameState.board);
       setCurrentTurn(gameState.currentTurn);
       setMustJump(gameState.mustJump);
+
+      // Track player names for spectators
+      setPlayer1Name(typedMatch.players.player1.displayName);
+      setPlayer2Name(typedMatch.players.player2.displayName);
 
       // Determine my color
       if (currentFirebaseUser) {
@@ -486,6 +517,11 @@ export default function CheckersGameScreen({
 
   const handleCellPress = useCallback(
     async (row: number, col: number) => {
+      // Block interactions in spectator mode
+      if (isSpectator) {
+        return;
+      }
+
       if (winner) return;
 
       const clickedPiece = board[row][col];
@@ -935,6 +971,15 @@ export default function CheckersGameScreen({
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      {/* Spectator Banner */}
+      <SpectatorBanner
+        isSpectator={isSpectator}
+        spectatorCount={spectatorCount}
+        onLeave={handleLeaveSpectator}
+        playerNames={[player1Name, player2Name]}
+        loading={spectatorLoading}
+      />
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleGoBack}>
@@ -947,7 +992,7 @@ export default function CheckersGameScreen({
         <Text style={[styles.title, { color: theme.colors.onBackground }]}>
           Checkers
         </Text>
-        {gameMode === "online" && match?.status === "active" ? (
+        {gameMode === "online" && match?.status === "active" && !isSpectator ? (
           <TouchableOpacity onPress={handleResign}>
             <MaterialCommunityIcons
               name="flag"

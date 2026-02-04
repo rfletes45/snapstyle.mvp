@@ -93,12 +93,12 @@ import {
   GameCategoryCarousel,
   GameFilterBar,
   GameInvitesBanner,
+  GameQuickActionsModal,
   GameRecommendations,
   GameStatsSummary,
   ModernGameCard,
   PlayHeader,
   PlaySearchBar,
-  QuickMatchFAB,
   SearchResultsView,
 } from "./components";
 
@@ -317,6 +317,7 @@ interface CategorySectionProps {
   highScores: Map<string, number>;
   highScoresFormatted: Map<string, string>;
   onPlayGame: (gameId: ExtendedGameType) => void;
+  onLongPressGame?: (gameId: ExtendedGameType) => void;
 }
 
 function CategorySection({
@@ -326,6 +327,7 @@ function CategorySection({
   highScores,
   highScoresFormatted,
   onPlayGame,
+  onLongPressGame,
 }: CategorySectionProps) {
   const theme = useTheme();
   const useModernCards = PLAY_SCREEN_FEATURES.CATEGORY_MODERN_CARDS;
@@ -360,6 +362,9 @@ function CategorySection({
                   : null
               }
               onPress={() => onPlayGame(gameId)}
+              onLongPress={
+                onLongPressGame ? () => onLongPressGame(gameId) : undefined
+              }
               variant={
                 PLAY_SCREEN_FEATURES.COMPACT_BROWSE_CARDS
                   ? "compact"
@@ -427,6 +432,13 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   );
   const [selectedFilterChip, setSelectedFilterChip] = useState("all");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // =========================================================================
+  // Game Quick Actions Modal State
+  // =========================================================================
+  const [quickActionsVisible, setQuickActionsVisible] = useState(false);
+  const [selectedGameForQuickActions, setSelectedGameForQuickActions] =
+    useState<ExtendedGameType | null>(null);
 
   // Phase 2: Calculate if search is active (has query or non-default filters)
   const isSearchActive = useMemo(() => {
@@ -566,16 +578,19 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     const screenMap: Partial<Record<ExtendedGameType, string>> = {
       reaction_tap: "ReactionTapGame",
       timed_tap: "TimedTapGame",
-      flappy_snap: "FlappySnapGame",
       bounce_blitz: "BounceBlitzGame",
       memory_snap: "MemorySnapGame",
       word_snap: "WordSnapGame",
       snap_2048: "Snap2048Game",
       snap_snake: "SnapSnakeGame",
+      cart_course: "CartCourseGame",
       tic_tac_toe: "TicTacToeGame",
       checkers: "CheckersGame",
       chess: "ChessGame",
       crazy_eights: "CrazyEightsGame",
+      // New single-player games (Phase 1)
+      tile_slide: "TileSlideGame",
+      brick_breaker: "BrickBreakerGame",
     };
 
     const screen = screenMap[gameId];
@@ -583,6 +598,33 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       navigation.navigate(screen);
     }
   };
+
+  // =========================================================================
+  // Game Quick Actions Handlers
+  // =========================================================================
+  const handleGameLongPress = useCallback((gameId: ExtendedGameType) => {
+    setSelectedGameForQuickActions(gameId);
+    setQuickActionsVisible(true);
+  }, []);
+
+  const handleQuickActionsClose = useCallback(() => {
+    setQuickActionsVisible(false);
+    setSelectedGameForQuickActions(null);
+  }, []);
+
+  const handleQuickActionsLeaderboard = useCallback(
+    (gameId: ExtendedGameType) => {
+      navigation.navigate("Leaderboard", { gameId });
+    },
+    [navigation],
+  );
+
+  const handleQuickActionsAchievements = useCallback(
+    (gameId: ExtendedGameType) => {
+      navigation.navigate("Achievements", { gameId });
+    },
+    [navigation],
+  );
 
   const handleSelectActiveGame = (game: AnyMatch) => {
     // Navigate to the appropriate game screen with the match ID
@@ -748,6 +790,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         if (screen) {
           navigation.navigate(screen, {
             matchId: result.gameId,
+            inviteId: invite.id,
             spectatorMode: true,
             entryPoint: "play",
           });
@@ -794,6 +837,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     "snap_2048",
     "snap_snake",
     "memory_snap",
+    "cart_course",
   ];
   const dailyGames: ExtendedGameType[] = ["word_snap"];
   const multiplayerGames: ExtendedGameType[] = [
@@ -1081,6 +1125,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                       gameType={gameType}
                       personalBest={highScoresFormatted.get(gameType)}
                       onPress={() => navigateToGame(gameType)}
+                      onLongPress={() => handleGameLongPress(gameType)}
                       testID={`daily-challenge-${gameType}`}
                     />
                   );
@@ -1093,6 +1138,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                     category={category}
                     highScores={highScoresFormatted}
                     onGamePress={navigateToGame}
+                    onGameLongPress={handleGameLongPress}
                     showSeeAll={false}
                     testID={`category-carousel-${category.id}`}
                   />
@@ -1110,6 +1156,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                 highScores={highScoresMap}
                 highScoresFormatted={highScoresFormatted}
                 onPlayGame={navigateToGame}
+                onLongPressGame={handleGameLongPress}
               />
 
               {/* Puzzle Games Section */}
@@ -1121,6 +1168,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                 highScores={highScoresMap}
                 highScoresFormatted={highScoresFormatted}
                 onPlayGame={navigateToGame}
+                onLongPressGame={handleGameLongPress}
               />
 
               {/* Multiplayer Games Section */}
@@ -1132,6 +1180,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                 highScores={highScoresMap}
                 highScoresFormatted={highScoresFormatted}
                 onPlayGame={navigateToGame}
+                onLongPressGame={handleGameLongPress}
               />
 
               {/* Daily Games Section */}
@@ -1143,6 +1192,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                 highScores={highScoresMap}
                 highScoresFormatted={highScoresFormatted}
                 onPlayGame={navigateToGame}
+                onLongPressGame={handleGameLongPress}
               />
             </>
           )}
@@ -1321,24 +1371,14 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         </ScrollView>
       )}
 
-      {/* Phase 7: Quick Match FAB */}
-      {PLAY_SCREEN_FEATURES.QUICK_MATCH_FAB && (
-        <QuickMatchFAB
-          onQuickMatch={(gameType) => {
-            // Navigate to the game screen - the game menu will handle friend selection
-            const screenMap: Record<string, string> = {
-              tic_tac_toe: "TicTacToeGame",
-              checkers: "CheckersGame",
-              chess: "ChessGame",
-              crazy_eights: "CrazyEightsGame",
-            };
-
-            const screen = screenMap[gameType];
-            if (screen) {
-              navigation.navigate(screen, { entryPoint: "quick-match" });
-            }
-          }}
-          testID="quick-match-fab"
+      {/* Game Quick Actions Modal */}
+      {selectedGameForQuickActions && (
+        <GameQuickActionsModal
+          visible={quickActionsVisible}
+          gameType={selectedGameForQuickActions}
+          onClose={handleQuickActionsClose}
+          onLeaderboard={handleQuickActionsLeaderboard}
+          onAchievements={handleQuickActionsAchievements}
         />
       )}
     </View>

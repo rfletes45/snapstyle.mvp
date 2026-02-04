@@ -48,7 +48,6 @@ import {
 } from "@/types/games";
 import {
   BounceBlitzStats,
-  FlappySnapStats,
   MemorySnapStats,
   SinglePlayerGameStats,
   Snap2048Stats,
@@ -626,10 +625,6 @@ export function GameHistoryScreen() {
       case "snap_snake": {
         const ss = stats as SnapSnakeStats;
         return `🍎 ${ss.foodEaten} apples • ${ss.maxLength} max length`;
-      }
-      case "flappy_snap": {
-        const fs = stats as FlappySnapStats;
-        return `🐦 ${fs.pipesPassed} pipes • ${fs.maxCombo}x combo`;
       }
       case "snap_2048": {
         const s2 = stats as Snap2048Stats;

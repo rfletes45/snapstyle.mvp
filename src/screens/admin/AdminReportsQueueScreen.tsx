@@ -50,7 +50,7 @@ import {
   TextInput,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 // Ban duration options for the modal
 const BAN_DURATION_OPTIONS = [
@@ -63,6 +63,7 @@ const BAN_DURATION_OPTIONS = [
 
 export default function AdminReportsQueueScreen({ navigation }: any) {
   const { currentFirebaseUser, customClaims } = useAuth();
+  const colors = useColors();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -211,7 +212,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
 
   // Render a report card
   const renderReportCard = ({ item: report }: { item: Report }) => (
-    <Card style={styles.reportCard}>
+    <Card style={[styles.reportCard, { backgroundColor: colors.surface }]}>
       <Card.Content>
         <View style={styles.reportHeader}>
           <Chip
@@ -224,39 +225,56 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
           >
             {REPORT_REASON_LABELS[report.reason]}
           </Chip>
-          <Text style={styles.timestamp}>
+          <Text style={[styles.timestamp, { color: colors.textSecondary }]}>
             {new Date(report.createdAt).toLocaleDateString()}
           </Text>
         </View>
 
         <View style={styles.userRow}>
-          <Text style={styles.label}>Reported User:</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            Reported User:
+          </Text>
           <Button
             mode="text"
             compact
             onPress={() => handleViewUser(report.reportedUserId)}
-            textColor={AppColors.primary}
+            textColor={colors.primary}
           >
             View Profile
           </Button>
         </View>
 
         <View style={styles.userRow}>
-          <Text style={styles.label}>Reporter:</Text>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            Reporter:
+          </Text>
           <Button
             mode="text"
             compact
             onPress={() => handleViewUser(report.reporterId)}
-            textColor={AppColors.secondary}
+            textColor={colors.secondary}
           >
             View Profile
           </Button>
         </View>
 
         {report.description && (
-          <View style={styles.descriptionBox}>
-            <Text style={styles.descriptionLabel}>Description:</Text>
-            <Text style={styles.descriptionText}>{report.description}</Text>
+          <View
+            style={[
+              styles.descriptionBox,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+          >
+            <Text
+              style={[styles.descriptionLabel, { color: colors.textSecondary }]}
+            >
+              Description:
+            </Text>
+            <Text
+              style={[styles.descriptionText, { color: colors.textPrimary }]}
+            >
+              {report.description}
+            </Text>
           </View>
         )}
 
@@ -271,7 +289,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
         <Button
           mode="outlined"
           onPress={() => handleOpenActionModal(report)}
-          textColor={AppColors.primary}
+          textColor={colors.primary}
         >
           Take Action
         </Button>
@@ -298,7 +316,9 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
   // Non-admin view
   if (!isAdmin) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
         <ErrorState
           title="Access Denied"
           message="You don't have permission to access this page."
@@ -311,7 +331,9 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
         <LoadingState message="Loading reports..." />
       </SafeAreaView>
     );
@@ -319,24 +341,39 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
         <ErrorState message={error} onRetry={handleRefresh} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       {/* Header */}
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: colors.surface, borderBottomColor: colors.border },
+        ]}
+      >
         <IconButton
           icon="arrow-left"
           onPress={() => navigation.goBack()}
-          iconColor={AppColors.textPrimary}
+          iconColor={colors.textPrimary}
         />
-        <Text style={styles.headerTitle}>Reports Queue</Text>
-        <View style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>{reports.length}</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+          Reports Queue
+        </Text>
+        <View style={[styles.headerBadge, { backgroundColor: colors.primary }]}>
+          <Text
+            style={[styles.headerBadgeText, { color: colors.textOnPrimary }]}
+          >
+            {reports.length}
+          </Text>
         </View>
       </View>
 
@@ -357,7 +394,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={AppColors.primary}
+              tintColor={colors.primary}
             />
           }
         />
@@ -368,12 +405,19 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
         <Modal
           visible={actionModalVisible}
           onDismiss={() => setActionModalVisible(false)}
-          contentContainerStyle={styles.modalContent}
+          contentContainerStyle={[
+            styles.modalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
           <ScrollView>
-            <Text style={styles.modalTitle}>Take Action</Text>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Take Action
+            </Text>
 
-            <Text style={styles.sectionLabel}>Action</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textPrimary }]}>
+              Action
+            </Text>
             <RadioButton.Group
               value={selectedAction}
               onValueChange={(v) =>
@@ -383,29 +427,35 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
               <RadioButton.Item
                 label="Dismiss (No action)"
                 value="none"
-                labelStyle={styles.radioLabel}
+                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
               />
               <RadioButton.Item
                 label="Warning"
                 value="warning"
-                labelStyle={styles.radioLabel}
+                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
               />
               <RadioButton.Item
                 label="Issue Strike"
                 value="strike"
-                labelStyle={styles.radioLabel}
+                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
               />
               <RadioButton.Item
                 label="Ban User"
                 value="ban"
-                labelStyle={styles.radioLabel}
+                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
               />
             </RadioButton.Group>
 
             {selectedAction === "ban" && (
               <>
-                <Divider style={styles.divider} />
-                <Text style={styles.sectionLabel}>Ban Duration</Text>
+                <Divider
+                  style={[styles.divider, { backgroundColor: colors.divider }]}
+                />
+                <Text
+                  style={[styles.sectionLabel, { color: colors.textPrimary }]}
+                >
+                  Ban Duration
+                </Text>
                 {BAN_DURATION_OPTIONS.map((option) => (
                   <RadioButton.Item
                     key={option.label}
@@ -415,13 +465,18 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                       banDuration === option.value ? "checked" : "unchecked"
                     }
                     onPress={() => setBanDuration(option.value)}
-                    labelStyle={styles.radioLabel}
+                    labelStyle={[
+                      styles.radioLabel,
+                      { color: colors.textPrimary },
+                    ]}
                   />
                 ))}
               </>
             )}
 
-            <Divider style={styles.divider} />
+            <Divider
+              style={[styles.divider, { backgroundColor: colors.divider }]}
+            />
 
             <TextInput
               label="Resolution Notes"
@@ -438,7 +493,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
               <Button
                 mode="text"
                 onPress={() => setActionModalVisible(false)}
-                textColor={AppColors.textSecondary}
+                textColor={colors.textSecondary}
                 disabled={actionLoading}
               >
                 Cancel
@@ -453,7 +508,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                     ? "#F44336"
                     : selectedAction === "strike"
                       ? "#FF9800"
-                      : AppColors.primary
+                      : colors.primary
                 }
               >
                 {selectedAction === "none" ? "Dismiss" : "Apply Action"}
@@ -466,46 +521,105 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
         <Modal
           visible={userInfoModalVisible}
           onDismiss={() => setUserInfoModalVisible(false)}
-          contentContainerStyle={styles.modalContent}
+          contentContainerStyle={[
+            styles.modalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
           {userInfoLoading ? (
-            <ActivityIndicator size="large" color={AppColors.primary} />
+            <ActivityIndicator size="large" color={colors.primary} />
           ) : (
             <ScrollView>
-              <Text style={styles.modalTitle}>User Info</Text>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                User Info
+              </Text>
 
               {selectedUser && (
                 <>
                   <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoLabel}>Username:</Text>
-                    <Text style={styles.userInfoValue}>
+                    <Text
+                      style={[
+                        styles.userInfoLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      Username:
+                    </Text>
+                    <Text
+                      style={[
+                        styles.userInfoValue,
+                        { color: colors.textPrimary },
+                      ]}
+                    >
                       @{selectedUser.username}
                     </Text>
                   </View>
                   <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoLabel}>Display Name:</Text>
-                    <Text style={styles.userInfoValue}>
+                    <Text
+                      style={[
+                        styles.userInfoLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      Display Name:
+                    </Text>
+                    <Text
+                      style={[
+                        styles.userInfoValue,
+                        { color: colors.textPrimary },
+                      ]}
+                    >
                       {selectedUser.displayName}
                     </Text>
                   </View>
                   <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoLabel}>UID:</Text>
-                    <Text style={styles.userInfoValueSmall}>
+                    <Text
+                      style={[
+                        styles.userInfoLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      UID:
+                    </Text>
+                    <Text
+                      style={[
+                        styles.userInfoValueSmall,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       {selectedUser.uid}
                     </Text>
                   </View>
                   <View style={styles.userInfoRow}>
-                    <Text style={styles.userInfoLabel}>Joined:</Text>
-                    <Text style={styles.userInfoValue}>
+                    <Text
+                      style={[
+                        styles.userInfoLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      Joined:
+                    </Text>
+                    <Text
+                      style={[
+                        styles.userInfoValue,
+                        { color: colors.textPrimary },
+                      ]}
+                    >
                       {new Date(selectedUser.createdAt).toLocaleDateString()}
                     </Text>
                   </View>
                 </>
               )}
 
-              <Divider style={styles.divider} />
+              <Divider
+                style={[styles.divider, { backgroundColor: colors.divider }]}
+              />
 
-              <Text style={styles.sectionLabel}>Strike History</Text>
+              <Text
+                style={[styles.sectionLabel, { color: colors.textPrimary }]}
+              >
+                Strike History
+              </Text>
               {selectedUserStrikes ? (
                 <>
                   <Chip
@@ -527,19 +641,37 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                   </Chip>
 
                   {selectedUserStrikes.strikeHistory.map((strike, idx) => (
-                    <View key={idx} style={styles.strikeItem}>
-                      <Text style={styles.strikeReason}>
+                    <View
+                      key={idx}
+                      style={[
+                        styles.strikeItem,
+                        { backgroundColor: colors.surfaceVariant },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.strikeReason,
+                          { color: colors.textPrimary },
+                        ]}
+                      >
                         {BAN_REASON_LABELS[strike.reason as BanReason] ||
                           strike.reason}
                       </Text>
-                      <Text style={styles.strikeDate}>
+                      <Text
+                        style={[
+                          styles.strikeDate,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         {new Date(strike.issuedAt).toLocaleDateString()}
                       </Text>
                     </View>
                   ))}
                 </>
               ) : (
-                <Text style={styles.noStrikes}>No strikes on record</Text>
+                <Text style={[styles.noStrikes, { color: colors.success }]}>
+                  No strikes on record
+                </Text>
               )}
 
               <Button
@@ -568,32 +700,26 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: AppColors.background,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 12,
-    backgroundColor: AppColors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: AppColors.border,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: AppColors.textPrimary,
     flex: 1,
   },
   headerBadge: {
-    backgroundColor: AppColors.primary,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
     marginRight: 8,
   },
   headerBadgeText: {
-    color: AppColors.textOnPrimary,
     fontWeight: "bold",
     fontSize: 14,
   },
@@ -602,7 +728,6 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   reportCard: {
-    backgroundColor: AppColors.surface,
     marginBottom: 16,
     borderRadius: 12,
   },
@@ -616,7 +741,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   timestamp: {
-    color: AppColors.textSecondary,
     fontSize: 12,
   },
   userRow: {
@@ -626,23 +750,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   label: {
-    color: AppColors.textSecondary,
     fontSize: 14,
   },
   descriptionBox: {
-    backgroundColor: AppColors.surfaceVariant,
     borderRadius: 8,
     padding: 12,
     marginTop: 8,
     marginBottom: 8,
   },
   descriptionLabel: {
-    color: AppColors.textSecondary,
     fontSize: 12,
     marginBottom: 4,
   },
   descriptionText: {
-    color: AppColors.textPrimary,
     fontSize: 14,
   },
   contentChip: {
@@ -655,7 +775,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   modalContent: {
-    backgroundColor: AppColors.surface,
     margin: 20,
     borderRadius: 16,
     padding: 20,
@@ -664,22 +783,17 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: AppColors.textPrimary,
     marginBottom: 16,
     textAlign: "center",
   },
   sectionLabel: {
     fontSize: 16,
     fontWeight: "600",
-    color: AppColors.textPrimary,
     marginTop: 8,
     marginBottom: 8,
   },
-  radioLabel: {
-    color: AppColors.textPrimary,
-  },
+  radioLabel: {},
   divider: {
-    backgroundColor: AppColors.divider,
     marginVertical: 16,
   },
   notesInput: {
@@ -698,16 +812,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   userInfoLabel: {
-    color: AppColors.textSecondary,
     fontSize: 14,
   },
   userInfoValue: {
-    color: AppColors.textPrimary,
     fontSize: 14,
     fontWeight: "500",
   },
   userInfoValueSmall: {
-    color: AppColors.textSecondary,
     fontSize: 11,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
@@ -716,23 +827,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   strikeItem: {
-    backgroundColor: AppColors.surfaceVariant,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
   },
   strikeReason: {
-    color: AppColors.textPrimary,
     fontSize: 14,
     fontWeight: "500",
   },
   strikeDate: {
-    color: AppColors.textSecondary,
     fontSize: 12,
     marginTop: 4,
   },
   noStrikes: {
-    color: AppColors.success,
     fontSize: 14,
     fontStyle: "italic",
   },

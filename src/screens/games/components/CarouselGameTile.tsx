@@ -42,6 +42,8 @@ export interface CarouselGameTileProps {
   personalBest?: string | null;
   /** Called when tile is pressed */
   onPress: () => void;
+  /** Called when tile is long-pressed */
+  onLongPress?: () => void;
   /** Show NEW badge */
   isNew?: boolean;
   /** Additional styles */
@@ -66,6 +68,7 @@ function CarouselGameTileComponent({
   gameType,
   personalBest,
   onPress,
+  onLongPress,
   isNew = false,
   style,
   width = DEFAULT_TILE_WIDTH,
@@ -96,12 +99,21 @@ function CarouselGameTileComponent({
     scale.value = withSpring(1, animation.pressSpring);
   }, [scale]);
 
+  const handleLongPress = useCallback(() => {
+    if (onLongPress) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      onLongPress();
+    }
+  }, [onLongPress]);
+
   return (
     <Animated.View style={[animatedStyle, style]}>
       <Pressable
         onPress={onPress}
+        onLongPress={handleLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
+        delayLongPress={400}
         testID={testID}
         style={[
           styles.tile,

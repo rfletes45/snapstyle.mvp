@@ -56,11 +56,22 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { currentFirebaseUser, customClaims } = useAuth();
   const { profile, refreshProfile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
-  const { mode, setMode, isDark } = useAppTheme();
+  const {
+    themeId,
+    setTheme,
+    isDark,
+    useSystemTheme,
+    setUseSystemTheme,
+    toggleDarkMode,
+    availableThemes,
+  } = useAppTheme();
   const {
     enabled: inAppNotificationsEnabled,
     setEnabled: setInAppNotificationsEnabled,
   } = useInAppNotifications();
+
+  // Get current theme info
+  const currentThemeMeta = availableThemes.find((t) => t.id === themeId);
 
   // Notification toggles (local state - persisted to Firestore in future)
   const [notifications, setNotifications] = useState<NotificationSettings>({
@@ -230,11 +241,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         <List.Item
           title="Theme"
           description={
-            mode === "system"
-              ? `System (currently ${isDark ? "dark" : "light"})`
-              : mode === "dark"
-                ? "Dark"
-                : "Light"
+            useSystemTheme
+              ? `System (${currentThemeMeta?.name || "Auto"})`
+              : currentThemeMeta?.name || "Custom"
           }
           left={(props) => (
             <List.Icon
@@ -242,13 +251,15 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
               icon={isDark ? "weather-night" : "weather-sunny"}
             />
           )}
+          right={(props) => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => navigation.navigate("ThemeSettings")}
         />
 
         <View style={styles.themeButtonsContainer}>
           <Button
-            mode={mode === "light" ? "contained" : "outlined"}
+            mode={!useSystemTheme && !isDark ? "contained" : "outlined"}
             onPress={() => {
-              setMode("light");
+              setTheme("catppuccin-latte");
               showSuccess("Light theme enabled");
             }}
             style={styles.themeButton}
@@ -258,9 +269,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </Button>
 
           <Button
-            mode={mode === "dark" ? "contained" : "outlined"}
+            mode={!useSystemTheme && isDark ? "contained" : "outlined"}
             onPress={() => {
-              setMode("dark");
+              setTheme("catppuccin-mocha");
               showSuccess("Dark theme enabled");
             }}
             style={styles.themeButton}
@@ -270,9 +281,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           </Button>
 
           <Button
-            mode={mode === "system" ? "contained" : "outlined"}
+            mode={useSystemTheme ? "contained" : "outlined"}
             onPress={() => {
-              setMode("system");
+              setUseSystemTheme(true);
               showSuccess("System theme enabled");
             }}
             style={styles.themeButton}

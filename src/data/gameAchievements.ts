@@ -1590,6 +1590,463 @@ export const POOL_ACHIEVEMENTS: GameAchievementDefinition[] = [
 ];
 
 // =============================================================================
+// Tile Slide Achievements
+// =============================================================================
+
+export const TILE_SLIDE_ACHIEVEMENTS: GameAchievementDefinition[] = [
+  // First solve
+  {
+    id: "slide_first_solve",
+    name: "First Slide",
+    description: "Solve your first sliding puzzle",
+    icon: "🔢",
+    category: "tile_slide",
+    tier: "bronze",
+    xpReward: TIER_REWARDS.bronze.xp,
+    coinReward: TIER_REWARDS.bronze.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "tile_slide", count: 1 },
+    },
+    progressType: "instant",
+  },
+
+  // 3x3 optimal
+  {
+    id: "slide_3x3_optimal",
+    name: "8-Puzzle Pro",
+    description: "Solve a 3×3 puzzle in optimal moves",
+    icon: "⭐",
+    category: "tile_slide",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "tile_slide", min: 200 }, // Optimal 3x3 = base 100 + optimal 100
+    },
+    progressType: "instant",
+  },
+
+  // 4x4 complete
+  {
+    id: "slide_4x4_complete",
+    name: "15-Puzzle Solver",
+    description: "Solve a 4×4 puzzle",
+    icon: "🧩",
+    category: "tile_slide",
+    tier: "bronze",
+    xpReward: TIER_REWARDS.bronze.xp,
+    coinReward: TIER_REWARDS.bronze.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "tile_slide", gridSize: 4, min: 1 },
+    },
+    progressType: "instant",
+  },
+
+  // 4x4 optimal
+  {
+    id: "slide_4x4_optimal",
+    name: "15-Puzzle Master",
+    description: "Solve a 4×4 puzzle near-optimally",
+    icon: "🏆",
+    category: "tile_slide",
+    tier: "gold",
+    xpReward: TIER_REWARDS.gold.xp,
+    coinReward: TIER_REWARDS.gold.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "tile_slide", min: 300 }, // Near-optimal 4x4
+    },
+    progressType: "instant",
+    unlocks: { type: "badge", itemId: "puzzle_master_badge" },
+  },
+
+  // 5x5 complete
+  {
+    id: "slide_5x5_complete",
+    name: "24-Puzzle Hero",
+    description: "Solve a 5×5 puzzle",
+    icon: "💪",
+    category: "tile_slide",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "tile_slide", gridSize: 5, min: 1 },
+    },
+    progressType: "instant",
+  },
+
+  // 5x5 fast
+  {
+    id: "slide_5x5_fast",
+    name: "Speed Slider",
+    description: "Solve a 5×5 puzzle in under 2 minutes",
+    icon: "⚡",
+    category: "tile_slide",
+    tier: "gold",
+    xpReward: TIER_REWARDS.gold.xp,
+    coinReward: TIER_REWARDS.gold.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "tile_slide", gridSize: 5, maxTime: 120 },
+    },
+    progressType: "instant",
+    unlocks: { type: "badge", itemId: "speed_slider_badge" },
+  },
+
+  // No hints streak
+  {
+    id: "slide_no_hints",
+    name: "Unassisted",
+    description: "Solve 10 puzzles without using hints",
+    icon: "🧠",
+    category: "tile_slide",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "tile_slide", noHints: true, count: 10 },
+    },
+    progressType: "count",
+    progressTarget: 10,
+  },
+
+  // Daily puzzle 7 days
+  {
+    id: "slide_daily_7",
+    name: "Week Warrior",
+    description: "Complete 7 daily puzzles",
+    icon: "📅",
+    category: "tile_slide",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "tile_slide", daily: true, count: 7 },
+    },
+    progressType: "count",
+    progressTarget: 7,
+  },
+
+  // Daily puzzle 30 days
+  {
+    id: "slide_daily_30",
+    name: "Monthly Master",
+    description: "Complete 30 daily puzzles",
+    icon: "🗓️",
+    category: "tile_slide",
+    tier: "gold",
+    xpReward: TIER_REWARDS.gold.xp,
+    coinReward: TIER_REWARDS.gold.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "tile_slide", daily: true, count: 30 },
+    },
+    progressType: "count",
+    progressTarget: 30,
+    unlocks: { type: "avatar_frame", itemId: "daily_master_frame" },
+  },
+
+  // Total puzzles 50
+  {
+    id: "slide_total_50",
+    name: "Puzzle Addict",
+    description: "Solve 50 total puzzles",
+    icon: "🔥",
+    category: "tile_slide",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "tile_slide", count: 50 },
+    },
+    progressType: "count",
+    progressTarget: 50,
+  },
+
+  // Image puzzles 10
+  {
+    id: "slide_image_10",
+    name: "Picture Perfect",
+    description: "Solve 10 image puzzles",
+    icon: "🖼️",
+    category: "tile_slide",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "tile_slide", imageMode: true, count: 10 },
+    },
+    progressType: "count",
+    progressTarget: 10,
+  },
+];
+
+// =============================================================================
+// Brick Breaker Achievements
+// =============================================================================
+
+export const BRICK_BREAKER_ACHIEVEMENTS: GameAchievementDefinition[] = [
+  // First game
+  {
+    id: "brick_first_game",
+    name: "Block Buster",
+    description: "Destroy your first brick",
+    icon: "🧱",
+    category: "brick_breaker",
+    tier: "bronze",
+    xpReward: TIER_REWARDS.bronze.xp,
+    coinReward: TIER_REWARDS.bronze.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "game_played",
+      conditions: { gameType: "brick_breaker", count: 1 },
+    },
+    progressType: "instant",
+  },
+
+  // 100 bricks destroyed
+  {
+    id: "brick_veteran",
+    name: "Brick Veteran",
+    description: "Destroy 100 total bricks",
+    icon: "💥",
+    category: "brick_breaker",
+    tier: "bronze",
+    xpReward: TIER_REWARDS.bronze.xp,
+    coinReward: TIER_REWARDS.bronze.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "stat_reached",
+      conditions: {
+        gameType: "brick_breaker",
+        stat: "bricksDestroyed",
+        value: 100,
+      },
+    },
+    progressType: "count",
+    progressTarget: 100,
+  },
+
+  // 1000 bricks destroyed
+  {
+    id: "brick_master",
+    name: "Brick Master",
+    description: "Destroy 1000 total bricks",
+    icon: "🏆",
+    category: "brick_breaker",
+    tier: "gold",
+    xpReward: TIER_REWARDS.gold.xp,
+    coinReward: TIER_REWARDS.gold.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "stat_reached",
+      conditions: {
+        gameType: "brick_breaker",
+        stat: "bricksDestroyed",
+        value: 1000,
+      },
+    },
+    progressType: "count",
+    progressTarget: 1000,
+    unlocks: { type: "badge", itemId: "brick_master_badge" },
+  },
+
+  // Perfect clear - complete level without losing a ball
+  {
+    id: "brick_perfect_clear",
+    name: "Perfect Clear",
+    description: "Complete a level without losing any balls",
+    icon: "⭐",
+    category: "brick_breaker",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "special_event",
+      conditions: { gameType: "brick_breaker", event: "perfect_level" },
+    },
+    progressType: "instant",
+  },
+
+  // Have 3 balls active at once
+  {
+    id: "brick_triple_threat",
+    name: "Triple Threat",
+    description: "Have 3 balls active at the same time",
+    icon: "⚪⚪⚪",
+    category: "brick_breaker",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "special_event",
+      conditions: { gameType: "brick_breaker", event: "triple_balls" },
+    },
+    progressType: "instant",
+  },
+
+  // Have 5 or more balls active
+  {
+    id: "brick_ball_chaos",
+    name: "Ball Chaos",
+    description: "Have 5 or more balls bouncing simultaneously",
+    icon: "🎱",
+    category: "brick_breaker",
+    tier: "gold",
+    xpReward: TIER_REWARDS.gold.xp,
+    coinReward: TIER_REWARDS.gold.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "special_event",
+      conditions: { gameType: "brick_breaker", event: "ball_chaos" },
+    },
+    progressType: "instant",
+  },
+
+  // Collect 10 power-ups in one game
+  {
+    id: "brick_power_hungry",
+    name: "Power Hungry",
+    description: "Collect 10 power-ups in a single game",
+    icon: "⚡",
+    category: "brick_breaker",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "stat_reached",
+      conditions: {
+        gameType: "brick_breaker",
+        stat: "powerupsCollectedGame",
+        value: 10,
+      },
+    },
+    progressType: "count",
+    progressTarget: 10,
+  },
+
+  // Chain reaction - destroy 5 bricks with one explosive
+  {
+    id: "brick_chain_reaction",
+    name: "Chain Reaction",
+    description: "Destroy 5+ bricks with a single explosive brick",
+    icon: "💣",
+    category: "brick_breaker",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "special_event",
+      conditions: { gameType: "brick_breaker", event: "chain_reaction" },
+    },
+    progressType: "instant",
+  },
+
+  // Score 10,000 points
+  {
+    id: "brick_score_hunter",
+    name: "Score Hunter",
+    description: "Score 10,000 points in a single game",
+    icon: "🎯",
+    category: "brick_breaker",
+    tier: "silver",
+    xpReward: TIER_REWARDS.silver.xp,
+    coinReward: TIER_REWARDS.silver.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "brick_breaker", score: 10000 },
+    },
+    progressType: "highscore",
+    progressTarget: 10000,
+  },
+
+  // Score 50,000 points
+  {
+    id: "brick_score_legend",
+    name: "Score Legend",
+    description: "Score 50,000 points in a single game",
+    icon: "👑",
+    category: "brick_breaker",
+    tier: "platinum",
+    xpReward: TIER_REWARDS.platinum.xp,
+    coinReward: TIER_REWARDS.platinum.coins,
+    secret: false,
+    repeatable: false,
+    trigger: {
+      type: "score_reached",
+      conditions: { gameType: "brick_breaker", score: 50000 },
+    },
+    progressType: "highscore",
+    progressTarget: 50000,
+    unlocks: { type: "avatar_frame", itemId: "brick_legend_frame" },
+  },
+
+  // Complete a level using only paddle (no power-ups)
+  {
+    id: "brick_purist",
+    name: "Purist",
+    description: "Complete a level without collecting any power-ups",
+    icon: "🙏",
+    category: "brick_breaker",
+    tier: "gold",
+    xpReward: TIER_REWARDS.gold.xp,
+    coinReward: TIER_REWARDS.gold.coins,
+    secret: true,
+    repeatable: false,
+    trigger: {
+      type: "special_event",
+      conditions: { gameType: "brick_breaker", event: "no_powerups_level" },
+    },
+    progressType: "instant",
+  },
+];
+
+// =============================================================================
 // Streak Achievements (Legacy Support)
 // =============================================================================
 
@@ -1672,6 +2129,8 @@ export const ALL_GAME_ACHIEVEMENTS: GameAchievementDefinition[] = [
   ...MEMORY_SNAP_ACHIEVEMENTS,
   ...SNAP_2048_ACHIEVEMENTS,
   ...SNAP_SNAKE_ACHIEVEMENTS,
+  ...TILE_SLIDE_ACHIEVEMENTS,
+  ...BRICK_BREAKER_ACHIEVEMENTS,
   ...MULTIPLAYER_ACHIEVEMENTS,
   ...TIC_TAC_TOE_ACHIEVEMENTS,
   ...CHECKERS_ACHIEVEMENTS,

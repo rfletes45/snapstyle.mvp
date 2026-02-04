@@ -135,6 +135,14 @@ export default function BounceBlitzGameScreen({
   const launchXRef = useRef<number>(launchX);
   const aimAngleRef = useRef<number | null>(aimAngle);
 
+  // Refs to track game state values for endGame (avoids stale closure)
+  const scoreRef = useRef<number>(score);
+  const levelRef = useRef<number>(level);
+  const ballCountRef = useRef<number>(ballCount);
+  const totalBlocksDestroyedRef = useRef<number>(totalBlocksDestroyed);
+  const totalBouncesRef = useRef<number>(totalBounces);
+  const highScoreRef = useRef<number>(highScore);
+
   // Keep refs in sync with state
   useEffect(() => {
     statusRef.current = status;
@@ -147,6 +155,30 @@ export default function BounceBlitzGameScreen({
   useEffect(() => {
     aimAngleRef.current = aimAngle;
   }, [aimAngle]);
+
+  useEffect(() => {
+    scoreRef.current = score;
+  }, [score]);
+
+  useEffect(() => {
+    levelRef.current = level;
+  }, [level]);
+
+  useEffect(() => {
+    ballCountRef.current = ballCount;
+  }, [ballCount]);
+
+  useEffect(() => {
+    totalBlocksDestroyedRef.current = totalBlocksDestroyed;
+  }, [totalBlocksDestroyed]);
+
+  useEffect(() => {
+    totalBouncesRef.current = totalBounces;
+  }, [totalBounces]);
+
+  useEffect(() => {
+    highScoreRef.current = highScore;
+  }, [highScore]);
 
   // Share state
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -161,11 +193,14 @@ export default function BounceBlitzGameScreen({
   const gameLoopRef = useRef<number | null>(null);
   const blockIdCounter = useRef(0); // Unique ID counter for blocks
   const [renderTrigger, setRenderTrigger] = useState(0);
+  // Track recently hit blocks to prevent multi-hit (blockId -> frames since hit)
+  const recentlyHitBlocks = useRef<Map<number, number>>(new Map());
 
   // Generate blocks for a new level
   const generateBlocks = useCallback((levelNum: number): Block[] => {
     const newBlocks: Block[] = [];
-    const blocksPerRow = Math.min(2 + Math.floor(levelNum / 3), COLS - 1);
+    // Much gentler difficulty curve: start with 1 block, add 1 every 5 levels, max 4 blocks
+    const blocksPerRow = Math.min(1 + Math.floor(levelNum / 5), 4);
 
     // Generate positions for blocks in the top row
     const positions = new Set<number>();
@@ -184,10 +219,11 @@ export default function BounceBlitzGameScreen({
         type = "bonus";
       }
 
-      // Health based on level
-      const baseHealth = Math.ceil(levelNum * 1.2);
-      const variance = Math.floor(levelNum * 0.3);
-      const health = baseHealth + Math.floor(Math.random() * variance);
+      // Health based on level - gentler difficulty curve
+      // Starts at 1-2, grows slowly with diminishing returns
+      const baseHealth = Math.ceil(1 + Math.sqrt(levelNum) * 0.8);
+      const variance = Math.max(0, Math.floor(Math.sqrt(levelNum) * 0.3));
+      const health = baseHealth + Math.floor(Math.random() * (variance + 1));
 
       newBlocks.push({
         id: blockId,
@@ -209,6 +245,12 @@ export default function BounceBlitzGameScreen({
 
   // Initialize game
   const initGame = useCallback(() => {
+    // Stop any running game loop first
+    if (gameLoopRef.current) {
+      cancelAnimationFrame(gameLoopRef.current);
+      gameLoopRef.current = null;
+    }
+
     balls.current = [];
     blockIdCounter.current = 0; // Reset block ID counter
     blocks.current = generateBlocks(1);
@@ -228,16 +270,22 @@ export default function BounceBlitzGameScreen({
   // Start game
   const startGame = useCallback(() => {
     console.log("[BounceBlitz] startGame called - initializing game");
+    // Reset the ending flag in case it's stuck
+    endingGameRef.current = false;
     initGame();
-    setStatus("aiming");
-    statusRef.current = "aiming";
-    console.log("[BounceBlitz] Game status set to 'aiming'");
+    // Use setTimeout to ensure state updates have processed
+    setTimeout(() => {
+      setStatus("aiming");
+      statusRef.current = "aiming";
+      console.log("[BounceBlitz] Game status set to 'aiming'");
+    }, 50);
   }, [initGame]);
 
   // Launch balls
   const launchBalls = useCallback(
     (angle: number) => {
       setStatus("shooting");
+      statusRef.current = "shooting";
       ballsReturned.current = 0;
 
       // Create balls with staggered launch
@@ -265,9 +313,14 @@ export default function BounceBlitzGameScreen({
         }
       }, 80);
 
+      // Game loop - check if we should continue after each update
       const gameLoop = () => {
         updateGame();
-        gameLoopRef.current = requestAnimationFrame(gameLoop);
+        // Only schedule next frame if we're still in shooting state
+        // The updateGame function sets gameLoopRef.current to null when done
+        if (gameLoopRef.current !== null && statusRef.current === "shooting") {
+          gameLoopRef.current = requestAnimationFrame(gameLoop);
+        }
       };
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     },
@@ -282,14 +335,21 @@ export default function BounceBlitzGameScreen({
 
   // Update game physics
   const updateGame = useCallback(() => {
-    let allReturned = true;
+    // Only process if we're in shooting state
+    if (statusRef.current !== "shooting") {
+      return;
+    }
+
+    let anyBallActive = false;
     let bounceOccurred = false;
 
     balls.current = balls.current.map((ball) => {
       if (!ball.active) {
-        allReturned = false;
+        // Ball already returned, skip processing
         return ball;
       }
+
+      anyBallActive = true;
 
       // Update position
       let newX = ball.x + ball.vx;
@@ -325,53 +385,93 @@ export default function BounceBlitzGameScreen({
         return { ...ball, active: false };
       }
 
-      // Block collisions
-      blocks.current = blocks.current.map((block) => {
-        const blockLeft = block.col * CELL_SIZE + BLOCK_PADDING;
-        const blockRight = blockLeft + BLOCK_SIZE;
-        const blockTop = (block.row + 1) * CELL_SIZE + BLOCK_PADDING;
-        const blockBottom = blockTop + BLOCK_SIZE;
+      // Block collisions - track if we hit a block this frame to prevent multi-hits
+      let hitBlockThisFrame = false;
 
-        // Check collision
-        const closestX = Math.max(blockLeft, Math.min(newX, blockRight));
-        const closestY = Math.max(blockTop, Math.min(newY, blockBottom));
+      // Decrement cooldowns and remove expired entries
+      recentlyHitBlocks.current.forEach((frames, blockId) => {
+        if (frames <= 1) {
+          recentlyHitBlocks.current.delete(blockId);
+        } else {
+          recentlyHitBlocks.current.set(blockId, frames - 1);
+        }
+      });
+
+      blocks.current = blocks.current.map((block) => {
+        // Skip if we already hit a block this frame
+        if (hitBlockThisFrame) return block;
+
+        // Skip if this block was recently hit (cooldown to prevent multi-hit)
+        if (recentlyHitBlocks.current.has(block.id)) return block;
+
+        // Extra ball pickups are pass-through (no collision/bounce)
+        if (block.type === "extra_ball") {
+          // Check if ball center is within pickup radius (circle collision)
+          const blockCenterX = block.col * CELL_SIZE + CELL_SIZE / 2;
+          const blockCenterY = (block.row + 1) * CELL_SIZE + CELL_SIZE / 2;
+          const pickupRadius = BLOCK_SIZE / 2;
+
+          const distX = newX - blockCenterX;
+          const distY = newY - blockCenterY;
+          const distance = Math.sqrt(distX * distX + distY * distY);
+
+          if (distance < pickupRadius + BALL_RADIUS) {
+            // Collect the extra ball - no bounce!
+            setBallCount((b) => b + 1);
+            setScore((s) => s + 10);
+            return { ...block, health: 0 };
+          }
+          return block;
+        }
+
+        // Use full cell bounds for collision (no gaps between blocks)
+        // This prevents balls from slipping through diagonal gaps
+        const cellLeft = block.col * CELL_SIZE;
+        const cellRight = cellLeft + CELL_SIZE;
+        const cellTop = (block.row + 1) * CELL_SIZE;
+        const cellBottom = cellTop + CELL_SIZE;
+
+        // Check collision against full cell
+        const closestX = Math.max(cellLeft, Math.min(newX, cellRight));
+        const closestY = Math.max(cellTop, Math.min(newY, cellBottom));
         const distX = newX - closestX;
         const distY = newY - closestY;
         const distance = Math.sqrt(distX * distX + distY * distY);
 
         if (distance < BALL_RADIUS) {
+          hitBlockThisFrame = true;
           bounceOccurred = true;
 
-          // Determine collision side
+          // Add to recently hit blocks with cooldown (prevents re-hitting for 3 frames)
+          recentlyHitBlocks.current.set(block.id, 3);
+
+          // Determine collision side and push ball out more aggressively
           const overlapX = BALL_RADIUS - Math.abs(distX);
           const overlapY = BALL_RADIUS - Math.abs(distY);
 
+          // Add extra push distance to ensure ball fully exits the block
+          const pushExtra = 2;
+
           if (overlapX < overlapY) {
             newVx = -newVx;
-            newX += distX > 0 ? overlapX : -overlapX;
+            newX += distX > 0 ? overlapX + pushExtra : -(overlapX + pushExtra);
           } else {
             newVy = -newVy;
-            newY += distY > 0 ? overlapY : -overlapY;
+            newY += distY > 0 ? overlapY + pushExtra : -(overlapY + pushExtra);
           }
 
-          // Handle block hit
-          if (block.type === "extra_ball") {
-            setBallCount((b) => b + 1);
-            setScore((s) => s + 10);
-            return { ...block, health: 0 };
-          } else {
-            const newHealth = block.health - 1;
-            if (newHealth <= 0) {
-              setScore((s) => s + (block.type === "bonus" ? 20 : 10));
-              setTotalBlocksDestroyed((t) => t + 1);
-            }
-            return {
-              ...block,
-              health: newHealth,
-              color:
-                block.type === "bonus" ? "#9C27B0" : getBlockColor(newHealth),
-            };
+          // Handle block hit (normal and bonus blocks only)
+          const newHealth = block.health - 1;
+          if (newHealth <= 0) {
+            setScore((s) => s + (block.type === "bonus" ? 20 : 10));
+            setTotalBlocksDestroyed((t) => t + 1);
           }
+          return {
+            ...block,
+            health: newHealth,
+            color:
+              block.type === "bonus" ? "#9C27B0" : getBlockColor(newHealth),
+          };
         }
         return block;
       });
@@ -379,7 +479,6 @@ export default function BounceBlitzGameScreen({
       // Remove destroyed blocks
       blocks.current = blocks.current.filter((b) => b.health > 0);
 
-      allReturned = false;
       return { ...ball, x: newX, y: newY, vx: newVx, vy: newVy };
     });
 
@@ -387,8 +486,14 @@ export default function BounceBlitzGameScreen({
       setTotalBounces((t) => t + 1);
     }
 
-    // Check if all balls returned
-    if (allReturned && balls.current.every((b) => !b.active)) {
+    // Check if all balls have returned (none are active and all have been launched)
+    const allBallsReturned =
+      !anyBallActive &&
+      balls.current.length > 0 &&
+      balls.current.every((b) => !b.active) &&
+      ballsReturned.current >= balls.current.length;
+
+    if (allBallsReturned) {
       if (gameLoopRef.current) {
         cancelAnimationFrame(gameLoopRef.current);
         gameLoopRef.current = null;
@@ -418,23 +523,58 @@ export default function BounceBlitzGameScreen({
       // Update launch position
       setLaunchX(newLaunchX.current);
       setStatus("aiming");
+      statusRef.current = "aiming";
     }
 
     setRenderTrigger((t) => t + 1);
-  }, [generateBlocks]);
+  }, [generateBlocks, endGame]);
 
-  // End game
+  // Flag to prevent multiple endGame calls
+  const endingGameRef = useRef(false);
+
+  // End game - uses refs to get current values, avoiding stale closures
   const endGame = useCallback(async () => {
+    // Prevent multiple calls
+    if (endingGameRef.current || statusRef.current === "gameOver") {
+      console.log(
+        "[BounceBlitz] endGame already in progress or game already over, skipping",
+      );
+      return;
+    }
+    endingGameRef.current = true;
+
+    // Stop the game loop immediately
+    if (gameLoopRef.current) {
+      cancelAnimationFrame(gameLoopRef.current);
+      gameLoopRef.current = null;
+    }
+
     setStatus("gameOver");
+    statusRef.current = "gameOver";
 
     if (Platform.OS !== "web") {
       Vibration.vibrate([0, 100, 50, 100]);
     }
 
-    const currentScore = score;
-    const newBest = currentScore > highScore;
+    // Use refs to get current values
+    const currentScore = scoreRef.current;
+    const currentHighScore = highScoreRef.current;
+    const currentLevel = levelRef.current;
+    const currentBlocksDestroyed = totalBlocksDestroyedRef.current;
+    const currentBallCount = ballCountRef.current;
+    const currentBounces = totalBouncesRef.current;
+
+    console.log(
+      "[BounceBlitz] endGame - score:",
+      currentScore,
+      "level:",
+      currentLevel,
+    );
+
+    const newBest = currentScore > currentHighScore;
     if (newBest) {
       setHighScore(currentScore);
+      highScoreRef.current = currentScore;
       setIsNewBest(true);
       showSuccess("🎉 New High Score!");
     }
@@ -442,31 +582,30 @@ export default function BounceBlitzGameScreen({
     // Record session
     if (currentFirebaseUser) {
       try {
+        console.log(
+          "[BounceBlitz] Recording session for user:",
+          currentFirebaseUser.uid,
+        );
         await recordSinglePlayerSession(currentFirebaseUser.uid, {
           gameType: "bounce_blitz",
           finalScore: currentScore,
           stats: {
             gameType: "bounce_blitz",
-            levelReached: level,
-            blocksDestroyed: totalBlocksDestroyed,
-            ballsLaunched: ballCount,
-            totalBounces,
+            levelReached: currentLevel,
+            blocksDestroyed: currentBlocksDestroyed,
+            ballsLaunched: currentBallCount,
+            totalBounces: currentBounces,
           },
         });
+        console.log("[BounceBlitz] Session recorded successfully");
       } catch (error) {
         console.error("[BounceBlitz] Error recording session:", error);
       }
     }
-  }, [
-    score,
-    highScore,
-    level,
-    totalBlocksDestroyed,
-    ballCount,
-    totalBounces,
-    currentFirebaseUser,
-    showSuccess,
-  ]);
+
+    // Reset the ending flag after a short delay
+    endingGameRef.current = false;
+  }, [currentFirebaseUser, showSuccess]);
 
   // Pan responder for aiming - uses refs to avoid stale closures
   const panResponder = useRef(
@@ -513,12 +652,12 @@ export default function BounceBlitzGameScreen({
         if (statusRef.current !== "aiming") return;
 
         const currentLaunchX = launchXRef.current;
+        // Calculate relative to ball position (GAME_HEIGHT - BALL_RADIUS - 10)
+        const ballY = GAME_HEIGHT - BALL_RADIUS - 10;
         const dx =
           gestureState.moveX - (SCREEN_WIDTH - GAME_WIDTH) / 2 - currentLaunchX;
         const dy =
-          gestureState.moveY -
-          (SCREEN_HEIGHT - GAME_HEIGHT) / 2 -
-          (GAME_HEIGHT - 20);
+          gestureState.moveY - (SCREEN_HEIGHT - GAME_HEIGHT) / 2 - ballY;
 
         console.log(
           "[BounceBlitz] Pan move - dx:",
@@ -609,31 +748,124 @@ export default function BounceBlitzGameScreen({
     }
   };
 
-  // Render aim line
+  // Render aim line with ray-casting to find collision point
   const renderAimLine = () => {
     if (aimAngle === null) return null;
 
-    const lineLength = 100;
-    const dots = [];
-    for (let i = 0; i < 8; i++) {
-      const x = launchX + Math.cos(aimAngle) * (i * 15);
-      const y = GAME_HEIGHT - 20 + Math.sin(aimAngle) * (i * 15);
-      if (y > 0) {
-        dots.push(
-          <View
-            key={i}
-            style={[
-              styles.aimDot,
-              {
-                left: x - 3,
-                top: y - 3,
-                opacity: 1 - i * 0.1,
-              },
-            ]}
-          />,
-        );
+    // Starting position (directly above the ball)
+    const startX = launchX;
+    const startY = GAME_HEIGHT - BALL_RADIUS - 10;
+
+    // Direction vector
+    const dirX = Math.cos(aimAngle);
+    const dirY = Math.sin(aimAngle);
+
+    // Ray-cast to find collision point
+    let endX = startX;
+    let endY = startY;
+    const step = 2; // Small step for accuracy
+    const maxDistance = GAME_HEIGHT + GAME_WIDTH; // Maximum ray length
+
+    for (let dist = 0; dist < maxDistance; dist += step) {
+      const testX = startX + dirX * dist;
+      const testY = startY + dirY * dist;
+
+      // Check wall collisions
+      if (testX - BALL_RADIUS <= 0 || testX + BALL_RADIUS >= GAME_WIDTH) {
+        endX = testX;
+        endY = testY;
+        break;
       }
+
+      // Check ceiling collision
+      if (testY - BALL_RADIUS <= 0) {
+        endX = testX;
+        endY = testY;
+        break;
+      }
+
+      // Check block collisions (skip extra_ball pickups since they're pass-through)
+      let hitBlock = false;
+      for (const block of blocks.current) {
+        // Skip extra_ball pickups - they don't block the aim line
+        if (block.type === "extra_ball") continue;
+
+        const blockLeft = block.col * CELL_SIZE + BLOCK_PADDING;
+        const blockRight = blockLeft + BLOCK_SIZE;
+        const blockTop = (block.row + 1) * CELL_SIZE + BLOCK_PADDING;
+        const blockBottom = blockTop + BLOCK_SIZE;
+
+        // Simple AABB check with ball radius
+        if (
+          testX + BALL_RADIUS > blockLeft &&
+          testX - BALL_RADIUS < blockRight &&
+          testY + BALL_RADIUS > blockTop &&
+          testY - BALL_RADIUS < blockBottom
+        ) {
+          hitBlock = true;
+          break;
+        }
+      }
+
+      if (hitBlock) {
+        endX = testX;
+        endY = testY;
+        break;
+      }
+
+      endX = testX;
+      endY = testY;
     }
+
+    // Create dots along the line
+    const dots = [];
+    const lineLength = Math.sqrt(
+      Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2),
+    );
+    const dotSpacing = 12;
+    const numDots = Math.floor(lineLength / dotSpacing);
+
+    for (let i = 0; i <= numDots; i++) {
+      const t = i / Math.max(numDots, 1);
+      const x = startX + (endX - startX) * t;
+      const y = startY + (endY - startY) * t;
+
+      // Fade dots towards the end
+      const opacity = 1 - t * 0.5;
+
+      dots.push(
+        <View
+          key={i}
+          style={[
+            styles.aimDot,
+            {
+              left: x - 3,
+              top: y - 3,
+              opacity,
+            },
+          ]}
+        />,
+      );
+    }
+
+    // Add a larger dot at the collision point
+    dots.push(
+      <View
+        key="collision"
+        style={[
+          styles.aimDot,
+          {
+            left: endX - 5,
+            top: endY - 5,
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: "#FF5722",
+          },
+        ]}
+      />,
+    );
+
     return dots;
   };
 
@@ -676,21 +908,34 @@ export default function BounceBlitzGameScreen({
           <View
             key={block.id}
             style={[
-              styles.block,
-              {
-                left: block.col * CELL_SIZE + BLOCK_PADDING,
-                top: (block.row + 1) * CELL_SIZE + BLOCK_PADDING,
-                width: BLOCK_SIZE,
-                height: BLOCK_SIZE,
-                backgroundColor: block.color,
-              },
+              block.type === "extra_ball"
+                ? styles.extraBallPickup
+                : styles.block,
+              block.type === "extra_ball"
+                ? {
+                    left:
+                      block.col * CELL_SIZE + CELL_SIZE / 2 - BLOCK_SIZE / 2,
+                    top:
+                      (block.row + 1) * CELL_SIZE +
+                      CELL_SIZE / 2 -
+                      BLOCK_SIZE / 2,
+                    width: BLOCK_SIZE,
+                    height: BLOCK_SIZE,
+                  }
+                : {
+                    left: block.col * CELL_SIZE + BLOCK_PADDING,
+                    top: (block.row + 1) * CELL_SIZE + BLOCK_PADDING,
+                    width: BLOCK_SIZE,
+                    height: BLOCK_SIZE,
+                    backgroundColor: block.color,
+                  },
             ]}
           >
             {block.type === "extra_ball" ? (
               <MaterialCommunityIcons
                 name="plus-circle"
-                size={24}
-                color="#1a1a2e"
+                size={BLOCK_SIZE}
+                color="#FFFC00"
               />
             ) : (
               <Text style={styles.blockText}>{block.health}</Text>
@@ -1042,5 +1287,11 @@ const styles = StyleSheet.create({
   instructionText: {
     color: "rgba(255, 255, 255, 0.7)",
     fontSize: 14,
+  },
+  extraBallPickup: {
+    position: "absolute",
+    justifyContent: "center",
+    alignItems: "center",
+    // No background - the icon provides the visual
   },
 });

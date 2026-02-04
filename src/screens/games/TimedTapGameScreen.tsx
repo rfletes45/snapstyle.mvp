@@ -35,7 +35,7 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -65,6 +65,7 @@ export default function TimedTapGameScreen({
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
+  const colors = useColors();
 
   const [gameState, setGameState] = useState<GameState>("waiting");
   const [tapCount, setTapCount] = useState(0);
@@ -254,7 +255,7 @@ export default function TimedTapGameScreen({
 
   const buttonBackgroundColor = buttonColorAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [AppColors.primary, "#FF6B00"],
+    outputRange: [colors.primary, "#FF6B00"],
   });
 
   const getTapsPerSecond = () => {
@@ -287,7 +288,9 @@ export default function TimedTapGameScreen({
               Tap as fast as you can in 10 seconds
             </Text>
             {personalBest && (
-              <Text style={styles.personalBestText}>
+              <Text
+                style={[styles.personalBestText, { color: colors.primary }]}
+              >
                 Personal Best: {personalBest.bestScore} taps
               </Text>
             )}
@@ -297,7 +300,7 @@ export default function TimedTapGameScreen({
         {gameState === "playing" && (
           <>
             <View style={styles.timerContainer}>
-              <Text style={styles.timerText}>
+              <Text style={[styles.timerText, { color: colors.primary }]}>
                 {(timeRemaining / 1000).toFixed(1)}s
               </Text>
               <ProgressBar
@@ -315,7 +318,9 @@ export default function TimedTapGameScreen({
 
         {gameState === "finished" && (
           <>
-            <Text style={styles.finishedLabel}>TIME'S UP!</Text>
+            <Text style={[styles.finishedLabel, { color: colors.primary }]}>
+              TIME'S UP!
+            </Text>
             <Text style={styles.tapCountFinal}>{tapCount}</Text>
             <Text style={styles.tapsLabel}>TAPS</Text>
             {isNewBest && <Text style={styles.newBestBadge}>🎉 NEW BEST!</Text>}
@@ -345,6 +350,7 @@ export default function TimedTapGameScreen({
                     gameState === "playing"
                       ? buttonBackgroundColor
                       : theme.colors.primary,
+                  shadowColor: colors.primary,
                 },
               ]}
             >
@@ -487,7 +493,6 @@ const styles = StyleSheet.create({
   },
   personalBestText: {
     fontSize: 14,
-    color: AppColors.primary,
     marginTop: 16,
   },
   timerContainer: {
@@ -499,7 +504,6 @@ const styles = StyleSheet.create({
   timerText: {
     fontSize: 48,
     fontWeight: "bold",
-    color: AppColors.primary,
     marginBottom: 8,
   },
   progressBar: {
@@ -521,7 +525,6 @@ const styles = StyleSheet.create({
   finishedLabel: {
     fontSize: 24,
     fontWeight: "bold",
-    color: AppColors.primary,
     marginBottom: 8,
   },
   tapCountFinal: {
@@ -552,7 +555,6 @@ const styles = StyleSheet.create({
     borderRadius: 90,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: AppColors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

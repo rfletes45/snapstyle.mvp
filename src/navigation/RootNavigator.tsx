@@ -19,6 +19,7 @@ import SignupScreen from "@/screens/auth/SignupScreen";
 import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 
 // App screens
+import CartCourseScreen from "@/components/games/CartCourse/CartCourseScreen";
 import ChatListScreen from "@/screens/chat/ChatListScreenV2";
 import ChatScreen from "@/screens/chat/ChatScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
@@ -26,10 +27,10 @@ import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
 import AchievementsScreen from "@/screens/games/AchievementsScreen";
 import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
+import BrickBreakerGameScreen from "@/screens/games/BrickBreakerGameScreen";
 import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
 import ChessGameScreen from "@/screens/games/ChessGameScreen";
 import CrazyEightsGameScreen from "@/screens/games/CrazyEightsGameScreen";
-import FlappySnapGameScreen from "@/screens/games/FlappySnapGameScreen";
 import GameHistoryScreen from "@/screens/games/GameHistoryScreen";
 import GamesHubScreen from "@/screens/games/GamesHubScreen";
 import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
@@ -38,12 +39,14 @@ import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
 import Snap2048GameScreen from "@/screens/games/Snap2048GameScreen";
 import SnapSnakeGameScreen from "@/screens/games/SnapSnakeGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
+import TileSlideGameScreen from "@/screens/games/TileSlideGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
 import WordSnapGameScreen from "@/screens/games/WordSnapGameScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import ProfileScreen from "@/screens/profile/ProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
+import ThemeSettingsScreen from "@/screens/settings/ThemeSettingsScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
 import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
 // DebugScreens only loaded in development
@@ -75,6 +78,15 @@ import InboxSearchScreen from "@/screens/chat/InboxSearchScreen";
 import InboxSettingsScreen from "@/screens/chat/InboxSettingsScreen";
 
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
+
+// Call screens
+import {
+  AudioCallScreen,
+  CallHistoryScreen,
+  CallSettingsScreen,
+  GroupCallScreen,
+  VideoCallScreen,
+} from "@/screens/calls";
 
 const Stack = createNativeStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
@@ -274,14 +286,6 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="FlappySnapGame"
-        component={FlappySnapGameScreen}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
         name="BounceBlitzGame"
         component={BounceBlitzGameScreen}
         options={{
@@ -323,6 +327,24 @@ function PlayStack() {
           gestureEnabled: false,
         }}
       />
+      {/* New Single-Player Games (Phase 1) */}
+      <Stack.Screen
+        name="BrickBreakerGame"
+        component={BrickBreakerGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="TileSlideGame"
+        component={TileSlideGameScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
       <Stack.Screen
         name="TicTacToeGame"
         component={TicTacToeGameScreen}
@@ -353,6 +375,15 @@ function PlayStack() {
         options={{
           headerShown: false,
           presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="CartCourseGame"
+        component={CartCourseScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
         }}
       />
       <Stack.Screen
@@ -432,6 +463,11 @@ function ProfileStack() {
         name="Settings"
         component={SettingsScreen}
         options={{ title: "Settings" }}
+      />
+      <Stack.Screen
+        name="ThemeSettings"
+        component={ThemeSettingsScreen}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Wallet"
@@ -636,6 +672,58 @@ function MainStack() {
         options={{
           headerShown: false,
           presentation: "modal",
+        }}
+      />
+
+      {/* Call screens - full-screen overlay during calls */}
+      <Stack.Screen
+        name="AudioCall"
+        component={AudioCallScreen}
+        options={{
+          headerShown: false,
+          presentation: "fullScreenModal",
+          gestureEnabled: false, // Prevent accidental swipe-to-dismiss
+          animation: "fade",
+        }}
+      />
+      <Stack.Screen
+        name="VideoCall"
+        component={VideoCallScreen}
+        options={{
+          headerShown: false,
+          presentation: "fullScreenModal",
+          gestureEnabled: false, // Prevent accidental swipe-to-dismiss
+          animation: "fade",
+        }}
+      />
+      <Stack.Screen
+        name="GroupCall"
+        component={GroupCallScreen}
+        options={{
+          headerShown: false,
+          presentation: "fullScreenModal",
+          gestureEnabled: false, // Prevent accidental swipe-to-dismiss during group calls
+          animation: "fade",
+        }}
+      />
+
+      {/* Call History - accessible from profile/settings */}
+      <Stack.Screen
+        name="CallHistory"
+        component={CallHistoryScreen}
+        options={{
+          headerShown: false,
+          animation: "slide_from_right",
+        }}
+      />
+
+      {/* Call Settings - accessible from settings */}
+      <Stack.Screen
+        name="CallSettings"
+        component={CallSettingsScreen}
+        options={{
+          headerShown: false,
+          animation: "slide_from_right",
         }}
       />
 

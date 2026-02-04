@@ -31,8 +31,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
+import SpectatorBanner from "@/components/games/SpectatorBanner";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useSpectatorMode } from "@/hooks/useSpectatorMode";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   createChessMove,
@@ -97,6 +99,8 @@ interface ChessGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
+      /** Whether user is spectating (watching only) */
+      spectatorMode?: boolean;
     };
   };
 }
@@ -398,6 +402,25 @@ export default function ChessGameScreen({
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<ChessMatch | null>(null);
 
+  // Online game state
+  const [matchId, setMatchId] = useState<string | null>(
+    route.params?.matchId || null,
+  );
+
+  // Spectator mode hook
+  const {
+    isSpectator,
+    spectatorCount,
+    leaveSpectatorMode,
+    loading: spectatorLoading,
+  } = useSpectatorMode({
+    matchId,
+    inviteId: route.params?.inviteId,
+    spectatorMode: route.params?.spectatorMode,
+    userId: currentFirebaseUser?.uid,
+    userName: currentFirebaseUser?.displayName || "Spectator",
+  });
+
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
     exitGame,
@@ -448,18 +471,22 @@ export default function ChessGameScreen({
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
   const [winMethod, setWinMethod] = useState<string>("");
 
-  // Online game state
-  const [matchId, setMatchId] = useState<string | null>(
-    route.params?.matchId || null,
-  );
   const [myColor, setMyColor] = useState<ChessColor | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
+  const [player1Name, setPlayer1Name] = useState<string>("White");
+  const [player2Name, setPlayer2Name] = useState<string>("Black");
   const [flipped, setFlipped] = useState(false);
 
   // UI state
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+
+  // Handle spectator leave
+  const handleLeaveSpectator = useCallback(async () => {
+    await leaveSpectatorMode();
+    navigation.goBack();
+  }, [leaveSpectatorMode, navigation]);
 
   // ==========================================================================
   // Online Game Subscription
@@ -478,6 +505,10 @@ export default function ChessGameScreen({
       const state = typedMatch.gameState as ChessGameState;
       setGameState(state);
       setMoveHistory(typedMatch.moveHistory as ChessMove[]);
+
+      // Track player names for spectators
+      setPlayer1Name(typedMatch.players.player1.displayName);
+      setPlayer2Name(typedMatch.players.player2.displayName);
 
       // Update last move
       if (typedMatch.moveHistory.length > 0) {
@@ -540,6 +571,11 @@ export default function ChessGameScreen({
 
   const handleCellPress = useCallback(
     async (actualRow: number, actualCol: number) => {
+      // Block interactions in spectator mode
+      if (isSpectator) {
+        return;
+      }
+
       // actualRow and actualCol are actual board coordinates (0-7, where 0 is white's back rank)
 
       if (gameState.isCheckmate || gameState.isStalemate || gameState.isDraw)
@@ -1000,6 +1036,15 @@ export default function ChessGameScreen({
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      {/* Spectator Banner */}
+      <SpectatorBanner
+        isSpectator={isSpectator}
+        spectatorCount={spectatorCount}
+        onLeave={handleLeaveSpectator}
+        playerNames={[player1Name, player2Name]}
+        loading={spectatorLoading}
+      />
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
@@ -1016,7 +1061,7 @@ export default function ChessGameScreen({
           Chess
         </Text>
 
-        {gameMode === "online" && (
+        {gameMode === "online" && !isSpectator && (
           <TouchableOpacity onPress={handleResign} style={styles.resignButton}>
             <MaterialCommunityIcons
               name="flag"

@@ -1,6 +1,7 @@
 import React from "react";
-import { View, StyleSheet } from "react-native";
-import { Text, Card } from "react-native-paper";
+import { StyleSheet, View } from "react-native";
+import { Card, Text } from "react-native-paper";
+import { useColors } from "../store/ThemeContext";
 
 interface StreakMilestoneInfoProps {
   currentStreak: number;
@@ -19,6 +20,7 @@ const MILESTONES = [
 export default function StreakMilestoneInfo({
   currentStreak,
 }: StreakMilestoneInfoProps) {
+  const colors = useColors();
   // Find next milestone
   const nextMilestone = MILESTONES.find((m) => m.day > currentStreak);
   const completedMilestones = MILESTONES.filter((m) => m.day <= currentStreak);
@@ -51,7 +53,7 @@ export default function StreakMilestoneInfo({
                   <Text
                     key={milestone.day}
                     variant="bodySmall"
-                    style={styles.unlocked}
+                    style={[styles.unlocked, { color: colors.success }]}
                   >
                     • Day {milestone.day}: {milestone.reward}
                   </Text>
@@ -64,7 +66,10 @@ export default function StreakMilestoneInfo({
                 <Text variant="bodySmall" style={styles.sectionTitle}>
                   Next reward:
                 </Text>
-                <Text variant="bodyMedium" style={styles.nextReward}>
+                <Text
+                  variant="bodyMedium"
+                  style={[styles.nextReward, { color: colors.warning }]}
+                >
                   Day {nextMilestone.day}: {nextMilestone.reward}
                 </Text>
                 <Text variant="bodySmall" style={styles.daysRemaining}>
@@ -108,14 +113,12 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   unlocked: {
-    color: "#4CAF50",
     marginLeft: 8,
     marginTop: 2,
   },
   nextReward: {
     marginLeft: 8,
     fontWeight: "600",
-    color: "#FF9800",
   },
   daysRemaining: {
     marginLeft: 8,

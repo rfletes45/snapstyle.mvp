@@ -7,6 +7,18 @@
  * @module constants/featureFlags
  */
 
+import { Platform } from "react-native";
+
+// =============================================================================
+// Platform Detection
+// =============================================================================
+
+/**
+ * Check if running on web platform
+ * Used to disable features that don't work on web (SQLite sync, native modules, etc.)
+ */
+const IS_WEB = Platform.OS === "web";
+
 // =============================================================================
 // Storage Features
 // =============================================================================
@@ -25,9 +37,13 @@
  *
  * Set to `false` to rollback to old behavior if issues occur.
  *
- * @default true
+ * NOTE: Disabled on web platform because expo-sqlite's synchronous operations
+ * require SharedArrayBuffer, which needs COOP/COEP headers that are not
+ * available in Expo's dev server or most hosting environments.
+ *
+ * @default true (native), false (web)
  */
-export const USE_LOCAL_STORAGE = true;
+export const USE_LOCAL_STORAGE = !IS_WEB;
 
 // =============================================================================
 // Debug Features
@@ -319,9 +335,6 @@ export const PLAY_SCREEN_FEATURES = {
   // Phase 7: Additional Features
   // =========================================================================
 
-  /** Phase 7: Enable quick match FAB button */
-  QUICK_MATCH_FAB: true,
-
   /** Phase 7: Enable weekly game stats summary card */
   GAME_STATS_SUMMARY: true,
 
@@ -558,3 +571,257 @@ export const AVATAR_FEATURES = {
   /** Debug: Simulate beta user status */
   DEBUG_FORCE_BETA: false,
 } as const;
+
+// =============================================================================
+// Video Calling Feature Flags
+// =============================================================================
+
+/**
+ * Video calling feature flags
+ * Enable these progressively as each phase completes
+ *
+ * @see docs/VIDEO_CALL_IMPLEMENTATION_PLAN.md
+ */
+export const CALL_FEATURES = {
+  // =========================================================================
+  // Phase 1: Foundation (1:1 Audio Calls)
+  // =========================================================================
+
+  /**
+   * Master switch for calling feature
+   *
+   * When enabled:
+   * - Call buttons appear in DM chat headers
+   * - Users can initiate and receive calls
+   * - Call history is tracked
+   *
+   * @default false - Enable after Phase 1 testing
+   */
+  CALLS_ENABLED: false,
+
+  /**
+   * Enable audio-only calls
+   * Requires CALLS_ENABLED to be true
+   *
+   * @default false
+   */
+  AUDIO_CALLS_ENABLED: false,
+
+  // =========================================================================
+  // Phase 2: Video & Native Integration
+  // =========================================================================
+
+  /**
+   * Enable video calls
+   * Requires CALLS_ENABLED to be true
+   *
+   * @default false - Enable after Phase 2 testing
+   */
+  VIDEO_CALLS_ENABLED: false,
+
+  /**
+   * Enable CallKeep integration for native call UI
+   * iOS: CallKit integration
+   * Android: ConnectionService integration
+   *
+   * @default false
+   */
+  NATIVE_CALL_UI_ENABLED: false,
+
+  /**
+   * Enable background audio during calls
+   * Allows calls to continue when app is minimized
+   *
+   * @default false
+   */
+  BACKGROUND_CALLS_ENABLED: false,
+
+  // =========================================================================
+  // Phase 3: Group Calls
+  // =========================================================================
+
+  /**
+   * Enable group audio/video calls
+   * Requires CALLS_ENABLED to be true
+   * Max 8 participants
+   *
+   * @default false - Enable after Phase 3 testing
+   */
+  GROUP_CALLS_ENABLED: false,
+
+  /**
+   * Enable host controls for group calls
+   * Includes: mute all, remove participant, pin video
+   *
+   * @default false
+   */
+  HOST_CONTROLS_ENABLED: false,
+
+  /**
+   * Enable adaptive bitrate for video calls
+   * Automatically adjusts quality based on network
+   *
+   * @default true
+   */
+  ADAPTIVE_BITRATE_ENABLED: true,
+
+  // =========================================================================
+  // Phase 4: Polish & Launch
+  // =========================================================================
+
+  /**
+   * Enable call history screen
+   * Shows recent calls with filtering and stats
+   *
+   * @default false
+   */
+  CALL_HISTORY_ENABLED: false,
+
+  /**
+   * Enable call settings screen
+   * Camera, audio, ringtone, DND, privacy settings
+   *
+   * @default false
+   */
+  CALL_SETTINGS_ENABLED: false,
+
+  /**
+   * Enable call quality analytics
+   * Tracks metrics, issues, and user feedback
+   *
+   * @default true
+   */
+  CALL_ANALYTICS_ENABLED: true,
+
+  /**
+   * Show missed calls badge in tab bar
+   *
+   * @default false
+   */
+  MISSED_CALL_BADGE_ENABLED: false,
+
+  /**
+   * Enable call quality indicator during calls
+   *
+   * @default true
+   */
+  QUALITY_INDICATOR_ENABLED: true,
+
+  // =========================================================================
+  // Future Features
+  // =========================================================================
+
+  /**
+   * Enable screen sharing during calls
+   * Future feature - not yet implemented
+   *
+   * @default false
+   */
+  SCREEN_SHARING_ENABLED: false,
+
+  /**
+   * Enable call recording
+   * Future feature - requires additional permissions
+   *
+   * @default false
+   */
+  CALL_RECORDING_ENABLED: false,
+
+  /**
+   * Enable in-call games
+   * Future feature - games during video calls
+   *
+   * @default false
+   */
+  IN_CALL_GAMES_ENABLED: false,
+
+  // =========================================================================
+  // Rollout Configuration
+  // =========================================================================
+
+  /**
+   * Enable percentage-based rollout for calls
+   *
+   * When enabled:
+   * - Uses user ID hashing for consistent bucketing
+   * - Respects CALL_ROLLOUT_PERCENTAGE
+   *
+   * @default true
+   */
+  PERCENTAGE_ROLLOUT_ENABLED: true,
+
+  /**
+   * Rollout percentage for calling feature
+   *
+   * Values: 0-100
+   * - 0: Only beta users (internal testing)
+   * - 5: Beta + 5% (beta phase)
+   * - 25: Canary release
+   * - 50: Gradual rollout
+   * - 100: Full rollout
+   *
+   * @default 0 - Start with internal testing only
+   */
+  ROLLOUT_PERCENTAGE: 0,
+
+  // =========================================================================
+  // Debug Flags
+  // =========================================================================
+
+  /** Debug: Log call events to console */
+  DEBUG_CALLS: __DEV__,
+
+  /** Debug: Log WebRTC events */
+  DEBUG_WEBRTC: __DEV__,
+
+  /** Debug: Log signaling messages */
+  DEBUG_SIGNALING: __DEV__,
+
+  /** Debug: Force call quality issues for testing */
+  DEBUG_FORCE_POOR_QUALITY: false,
+
+  /** Debug: Skip permission checks */
+  DEBUG_SKIP_PERMISSIONS: false,
+
+  /** Debug: Show call state overlay */
+  DEBUG_CALL_STATE_OVERLAY: __DEV__,
+} as const;
+
+/**
+ * Check if a user should have calling enabled based on rollout
+ * Uses consistent hashing for stable bucket assignment
+ */
+export function isCallsEnabledForUser(userId: string): boolean {
+  if (!CALL_FEATURES.CALLS_ENABLED) return false;
+  if (!CALL_FEATURES.PERCENTAGE_ROLLOUT_ENABLED) return true;
+
+  // Simple hash function for bucket assignment
+  const hash = userId.split("").reduce((acc, char) => {
+    return ((acc << 5) - acc + char.charCodeAt(0)) | 0;
+  }, 0);
+
+  const bucket = Math.abs(hash) % 100;
+  return bucket < CALL_FEATURES.ROLLOUT_PERCENTAGE;
+}
+
+/**
+ * Check if a specific call feature is enabled
+ */
+export function isCallFeatureEnabled(
+  feature: keyof typeof CALL_FEATURES,
+  userId?: string,
+): boolean {
+  // Master switch check
+  if (!CALL_FEATURES.CALLS_ENABLED && feature !== "CALLS_ENABLED") {
+    return false;
+  }
+
+  // Rollout check for user-specific features
+  if (userId && CALL_FEATURES.PERCENTAGE_ROLLOUT_ENABLED) {
+    if (!isCallsEnabledForUser(userId)) {
+      return false;
+    }
+  }
+
+  return CALL_FEATURES[feature] as boolean;
+}

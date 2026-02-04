@@ -73,6 +73,21 @@ export async function recordSinglePlayerSession(
   console.log("[singlePlayerSessions] PlayerId param:", playerId);
   console.log("[singlePlayerSessions] Match:", currentUser?.uid === playerId);
 
+  // Validate authentication state
+  if (!currentUser) {
+    console.error(
+      "[singlePlayerSessions] No authenticated user - cannot record session",
+    );
+    return null;
+  }
+
+  if (currentUser.uid !== playerId) {
+    console.error(
+      "[singlePlayerSessions] Auth UID does not match playerId - potential security issue",
+    );
+    return null;
+  }
+
   try {
     const sessionId = generateId();
     const now = Date.now();
@@ -174,8 +189,24 @@ export async function recordSinglePlayerSession(
 
     console.log("[singlePlayerSessions] Session recorded:", sessionId);
     return session;
-  } catch (error) {
+  } catch (error: any) {
     console.error("[singlePlayerSessions] Error recording session:", error);
+
+    // Provide more helpful error messages
+    if (
+      error?.code === "permission-denied" ||
+      error?.message?.includes("permission")
+    ) {
+      console.error(
+        "[singlePlayerSessions] PERMISSION DENIED - This likely means:",
+      );
+      console.error(
+        "  1. Firestore rules may need to be deployed: firebase deploy --only firestore:rules",
+      );
+      console.error("  2. User may not be properly authenticated");
+      console.error("  3. The playerId may not match the authenticated user");
+    }
+
     return null;
   }
 }

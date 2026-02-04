@@ -40,6 +40,9 @@ export type AchievementCategory =
   | "memory_snap" // Memory game specific
   | "word_snap" // Word game specific
   | "snap_snake" // Snake game specific
+  // New single-player games (Phase 1)
+  | "brick_breaker" // Brick Breaker specific
+  | "tile_slide" // Tile Slide specific
 
   // Multiplayer games
   | "multiplayer" // General multiplayer
@@ -377,6 +380,9 @@ export function getCategoryDisplayName(category: AchievementCategory): string {
     memory_snap: "Memory Snap",
     word_snap: "Word Snap",
     snap_snake: "Snap Snake",
+    // New games (Phase 1)
+    brick_breaker: "Brick Breaker",
+    tile_slide: "Tile Slide",
     multiplayer: "Multiplayer",
     chess: "Chess",
     checkers: "Checkers",

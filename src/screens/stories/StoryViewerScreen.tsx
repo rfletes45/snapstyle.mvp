@@ -36,7 +36,7 @@ import {
 } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 interface StoryViewerScreenProps {
   route: any;
@@ -50,6 +50,7 @@ export default function StoryViewerScreen({
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { imageUri, storyId, isNewStory, allStoryIds, currentIndex } =
     route.params;
 
@@ -383,7 +384,10 @@ export default function StoryViewerScreen({
             <View
               style={[
                 styles.progressBarFill,
-                { width: `${getExpirationProgress() * 100}%` },
+                {
+                  width: `${getExpirationProgress() * 100}%`,
+                  backgroundColor: colors.primary,
+                },
               ]}
             />
           </View>
@@ -408,7 +412,7 @@ export default function StoryViewerScreen({
           <TouchableOpacity
             onPress={handlePostStory}
             disabled={posting}
-            style={styles.postButton}
+            style={[styles.postButton, { backgroundColor: colors.primary }]}
           >
             <Text style={styles.postButtonText}>
               {posting ? "Posting..." : "Post"}
@@ -427,13 +431,16 @@ export default function StoryViewerScreen({
       {!isNewStory && isAuthor && (
         <View style={styles.footer}>
           {Platform.OS === "web" ? (
-            <Pressable onPress={handleDeleteStory} style={styles.deleteButton}>
+            <Pressable
+              onPress={handleDeleteStory}
+              style={[styles.deleteButton, { backgroundColor: colors.error }]}
+            >
               <Text style={styles.deleteButtonText}>Delete Story</Text>
             </Pressable>
           ) : (
             <TouchableOpacity
               onPress={handleDeleteStory}
-              style={styles.deleteButton}
+              style={[styles.deleteButton, { backgroundColor: colors.error }]}
             >
               <Text style={styles.deleteButtonText}>Delete Story</Text>
             </TouchableOpacity>
@@ -469,7 +476,6 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: AppColors.primary,
     borderRadius: 3,
   },
   progressBar: {
@@ -507,7 +513,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   postButton: {
-    backgroundColor: AppColors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -534,7 +539,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   deleteButton: {
-    backgroundColor: "#ff4444",
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",

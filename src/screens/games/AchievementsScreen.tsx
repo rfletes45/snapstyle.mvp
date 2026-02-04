@@ -10,7 +10,6 @@
 import { ErrorState, LoadingState } from "@/components/ui";
 import {
   ALL_GAME_ACHIEVEMENTS,
-  getAchievementStats,
   getAchievementsByCategory as getNewAchievementsByCategory,
 } from "@/data/gameAchievements";
 import { getUserAchievements } from "@/services/achievements";
@@ -20,6 +19,7 @@ import {
   GameAchievementDefinition,
   TIER_COLORS,
 } from "@/types/achievements";
+import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import { Achievement } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -74,10 +74,13 @@ interface SectionData {
   data: (GameAchievementDefinition & { earned?: Achievement })[];
 }
 
-export default function AchievementsScreen({ navigation }: Props) {
+export default function AchievementsScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const userId = currentFirebaseUser?.uid;
+
+  // Get optional gameId filter from route params
+  const filterGameId = (route.params as any)?.gameId as string | undefined;
 
   const [userAchievements, setUserAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,9 +119,42 @@ export default function AchievementsScreen({ navigation }: Props) {
   // Get unique categories from all achievements
   const categories = new Set(ALL_GAME_ACHIEVEMENTS.map((a) => a.category));
 
+  // Map game IDs to their achievement categories
+  const gameIdToCategoryMap: Record<string, AchievementCategory[]> = {
+    // Single player games
+    bounce_blitz: ["bounce_blitz"],
+    memory_snap: ["memory_snap"],
+    snap_2048: ["snap_2048"],
+    snap_snake: ["snap_snake"],
+    word_snap: ["word_snap"],
+    reaction_tap: ["casual_games"],
+    timed_tap: ["casual_games"],
+    cart_course: ["casual_games"],
+    // Multiplayer games
+    tic_tac_toe: ["tic_tac_toe", "multiplayer"],
+    checkers: ["checkers", "multiplayer"],
+    chess: ["chess", "multiplayer"],
+    crazy_eights: ["crazy_eights", "multiplayer"],
+    "8ball_pool": ["pool", "multiplayer"],
+    air_hockey: ["multiplayer"],
+  };
+
+  // Determine which categories to show based on filter
+  const allowedCategories = filterGameId
+    ? new Set([
+        ...(gameIdToCategoryMap[filterGameId] || []),
+        "general", // Always show general achievements
+      ])
+    : null; // null means show all
+
   // Build sections from the new achievement definitions
   const sections: SectionData[] = Array.from(categories)
     .map((category) => {
+      // Skip categories not related to the filtered game
+      if (allowedCategories && !allowedCategories.has(category)) {
+        return null;
+      }
+
       const config = CATEGORY_CONFIG[category] || {
         title: category,
         icon: "star",
@@ -137,14 +173,26 @@ export default function AchievementsScreen({ navigation }: Props) {
         })),
       };
     })
-    .filter((section) => section.data.length > 0)
+    .filter(
+      (section): section is SectionData =>
+        section !== null && section.data.length > 0,
+    )
     .sort((a, b) => (a as any).order - (b as any).order);
 
-  // Calculate stats using new system
-  const stats = getAchievementStats(earnedIds);
-  const earnedCount = stats.earned;
-  const totalCount = stats.total;
-  const completionPercent = stats.percentage;
+  // Calculate stats using new system - filter by allowed categories if gameId is set
+  const filteredAchievements = filterGameId
+    ? ALL_GAME_ACHIEVEMENTS.filter(
+        (a) => allowedCategories?.has(a.category) ?? true,
+      )
+    : ALL_GAME_ACHIEVEMENTS;
+  const filteredTotal = filteredAchievements.length;
+  const filteredEarned = filteredAchievements.filter((a) =>
+    earnedIds.has(a.id as any),
+  ).length;
+  const earnedCount = filteredEarned;
+  const totalCount = filteredTotal;
+  const completionPercent =
+    filteredTotal > 0 ? Math.round((filteredEarned / filteredTotal) * 100) : 0;
 
   const renderSectionHeader = ({ section }: { section: SectionData }) => (
     <View style={styles.sectionHeader}>
@@ -304,7 +352,13 @@ export default function AchievementsScreen({ navigation }: Props) {
     >
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content title="Achievements" />
+        <Appbar.Content
+          title={
+            filterGameId && GAME_METADATA[filterGameId as ExtendedGameType]
+              ? `${GAME_METADATA[filterGameId as ExtendedGameType].name} Achievements`
+              : "Achievements"
+          }
+        />
       </Appbar.Header>
 
       {loading && !refreshing ? (

@@ -6,6 +6,20 @@
 **Inspiration:** Nintendo Land - Donkey Kong's Crash Course
 **Platform:** React Native / Expo with device accelerometer/gyroscope
 
+### Technology Stack
+
+| Package                      | Version | Purpose                                              |
+| ---------------------------- | ------- | ---------------------------------------------------- |
+| `matter-js`                  | ^0.19.0 | 2D physics engine (gravity, collisions, constraints) |
+| `react-native-game-engine`   | ^1.2.0  | Entity-component game loop (60fps updates)           |
+| `@shopify/react-native-skia` | ^1.0.0  | GPU-accelerated canvas rendering                     |
+| `expo-sensors`               | ^14.x   | Accelerometer/gyroscope for tilt controls            |
+
+```bash
+# Already installed in project
+npm install matter-js @types/matter-js react-native-game-engine @shopify/react-native-skia
+```
+
 ---
 
 ## Table of Contents
@@ -190,159 +204,202 @@ function detectCrash(
 
 ---
 
-## 3. Physics System
+## 3. Physics System (Matter.js)
 
-### 3.1 Tilt Physics
+### 3.1 Matter.js World Setup
 
 ```typescript
-interface TiltPhysics {
-  // Device tilt affects gravity direction
-  baseTiltMultiplier: number; // Sensitivity to device tilt
-  maxTiltAngle: number; // Maximum effective tilt
-  deadzone: number; // Ignore small tilts
-  smoothingFactor: number; // Input smoothing (0-1)
-}
+import Matter from "matter-js";
 
-function applyTiltGravity(
-  cart: CartState,
-  deviceTilt: { pitch: number; roll: number },
-  config: TiltPhysics,
-  deltaTime: number,
-): Vector2D {
-  // Apply deadzone
-  let effectiveTilt = deviceTilt.roll;
-  if (Math.abs(effectiveTilt) < config.deadzone) {
-    effectiveTilt = 0;
-  }
+// Create Matter.js engine with gravity
+const engine = Matter.Engine.create({
+  gravity: { x: 0, y: 1 }, // Default downward gravity
+  enableSleeping: false, // Keep all bodies active
+});
 
-  // Clamp to max
-  effectiveTilt = clamp(
-    effectiveTilt,
-    -config.maxTiltAngle,
-    config.maxTiltAngle,
-  );
+const world = engine.world;
 
-  // Convert tilt to gravity modifier
-  const tiltRatio = effectiveTilt / config.maxTiltAngle;
-  const horizontalGravity =
-    DEFAULT_CART_CONFIG.gravity * tiltRatio * config.baseTiltMultiplier;
+// Collision categories
+const COLLISION_CATEGORIES = {
+  CART: 0x0001,
+  PLATFORM: 0x0002,
+  WALL: 0x0004,
+  MECHANISM: 0x0008,
+  COLLECTIBLE: 0x0010,
+  HAZARD: 0x0020,
+  CHECKPOINT: 0x0040,
+};
 
-  // Gravity always pulls down, tilt adds horizontal component
-  return {
-    x: horizontalGravity,
-    y: DEFAULT_CART_CONFIG.gravity,
-  };
-}
+// Cart only collides with solid objects
+const CART_COLLISION_FILTER = {
+  category: COLLISION_CATEGORIES.CART,
+  mask:
+    COLLISION_CATEGORIES.PLATFORM |
+    COLLISION_CATEGORIES.WALL |
+    COLLISION_CATEGORIES.MECHANISM |
+    COLLISION_CATEGORIES.HAZARD,
+};
 ```
 
-### 3.2 Surface Interaction
+### 3.2 Cart Creation with Matter.js
 
 ```typescript
-interface SurfaceProperties {
-  type: "solid" | "bouncy" | "slippery" | "sticky";
-  friction: number;
-  bounciness: number; // Coefficient of restitution
-  angle: number; // Surface angle in degrees
-}
-
-function applySurfacePhysics(
-  cart: CartState,
-  surface: SurfaceProperties,
-  gravity: Vector2D,
-  deltaTime: number,
-): CartState {
-  // Calculate surface normal
-  const surfaceAngleRad = (surface.angle * Math.PI) / 180;
-  const surfaceNormal = {
-    x: Math.sin(surfaceAngleRad),
-    y: -Math.cos(surfaceAngleRad),
-  };
-
-  // Project gravity onto surface
-  const gravityAlongSurface = Vector2D.dot(gravity, {
-    x: Math.cos(surfaceAngleRad),
-    y: Math.sin(surfaceAngleRad),
+function createCartBody(x: number, y: number): Matter.Composite {
+  // Cart is a composite: body + two wheels connected by constraints
+  const cartBody = Matter.Bodies.rectangle(x, y, CART_WIDTH, CART_HEIGHT, {
+    label: "cart_body",
+    friction: 0.8,
+    restitution: 0.1, // Low bounce
+    collisionFilter: CART_COLLISION_FILTER,
   });
 
-  // Apply friction
-  const frictionForce = surface.friction * Vector2D.magnitude(gravity);
-  const velocityMagnitude = Vector2D.magnitude(cart.linearVelocity);
+  const leftWheel = Matter.Bodies.circle(
+    x - CART_WIDTH / 2 + WHEEL_RADIUS,
+    y + CART_HEIGHT / 2,
+    WHEEL_RADIUS,
+    {
+      label: "cart_wheel_left",
+      friction: 0.9, // High friction for grip
+      restitution: 0.05, // Very low bounce
+      collisionFilter: CART_COLLISION_FILTER,
+    },
+  );
 
-  let newVelocity = cart.linearVelocity;
+  const rightWheel = Matter.Bodies.circle(
+    x + CART_WIDTH / 2 - WHEEL_RADIUS,
+    y + CART_HEIGHT / 2,
+    WHEEL_RADIUS,
+    {
+      label: "cart_wheel_right",
+      friction: 0.9,
+      restitution: 0.05,
+      collisionFilter: CART_COLLISION_FILTER,
+    },
+  );
 
-  // Apply surface acceleration
-  if (cart.isGrounded) {
-    // Add gravity component along surface
-    newVelocity = Vector2D.add(
-      newVelocity,
-      Vector2D.multiply(
-        { x: Math.cos(surfaceAngleRad), y: Math.sin(surfaceAngleRad) },
-        gravityAlongSurface * deltaTime,
-      ),
-    );
+  // Connect wheels to body with constraints
+  const leftAxle = Matter.Constraint.create({
+    bodyA: cartBody,
+    pointA: { x: -CART_WIDTH / 2 + WHEEL_RADIUS, y: CART_HEIGHT / 2 },
+    bodyB: leftWheel,
+    pointB: { x: 0, y: 0 },
+    stiffness: 1,
+    length: 0,
+  });
 
-    // Apply friction (opposes motion)
-    if (velocityMagnitude > 0) {
-      const frictionDecel = Math.min(
-        frictionForce * deltaTime,
-        velocityMagnitude,
-      );
-      const frictionDir = Vector2D.normalize(
-        Vector2D.multiply(newVelocity, -1),
-      );
-      newVelocity = Vector2D.add(
-        newVelocity,
-        Vector2D.multiply(frictionDir, frictionDecel),
-      );
-    }
-  }
+  const rightAxle = Matter.Constraint.create({
+    bodyA: cartBody,
+    pointA: { x: CART_WIDTH / 2 - WHEEL_RADIUS, y: CART_HEIGHT / 2 },
+    bodyB: rightWheel,
+    pointB: { x: 0, y: 0 },
+    stiffness: 1,
+    length: 0,
+  });
 
-  return {
-    ...cart,
-    linearVelocity: newVelocity,
-    surfaceNormal,
-    isGrounded: true,
-  };
+  const cart = Matter.Composite.create({ label: "cart" });
+  Matter.Composite.add(cart, [
+    cartBody,
+    leftWheel,
+    rightWheel,
+    leftAxle,
+    rightAxle,
+  ]);
+  Matter.World.add(world, cart);
+
+  return cart;
 }
 ```
 
-### 3.3 Collision Response
+### 3.3 Tilt-Based Gravity with Matter.js
 
 ```typescript
-function handleCollision(
-  cart: CartState,
-  collision: CollisionResult,
-): CartState {
-  const surface = collision.surface;
+import { Accelerometer } from "expo-sensors";
 
-  // Calculate reflection for bouncy surfaces
-  if (surface.bounciness > 0) {
-    const reflected = Vector2D.reflect(cart.linearVelocity, collision.normal);
+class TiltGravityController {
+  private baseGravity = { x: 0, y: 9.8 };
+  private tiltMultiplier = 0.5;
+  private smoothedTilt = { x: 0, y: 0 };
+  private smoothingFactor = 0.15;
 
-    return {
-      ...cart,
-      position: collision.resolvedPosition,
-      linearVelocity: Vector2D.multiply(reflected, surface.bounciness),
-    };
+  start(engine: Matter.Engine): void {
+    Accelerometer.setUpdateInterval(16); // ~60fps
+
+    Accelerometer.addListener(({ x, y }) => {
+      // Smooth the input
+      this.smoothedTilt.x = lerp(this.smoothedTilt.x, x, this.smoothingFactor);
+      this.smoothedTilt.y = lerp(this.smoothedTilt.y, y, this.smoothingFactor);
+
+      // Apply tilt to gravity direction
+      // Device tilt X affects horizontal gravity
+      // Device tilt Y affects vertical gravity (for forward/back tilt)
+      engine.gravity.x =
+        this.smoothedTilt.x * this.baseGravity.y * this.tiltMultiplier;
+      engine.gravity.y = this.baseGravity.y; // Always pull down
+    });
   }
 
-  // For solid surfaces, zero out velocity component into surface
-  const normalVelocity = Vector2D.dot(cart.linearVelocity, collision.normal);
-
-  if (normalVelocity < 0) {
-    // Moving into surface
-    const tangent = { x: -collision.normal.y, y: collision.normal.x };
-    const tangentVelocity = Vector2D.dot(cart.linearVelocity, tangent);
-
-    return {
-      ...cart,
-      position: collision.resolvedPosition,
-      linearVelocity: Vector2D.multiply(tangent, tangentVelocity),
-      isGrounded: collision.isFloor,
-    };
+  calibrate(): void {
+    // Reset smoothed tilt to treat current position as neutral
+    this.smoothedTilt = { x: 0, y: 0 };
   }
+}
+```
 
-  return cart;
+### 3.4 Crash Detection with Matter.js
+
+```typescript
+// Listen for collision events
+Matter.Events.on(engine, "collisionStart", (event) => {
+  event.pairs.forEach((pair) => {
+    const bodyA = pair.bodyA;
+    const bodyB = pair.bodyB;
+
+    // Check for cart collision
+    if (isCartPart(bodyA) || isCartPart(bodyB)) {
+      const cartPart = isCartPart(bodyA) ? bodyA : bodyB;
+      const otherBody = isCartPart(bodyA) ? bodyB : bodyA;
+
+      // Calculate impact velocity
+      const relativeVelocity = Matter.Vector.sub(
+        cartPart.velocity,
+        otherBody.isStatic ? { x: 0, y: 0 } : otherBody.velocity,
+      );
+      const impactSpeed = Matter.Vector.magnitude(relativeVelocity);
+
+      // Check for crash-inducing impact
+      if (isHazard(otherBody)) {
+        triggerCrash(CrashType.HAZARD, cartPart.position);
+      } else if (impactSpeed > MAX_SAFE_IMPACT_VELOCITY) {
+        triggerCrash(CrashType.WALL_IMPACT, cartPart.position);
+      }
+
+      // Check for checkpoint/collectible (sensors)
+      if (isCheckpoint(otherBody)) {
+        activateCheckpoint(otherBody.plugin.checkpointIndex);
+      } else if (isCollectible(otherBody)) {
+        collectItem(otherBody);
+      }
+    }
+  });
+});
+
+// Check for flip crash each frame
+function checkFlipCrash(cart: Matter.Composite): boolean {
+  const cartBody = cart.bodies.find((b) => b.label === "cart_body");
+  if (!cartBody) return false;
+
+  // Normalize angle to -180 to 180
+  const angle = ((((cartBody.angle * 180) / Math.PI) % 360) + 360) % 360;
+  const normalizedAngle = angle > 180 ? angle - 360 : angle;
+
+  // Crash if tilted more than threshold from upright
+  return Math.abs(normalizedAngle) > MAX_ROTATION_DEGREES;
+}
+
+// Check for fall crash
+function checkFallCrash(cart: Matter.Composite, maxY: number): boolean {
+  const cartBody = cart.bodies.find((b) => b.label === "cart_body");
+  return cartBody ? cartBody.position.y > maxY : false;
 }
 ```
 
@@ -612,113 +669,199 @@ interface MechanismConfig {
 }
 ```
 
-### 5.3 Mechanism Behaviors
+### 5.3 Mechanism Behaviors (Matter.js Implementation)
 
 ```typescript
-// L/R Button Gear - Rotates while held
+import Matter from "matter-js";
+
+// L/R Button Gear - Rotates platform while held using Matter.js constraint
 class RotatingGearMechanism {
-  update(input: { isHeld: boolean }, deltaTime: number): void {
-    if (input.isHeld) {
-      this.rotation += this.config.rotationSpeed * deltaTime;
-      this.rotation = clamp(
-        this.rotation,
-        this.config.rotationRange.min,
-        this.config.rotationRange.max,
+  body: Matter.Body;
+  constraint: Matter.Constraint; // Pivot constraint
+  attachedPlatform: Matter.Body;
+  currentAngle: number = 0;
+  targetAngle: number = 0;
+
+  constructor(config: GearConfig) {
+    // Create gear as static body (doesn't move, just rotates)
+    this.body = Matter.Bodies.circle(config.x, config.y, config.radius, {
+      isStatic: true,
+      label: `gear_${config.id}`,
+      collisionFilter: { mask: 0 }, // No collisions, visual only
+    });
+
+    // Create attached platform
+    this.attachedPlatform = Matter.Bodies.rectangle(
+      config.x + config.armLength,
+      config.y,
+      config.platformWidth,
+      config.platformHeight,
+      {
+        isStatic: false,
+        label: `platform_${config.id}`,
+        friction: 0.9,
+      },
+    );
+
+    // Pivot constraint - platform rotates around gear center
+    this.constraint = Matter.Constraint.create({
+      pointA: { x: config.x, y: config.y },
+      bodyB: this.attachedPlatform,
+      pointB: { x: -config.armLength, y: 0 },
+      stiffness: 1,
+      length: 0,
+    });
+  }
+
+  update(isHeld: boolean, deltaTime: number): void {
+    if (isHeld) {
+      this.targetAngle = Math.min(
+        this.targetAngle + this.config.rotationSpeed * deltaTime,
+        this.config.maxAngle,
       );
     } else if (this.config.returnToNeutral) {
-      // Spring back to neutral
-      this.rotation = lerp(this.rotation, 0, 0.1);
+      this.targetAngle = lerp(this.targetAngle, 0, 0.1);
     }
 
-    // Update attached platforms
-    for (const platformId of this.config.attachedPlatforms) {
-      const platform = this.getPlatform(platformId);
-      platform.rotation = this.rotation;
-    }
+    // Smoothly rotate toward target
+    this.currentAngle = lerp(this.currentAngle, this.targetAngle, 0.2);
+
+    // Update platform position based on rotation
+    const angleRad = (this.currentAngle * Math.PI) / 180;
+    const newX = this.config.x + Math.cos(angleRad) * this.config.armLength;
+    const newY = this.config.y + Math.sin(angleRad) * this.config.armLength;
+
+    Matter.Body.setPosition(this.attachedPlatform, { x: newX, y: newY });
+    Matter.Body.setAngle(this.attachedPlatform, angleRad);
   }
 }
 
-// Joystick Gear - Rotation controlled by stick rotation
+// Joystick Gear - Rotation controlled by stick angle
 class JoystickGearMechanism {
-  update(input: { angle: number; magnitude: number }, deltaTime: number): void {
-    if (input.magnitude > 0.2) {
-      // Map joystick rotation to gear rotation
-      const targetRotation =
-        input.angle *
-        (this.config.rotationRange.max - this.config.rotationRange.min);
-      this.rotation = lerp(
-        this.rotation,
-        targetRotation,
+  body: Matter.Body;
+  attachedPlatform: Matter.Body;
+  currentAngle: number = 0;
+
+  update(
+    joystickInput: { angle: number; magnitude: number },
+    deltaTime: number,
+  ): void {
+    if (joystickInput.magnitude > 0.2) {
+      // Map joystick angle to gear rotation range
+      const targetAngle =
+        (joystickInput.angle / Math.PI) * this.config.maxAngle;
+      this.currentAngle = lerp(
+        this.currentAngle,
+        targetAngle,
         this.config.rotationSpeed * deltaTime,
       );
     }
 
-    // Update attached platforms position based on rotation
-    for (const platformId of this.config.attachedPlatforms) {
-      const platform = this.getPlatform(platformId);
-      const angle = (this.rotation * Math.PI) / 180;
-      const radius = this.config.armLength;
-      platform.position = {
-        x: this.position.x + Math.cos(angle) * radius,
-        y: this.position.y + Math.sin(angle) * radius,
-      };
-    }
+    // Update platform via rotation
+    const angleRad = (this.currentAngle * Math.PI) / 180;
+    const radius = this.config.armLength;
+
+    Matter.Body.setPosition(this.attachedPlatform, {
+      x: this.config.x + Math.cos(angleRad) * radius,
+      y: this.config.y + Math.sin(angleRad) * radius,
+    });
+    Matter.Body.setAngle(this.attachedPlatform, angleRad);
   }
 }
 
-// R Launcher - Charge and launch
+// R Launcher - Charge and launch using Matter.js impulse
 class LauncherMechanism {
-  private chargeLevel: number = 0;
+  platform: Matter.Body;
+  chargeLevel: number = 0;
+  isCharging: boolean = false;
 
-  update(input: { isHeld: boolean }, deltaTime: number): void {
-    if (input.isHeld) {
+  update(isHeld: boolean, deltaTime: number, cart: CartEntity): void {
+    if (isHeld) {
       // Charge up
       this.chargeLevel = Math.min(
         1,
         this.chargeLevel + deltaTime / this.config.chargeTime,
       );
-      this.state = "active";
-    } else if (this.state === "active") {
+      this.isCharging = true;
+    } else if (this.isCharging) {
       // Release - launch!
-      this.launch(this.chargeLevel);
+      this.launch(this.chargeLevel, cart);
       this.chargeLevel = 0;
-      this.state = "idle";
+      this.isCharging = false;
     }
   }
 
-  private launch(power: number): void {
-    const cartOnPlatform = this.getCartOnPlatform();
-    if (cartOnPlatform) {
-      const launchVelocity = {
-        x: this.config.launchDirection.x * this.config.launchForce * power,
-        y: this.config.launchDirection.y * this.config.launchForce * power,
-      };
-      cartOnPlatform.applyImpulse(launchVelocity);
+  private launch(power: number, cart: CartEntity): void {
+    // Check if cart is on this platform
+    const cartBody = cart.composite.bodies.find((b) => b.label === "cart_body");
+    if (!cartBody) return;
+
+    const distance = Matter.Vector.magnitude(
+      Matter.Vector.sub(cartBody.position, this.platform.position),
+    );
+
+    if (distance < this.config.activationRadius) {
+      // Apply impulse to cart
+      const impulse = Matter.Vector.mult(
+        this.config.launchDirection,
+        this.config.maxLaunchForce * power,
+      );
+
+      Matter.Body.applyForce(cartBody, cartBody.position, impulse);
+      playSound("launcher_fire");
     }
   }
 }
 
-// Fan Platform - Blow to lift
+// Fan Platform - Blow/tap to lift using Matter.js force
 class FanPlatformMechanism {
-  update(input: { isBlowing: boolean }, deltaTime: number): void {
-    if (input.isBlowing) {
+  platform: Matter.Body;
+  baseY: number;
+  maxLiftY: number;
+  currentLift: number = 0;
+
+  constructor(config: FanConfig) {
+    this.platform = Matter.Bodies.rectangle(
+      config.x,
+      config.y,
+      config.width,
+      config.height,
+      {
+        isStatic: true, // We control position directly
+        label: `fan_platform_${config.id}`,
+        friction: 0.8,
+      },
+    );
+    this.baseY = config.y;
+    this.maxLiftY = config.y - config.liftHeight;
+  }
+
+  update(isBlowing: boolean, deltaTime: number): void {
+    if (isBlowing) {
       // Lift platform
-      this.position.y = lerp(
-        this.position.y,
-        this.config.endPosition.y,
-        this.config.moveSpeed * deltaTime,
+      this.currentLift = Math.min(
+        1,
+        this.currentLift + this.config.liftSpeed * deltaTime,
       );
     } else {
-      // Lower platform
-      this.position.y = lerp(
-        this.position.y,
-        this.config.startPosition.y,
-        this.config.moveSpeed * 0.5 * deltaTime, // Falls slower
+      // Lower platform (slower descent)
+      this.currentLift = Math.max(
+        0,
+        this.currentLift - this.config.liftSpeed * 0.5 * deltaTime,
       );
     }
+
+    // Update platform position
+    const newY = lerp(this.baseY, this.maxLiftY, this.currentLift);
+    Matter.Body.setPosition(this.platform, {
+      x: this.platform.position.x,
+      y: newY,
+    });
   }
 }
 ```
+
+````
 
 ---
 
@@ -780,7 +923,7 @@ interface Checkpoint {
     showTransition: boolean;
   };
 }
-```
+````
 
 ### 6.2 Camera System
 
@@ -1366,90 +1509,179 @@ const UNLOCKABLES = {
 
 ## 10. Technical Implementation
 
-### 10.1 Game Loop
+### 10.1 Game Loop (react-native-game-engine + Matter.js)
 
 ```typescript
-class CartCourseGame {
-  private lastFrameTime: number = 0;
-  private accumulator: number = 0;
-  private readonly PHYSICS_TIMESTEP: number = 1000 / 120; // 120 FPS physics for precision
-  private readonly RENDER_TIMESTEP: number = 1000 / 60; // 60 FPS render
+import { GameEngine } from "react-native-game-engine";
+import Matter from "matter-js";
 
-  public start(): void {
-    this.lastFrameTime = performance.now();
-    this.inputController.start();
-    requestAnimationFrame(this.gameLoop.bind(this));
-  }
-
-  private gameLoop(currentTime: number): void {
-    const deltaTime = currentTime - this.lastFrameTime;
-    this.lastFrameTime = currentTime;
-    this.accumulator += deltaTime;
-
-    // Process input
-    const input = this.inputController.getInput();
-
-    // Fixed timestep physics (multiple iterations if needed)
-    while (this.accumulator >= this.PHYSICS_TIMESTEP) {
-      this.updatePhysics(this.PHYSICS_TIMESTEP, input);
-      this.accumulator -= this.PHYSICS_TIMESTEP;
-    }
-
-    // Update camera
-    this.updateCamera(deltaTime);
-
-    // Interpolate for smooth rendering
-    const alpha = this.accumulator / this.PHYSICS_TIMESTEP;
-    this.render(alpha);
-
-    // Continue loop
-    if (this.gameState.status === "playing") {
-      requestAnimationFrame(this.gameLoop.bind(this));
-    }
-  }
-
-  private updatePhysics(dt: number, input: GameInput): void {
-    const dtSeconds = dt / 1000;
-
-    // Calculate gravity based on device tilt
-    const gravity = this.calculateGravity(input.tilt);
-
-    // Update mechanisms first (they affect surfaces)
-    this.updateMechanisms(input, dtSeconds);
-
-    // Update cart physics
-    this.cart = this.physicsEngine.updateCart(
-      this.cart,
-      gravity,
-      this.currentArea.obstacles,
-      this.currentArea.mechanisms,
-      dtSeconds,
-    );
-
-    // Check for crashes
-    const crash = detectCrash(
-      this.cart,
-      this.lastCollision,
-      this.previousPosition,
-    );
-    if (crash) {
-      this.handleCrash(crash);
-      return;
-    }
-
-    // Check collectibles
-    this.checkCollectibles();
-
-    // Check checkpoint reached
-    this.checkCheckpoints();
-
-    // Check area transition
-    this.checkAreaTransition();
-
-    // Store for next frame
-    this.previousPosition = { ...this.cart.position };
-  }
+// Entity structure for react-native-game-engine
+interface GameEntities {
+  physics: { engine: Matter.Engine; world: Matter.World };
+  cart: CartEntity;
+  platforms: Map<string, PlatformEntity>;
+  mechanisms: Map<string, MechanismEntity>;
+  collectibles: Map<string, CollectibleEntity>;
+  checkpoints: Map<string, CheckpointEntity>;
+  camera: CameraEntity;
 }
+
+// Physics system - runs Matter.js each frame
+const PhysicsSystem = (
+  entities: GameEntities,
+  { time }: GameEngineUpdateProps,
+) => {
+  const { engine } = entities.physics;
+
+  // Run physics at 120Hz internally for precision
+  // Matter.js handles sub-stepping automatically
+  Matter.Engine.update(engine, time.delta);
+
+  return entities;
+};
+
+// Tilt gravity system - modifies gravity based on accelerometer
+const TiltGravitySystem = (
+  entities: GameEntities,
+  { tilt }: GameEngineUpdateProps,
+) => {
+  const { engine } = entities.physics;
+
+  // Apply device tilt to gravity direction
+  const tiltMultiplier = 0.5;
+  engine.gravity.x = tilt.x * 9.8 * tiltMultiplier;
+  engine.gravity.y = 9.8; // Always pull down
+
+  return entities;
+};
+
+// Mechanism control system - updates mechanisms based on button/joystick input
+const MechanismSystem = (
+  entities: GameEntities,
+  { input, time }: GameEngineUpdateProps,
+) => {
+  entities.mechanisms.forEach((mechanism) => {
+    switch (mechanism.type) {
+      case "L_ROTATING_GEAR":
+        updateRotatingGear(mechanism, input.leftButton, time.delta);
+        break;
+      case "R_ROTATING_GEAR":
+        updateRotatingGear(mechanism, input.rightButton, time.delta);
+        break;
+      case "LEFT_STICK_GEAR":
+        updateJoystickGear(mechanism, input.leftJoystick, time.delta);
+        break;
+      case "FAN_PLATFORM":
+        updateFanPlatform(mechanism, input.isBlowing, time.delta);
+        break;
+      case "R_LAUNCHER":
+        updateLauncher(mechanism, input.rightButton, time.delta, entities.cart);
+        break;
+    }
+
+    // Sync Matter.js body with mechanism state
+    syncMechanismBody(mechanism);
+  });
+
+  return entities;
+};
+
+// Crash detection system
+const CrashDetectionSystem = (
+  entities: GameEntities,
+  { dispatch }: GameEngineUpdateProps,
+) => {
+  const { cart } = entities;
+
+  // Check flip crash
+  if (checkFlipCrash(cart.composite)) {
+    dispatch({ type: "crash", crashType: CrashType.FLIP });
+    return entities;
+  }
+
+  // Check fall out of bounds
+  if (checkFallCrash(cart.composite, entities.camera.bounds.maxY + 200)) {
+    dispatch({ type: "crash", crashType: CrashType.PIT });
+    return entities;
+  }
+
+  return entities;
+};
+
+// Camera follow system
+const CameraSystem = (
+  entities: GameEntities,
+  { time }: GameEngineUpdateProps,
+) => {
+  const { cart, camera } = entities;
+  const cartBody = cart.composite.bodies.find((b) => b.label === "cart_body");
+
+  if (cartBody) {
+    // Smooth camera follow with look-ahead
+    const targetX = cartBody.position.x + cartBody.velocity.x * 0.3;
+    const targetY = cartBody.position.y + cartBody.velocity.y * 0.2;
+
+    camera.position.x = lerp(camera.position.x, targetX, 0.08);
+    camera.position.y = lerp(camera.position.y, targetY, 0.08);
+
+    // Clamp to area bounds
+    camera.position.x = clamp(
+      camera.position.x,
+      camera.bounds.minX,
+      camera.bounds.maxX,
+    );
+    camera.position.y = clamp(
+      camera.position.y,
+      camera.bounds.minY,
+      camera.bounds.maxY,
+    );
+  }
+
+  return entities;
+};
+
+// Collectible system
+const CollectibleSystem = (
+  entities: GameEntities,
+  { dispatch }: GameEngineUpdateProps,
+) => {
+  entities.collectibles.forEach((collectible, id) => {
+    if (collectible.collected && !collectible.removed) {
+      // Play sound, add to score
+      dispatch({ type: "collect", itemType: collectible.type, id });
+      collectible.removed = true;
+      Matter.World.remove(entities.physics.world, collectible.body);
+    }
+  });
+
+  return entities;
+};
+
+// Timer system
+const TimerSystem = (
+  entities: GameEntities,
+  { time, dispatch }: GameEngineUpdateProps,
+) => {
+  entities.elapsedTime += time.delta;
+
+  // Check 10-minute time limit
+  if (entities.elapsedTime > 10 * 60 * 1000) {
+    dispatch({ type: "time-up" });
+  }
+
+  return entities;
+};
+
+// All systems in execution order
+const GAME_SYSTEMS = [
+  TiltGravitySystem, // Update gravity from accelerometer
+  MechanismSystem, // Update mechanism positions
+  PhysicsSystem, // Matter.js physics step
+  CrashDetectionSystem,
+  CollectibleSystem,
+  CameraSystem,
+  TimerSystem,
+];
 ```
 
 ### 10.2 React Native Components
@@ -1530,81 +1762,89 @@ const CartCourseScreen: React.FC = () => {
 
 ---
 
-## 11. Component Architecture
+## 11. Component Architecture (Matter.js + react-native-game-engine)
 
 ```
 src/
 ├── components/
 │   └── games/
 │       └── CartCourse/
-│           ├── index.tsx                 # Main game component
-│           ├── CartCourseGame.ts        # Core game engine class
-│           ├── CartCourseCanvas.tsx     # Rendering with Skia
-│           ├── CartCourseHUD.tsx        # Score, lives, timer
-│           ├── CartCourseControls.tsx   # Touch zones and joysticks
-│           ├── BlowIndicator.tsx        # Microphone feedback UI
-│           ├── MiniMap.tsx              # Optional course overview
+│           ├── index.tsx                 # Main GameEngine component
+│           ├── CartCourseScreen.tsx      # Screen wrapper with HUD
+│           ├── CartCourseHUD.tsx         # Score, lives, timer, area
+│           ├── CartCourseControls.tsx    # Button zones, joysticks
+│           ├── BlowIndicator.tsx         # Microphone feedback UI
+│           ├── MiniMap.tsx               # Optional course overview
 │           ├── CartCoursePauseMenu.tsx
 │           ├── CartCourseResults.tsx
 │           │
 │           ├── engine/
-│           │   ├── GameLoop.ts          # Main loop with fixed timestep
-│           │   ├── PhysicsEngine.ts     # Cart physics, gravity, collisions
-│           │   ├── TiltController.ts    # Accelerometer handling
-│           │   ├── MechanismController.ts # All mechanism logic
-│           │   ├── BlowDetector.ts      # Microphone detection
-│           │   ├── CollisionSystem.ts   # 2D collision detection
-│           │   └── CameraController.ts  # Camera follow logic
+│           │   ├── MatterWorld.ts        # Matter.js world setup
+│           │   ├── CollisionHandler.ts   # Collision event handlers
+│           │   ├── EntityFactory.ts      # Create Matter.js bodies
+│           │   ├── TiltController.ts     # Accelerometer to gravity
+│           │   └── BlowDetector.ts       # Microphone detection
+│           │
+│           ├── systems/                  # react-native-game-engine systems
+│           │   ├── PhysicsSystem.ts      # Matter.Engine.update()
+│           │   ├── TiltGravitySystem.ts  # Apply tilt to gravity
+│           │   ├── MechanismSystem.ts    # Update all mechanisms
+│           │   ├── CrashDetectionSystem.ts # Flip/fall/impact detection
+│           │   ├── CollectibleSystem.ts  # Banana/coin collection
+│           │   ├── CheckpointSystem.ts   # Checkpoint activation
+│           │   ├── CameraSystem.ts       # Camera follow with lookahead
+│           │   └── TimerSystem.ts        # Elapsed time tracking
 │           │
 │           ├── entities/
-│           │   ├── Cart.ts              # Cart entity with wheels
-│           │   ├── Obstacle.ts          # Static obstacle class
-│           │   ├── Mechanism.ts         # Base mechanism class
-│           │   ├── Collectible.ts       # Banana, coin classes
-│           │   └── Checkpoint.ts        # Checkpoint flag entity
+│           │   ├── CartEntity.ts         # Cart composite (body + wheels)
+│           │   ├── PlatformEntity.ts     # Static/kinematic platforms
+│           │   ├── WallEntity.ts         # Static wall bodies
+│           │   ├── CollectibleEntity.ts  # Sensor bodies for bananas/coins
+│           │   └── CheckpointEntity.ts   # Sensor bodies for checkpoints
 │           │
-│           ├── mechanisms/
-│           │   ├── RotatingGear.ts      # L/R button gears
-│           │   ├── JoystickGear.ts      # Stick-controlled gears
-│           │   ├── LiftPlatform.ts      # Button lift platforms
-│           │   ├── TiltPlatform.ts      # Stick tilt platforms
-│           │   ├── LauncherPlatform.ts  # Charge and launch
-│           │   ├── FanPlatform.ts       # Blow-controlled
-│           │   ├── AutoRotate.ts        # Triggered by cart
-│           │   └── Conveyor.ts          # Auto-moving belt
+│           ├── mechanisms/               # Matter.js mechanism implementations
+│           │   ├── RotatingGear.ts       # L/R button rotating gears
+│           │   ├── JoystickGear.ts       # Stick-controlled gears
+│           │   ├── LiftPlatform.ts       # Button lift platforms
+│           │   ├── TiltPlatform.ts       # Stick tilt platforms
+│           │   ├── LauncherPlatform.ts   # Charge and launch
+│           │   ├── FanPlatform.ts        # Blow-controlled lift
+│           │   ├── AutoRotate.ts         # Cart-triggered rotation
+│           │   └── Conveyor.ts           # Auto-moving belt
 │           │
-│           ├── renderers/
-│           │   ├── CourseRenderer.tsx   # Background, platforms
-│           │   ├── CartRenderer.tsx     # Cart with wheels
-│           │   ├── MechanismRenderer.tsx # Animated mechanisms
-│           │   ├── CollectibleRenderer.tsx
-│           │   ├── ParticleRenderer.tsx # Dust, sparks
-│           │   └── UIRenderer.tsx       # HUD elements
+│           ├── renderers/                # Skia rendering components
+│           │   ├── SkiaRenderer.tsx      # Main renderer for GameEngine
+│           │   ├── CourseRenderer.tsx    # Background, static platforms
+│           │   ├── CartRenderer.tsx      # Cart body + animated wheels
+│           │   ├── MechanismRenderer.tsx # Animated mechanisms (gears, etc)
+│           │   ├── CollectibleRenderer.tsx # Bananas with glow
+│           │   ├── ParticleRenderer.tsx  # Dust, sparks on impact
+│           │   └── UIRenderer.tsx        # HUD elements
 │           │
 │           ├── data/
 │           │   ├── courses/
-│           │   │   ├── course1.ts       # Classic Run data
-│           │   │   ├── course2.ts       # Industrial Zone data
-│           │   │   ├── course3.ts       # Classic Expert data
-│           │   │   └── course4.ts       # Industrial Expert data
-│           │   ├── mechanisms.ts        # Mechanism configs
-│           │   ├── stamps.ts            # Achievement definitions
-│           │   └── unlockables.ts       # Progression config
+│           │   │   ├── course1.ts        # Classic Run (Matter.js bodies)
+│           │   │   ├── course2.ts        # Industrial Zone
+│           │   │   ├── course3.ts        # Classic Expert
+│           │   │   └── course4.ts        # Industrial Expert
+│           │   ├── mechanisms.ts         # Mechanism configs
+│           │   ├── stamps.ts             # Achievement definitions
+│           │   └── constants.ts          # Physics constants
 │           │
 │           ├── hooks/
-│           │   ├── useCartCourseGame.ts # Game state management
-│           │   ├── useTiltControls.ts   # Accelerometer hook
-│           │   ├── useBlowDetection.ts  # Microphone hook
+│           │   ├── useCartCourseGame.ts  # Initialize entities & Matter.js
+│           │   ├── useTiltControls.ts    # Accelerometer hook
+│           │   ├── useBlowDetection.ts   # Microphone hook
 │           │   └── useCartCourseAudio.ts
 │           │
 │           └── types/
-│               └── cartCourse.types.ts  # TypeScript interfaces
+│               └── cartCourse.types.ts   # TypeScript interfaces
 │
 ├── services/
-│   └── cartCourseService.ts             # Firebase integration
+│   └── cartCourseService.ts              # Firebase integration
 │
 └── types/
-    └── games.ts                         # Add CartCourse types
+    └── games.ts                          # Add CartCourse types
 ```
 
 ---
@@ -1667,75 +1907,90 @@ interface LeaderboardEntry {
 
 ## 13. Development Phases
 
-### Phase 1: Core Physics (Week 1-2)
+### Phase 1: Core Engine Setup (Week 1-2)
 
-- [ ] Set up game canvas with react-native-skia
-- [ ] Implement cart entity with two wheels
-- [ ] Basic gravity and movement physics
-- [ ] Tilt controls via accelerometer
-- [ ] Ground collision detection
-- [ ] Basic ramp physics
+- [ ] Configure Matter.js with gravity-enabled world
+- [ ] Set up react-native-game-engine with Skia renderer
+- [ ] Create cart composite (body + two wheel circles + axle constraints)
+- [ ] Implement basic gravity and cart rolling physics
+- [ ] Set up accelerometer with expo-sensors
+- [ ] Connect device tilt to Matter.js gravity.x
+- [ ] Create basic platform as static Matter.Body
+- [ ] Implement cart-platform collision
 
-### Phase 2: Advanced Physics (Week 2-3)
+### Phase 2: Advanced Cart Physics (Week 2-3)
 
-- [ ] Crash detection (velocity, flip, fall)
-- [ ] Surface friction variations
-- [ ] Bounce/bumper mechanics
-- [ ] Air resistance and terminal velocity
-- [ ] Precise wheel contact detection
-- [ ] Camera follow system
+- [ ] Wheel friction and grip physics
+- [ ] Surface-specific friction (slippery, sticky)
+- [ ] Bouncy bumper walls (high restitution)
+- [ ] Crash detection: impact velocity threshold
+- [ ] Crash detection: flip angle threshold
+- [ ] Crash detection: fall out of bounds
+- [ ] Smooth camera follow with lookahead
+- [ ] Camera bounds clamping per area
 
 ### Phase 3: Mechanisms - Part 1 (Week 3-4)
 
-- [ ] L/R button rotating gears
-- [ ] L/R button lift platforms
-- [ ] Joystick-controlled gears
-- [ ] Joystick-controlled tilt platforms
-- [ ] Cart attachment to platforms
+- [ ] L/R button touch zones UI
+- [ ] RotatingGear mechanism with Matter.js body rotation
+- [ ] Attached platform following gear rotation
+- [ ] LiftPlatform mechanism (vertical kinematic body)
+- [ ] Joystick touch control component
+- [ ] JoystickGear mechanism (angle-mapped rotation)
+- [ ] Cart attachment detection (is cart on platform?)
 
 ### Phase 4: Mechanisms - Part 2 (Week 4-5)
 
-- [ ] Launcher platforms (charge/release)
-- [ ] Fan/blow platforms with microphone
-- [ ] Alternative X button for blow
-- [ ] Auto-rotating platforms
-- [ ] Conveyor belts
-- [ ] Auto-moving platforms
+- [ ] LauncherPlatform with charge indicator UI
+- [ ] Matter.Body.applyForce for launch impulse
+- [ ] Microphone blow detection with expo-av
+- [ ] FanPlatform mechanism (kinematic lift on blow)
+- [ ] Alternative tap button for blow accessibility
+- [ ] AutoRotate mechanism (triggered by cart contact)
+- [ ] Conveyor belt (constant velocity zone)
 
 ### Phase 5: Course Design (Week 5-6)
 
-- [ ] Course 1 (10 areas) - Classic
-- [ ] Course 2 (10 areas) - Industrial
-- [ ] Course 3 - Expert variant of Course 1
-- [ ] Course 4 - Expert variant of Course 2
-- [ ] Checkpoint system
-- [ ] Lives system
+- [ ] Course data structure with Matter.js body definitions
+- [ ] Course 1 (10 areas) - Classic theme
+- [ ] Course 2 (10 areas) - Industrial theme
+- [ ] Area transition detection
+- [ ] Checkpoint system (sensor bodies)
+- [ ] Lives system with checkpoint respawn
+- [ ] Course 3 - Expert variant (modified mechanisms)
+- [ ] Course 4 - Expert variant
 
 ### Phase 6: Collectibles & Scoring (Week 6-7)
 
-- [ ] Banana placement and collection
-- [ ] Coin spawning logic
-- [ ] Score calculation
-- [ ] Time tracking
-- [ ] Extra life system
+- [ ] Banana collectibles (sensor bodies with callback)
+- [ ] Coin spawning after all bananas collected
+- [ ] Score calculation system
+- [ ] Time tracking with 10-minute limit
+- [ ] Extra life every 2000 points
 - [ ] Area completion detection
+- [ ] Course completion flow
 
-### Phase 7: Polish (Week 7-8)
+### Phase 7: Polish & Effects (Week 7-8)
 
-- [ ] Visual effects (particles, trails)
-- [ ] Sound effects
-- [ ] Music system
-- [ ] HUD refinement
-- [ ] Control calibration UI
-- [ ] Tutorial/help overlays
+- [ ] Skia particle effects (dust on landing, sparks on impact)
+- [ ] Wheel rotation animation synced to velocity
+- [ ] Cart trail effect
+- [ ] Collectible glow and collection animation
+- [ ] Sound effects integration
+- [ ] Music system with intensity changes
+- [ ] HUD animations
+- [ ] Tilt calibration UI
+- [ ] Tutorial overlays
 
 ### Phase 8: Progression & Integration (Week 8-9)
 
-- [ ] Stamp/achievement system
-- [ ] Unlockables
-- [ ] Leaderboards
-- [ ] Firebase integration
-- [ ] App integration
+- [ ] Stamp/achievement detection and award
+- [ ] Unlockable courses and cart skins
+- [ ] Leaderboards (Firebase)
+- [ ] Firebase progress persistence
+- [ ] App navigation integration
+- [ ] Performance optimization
+- [ ] E2E testing
 
 ---
 

@@ -141,12 +141,14 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   // Action/Quick Play
   reaction_tap: "ReactionTapGame",
   timed_tap: "TimedTapGame",
-  flappy_snap: "FlappySnapGame",
   bounce_blitz: "BounceBlitzGame",
   snap_snake: "SnapSnakeGame",
+  brick_breaker: "BrickBreakerGame", // New (Phase 1)
   // Puzzle
   snap_2048: "Snap2048Game",
   memory_snap: "MemorySnapGame",
+  cart_course: "CartCourseGame",
+  tile_slide: "TileSlideGame", // New (Phase 1)
   // Daily
   word_snap: "WordSnapGame",
   // Multiplayer

@@ -65,6 +65,15 @@ import {
   triggerDailyDeals,
 } from "./dailyDeals";
 
+// Import Call functions (Voice/Video Calling)
+import {
+  cleanupCallSignaling,
+  getTurnCredentials,
+  handleCallTimeouts,
+  onCallCreated,
+  onCallUpdated,
+} from "./calls";
+
 // Re-export V2 Messaging functions
 export const sendMessageV2 = sendMessageV2Function;
 export const editMessageV2 = editMessageV2Function;
@@ -108,6 +117,15 @@ export {
   generateDailyDeals,
   generateWeeklyDeals,
   triggerDailyDeals,
+};
+
+// Re-export Call functions (Voice/Video Calling)
+export {
+  cleanupCallSignaling,
+  getTurnCredentials,
+  handleCallTimeouts,
+  onCallCreated,
+  onCallUpdated,
 };
 
 // Initialize Firebase Admin SDK

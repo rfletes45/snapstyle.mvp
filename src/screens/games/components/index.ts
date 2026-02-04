@@ -33,6 +33,9 @@ export { PlaySearchBar } from "./PlaySearchBar";
 export { ModernGameCard } from "./ModernGameCard";
 export type { GameCardVariant, ModernGameCardProps } from "./ModernGameCard";
 
+export { GameQuickActionsModal } from "./GameQuickActionsModal";
+export type { GameQuickActionsModalProps } from "./GameQuickActionsModal";
+
 export { CarouselGameTile } from "./CarouselGameTile";
 export type { CarouselGameTileProps } from "./CarouselGameTile";
 
@@ -81,9 +84,6 @@ export type { ActiveGamesMiniProps } from "./ActiveGamesMini";
 // =============================================================================
 // Play Screen V2 Components (Phase 7)
 // =============================================================================
-
-export { QuickMatchFAB } from "./QuickMatchFAB";
-export type { QuickMatchFABProps } from "./QuickMatchFAB";
 
 export { GameStatsSummary } from "./GameStatsSummary";
 export type { GameStatsSummaryProps } from "./GameStatsSummary";

@@ -11,3 +11,7 @@ export * from "./cosmetics";
 export * from "./extendedCosmetics";
 export * from "./gameAchievements";
 export * from "./profileThemes";
+
+// Cart Course Game Data (Phase 8: Progression & Integration)
+export * from "../components/games/CartCourse/data/stamps";
+export * from "../components/games/CartCourse/data/unlockables";

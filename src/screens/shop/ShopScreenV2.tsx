@@ -67,7 +67,7 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PROFILE_FEATURES } from "../../../constants/featureFlags";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -120,6 +120,7 @@ export default function ShopScreenV2({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
   const theme = useTheme();
+  const colors = useColors();
 
   // Main tab state
   const [activeTab, setActiveTab] = useState<ShopTab>("items");
@@ -1168,7 +1169,6 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 18,
     fontWeight: "bold",
-    color: AppColors.primary,
   },
   ownedBadge: {
     position: "absolute",

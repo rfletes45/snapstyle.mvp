@@ -40,7 +40,11 @@ export interface ChatGameInvitesProps {
   /** Current user's avatar config (optional) */
   currentUserAvatar?: string;
   /** Callback when user wants to navigate to a game */
-  onNavigateToGame: (gameId: string, gameType: string) => void;
+  onNavigateToGame: (
+    gameId: string,
+    gameType: string,
+    options?: { inviteId?: string; spectatorMode?: boolean },
+  ) => void;
   /** Whether the section starts expanded (default: true) */
   defaultExpanded?: boolean;
   /** Compact mode for smaller display */
@@ -140,7 +144,10 @@ export function ChatGameInvites({
       );
 
       if (result.success && result.gameId) {
-        onNavigateToGame(result.gameId, invite.gameType);
+        onNavigateToGame(result.gameId, invite.gameType, {
+          inviteId: invite.id,
+          spectatorMode: true,
+        });
       }
     },
     [currentUserId, currentUserName, currentUserAvatar, onNavigateToGame],

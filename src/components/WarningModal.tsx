@@ -15,10 +15,12 @@ import type { BanReason, UserWarning } from "@/types/models";
 import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Button, Divider, Modal, Portal, Text } from "react-native-paper";
-import { AppColors, BorderRadius, Spacing } from "../../constants/theme";
+import { BorderRadius, Spacing } from "../../constants/theme";
+import { useColors } from "../store/ThemeContext";
 
 export default function WarningModal() {
   const { currentFirebaseUser } = useAuth();
+  const colors = useColors();
   const [warnings, setWarnings] = useState<UserWarning[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [acknowledging, setAcknowledging] = useState(false);
@@ -77,7 +79,10 @@ export default function WarningModal() {
       <Modal
         visible={hasWarnings}
         dismissable={false}
-        contentContainerStyle={styles.modalContainer}
+        contentContainerStyle={[
+          styles.modalContainer,
+          { backgroundColor: colors.surface },
+        ]}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.header}>
@@ -85,17 +90,23 @@ export default function WarningModal() {
             <Text style={styles.title}>Warning</Text>
           </View>
 
-          <Text style={styles.countText}>
+          <Text style={[styles.countText, { color: colors.textSecondary }]}>
             {warnings.length > 1
               ? `Warning ${currentIndex + 1} of ${warnings.length}`
               : "You have received a warning"}
           </Text>
 
-          <Divider style={styles.divider} />
+          <Divider
+            style={[styles.divider, { backgroundColor: colors.divider }]}
+          />
 
           <View style={styles.reasonSection}>
-            <Text style={styles.sectionLabel}>Reason</Text>
-            <Text style={styles.reasonText}>
+            <Text
+              style={[styles.sectionLabel, { color: colors.textSecondary }]}
+            >
+              Reason
+            </Text>
+            <Text style={[styles.reasonText, { color: colors.textPrimary }]}>
               {BAN_REASON_LABELS[currentWarning.reason as BanReason] ||
                 currentWarning.reason}
             </Text>
@@ -103,15 +114,28 @@ export default function WarningModal() {
 
           {currentWarning.details && (
             <View style={styles.detailsSection}>
-              <Text style={styles.sectionLabel}>Details</Text>
-              <View style={styles.detailsBox}>
-                <Text style={styles.detailsText}>{currentWarning.details}</Text>
+              <Text
+                style={[styles.sectionLabel, { color: colors.textSecondary }]}
+              >
+                Details
+              </Text>
+              <View
+                style={[
+                  styles.detailsBox,
+                  { backgroundColor: colors.surfaceVariant },
+                ]}
+              >
+                <Text
+                  style={[styles.detailsText, { color: colors.textPrimary }]}
+                >
+                  {currentWarning.details}
+                </Text>
               </View>
             </View>
           )}
 
           <View style={styles.dateSection}>
-            <Text style={styles.dateText}>
+            <Text style={[styles.dateText, { color: colors.textSecondary }]}>
               Issued on:{" "}
               {new Date(currentWarning.issuedAt).toLocaleDateString(undefined, {
                 year: "numeric",
@@ -123,14 +147,16 @@ export default function WarningModal() {
             </Text>
           </View>
 
-          <Divider style={styles.divider} />
+          <Divider
+            style={[styles.divider, { backgroundColor: colors.divider }]}
+          />
 
-          <Text style={styles.infoText}>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
             This warning has been added to your account record. Continued
             violations may result in strikes or a ban from the platform.
           </Text>
 
-          <Text style={styles.infoText}>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
             Please review our Community Guidelines to ensure you understand
             acceptable behavior.
           </Text>
@@ -141,7 +167,7 @@ export default function WarningModal() {
             loading={acknowledging}
             disabled={acknowledging}
             style={styles.acknowledgeButton}
-            buttonColor={AppColors.primary}
+            buttonColor={colors.primary}
           >
             {warnings.length > 1 && currentIndex < warnings.length - 1
               ? "Acknowledge & Continue"
@@ -155,7 +181,6 @@ export default function WarningModal() {
 
 const styles = StyleSheet.create({
   modalContainer: {
-    backgroundColor: AppColors.surface,
     margin: 20,
     borderRadius: BorderRadius.lg,
     maxHeight: "80%",
@@ -180,12 +205,10 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: 14,
-    color: AppColors.textSecondary,
     textAlign: "center",
     marginBottom: Spacing.md,
   },
   divider: {
-    backgroundColor: AppColors.divider,
     marginVertical: Spacing.md,
   },
   reasonSection: {
@@ -194,26 +217,22 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: AppColors.textSecondary,
     textTransform: "uppercase",
     marginBottom: 4,
   },
   reasonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: AppColors.textPrimary,
   },
   detailsSection: {
     marginBottom: Spacing.md,
   },
   detailsBox: {
-    backgroundColor: AppColors.surfaceVariant,
     padding: Spacing.md,
     borderRadius: BorderRadius.sm,
   },
   detailsText: {
     fontSize: 14,
-    color: AppColors.textPrimary,
     lineHeight: 20,
   },
   dateSection: {
@@ -221,11 +240,9 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 12,
-    color: AppColors.textSecondary,
   },
   infoText: {
     fontSize: 14,
-    color: AppColors.textSecondary,
     lineHeight: 20,
     marginBottom: Spacing.sm,
   },

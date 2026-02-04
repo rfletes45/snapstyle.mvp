@@ -52,6 +52,8 @@ export interface DailyChallengeCardProps {
   personalBest?: string | null;
   /** Called when card is pressed */
   onPress: () => void;
+  /** Called when card is long-pressed */
+  onLongPress?: () => void;
   /** Additional container styles */
   style?: ViewStyle;
   /** Test ID for testing */
@@ -73,6 +75,7 @@ function DailyChallengeCardComponent({
   todayScore,
   personalBest,
   onPress,
+  onLongPress,
   style,
   testID,
 }: DailyChallengeCardProps) {
@@ -120,6 +123,13 @@ function DailyChallengeCardComponent({
     scale.value = withSpring(1, animation.pressSpring);
   }, [scale]);
 
+  const handleLongPress = useCallback(() => {
+    if (onLongPress) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      onLongPress();
+    }
+  }, [onLongPress]);
+
   return (
     <Animated.View
       entering={FadeIn.duration(300)}
@@ -128,8 +138,10 @@ function DailyChallengeCardComponent({
     >
       <Pressable
         onPress={onPress}
+        onLongPress={handleLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
+        delayLongPress={400}
         style={styles.pressable}
       >
         <LinearGradient

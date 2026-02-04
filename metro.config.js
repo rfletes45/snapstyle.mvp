@@ -1,6 +1,7 @@
 /**
  * Metro configuration for React Native/Expo
  * Excludes the firebase-backend folder from bundling
+ * Provides platform-specific resolution for native modules
  */
 const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
@@ -15,5 +16,60 @@ config.resolver.blockList = [
   new RegExp(`${firebaseBackendPath.replace(/\\/g, "\\\\")}`),
   new RegExp(`${firebasePath.replace(/\\/g, "\\\\")}`),
 ];
+
+// Prioritize .web.ts/.web.tsx files on web platform
+// This ensures native-only modules get web stubs
+config.resolver.sourceExts = [...(config.resolver.sourceExts || [])];
+
+// Add platform-specific extensions for web
+// Metro will automatically prefer .web.ts over .ts on web platform
+config.resolver.resolverMainFields = ["react-native", "browser", "main"];
+
+// Provide shims for native modules on web
+const originalResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Only apply shims on web platform
+  if (platform === "web") {
+    // Shim tslib to fix ESM interop issues with react-remove-scroll and other packages
+    // This fixes: "Cannot destructure property '__extends' of 'tslib.default' as it is undefined"
+    if (moduleName === "tslib") {
+      return {
+        filePath: path.resolve(__dirname, "src/shims/tslib.js"),
+        type: "sourceFile",
+      };
+    }
+
+    // Shim react-native-webrtc on web
+    if (moduleName === "react-native-webrtc") {
+      return {
+        filePath: path.resolve(__dirname, "src/shims/react-native-webrtc.js"),
+        type: "sourceFile",
+      };
+    }
+
+    // Shim react-native-callkeep on web
+    if (moduleName === "react-native-callkeep") {
+      return {
+        filePath: path.resolve(__dirname, "src/shims/react-native-callkeep.js"),
+        type: "sourceFile",
+      };
+    }
+
+    // Shim @shopify/react-native-skia on web
+    if (moduleName === "@shopify/react-native-skia") {
+      return {
+        filePath: path.resolve(__dirname, "src/shims/react-native-skia.js"),
+        type: "sourceFile",
+      };
+    }
+  }
+
+  // Use default resolver for everything else
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform);
+  }
+
+  return context.resolveRequest(context, moduleName, platform);
+};
 
 module.exports = config;

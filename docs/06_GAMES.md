@@ -25,12 +25,12 @@
 
 ### Game Categories
 
-| Category        | Games                                         | Description                      |
-| --------------- | --------------------------------------------- | -------------------------------- |
-| **Quick Play**  | Flappy Snap, Bounce Blitz                     | Fast, casual single-player games |
-| **Puzzle**      | Snap 2048, Memory Snap, Word Snap, Snap Snake | Thinking games                   |
-| **Multiplayer** | Chess, Checkers, Tic-Tac-Toe, Crazy Eights    | Turn-based VS other players      |
-| **Daily**       | Word Snap                                     | Daily challenges                 |
+| Category        | Games                                                                               | Description                      |
+| --------------- | ----------------------------------------------------------------------------------- | -------------------------------- |
+| **Quick Play**  | Flappy Snap, Bounce Blitz, Brick Breaker                                            | Fast, casual single-player games |
+| **Puzzle**      | Snap 2048, Memory Snap, Word Snap, Snap Snake, Tile Slide, Color Flow, Hex Collapse | Thinking games                   |
+| **Multiplayer** | Chess, Checkers, Tic-Tac-Toe, Crazy Eights                                          | Turn-based VS other players      |
+| **Daily**       | Word Snap                                                                           | Daily challenges                 |
 
 ### Game Status Flow
 
@@ -53,6 +53,7 @@ Turn-Based Multiplayer:
 │                    Game Screen Components                    │
 ├─────────────────────────────────────────────────────────────┤
 │  Flappy    Bounce   Memory   Word   Snap2048  Snake        │
+│  TileSlide HexCollapse ColorFlow BrickBreaker              │
 │  TicTacToe Checkers Chess    CrazyEights                   │
 └──────────────────────────┬──────────────────────────────────┘
                            │
@@ -96,6 +97,44 @@ useGameLoop((deltaTime) => {
 }, isRunning);
 ```
 
+### Game Haptics Hook
+
+**File:** `src/hooks/useGameHaptics.ts`
+
+All games use `useGameHaptics` for consistent haptic feedback:
+
+```typescript
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+
+const haptics = useGameHaptics();
+
+// Basic triggers
+haptics.trigger("selection"); // UI tap
+haptics.trigger("tile_slide"); // Tile Slide movement
+haptics.trigger("hex_collapse"); // Hex cluster collapse
+haptics.trigger("path_connect"); // Color Flow path extension
+haptics.trigger("brick_hit"); // Brick Breaker hit
+haptics.trigger("powerup_collect"); // Power-up collected
+
+// Pattern functions
+haptics.celebrationPattern(); // Win celebration
+haptics.gameOverPattern(didWin); // Game end (different for win/lose)
+haptics.comboPattern(comboCount); // Combo feedback (Hex Collapse)
+haptics.brickCascadePattern(count); // Multiple brick breaks
+haptics.puzzleSolvedPattern(); // Puzzle completed (Tile Slide)
+haptics.levelCompletePattern(); // Level finished (Color Flow, Brick Breaker)
+```
+
+**Available Haptic Types:**
+
+| Category     | Types                                                                                                                                  |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Basic        | `selection`, `success`, `error`, `warning`                                                                                             |
+| Impact       | `impact_light`, `impact_medium`, `impact_heavy`                                                                                        |
+| Game Actions | `move`, `capture`, `merge`, `eat`, `special_move`                                                                                      |
+| New Games    | `tile_slide`, `hex_collapse`, `path_connect`, `path_complete`, `brick_hit`, `brick_destroy`, `powerup_collect`, `ball_launch`, `combo` |
+| States       | `game_over`, `win`, `lose`, `turn_change`, `check`                                                                                     |
+
 ---
 
 ## 3. Game Types
@@ -113,7 +152,11 @@ SinglePlayerGameType =
   "memory_snap" |
   "word_snap" |
   "snap_2048" |
-  "snap_snake";
+  "snap_snake" |
+  "tile_slide" |
+  "hex_collapse" |
+  "color_flow" |
+  "brick_breaker";
 
 TurnBasedGameType = "chess" | "checkers" | "tic_tac_toe" | "crazy_eights";
 
@@ -206,6 +249,135 @@ Slide tiles to combine matching numbers, reach 2048.
 **File:** `src/screens/games/SnapSnakeGameScreen.tsx`
 
 Classic snake game - eat food, grow longer, don't hit walls.
+
+### Tile Slide
+
+**File:** `src/screens/games/TileSlideGameScreen.tsx`  
+**Logic:** `src/data/games/tileSlideLogic.ts`
+
+Classic sliding puzzle game where you arrange numbered tiles in order.
+
+| Feature    | Description                                  |
+| ---------- | -------------------------------------------- |
+| Grid Sizes | 3×3 (Easy), 4×4 (Medium), 5×5 (Hard)         |
+| Controls   | Tap adjacent tiles to slide into empty space |
+| Scoring    | Based on move count (fewer = higher score)   |
+| Hints      | Shows best tile to move (limited uses)       |
+| Animations | Smooth sliding with spring physics           |
+
+**Difficulty Levels:**
+
+| Size | Optimal Moves | Min Shuffles | Max Shuffles |
+| ---- | ------------- | ------------ | ------------ |
+| 3×3  | 30            | 30           | 50           |
+| 4×4  | 80            | 80           | 120          |
+| 5×5  | 150           | 150          | 200          |
+
+**Score Calculation:**
+
+```typescript
+baseScore = (gridSize * gridSize) * 100
+moveBonus = optimalMoves / actualMoves  // up to 2x
+timeBonus = if (time < 60s) 200 else if (time < 120s) 100 else 0
+finalScore = baseScore * moveBonus + timeBonus
+```
+
+### Hex Collapse
+
+**File:** `src/screens/games/HexCollapseGameScreen.tsx`  
+**Logic:** `src/data/games/hexCollapseLogic.ts`
+
+Match-3 style game on a hexagonal grid with chain reactions.
+
+| Feature      | Description                               |
+| ------------ | ----------------------------------------- |
+| Grid         | Hexagonal grid (7 columns × 9 rows)       |
+| Controls     | Tap clusters of 3+ matching colors        |
+| Chain React  | Cascading collapses multiply score        |
+| Combo System | Chain multiplier (1.5x, 2x, 2.5x, 3x, 4x) |
+| End          | Game over when no valid clusters remain   |
+
+**Scoring System:**
+
+```typescript
+clusterSize = number of hexes in cluster
+basePoints = clusterSize * (clusterSize - 1) * 5
+comboMultiplier = [1, 1.5, 2, 2.5, 3, 4][Math.min(combo, 5)]
+points = Math.floor(basePoints * comboMultiplier)
+```
+
+**Hex Colors:** 6 distinct colors for visual clarity.
+
+### Color Flow
+
+**File:** `src/screens/games/ColorFlowGameScreen.tsx`  
+**Logic:** `src/data/games/colorFlowLogic.ts`
+
+Flow Free-style puzzle connecting matching colored dots.
+
+| Feature     | Description                                     |
+| ----------- | ----------------------------------------------- |
+| Grid Sizes  | 5×5 (Easy), 7×7 (Medium), 9×9 (Hard)            |
+| Controls    | Drag to draw paths between same-colored dots    |
+| Goal        | Fill entire grid with paths connecting all dots |
+| Paths       | Paths cannot cross each other                   |
+| Star Rating | 1-3 stars based on time and completion          |
+
+**Level System:**
+
+- 50 levels per difficulty pack
+- Procedurally generated with guaranteed solutions
+- Progressive difficulty curve
+
+**Star Rating:**
+
+| Stars | Criteria                            |
+| ----- | ----------------------------------- |
+| ★★★   | Perfect (100% fill, under par time) |
+| ★★    | Complete (100% fill)                |
+| ★     | Partial (all dots connected)        |
+
+### Brick Breaker
+
+**File:** `src/screens/games/BrickBreakerGameScreen.tsx`  
+**Logic:** `src/data/games/brickBreakerLogic.ts`
+
+Classic Breakout-style arcade game with power-ups.
+
+| Feature     | Description                                         |
+| ----------- | --------------------------------------------------- |
+| Controls    | Touch/drag to move paddle horizontally              |
+| Physics     | 60fps physics with angle-based ball reflection      |
+| Power-ups   | 8 different power-ups with visual effects           |
+| Brick Types | Normal, Tough (2-3 hits), Indestructible, Explosive |
+| Levels      | 10 procedurally generated levels                    |
+| Lives       | Start with 3 lives, lose on ball drop               |
+
+**Power-ups:**
+
+| Power-up        | Effect                        | Duration |
+| --------------- | ----------------------------- | -------- |
+| `expand_paddle` | Increases paddle width by 50% | 10s      |
+| `shrink_paddle` | Decreases paddle width by 30% | 10s      |
+| `multiball`     | Splits into 3 balls           | —        |
+| `slow_ball`     | Reduces ball speed by 30%     | 8s       |
+| `fast_ball`     | Increases ball speed by 40%   | 8s       |
+| `sticky_paddle` | Ball sticks to paddle         | 12s      |
+| `laser_paddle`  | Shoot lasers from paddle      | 10s      |
+| `extra_life`    | Adds one life                 | —        |
+
+**Physics Constants:**
+
+```typescript
+{
+  paddleBounceAngleRange: 60, // degrees from vertical
+  ballSpeedMin: 4,
+  ballSpeedMax: 8,
+  speedIncreasePerLevel: 0.3,
+}
+```
+
+**Brick Layout:** Procedurally generated patterns with increasing density per level.
 
 ---
 
@@ -575,10 +747,18 @@ __tests__/
 ├── games/
 │   ├── chess.validation.test.ts
 │   ├── checkers.validation.test.ts
-│   └── ticTacToe.validation.test.ts
+│   ├── ticTacToe.validation.test.ts
+│   ├── tileSlide/
+│   │   └── tileSlideLogic.test.ts        # 59 tests
+│   ├── hexCollapse/
+│   │   └── hexCollapseLogic.test.ts      # 75 tests
+│   ├── colorFlow/
+│   │   └── colorFlowLogic.test.ts        # 62 tests
+│   └── brickBreaker/
+│       └── brickBreakerLogic.test.ts     # 62 tests
 ├── integration/
-│   ├── gameInvites.test.ts           # Legacy invite tests
-│   ├── universalGameInvites.test.ts  # Universal invite tests (39 tests)
+│   ├── gameInvites.test.ts               # Legacy invite tests
+│   ├── universalGameInvites.test.ts      # Universal invite tests (39 tests)
 │   └── turnBasedGame.test.ts
 ├── achievements/
 │   └── gameAchievements.test.ts

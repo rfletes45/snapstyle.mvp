@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { AppColors } from "../../constants/theme";
+import { useColors } from "../store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -34,6 +34,7 @@ export default memo(function ScorecardBubble({
   isMine,
 }: ScorecardBubbleProps) {
   const theme = useTheme();
+  const colors = useColors();
   const { gameId, score, playerName } = scorecard;
   const iconName = getGameIcon(
     gameId,
@@ -56,7 +57,15 @@ export default memo(function ScorecardBubble({
         : "👍";
 
   return (
-    <View style={[styles.container, isMine ? styles.mine : styles.theirs]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.surfaceVariant },
+        isMine
+          ? [styles.mine, { borderColor: colors.primary }]
+          : [styles.theirs, { borderColor: colors.border }],
+      ]}
+    >
       {/* Header */}
       <View style={styles.header}>
         <View
@@ -78,23 +87,27 @@ export default memo(function ScorecardBubble({
 
       {/* Score */}
       <View style={styles.scoreContainer}>
-        <Text style={styles.scoreValue}>{formattedScore}</Text>
+        <Text style={[styles.scoreValue, { color: colors.text }]}>
+          {formattedScore}
+        </Text>
         <Text style={styles.scoreEmoji}>{scoreEmoji}</Text>
       </View>
 
       {/* Player */}
-      <Text style={styles.playerName}>
+      <Text style={[styles.playerName, { color: colors.textMuted }]}>
         {isMine ? "My Score" : `${playerName}'s Score`}
       </Text>
 
       {/* Challenge text */}
-      <View style={styles.challengeContainer}>
+      <View
+        style={[styles.challengeContainer, { borderTopColor: colors.border }]}
+      >
         <MaterialCommunityIcons
           name="gamepad-variant"
           size={14}
-          color="rgba(255, 255, 255, 0.5)"
+          color={colors.textMuted}
         />
-        <Text style={styles.challengeText}>
+        <Text style={[styles.challengeText, { color: colors.textMuted }]}>
           {isMine ? "Can you beat this?" : "Challenge accepted?"}
         </Text>
       </View>
@@ -140,14 +153,10 @@ const styles = StyleSheet.create({
     maxWidth: 260,
   },
   mine: {
-    backgroundColor: "#2a2a2a",
     borderWidth: 1,
-    borderColor: AppColors.primary,
   },
   theirs: {
-    backgroundColor: "#333",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   header: {
     flexDirection: "row",
@@ -166,7 +175,6 @@ const styles = StyleSheet.create({
   gameName: {
     fontSize: 14,
     fontWeight: "600",
-    color: AppColors.primary,
   },
   scoreContainer: {
     flexDirection: "row",
@@ -177,7 +185,6 @@ const styles = StyleSheet.create({
   scoreValue: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#fff",
   },
   scoreEmoji: {
     fontSize: 24,
@@ -185,7 +192,6 @@ const styles = StyleSheet.create({
   },
   playerName: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.6)",
     textAlign: "center",
     marginBottom: 12,
   },
@@ -195,11 +201,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.1)",
   },
   challengeText: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.5)",
     marginLeft: 6,
     fontStyle: "italic",
   },

@@ -16,7 +16,8 @@ import {
   View,
 } from "react-native";
 import { ActivityIndicator, Button, Text, useTheme } from "react-native-paper";
-import { AppColors, Latte } from "../../constants/theme";
+import { Latte } from "../../constants/theme";
+import { useColors } from "../store/ThemeContext";
 import Avatar from "./Avatar";
 
 // Avatar base colors
@@ -47,6 +48,7 @@ export default function AvatarCustomizer({
   onSave,
 }: AvatarCustomizerProps) {
   const theme = useTheme();
+  const colors = useColors();
   // Local state for preview
   const [previewConfig, setPreviewConfig] =
     useState<AvatarConfig>(currentConfig);
@@ -178,7 +180,10 @@ export default function AvatarCustomizer({
               key={item.id}
               style={[
                 styles.itemCard,
-                selected && styles.itemCardSelected,
+                selected && [
+                  styles.itemCardSelected,
+                  { borderColor: colors.primary },
+                ],
                 locked && styles.itemCardLocked,
               ]}
               onPress={() => selectItem(item)}
@@ -302,7 +307,10 @@ export default function AvatarCustomizer({
                     key={tab.key}
                     style={[
                       styles.tab,
-                      activeTab === tab.key && styles.tabActive,
+                      activeTab === tab.key && [
+                        styles.tabActive,
+                        { borderBottomColor: colors.primary },
+                      ],
                     ]}
                     onPress={() => setActiveTab(tab.key)}
                   >
@@ -415,7 +423,6 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderBottomWidth: 2,
-    borderBottomColor: AppColors.primary,
   },
   tabLabel: {
     fontSize: 12,
@@ -466,7 +473,6 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   itemCardSelected: {
-    borderColor: AppColors.primary,
     backgroundColor: "#fffde7",
   },
   itemCardLocked: {

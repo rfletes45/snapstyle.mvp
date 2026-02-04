@@ -23,7 +23,8 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
-import { AppColors, BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -59,6 +60,7 @@ export function ReturnToBottomPill({
   bottomOffset = DEFAULT_BOTTOM_OFFSET,
   style,
 }: ReturnToBottomPillProps): React.JSX.Element | null {
+  const colors = useColors();
   // Animated style for bounce effect on press
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -93,7 +95,7 @@ export function ReturnToBottomPill({
         <MaterialCommunityIcons
           name="chevron-down"
           size={20}
-          color={AppColors.primary}
+          color={colors.primary}
         />
         <Text style={styles.text}>{label}</Text>
       </Pressable>

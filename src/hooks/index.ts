@@ -265,3 +265,37 @@ export type {
   AvatarRolloutState,
   UseAvatarRolloutReturn,
 } from "./useAvatarRollout";
+
+// =============================================================================
+// Cart Course Navigation Hook (Cart Course Game Phase 8)
+// =============================================================================
+
+export {
+  CART_COURSE_LINKING_CONFIG,
+  calculateElapsedTime,
+  formatGameTime,
+  formatLeaderboardTime,
+  getGameModeSettings,
+  useCartCourseNavigation,
+} from "../components/games/CartCourse/hooks/useCartCourseNavigation";
+export type {
+  CartCourseNavigationProp,
+  CartCourseRouteParams,
+  GameModeSettings,
+  GameSessionState,
+  UseCartCourseNavigationResult,
+} from "../components/games/CartCourse/hooks/useCartCourseNavigation";
+
+// =============================================================================
+// Call System Hooks (Video Call Phase 4)
+// =============================================================================
+
+export {
+  formatBandwidth,
+  formatLatency,
+  getQualityColor,
+  getQualityIcon,
+  getSignalBars,
+  useCallQuality,
+} from "./useCallQuality";
+export type { CallQualityState, UseCallQualityOptions } from "./useCallQuality";

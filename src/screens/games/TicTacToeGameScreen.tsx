@@ -27,7 +27,9 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorBanner from "@/components/games/SpectatorBanner";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useSpectatorMode } from "@/hooks/useSpectatorMode";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
@@ -116,6 +118,8 @@ interface TicTacToeGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
+      /** Whether user is spectating (watching only) */
+      spectatorMode?: boolean;
     };
   };
 }
@@ -266,6 +270,25 @@ export default function TicTacToeGameScreen({
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<TicTacToeMatch | null>(null);
 
+  // Online game state
+  const [matchId, setMatchId] = useState<string | null>(
+    route.params?.matchId || null,
+  );
+
+  // Spectator mode hook
+  const {
+    isSpectator,
+    spectatorCount,
+    leaveSpectatorMode,
+    loading: spectatorLoading,
+  } = useSpectatorMode({
+    matchId,
+    inviteId: route.params?.inviteId,
+    spectatorMode: route.params?.spectatorMode,
+    userId: currentFirebaseUser?.uid,
+    userName: currentFirebaseUser?.displayName || "Spectator",
+  });
+
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
     exitGame,
@@ -291,12 +314,10 @@ export default function TicTacToeGameScreen({
   const [isDraw, setIsDraw] = useState(false);
   const [scores, setScores] = useState({ X: 0, O: 0, draws: 0 });
 
-  // Online game state
-  const [matchId, setMatchId] = useState<string | null>(
-    route.params?.matchId || null,
-  );
   const [mySymbol, setMySymbol] = useState<"X" | "O" | null>(null);
   const [opponentName, setOpponentName] = useState<string>("Opponent");
+  const [player1Name, setPlayer1Name] = useState<string>("Player 1");
+  const [player2Name, setPlayer2Name] = useState<string>("Player 2");
 
   // UI state
   const [showFriendPicker, setShowFriendPicker] = useState(false);
@@ -305,6 +326,12 @@ export default function TicTacToeGameScreen({
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Handle spectator leave
+  const handleLeaveSpectator = useCallback(async () => {
+    await leaveSpectatorMode();
+    navigation.goBack();
+  }, [leaveSpectatorMode, navigation]);
 
   // ==========================================================================
   // Online Game Subscription
@@ -324,6 +351,10 @@ export default function TicTacToeGameScreen({
 
       setBoard(gameState.board);
       setCurrentTurn(gameState.currentTurn);
+
+      // Track player names for spectators
+      setPlayer1Name(typedMatch.players.player1.displayName);
+      setPlayer2Name(typedMatch.players.player2.displayName);
 
       // Determine my symbol
       if (currentFirebaseUser) {
@@ -368,6 +399,11 @@ export default function TicTacToeGameScreen({
 
   const handleCellPress = useCallback(
     async (row: number, col: number) => {
+      // Block interactions in spectator mode
+      if (isSpectator) {
+        return;
+      }
+
       if (winner || isDraw || board[row][col]) {
         return;
       }
@@ -684,6 +720,15 @@ export default function TicTacToeGameScreen({
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      {/* Spectator Banner */}
+      <SpectatorBanner
+        isSpectator={isSpectator}
+        spectatorCount={spectatorCount}
+        onLeave={handleLeaveSpectator}
+        playerNames={[player1Name, player2Name]}
+        loading={spectatorLoading}
+      />
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleGoBack}>
@@ -696,7 +741,7 @@ export default function TicTacToeGameScreen({
         <Text style={[styles.title, { color: theme.colors.onBackground }]}>
           Tic-Tac-Toe
         </Text>
-        {gameMode === "online" && match?.status === "active" ? (
+        {gameMode === "online" && match?.status === "active" && !isSpectator ? (
           <TouchableOpacity onPress={handleResign}>
             <MaterialCommunityIcons
               name="flag"

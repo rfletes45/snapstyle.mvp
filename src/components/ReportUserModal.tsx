@@ -14,6 +14,7 @@ import {
   Text,
   TextInput,
 } from "react-native-paper";
+import { useColors } from "../store/ThemeContext";
 
 interface ReportUserModalProps {
   visible: boolean;
@@ -38,6 +39,7 @@ export default function ReportUserModal({
   onCancel,
   loading = false,
 }: ReportUserModalProps) {
+  const colors = useColors();
   const [selectedReason, setSelectedReason] = useState<ReportReason | null>(
     null,
   );
@@ -94,7 +96,10 @@ export default function ReportUserModal({
               onChangeText={setDescription}
               multiline
               numberOfLines={3}
-              style={styles.descriptionInput}
+              style={[
+                styles.descriptionInput,
+                { backgroundColor: colors.surface },
+              ]}
             />
 
             <Text variant="bodySmall" style={styles.disclaimer}>
@@ -111,7 +116,7 @@ export default function ReportUserModal({
             onPress={handleSubmit}
             loading={loading}
             disabled={loading || !selectedReason}
-            textColor="#d32f2f"
+            textColor={colors.error}
           >
             Submit Report
           </Button>
@@ -145,7 +150,6 @@ const styles = StyleSheet.create({
   },
   descriptionInput: {
     marginHorizontal: 24,
-    backgroundColor: "#fff",
   },
   disclaimer: {
     marginTop: 16,

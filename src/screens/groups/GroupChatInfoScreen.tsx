@@ -52,13 +52,14 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 export default function GroupChatInfoScreen({ route, navigation }: any) {
   const { groupId } = route.params;
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
+  const colors = useColors();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -388,7 +389,10 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <View
               style={[
                 styles.roleBadge,
-                member.role === "owner" && styles.ownerBadge,
+                member.role === "owner" && [
+                  styles.ownerBadge,
+                  { backgroundColor: colors.primary },
+                ],
                 member.role === "admin" && styles.adminBadge,
               ]}
             >
@@ -514,7 +518,12 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               </View>
             )}
             {(userRole === "owner" || userRole === "admin") && (
-              <View style={styles.editAvatarBadge}>
+              <View
+                style={[
+                  styles.editAvatarBadge,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
                 {uploadingPhoto ? (
                   <MaterialCommunityIcons
                     name="loading"
@@ -555,7 +564,11 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                     size={20}
                     color={theme.colors.primary}
                   />
-                  <Text style={styles.addButtonText}>Invite</Text>
+                  <Text
+                    style={[styles.addButtonText, { color: colors.primary }]}
+                  >
+                    Invite
+                  </Text>
                 </TouchableOpacity>
               )}
           </View>
@@ -871,7 +884,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: AppColors.primary,
     borderRadius: 12,
     width: 24,
     height: 24,
@@ -911,7 +923,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addButtonText: {
-    color: AppColors.primary,
     fontSize: 14,
     fontWeight: "500",
   },
@@ -961,9 +972,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#333",
   },
-  ownerBadge: {
-    backgroundColor: AppColors.primary,
-  },
+  ownerBadge: {},
   adminBadge: {
     backgroundColor: "#4CAF50",
   },

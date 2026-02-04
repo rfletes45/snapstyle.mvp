@@ -46,6 +46,8 @@ export interface ModernGameCardProps {
   personalBest?: string | null;
   /** Called when card is pressed */
   onPress: () => void;
+  /** Called when card is long-pressed */
+  onLongPress?: () => void;
   /** Card variant for different sizes */
   variant?: GameCardVariant;
   /** Show PLAY button (default) or chevron */
@@ -68,6 +70,7 @@ function ModernGameCardComponent({
   gameType,
   personalBest,
   onPress,
+  onLongPress,
   variant = "default",
   showPlayButton = true,
   isNew = false,
@@ -105,14 +108,23 @@ function ModernGameCardComponent({
     }
   }, [isLocked, onPress]);
 
+  const handleLongPress = useCallback(() => {
+    if (!isLocked && onLongPress) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      onLongPress();
+    }
+  }, [isLocked, onLongPress]);
+
   // Render featured variant (vertical layout)
   if (variant === "featured") {
     return (
       <Animated.View style={[animatedStyle, style]}>
         <Pressable
           onPress={handlePress}
+          onLongPress={handleLongPress}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
+          delayLongPress={400}
           disabled={isLocked}
           testID={testID}
           style={[
@@ -178,8 +190,10 @@ function ModernGameCardComponent({
     <Animated.View style={[animatedStyle, style]}>
       <Pressable
         onPress={handlePress}
+        onLongPress={handleLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
+        delayLongPress={400}
         disabled={isLocked}
         testID={testID}
         style={[

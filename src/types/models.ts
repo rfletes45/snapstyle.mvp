@@ -107,7 +107,6 @@ export type GameType = "reaction_tap" | "timed_tap";
 // Extended game types
 // @see src/types/games.ts for full type definitions and metadata
 export type SinglePlayerGameType =
-  | "flappy_snap"
   | "bounce_blitz"
   | "snap_2048"
   | "snap_snake"

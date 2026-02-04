@@ -61,6 +61,9 @@ export * from "./avatarService";
 export * from "./avatarAnalytics";
 export * from "./avatarDeprecation";
 
+// Cart Course Game Service (Phase 8: Progression & Integration)
+export * from "./cartCourseService";
+
 // Shop services (Shop Overhaul)
 // Note: Import pointsShop and premiumShop directly due to potential naming conflicts
 // export * from "./pointsShop";

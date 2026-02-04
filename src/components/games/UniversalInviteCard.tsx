@@ -143,7 +143,7 @@ export function UniversalInviteCard({
     !hasJoined &&
     !isSpectating &&
     invite.spectatingEnabled &&
-    ["ready", "active"].includes(invite.status);
+    ["filling", "ready", "active"].includes(invite.status);
   // Can start early if host and have minimum players, OR can start if game is ready
   const canStartEarly =
     isHost &&

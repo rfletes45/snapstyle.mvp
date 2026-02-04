@@ -233,10 +233,12 @@ function ShopItemCardComponent({
               <MaterialCommunityIcons
                 name={badge.icon}
                 size={10}
-                color="#FFF"
+                color={colors.onPrimary}
               />
             )}
-            <Text style={styles.badgeText}>{badge.label}</Text>
+            <Text style={[styles.badgeText, { color: colors.onPrimary }]}>
+              {badge.label}
+            </Text>
           </View>
         ))}
       </View>
@@ -359,7 +361,7 @@ function ShopItemCardComponent({
               <MaterialCommunityIcons
                 name="check-circle"
                 size={32}
-                color="#FFF"
+                color={colors.onPrimary}
               />
             </View>
           )}
@@ -454,7 +456,6 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   badgeText: {
-    color: "#FFF",
     fontSize: 9,
     fontWeight: "700",
   },

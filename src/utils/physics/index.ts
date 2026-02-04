@@ -4,35 +4,6 @@
  * Central export for all game physics modules.
  */
 
-// Flappy Snap Physics
-export {
-  // Types
-  Bird,
-  // Constants
-  FLAPPY_PHYSICS,
-  FlappyGameState,
-  Pipe,
-  // Bird physics
-  applyGravity,
-  checkAllCollisions,
-  checkCeilingCollision,
-  checkGroundCollision,
-  // Collision detection
-  checkPipeCollision,
-  clampBirdPosition,
-  // Game state
-  createInitialState,
-  flap,
-  // Pipe management
-  generatePipe,
-  movePipes,
-  physicsTick,
-  recyclePipes,
-  updateBirdPosition,
-  // Score
-  updateScore,
-} from "./flappyPhysics";
-
 // Pool Physics
 export {
   // Types

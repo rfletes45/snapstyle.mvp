@@ -64,17 +64,19 @@
 | [PLAY_SCREEN_OVERHAUL_PLAN.md](PLAY_SCREEN_OVERHAUL_PLAN.md)       | Play screen UI/UX redesign, search, categories   | Planning Phase                |
 | [GAME_SYSTEM_OVERHAUL_PLAN.md](GAME_SYSTEM_OVERHAUL_PLAN.md)       | Game history, stats, navigation improvements     | Phase 1 Complete, 2-8 Pending |
 | [GAME_PICKER_PLAN.md](GAME_PICKER_PLAN.md)                         | Game picker modal, queue visualization           | Core Complete, TBD            |
-| [TANK_BATTLE_GAME_PLAN.md](TANK_BATTLE_GAME_PLAN.md)               | Wii Tanks-style 2-player multiplayer combat game | **NEW** - Planning Phase      |
-| [CART_COURSE_GAME_PLAN.md](CART_COURSE_GAME_PLAN.md)               | DK Crash Course-style tilt-based obstacle course | **NEW** - Planning Phase      |
+| [TANK_BATTLE_GAME_PLAN.md](TANK_BATTLE_GAME_PLAN.md)               | Wii Tanks-style 2-player multiplayer combat game | Planning Phase                |
+| [CART_COURSE_GAME_PLAN.md](CART_COURSE_GAME_PLAN.md)               | DK Crash Course-style tilt-based obstacle course | Planning Phase                |
 
-### Archived/Completed Plans
+### Archived Plans
 
-> **Note**: Completed plan summaries are consolidated in [ARCHIVE.md](ARCHIVE.md).
+> **Note**: Completed and paused plans are in the `docs/archived/` folder.
+> Completed plan summaries are consolidated in [ARCHIVE.md](ARCHIVE.md).
 
-| File                                                           | Purpose                                 | Status    |
-| -------------------------------------------------------------- | --------------------------------------- | --------- |
-| [AVATAR_ROLLOUT_GUIDE.md](AVATAR_ROLLOUT_GUIDE.md)             | Digital avatar rollout strategy         | ⏸️ Paused |
-| [DIGITAL_AVATAR_SYSTEM_PLAN.md](DIGITAL_AVATAR_SYSTEM_PLAN.md) | Full digital avatar implementation plan | ⏸️ Paused |
+| File                                                                                     | Purpose                                 | Status         |
+| ---------------------------------------------------------------------------------------- | --------------------------------------- | -------------- |
+| [archived/VIDEO_CALL_IMPLEMENTATION_PLAN.md](archived/VIDEO_CALL_IMPLEMENTATION_PLAN.md) | Voice/video calling system              | ✅ Implemented |
+| [archived/AVATAR_ROLLOUT_GUIDE.md](archived/AVATAR_ROLLOUT_GUIDE.md)                     | Digital avatar rollout strategy         | ⏸️ Paused      |
+| [archived/DIGITAL_AVATAR_SYSTEM_PLAN.md](archived/DIGITAL_AVATAR_SYSTEM_PLAN.md)         | Full digital avatar implementation plan | ⏸️ Paused      |
 
 ---
 
@@ -100,7 +102,7 @@
 
 - `auth.ts` — Authentication
 - `chat.ts` — DM chat operations
-- `chatV2.ts` — V2 messaging with outbox
+- `chatV2.ts` — V2 messaging with outbox (deprecated, use messaging/)
 - `groups.ts` — Group chat operations
 - `users.ts` — User profile CRUD
 - `friends.ts` — Friend requests and connections
@@ -115,6 +117,7 @@
 - `database/` — **SQLite local storage** (messages, conversations)
 - `sync/` — **Background sync engine** (Firestore bidirectional sync)
 - `mediaCache.ts` — **Local media caching** (images, videos, audio)
+- `calls/` — **Voice/video calling** (WebRTC, CallKeep integration)
 
 ### State (src/store/)
 

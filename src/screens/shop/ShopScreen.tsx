@@ -42,7 +42,7 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -59,6 +59,7 @@ export default function ShopScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
   const theme = useTheme();
+  const colors = useColors();
 
   // State
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -877,7 +878,6 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 18,
     fontWeight: "bold",
-    color: AppColors.primary,
   },
   ownedBadge: {
     position: "absolute",
@@ -907,14 +907,12 @@ const styles = StyleSheet.create({
   categoryTabActive: {
     backgroundColor: "#222",
     borderWidth: 1,
-    borderColor: AppColors.primary,
   },
   categoryTabText: {
     fontSize: 12,
     color: "#666",
   },
   categoryTabTextActive: {
-    color: AppColors.primary,
     fontWeight: "bold",
   },
 
@@ -973,7 +971,6 @@ const styles = StyleSheet.create({
   itemPriceText: {
     fontSize: 14,
     fontWeight: "bold",
-    color: AppColors.primary,
   },
   ownedText: {
     fontSize: 12,
@@ -1060,7 +1057,6 @@ const styles = StyleSheet.create({
   modalPriceText: {
     fontSize: 24,
     fontWeight: "bold",
-    color: AppColors.primary,
   },
   modalBalance: {
     flexDirection: "row",
@@ -1121,6 +1117,5 @@ const styles = StyleSheet.create({
   },
   purchaseButton: {
     flex: 2,
-    backgroundColor: AppColors.primary,
   },
 });

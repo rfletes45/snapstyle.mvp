@@ -2,10 +2,11 @@
  * Single-Player Game Types
  *
  * Type definitions for single-player games including:
- * - Flappy Dunk
- * - Bounce Master
- * - Color Match Blitz
- * - Daily Brain Puzzles
+ * - Bounce Blitz
+ * - Memory Snap
+ * - Word Snap
+ * - Snap 2048
+ * - Snap Snake
  *
  * @see docs/07_GAMES_ARCHITECTURE.md Section 1
  */
@@ -44,106 +45,6 @@ export interface BaseSinglePlayerState {
   lives?: number;
   maxLives?: number;
 }
-
-// =============================================================================
-// Flappy Dunk
-// =============================================================================
-
-/**
- * Flappy Snap game state (Flappy Bird-style)
- */
-export interface FlappySnapState extends BaseSinglePlayerState {
-  gameType: "flappy_snap";
-  category: "quick_play";
-
-  // Ball state
-  ball: {
-    x: number;
-    y: number;
-    velocity: number;
-    rotation: number;
-  };
-
-  // Hoops passed
-  hoopsPassed: number;
-
-  // Perfect dunks (through center)
-  perfectDunks: number;
-
-  // Combo tracking
-  comboCount: number;
-  maxCombo: number;
-
-  // Obstacles
-  currentHoopIndex: number;
-  hoops: FlappyHoop[];
-
-  // Power-ups (future)
-  activePowerUp?: FlappyPowerUp;
-
-  // Difficulty scaling
-  difficultyLevel: number;
-  scrollSpeed: number;
-}
-
-/**
- * Flappy hoop obstacle
- */
-export interface FlappyHoop {
-  id: number;
-  x: number;
-  centerY: number;
-  gapSize: number;
-  passed: boolean;
-  scoredPerfect: boolean;
-  moving?: {
-    direction: "up" | "down";
-    speed: number;
-    minY: number;
-    maxY: number;
-  };
-}
-
-/**
- * Flappy power-up types
- */
-export type FlappyPowerUp =
-  | { type: "shield"; duration: number; remainingTime: number }
-  | { type: "slow_motion"; duration: number; remainingTime: number }
-  | { type: "double_points"; duration: number; remainingTime: number };
-
-/**
- * Flappy Dunk constants
- */
-export const FLAPPY_DUNK_CONFIG = {
-  // Physics
-  gravity: 0.5,
-  jumpVelocity: -8,
-  terminalVelocity: 12,
-
-  // Ball
-  ballRadius: 15,
-
-  // Hoops
-  baseHoopGap: 120,
-  minHoopGap: 80,
-  hoopWidth: 60,
-  hoopSpacing: 200,
-
-  // Scoring
-  scorePerHoop: 1,
-  perfectDunkBonus: 2,
-  comboMultiplier: 0.5, // Additional per combo
-
-  // Difficulty scaling
-  difficultyIncreaseInterval: 5, // Every 5 hoops
-  speedIncrease: 0.1,
-  gapDecrease: 5,
-
-  // Screen
-  worldWidth: 400,
-  worldHeight: 600,
-};
 
 // =============================================================================
 // Bounce Master
@@ -705,6 +606,322 @@ export interface SnapSnakeStats {
 }
 
 // =============================================================================
+// Brick Breaker (New Game)
+// =============================================================================
+
+/**
+ * Brick type in the game
+ */
+export type BrickType =
+  | "standard"
+  | "silver"
+  | "gold"
+  | "indestructible"
+  | "explosive"
+  | "mystery";
+
+/**
+ * Power-up type
+ */
+export type BrickPowerUpType =
+  | "expand"
+  | "shrink"
+  | "multi_ball"
+  | "laser"
+  | "slow"
+  | "fast"
+  | "sticky"
+  | "extra_life";
+
+/**
+ * Paddle state
+ */
+export interface BrickPaddleState {
+  x: number;
+  width: number;
+  baseWidth: number;
+  hasSticky: boolean;
+  hasLaser: boolean;
+}
+
+/**
+ * Ball state
+ */
+export interface BrickBallState {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  isStuck: boolean;
+}
+
+/**
+ * Brick state
+ */
+export interface BrickState {
+  id: string;
+  row: number;
+  col: number;
+  type: BrickType;
+  hitsRemaining: number;
+  hasPowerUp: boolean;
+}
+
+/**
+ * Falling power-up
+ */
+export interface FallingPowerUp {
+  id: string;
+  type: BrickPowerUpType;
+  x: number;
+  y: number;
+  vy: number;
+}
+
+/**
+ * Laser projectile
+ */
+export interface LaserState {
+  id: string;
+  x: number;
+  y: number;
+  vy: number;
+}
+
+/**
+ * Active effect on paddle/ball
+ */
+export interface ActiveEffect {
+  type: BrickPowerUpType;
+  expiresAt: number;
+  usesRemaining?: number;
+}
+
+/**
+ * Brick Breaker game state
+ */
+export interface BrickBreakerState extends BaseSinglePlayerState {
+  gameType: "brick_breaker";
+  category: "quick_play";
+
+  // Game objects
+  paddle: BrickPaddleState;
+  balls: BrickBallState[];
+  bricks: BrickState[];
+  powerUps: FallingPowerUp[];
+  lasers: LaserState[];
+
+  // Progress
+  currentLevel: number;
+  lives: number;
+  maxLives: number;
+
+  // Active effects
+  activeEffects: ActiveEffect[];
+
+  // Stats
+  bricksDestroyed: number;
+  powerUpsCollected: number;
+  maxCombo: number;
+  perfectLevels: number;
+
+  // Game phase
+  phase: "ready" | "playing" | "levelComplete" | "gameOver";
+}
+
+/**
+ * Brick Breaker stats for session recording
+ */
+export interface BrickBreakerStats {
+  gameType: "brick_breaker";
+  levelsCompleted: number;
+  bricksDestroyed: number;
+  powerUpsCollected: number;
+  perfectLevels: number;
+  maxMultiBall: number;
+}
+
+/**
+ * Brick Breaker configuration constants
+ */
+export const BRICK_BREAKER_CONFIG = {
+  // Canvas dimensions
+  canvasWidth: 360,
+  canvasHeight: 640,
+
+  // Paddle
+  paddleWidth: 80,
+  paddleHeight: 12,
+  paddleY: 580,
+  paddleSpeed: 15,
+  expandedWidth: 120,
+  shrunkWidth: 56,
+
+  // Ball
+  ballRadius: 8,
+  ballBaseSpeed: 5,
+  maxBallSpeed: 12,
+  maxBalls: 5,
+
+  // Bricks
+  brickRows: 6,
+  brickCols: 8,
+  brickWidth: 40,
+  brickHeight: 16,
+  brickPadding: 4,
+  brickTopOffset: 60,
+
+  // Power-ups
+  powerUpSpeed: 3,
+  powerUpSize: 24,
+  effectDurations: {
+    expand: 15000,
+    shrink: 15000,
+    laser: 20000,
+    slow: 12000,
+    fast: 12000,
+    sticky: 3, // uses
+  },
+
+  // Physics
+  speedIncreasePerLevel: 0.5,
+  bounceVariation: 0.2,
+
+  // Game
+  totalLevels: 30,
+  startingLives: 3,
+
+  // Scoring
+  brickPoints: {
+    standard: 10,
+    silver: 25,
+    gold: 50,
+    explosive: 15,
+    mystery: 20,
+    indestructible: 0,
+  },
+  levelCompleteBonus: 100,
+  noMissBonus: 200,
+  speedBonus: 150,
+  multiBallMultiplier: 1.5,
+};
+
+// =============================================================================
+// Tile Slide (New Game)
+// =============================================================================
+
+/**
+ * Tile Slide puzzle size
+ */
+export type TileSlideSize = 3 | 4 | 5;
+
+/**
+ * Tile Slide mode
+ */
+export type TileSlideMode = "numbers" | "image";
+
+/**
+ * Slide direction
+ */
+export type SlideDirection = "up" | "down" | "left" | "right";
+
+/**
+ * Tile Slide game state
+ */
+export interface TileSlideState extends BaseSinglePlayerState {
+  gameType: "tile_slide";
+  category: "puzzle";
+
+  // Puzzle configuration
+  gridSize: TileSlideSize;
+  mode: TileSlideMode;
+  imageUri?: string;
+
+  // Board state (flat array, row-major order)
+  // null represents the empty space
+  tiles: (number | null)[];
+  emptyIndex: number;
+
+  // Solution reference
+  solvedState: number[];
+
+  // Progress
+  moveCount: number;
+  hintsUsed: number;
+  optimalMoves: number;
+
+  // Daily puzzle
+  isDailyPuzzle: boolean;
+  dailyPuzzleDate?: string;
+
+  // Animation
+  slidingTile: number | null;
+  slideDirection: SlideDirection | null;
+}
+
+/**
+ * Tile Slide stats for session recording
+ */
+export interface TileSlideStats {
+  gameType: "tile_slide";
+  puzzlesSolved: number;
+  totalMoves: number;
+  optimalSolves: number;
+  hintsUsed: number;
+  dailyPuzzlesCompleted: number;
+}
+
+/**
+ * Tile Slide configuration constants
+ */
+export const TILE_SLIDE_CONFIG = {
+  // Available sizes
+  sizes: [3, 4, 5] as const,
+
+  // Shuffle moves per size (ensures solvability)
+  shuffleMoves: {
+    3: 50,
+    4: 100,
+    5: 200,
+  },
+
+  // Animation
+  slideAnimationMs: 200,
+  hintHighlightMs: 1000,
+
+  // Scoring
+  baseScore: {
+    3: 100,
+    4: 200,
+    5: 350,
+  },
+  optimalBonus: 100,
+  nearOptimalBonus: 50,
+  timeBonus30s: 40,
+  timeBonus60s: 20,
+  noHintsBonus: 30,
+  hintPenalty: 10,
+
+  // Optimal moves (average)
+  optimalMoves: {
+    3: 22,
+    4: 50,
+    5: 100,
+  },
+
+  // Visual
+  tileSize: 80,
+  tilePadding: 4,
+  tileBorderRadius: 8,
+  backgroundColor: "#1a1a2e",
+  tileColor: "#4a4a6a",
+  tileTextColor: "#ffffff",
+  correctTileColor: "#4CAF50",
+};
+
+// =============================================================================
 // Game Session Management
 // =============================================================================
 
@@ -743,20 +960,14 @@ export interface SinglePlayerGameSession {
  * Union of game-specific stats
  */
 export type SinglePlayerGameStats =
-  | FlappySnapStats
   | BounceBlitzStats
   | MemorySnapStats
   | WordSnapStats
   | Snap2048Stats
-  | SnapSnakeStats;
-
-export interface FlappySnapStats {
-  gameType: "flappy_snap";
-  pipesPassed: number;
-  perfectPasses: number;
-  maxCombo: number;
-  totalJumps: number;
-}
+  | SnapSnakeStats
+  // New game stats (Phase 1)
+  | BrickBreakerStats
+  | TileSlideStats;
 
 export interface BounceBlitzStats {
   gameType: "bounce_blitz";

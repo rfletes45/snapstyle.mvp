@@ -1,44 +1,33 @@
 /**
- * Snap2048GameScreen - 2048 Puzzle Game
+ * Snap2048GameScreen - 2048 Puzzle Game with Sliding Animations
  *
- * How to play:
- * 1. Swipe in any direction to slide all tiles
- * 2. Matching tiles merge and double their value
- * 3. Try to create the 2048 tile!
- * 4. Game ends when no moves are possible
- *
- * Features:
- * - Smooth tile animations with spring physics
- * - Score tracking with high score persistence
- * - New tile spawn animation with pop effect
- * - Merge animation with scale pulse
- * - Haptic feedback for all interactions
- * - Win detection (can continue playing)
- * - Polished game over modal
+ * Features smooth tile sliding animations using React Native Reanimated.
+ * Each tile has a unique ID that persists across moves, allowing us to
+ * animate tiles from their old position to their new position.
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { sendScorecard } from "@/services/games";
-import {
-  applyMove,
-  createInitial2048State,
-  getTileColor,
-  getTileFontSize,
-  getTileTextColor,
-} from "@/services/games/snap2048Logic";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
-import { Snap2048Direction, Snap2048Stats } from "@/types/singlePlayerGames";
-import { generateId } from "@/utils/ids";
+import { Snap2048Stats } from "@/types/singlePlayerGames";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Dimensions,
+  GestureResponderEvent,
   PanResponder,
+  PanResponderGestureState,
   Platform,
   StyleSheet,
   View,
@@ -60,132 +49,436 @@ interface Snap2048GameScreenProps {
   navigation: any;
 }
 
+type Direction = "up" | "down" | "left" | "right";
+
+/**
+ * A tile with a unique ID for tracking across moves
+ */
+interface TileData {
+  id: number;
+  value: number;
+  row: number;
+  col: number;
+  isNew?: boolean;
+  isMerging?: boolean;
+}
+
+interface GameState {
+  tiles: TileData[];
+  score: number;
+  bestTile: number;
+  moveCount: number;
+  isGameOver: boolean;
+  hasWon: boolean;
+}
+
 // =============================================================================
 // Constants
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_SIZE = 4;
-const BOARD_PADDING = 16;
 const BOARD_SIZE = Math.min(SCREEN_WIDTH - 48, 380);
-const CELL_MARGIN = 6;
-const CELL_SIZE = (BOARD_SIZE - CELL_MARGIN * (GRID_SIZE + 1)) / GRID_SIZE;
-
+const CELL_GAP = 8;
+const CELL_SIZE = (BOARD_SIZE - CELL_GAP * (GRID_SIZE + 1)) / GRID_SIZE;
 const SWIPE_THRESHOLD = 30;
-const SWIPE_VELOCITY_THRESHOLD = 0.3;
-const ANIMATION_DURATION = 100; // ms for tile movement
+const WIN_TILE = 2048;
+const SLIDE_DURATION = 100; // ms for slide animation
+
+// Tile colors matching the classic 2048 game
+const TILE_COLORS: Record<number, string> = {
+  2: "#EEE4DA",
+  4: "#EDE0C8",
+  8: "#F2B179",
+  16: "#F59563",
+  32: "#F67C5F",
+  64: "#F65E3B",
+  128: "#EDCF72",
+  256: "#EDCC61",
+  512: "#EDC850",
+  1024: "#EDC53F",
+  2048: "#EDC22E",
+  4096: "#3C3A32",
+  8192: "#3C3A32",
+};
 
 // =============================================================================
-// Tile Tracking Types
+// Utility Functions
 // =============================================================================
 
-interface TrackedTile {
-  id: number;
-  value: number;
-  row: number;
-  col: number;
+let nextTileId = 1;
+function generateTileId(): number {
+  return nextTileId++;
 }
 
-// Global tile ID counter
-let nextTileId = 1;
+function resetTileIds(): void {
+  nextTileId = 1;
+}
 
-// Create initial tracked tiles from a board
-function createTrackedTiles(board: number[][]): TrackedTile[] {
-  const tiles: TrackedTile[] = [];
+/**
+ * Convert pixel position to grid position
+ */
+function getPixelPosition(gridPos: number): number {
+  return CELL_GAP + gridPos * (CELL_SIZE + CELL_GAP);
+}
+
+/**
+ * Convert tiles to a 2D board for game logic
+ */
+function tilesToBoard(tiles: TileData[]): number[][] {
+  const board: number[][] = Array.from({ length: GRID_SIZE }, () =>
+    Array.from({ length: GRID_SIZE }, () => 0),
+  );
+  for (const tile of tiles) {
+    board[tile.row][tile.col] = tile.value;
+  }
+  return board;
+}
+
+/**
+ * Get empty cells from a board
+ */
+function getEmptyCells(board: number[][]): Array<{ row: number; col: number }> {
+  const empty: Array<{ row: number; col: number }> = [];
   for (let row = 0; row < GRID_SIZE; row++) {
     for (let col = 0; col < GRID_SIZE; col++) {
-      if (board[row][col] !== 0) {
-        tiles.push({
-          id: nextTileId++,
-          value: board[row][col],
-          row,
-          col,
-        });
+      if (board[row][col] === 0) {
+        empty.push({ row, col });
       }
     }
   }
-  return tiles;
+  return empty;
+}
+
+/**
+ * Get the max tile value
+ */
+function getMaxTile(tiles: TileData[]): number {
+  return tiles.reduce((max, tile) => Math.max(max, tile.value), 0);
+}
+
+/**
+ * Check if any moves are possible
+ */
+function canMakeMove(tiles: TileData[]): boolean {
+  const board = tilesToBoard(tiles);
+
+  // Check for empty cells
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      if (board[row][col] === 0) return true;
+    }
+  }
+
+  // Check for possible merges
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE - 1; col++) {
+      if (board[row][col] === board[row][col + 1]) return true;
+    }
+  }
+  for (let row = 0; row < GRID_SIZE - 1; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      if (board[row][col] === board[row + 1][col]) return true;
+    }
+  }
+
+  return false;
 }
 
 // =============================================================================
-// Tile Component with Position Animation
+// Move Logic with Tile Tracking
 // =============================================================================
 
-interface TileProps {
-  tile: TrackedTile;
-  isNew: boolean;
-  isMerged: boolean;
+interface MoveResult {
+  newTiles: TileData[];
+  scoreEarned: number;
+  moved: boolean;
+  newTilePosition?: { row: number; col: number };
 }
 
-// Memoized tile to prevent unnecessary rerenders
-const Tile = React.memo(function Tile({ tile, isNew, isMerged }: TileProps) {
-  const { value, row, col } = tile;
+/**
+ * Process a move and track tile movements
+ */
+function processMove(tiles: TileData[], direction: Direction): MoveResult {
+  // Create a map of positions to tiles
+  const tileMap = new Map<string, TileData>();
+  for (const tile of tiles) {
+    tileMap.set(`${tile.row},${tile.col}`, tile);
+  }
 
-  // Calculate target position
-  const targetX = col * (CELL_SIZE + CELL_MARGIN);
-  const targetY = row * (CELL_SIZE + CELL_MARGIN);
+  const newTiles: TileData[] = [];
+  let scoreEarned = 0;
+  let moved = false;
 
-  // Track previous position for animation
-  const prevRow = useRef(row);
-  const prevCol = useRef(col);
+  // Determine the order to process tiles based on direction
+  const rows = Array.from({ length: GRID_SIZE }, (_, i) => i);
+  const cols = Array.from({ length: GRID_SIZE }, (_, i) => i);
 
-  // Calculate starting position (previous position or target for new tiles)
-  const startX = isNew ? targetX : prevCol.current * (CELL_SIZE + CELL_MARGIN);
-  const startY = isNew ? targetY : prevRow.current * (CELL_SIZE + CELL_MARGIN);
+  if (direction === "right") cols.reverse();
+  if (direction === "down") rows.reverse();
 
-  // Animate position using shared values - start from previous position
-  const posX = useSharedValue(startX);
-  const posY = useSharedValue(startY);
-  const scale = useSharedValue(isNew ? 0 : 1);
+  // Track which positions have been merged this move
+  const mergedPositions = new Set<string>();
 
-  // Animate to new position when row/col changes
+  // Process based on direction
+  if (direction === "left" || direction === "right") {
+    // Process row by row
+    for (const row of rows) {
+      // Get tiles in this row, sorted by column
+      const rowTiles: TileData[] = [];
+      for (let col = 0; col < GRID_SIZE; col++) {
+        const tile = tileMap.get(`${row},${col}`);
+        if (tile) rowTiles.push({ ...tile });
+      }
+
+      if (direction === "right") rowTiles.reverse();
+
+      // Slide and merge
+      let targetCol = direction === "left" ? 0 : GRID_SIZE - 1;
+      const step = direction === "left" ? 1 : -1;
+
+      for (let i = 0; i < rowTiles.length; i++) {
+        const tile = rowTiles[i];
+        const nextTile = rowTiles[i + 1];
+
+        if (
+          nextTile &&
+          tile.value === nextTile.value &&
+          !mergedPositions.has(`${row},${targetCol}`)
+        ) {
+          // Merge
+          const mergedTile: TileData = {
+            id: generateTileId(),
+            value: tile.value * 2,
+            row,
+            col: targetCol,
+            isMerging: true,
+          };
+          newTiles.push(mergedTile);
+          scoreEarned += tile.value * 2;
+          mergedPositions.add(`${row},${targetCol}`);
+
+          // Track if tiles actually moved
+          if (tile.col !== targetCol || nextTile.col !== targetCol) {
+            moved = true;
+          }
+
+          i++; // Skip the next tile since it merged
+          targetCol += step;
+        } else {
+          // Just move
+          const movedTile: TileData = {
+            ...tile,
+            row,
+            col: targetCol,
+          };
+          newTiles.push(movedTile);
+
+          if (tile.col !== targetCol) {
+            moved = true;
+          }
+
+          targetCol += step;
+        }
+      }
+    }
+  } else {
+    // Process column by column (up/down)
+    for (const col of cols) {
+      // Get tiles in this column, sorted by row
+      const colTiles: TileData[] = [];
+      for (let row = 0; row < GRID_SIZE; row++) {
+        const tile = tileMap.get(`${row},${col}`);
+        if (tile) colTiles.push({ ...tile });
+      }
+
+      if (direction === "down") colTiles.reverse();
+
+      // Slide and merge
+      let targetRow = direction === "up" ? 0 : GRID_SIZE - 1;
+      const step = direction === "up" ? 1 : -1;
+
+      for (let i = 0; i < colTiles.length; i++) {
+        const tile = colTiles[i];
+        const nextTile = colTiles[i + 1];
+
+        if (
+          nextTile &&
+          tile.value === nextTile.value &&
+          !mergedPositions.has(`${targetRow},${col}`)
+        ) {
+          // Merge
+          const mergedTile: TileData = {
+            id: generateTileId(),
+            value: tile.value * 2,
+            row: targetRow,
+            col,
+            isMerging: true,
+          };
+          newTiles.push(mergedTile);
+          scoreEarned += tile.value * 2;
+          mergedPositions.add(`${targetRow},${col}`);
+
+          if (tile.row !== targetRow || nextTile.row !== targetRow) {
+            moved = true;
+          }
+
+          i++;
+          targetRow += step;
+        } else {
+          // Just move
+          const movedTile: TileData = {
+            ...tile,
+            row: targetRow,
+            col,
+          };
+          newTiles.push(movedTile);
+
+          if (tile.row !== targetRow) {
+            moved = true;
+          }
+
+          targetRow += step;
+        }
+      }
+    }
+  }
+
+  // Add a new random tile if the board changed
+  let newTilePosition: { row: number; col: number } | undefined;
+  if (moved) {
+    const board = tilesToBoard(newTiles);
+    const emptyCells = getEmptyCells(board);
+
+    if (emptyCells.length > 0) {
+      const cell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+      newTiles.push({
+        id: generateTileId(),
+        value: Math.random() < 0.9 ? 2 : 4,
+        row: cell.row,
+        col: cell.col,
+        isNew: true,
+      });
+      newTilePosition = cell;
+    }
+  }
+
+  return { newTiles, scoreEarned, moved, newTilePosition };
+}
+
+/**
+ * Create initial game state with two tiles
+ */
+function createInitialState(): GameState {
+  resetTileIds();
+
+  const tiles: TileData[] = [];
+  const positions: Set<string> = new Set();
+
+  for (let i = 0; i < 2; i++) {
+    let row, col;
+    do {
+      row = Math.floor(Math.random() * GRID_SIZE);
+      col = Math.floor(Math.random() * GRID_SIZE);
+    } while (positions.has(`${row},${col}`));
+
+    positions.add(`${row},${col}`);
+    tiles.push({
+      id: generateTileId(),
+      value: Math.random() < 0.9 ? 2 : 4,
+      row,
+      col,
+      isNew: true,
+    });
+  }
+
+  return {
+    tiles,
+    score: 0,
+    bestTile: getMaxTile(tiles),
+    moveCount: 0,
+    isGameOver: false,
+    hasWon: false,
+  };
+}
+
+// =============================================================================
+// Animated Tile Component
+// =============================================================================
+
+interface AnimatedTileProps {
+  tile: TileData;
+  previousPositions: Map<number, { row: number; col: number }>;
+}
+
+function AnimatedTile({ tile, previousPositions }: AnimatedTileProps) {
+  const prevPos = previousPositions.get(tile.id);
+
+  // Shared values for position
+  const translateX = useSharedValue(
+    prevPos ? getPixelPosition(prevPos.col) : getPixelPosition(tile.col),
+  );
+  const translateY = useSharedValue(
+    prevPos ? getPixelPosition(prevPos.row) : getPixelPosition(tile.row),
+  );
+  const scale = useSharedValue(tile.isNew ? 0 : 1);
+
+  // Target positions
+  const targetX = getPixelPosition(tile.col);
+  const targetY = getPixelPosition(tile.row);
+
   useEffect(() => {
-    // Animate from current position to target
-    posX.value = withTiming(targetX, { duration: ANIMATION_DURATION });
-    posY.value = withTiming(targetY, { duration: ANIMATION_DURATION });
+    // Animate to new position
+    translateX.value = withTiming(targetX, { duration: SLIDE_DURATION });
+    translateY.value = withTiming(targetY, { duration: SLIDE_DURATION });
 
-    // Update refs for next move
-    prevRow.current = row;
-    prevCol.current = col;
-  }, [row, col, targetX, targetY, posX, posY]);
-
-  // Handle new tile and merge animations
-  useEffect(() => {
-    if (isNew) {
-      scale.value = 0;
+    // Pop animation for new tiles or merged tiles
+    if (tile.isNew) {
       scale.value = withSequence(
-        withTiming(0, { duration: ANIMATION_DURATION }), // Wait for slides
+        withTiming(0, { duration: 0 }),
+        withTiming(1.1, { duration: SLIDE_DURATION }),
         withSpring(1, { damping: 12, stiffness: 200 }),
       );
-    } else if (isMerged) {
+    } else if (tile.isMerging) {
       scale.value = withSequence(
-        withSpring(1.2, { damping: 8, stiffness: 400 }),
+        withTiming(1.2, { duration: SLIDE_DURATION / 2 }),
         withSpring(1, { damping: 12, stiffness: 200 }),
       );
     }
-  }, [isNew, isMerged, scale]);
+  }, [
+    tile.col,
+    tile.row,
+    tile.isNew,
+    tile.isMerging,
+    targetX,
+    targetY,
+    translateX,
+    translateY,
+    scale,
+  ]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: posX.value },
-      { translateY: posY.value },
+      { translateX: translateX.value },
+      { translateY: translateY.value },
       { scale: scale.value },
     ],
   }));
 
-  if (value === 0) return null;
+  const backgroundColor = TILE_COLORS[tile.value] || "#3C3A32";
+  const textColor = tile.value <= 4 ? "#776E65" : "#FFFFFF";
 
-  const backgroundColor = getTileColor(value);
-  const textColor = getTileTextColor(value);
-  const fontSize = getTileFontSize(value, CELL_SIZE);
+  const digits = tile.value.toString().length;
+  let fontSize = CELL_SIZE * 0.45;
+  if (digits === 3) fontSize = CELL_SIZE * 0.38;
+  else if (digits === 4) fontSize = CELL_SIZE * 0.32;
+  else if (digits >= 5) fontSize = CELL_SIZE * 0.26;
 
   return (
     <Animated.View
       style={[
         styles.tile,
         {
-          left: CELL_MARGIN,
-          top: CELL_MARGIN,
           width: CELL_SIZE,
           height: CELL_SIZE,
           backgroundColor,
@@ -193,20 +486,12 @@ const Tile = React.memo(function Tile({ tile, isNew, isMerged }: TileProps) {
         animatedStyle,
       ]}
     >
-      <Text
-        style={[
-          styles.tileText,
-          {
-            color: textColor,
-            fontSize,
-          },
-        ]}
-      >
-        {value}
+      <Text style={[styles.tileText, { color: textColor, fontSize }]}>
+        {tile.value}
       </Text>
     </Animated.View>
   );
-});
+}
 
 // =============================================================================
 // Main Component
@@ -221,35 +506,32 @@ export default function Snap2048GameScreen({
   const { showSuccess, showError } = useSnackbar();
   const haptics = useGameHaptics();
 
-  // Game state
-  const [gameState, setGameState] = useState(() =>
-    createInitial2048State(currentFirebaseUser?.uid ?? "guest", generateId()),
-  );
+  // Core game state
+  const [gameState, setGameState] = useState<GameState>(createInitialState);
   const [highScore, setHighScore] = useState(0);
   const [showWinDialog, setShowWinDialog] = useState(false);
-  const [hasShownWin, setHasShownWin] = useState(false);
-  const [mergeCount, setMergeCount] = useState(0);
+  const [hasShownWinDialog, setHasShownWinDialog] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [startTime] = useState(Date.now());
+
+  // Track previous tile positions for animations
+  const [previousPositions, setPreviousPositions] = useState<
+    Map<number, { row: number; col: number }>
+  >(new Map());
 
   // Share state
-  const [showShareDialog, setShowShareDialog] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
-  const [isSending, setIsSending] = useState(false);
 
-  // Tracked tiles for smooth animations
-  const [trackedTiles, setTrackedTiles] = useState<TrackedTile[]>(() =>
-    createTrackedTiles(gameState.board),
-  );
-  const [newTileId, setNewTileId] = useState<number | null>(null);
-  const [mergedTileIds, setMergedTileIds] = useState<Set<number>>(new Set());
+  // Prevent rapid swipes
+  const isProcessingMove = useRef(false);
 
-  // Animation lock to prevent rapid swipes
-  const isAnimating = useRef(false);
+  // Refs for pan responder
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
 
   // Score animation
   const scoreScale = useSharedValue(1);
 
-  // Animate score when it changes
   useEffect(() => {
     if (gameState.score > 0) {
       scoreScale.value = withSequence(
@@ -265,23 +547,19 @@ export default function Snap2048GameScreen({
 
   // Handle game over
   const handleGameOver = useCallback(
-    async (finalState: typeof gameState) => {
-      // Haptic feedback for game over
+    async (finalState: GameState) => {
       haptics.gameOverPattern(finalState.hasWon);
 
-      // Record session
       if (currentFirebaseUser?.uid) {
         const stats: Snap2048Stats = {
           gameType: "snap_2048",
           bestTile: finalState.bestTile,
           moveCount: finalState.moveCount,
-          mergeCount,
+          mergeCount: 0,
           didWin: finalState.hasWon,
         };
 
-        const duration = Math.floor(
-          ((finalState.endedAt ?? Date.now()) - finalState.startedAt) / 1000,
-        );
+        const duration = Math.floor((Date.now() - startTime) / 1000);
 
         await recordSinglePlayerSession(currentFirebaseUser.uid, {
           gameType: "snap_2048",
@@ -291,117 +569,48 @@ export default function Snap2048GameScreen({
         });
       }
 
-      // Show game over modal
       setShowGameOverModal(true);
     },
-    [currentFirebaseUser, mergeCount, haptics],
+    [currentFirebaseUser, startTime, haptics],
   );
 
-  // Handle swipe gesture
+  // Process a swipe
   const handleSwipe = useCallback(
-    (direction: Snap2048Direction) => {
-      if (isAnimating.current || gameState.status !== "playing") return;
+    (direction: Direction) => {
+      if (isProcessingMove.current) return;
 
-      isAnimating.current = true;
+      const currentState = gameStateRef.current;
+      if (currentState.isGameOver) return;
 
-      const newState = applyMove(gameState, direction);
+      isProcessingMove.current = true;
 
-      // Check if move was valid (state changed)
-      if (newState.moveCount > gameState.moveCount) {
-        // Haptic feedback for successful move
+      // Store current positions before the move
+      const prevPositions = new Map<number, { row: number; col: number }>();
+      for (const tile of currentState.tiles) {
+        prevPositions.set(tile.id, { row: tile.row, col: tile.col });
+      }
+
+      const result = processMove(currentState.tiles, direction);
+
+      if (result.moved) {
         haptics.trigger("move");
 
-        // Update tracked tiles based on moves
-        const newTrackedTiles: TrackedTile[] = [];
-        const mergedIds = new Set<number>();
-        let newlyCreatedTileId: number | null = null;
+        // Update previous positions for animation
+        setPreviousPositions(prevPositions);
 
-        // Build a map of tile positions for the new state
-        const positionToValue = new Map<string, number>();
-        for (let row = 0; row < GRID_SIZE; row++) {
-          for (let col = 0; col < GRID_SIZE; col++) {
-            const value = newState.board[row][col];
-            if (value !== 0) {
-              positionToValue.set(`${row}-${col}`, value);
-            }
-          }
-        }
+        const newBestTile = getMaxTile(result.newTiles);
+        const newHasWon = currentState.hasWon || newBestTile >= WIN_TILE;
+        const newIsGameOver = !canMakeMove(result.newTiles);
 
-        // Process moved tiles - update positions of existing tiles
-        if (newState.lastMove?.movedTiles) {
-          const processedPositions = new Set<string>();
+        const newState: GameState = {
+          tiles: result.newTiles,
+          score: currentState.score + result.scoreEarned,
+          bestTile: newBestTile,
+          moveCount: currentState.moveCount + 1,
+          isGameOver: newIsGameOver,
+          hasWon: newHasWon,
+        };
 
-          for (const move of newState.lastMove.movedTiles) {
-            const fromKey = `${move.from.row}-${move.from.col}`;
-            const toKey = `${move.to.row}-${move.to.col}`;
-            const newValue = newState.board[move.to.row][move.to.col];
-
-            // Find the tile that was at this position
-            const existingTile = trackedTiles.find(
-              (t) => t.row === move.from.row && t.col === move.from.col,
-            );
-
-            if (existingTile && !processedPositions.has(toKey)) {
-              // Check if this is a merge (value doubled)
-              const isMerge = newValue > move.value;
-
-              if (isMerge) {
-                // Merged tile - create new tile with new ID (old tiles are removed)
-                mergedIds.add(existingTile.id);
-              }
-
-              // Move the tile to new position with updated value
-              newTrackedTiles.push({
-                id: existingTile.id,
-                value: newValue,
-                row: move.to.row,
-                col: move.to.col,
-              });
-              processedPositions.add(toKey);
-            }
-          }
-
-          // Add tiles that didn't move
-          for (const tile of trackedTiles) {
-            const key = `${tile.row}-${tile.col}`;
-            if (
-              !newState.lastMove?.movedTiles.some(
-                (m) => m.from.row === tile.row && m.from.col === tile.col,
-              )
-            ) {
-              // Tile didn't move, check if still on board
-              if (newState.board[tile.row][tile.col] === tile.value) {
-                newTrackedTiles.push(tile);
-              }
-            }
-          }
-        }
-
-        // Add newly spawned tile
-        if (newState.lastMove?.newTile) {
-          const { row, col, value } = newState.lastMove.newTile;
-          const newTile: TrackedTile = {
-            id: nextTileId++,
-            value,
-            row,
-            col,
-          };
-          newTrackedTiles.push(newTile);
-          newlyCreatedTileId = newTile.id;
-        }
-
-        // Track merge count for haptics
-        if (
-          newState.lastMove?.mergedPositions &&
-          newState.lastMove.mergedPositions.length > 0
-        ) {
-          setMergeCount((c) => c + newState.lastMove!.mergedPositions.length);
-          haptics.trigger("merge");
-        }
-
-        setTrackedTiles(newTrackedTiles);
-        setNewTileId(newlyCreatedTileId);
-        setMergedTileIds(mergedIds);
         setGameState(newState);
 
         // Update high score
@@ -409,83 +618,76 @@ export default function Snap2048GameScreen({
           setHighScore(newState.score);
         }
 
-        // Check for win (show dialog once)
-        if (newState.hasWon && !hasShownWin) {
-          setHasShownWin(true);
+        // Show win dialog once
+        if (newState.hasWon && !hasShownWinDialog) {
+          setHasShownWinDialog(true);
           setShowWinDialog(true);
           haptics.celebrationPattern();
         }
 
-        // Check for game over
-        if (newState.status === "gameOver") {
+        // Handle game over
+        if (newState.isGameOver) {
           handleGameOver(newState);
         }
       }
 
-      // Reset animation lock after animation completes
+      // Allow next move after animation completes
       setTimeout(() => {
-        isAnimating.current = false;
-        // Clear animation flags
-        setNewTileId(null);
-        setMergedTileIds(new Set());
-      }, ANIMATION_DURATION + 100);
+        isProcessingMove.current = false;
+      }, SLIDE_DURATION + 50);
     },
-    [gameState, highScore, hasShownWin, haptics, handleGameOver, trackedTiles],
+    [highScore, hasShownWinDialog, haptics, handleGameOver],
   );
 
-  // Pan responder for swipe detection
-  const panResponder = useRef(
-    PanResponder.create({
+  // Ref for handleSwipe
+  const handleSwipeRef = useRef(handleSwipe);
+  handleSwipeRef.current = handleSwipe;
+
+  // Pan responder
+  const panResponder = useMemo(() => {
+    return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderRelease: (_, gestureState) => {
-        const { dx, dy, vx, vy } = gestureState;
+      onPanResponderRelease: (
+        _event: GestureResponderEvent,
+        gestureState: PanResponderGestureState,
+      ) => {
+        const { dx, dy } = gestureState;
 
-        // Check if swipe is significant enough
-        const isHorizontalSwipe =
-          Math.abs(dx) > SWIPE_THRESHOLD ||
-          Math.abs(vx) > SWIPE_VELOCITY_THRESHOLD;
-        const isVerticalSwipe =
-          Math.abs(dy) > SWIPE_THRESHOLD ||
-          Math.abs(vy) > SWIPE_VELOCITY_THRESHOLD;
-
-        if (!isHorizontalSwipe && !isVerticalSwipe) return;
-
-        // Determine direction
-        if (Math.abs(dx) > Math.abs(dy)) {
-          handleSwipe(dx > 0 ? "right" : "left");
-        } else {
-          handleSwipe(dy > 0 ? "down" : "up");
+        if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) {
+          return;
         }
-      },
-    }),
-  ).current;
 
-  // Start new game
+        let direction: Direction;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          direction = dx > 0 ? "right" : "left";
+        } else {
+          direction = dy > 0 ? "down" : "up";
+        }
+
+        handleSwipeRef.current(direction);
+      },
+    });
+  }, []);
+
+  // Start a new game
   const startNewGame = useCallback(() => {
     haptics.trigger("selection");
-    const newGameState = createInitial2048State(
-      currentFirebaseUser?.uid ?? "guest",
-      generateId(),
-    );
-    setGameState(newGameState);
-    setTrackedTiles(createTrackedTiles(newGameState.board));
-    setHasShownWin(false);
-    setMergeCount(0);
-    setNewTileId(null);
-    setMergedTileIds(new Set());
-    setShowShareDialog(false);
+    setPreviousPositions(new Map());
+    setGameState(createInitialState());
+    setHasShownWinDialog(false);
     setShowWinDialog(false);
     setShowGameOverModal(false);
-  }, [currentFirebaseUser, haptics]);
+    isProcessingMove.current = false;
+  }, [haptics]);
 
-  // Continue playing after win
+  // Continue after winning
   const continueGame = useCallback(() => {
     setShowWinDialog(false);
   }, []);
 
   // Share score
-  const handleShare = useCallback(async () => {
+  const handleShare = useCallback(() => {
     setShowFriendPicker(true);
   }, []);
 
@@ -497,8 +699,8 @@ export default function Snap2048GameScreen({
     }) => {
       if (!currentFirebaseUser?.uid || !profile) return;
 
-      setIsSending(true);
       setShowFriendPicker(false);
+
       try {
         const success = await sendScorecard(
           currentFirebaseUser.uid,
@@ -509,33 +711,32 @@ export default function Snap2048GameScreen({
             playerName: profile.displayName || profile.username || "Player",
           },
         );
+
         if (success) {
           showSuccess(`Score shared with ${friend.displayName}!`);
         } else {
           showError("Failed to share score. Try again.");
         }
-      } catch (error) {
+      } catch {
         showError("Failed to share score. Try again.");
-      } finally {
-        setIsSending(false);
       }
     },
     [currentFirebaseUser, profile, gameState.score, showSuccess, showError],
   );
 
-  // Render grid background
-  const renderGridBackground = () => {
+  // Render background grid cells
+  const gridCells = useMemo(() => {
     const cells = [];
     for (let row = 0; row < GRID_SIZE; row++) {
       for (let col = 0; col < GRID_SIZE; col++) {
         cells.push(
           <View
-            key={`bg-${row}-${col}`}
+            key={`cell-${row}-${col}`}
             style={[
               styles.gridCell,
               {
-                left: CELL_MARGIN + col * (CELL_SIZE + CELL_MARGIN),
-                top: CELL_MARGIN + row * (CELL_SIZE + CELL_MARGIN),
+                left: getPixelPosition(col),
+                top: getPixelPosition(row),
                 width: CELL_SIZE,
                 height: CELL_SIZE,
               },
@@ -545,19 +746,7 @@ export default function Snap2048GameScreen({
       }
     }
     return cells;
-  };
-
-  // Render tiles from board state
-  const renderTiles = () => {
-    return trackedTiles.map((tile) => (
-      <Tile
-        key={tile.id}
-        tile={tile}
-        isNew={tile.id === newTileId}
-        isMerged={mergedTileIds.has(tile.id)}
-      />
-    ));
-  };
+  }, []);
 
   return (
     <View
@@ -579,7 +768,7 @@ export default function Snap2048GameScreen({
         <View style={{ width: 80 }} />
       </View>
 
-      {/* Score display */}
+      {/* Score Display */}
       <View style={styles.scoreContainer}>
         <Animated.View
           style={[
@@ -604,6 +793,7 @@ export default function Snap2048GameScreen({
             {gameState.score}
           </Text>
         </Animated.View>
+
         <View
           style={[
             styles.scoreBox,
@@ -628,7 +818,7 @@ export default function Snap2048GameScreen({
         </View>
       </View>
 
-      {/* Best tile indicator */}
+      {/* Best Tile */}
       <View style={styles.bestTileContainer}>
         <Text variant="labelLarge" style={{ color: theme.colors.onBackground }}>
           Best Tile: {gameState.bestTile}
@@ -641,16 +831,24 @@ export default function Snap2048GameScreen({
         )}
       </View>
 
-      {/* Game board */}
+      {/* Game Board */}
       <View
         style={[styles.board, { backgroundColor: "#BBADA0" }]}
         {...panResponder.panHandlers}
       >
-        {renderGridBackground()}
-        {renderTiles()}
+        {gridCells}
 
-        {/* Game over overlay */}
-        {gameState.status === "gameOver" && (
+        {/* Render tiles */}
+        {gameState.tiles.map((tile) => (
+          <AnimatedTile
+            key={tile.id}
+            tile={tile}
+            previousPositions={previousPositions}
+          />
+        ))}
+
+        {/* Game Over Overlay */}
+        {gameState.isGameOver && (
           <View style={styles.gameOverOverlay}>
             <Text style={styles.gameOverText}>Game Over!</Text>
             <Text style={styles.gameOverScore}>Score: {gameState.score}</Text>
@@ -723,7 +921,7 @@ export default function Snap2048GameScreen({
         }
       />
 
-      {/* Friend Picker Modal */}
+      {/* Friend Picker */}
       <FriendPickerModal
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}

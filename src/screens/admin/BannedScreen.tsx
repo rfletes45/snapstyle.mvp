@@ -12,13 +12,14 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppColors } from "../../../constants/theme";
+import { useColors } from "../../store/ThemeContext";
 
 interface BannedScreenProps {
   ban: Ban;
 }
 
 export default function BannedScreen({ ban }: BannedScreenProps) {
+  const colors = useColors();
   const isPermanent = ban.expiresAt === null;
   const reasonLabel = BAN_REASON_LABELS[ban.reason as BanReason] || ban.reason;
 
@@ -34,7 +35,9 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <View style={styles.content}>
         <MaterialCommunityIcons
           name="shield-alert"
@@ -43,52 +46,70 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
           style={styles.icon}
         />
 
-        <Text style={styles.title}>Account Suspended</Text>
+        <Text style={[styles.title, { color: colors.error }]}>
+          Account Suspended
+        </Text>
 
-        <Text style={styles.message}>
+        <Text style={[styles.message, { color: colors.textMuted }]}>
           Your account has been suspended for violating our community
           guidelines.
         </Text>
 
-        <View style={styles.infoBox}>
+        <View style={[styles.infoBox, { backgroundColor: colors.surface }]}>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Reason:</Text>
-            <Text style={styles.infoValue}>{reasonLabel}</Text>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+              Reason:
+            </Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              {reasonLabel}
+            </Text>
           </View>
 
           {ban.reasonDetails && (
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Details:</Text>
-              <Text style={styles.infoValue}>{ban.reasonDetails}</Text>
+              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+                Details:
+              </Text>
+              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+                {ban.reasonDetails}
+              </Text>
             </View>
           )}
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Duration:</Text>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+              Duration:
+            </Text>
             <Text
-              style={[styles.infoValue, isPermanent && styles.permanentText]}
+              style={[
+                styles.infoValue,
+                { color: colors.textPrimary },
+                isPermanent && { color: colors.error },
+              ]}
             >
               {formatBanDuration(ban)}
             </Text>
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Banned on:</Text>
-            <Text style={styles.infoValue}>
+            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
+              Banned on:
+            </Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
               {new Date(ban.createdAt).toLocaleDateString()}
             </Text>
           </View>
         </View>
 
         {!isPermanent && (
-          <Text style={styles.expiryNote}>
+          <Text style={[styles.expiryNote, { color: colors.success }]}>
             Your suspension will automatically be lifted when the duration
             expires. Please review our community guidelines before returning.
           </Text>
         )}
 
         {isPermanent && (
-          <Text style={styles.permanentNote}>
+          <Text style={[styles.permanentNote, { color: colors.warning }]}>
             This suspension is permanent. If you believe this was a mistake, you
             may contact support.
           </Text>
@@ -99,13 +120,13 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
             mode="outlined"
             onPress={handleSignOut}
             textColor="#888"
-            style={styles.signOutButton}
+            style={[styles.signOutButton, { borderColor: colors.border }]}
           >
             Sign Out
           </Button>
         </View>
 
-        <Text style={styles.supportText}>
+        <Text style={[styles.supportText, { color: colors.textSecondary }]}>
           Questions? Contact support@snapstyle.app
         </Text>
       </View>
@@ -116,7 +137,6 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: AppColors.background,
   },
   content: {
     flex: 1,
@@ -130,19 +150,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    color: AppColors.error,
     marginBottom: 16,
     textAlign: "center",
   },
   message: {
     fontSize: 16,
-    color: AppColors.textMuted,
     textAlign: "center",
     marginBottom: 24,
     lineHeight: 24,
   },
   infoBox: {
-    backgroundColor: AppColors.surface,
     borderRadius: 12,
     padding: 20,
     width: "100%",
@@ -154,23 +171,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   infoLabel: {
-    color: AppColors.textSecondary,
     fontSize: 14,
   },
   infoValue: {
-    color: AppColors.textPrimary,
     fontSize: 14,
     fontWeight: "500",
     flex: 1,
     textAlign: "right",
     marginLeft: 16,
   },
-  permanentText: {
-    color: AppColors.error,
-  },
+  permanentText: {},
   expiryNote: {
     fontSize: 14,
-    color: AppColors.success,
     textAlign: "center",
     marginBottom: 24,
     lineHeight: 20,
@@ -178,7 +190,6 @@ const styles = StyleSheet.create({
   },
   permanentNote: {
     fontSize: 14,
-    color: AppColors.warning,
     textAlign: "center",
     marginBottom: 24,
     lineHeight: 20,
@@ -187,12 +198,9 @@ const styles = StyleSheet.create({
   actions: {
     marginBottom: 24,
   },
-  signOutButton: {
-    borderColor: AppColors.border,
-  },
+  signOutButton: {},
   supportText: {
     fontSize: 12,
-    color: AppColors.textSecondary,
     textAlign: "center",
   },
 });

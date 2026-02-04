@@ -104,13 +104,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Fast-paced action games",
     icon: "lightning-bolt",
     accentColor: "#FF6B6B",
-    games: [
-      "flappy_snap",
-      "reaction_tap",
-      "timed_tap",
-      "bounce_blitz",
-      "snap_snake",
-    ],
+    games: ["reaction_tap", "timed_tap", "bounce_blitz", "snap_snake"],
     layout: "carousel",
   },
   {

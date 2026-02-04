@@ -18,11 +18,12 @@
  * Enhanced Features:
  * - Message highlight animation when navigating to replied messages
  * - Jump-back button after scrolling to a reply target
+ * - Group video/audio calls (Phase 3)
  *
  * @module screens/groups/GroupChatScreen
  */
 
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
   useCallback,
   useEffect,
@@ -30,7 +31,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert, Image, StyleSheet, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import {
   ActivityIndicator,
   Appbar,
@@ -97,6 +105,24 @@ import {
   getScheduledMessagesForChat,
   scheduleMessage,
 } from "@/services/scheduledMessages";
+
+// Group Calls (Phase 3) - lazy loaded to avoid native module issues
+import { CallType } from "@/types/call";
+import Constants from "expo-constants";
+
+// Platform detection for native calls
+const isWeb = Platform.OS === "web";
+const isExpoGo = Constants.appOwnership === "expo";
+const areNativeCallsAvailable = !isWeb && !isExpoGo;
+
+// Helper to lazy-load groupCallService (avoids react-native-webrtc at module load)
+// Use relative path because require() doesn't always resolve @/ alias correctly
+const getGroupCallService = () => {
+  if (!areNativeCallsAvailable) {
+    return null;
+  }
+  return require("../../services/calls/groupCallService").groupCallService;
+};
 
 // Game Picker
 import { GamePickerModal } from "@/components/games/GamePickerModal";
@@ -185,6 +211,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
+
+  // Group call state (Phase 3)
+  const [isStartingCall, setIsStartingCall] = useState(false);
 
   // Reply navigation state (highlight + jump-back)
   const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -365,6 +394,85 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Handlers
   // ==========================================================================
 
+  // Group Call Handler (Phase 3)
+  const handleStartGroupCall = useCallback(
+    async (callType: CallType = "video") => {
+      if (!group || !uid || isStartingCall) return;
+
+      // Check if native calls are available
+      if (!areNativeCallsAvailable) {
+        Alert.alert(
+          "Calls Not Available",
+          `Video and audio calls require a development build and are not available in ${isWeb ? "web browsers" : "Expo Go"}. Please use a development build to make calls.`,
+        );
+        return;
+      }
+
+      setIsStartingCall(true);
+      try {
+        // Get member IDs excluding current user
+        const memberIds = groupMembers
+          .filter((m) => m.uid !== uid)
+          .map((m) => m.uid);
+
+        if (memberIds.length === 0) {
+          Alert.alert("Cannot Start Call", "No other members in this group.");
+          return;
+        }
+
+        const service = getGroupCallService();
+        if (!service) {
+          Alert.alert(
+            "Calls Not Available",
+            "Call service is not available on this platform.",
+          );
+          return;
+        }
+
+        const callId = await service.startGroupCall(
+          groupId,
+          group.name,
+          memberIds,
+          callType,
+        );
+
+        // Navigate to group call screen
+        navigation.navigate("GroupCall", {
+          callId,
+          groupName: group.name,
+          isOutgoing: true,
+        });
+      } catch (error: any) {
+        console.error("[GroupChatScreen] Failed to start group call:", error);
+        Alert.alert(
+          "Call Failed",
+          error.message || "Failed to start group call. Please try again.",
+        );
+      } finally {
+        setIsStartingCall(false);
+      }
+    },
+    [group, groupId, groupMembers, uid, isStartingCall, navigation],
+  );
+
+  const handleShowCallOptions = useCallback(() => {
+    Alert.alert(
+      "Start Group Call",
+      `Call ${group?.name || "group"} (${groupMembers.length} members)`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Audio Call",
+          onPress: () => handleStartGroupCall("audio"),
+        },
+        {
+          text: "Video Call",
+          onPress: () => handleStartGroupCall("video"),
+        },
+      ],
+    );
+  }, [group?.name, groupMembers.length, handleStartGroupCall]);
+
   const handleOpenMediaViewer = useCallback(
     (
       attachments: AttachmentV2[],
@@ -464,7 +572,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   const handleNavigateToGame = useCallback(
-    (gameId: string, gameType: string) => {
+    (
+      gameId: string,
+      gameType: string,
+      options?: { inviteId?: string; spectatorMode?: boolean },
+    ) => {
       const screenMap: Record<string, string> = {
         tic_tac_toe: "TicTacToeGame",
         checkers: "CheckersGame",
@@ -473,10 +585,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       };
       const screen = screenMap[gameType];
       if (screen) {
-        // Navigate to Play tab first, then to the specific game screen
-        navigation.navigate("Play", {
-          screen,
-          params: { matchId: gameId, entryPoint: "chat" },
+        // Navigate through MainTabs -> Play tab -> specific game screen
+        navigation.navigate("MainTabs", {
+          screen: "Play",
+          params: {
+            screen,
+            params: {
+              matchId: gameId,
+              inviteId: options?.inviteId,
+              spectatorMode: options?.spectatorMode,
+              entryPoint: "chat",
+            },
+          },
         });
       }
     },
@@ -493,7 +613,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     (gameType: ExtendedGameType) => {
       const screenName = GAME_SCREEN_MAP[gameType];
       if (screenName) {
-        navigation.navigate(screenName as any);
+        // Navigate through MainTabs -> Play tab -> specific game screen
+        navigation.navigate("MainTabs", {
+          screen: "Play",
+          params: {
+            screen: screenName,
+            params: {
+              entryPoint: "chat",
+            },
+          },
+        });
       }
     },
     [navigation],
@@ -1119,6 +1248,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               </Text>
             </View>
           </TouchableOpacity>
+          {/* Group Call Button (Phase 3) */}
+          <TouchableOpacity
+            onPress={handleShowCallOptions}
+            disabled={isStartingCall}
+            style={styles.callButton}
+          >
+            {isStartingCall ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : (
+              <Ionicons
+                name="videocam"
+                size={22}
+                color={theme.colors.primary}
+              />
+            )}
+          </TouchableOpacity>
           <Appbar.Action
             icon="information-outline"
             onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
@@ -1338,6 +1483,10 @@ const styles = StyleSheet.create({
   },
   headerTitleText: { fontSize: 16, fontWeight: "600" },
   headerSubtitle: { fontSize: 12 },
+  callButton: {
+    padding: 8,
+    marginRight: 4,
+  },
   messageContainer: { marginBottom: 12, width: "100%" },
   groupedMessageContainer: { marginBottom: 3 }, // Reduced spacing for grouped messages
   ownMessageContainer: {},

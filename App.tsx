@@ -1,7 +1,14 @@
+import { IncomingCallOverlay } from "@/components/calls";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
+import { CallProvider } from "@/contexts/CallContext";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
 import RootNavigator from "@/navigation/RootNavigator";
+import {
+  createCallNotificationChannel,
+  initializeAppStateListener,
+  initializeBackgroundCallHandler,
+} from "@/services/calls";
 import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig.local";
 import { AuthProvider } from "@/store/AuthContext";
@@ -22,6 +29,11 @@ import { PaperProvider } from "react-native-paper";
 
 // Initialize Firebase synchronously before rendering
 initializeFirebase(firebaseConfig);
+
+// Initialize background call handler for incoming calls when app is in background
+initializeBackgroundCallHandler();
+initializeAppStateListener();
+createCallNotificationChannel();
 
 /**
  * Root error handler for ErrorBoundary
@@ -64,19 +76,22 @@ function AppContent() {
       <SnackbarProvider>
         <AuthProvider>
           <UserProvider>
-            <InAppNotificationsProvider>
-              <OutboxProcessorProvider />
-              <View
-                style={[
-                  styles.container,
-                  { backgroundColor: colors.background },
-                ]}
-              >
-                <RootNavigator navigationRef={navigationRef} />
-                <InAppToast onNavigate={handleToastNavigate} />
-              </View>
-              <ExpoStatusBar style={isDark ? "light" : "dark"} />
-            </InAppNotificationsProvider>
+            <CallProvider>
+              <InAppNotificationsProvider>
+                <OutboxProcessorProvider />
+                <View
+                  style={[
+                    styles.container,
+                    { backgroundColor: colors.background },
+                  ]}
+                >
+                  <RootNavigator navigationRef={navigationRef} />
+                  <InAppToast onNavigate={handleToastNavigate} />
+                  <IncomingCallOverlay />
+                </View>
+                <ExpoStatusBar style={isDark ? "light" : "dark"} />
+              </InAppNotificationsProvider>
+            </CallProvider>
           </UserProvider>
         </AuthProvider>
       </SnackbarProvider>

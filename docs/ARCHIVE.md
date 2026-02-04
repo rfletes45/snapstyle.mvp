@@ -25,6 +25,7 @@
 | Privacy     | Chat privacy features (4 settings)   | ✅ Complete (Feb 2026)   |
 | Perf        | Chat loading optimization            | ✅ Complete (Jan 2026)   |
 | Reply       | Enhanced reply system design         | ✅ Complete (2025)       |
+| Calls       | Voice/video calling system           | ✅ Complete (Feb 2026)   |
 
 ---
 
@@ -478,6 +479,83 @@ All three rules verified:
 - Storage rules: Authenticated uploads ✅
 - Cloud Functions: Auth required ✅
 - No sensitive data in client code ✅
+
+---
+
+## Voice/Video Calling System Summary
+
+**Completed**: February 2026
+
+### Overview
+
+Full WebRTC-based voice and video calling system with native integration for 1:1 and group calls.
+
+### Features Implemented
+
+| Feature           | Status      | Notes                                 |
+| ----------------- | ----------- | ------------------------------------- |
+| 1:1 Audio Calls   | ✅ Complete | WebRTC peer-to-peer                   |
+| 1:1 Video Calls   | ✅ Complete | Camera/video support                  |
+| Group Audio Calls | ✅ Complete | Up to 8 participants                  |
+| Group Video Calls | ✅ Complete | Mesh topology                         |
+| Native Call UI    | ✅ Complete | CallKeep for iOS/Android              |
+| Background Calls  | ✅ Complete | Calls continue when app minimized     |
+| Call History      | ✅ Complete | Full call logs with filtering         |
+| Call Settings     | ✅ Complete | Audio/video preferences               |
+| Adaptive Bitrate  | ✅ Complete | Auto-adjusts quality based on network |
+| Call Analytics    | ✅ Complete | Quality metrics and issue tracking    |
+
+### Key Files Created
+
+**Services** (`src/services/calls/`):
+
+- `callService.ts` — Main call lifecycle management
+- `webRTCService.ts` — WebRTC peer connection handling
+- `groupCallService.ts` — Group call coordination
+- `callKeepService.ts` — Native call UI integration (iOS CallKit, Android ConnectionService)
+- `callHistoryService.ts` — Call logs and history
+- `callAnalyticsService.ts` — Quality metrics
+
+**Components** (`src/components/calls/`):
+
+- `CallButton.tsx` — Initiate calls from chat
+- `VideoGrid.tsx` — Multi-participant video layout
+- `SpeakerView.tsx` — Active speaker highlighting
+
+**Screens** (`src/screens/calls/`):
+
+- `AudioCallScreen.tsx` — Audio-only call UI
+- `VideoCallScreen.tsx` — Video call UI
+- `GroupCallScreen.tsx` — Group call UI
+- `CallHistoryScreen.tsx` — Call logs
+- `CallSettingsScreen.tsx` — Call preferences
+
+**Hooks** (`src/hooks/calls/`):
+
+- `useCall.ts` — Call state management
+- `useGroupCallParticipants.ts` — Group participant tracking
+
+### Technical Details
+
+- **Technology**: WebRTC via `react-native-webrtc`
+- **Native Integration**: `react-native-callkeep` for CallKit/ConnectionService
+- **Signaling**: Firestore for call state synchronization
+- **Platform Support**: iOS (requires dev build), Android (requires dev build), Web (limited - no native UI)
+- **Expo Go**: Not supported (requires native modules)
+
+### Feature Flags
+
+Feature flags in `constants/featureFlags.ts` → `CALL_FEATURES`:
+
+- `CALLS_ENABLED` — Master switch
+- `AUDIO_CALLS_ENABLED` — Audio-only calls
+- `VIDEO_CALLS_ENABLED` — Video calls
+- `GROUP_CALLS_ENABLED` — Group calls
+- `NATIVE_CALL_UI_ENABLED` — CallKeep integration
+- `CALL_HISTORY_ENABLED` — Call history screen
+- `CALL_SETTINGS_ENABLED` — Call settings screen
+
+**Full plan**: [archived/VIDEO_CALL_IMPLEMENTATION_PLAN.md](archived/VIDEO_CALL_IMPLEMENTATION_PLAN.md)
 
 ---
 
