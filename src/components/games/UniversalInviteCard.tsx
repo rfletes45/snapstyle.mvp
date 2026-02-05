@@ -139,11 +139,14 @@ export function UniversalInviteCard({
     hasJoined &&
     !isHost &&
     ["pending", "filling", "ready"].includes(invite.status);
+  // Spectate requires: not a player, spectating enabled, game is active (has gameId)
+  // Note: "ready" status means players joined but host hasn't started the game yet
   const canSpectate =
     !hasJoined &&
     !isSpectating &&
     invite.spectatingEnabled &&
-    ["filling", "ready", "active"].includes(invite.status);
+    invite.status === "active" &&
+    !!invite.gameId;
   // Can start early if host and have minimum players, OR can start if game is ready
   const canStartEarly =
     isHost &&
@@ -311,6 +314,20 @@ export function UniversalInviteCard({
                 disabled={loading !== null}
               >
                 Cancel
+              </Button>
+            )}
+
+            {/* Spectate Button (for non-participants when game is active) */}
+            {canSpectate && (
+              <Button
+                mode="outlined"
+                compact
+                icon="eye"
+                onPress={() => handleAction("spectate", onSpectate)}
+                loading={loading === "spectate"}
+                disabled={loading !== null}
+              >
+                Spectate
               </Button>
             )}
 

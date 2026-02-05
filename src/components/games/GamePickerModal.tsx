@@ -3,7 +3,7 @@
  *
  * Bottom sheet modal for selecting games from chat.
  * Displays games organized by category with proper handling for
- * single-player (direct navigation) and multiplayer (invite creation).
+ * single-player (with spectator invite option) and multiplayer (invite creation).
  *
  * @file src/components/games/GamePickerModal.tsx
  */
@@ -27,11 +27,24 @@ import {
   getAllCategoriesWithGames,
   PickerCategory,
 } from "@/config/gameCategories";
-import { sendUniversalInvite } from "@/services/gameInvites";
+import {
+  sendUniversalInvite,
+  SpectatorInvite,
+  startSpectatorInvite,
+} from "@/services/gameInvites";
+import {
+  createLiveSession,
+  startLiveSession,
+} from "@/services/liveSpectatorSession";
 import { useAuth } from "@/store/AuthContext";
-import { ExtendedGameType, GameMetadata } from "@/types/games";
+import {
+  ExtendedGameType,
+  GameMetadata,
+  SinglePlayerGameType,
+} from "@/types/games";
 import { UniversalGameInvite } from "@/types/turnBased";
 import { BorderRadius, Spacing } from "../../../constants/theme";
+import { SpectatorInviteModal } from "./SpectatorInviteModal";
 
 // =============================================================================
 // Types
@@ -57,9 +70,15 @@ export interface GamePickerModalProps {
   /** For Group: array of all member user IDs */
   eligibleUserIds?: string[];
   /** Called when a single-player game is selected (navigate to game) */
-  onSinglePlayerGame: (gameType: ExtendedGameType) => void;
+  onSinglePlayerGame: (
+    gameType: ExtendedGameType,
+    spectatorInviteId?: string,
+    liveSessionId?: string,
+  ) => void;
   /** Called when a multiplayer invite is created */
   onInviteCreated?: (invite: UniversalGameInvite) => void;
+  /** Called when a spectator invite is created */
+  onSpectatorInviteCreated?: (invite: SpectatorInvite) => void;
   /** Called on any error */
   onError?: (error: string) => void;
 }
@@ -237,6 +256,7 @@ export function GamePickerModal({
   eligibleUserIds,
   onSinglePlayerGame,
   onInviteCreated,
+  onSpectatorInviteCreated,
   onError,
 }: GamePickerModalProps) {
   const theme = useTheme();
@@ -249,6 +269,10 @@ export function GamePickerModal({
   const [selectedCategory, setSelectedCategory] =
     useState<PickerCategory>("multiplayer");
   const [loadingGame, setLoadingGame] = useState<ExtendedGameType | null>(null);
+  // Spectator invite modal state
+  const [spectatorInviteGame, setSpectatorInviteGame] =
+    useState<SinglePlayerGameType | null>(null);
+  const [spectatorModalVisible, setSpectatorModalVisible] = useState(false);
 
   // -------------------------------------------------------------------------
   // Computed
@@ -267,6 +291,70 @@ export function GamePickerModal({
   );
 
   // -------------------------------------------------------------------------
+  // Spectator Invite Handlers
+  // -------------------------------------------------------------------------
+  const handleSpectatorInviteCreated = useCallback(
+    async (invite: SpectatorInvite) => {
+      // Immediately create a live session and start the invite
+      let sessionId: string | undefined;
+      try {
+        const result = await createLiveSession({
+          gameType: invite.gameType as SinglePlayerGameType,
+          hostId: invite.hostId,
+          hostName: invite.hostName,
+          hostAvatar: invite.hostAvatar,
+          invitedUserIds: invite.eligibleUserIds,
+          conversationId: invite.conversationId,
+          conversationType: invite.context === "group" ? "group" : "dm",
+          maxSpectators: invite.maxSpectators,
+        });
+
+        if (result.success && result.sessionId) {
+          sessionId = result.sessionId;
+          // Mark the spectator invite as active with the live session ID
+          await startSpectatorInvite(invite.id, result.sessionId);
+          // Also start the live session immediately so spectators see "active" status
+          await startLiveSession(result.sessionId);
+        }
+      } catch (error) {
+        console.error(
+          "[GamePickerModal] Failed to create live session:",
+          error,
+        );
+        // Continue anyway - host can still play, spectators just won't work
+      }
+
+      // Notify parent
+      onSpectatorInviteCreated?.(invite);
+      // Close modals and navigate to game with invite ID AND live session ID
+      setSpectatorModalVisible(false);
+      if (spectatorInviteGame) {
+        onSinglePlayerGame(spectatorInviteGame, invite.id, sessionId);
+      }
+      onDismiss();
+    },
+    [
+      onSpectatorInviteCreated,
+      onSinglePlayerGame,
+      spectatorInviteGame,
+      onDismiss,
+    ],
+  );
+
+  const handlePlayAlone = useCallback(() => {
+    setSpectatorModalVisible(false);
+    if (spectatorInviteGame) {
+      onSinglePlayerGame(spectatorInviteGame);
+    }
+    onDismiss();
+  }, [spectatorInviteGame, onSinglePlayerGame, onDismiss]);
+
+  const handleSpectatorModalDismiss = useCallback(() => {
+    setSpectatorModalVisible(false);
+    setSpectatorInviteGame(null);
+  }, []);
+
+  // -------------------------------------------------------------------------
   // Handlers
   // -------------------------------------------------------------------------
   const handleGamePress = useCallback(
@@ -282,10 +370,10 @@ export function GamePickerModal({
         currentFirebaseUser.email ||
         "Player";
 
-      // Single-player: just navigate
+      // Single-player: show spectator invite modal
       if (!game.isMultiplayer) {
-        onSinglePlayerGame(game.id);
-        onDismiss();
+        setSpectatorInviteGame(game.id as SinglePlayerGameType);
+        setSpectatorModalVisible(true);
         return;
       }
 
@@ -365,75 +453,107 @@ export function GamePickerModal({
     [handleGamePress, loadingGame],
   );
 
+  // Hide the game picker when spectator modal is visible (only one modal at a time on mobile)
+  const gamePickerVisible = visible && !spectatorModalVisible;
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onDismiss}
-    >
-      <Pressable style={styles.overlay} onPress={onDismiss}>
-        <Pressable
-          style={[
-            styles.modalContainer,
-            {
-              backgroundColor: theme.colors.background,
-              paddingBottom: insets.bottom + Spacing.md,
-            },
-          ]}
-          onPress={(e) => e.stopPropagation()}
-        >
-          {/* Handle */}
-          <View style={styles.handleContainer}>
-            <View
-              style={[styles.handle, { backgroundColor: theme.colors.outline }]}
+    <>
+      {/* Main Game Picker Modal */}
+      <Modal
+        visible={gamePickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={onDismiss}
+      >
+        <View style={styles.overlay}>
+          {/* Backdrop - tap to dismiss */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} />
+          {/* Content container - Use View instead of Pressable to not capture touch events */}
+          <View
+            style={[
+              styles.modalContainer,
+              {
+                backgroundColor: theme.colors.background,
+                paddingBottom: insets.bottom + Spacing.md,
+              },
+            ]}
+          >
+            {/* Handle */}
+            <View style={styles.handleContainer}>
+              <View
+                style={[
+                  styles.handle,
+                  { backgroundColor: theme.colors.outline },
+                ]}
+              />
+            </View>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <Text
+                style={[styles.title, { color: theme.colors.onBackground }]}
+              >
+                Pick a Game
+              </Text>
+              <Pressable onPress={onDismiss} style={styles.closeButton}>
+                <MaterialCommunityIcons
+                  name="close"
+                  size={24}
+                  color={theme.colors.onSurfaceVariant}
+                />
+              </Pressable>
+            </View>
+
+            {/* Category Tabs */}
+            <CategoryTabs
+              categories={categoryIds}
+              selected={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
+
+            {/* Category Subtitle */}
+            {currentCategory && (
+              <Text
+                style={[
+                  styles.categorySubtitle,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                {currentCategory.subtitle}
+              </Text>
+            )}
+
+            {/* Games List */}
+            <FlatList
+              data={currentCategory?.games || []}
+              renderItem={renderGameItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.gamesList}
+              showsVerticalScrollIndicator={false}
             />
           </View>
+        </View>
+      </Modal>
 
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.colors.onBackground }]}>
-              Pick a Game
-            </Text>
-            <Pressable onPress={onDismiss} style={styles.closeButton}>
-              <MaterialCommunityIcons
-                name="close"
-                size={24}
-                color={theme.colors.onSurfaceVariant}
-              />
-            </Pressable>
-          </View>
-
-          {/* Category Tabs */}
-          <CategoryTabs
-            categories={categoryIds}
-            selected={selectedCategory}
-            onSelect={setSelectedCategory}
-          />
-
-          {/* Category Subtitle */}
-          {currentCategory && (
-            <Text
-              style={[
-                styles.categorySubtitle,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
-              {currentCategory.subtitle}
-            </Text>
-          )}
-
-          {/* Games List */}
-          <FlatList
-            data={currentCategory?.games || []}
-            renderItem={renderGameItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.gamesList}
-            showsVerticalScrollIndicator={false}
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
+      {/* Spectator Invite Modal - MUST be sibling to main Modal, not nested inside */}
+      {spectatorInviteGame && (
+        <SpectatorInviteModal
+          visible={spectatorModalVisible}
+          onDismiss={handleSpectatorModalDismiss}
+          gameType={spectatorInviteGame}
+          context={context}
+          conversationId={conversationId}
+          conversationName={conversationName}
+          recipientId={recipientId}
+          recipientName={recipientName}
+          recipientAvatar={recipientAvatar}
+          eligibleUserIds={eligibleUserIds}
+          onInviteCreated={handleSpectatorInviteCreated}
+          onPlayAlone={handlePlayAlone}
+          onError={onError}
+        />
+      )}
+    </>
   );
 }
 

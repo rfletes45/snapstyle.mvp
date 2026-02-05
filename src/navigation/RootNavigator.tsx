@@ -38,6 +38,7 @@ import MemorySnapGameScreen from "@/screens/games/MemorySnapGameScreen";
 import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
 import Snap2048GameScreen from "@/screens/games/Snap2048GameScreen";
 import SnapSnakeGameScreen from "@/screens/games/SnapSnakeGameScreen";
+import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TileSlideGameScreen from "@/screens/games/TileSlideGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
@@ -101,6 +102,25 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   // Moments stack routes
   "StoryViewer",
   "CreateStory",
+  // Game screens in PlayStack - hide tab bar for immersive gameplay
+  "ReactionTapGame",
+  "TimedTapGame",
+  "BounceBlitzGame",
+  "MemorySnapGame",
+  "WordSnapGame",
+  "Snap2048Game",
+  "SnapSnakeGame",
+  "BrickBreakerGame",
+  "TileSlideGame",
+  "TicTacToeGame",
+  "CheckersGame",
+  "ChessGame",
+  "CrazyEightsGame",
+  "CartCourseGame",
+  "SpectatorView",
+  "Leaderboard",
+  "Achievements",
+  "GameHistory",
 ]);
 
 /**
@@ -384,6 +404,15 @@ function PlayStack() {
           headerShown: false,
           presentation: "card",
           gestureEnabled: false,
+        }}
+      />
+      {/* Spectator View for watching single-player games */}
+      <Stack.Screen
+        name="SpectatorView"
+        component={SpectatorViewScreen}
+        options={{
+          headerShown: false,
+          presentation: "card",
         }}
       />
       <Stack.Screen

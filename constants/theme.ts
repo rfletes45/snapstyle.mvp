@@ -43,6 +43,9 @@ export type ThemeId =
   | "amoled" // Super dark OLED
   | "amoled-oled-blue" // AMOLED with blue accents
   | "amoled-blood-moon" // AMOLED with red accents
+  | "amoled-emerald" // AMOLED with emerald green
+  | "amoled-royal-purple" // AMOLED with royal purple
+  | "amoled-sunset-orange" // AMOLED with sunset orange
   | "neo-tokyo" // Cyberpunk neon
   | "retro-wave" // 80s synthwave
   | "vaporwave" // Aesthetic pink/teal
@@ -55,10 +58,16 @@ export type ThemeId =
   | "mint-fresh" // Green pastels
   | "sunset-glow" // Warm orange/coral
   | "lavender-dream" // Purple soft
+  | "peach-blossom" // Soft peach pastels
+  | "sky-cotton" // Light blue cotton candy
+  | "honeydew-mint" // Soft green honeydew
   | "dracula" // Popular dark
   | "nord" // Arctic blue
   | "solarized-light" // Precision colors
-  | "gruvbox-dark"; // Retro groove
+  | "gruvbox-dark" // Retro groove
+  | "night-owl" // Sarah Drasner's accessible theme
+  | "aura" // Dalton Menezes purple neon
+  | "jellyfish"; // Pawel Borkar hot pink
 
 export interface ThemeMeta {
   id: ThemeId;
@@ -150,6 +159,30 @@ export const THEME_METADATA: Record<ThemeId, ThemeMeta> = {
     category: "pastel",
     previewColors: ["#f8f5ff", "#7c4dff", "#b388ff"],
   },
+  "peach-blossom": {
+    id: "peach-blossom",
+    name: "Peach Blossom",
+    description: "Soft peach and coral pastels",
+    isDark: false,
+    category: "pastel",
+    previewColors: ["#fff5f0", "#ffab91", "#ff8a65"],
+  },
+  "sky-cotton": {
+    id: "sky-cotton",
+    name: "Sky Cotton",
+    description: "Light blue cotton candy pastels",
+    isDark: false,
+    category: "pastel",
+    previewColors: ["#f0f8ff", "#87ceeb", "#4fc3f7"],
+  },
+  "honeydew-mint": {
+    id: "honeydew-mint",
+    name: "Honeydew Mint",
+    description: "Soft honeydew green pastels",
+    isDark: false,
+    category: "pastel",
+    previewColors: ["#f0fff0", "#98fb98", "#66cdaa"],
+  },
   dracula: {
     id: "dracula",
     name: "Dracula",
@@ -182,6 +215,30 @@ export const THEME_METADATA: Record<ThemeId, ThemeMeta> = {
     category: "dark",
     previewColors: ["#282828", "#fe8019", "#8ec07c"],
   },
+  "night-owl": {
+    id: "night-owl",
+    name: "Night Owl",
+    description: "Sarah Drasner's accessible dark theme for night coders",
+    isDark: true,
+    category: "dark",
+    previewColors: ["#011627", "#c792ea", "#7fdbca"],
+  },
+  aura: {
+    id: "aura",
+    name: "Aura",
+    description: "Dalton Menezes' purple neon aesthetic",
+    isDark: true,
+    category: "vibrant",
+    previewColors: ["#15141b", "#a277ff", "#61ffca"],
+  },
+  jellyfish: {
+    id: "jellyfish",
+    name: "Jellyfish",
+    description: "Pawel Borkar's vibrant hot pink theme",
+    isDark: true,
+    category: "vibrant",
+    previewColors: ["#1e1e28", "#ff0055", "#00d9ff"],
+  },
   "amoled-oled-blue": {
     id: "amoled-oled-blue",
     name: "AMOLED Blue",
@@ -197,6 +254,30 @@ export const THEME_METADATA: Record<ThemeId, ThemeMeta> = {
     isDark: true,
     category: "amoled",
     previewColors: ["#000000", "#ff2d2d", "#8b0000"],
+  },
+  "amoled-emerald": {
+    id: "amoled-emerald",
+    name: "AMOLED Emerald",
+    description: "True black with emerald green accents",
+    isDark: true,
+    category: "amoled",
+    previewColors: ["#000000", "#50c878", "#2e8b57"],
+  },
+  "amoled-royal-purple": {
+    id: "amoled-royal-purple",
+    name: "AMOLED Royal",
+    description: "True black with royal purple accents",
+    isDark: true,
+    category: "amoled",
+    previewColors: ["#000000", "#9b59b6", "#6a0dad"],
+  },
+  "amoled-sunset-orange": {
+    id: "amoled-sunset-orange",
+    name: "AMOLED Sunset",
+    description: "True black with warm sunset orange",
+    isDark: true,
+    category: "amoled",
+    previewColors: ["#000000", "#ff7f50", "#ff4500"],
   },
   vaporwave: {
     id: "vaporwave",
@@ -857,6 +938,265 @@ export const GalaxyPurple = {
   success: "#69f0ae",
 };
 
+/**
+ * Night Owl - Sarah Drasner's accessible dark theme
+ */
+export const NightOwl = {
+  base: "#011627",
+  mantle: "#010e1a",
+  crust: "#000810",
+  surface0: "#0b2942",
+  surface1: "#1d3b53",
+  surface2: "#2d4f67",
+  text: "#d6deeb",
+  subtext1: "#b2c0d0",
+  subtext0: "#8da2b8",
+  overlay2: "#6d8ca0",
+  overlay1: "#4d6c80",
+  overlay0: "#3d5c70",
+  // Night Owl accent colors
+  purple: "#c792ea",
+  green: "#7fdbca",
+  yellow: "#ecc48d",
+  orange: "#f78c6c",
+  red: "#ef5350",
+  blue: "#82aaff",
+  cyan: "#21c7a8",
+  pink: "#ff5874",
+  lavender: "#b4a7d6",
+  error: "#ef5350",
+  warning: "#ecc48d",
+  success: "#7fdbca",
+};
+
+/**
+ * Aura - Dalton Menezes' purple neon aesthetic
+ */
+export const Aura = {
+  base: "#15141b",
+  mantle: "#110f18",
+  crust: "#0a0810",
+  surface0: "#1c1b22",
+  surface1: "#252430",
+  surface2: "#2d2b3d",
+  text: "#edecee",
+  subtext1: "#cdccce",
+  subtext0: "#b4b4b4",
+  overlay2: "#6d6d6d",
+  overlay1: "#525156",
+  overlay0: "#3d3a45",
+  // Aura accent colors
+  purple: "#a277ff",
+  green: "#61ffca",
+  orange: "#ffca85",
+  pink: "#f694ff",
+  blue: "#82e2ff",
+  red: "#ff6767",
+  selection: "#3d375e7f",
+  cyan: "#61ffca",
+  error: "#ff6767",
+  warning: "#ffca85",
+  success: "#61ffca",
+};
+
+/**
+ * Jellyfish - Pawel Borkar's hot pink theme
+ */
+export const Jellyfish = {
+  base: "#1e1e28",
+  mantle: "#16161e",
+  crust: "#0f0f14",
+  surface0: "#282835",
+  surface1: "#32324a",
+  surface2: "#3c3c5a",
+  text: "#f8f8f2",
+  subtext1: "#e8e8e0",
+  subtext0: "#c8c8c0",
+  overlay2: "#909090",
+  overlay1: "#707080",
+  overlay0: "#505060",
+  // Jellyfish accent colors
+  hotPink: "#ff0055",
+  magenta: "#ff00aa",
+  cyan: "#00d9ff",
+  teal: "#00b4d8",
+  purple: "#bd00ff",
+  lavender: "#e0b0ff",
+  coral: "#ff6b6b",
+  gold: "#ffcc00",
+  error: "#ff4466",
+  warning: "#ffcc00",
+  success: "#00ff88",
+};
+
+/**
+ * AMOLED Emerald - True black with emerald green
+ */
+export const AmoledEmerald = {
+  base: "#000000",
+  mantle: "#000000",
+  crust: "#000000",
+  surface0: "#001a0d",
+  surface1: "#00331a",
+  surface2: "#004d26",
+  text: "#ffffff",
+  subtext1: "#e0fff0",
+  subtext0: "#a0d8c0",
+  overlay2: "#508060",
+  overlay1: "#306040",
+  overlay0: "#104020",
+  // Emerald accents
+  primary: "#50c878",
+  secondary: "#2e8b57",
+  accent: "#98fb98",
+  mint: "#00fa9a",
+  forest: "#228b22",
+  lime: "#32cd32",
+  error: "#ff4444",
+  success: "#00ff7f",
+  warning: "#ffcc00",
+};
+
+/**
+ * AMOLED Royal Purple - True black with royal purple
+ */
+export const AmoledRoyalPurple = {
+  base: "#000000",
+  mantle: "#000000",
+  crust: "#000000",
+  surface0: "#0d001a",
+  surface1: "#1a0033",
+  surface2: "#26004d",
+  text: "#ffffff",
+  subtext1: "#f0e0ff",
+  subtext0: "#c0a0d8",
+  overlay2: "#705080",
+  overlay1: "#503060",
+  overlay0: "#301040",
+  // Royal purple accents
+  primary: "#9b59b6",
+  secondary: "#6a0dad",
+  accent: "#da70d6",
+  violet: "#8a2be2",
+  lavender: "#e6e6fa",
+  orchid: "#ba55d3",
+  error: "#ff4444",
+  success: "#4caf50",
+  warning: "#ffab00",
+};
+
+/**
+ * AMOLED Sunset Orange - True black with sunset orange
+ */
+export const AmoledSunsetOrange = {
+  base: "#000000",
+  mantle: "#000000",
+  crust: "#000000",
+  surface0: "#1a0d00",
+  surface1: "#331a00",
+  surface2: "#4d2600",
+  text: "#ffffff",
+  subtext1: "#fff0e0",
+  subtext0: "#d8c0a0",
+  overlay2: "#806050",
+  overlay1: "#604030",
+  overlay0: "#402010",
+  // Sunset orange accents
+  primary: "#ff7f50",
+  secondary: "#ff4500",
+  accent: "#ffa07a",
+  coral: "#ff6347",
+  gold: "#ffd700",
+  amber: "#ffbf00",
+  error: "#ff0000",
+  success: "#32cd32",
+  warning: "#ffd700",
+};
+
+/**
+ * Peach Blossom - Soft peach pastels
+ */
+export const PeachBlossom = {
+  base: "#fff5f0",
+  mantle: "#ffe8e0",
+  crust: "#ffdcd0",
+  surface0: "#ffcfc0",
+  surface1: "#ffc2b0",
+  surface2: "#ffb5a0",
+  text: "#5c3d30",
+  subtext1: "#7a5545",
+  subtext0: "#986d5a",
+  overlay2: "#b0856f",
+  overlay1: "#c89d84",
+  overlay0: "#e0b599",
+  // Peach accents
+  peach: "#ffab91",
+  coral: "#ff8a65",
+  salmon: "#fa8072",
+  apricot: "#fbceb1",
+  blush: "#ffe4e1",
+  rose: "#ff6f61",
+  error: "#d32f2f",
+  warning: "#ff9800",
+  success: "#4caf50",
+};
+
+/**
+ * Sky Cotton - Light blue cotton candy
+ */
+export const SkyCotton = {
+  base: "#f0f8ff",
+  mantle: "#e6f2ff",
+  crust: "#dceeff",
+  surface0: "#cce6ff",
+  surface1: "#bcdeff",
+  surface2: "#acd6ff",
+  text: "#1a3a5c",
+  subtext1: "#2d5478",
+  subtext0: "#406f94",
+  overlay2: "#5389af",
+  overlay1: "#66a3cb",
+  overlay0: "#79bde6",
+  // Sky cotton accents
+  sky: "#87ceeb",
+  azure: "#4fc3f7",
+  powder: "#b0e0e6",
+  baby: "#89cff0",
+  periwinkle: "#ccccff",
+  cornflower: "#6495ed",
+  error: "#e53935",
+  warning: "#fb8c00",
+  success: "#43a047",
+};
+
+/**
+ * Honeydew Mint - Soft honeydew green
+ */
+export const HoneydewMint = {
+  base: "#f0fff0",
+  mantle: "#e6ffe6",
+  crust: "#dcffdc",
+  surface0: "#ccffcc",
+  surface1: "#bcffbc",
+  surface2: "#acffac",
+  text: "#1b4332",
+  subtext1: "#2d5a45",
+  subtext0: "#407158",
+  overlay2: "#53886b",
+  overlay1: "#669f7e",
+  overlay0: "#79b691",
+  // Honeydew accents
+  honeydew: "#98fb98",
+  mint: "#66cdaa",
+  seafoam: "#3cb371",
+  spring: "#00ff7f",
+  lime: "#90ee90",
+  celadon: "#ace1af",
+  error: "#ff5252",
+  warning: "#ffab00",
+  success: "#00e676",
+};
+
 // ============================================================================
 // SEMANTIC COLOR MAPPING
 // ============================================================================
@@ -933,6 +1273,16 @@ export interface ThemeColors {
   accent2?: string;
   accent3?: string;
   glow?: string;
+
+  // Message colors (for enhanced theme differentiation)
+  messageSentBackground?: string;
+  messageSentText?: string;
+  messageReceivedBackground?: string;
+  messageReceivedText?: string;
+
+  // Chat type differentiation
+  dmAccent?: string;
+  groupChatAccent?: string;
 }
 
 // ============================================================================
@@ -1122,6 +1472,14 @@ export const NeoTokyoColors: ThemeColors = {
   accent2: NeoTokyo.laserGreen,
   accent3: NeoTokyo.neonYellow,
   glow: NeoTokyo.hotPink,
+  // Enhanced message colors - user requested red sent, blue received
+  messageSentBackground: "#3d0a14", // Dark red background
+  messageSentText: NeoTokyo.hotPink, // Hot pink/red text
+  messageReceivedBackground: "#0a1f3d", // Dark blue background
+  messageReceivedText: NeoTokyo.electricBlue, // Electric blue text
+  // Chat type differentiation - DMs vs Group chats
+  dmAccent: NeoTokyo.neonPurple, // Purple for DMs
+  groupChatAccent: NeoTokyo.cyan, // Cyan for group chats
 };
 
 export const RetroWaveColors: ThemeColors = {
@@ -1930,6 +2288,449 @@ export const GalaxyPurpleColors: ThemeColors = {
   glow: GalaxyPurple.purple,
 };
 
+export const NightOwlColors: ThemeColors = {
+  background: NightOwl.base,
+  surface: NightOwl.surface0,
+  surfaceVariant: NightOwl.mantle,
+  surfaceElevated: NightOwl.surface1,
+  primary: NightOwl.purple,
+  primaryContainer: "#1d2d4a",
+  onPrimary: "#000000",
+  onPrimaryContainer: NightOwl.lavender,
+  secondary: NightOwl.green,
+  secondaryContainer: "#0a3d3d",
+  onSecondary: "#000000",
+  onSecondaryContainer: NightOwl.cyan,
+  tertiary: NightOwl.blue,
+  tertiaryContainer: "#1a3d5a",
+  text: NightOwl.text,
+  textSecondary: NightOwl.subtext1,
+  textMuted: NightOwl.overlay1,
+  textOnPrimary: "#000000",
+  success: NightOwl.success,
+  successContainer: "#0a3d2d",
+  warning: NightOwl.warning,
+  warningContainer: "#3d3d1a",
+  error: NightOwl.error,
+  errorContainer: "#3d1a1a",
+  info: NightOwl.blue,
+  infoContainer: "#1a2d4a",
+  ritual: NightOwl.pink,
+  ritualGlow: NightOwl.purple,
+  cardConnection: "#0b2942",
+  cardConnectionBorder: NightOwl.purple,
+  cardRequest: "#1d3b53",
+  cardRequestBorder: NightOwl.orange,
+  cardSent: NightOwl.surface0,
+  border: NightOwl.surface1,
+  divider: "#0b2942",
+  outline: NightOwl.surface2,
+  overlay: "rgba(0, 0, 0, 0.75)",
+  overlayLight: "rgba(1, 22, 39, 0.6)",
+  tabActive: NightOwl.purple,
+  tabInactive: NightOwl.overlay1,
+  headerBackground: NightOwl.mantle,
+  headerText: NightOwl.text,
+  accent1: NightOwl.green,
+  accent2: NightOwl.blue,
+  accent3: NightOwl.yellow,
+  glow: NightOwl.purple,
+};
+
+export const AuraColors: ThemeColors = {
+  background: Aura.base,
+  surface: Aura.surface0,
+  surfaceVariant: Aura.mantle,
+  surfaceElevated: Aura.surface1,
+  primary: Aura.purple,
+  primaryContainer: "#2d1f4a",
+  onPrimary: "#000000",
+  onPrimaryContainer: Aura.pink,
+  secondary: Aura.green,
+  secondaryContainer: "#0a3d3d",
+  onSecondary: "#000000",
+  onSecondaryContainer: Aura.cyan,
+  tertiary: Aura.blue,
+  tertiaryContainer: "#1a3d5a",
+  text: Aura.text,
+  textSecondary: Aura.subtext1,
+  textMuted: Aura.overlay1,
+  textOnPrimary: "#000000",
+  success: Aura.success,
+  successContainer: "#0a3d2d",
+  warning: Aura.warning,
+  warningContainer: "#3d3d1a",
+  error: Aura.error,
+  errorContainer: "#3d1a1a",
+  info: Aura.blue,
+  infoContainer: "#1a2d4a",
+  ritual: Aura.pink,
+  ritualGlow: Aura.purple,
+  cardConnection: "#1c1b22",
+  cardConnectionBorder: Aura.purple,
+  cardRequest: "#252430",
+  cardRequestBorder: Aura.pink,
+  cardSent: Aura.surface0,
+  border: Aura.surface1,
+  divider: "#1c1b22",
+  outline: Aura.surface2,
+  overlay: "rgba(0, 0, 0, 0.75)",
+  overlayLight: "rgba(21, 20, 27, 0.6)",
+  tabActive: Aura.purple,
+  tabInactive: Aura.overlay1,
+  headerBackground: Aura.mantle,
+  headerText: Aura.text,
+  accent1: Aura.green,
+  accent2: Aura.pink,
+  accent3: Aura.orange,
+  glow: Aura.purple,
+  // Enhanced message colors
+  messageSentBackground: "#2d1f4a",
+  messageSentText: Aura.purple,
+  messageReceivedBackground: "#0a3d3d",
+  messageReceivedText: Aura.green,
+  dmAccent: Aura.pink,
+  groupChatAccent: Aura.blue,
+};
+
+export const JellyfishColors: ThemeColors = {
+  background: Jellyfish.base,
+  surface: Jellyfish.surface0,
+  surfaceVariant: Jellyfish.mantle,
+  surfaceElevated: Jellyfish.surface1,
+  primary: Jellyfish.hotPink,
+  primaryContainer: "#3d0a2d",
+  onPrimary: "#000000",
+  onPrimaryContainer: Jellyfish.coral,
+  secondary: Jellyfish.cyan,
+  secondaryContainer: "#0a3d4a",
+  onSecondary: "#000000",
+  onSecondaryContainer: Jellyfish.teal,
+  tertiary: Jellyfish.purple,
+  tertiaryContainer: "#2d0a4a",
+  text: Jellyfish.text,
+  textSecondary: Jellyfish.subtext1,
+  textMuted: Jellyfish.overlay1,
+  textOnPrimary: "#000000",
+  success: Jellyfish.success,
+  successContainer: "#0a3d1f",
+  warning: Jellyfish.warning,
+  warningContainer: "#3d3d0a",
+  error: Jellyfish.error,
+  errorContainer: "#3d0a1a",
+  info: Jellyfish.cyan,
+  infoContainer: "#0a2d4a",
+  ritual: Jellyfish.magenta,
+  ritualGlow: Jellyfish.hotPink,
+  cardConnection: "#282835",
+  cardConnectionBorder: Jellyfish.purple,
+  cardRequest: "#32324a",
+  cardRequestBorder: Jellyfish.hotPink,
+  cardSent: Jellyfish.surface0,
+  border: Jellyfish.surface1,
+  divider: "#282835",
+  outline: Jellyfish.surface2,
+  overlay: "rgba(0, 0, 0, 0.75)",
+  overlayLight: "rgba(30, 30, 40, 0.6)",
+  tabActive: Jellyfish.hotPink,
+  tabInactive: Jellyfish.overlay1,
+  headerBackground: Jellyfish.mantle,
+  headerText: Jellyfish.text,
+  accent1: Jellyfish.cyan,
+  accent2: Jellyfish.purple,
+  accent3: Jellyfish.gold,
+  glow: Jellyfish.hotPink,
+  // Enhanced message colors
+  messageSentBackground: "#3d0a2d",
+  messageSentText: Jellyfish.hotPink,
+  messageReceivedBackground: "#0a3d4a",
+  messageReceivedText: Jellyfish.cyan,
+  dmAccent: Jellyfish.magenta,
+  groupChatAccent: Jellyfish.teal,
+};
+
+export const AmoledEmeraldColors: ThemeColors = {
+  background: AmoledEmerald.base,
+  surface: AmoledEmerald.surface0,
+  surfaceVariant: AmoledEmerald.mantle,
+  surfaceElevated: AmoledEmerald.surface1,
+  primary: AmoledEmerald.primary,
+  primaryContainer: "#003318",
+  onPrimary: "#000000",
+  onPrimaryContainer: AmoledEmerald.mint,
+  secondary: AmoledEmerald.secondary,
+  secondaryContainer: "#002610",
+  onSecondary: "#000000",
+  onSecondaryContainer: AmoledEmerald.lime,
+  tertiary: AmoledEmerald.accent,
+  tertiaryContainer: "#0a4a2a",
+  text: AmoledEmerald.text,
+  textSecondary: AmoledEmerald.subtext1,
+  textMuted: AmoledEmerald.overlay1,
+  textOnPrimary: "#000000",
+  success: AmoledEmerald.success,
+  successContainer: "#003318",
+  warning: AmoledEmerald.warning,
+  warningContainer: "#333300",
+  error: AmoledEmerald.error,
+  errorContainer: "#330000",
+  info: AmoledEmerald.lime,
+  infoContainer: "#002610",
+  ritual: AmoledEmerald.mint,
+  ritualGlow: AmoledEmerald.primary,
+  cardConnection: "#001a0d",
+  cardConnectionBorder: AmoledEmerald.primary,
+  cardRequest: "#00260d",
+  cardRequestBorder: AmoledEmerald.mint,
+  cardSent: AmoledEmerald.surface0,
+  border: AmoledEmerald.surface1,
+  divider: "#00260d",
+  outline: AmoledEmerald.surface2,
+  overlay: "rgba(0, 0, 0, 0.9)",
+  overlayLight: "rgba(0, 0, 0, 0.75)",
+  tabActive: AmoledEmerald.primary,
+  tabInactive: AmoledEmerald.overlay1,
+  headerBackground: "#000000",
+  headerText: AmoledEmerald.text,
+  accent1: AmoledEmerald.mint,
+  accent2: AmoledEmerald.lime,
+  accent3: AmoledEmerald.forest,
+  glow: AmoledEmerald.primary,
+};
+
+export const AmoledRoyalPurpleColors: ThemeColors = {
+  background: AmoledRoyalPurple.base,
+  surface: AmoledRoyalPurple.surface0,
+  surfaceVariant: AmoledRoyalPurple.mantle,
+  surfaceElevated: AmoledRoyalPurple.surface1,
+  primary: AmoledRoyalPurple.primary,
+  primaryContainer: "#2a0a4a",
+  onPrimary: "#ffffff",
+  onPrimaryContainer: AmoledRoyalPurple.lavender,
+  secondary: AmoledRoyalPurple.secondary,
+  secondaryContainer: "#1a0033",
+  onSecondary: "#ffffff",
+  onSecondaryContainer: AmoledRoyalPurple.orchid,
+  tertiary: AmoledRoyalPurple.accent,
+  tertiaryContainer: "#3a0a5a",
+  text: AmoledRoyalPurple.text,
+  textSecondary: AmoledRoyalPurple.subtext1,
+  textMuted: AmoledRoyalPurple.overlay1,
+  textOnPrimary: "#ffffff",
+  success: AmoledRoyalPurple.success,
+  successContainer: "#1b3d1b",
+  warning: AmoledRoyalPurple.warning,
+  warningContainer: "#3d3d00",
+  error: AmoledRoyalPurple.error,
+  errorContainer: "#3d1b1b",
+  info: AmoledRoyalPurple.violet,
+  infoContainer: "#1a0033",
+  ritual: AmoledRoyalPurple.orchid,
+  ritualGlow: AmoledRoyalPurple.primary,
+  cardConnection: "#0d001a",
+  cardConnectionBorder: AmoledRoyalPurple.primary,
+  cardRequest: "#1a0033",
+  cardRequestBorder: AmoledRoyalPurple.orchid,
+  cardSent: AmoledRoyalPurple.surface0,
+  border: AmoledRoyalPurple.surface1,
+  divider: "#1a0033",
+  outline: AmoledRoyalPurple.surface2,
+  overlay: "rgba(0, 0, 0, 0.9)",
+  overlayLight: "rgba(0, 0, 0, 0.75)",
+  tabActive: AmoledRoyalPurple.primary,
+  tabInactive: AmoledRoyalPurple.overlay1,
+  headerBackground: "#000000",
+  headerText: AmoledRoyalPurple.text,
+  accent1: AmoledRoyalPurple.violet,
+  accent2: AmoledRoyalPurple.orchid,
+  accent3: AmoledRoyalPurple.lavender,
+  glow: AmoledRoyalPurple.primary,
+};
+
+export const AmoledSunsetOrangeColors: ThemeColors = {
+  background: AmoledSunsetOrange.base,
+  surface: AmoledSunsetOrange.surface0,
+  surfaceVariant: AmoledSunsetOrange.mantle,
+  surfaceElevated: AmoledSunsetOrange.surface1,
+  primary: AmoledSunsetOrange.primary,
+  primaryContainer: "#4a1a00",
+  onPrimary: "#000000",
+  onPrimaryContainer: AmoledSunsetOrange.accent,
+  secondary: AmoledSunsetOrange.secondary,
+  secondaryContainer: "#331000",
+  onSecondary: "#000000",
+  onSecondaryContainer: AmoledSunsetOrange.coral,
+  tertiary: AmoledSunsetOrange.gold,
+  tertiaryContainer: "#4a3a00",
+  text: AmoledSunsetOrange.text,
+  textSecondary: AmoledSunsetOrange.subtext1,
+  textMuted: AmoledSunsetOrange.overlay1,
+  textOnPrimary: "#000000",
+  success: AmoledSunsetOrange.success,
+  successContainer: "#1a3d1a",
+  warning: AmoledSunsetOrange.warning,
+  warningContainer: "#4a4a00",
+  error: AmoledSunsetOrange.error,
+  errorContainer: "#4a0000",
+  info: AmoledSunsetOrange.gold,
+  infoContainer: "#3a2a00",
+  ritual: AmoledSunsetOrange.coral,
+  ritualGlow: AmoledSunsetOrange.primary,
+  cardConnection: "#1a0d00",
+  cardConnectionBorder: AmoledSunsetOrange.primary,
+  cardRequest: "#2a1500",
+  cardRequestBorder: AmoledSunsetOrange.coral,
+  cardSent: AmoledSunsetOrange.surface0,
+  border: AmoledSunsetOrange.surface1,
+  divider: "#2a1500",
+  outline: AmoledSunsetOrange.surface2,
+  overlay: "rgba(0, 0, 0, 0.9)",
+  overlayLight: "rgba(0, 0, 0, 0.75)",
+  tabActive: AmoledSunsetOrange.primary,
+  tabInactive: AmoledSunsetOrange.overlay1,
+  headerBackground: "#000000",
+  headerText: AmoledSunsetOrange.text,
+  accent1: AmoledSunsetOrange.coral,
+  accent2: AmoledSunsetOrange.gold,
+  accent3: AmoledSunsetOrange.amber,
+  glow: AmoledSunsetOrange.primary,
+};
+
+export const PeachBlossomColors: ThemeColors = {
+  background: PeachBlossom.base,
+  surface: "#ffffff",
+  surfaceVariant: PeachBlossom.mantle,
+  surfaceElevated: "#ffffff",
+  primary: PeachBlossom.peach,
+  primaryContainer: "#ffe4e0",
+  onPrimary: "#ffffff",
+  onPrimaryContainer: PeachBlossom.coral,
+  secondary: PeachBlossom.coral,
+  secondaryContainer: "#ffdcd0",
+  onSecondary: "#ffffff",
+  onSecondaryContainer: PeachBlossom.salmon,
+  tertiary: PeachBlossom.rose,
+  tertiaryContainer: "#ffe0e0",
+  text: PeachBlossom.text,
+  textSecondary: PeachBlossom.subtext1,
+  textMuted: PeachBlossom.overlay1,
+  textOnPrimary: "#ffffff",
+  success: PeachBlossom.success,
+  successContainer: "#e8f5e9",
+  warning: PeachBlossom.warning,
+  warningContainer: "#fff3e0",
+  error: PeachBlossom.error,
+  errorContainer: "#ffebee",
+  info: "#2196f3",
+  infoContainer: "#e3f2fd",
+  ritual: PeachBlossom.coral,
+  ritualGlow: PeachBlossom.peach,
+  cardConnection: "#fff0f0",
+  cardConnectionBorder: PeachBlossom.peach,
+  cardRequest: "#ffe8e0",
+  cardRequestBorder: PeachBlossom.coral,
+  cardSent: PeachBlossom.mantle,
+  border: PeachBlossom.surface1,
+  divider: PeachBlossom.surface0,
+  outline: PeachBlossom.surface2,
+  overlay: "rgba(92, 61, 48, 0.5)",
+  overlayLight: "rgba(92, 61, 48, 0.3)",
+  tabActive: PeachBlossom.peach,
+  tabInactive: PeachBlossom.overlay1,
+  headerBackground: "#ffffff",
+  headerText: PeachBlossom.text,
+};
+
+export const SkyCottonColors: ThemeColors = {
+  background: SkyCotton.base,
+  surface: "#ffffff",
+  surfaceVariant: SkyCotton.mantle,
+  surfaceElevated: "#ffffff",
+  primary: SkyCotton.sky,
+  primaryContainer: "#e0f4ff",
+  onPrimary: "#1a3a5c",
+  onPrimaryContainer: SkyCotton.azure,
+  secondary: SkyCotton.azure,
+  secondaryContainer: "#d6eeff",
+  onSecondary: "#1a3a5c",
+  onSecondaryContainer: SkyCotton.cornflower,
+  tertiary: SkyCotton.periwinkle,
+  tertiaryContainer: "#e8e8ff",
+  text: SkyCotton.text,
+  textSecondary: SkyCotton.subtext1,
+  textMuted: SkyCotton.overlay1,
+  textOnPrimary: "#1a3a5c",
+  success: SkyCotton.success,
+  successContainer: "#e8f5e9",
+  warning: SkyCotton.warning,
+  warningContainer: "#fff3e0",
+  error: SkyCotton.error,
+  errorContainer: "#ffebee",
+  info: SkyCotton.azure,
+  infoContainer: "#e0f4ff",
+  ritual: SkyCotton.azure,
+  ritualGlow: SkyCotton.sky,
+  cardConnection: "#e6f2ff",
+  cardConnectionBorder: SkyCotton.sky,
+  cardRequest: "#dceeff",
+  cardRequestBorder: SkyCotton.azure,
+  cardSent: SkyCotton.mantle,
+  border: SkyCotton.surface1,
+  divider: SkyCotton.surface0,
+  outline: SkyCotton.surface2,
+  overlay: "rgba(26, 58, 92, 0.5)",
+  overlayLight: "rgba(26, 58, 92, 0.3)",
+  tabActive: SkyCotton.azure,
+  tabInactive: SkyCotton.overlay1,
+  headerBackground: "#ffffff",
+  headerText: SkyCotton.text,
+};
+
+export const HoneydewMintColors: ThemeColors = {
+  background: HoneydewMint.base,
+  surface: "#ffffff",
+  surfaceVariant: HoneydewMint.mantle,
+  surfaceElevated: "#ffffff",
+  primary: HoneydewMint.honeydew,
+  primaryContainer: "#e0ffe0",
+  onPrimary: "#1b4332",
+  onPrimaryContainer: HoneydewMint.mint,
+  secondary: HoneydewMint.mint,
+  secondaryContainer: "#d0ffd0",
+  onSecondary: "#1b4332",
+  onSecondaryContainer: HoneydewMint.seafoam,
+  tertiary: HoneydewMint.spring,
+  tertiaryContainer: "#c0ffc0",
+  text: HoneydewMint.text,
+  textSecondary: HoneydewMint.subtext1,
+  textMuted: HoneydewMint.overlay1,
+  textOnPrimary: "#1b4332",
+  success: HoneydewMint.success,
+  successContainer: "#e0ffe0",
+  warning: HoneydewMint.warning,
+  warningContainer: "#fff8e1",
+  error: HoneydewMint.error,
+  errorContainer: "#ffebee",
+  info: "#2196f3",
+  infoContainer: "#e3f2fd",
+  ritual: HoneydewMint.mint,
+  ritualGlow: HoneydewMint.honeydew,
+  cardConnection: "#e6ffe6",
+  cardConnectionBorder: HoneydewMint.honeydew,
+  cardRequest: "#dcffdc",
+  cardRequestBorder: HoneydewMint.mint,
+  cardSent: HoneydewMint.mantle,
+  border: HoneydewMint.surface1,
+  divider: HoneydewMint.surface0,
+  outline: HoneydewMint.surface2,
+  overlay: "rgba(27, 67, 50, 0.5)",
+  overlayLight: "rgba(27, 67, 50, 0.3)",
+  tabActive: HoneydewMint.mint,
+  tabInactive: HoneydewMint.overlay1,
+  headerBackground: "#ffffff",
+  headerText: HoneydewMint.text,
+};
+
 // Map theme IDs to their color definitions
 export const THEME_COLORS: Record<ThemeId, ThemeColors> = {
   "catppuccin-latte": CatppuccinLatteColors,
@@ -1942,17 +2743,26 @@ export const THEME_COLORS: Record<ThemeId, ThemeColors> = {
   "mint-fresh": MintFreshColors,
   "sunset-glow": SunsetGlowColors,
   "lavender-dream": LavenderDreamColors,
+  "peach-blossom": PeachBlossomColors,
+  "sky-cotton": SkyCottonColors,
+  "honeydew-mint": HoneydewMintColors,
   dracula: DraculaColors,
   nord: NordColors,
   "solarized-light": SolarizedLightColors,
   "gruvbox-dark": GruvboxDarkColors,
   "amoled-oled-blue": AmoledOledBlueColors,
   "amoled-blood-moon": AmoledBloodMoonColors,
+  "amoled-emerald": AmoledEmeraldColors,
+  "amoled-royal-purple": AmoledRoyalPurpleColors,
+  "amoled-sunset-orange": AmoledSunsetOrangeColors,
   vaporwave: VaporwaveColors,
   "aurora-borealis": AuroraBorealisColors,
   "neon-sunset": NeonSunsetColors,
   "electric-lime": ElectricLimeColors,
   "galaxy-purple": GalaxyPurpleColors,
+  "night-owl": NightOwlColors,
+  aura: AuraColors,
+  jellyfish: JellyfishColors,
 };
 
 // ============================================================================

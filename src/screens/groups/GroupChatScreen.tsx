@@ -575,15 +575,28 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     (
       gameId: string,
       gameType: string,
-      options?: { inviteId?: string; spectatorMode?: boolean },
+      options?: {
+        inviteId?: string;
+        spectatorMode?: boolean;
+        liveSessionId?: string;
+      },
     ) => {
-      const screenMap: Record<string, string> = {
-        tic_tac_toe: "TicTacToeGame",
-        checkers: "CheckersGame",
-        chess: "ChessGame",
-        crazy_eights: "CrazyEightsGame",
-      };
-      const screen = screenMap[gameType];
+      // For spectators, navigate to SpectatorView screen
+      if (options?.spectatorMode && options?.liveSessionId) {
+        navigation.navigate("MainTabs", {
+          screen: "Play",
+          params: {
+            screen: "SpectatorView",
+            params: {
+              liveSessionId: options.liveSessionId,
+              gameType: gameType,
+            },
+          },
+        });
+        return;
+      }
+
+      const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
       if (screen) {
         // Navigate through MainTabs -> Play tab -> specific game screen
         navigation.navigate("MainTabs", {
@@ -594,13 +607,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               matchId: gameId,
               inviteId: options?.inviteId,
               spectatorMode: options?.spectatorMode,
+              spectatorInviteId: options?.inviteId, // For single-player spectator sessions
+              liveSessionId: options?.liveSessionId, // For live spectator sessions
               entryPoint: "chat",
+              conversationId: groupId,
+              conversationType: "group" as const,
             },
           },
         });
+      } else {
+        console.warn(
+          `[GroupChatScreen] No screen mapping for gameType: ${gameType}`,
+        );
       }
     },
-    [navigation],
+    [navigation, groupId],
   );
 
   // Game button press handler - Opens game picker modal
@@ -609,8 +630,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   }, []);
 
   // Handle single-player game selection - navigate directly to game
+  // Optionally receives a spectatorInviteId and liveSessionId if the player wants to invite spectators
   const handleSinglePlayerGame = useCallback(
-    (gameType: ExtendedGameType) => {
+    (
+      gameType: ExtendedGameType,
+      spectatorInviteId?: string,
+      liveSessionId?: string,
+    ) => {
       const screenName = GAME_SCREEN_MAP[gameType];
       if (screenName) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -620,13 +646,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             screen: screenName,
             params: {
               entryPoint: "chat",
+              spectatorInviteId, // Pass spectator invite ID
+              liveSessionId, // Pass live session ID for real-time spectator updates
+              conversationId: groupId, // Pass conversation context
+              conversationType: "group" as const,
             },
           },
         });
       }
     },
-    [navigation],
+    [navigation, groupId],
   );
+
+  // Handle spectator invite creation
+  const handleSpectatorInviteCreated = useCallback(() => {
+    // Spectator invite created - navigation happens in GamePickerModal
+    // Optionally show a toast or haptic feedback here
+  }, []);
 
   // Compute eligible user IDs from group members
   const groupMemberIds = useMemo(
@@ -1454,6 +1490,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         eligibleUserIds={groupMemberIds}
         onSinglePlayerGame={handleSinglePlayerGame}
         onInviteCreated={() => {}}
+        onSpectatorInviteCreated={handleSpectatorInviteCreated}
         onError={(error) => Alert.alert("Error", error)}
       />
     </>

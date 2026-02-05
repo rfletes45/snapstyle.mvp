@@ -273,7 +273,11 @@ export default function TimedTapGameScreen({
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={24}
+            color={colors.text}
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Speed Tap</Text>
         <View style={styles.headerSpacer} />

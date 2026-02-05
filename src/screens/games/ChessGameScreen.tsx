@@ -26,7 +26,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Modal, Portal, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
@@ -52,6 +52,7 @@ import {
   subscribeToMatch,
 } from "@/services/turnBasedGames";
 import { useAuth } from "@/store/AuthContext";
+import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import {
   ChessBoard,
@@ -394,7 +395,7 @@ export default function ChessGameScreen({
   navigation,
   route,
 }: ChessGameScreenProps) {
-  const theme = useTheme();
+  const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
   const haptics = useGameHaptics();
@@ -495,7 +496,22 @@ export default function ChessGameScreen({
   useEffect(() => {
     if (!matchId) return;
 
+    console.log(`[Chess] Setting up subscription for matchId: ${matchId}`);
+
     const unsubscribe = subscribeToMatch(matchId, (updatedMatch) => {
+      console.log(
+        `[Chess] Received match update:`,
+        updatedMatch
+          ? {
+              id: updatedMatch.id,
+              currentTurn: updatedMatch.currentTurn,
+              turnNumber: updatedMatch.turnNumber,
+              moveCount: updatedMatch.moveHistory?.length,
+              status: updatedMatch.status,
+            }
+          : null,
+      );
+
       if (!updatedMatch) return;
 
       const typedMatch = updatedMatch as ChessMatch;
@@ -701,8 +717,16 @@ export default function ChessGameScreen({
           ? match.players.player2.userId
           : match.players.player1.userId;
 
+      console.log(`[Chess] Submitting move to Firestore:`, {
+        matchId,
+        from: chessMove.from,
+        to: chessMove.to,
+        nextPlayerId,
+      });
+
       try {
         await submitMove(matchId, chessMove, newState, nextPlayerId);
+        console.log(`[Chess] Move submitted successfully`);
       } catch (error) {
         console.error("[Chess] Error submitting move:", error);
       }
@@ -969,20 +993,13 @@ export default function ChessGameScreen({
   if (gameMode === "menu") {
     return (
       <SafeAreaView
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        style={[styles.container, { backgroundColor: colors.background }]}
       >
         <View style={styles.menuContainer}>
-          <Text
-            style={[styles.menuTitle, { color: theme.colors.onBackground }]}
-          >
+          <Text style={[styles.menuTitle, { color: colors.text }]}>
             ♟️ Chess
           </Text>
-          <Text
-            style={[
-              styles.menuSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
+          <Text style={[styles.menuSubtitle, { color: colors.textSecondary }]}>
             The classic game of strategy
           </Text>
 
@@ -1034,7 +1051,7 @@ export default function ChessGameScreen({
 
   return (
     <SafeAreaView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      style={[styles.container, { backgroundColor: colors.background }]}
     >
       {/* Spectator Banner */}
       <SpectatorBanner
@@ -1051,22 +1068,18 @@ export default function ChessGameScreen({
           <MaterialCommunityIcons
             name="arrow-left"
             size={24}
-            color={theme.colors.onBackground}
+            color={colors.text}
           />
         </TouchableOpacity>
 
-        <Text
-          style={[styles.headerTitle, { color: theme.colors.onBackground }]}
-        >
-          Chess
-        </Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Chess</Text>
 
         {gameMode === "online" && !isSpectator && (
           <TouchableOpacity onPress={handleResign} style={styles.resignButton}>
             <MaterialCommunityIcons
               name="flag"
               size={20}
-              color={theme.colors.error}
+              color={colors.error}
             />
           </TouchableOpacity>
         )}
@@ -1075,12 +1088,7 @@ export default function ChessGameScreen({
       {/* Opponent Info & Captured Pieces */}
       <View style={styles.playerInfo}>
         <View style={styles.playerNameContainer}>
-          <Text
-            style={[
-              styles.playerName,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
+          <Text style={[styles.playerName, { color: colors.textSecondary }]}>
             {gameMode === "online" ? opponentName : "Black"}
           </Text>
           {!isMyTurn() && gameMode !== "local" && (
@@ -1095,7 +1103,7 @@ export default function ChessGameScreen({
         <Text
           style={[
             styles.statusText,
-            { color: theme.colors.onBackground },
+            { color: colors.text },
             gameState.isCheck && styles.checkText,
           ]}
         >
@@ -1111,12 +1119,7 @@ export default function ChessGameScreen({
       {/* Player Info & Captured Pieces */}
       <View style={styles.playerInfo}>
         <View style={styles.playerNameContainer}>
-          <Text
-            style={[
-              styles.playerName,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
+          <Text style={[styles.playerName, { color: colors.textSecondary }]}>
             {gameMode === "online"
               ? userProfile?.displayName || "You"
               : "White"}
@@ -1134,9 +1137,7 @@ export default function ChessGameScreen({
       {/* Score (Local Game) */}
       {gameMode === "local" && (
         <View style={styles.scoreContainer}>
-          <Text
-            style={[styles.scoreText, { color: theme.colors.onBackground }]}
-          >
+          <Text style={[styles.scoreText, { color: colors.text }]}>
             White: {scores.white} - Black: {scores.black}
           </Text>
         </View>

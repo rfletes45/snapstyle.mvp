@@ -26,6 +26,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -69,7 +70,7 @@ export async function getUserBadges(uid: string): Promise<UserBadge[]> {
       const data = doc.data();
       return {
         badgeId: doc.id,
-        earnedAt: data.earnedAt,
+        earnedAt: data.earnedAt?.toMillis?.() || data.earnedAt || Date.now(),
         featured: data.featured || false,
         displayOrder: data.displayOrder,
         earnedVia: data.earnedVia,
@@ -100,7 +101,7 @@ export async function getFeaturedBadges(uid: string): Promise<UserBadge[]> {
       const data = doc.data();
       return {
         badgeId: doc.id,
-        earnedAt: data.earnedAt,
+        earnedAt: data.earnedAt?.toMillis?.() || data.earnedAt || Date.now(),
         featured: true,
         displayOrder: data.displayOrder,
         earnedVia: data.earnedVia,
@@ -162,7 +163,7 @@ export async function grantBadge(
     const badgeRef = doc(db, "Users", uid, "Badges", badgeId);
     await setDoc(badgeRef, {
       badgeId,
-      earnedAt: Date.now(),
+      earnedAt: serverTimestamp(),
       featured: false,
       earnedVia: earnedVia || {},
     });
@@ -370,7 +371,8 @@ export function subscribeToBadges(
           const data = doc.data();
           return {
             badgeId: doc.id,
-            earnedAt: data.earnedAt,
+            earnedAt:
+              data.earnedAt?.toMillis?.() || data.earnedAt || Date.now(),
             featured: data.featured || false,
             displayOrder: data.displayOrder,
             earnedVia: data.earnedVia,
@@ -442,7 +444,7 @@ export function subscribeToFeaturedBadges(
       const data = doc.data();
       return {
         badgeId: doc.id,
-        earnedAt: data.earnedAt,
+        earnedAt: data.earnedAt?.toMillis?.() || data.earnedAt || Date.now(),
         featured: true,
         displayOrder: data.displayOrder,
         earnedVia: data.earnedVia,

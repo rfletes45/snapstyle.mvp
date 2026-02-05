@@ -18,6 +18,7 @@
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useLiveSpectatorSession } from "@/hooks/useLiveSpectatorSession";
 import { sendScorecard } from "@/services/games";
 import {
   advanceToNextLevel,
@@ -49,6 +50,7 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import { BrickBreakerState } from "@/types/singlePlayerGames";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { RouteProp, useRoute } from "@react-navigation/native";
 import React, {
   useCallback,
   useEffect,
@@ -88,6 +90,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 // =============================================================================
 // Types
 // =============================================================================
+
+/** Route params for live spectator sessions */
+type BrickBreakerRouteParams = {
+  BrickBreakerGame: {
+    liveSessionId?: string;
+    spectatorInviteId?: string;
+    entryPoint?: string;
+    conversationId?: string;
+    conversationType?: "dm" | "group";
+  };
+};
 
 interface BrickBreakerGameScreenProps {
   navigation: any;
@@ -372,6 +385,26 @@ export default function BrickBreakerGameScreen({
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showError, showSuccess } = useSnackbar();
+  const route =
+    useRoute<RouteProp<BrickBreakerRouteParams, "BrickBreakerGame">>();
+
+  // Live spectator session (for spectator invites)
+  const liveSessionId = route.params?.liveSessionId;
+  const {
+    updateState: updateSpectatorState,
+    endSession: endSpectatorSession,
+    spectatorCount,
+    isLive: hasSpectators,
+  } = useLiveSpectatorSession({
+    sessionId: liveSessionId,
+    mode: "host",
+    userId: currentFirebaseUser?.uid,
+    userName:
+      currentFirebaseUser?.displayName ||
+      currentFirebaseUser?.email ||
+      "Player",
+    gameType: "brick_breaker",
+  });
 
   // Game state
   const [gameState, setGameState] = useState<BrickBreakerState | null>(null);
@@ -552,16 +585,46 @@ export default function BrickBreakerGameScreen({
       haptics.gameOverPattern(false);
       setShowGameOverModal(true);
       recordSession(newState);
+      // End spectator session
+      if (liveSessionId) {
+        endSpectatorSession(newState.score, {
+          currentLevel: newState.currentLevel,
+          lives: newState.lives,
+          phase: newState.phase,
+        });
+      }
     }
 
     setGameState(newState);
     gameStateRef.current = newState;
 
+    // Send state updates to spectators (throttled by hook)
+    if (liveSessionId) {
+      updateSpectatorState({
+        gameState: {
+          score: newState.score,
+          currentLevel: newState.currentLevel,
+          lives: newState.lives,
+          phase: newState.phase,
+          bricksRemaining: getBricksRemaining(newState),
+          activePowerUps: newState.activeEffects.map((e) => e.type),
+        },
+        currentScore: newState.score,
+      });
+    }
+
     // Continue loop if still playing
     if (newState.phase === "playing") {
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     }
-  }, [processEvents, recordSession, syncPaddlePosition]);
+  }, [
+    processEvents,
+    recordSession,
+    syncPaddlePosition,
+    liveSessionId,
+    updateSpectatorState,
+    endSpectatorSession,
+  ]);
 
   const startGameLoop = useCallback(() => {
     if (gameLoopRef.current) {
@@ -655,10 +718,39 @@ export default function BrickBreakerGameScreen({
     if (newState.phase === "gameOver") {
       setShowGameOverModal(true);
       recordSession(newState);
+      // End spectator session
+      if (liveSessionId) {
+        endSpectatorSession(newState.score, {
+          currentLevel: newState.currentLevel,
+          lives: newState.lives,
+          phase: newState.phase,
+        });
+      }
+    } else {
+      // Send level update to spectators
+      if (liveSessionId) {
+        updateSpectatorState({
+          gameState: {
+            score: newState.score,
+            currentLevel: newState.currentLevel,
+            lives: newState.lives,
+            phase: newState.phase,
+            bricksRemaining: getBricksRemaining(newState),
+          },
+          currentScore: newState.score,
+        });
+      }
     }
 
     haptics.trigger("success");
-  }, [haptics, paddleX, recordSession]);
+  }, [
+    haptics,
+    paddleX,
+    recordSession,
+    liveSessionId,
+    updateSpectatorState,
+    endSpectatorSession,
+  ]);
 
   // ==========================================================================
   // Navigation & Sharing

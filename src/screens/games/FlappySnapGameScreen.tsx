@@ -530,7 +530,11 @@ export default function FlappySnapGameScreen({
       <View style={styles.header}>
         <TouchableWithoutFeedback onPress={() => navigation.goBack()}>
           <View style={styles.backButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="white" />
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={24}
+              color={theme.colors.onBackground}
+            />
           </View>
         </TouchableWithoutFeedback>
         <View style={styles.scoreContainer}>

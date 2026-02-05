@@ -438,7 +438,11 @@ export default function MemorySnapGameScreen({
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="white" />
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={24}
+            color={theme.colors.onBackground}
+          />
         </TouchableOpacity>
 
         {status === "playing" && (

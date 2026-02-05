@@ -18,6 +18,7 @@ import {
 } from "@/services/games";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
+import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
@@ -55,6 +56,7 @@ const MAX_WAIT_TIME = 5000; // Maximum wait before green (5s)
 export default function ReactionTapGameScreen({
   navigation,
 }: ReactionTapGameScreenProps) {
+  const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
@@ -371,7 +373,11 @@ export default function ReactionTapGameScreen({
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={24}
+            color={colors.text}
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reaction Time</Text>
         <View style={styles.headerSpacer} />

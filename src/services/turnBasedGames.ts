@@ -188,14 +188,8 @@ function gameStateToFirestore(
       (gameState as { board: unknown[][] }).board[0]?.length || 0;
   }
 
-  // Remove undefined values (Firestore rejects them)
-  for (const key of Object.keys(state)) {
-    if (state[key] === undefined) {
-      delete state[key];
-    }
-  }
-
-  return state;
+  // Remove all undefined values recursively (Firestore rejects them)
+  return removeUndefined(state);
 }
 
 /**
@@ -368,23 +362,52 @@ export async function getMatch(matchId: string): Promise<AnyMatch | null> {
 export function subscribeToMatch(
   matchId: string,
   onUpdate: (match: AnyMatch | null) => void,
+  onError?: (error: Error) => void,
 ): () => void {
   const docRef = doc(getDb(), COLLECTIONS.matches, matchId);
 
-  return onSnapshot(docRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      onUpdate(null);
-      return;
-    }
-    const data = snapshot.data();
-    // Convert game state back from Firestore format
-    if (data.gameState) {
-      data.gameState = firestoreToGameState(
-        data.gameState as Record<string, unknown>,
+  console.log(
+    `[TurnBasedGames][${Date.now()}] Subscribing to match: ${matchId}`,
+  );
+
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      const meta = snapshot.metadata;
+      console.log(
+        `[TurnBasedGames][${Date.now()}] Match update received for ${matchId}:`,
+        snapshot.exists() ? "exists" : "not found",
+        `| fromCache: ${meta.fromCache}`,
+        `| hasPendingWrites: ${meta.hasPendingWrites}`,
       );
-    }
-    onUpdate({ id: snapshot.id, ...data } as AnyMatch);
-  });
+
+      if (!snapshot.exists()) {
+        onUpdate(null);
+        return;
+      }
+      const data = snapshot.data();
+      console.log(`[TurnBasedGames][${Date.now()}] Match data:`, {
+        currentTurn: data.currentTurn,
+        turnNumber: data.turnNumber,
+        moveHistoryLength: data.moveHistory?.length,
+        status: data.status,
+      });
+      // Convert game state back from Firestore format
+      if (data.gameState) {
+        data.gameState = firestoreToGameState(
+          data.gameState as Record<string, unknown>,
+        );
+      }
+      onUpdate({ id: snapshot.id, ...data } as AnyMatch);
+    },
+    (error) => {
+      console.error(
+        `[TurnBasedGames][${Date.now()}] Error subscribing to match ${matchId}:`,
+        error,
+      );
+      onError?.(error);
+    },
+  );
 }
 
 /**
@@ -396,26 +419,58 @@ export async function submitMove<T extends AnyMove>(
   newGameState: AnyGameState,
   nextPlayerId: string,
 ): Promise<void> {
+  const startTime = Date.now();
+  console.log(
+    `[TurnBasedGames][${startTime}] Submitting move for match ${matchId}:`,
+    {
+      move: move,
+      nextPlayerId,
+    },
+  );
+
   const docRef = doc(getDb(), COLLECTIONS.matches, matchId);
   const match = await getMatch(matchId);
+  console.log(
+    `[TurnBasedGames][${Date.now()}] Fetched current match state (took ${Date.now() - startTime}ms)`,
+  );
 
   if (!match) {
     throw new Error("Match not found");
   }
 
-  const updatedMoveHistory = [...match.moveHistory, move];
+  // Clean move of undefined values (Firestore rejects them)
+  const cleanMove = removeUndefined(
+    move as unknown as Record<string, unknown>,
+  ) as unknown as T;
+  const updatedMoveHistory = [...match.moveHistory, cleanMove];
 
   // Convert game state to Firestore format
   const firestoreGameState = gameStateToFirestore(newGameState);
 
-  await updateDoc(docRef, {
+  const updateData = {
     gameState: firestoreGameState,
     moveHistory: updatedMoveHistory,
     currentTurn: nextPlayerId,
     turnNumber: match.turnNumber + 1,
     lastMoveAt: Date.now(),
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  console.log(
+    `[TurnBasedGames][${Date.now()}] Updating Firestore document with:`,
+    {
+      currentTurn: updateData.currentTurn,
+      turnNumber: updateData.turnNumber,
+      moveHistoryLength: updateData.moveHistory.length,
+      lastMoveAt: updateData.lastMoveAt,
+    },
+  );
+
+  await updateDoc(docRef, updateData);
+
+  console.log(
+    `[TurnBasedGames][${Date.now()}] Move submitted successfully for match ${matchId} (total time: ${Date.now() - startTime}ms)`,
+  );
 }
 
 /**

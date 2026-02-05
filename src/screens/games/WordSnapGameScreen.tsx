@@ -1067,7 +1067,11 @@ export default function WordSnapGameScreen({
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="white" />
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={24}
+            color={theme.colors.onBackground}
+          />
         </TouchableOpacity>
         <Text style={styles.title}>Word Snap</Text>
         <View style={styles.streakBadge}>

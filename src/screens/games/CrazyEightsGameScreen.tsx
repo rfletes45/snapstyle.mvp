@@ -1226,14 +1226,22 @@ export default function CrazyEightsGameScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#FFFFFF" />
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={24}
+            color={theme.colors.onBackground}
+          />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Crazy Eights</Text>
 
         {gameMode === "online" && !isSpectator && (
           <TouchableOpacity onPress={handleResign} style={styles.resignButton}>
-            <MaterialCommunityIcons name="flag" size={20} color="#FF6B6B" />
+            <MaterialCommunityIcons
+              name="flag"
+              size={20}
+              color={theme.colors.error}
+            />
           </TouchableOpacity>
         )}
       </View>

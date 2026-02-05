@@ -11,6 +11,8 @@
  */
 
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -33,6 +35,7 @@ import {
   GAME_METADATA,
   GameCategory,
   RealTimeGameType,
+  SinglePlayerGameType,
   TurnBasedGameType,
 } from "../types/games";
 import type { TurnBasedMatchConfig, TurnBasedPlayer } from "../types/turnBased";
@@ -140,12 +143,106 @@ export interface InviteFilterOptions {
 }
 
 // =============================================================================
+// Spectator Invite Types (Single-Player Games)
+// =============================================================================
+
+/**
+ * Status of a spectator invite for single-player games
+ */
+export type SpectatorInviteStatus =
+  | "pending" // Invite sent, waiting for host to start game
+  | "active" // Host is playing, spectators can watch
+  | "completed" // Game ended
+  | "expired" // Invite expired before game started
+  | "cancelled"; // Host cancelled the invite
+
+/**
+ * Spectator invite for single-player games
+ * Allows players to invite others to watch them play a single-player game in real-time
+ */
+export interface SpectatorInvite {
+  id: string;
+  /** The single-player game being played */
+  gameType: SinglePlayerGameType;
+
+  // ============= HOST (PLAYER) =============
+  hostId: string;
+  hostName: string;
+  hostAvatar?: string;
+
+  // ============= CONTEXT =============
+  /** Where was this invite sent? "dm" for 1:1 chat, "group" for group chat */
+  context: "dm" | "group";
+  /** The conversation ID (chatId for DM, groupId for group) */
+  conversationId: string;
+  /** Display name of conversation */
+  conversationName?: string;
+
+  // ============= TARGETING =============
+  /** Users who can join as spectators */
+  eligibleUserIds: string[];
+  /** For DM: the specific recipient */
+  recipientId?: string;
+  recipientName?: string;
+  recipientAvatar?: string;
+
+  // ============= SPECTATORS =============
+  /** Users currently spectating */
+  spectators: SpectatorEntry[];
+  /** Max spectators allowed (undefined = unlimited) */
+  maxSpectators?: number;
+
+  // ============= STATUS =============
+  status: SpectatorInviteStatus;
+
+  // ============= LIVE SESSION =============
+  /** Live session ID once game starts */
+  liveSessionId?: string;
+
+  // ============= TIMESTAMPS =============
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  startedAt?: number;
+  endedAt?: number;
+
+  // ============= VISIBILITY =============
+  /** Show in Play page? true for DM invites */
+  showInPlayPage: boolean;
+  /** Message ID in chat */
+  chatMessageId?: string;
+}
+
+/**
+ * Parameters for creating a spectator invite
+ */
+export interface SendSpectatorInviteParams {
+  hostId: string;
+  hostName: string;
+  hostAvatar?: string;
+  gameType: SinglePlayerGameType;
+  context: "dm" | "group";
+  conversationId: string;
+  conversationName?: string;
+  /** Required for group invites - all group member IDs */
+  eligibleUserIds?: string[];
+  /** Required for DM invites */
+  recipientId?: string;
+  recipientName?: string;
+  recipientAvatar?: string;
+  maxSpectators?: number;
+  expirationMinutes?: number;
+}
+
+// =============================================================================
 // Constants
 // =============================================================================
 
 const COLLECTION_NAME = "GameInvites";
+const SPECTATOR_INVITES_COLLECTION = "SpectatorInvites";
 const DEFAULT_EXPIRATION_MINUTES = 60;
 const MAX_PENDING_INVITES_PER_USER = 10;
+const DEFAULT_MAX_SPECTATORS = 10;
 
 /**
  * Default game settings by type
@@ -874,10 +971,11 @@ export async function joinAsSpectator(
         };
       }
 
-      if (!["ready", "active", "completed"].includes(invite.status)) {
+      // Can only spectate active games (game must be started and have a gameId)
+      if (invite.status !== "active" || !invite.gameId) {
         return {
           success: false,
-          error: "Game is not ready for spectators yet",
+          error: "Game is not active yet - wait for host to start the game",
         };
       }
 
@@ -1673,6 +1771,563 @@ export async function cleanupCompletedGameInvites(
   return cleanedUp;
 }
 
+/**
+ * Clean up stale spectator invites for a conversation
+ * Handles:
+ * - Expired invites (past expiresAt timestamp)
+ * - Cancelled invites older than 1 hour
+ * - Completed invites older than 1 hour
+ *
+ * @param conversationId - The conversation to clean up invites for
+ * @param userId - The current user's ID (for security rules)
+ * @returns Number of invites cleaned up
+ */
+export async function cleanupSpectatorInvites(
+  conversationId: string,
+  userId: string,
+): Promise<number> {
+  try {
+    const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+
+    // Query spectator invites for this conversation that the user can access
+    const q = query(
+      collection(getDb(), SPECTATOR_INVITES_COLLECTION),
+      where("conversationId", "==", conversationId),
+      where("eligibleUserIds", "array-contains", userId),
+    );
+
+    const snapshot = await getDocs(q);
+    let cleanedUp = 0;
+
+    for (const inviteDoc of snapshot.docs) {
+      const invite = inviteDoc.data() as SpectatorInvite;
+
+      // Check if expired
+      if (invite.expiresAt < now) {
+        await updateDoc(inviteDoc.ref, {
+          status: "expired",
+          updatedAt: now,
+        });
+        cleanedUp++;
+        continue;
+      }
+
+      // Check if old cancelled/completed invite (clean up after 1 hour)
+      if (
+        (invite.status === "cancelled" || invite.status === "completed") &&
+        (invite.updatedAt || invite.createdAt) < oneHourAgo
+      ) {
+        await deleteDoc(inviteDoc.ref);
+        cleanedUp++;
+        continue;
+      }
+    }
+
+    if (cleanedUp > 0) {
+      console.log(
+        `[GameInvites] Cleaned up ${cleanedUp} spectator invites for conversation ${conversationId}`,
+      );
+    }
+
+    return cleanedUp;
+  } catch (error) {
+    console.error("[GameInvites] Error cleaning up spectator invites:", error);
+    return 0;
+  }
+}
+
+// =============================================================================
+// Spectator Invite Functions (Single-Player Games)
+// =============================================================================
+
+/**
+ * Generate unique spectator invite ID
+ */
+function generateSpectatorInviteId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `spinv_${timestamp}_${random}`;
+}
+
+/**
+ * Send a spectator invite for a single-player game
+ *
+ * Creates an invite that allows others to watch you play a single-player game.
+ * When the host starts the game, a live session is created and spectators can
+ * join to watch in real-time.
+ *
+ * @example
+ * // DM spectator invite
+ * const invite = await sendSpectatorInvite({
+ *   hostId: uid,
+ *   hostName: "Alice",
+ *   gameType: "bounce_blitz",
+ *   context: "dm",
+ *   conversationId: chatId,
+ *   recipientId: "user-bob",
+ *   recipientName: "Bob",
+ * });
+ *
+ * // Group spectator invite
+ * const invite = await sendSpectatorInvite({
+ *   hostId: uid,
+ *   hostName: "Alice",
+ *   gameType: "snap_2048",
+ *   context: "group",
+ *   conversationId: groupId,
+ *   conversationName: "Game Night",
+ *   eligibleUserIds: ["alice", "bob", "charlie"],
+ * });
+ */
+export async function sendSpectatorInvite(
+  params: SendSpectatorInviteParams,
+): Promise<SpectatorInvite> {
+  const {
+    hostId,
+    hostName,
+    hostAvatar,
+    gameType,
+    context,
+    conversationId,
+    conversationName,
+    eligibleUserIds,
+    recipientId,
+    recipientName,
+    recipientAvatar,
+    maxSpectators = DEFAULT_MAX_SPECTATORS,
+    expirationMinutes = DEFAULT_EXPIRATION_MINUTES,
+  } = params;
+
+  // Validation
+  if (context === "dm" && !recipientId) {
+    throw new Error("recipientId is required for DM spectator invites");
+  }
+  if (context === "group" && (!eligibleUserIds || eligibleUserIds.length < 1)) {
+    throw new Error(
+      "eligibleUserIds with at least 1 member required for group spectator invites",
+    );
+  }
+
+  // Determine targeting
+  const isSpecificTarget = context === "dm";
+  const showInPlayPage = isSpecificTarget;
+
+  // Build eligible user list (spectators)
+  const finalEligibleUserIds =
+    context === "dm" ? [recipientId!] : [...(eligibleUserIds || [])];
+
+  // Remove host from eligible list (host plays, not spectates)
+  const spectatorEligibleIds = finalEligibleUserIds.filter(
+    (id) => id !== hostId,
+  );
+
+  // Build invite
+  const now = Date.now();
+  const inviteId = generateSpectatorInviteId();
+
+  const invite: SpectatorInvite = {
+    id: inviteId,
+    gameType,
+
+    hostId,
+    hostName,
+    hostAvatar,
+
+    context,
+    conversationId,
+    conversationName,
+
+    eligibleUserIds: spectatorEligibleIds,
+    recipientId: isSpecificTarget ? recipientId : undefined,
+    recipientName: isSpecificTarget ? recipientName : undefined,
+    recipientAvatar: isSpecificTarget ? recipientAvatar : undefined,
+
+    spectators: [],
+    maxSpectators,
+
+    status: "pending",
+    liveSessionId: undefined,
+
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: now + expirationMinutes * 60 * 1000,
+
+    showInPlayPage,
+    chatMessageId: undefined,
+  };
+
+  // Remove undefined values (Firestore doesn't like undefined)
+  const cleanInvite = JSON.parse(JSON.stringify(invite));
+
+  // Save to Firestore
+  const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+  await setDoc(inviteRef, cleanInvite);
+
+  console.log(`[GameInvites] Created spectator invite: ${inviteId}`, {
+    context,
+    gameType,
+    maxSpectators,
+  });
+
+  return invite;
+}
+
+/**
+ * Start a spectator invite session
+ *
+ * Called when the host starts playing. Links the invite to a live session
+ * so spectators can watch.
+ */
+export async function startSpectatorInvite(
+  inviteId: string,
+  liveSessionId: string,
+): Promise<boolean> {
+  try {
+    const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+    await updateDoc(inviteRef, {
+      status: "active",
+      liveSessionId,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    console.log(
+      `[GameInvites] Started spectator invite: ${inviteId} with session: ${liveSessionId}`,
+    );
+    return true;
+  } catch (error) {
+    console.error("[GameInvites] Error starting spectator invite:", error);
+    return false;
+  }
+}
+
+/**
+ * End a spectator invite session
+ */
+export async function endSpectatorInvite(inviteId: string): Promise<boolean> {
+  try {
+    const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+    await updateDoc(inviteRef, {
+      status: "completed",
+      endedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    console.log(`[GameInvites] Ended spectator invite: ${inviteId}`);
+    return true;
+  } catch (error) {
+    console.error("[GameInvites] Error ending spectator invite:", error);
+    return false;
+  }
+}
+
+/**
+ * Cancel a spectator invite
+ */
+export async function cancelSpectatorInvite(
+  inviteId: string,
+): Promise<boolean> {
+  try {
+    const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+    await updateDoc(inviteRef, {
+      status: "cancelled",
+      updatedAt: Date.now(),
+    });
+
+    console.log(`[GameInvites] Cancelled spectator invite: ${inviteId}`);
+    return true;
+  } catch (error) {
+    console.error("[GameInvites] Error cancelling spectator invite:", error);
+    return false;
+  }
+}
+
+/**
+ * Get a spectator invite by ID
+ */
+export async function getSpectatorInviteById(
+  inviteId: string,
+): Promise<SpectatorInvite | null> {
+  try {
+    const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+    const snapshot = await getDoc(inviteRef);
+
+    if (!snapshot.exists()) {
+      return null;
+    }
+
+    return snapshot.data() as SpectatorInvite;
+  } catch (error) {
+    console.error("[GameInvites] Error getting spectator invite:", error);
+    return null;
+  }
+}
+
+/**
+ * Join a spectator invite as a spectator
+ */
+export async function joinSpectatorInvite(
+  inviteId: string,
+  userId: string,
+  userName: string,
+  userAvatar?: string,
+): Promise<{ success: boolean; error?: string; liveSessionId?: string }> {
+  try {
+    const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+    const snapshot = await getDoc(inviteRef);
+
+    if (!snapshot.exists()) {
+      return { success: false, error: "Invite not found" };
+    }
+
+    const invite = snapshot.data() as SpectatorInvite;
+
+    // Check status
+    if (invite.status === "completed" || invite.status === "cancelled") {
+      return { success: false, error: "Invite has ended" };
+    }
+
+    if (invite.status === "expired" || Date.now() > invite.expiresAt) {
+      return { success: false, error: "Invite has expired" };
+    }
+
+    // Check eligibility
+    if (!invite.eligibleUserIds.includes(userId)) {
+      return { success: false, error: "Not invited to spectate this game" };
+    }
+
+    // Check if already spectating
+    if (invite.spectators.some((s) => s.userId === userId)) {
+      return {
+        success: true,
+        liveSessionId: invite.liveSessionId,
+      };
+    }
+
+    // Check max spectators
+    if (
+      invite.maxSpectators !== undefined &&
+      invite.spectators.length >= invite.maxSpectators
+    ) {
+      return { success: false, error: "Maximum spectators reached" };
+    }
+
+    // Add spectator - only include defined fields (Firestore rejects undefined)
+    const spectator: SpectatorEntry = {
+      userId,
+      userName,
+      joinedAt: Date.now(),
+      ...(userAvatar !== undefined && { userAvatar }),
+    };
+
+    // Update using arrayUnion
+    await updateDoc(inviteRef, {
+      spectators: arrayUnion(spectator),
+      updatedAt: Date.now(),
+    });
+
+    console.log(
+      `[GameInvites] ${userName} joined spectator invite: ${inviteId}`,
+    );
+    return {
+      success: true,
+      liveSessionId: invite.liveSessionId,
+    };
+  } catch (error: any) {
+    console.error("[GameInvites] Error joining spectator invite:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Leave a spectator invite
+ */
+export async function leaveSpectatorInvite(
+  inviteId: string,
+  userId: string,
+): Promise<boolean> {
+  try {
+    const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+    const snapshot = await getDoc(inviteRef);
+
+    if (!snapshot.exists()) {
+      return false;
+    }
+
+    const invite = snapshot.data() as SpectatorInvite;
+    const spectator = invite.spectators.find((s) => s.userId === userId);
+
+    if (!spectator) {
+      return true; // Already not spectating
+    }
+
+    await updateDoc(inviteRef, {
+      spectators: arrayRemove(spectator),
+      updatedAt: Date.now(),
+    });
+
+    console.log(
+      `[GameInvites] User ${userId} left spectator invite: ${inviteId}`,
+    );
+    return true;
+  } catch (error) {
+    console.error("[GameInvites] Error leaving spectator invite:", error);
+    return false;
+  }
+}
+
+/**
+ * Subscribe to a spectator invite
+ */
+export function subscribeToSpectatorInvite(
+  inviteId: string,
+  onUpdate: (invite: SpectatorInvite | null) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
+
+  return onSnapshot(
+    inviteRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        onUpdate(snapshot.data() as SpectatorInvite);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      console.error(
+        "[GameInvites] Spectator invite subscription error:",
+        error,
+      );
+      onError?.(error);
+    },
+  );
+}
+
+/**
+ * Get spectator invites for a conversation
+ */
+export async function getConversationSpectatorInvites(
+  conversationId: string,
+): Promise<SpectatorInvite[]> {
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) {
+    return [];
+  }
+
+  const q = query(
+    collection(getDb(), SPECTATOR_INVITES_COLLECTION),
+    where("conversationId", "==", conversationId),
+    where("status", "in", ["pending", "active"]),
+    orderBy("createdAt", "desc"),
+    limit(20),
+  );
+
+  try {
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((d) => d.data() as SpectatorInvite);
+  } catch (error) {
+    console.error(
+      "[GameInvites] Error getting conversation spectator invites:",
+      error,
+    );
+    return [];
+  }
+}
+
+/**
+ * Subscribe to spectator invites for a conversation
+ * User must be eligible (in eligibleUserIds) to see invites
+ *
+ * Includes graceful handling for index-building errors with automatic retry.
+ */
+export function subscribeToConversationSpectatorInvites(
+  conversationId: string,
+  userId: string,
+  onUpdate: (invites: SpectatorInvite[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+  let unsubscribeSnapshot: Unsubscribe | null = null;
+  let retryCount = 0;
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 10000; // 10 seconds between retries
+
+  const setupSubscription = (): Unsubscribe => {
+    // Query for invites where the user is eligible to see them
+    // Note: Firestore doesn't allow combining 'in' with 'array-contains',
+    // so we filter by eligibleUserIds and check status client-side
+    const q = query(
+      collection(getDb(), SPECTATOR_INVITES_COLLECTION),
+      where("conversationId", "==", conversationId),
+      where("eligibleUserIds", "array-contains", userId),
+      orderBy("createdAt", "desc"),
+      limit(20),
+    );
+
+    unsubscribeSnapshot = onSnapshot(
+      q,
+      (snapshot) => {
+        // Reset retry count on successful snapshot
+        retryCount = 0;
+        // Filter to only pending/active status client-side
+        const invites = snapshot.docs
+          .map((d) => d.data() as SpectatorInvite)
+          .filter((inv) => inv.status === "pending" || inv.status === "active");
+        onUpdate(invites);
+      },
+      (error) => {
+        const errorMessage = error.message || "";
+
+        // Check if this is an "index building" error
+        if (
+          errorMessage.includes("index") &&
+          errorMessage.includes("building")
+        ) {
+          // Silently retry after delay if we haven't exceeded max retries
+          if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            console.log(
+              `[GameInvites] Spectator index still building, retrying in ${RETRY_DELAY_MS / 1000}s (attempt ${retryCount}/${MAX_RETRIES})`,
+            );
+            retryTimeout = setTimeout(() => {
+              if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+              }
+              setupSubscription();
+            }, RETRY_DELAY_MS);
+            return;
+          }
+        }
+
+        // For other errors or if retries exhausted, log and notify
+        console.error(
+          "[GameInvites] Spectator invites subscription error:",
+          error,
+        );
+        onError?.(error);
+      },
+    );
+
+    return unsubscribeSnapshot;
+  };
+
+  // Initial setup
+  setupSubscription();
+
+  // Return cleanup function
+  return () => {
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+    }
+    if (unsubscribeSnapshot) {
+      unsubscribeSnapshot();
+    }
+  };
+}
+
 // =============================================================================
 // Export
 // =============================================================================
@@ -1715,6 +2370,18 @@ export const gameInvites = {
   subscribeUniversal: subscribeToUniversalInvite,
   subscribePlayPage: subscribeToPlayPageInvites,
   subscribeConversation: subscribeToConversationInvites,
+
+  // NEW: Single-Player Spectator Invites
+  sendSpectatorInvite,
+  startSpectatorInvite,
+  endSpectatorInvite,
+  cancelSpectatorInvite,
+  getSpectatorInviteById,
+  joinSpectatorInvite,
+  leaveSpectatorInvite,
+  subscribeToSpectatorInvite,
+  getConversationSpectatorInvites,
+  subscribeToConversationSpectatorInvites,
 };
 
 export default gameInvites;

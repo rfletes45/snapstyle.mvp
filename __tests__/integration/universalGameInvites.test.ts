@@ -365,6 +365,50 @@ async function unclaimInviteSlot(
   return { success: true };
 }
 
+/**
+ * Mock startGameEarly function
+ * Simulates starting a game early (before auto-start)
+ */
+async function startGameEarly(
+  inviteId: string,
+  hostId: string,
+): Promise<{ success: boolean; gameId?: string; error?: string }> {
+  const invite = invites.get(inviteId);
+
+  if (!invite) {
+    return { success: false, error: "Invite not found" };
+  }
+
+  // Must be host
+  if (invite.claimedSlots[0]?.playerId !== hostId) {
+    return { success: false, error: "Only host can start the game" };
+  }
+
+  // Must be in startable status
+  if (!["pending", "filling", "ready"].includes(invite.status)) {
+    return { success: false, error: `Cannot start - game is ${invite.status}` };
+  }
+
+  // Must have minimum players (for chess, need 2)
+  const minPlayers = invite.gameType === "chess" ? 2 : invite.requiredPlayers;
+  if (invite.claimedSlots.length < minPlayers) {
+    return {
+      success: false,
+      error: `Need at least ${minPlayers} players to start`,
+    };
+  }
+
+  // Create game and update invite
+  const gameId = `game-${Date.now()}`;
+  invite.status = "active";
+  invite.gameId = gameId;
+  invite.filledAt = getCurrentTime();
+  invite.updatedAt = getCurrentTime();
+  invites.set(inviteId, invite);
+
+  return { success: true, gameId };
+}
+
 async function joinAsSpectator(
   inviteId: string,
   userId: string,
@@ -381,8 +425,12 @@ async function joinAsSpectator(
     return { success: false, error: "Spectating is not enabled for this game" };
   }
 
-  if (!["ready", "active", "completed"].includes(invite.status)) {
-    return { success: false, error: "Game is not ready for spectators yet" };
+  // Can only spectate active games (game must be started and have a gameId)
+  if (invite.status !== "active" || !invite.gameId) {
+    return {
+      success: false,
+      error: "Game is not active yet - wait for host to start the game",
+    };
   }
 
   if (!invite.eligibleUserIds.includes(userId)) {
@@ -803,7 +851,7 @@ describe("Universal Game Invites", () => {
     let inviteId: string;
 
     beforeEach(async () => {
-      // Create and fill an invite to ready status
+      // Create and fill an invite to ready status, then start the game
       const invite = await sendUniversalInvite({
         senderId: "user-alice",
         senderName: "Alice",
@@ -820,10 +868,13 @@ describe("Universal Game Invites", () => {
       inviteId = invite.id;
       await claimInviteSlot(inviteId, "user-bob", "Bob");
       // Now status is "ready" (2/2 players for chess)
+      // Start the game so spectating is allowed
+      await startGameEarly(inviteId, "user-alice");
+      // Now status is "active" with gameId
     });
 
     describe("joinAsSpectator", () => {
-      it("should add spectator when game is ready", async () => {
+      it("should add spectator when game is active", async () => {
         const result = await joinAsSpectator(
           inviteId,
           "user-charlie",
@@ -849,6 +900,8 @@ describe("Universal Game Invites", () => {
           recipientName: "Bob",
         });
         await claimInviteSlot(noSpecInvite.id, "user-bob", "Bob");
+        // Start the game
+        await startGameEarly(noSpecInvite.id, "user-alice");
 
         // Manually disable spectating
         const invite = invites.get(noSpecInvite.id)!;
@@ -895,8 +948,8 @@ describe("Universal Game Invites", () => {
         expect(result.error).toContain("cannot spectate");
       });
 
-      it("should reject if game not ready yet", async () => {
-        // Create new pending invite
+      it("should reject if game not active yet", async () => {
+        // Create new pending invite (not started)
         const pendingInvite = await sendUniversalInvite({
           senderId: "user-alice",
           senderName: "Alice",
@@ -914,7 +967,7 @@ describe("Universal Game Invites", () => {
         );
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain("not ready");
+        expect(result.error).toContain("not active");
       });
     });
 
@@ -1152,13 +1205,18 @@ describe("Universal Game Invites", () => {
       const claim4 = await claimInviteSlot(invite.id, "user-eve", "Eve");
       expect(claim4.success).toBe(false);
 
-      // 6. Eve spectates instead
+      // 6. Host starts the game
+      const startResult = await startGameEarly(invite.id, "user-alice");
+      expect(startResult.success).toBe(true);
+
+      // 7. Eve spectates the active game
       const spectate = await joinAsSpectator(invite.id, "user-eve", "Eve");
       expect(spectate.success).toBe(true);
 
       const finalInvite = await getUniversalInviteById(invite.id);
       expect(finalInvite?.claimedSlots).toHaveLength(4);
       expect(finalInvite?.spectators).toHaveLength(1);
+      expect(finalInvite?.status).toBe("active");
     });
 
     it("should handle player leaving and rejoining", async () => {

@@ -615,6 +615,15 @@
         { "fieldPath": "paymentMethod", "order": "ASCENDING" },
         { "fieldPath": "purchasedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "SpectatorInvites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eligibleUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -111,6 +111,11 @@ export {
   type UniversalInviteCardProps,
 } from "./UniversalInviteCard";
 
+export {
+  SpectatorInviteCard,
+  type SpectatorInviteCardProps,
+} from "./SpectatorInviteCard";
+
 // =============================================================================
 // Game Picker Modal
 // =============================================================================

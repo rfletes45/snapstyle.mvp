@@ -1304,9 +1304,14 @@ service cloud.firestore {
       function isGameActive() {
         return resource.data.status == 'active';
       }
+
+      // Helper: Check if game allows spectators
+      function allowsSpectators() {
+        return resource.data.get('config', {}).get('allowSpectators', false) == true;
+      }
       
-      // Read: players can read their games
-      allow read: if isAuth() && isGamePlayer();
+      // Read: players can read their games, spectators can read if allowed
+      allow read: if isAuth() && (isGamePlayer() || allowsSpectators());
       
       // Create: TEMPORARILY SIMPLIFIED FOR DEBUGGING
       // Any authenticated user can create a game (will restore validation later)
@@ -1338,9 +1343,11 @@ service cloud.firestore {
       
       // MOVES SUBCOLLECTION (Game History)
       match /Moves/{moveId} {
-        // Read: any game player
-        allow read: if isAuth() && 
-                      request.auth.uid in get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.playerIds;
+        // Read: any game player or spectator (if allowed)
+        allow read: if isAuth() && (
+                      request.auth.uid in get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.playerIds ||
+                      get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.get('config', {}).get('allowSpectators', false) == true
+                    );
         
         // Create: current turn player only, validated server-side
         allow create: if isAuth() &&
@@ -1350,6 +1357,24 @@ service cloud.firestore {
         
         // Moves are immutable
         allow update, delete: if false;
+      }
+
+      // SPECTATORS SUBCOLLECTION
+      // Tracks who is watching a game in real-time
+      match /spectators/{spectatorId} {
+        // Read: anyone authenticated can see spectators (for spectator count display)
+        allow read: if isAuth();
+        
+        // Create: users can join as spectators if game allows it
+        allow create: if isAuth() &&
+                        get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.get('config', {}).get('allowSpectators', false) == true &&
+                        request.resource.data.userId == request.auth.uid;
+        
+        // Update: users can update their own spectator entry
+        allow update: if isAuth() && resource.data.userId == request.auth.uid;
+        
+        // Delete: users can stop spectating (leave)
+        allow delete: if isAuth() && resource.data.userId == request.auth.uid;
       }
     }
 
@@ -1517,6 +1542,103 @@ service cloud.firestore {
 
       // Delete: sender can delete
       allow delete: if isAuth() && resource.data.senderId == request.auth.uid;
+    }
+
+    // =====================================================
+    // SPECTATOR INVITES COLLECTION (SINGLE-PLAYER GAMES)
+    // Allows inviting others to watch single-player games
+    // =====================================================
+    match /SpectatorInvites/{inviteId} {
+      
+      // Helper: Check if user can access this invite (for document reads)
+      function canAccessSpectatorInvite() {
+        let data = resource.data;
+        return data.hostId == request.auth.uid ||
+               request.auth.uid in data.eligibleUserIds;
+      }
+
+      // Read: host and eligible spectators can read
+      // For queries: use array-contains on eligibleUserIds to satisfy security
+      // For document reads: check host or eligibleUserIds membership
+      allow read: if isAuth() && (
+        resource.data.hostId == request.auth.uid ||
+        request.auth.uid in resource.data.eligibleUserIds
+      );
+
+      // Create: authenticated users can create spectator invites
+      allow create: if isAuth() &&
+        request.resource.data.hostId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.spectators.size() == 0;
+
+      // Update: Various actions allowed
+      allow update: if isAuth() && (
+        // HOST: Can update status (start, end, cancel)
+        (resource.data.hostId == request.auth.uid &&
+         request.resource.data.status in ['active', 'completed', 'cancelled']) ||
+
+        // HOST: Can set liveSessionId
+        (resource.data.hostId == request.auth.uid &&
+         resource.data.status == 'pending' &&
+         request.resource.data.liveSessionId != null) ||
+
+        // JOIN AS SPECTATOR: Eligible user joining
+        ((resource.data.hostId == request.auth.uid || request.auth.uid in resource.data.eligibleUserIds) &&
+         resource.data.status in ['pending', 'active'] &&
+         request.resource.data.spectators.size() > resource.data.spectators.size()) ||
+
+        // LEAVE AS SPECTATOR
+        ((resource.data.hostId == request.auth.uid || request.auth.uid in resource.data.eligibleUserIds) &&
+         request.resource.data.spectators.size() < resource.data.spectators.size())
+      );
+
+      // Delete: host can delete
+      allow delete: if isAuth() && resource.data.hostId == request.auth.uid;
+    }
+
+    // =====================================================
+    // LIVE SPECTATOR SESSIONS COLLECTION
+    // Real-time game state for spectators to watch
+    // =====================================================
+    match /LiveSpectatorSessions/{sessionId} {
+      
+      // Helper: Check if user can access this session
+      function canAccessLiveSession() {
+        let data = resource.data;
+        return data.hostId == request.auth.uid ||
+               request.auth.uid in data.get('invitedUserIds', []) ||
+               data.get('spectators', []).size() > 0;
+      }
+
+      // Read: host and invited users can read
+      allow read: if isAuth() && (
+        resource.data.hostId == request.auth.uid ||
+        request.auth.uid in resource.data.get('invitedUserIds', [])
+      );
+
+      // Create: authenticated users can create sessions for themselves
+      allow create: if isAuth() &&
+        request.resource.data.hostId == request.auth.uid &&
+        request.resource.data.status in ['waiting', 'active'];
+
+      // Update: host can update game state, spectators can join/leave
+      allow update: if isAuth() && (
+        // HOST: Can update game state, status, score
+        resource.data.hostId == request.auth.uid ||
+
+        // JOIN AS SPECTATOR
+        (request.auth.uid in resource.data.get('invitedUserIds', []) &&
+         resource.data.status in ['waiting', 'active'] &&
+         request.resource.data.get('spectators', []).size() >
+           resource.data.get('spectators', []).size()) ||
+
+        // LEAVE AS SPECTATOR
+        (request.resource.data.get('spectators', []).size() <
+           resource.data.get('spectators', []).size())
+      );
+
+      // Delete: host can delete
+      allow delete: if isAuth() && resource.data.hostId == request.auth.uid;
     }
 
     // MATCHMAKING QUEUE COLLECTION

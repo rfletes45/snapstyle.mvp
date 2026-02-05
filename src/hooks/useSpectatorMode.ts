@@ -159,10 +159,10 @@ export function useSpectatorMode({
       return;
     }
 
-    // Subscribe to spectators collection
+    // Subscribe to spectators subcollection under the game
     const spectatorsRef = collection(
       getDb(),
-      `TurnBasedMatches/${matchId}/spectators`,
+      `TurnBasedGames/${matchId}/spectators`,
     );
     const q = query(spectatorsRef);
 
