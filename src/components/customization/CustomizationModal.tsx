@@ -13,7 +13,6 @@
  */
 
 import Avatar from "@/components/Avatar";
-import { AvatarWithFrame } from "@/components/AvatarWithFrame";
 import { CHAT_BUBBLE_STYLES, getBubbleStyleById } from "@/data/chatBubbles";
 import { COSMETIC_ITEMS, getItemById } from "@/data/cosmetics";
 import {
@@ -279,15 +278,7 @@ function CustomizationModalBase({
             { backgroundColor: theme.colors.surfaceVariant },
           ]}
         >
-          {PROFILE_FEATURES.PROFILE_FRAMES ? (
-            <AvatarWithFrame
-              config={previewConfig}
-              size={120}
-              showEffects={true}
-            />
-          ) : (
-            <Avatar config={previewConfig} size={120} />
-          )}
+          <Avatar config={previewConfig} size={120} />
           {hasChanges && (
             <Text style={[styles.unsavedText, { color: theme.colors.primary }]}>
               Unsaved changes

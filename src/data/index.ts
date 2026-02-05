@@ -1,9 +1,8 @@
 /**
  * Data barrel export
- * Static data definitions (cosmetics, achievements, badges, avatar presets, etc.)
+ * Static data definitions (cosmetics, achievements, badges, etc.)
  */
 
-export * from "./avatarPresets";
 export * from "./badges";
 export * from "./chatBubbles";
 export * from "./cosmeticBundles";

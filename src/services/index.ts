@@ -54,13 +54,6 @@ export * from "./chatBubbles";
 export * from "./bundles";
 export * from "./iap";
 
-// Avatar service (Digital Avatar System Phase 6)
-export * from "./avatarService";
-
-// Avatar analytics and deprecation (Digital Avatar System Phase 8)
-export * from "./avatarAnalytics";
-export * from "./avatarDeprecation";
-
 // Cart Course Game Service (Phase 8: Progression & Integration)
 export * from "./cartCourseService";
 

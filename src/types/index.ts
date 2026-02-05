@@ -20,7 +20,6 @@
  */
 
 export * from "./achievements";
-export * from "./avatar";
 export * from "./database";
 export * from "./gameFilters";
 export * from "./gameHistory";

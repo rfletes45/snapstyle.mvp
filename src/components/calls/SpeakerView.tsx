@@ -16,7 +16,7 @@ import {
   ViewStyle,
 } from "react-native";
 import { MediaStream, RTCView } from "react-native-webrtc";
-import { AvatarConfig } from "../../types/avatar";
+import { AvatarConfig } from "../../types/models";
 import Avatar from "../Avatar";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");

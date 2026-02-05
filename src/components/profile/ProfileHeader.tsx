@@ -3,11 +3,9 @@
  *
  * Displays avatar with frame, username, display name, and level progress.
  * Central header for the redesigned profile screen.
- * Supports both legacy and digital avatar configurations.
  */
 
 import Avatar from "@/components/Avatar";
-import type { DigitalAvatarConfig } from "@/types/avatar";
 import type { AvatarConfig } from "@/types/models";
 import type { ExtendedAvatarConfig, LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -21,8 +19,8 @@ export interface ProfileHeaderProps {
   displayName: string;
   /** Username with @ prefix */
   username: string;
-  /** Avatar configuration - supports legacy and digital formats */
-  avatarConfig: ExtendedAvatarConfig | DigitalAvatarConfig | AvatarConfig;
+  /** Avatar configuration */
+  avatarConfig: ExtendedAvatarConfig | AvatarConfig;
   /** Level information */
   level: LevelInfo;
   /** Handler for edit profile button */

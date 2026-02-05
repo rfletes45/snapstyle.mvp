@@ -316,7 +316,6 @@ export function ProfilePreviewModal({
                     <Avatar
                       config={profile.avatarConfig}
                       size={100}
-                      showBorder
                     />
                   </View>
 

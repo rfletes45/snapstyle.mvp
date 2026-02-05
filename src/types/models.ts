@@ -1,15 +1,11 @@
 // User model
 
-import type { DigitalAvatarConfig } from "./avatar";
-
 export interface User {
   uid: string;
   usernameLower: string;
   username: string;
   displayName: string;
   avatarConfig: AvatarConfig;
-  /** Digital avatar configuration (new Bitmoji-style system) */
-  digitalAvatar?: DigitalAvatarConfig;
   expoPushToken?: string;
   createdAt: number;
   lastActive: number;

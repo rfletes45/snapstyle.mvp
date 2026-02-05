@@ -239,34 +239,6 @@ export type {
 } from "./useItemPreview";
 
 // =============================================================================
-// Avatar Customization Hook (Digital Avatar System Phase 6)
-// =============================================================================
-
-export { useAvatarCustomization } from "./useAvatarCustomization";
-export type {
-  UseAvatarCustomizationOptions,
-  UseAvatarCustomizationReturn,
-  ValidationResult,
-} from "./useAvatarCustomization";
-
-// =============================================================================
-// Avatar Rollout Hooks (Digital Avatar System Phase 8)
-// =============================================================================
-
-export {
-  AvatarRolloutProvider,
-  useAvatarRollout,
-  useAvatarRolloutContext,
-  useIsCustomizerEnabled,
-  useIsDigitalAvatarEnabled,
-  useNeedsMigration,
-} from "./useAvatarRollout";
-export type {
-  AvatarRolloutState,
-  UseAvatarRolloutReturn,
-} from "./useAvatarRollout";
-
-// =============================================================================
 // Cart Course Navigation Hook (Cart Course Game Phase 8)
 // =============================================================================
 

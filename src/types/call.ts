@@ -6,7 +6,7 @@
  * which doesn't work on web platforms.
  */
 
-import { AvatarConfig } from "./avatar";
+import { AvatarConfig } from "./models";
 
 // Use any type for MediaStream to support web/Expo Go where WebRTC isn't available
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
