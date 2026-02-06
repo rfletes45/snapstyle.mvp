@@ -143,12 +143,18 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   timed_tap: "TimedTapGame",
   bounce_blitz: "BounceBlitzGame",
   snap_snake: "SnapSnakeGame",
-  brick_breaker: "BrickBreakerGame", // New (Phase 1)
+  flappy_snap: "FlappySnapGame",
+  brick_breaker: "BrickBreakerGame",
+  snap_stack: "SnapStackGame",
+  snap_aim: "SnapAimGame",
   // Puzzle
   snap_2048: "Snap2048Game",
   memory_snap: "MemorySnapGame",
   cart_course: "CartCourseGame",
-  tile_slide: "TileSlideGame", // New (Phase 1)
+  tile_slide: "TileSlideGame",
+  snap_minesweeper: "SnapMinesweeperGame",
+  snap_number: "SnapNumberGame",
+  snap_lights: "SnapLightsGame",
   // Daily
   word_snap: "WordSnapGame",
   // Multiplayer
@@ -156,6 +162,9 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   checkers: "CheckersGame",
   chess: "ChessGame",
   crazy_eights: "CrazyEightsGame",
+  snap_four: "SnapFourGame",
+  snap_dots: "SnapDotsGame",
+  snap_gomoku: "SnapGomokuGame",
   // Coming Soon
   "8ball_pool": "PoolGame",
   air_hockey: "AirHockeyGame",

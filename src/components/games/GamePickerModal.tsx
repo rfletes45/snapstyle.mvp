@@ -9,7 +9,7 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
   FlatList,
@@ -36,6 +36,7 @@ import {
   createLiveSession,
   startLiveSession,
 } from "@/services/liveSpectatorSession";
+import { getFullProfileData } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import {
   ExtendedGameType,
@@ -273,6 +274,31 @@ export function GamePickerModal({
   const [spectatorInviteGame, setSpectatorInviteGame] =
     useState<SinglePlayerGameType | null>(null);
   const [spectatorModalVisible, setSpectatorModalVisible] = useState(false);
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<
+    string | undefined
+  >(undefined);
+
+  // -------------------------------------------------------------------------
+  // Fetch current user's profile picture
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!currentFirebaseUser?.uid) return;
+    let cancelled = false;
+
+    getFullProfileData(currentFirebaseUser.uid)
+      .then((profile) => {
+        if (!cancelled && profile?.profilePicture?.url) {
+          setCurrentUserAvatarUrl(profile.profilePicture.url);
+        }
+      })
+      .catch((err) => {
+        console.warn("[GamePickerModal] Failed to fetch profile picture:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFirebaseUser?.uid]);
 
   // -------------------------------------------------------------------------
   // Computed
@@ -396,7 +422,7 @@ export function GamePickerModal({
         const invite = await sendUniversalInvite({
           senderId: uid,
           senderName: userName,
-          senderAvatar: undefined, // TODO: Get from user profile
+          senderAvatar: currentUserAvatarUrl,
           gameType: game.id as any,
           context,
           conversationId,
@@ -405,7 +431,9 @@ export function GamePickerModal({
           recipientName: context === "dm" ? recipientName : undefined,
           recipientAvatar: context === "dm" ? recipientAvatar : undefined,
           eligibleUserIds: finalEligibleUserIds,
-          requiredPlayers: game.minPlayers,
+          requiredPlayers: game.isMultiplayer
+            ? Math.max(2, game.minPlayers)
+            : game.minPlayers,
           settings: {
             isRated: false,
             chatEnabled: true,

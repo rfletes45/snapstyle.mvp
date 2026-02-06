@@ -4,11 +4,12 @@
  * Displays user statistics in a grid layout.
  */
 
+import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
 import type { ProfileStats as ProfileStatsType } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 
 export interface ProfileStatsProps {
   /** Statistics data */
@@ -30,21 +31,19 @@ const StatItem = memo(function StatItem({
   label,
   color,
 }: StatItemProps) {
-  const theme = useTheme();
+  const colors = useProfileThemeColors();
 
   return (
     <View style={styles.statItem}>
       <MaterialCommunityIcons
         name={icon as any}
         size={24}
-        color={color || theme.colors.primary}
+        color={color || colors.primary}
       />
-      <Text style={[styles.statValue, { color: theme.colors.onSurface }]}>
+      <Text style={[styles.statValue, { color: colors.text }]}>
         {typeof value === "number" ? value.toLocaleString() : value}
       </Text>
-      <Text
-        style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}
-      >
+      <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
         {label}
       </Text>
     </View>
@@ -52,7 +51,7 @@ const StatItem = memo(function StatItem({
 });
 
 function ProfileStatsBase({ stats, expanded = false }: ProfileStatsProps) {
-  const theme = useTheme();
+  const colors = useProfileThemeColors();
 
   const primaryStats = [
     { icon: "gamepad-variant", value: stats.gamesPlayed, label: "Games" },
@@ -76,10 +75,7 @@ function ProfileStatsBase({ stats, expanded = false }: ProfileStatsProps) {
   return (
     <View style={styles.container}>
       <View
-        style={[
-          styles.statsGrid,
-          { backgroundColor: theme.colors.surfaceVariant },
-        ]}
+        style={[styles.statsGrid, { backgroundColor: colors.surfaceVariant }]}
       >
         {primaryStats.map((stat, index) => (
           <StatItem key={index} {...stat} />
@@ -91,7 +87,7 @@ function ProfileStatsBase({ stats, expanded = false }: ProfileStatsProps) {
           style={[
             styles.statsGrid,
             styles.secondaryGrid,
-            { backgroundColor: theme.colors.surfaceVariant },
+            { backgroundColor: colors.surfaceVariant },
           ]}
         >
           {secondaryStats.map((stat, index) => (

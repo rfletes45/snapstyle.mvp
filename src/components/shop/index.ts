@@ -45,22 +45,5 @@ export type { PurchaseConfirmationModalProps } from "./PurchaseConfirmationModal
 // Phase 4: Additional Features
 // =============================================================================
 
-// Wishlist
-export { WishlistButton } from "./WishlistButton";
-export type { WishlistButtonProps } from "./WishlistButton";
-
-// Gifting
-export { GiftModal } from "./GiftModal";
-
-// Daily Deals
-export { DailyDealsSection } from "./DailyDealsSection";
-
-// Promotions
-export {
-  CompactPromoBanner,
-  PromoBanner,
-  PromoCodeBanner,
-} from "./PromoBanner";
-
 // Item Preview
 export { ItemPreviewModal } from "./ItemPreviewModal";

@@ -24,6 +24,7 @@ import {
   CallHistoryFilter,
   CallHistoryStats,
 } from "../../types/call";
+import { formatDurationFull } from "../../utils/time";
 import { getAuthInstance, getFirestoreInstance } from "../firebase";
 
 // Lazy getters to avoid accessing Firebase before initialization
@@ -486,18 +487,10 @@ class CallHistoryService {
 
   /**
    * Format duration for display
+   * @deprecated Use `formatDurationFull` from `@/utils/time` directly
    */
   formatDuration(seconds: number | null): string {
-    if (seconds === null || seconds === 0) return "0:00";
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-    }
-    return `${minutes}:${secs.toString().padStart(2, "0")}`;
+    return formatDurationFull(seconds);
   }
 
   /**

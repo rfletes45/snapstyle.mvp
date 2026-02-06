@@ -24,7 +24,7 @@ import React, {
   useState,
 } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { Badge, IconButton, Menu, useTheme } from "react-native-paper";
+import { IconButton, Menu, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Auth & notifications
@@ -37,6 +37,7 @@ import { useReadReceipts } from "@/hooks/useReadReceipts";
 import { useSnapCapture } from "@/hooks/useSnapCapture";
 import { useTypingStatus } from "@/hooks/useTypingStatus";
 import { useUnifiedChatScreen } from "@/hooks/useUnifiedChatScreen";
+import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 
 // Chat components
 import {
@@ -50,6 +51,7 @@ import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
+import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
 
 // UI components
 import BlockUserModal from "@/components/BlockUserModal";
@@ -84,7 +86,8 @@ import {
   messageV2ToWithProfile,
   messageWithProfileToV2,
 } from "@/utils/messageAdapters";
-import { DEBUG_CHAT_V2, SHOW_V2_BADGE } from "../../../constants/featureFlags";
+import * as Haptics from "expo-haptics";
+import { DEBUG_CHAT_V2 } from "../../../constants/featureFlags";
 import { Spacing } from "../../../constants/theme";
 
 // ==========================================================================
@@ -92,6 +95,9 @@ import { Spacing } from "../../../constants/theme";
 // ==========================================================================
 
 const DEBUG_CHAT = DEBUG_CHAT_V2;
+
+/** Messages within this window from the same sender are visually grouped */
+const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 
 // ==========================================================================
 // Types
@@ -182,7 +188,7 @@ export default function ChatScreen({
     currentUid: uid || "",
     currentUserName:
       currentFirebaseUser?.displayName || currentFirebaseUser?.email || "User",
-    enableVoice: false,
+    enableVoice: true,
     enableAttachments: false,
     enableMentions: false,
     enableScheduledMessages: true,
@@ -221,6 +227,12 @@ export default function ChatScreen({
     debug: DEBUG_CHAT,
   });
 
+  // Voice recorder
+  const voiceRecorder = useVoiceRecorder({
+    maxDuration: 60,
+    onRecordingComplete: () => {},
+  });
+
   // ==========================================================================
   // Derived State
   // ==========================================================================
@@ -253,6 +265,50 @@ export default function ChatScreen({
   const selectedMessageAsV2 = useMemo(
     () => messageWithProfileToV2(selectedMessage, chatId, uid, friendProfile),
     [selectedMessage, chatId, uid, friendProfile],
+  );
+
+  // ==========================================================================
+  // Message Grouping Logic (for inverted FlatList)
+  // ==========================================================================
+
+  const areMessagesGrouped = useCallback(
+    (
+      msg1: MessageWithProfile | null,
+      msg2: MessageWithProfile | null,
+    ): boolean => {
+      if (!msg1 || !msg2) return false;
+      if (msg1.replyTo || msg2.replyTo) return false;
+      if (msg1.sender !== msg2.sender) return false;
+      const time1 =
+        msg1.createdAt instanceof Date
+          ? msg1.createdAt.getTime()
+          : msg1.createdAt;
+      const time2 =
+        msg2.createdAt instanceof Date
+          ? msg2.createdAt.getTime()
+          : msg2.createdAt;
+      return Math.abs(time1 - time2) < MESSAGE_GROUP_THRESHOLD_MS;
+    },
+    [],
+  );
+
+  /** In an inverted list, index 0 = newest (bottom). The message "below" visually is index - 1. */
+  const shouldShowTimestamp = useCallback(
+    (index: number, message: MessageWithProfile): boolean => {
+      // Always show timestamp on the last message in a group (visually bottom-most)
+      const messageBelow = index > 0 ? displayMessages[index - 1] : null;
+      return !areMessagesGrouped(message, messageBelow);
+    },
+    [displayMessages, areMessagesGrouped],
+  );
+
+  const isGroupedMessage = useCallback(
+    (index: number, message: MessageWithProfile): boolean => {
+      const messageAbove =
+        index < displayMessages.length - 1 ? displayMessages[index + 1] : null;
+      return areMessagesGrouped(message, messageAbove);
+    },
+    [displayMessages, areMessagesGrouped],
   );
 
   // ==========================================================================
@@ -376,21 +432,11 @@ export default function ChatScreen({
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           {/* Call buttons */}
           <CallButtonGroup
-            recipientId={friendUid}
-            recipientName={friendProfile?.username || "Friend"}
+            participantId={friendUid}
+            participantName={friendProfile?.username || "Friend"}
             conversationId={chatId || ""}
-            scope="dm"
             size={22}
-            iconColor={theme.colors.onSurface}
           />
-          {SHOW_V2_BADGE && (
-            <Badge
-              size={20}
-              style={{ backgroundColor: "#4CAF50", marginRight: 8 }}
-            >
-              V2
-            </Badge>
-          )}
           <Menu
             visible={menuVisible}
             onDismiss={() => setMenuVisible(false)}
@@ -464,6 +510,7 @@ export default function ChatScreen({
   const handleSendMessage = useCallback(async () => {
     if (!uid || !chatId || !screen.composer.text.trim()) return;
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       // Clear typing indicator when sending
       typing.setTyping(false);
       await screen.composer.send();
@@ -471,6 +518,31 @@ export default function ChatScreen({
       console.error("❌ [ChatScreen] Send error:", error);
     }
   }, [uid, chatId, screen.composer, typing]);
+
+  const handleVoiceRecordingComplete = useCallback(
+    async (recording: VoiceRecording) => {
+      if (!uid || !chatId || screen.sending) return;
+
+      try {
+        await screen.chat.sendMessage("", {
+          kind: "voice",
+          attachments: [
+            {
+              id: `voice_${Date.now()}_${uid}`,
+              uri: recording.uri,
+              kind: "audio",
+              mime: "audio/m4a",
+              durationMs: recording.durationMs,
+            },
+          ],
+        });
+      } catch (error: any) {
+        console.error("❌ [ChatScreen] Voice send error:", error);
+        Alert.alert("Error", error.message || "Failed to send voice message");
+      }
+    },
+    [uid, chatId, screen.chat, screen.sending],
+  );
 
   const handleReply = useCallback(
     (replyMetadata: ReplyToMetadata) => {
@@ -484,6 +556,7 @@ export default function ChatScreen({
   }, [screen.chat]);
 
   const handleMessageLongPress = useCallback((message: MessageWithProfile) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedMessage(message);
     setActionsSheetVisible(true);
   }, []);
@@ -708,18 +781,34 @@ export default function ChatScreen({
   const isInitializing = !chatId || !friendProfile;
   const showSkeleton = screen.loading || isInitializing;
 
-  const renderMessageItem = ({ item }: { item: MessageWithProfile }) => (
-    <DMMessageItem
-      message={item}
-      currentUid={uid}
-      chatId={chatId}
-      friendProfile={friendProfile}
-      onReply={handleReply}
-      onLongPress={handleMessageLongPress}
-      onScrollToMessage={scrollToMessage}
-      onRetry={handleRetryMessage}
-      isHighlighted={item.id === highlightedMessageId}
-    />
+  const renderMessageItem = useCallback(
+    ({ item, index }: { item: MessageWithProfile; index: number }) => (
+      <DMMessageItem
+        message={item}
+        currentUid={uid}
+        chatId={chatId}
+        friendProfile={friendProfile}
+        onReply={handleReply}
+        onLongPress={handleMessageLongPress}
+        onScrollToMessage={scrollToMessage}
+        onRetry={handleRetryMessage}
+        isHighlighted={item.id === highlightedMessageId}
+        isGrouped={isGroupedMessage(index, item)}
+        showTimestamp={shouldShowTimestamp(index, item)}
+      />
+    ),
+    [
+      uid,
+      chatId,
+      friendProfile,
+      handleReply,
+      handleMessageLongPress,
+      scrollToMessage,
+      handleRetryMessage,
+      highlightedMessageId,
+      isGroupedMessage,
+      shouldShowTimestamp,
+    ],
   );
 
   const cameraButton = (
@@ -787,11 +876,19 @@ export default function ChatScreen({
               ) : null
             }
             ListEmptyComponent={
-              <EmptyState
-                icon="chat-outline"
-                title="No messages yet"
-                subtitle="Send a message or snap to start the conversation!"
-              />
+              <View
+                style={{
+                  transform: [{ scaleY: -1 }],
+                  flexGrow: 1,
+                  justifyContent: "center",
+                }}
+              >
+                <EmptyState
+                  icon="chat-outline"
+                  title="No messages yet"
+                  subtitle="Send a message or snap to start the conversation!"
+                />
+              </View>
             }
             flatListProps={{
               onEndReached: screen.loadOlder,
@@ -828,6 +925,17 @@ export default function ChatScreen({
           onCancelReply={handleCancelReply}
           currentUid={uid}
           onGamePress={handleGamePress}
+          voiceButtonComponent={
+            voiceRecorder.isAvailable && !screen.composer.text.trim() ? (
+              <VoiceRecordButton
+                onRecordingComplete={handleVoiceRecordingComplete}
+                onRecordingCancelled={() => {}}
+                disabled={screen.sending}
+                size={32}
+                maxDuration={60000}
+              />
+            ) : undefined
+          }
           keyboardHeight={screen.keyboard.keyboardHeight}
           safeAreaBottom={insets.bottom}
           absolutePosition={true}
@@ -873,7 +981,7 @@ export default function ChatScreen({
         conversationName={friendProfile?.username}
         recipientId={friendUid}
         recipientName={friendProfile?.username}
-        recipientAvatar={friendProfile?.avatar}
+        recipientAvatar={friendProfile?.profilePicture?.url}
         onSinglePlayerGame={handleSinglePlayerGame}
         onInviteCreated={handleInviteCreated}
         onSpectatorInviteCreated={handleSpectatorInviteCreated}

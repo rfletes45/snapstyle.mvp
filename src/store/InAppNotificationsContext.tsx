@@ -76,7 +76,11 @@ const storage = {
 // Types
 // =============================================================================
 
-export type NotificationType = "message" | "friend_request";
+export type NotificationType =
+  | "message"
+  | "friend_request"
+  | "game_invite"
+  | "achievement";
 
 export interface InAppNotification {
   /** Unique ID for this notification */
@@ -274,11 +278,37 @@ export function InAppNotificationsProvider({
         return;
       }
 
+      // Suppress message notifications when on the inbox screen
+      if (notification.type === "message" && currentScreen === "ChatList") {
+        log.debug("User is on inbox screen, suppressing message notification");
+        return;
+      }
+
       if (
         notification.type === "friend_request" &&
         currentScreen === "Connections"
       ) {
         log.debug("User is on Connections screen, suppressing notification");
+        return;
+      }
+
+      // Suppress achievement notifications when on achievements screen
+      if (
+        notification.type === "achievement" &&
+        currentScreen === "Achievements"
+      ) {
+        log.debug("User is on Achievements screen, suppressing notification");
+        return;
+      }
+
+      // Suppress game invite notifications when viewing the chat it was sent in
+      if (
+        notification.type === "game_invite" &&
+        notification.entityId === currentChatId
+      ) {
+        log.debug(
+          "User is in the chat where game invite was sent, suppressing",
+        );
         return;
       }
 
@@ -648,6 +678,94 @@ export function InAppNotificationsProvider({
       );
     };
   }, [uid, enabled, currentChatId, pushNotification]);
+
+  // Subscribe to incoming game invites
+  useEffect(() => {
+    if (!uid || !enabled) return;
+
+    const db = getFirestoreInstance();
+    const invitesRef = collection(db, "GameInvites");
+    const q = query(
+      invitesRef,
+      where("recipientId", "==", uid),
+      where("status", "==", "pending"),
+    );
+
+    log.info("Setting up game invite listener");
+
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+          if (change.type === "added") {
+            const data = change.doc.data();
+            const inviteId = change.doc.id;
+            const fromUid = data.senderId || data.fromUserId;
+            const createdAt =
+              data.createdAt?.toMillis?.() || data.createdAt || Date.now();
+
+            // Skip old invites (only show recent ones)
+            if (Date.now() - createdAt > 30000) {
+              log.debug(`Skipping old game invite: ${inviteId}`);
+              continue;
+            }
+
+            const senderName =
+              data.senderDisplayName || data.fromDisplayName || "Someone";
+            const gameType = data.gameType || "a game";
+
+            // Determine navigation target — go to the chat where the invite was sent
+            const conversationId = data.conversationId;
+            const conversationType = data.conversationType; // "dm" or "group"
+
+            let navigateTo: InAppNotification["navigateTo"];
+            if (conversationType === "group" && conversationId) {
+              navigateTo = {
+                screen: "GroupChat",
+                params: {
+                  groupId: conversationId,
+                  groupName: data.conversationName || "Group",
+                },
+              };
+            } else if (conversationId) {
+              navigateTo = {
+                screen: "ChatDetail",
+                params: { friendUid: fromUid },
+              };
+            } else {
+              // Legacy invite without conversation context — navigate to chat with sender
+              navigateTo = {
+                screen: "ChatDetail",
+                params: { friendUid: fromUid },
+              };
+            }
+
+            pushNotification({
+              type: "game_invite",
+              title: "Game Invite!",
+              body: `${senderName} invited you to play ${gameType}`,
+              entityId: conversationId || inviteId,
+              fromUserId: fromUid,
+              fromDisplayName: senderName,
+              navigateTo,
+            });
+          }
+        }
+      },
+      (error) => {
+        log.error("Game invite listener error", error);
+      },
+    );
+
+    unsubscribeRefs.current.push(unsubscribe);
+
+    return () => {
+      unsubscribe();
+      unsubscribeRefs.current = unsubscribeRefs.current.filter(
+        (u) => u !== unsubscribe,
+      );
+    };
+  }, [uid, enabled, pushNotification]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -18,7 +18,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Dimensions,
   RefreshControl,
@@ -493,41 +493,6 @@ export default function PremiumShopScreen() {
         return null;
     }
   };
-
-  // Get selected item for modal
-  const getModalItem = useMemo(() => {
-    if (!selectedItem) return undefined;
-
-    switch (selectedItem.type) {
-      case "token_pack":
-        return {
-          id: selectedItem.item.id,
-          name: selectedItem.item.name,
-          priceUSD: selectedItem.item.basePriceUSD,
-          description: `${selectedItem.item.totalTokens.toLocaleString()} tokens`,
-          imagePath: "🪙",
-        };
-      case "bundle":
-        return {
-          id: selectedItem.item.id,
-          name: selectedItem.item.name,
-          priceUSD: selectedItem.item.basePriceUSD,
-          description: selectedItem.item.description,
-          imagePath: selectedItem.item.imagePath,
-        };
-      case "exclusive":
-        return {
-          id: selectedItem.item.id,
-          name: selectedItem.item.name,
-          priceUSD: selectedItem.item.basePriceUSD,
-          description: selectedItem.item.description,
-          imagePath: selectedItem.item.imagePath,
-          rarity: selectedItem.item.rarity,
-        };
-      default:
-        return undefined;
-    }
-  }, [selectedItem]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

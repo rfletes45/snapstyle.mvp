@@ -329,7 +329,7 @@ async function checkMultiplayerAchievements(
 async function checkGameSpecificAchievements(
   context: GameCompletionContext,
 ): Promise<AchievementCheckResult[]> {
-  const { match, userId, isWinner, stats } = context;
+  const { match, userId } = context;
   const gameType = match.gameType;
   const checks: { achievementId: string; value: number }[] = [];
 
@@ -516,7 +516,7 @@ function getTicTacToeAchievementChecks(
 function getCrazyEightsAchievementChecks(
   context: GameCompletionContext,
 ): { achievementId: string; value: number }[] {
-  const { match, isWinner, stats } = context;
+  const { isWinner, stats } = context;
   const checks: { achievementId: string; value: number }[] = [];
   const gameTypeStats = stats.byGameType.crazy_eights;
 
@@ -610,6 +610,9 @@ function gameTypeToStatsType(gameType: TurnBasedGameType): StatsGameType {
     checkers: "checkers",
     tic_tac_toe: "tic_tac_toe",
     crazy_eights: "crazy_eights",
+    snap_four: "snap_four",
+    snap_dots: "snap_dots",
+    snap_gomoku: "snap_gomoku",
   };
 
   return typeMap[gameType] || gameType;

@@ -333,6 +333,84 @@ export default function BounceBlitzGameScreen({
     launchBallsRef.current = launchBalls;
   }, [launchBalls]);
 
+  // Flag to prevent multiple endGame calls
+  const endingGameRef = useRef(false);
+
+  // End game - uses refs to get current values, avoiding stale closures
+  const endGame = useCallback(async () => {
+    // Prevent multiple calls
+    if (endingGameRef.current || statusRef.current === "gameOver") {
+      console.log(
+        "[BounceBlitz] endGame already in progress or game already over, skipping",
+      );
+      return;
+    }
+    endingGameRef.current = true;
+
+    // Stop the game loop immediately
+    if (gameLoopRef.current) {
+      cancelAnimationFrame(gameLoopRef.current);
+      gameLoopRef.current = null;
+    }
+
+    setStatus("gameOver");
+    statusRef.current = "gameOver";
+
+    if (Platform.OS !== "web") {
+      Vibration.vibrate([0, 100, 50, 100]);
+    }
+
+    // Use refs to get current values
+    const currentScore = scoreRef.current;
+    const currentHighScore = highScoreRef.current;
+    const currentLevel = levelRef.current;
+    const currentBlocksDestroyed = totalBlocksDestroyedRef.current;
+    const currentBallCount = ballCountRef.current;
+    const currentBounces = totalBouncesRef.current;
+
+    console.log(
+      "[BounceBlitz] endGame - score:",
+      currentScore,
+      "level:",
+      currentLevel,
+    );
+
+    const newBest = currentScore > currentHighScore;
+    if (newBest) {
+      setHighScore(currentScore);
+      highScoreRef.current = currentScore;
+      setIsNewBest(true);
+      showSuccess("🎉 New High Score!");
+    }
+
+    // Record session
+    if (currentFirebaseUser) {
+      try {
+        console.log(
+          "[BounceBlitz] Recording session for user:",
+          currentFirebaseUser.uid,
+        );
+        await recordSinglePlayerSession(currentFirebaseUser.uid, {
+          gameType: "bounce_blitz",
+          finalScore: currentScore,
+          stats: {
+            gameType: "bounce_blitz",
+            levelReached: currentLevel,
+            blocksDestroyed: currentBlocksDestroyed,
+            ballsLaunched: currentBallCount,
+            totalBounces: currentBounces,
+          },
+        });
+        console.log("[BounceBlitz] Session recorded successfully");
+      } catch (error) {
+        console.error("[BounceBlitz] Error recording session:", error);
+      }
+    }
+
+    // Reset the ending flag after a short delay
+    endingGameRef.current = false;
+  }, [currentFirebaseUser, showSuccess]);
+
   // Update game physics
   const updateGame = useCallback(() => {
     // Only process if we're in shooting state
@@ -528,84 +606,6 @@ export default function BounceBlitzGameScreen({
 
     setRenderTrigger((t) => t + 1);
   }, [generateBlocks, endGame]);
-
-  // Flag to prevent multiple endGame calls
-  const endingGameRef = useRef(false);
-
-  // End game - uses refs to get current values, avoiding stale closures
-  const endGame = useCallback(async () => {
-    // Prevent multiple calls
-    if (endingGameRef.current || statusRef.current === "gameOver") {
-      console.log(
-        "[BounceBlitz] endGame already in progress or game already over, skipping",
-      );
-      return;
-    }
-    endingGameRef.current = true;
-
-    // Stop the game loop immediately
-    if (gameLoopRef.current) {
-      cancelAnimationFrame(gameLoopRef.current);
-      gameLoopRef.current = null;
-    }
-
-    setStatus("gameOver");
-    statusRef.current = "gameOver";
-
-    if (Platform.OS !== "web") {
-      Vibration.vibrate([0, 100, 50, 100]);
-    }
-
-    // Use refs to get current values
-    const currentScore = scoreRef.current;
-    const currentHighScore = highScoreRef.current;
-    const currentLevel = levelRef.current;
-    const currentBlocksDestroyed = totalBlocksDestroyedRef.current;
-    const currentBallCount = ballCountRef.current;
-    const currentBounces = totalBouncesRef.current;
-
-    console.log(
-      "[BounceBlitz] endGame - score:",
-      currentScore,
-      "level:",
-      currentLevel,
-    );
-
-    const newBest = currentScore > currentHighScore;
-    if (newBest) {
-      setHighScore(currentScore);
-      highScoreRef.current = currentScore;
-      setIsNewBest(true);
-      showSuccess("🎉 New High Score!");
-    }
-
-    // Record session
-    if (currentFirebaseUser) {
-      try {
-        console.log(
-          "[BounceBlitz] Recording session for user:",
-          currentFirebaseUser.uid,
-        );
-        await recordSinglePlayerSession(currentFirebaseUser.uid, {
-          gameType: "bounce_blitz",
-          finalScore: currentScore,
-          stats: {
-            gameType: "bounce_blitz",
-            levelReached: currentLevel,
-            blocksDestroyed: currentBlocksDestroyed,
-            ballsLaunched: currentBallCount,
-            totalBounces: currentBounces,
-          },
-        });
-        console.log("[BounceBlitz] Session recorded successfully");
-      } catch (error) {
-        console.error("[BounceBlitz] Error recording session:", error);
-      }
-    }
-
-    // Reset the ending flag after a short delay
-    endingGameRef.current = false;
-  }, [currentFirebaseUser, showSuccess]);
 
   // Pan responder for aiming - uses refs to avoid stale closures
   const panResponder = useRef(

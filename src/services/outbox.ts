@@ -405,6 +405,21 @@ export async function processOutbox(
     data: { sent, failed, skipped },
   });
 
+  // Auto-cleanup: remove items older than 7 days and items that have
+  // exceeded MAX_RETRY_ATTEMPTS to prevent unbounded AsyncStorage growth
+  try {
+    const staleRemoved = await removeStaleItems();
+    const exhaustedRemoved = await removeExhaustedItems();
+    if (staleRemoved > 0 || exhaustedRemoved > 0) {
+      log.info("Outbox auto-cleanup completed", {
+        operation: "autoCleanup",
+        data: { staleRemoved, exhaustedRemoved },
+      });
+    }
+  } catch (cleanupError) {
+    log.warn("Outbox auto-cleanup failed", { operation: "autoCleanupFailed" });
+  }
+
   return { sent, failed, skipped };
 }
 
@@ -518,6 +533,31 @@ export async function getOutboxStats(): Promise<{
   }
 
   return stats;
+}
+
+/**
+ * Remove items that have exceeded MAX_RETRY_ATTEMPTS
+ * These will never succeed and should not accumulate in storage
+ */
+export async function removeExhaustedItems(): Promise<number> {
+  const outbox = await getOutbox();
+
+  const filtered = outbox.filter((item) => {
+    if (item.attemptCount <= MAX_RETRY_ATTEMPTS) return true;
+    log.info("Removing exhausted outbox item", {
+      operation: "removeExhausted",
+      data: { messageId: item.messageId, attempts: item.attemptCount },
+    });
+    return false;
+  });
+
+  const removedCount = outbox.length - filtered.length;
+
+  if (removedCount > 0) {
+    await saveOutbox(filtered);
+  }
+
+  return removedCount;
 }
 
 /**

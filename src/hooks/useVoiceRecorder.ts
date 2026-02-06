@@ -13,6 +13,7 @@
  */
 
 import { createLogger } from "@/utils/log";
+import { formatDurationMs as formatDuration } from "@/utils/time";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
 
@@ -91,17 +92,6 @@ const DEFAULT_MAX_DURATION = 60; // 60 seconds
 const RECORDING_UPDATE_INTERVAL = 100; // ms
 
 // =============================================================================
-// Helper Functions
-// =============================================================================
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-// =============================================================================
 // Fallback Hook (when expo-audio is not installed)
 // =============================================================================
 
@@ -149,6 +139,7 @@ function useVoiceRecorderImpl(
   const [durationMs, setDurationMs] = useState(0);
   const recordingStartTime = useRef<number | null>(null);
   const durationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isRecordingRef = useRef(false);
 
   // Use expo-audio hooks
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -216,6 +207,7 @@ function useVoiceRecorderImpl(
       audioRecorder.record();
 
       setIsRecording(true);
+      isRecordingRef.current = true;
       recordingStartTime.current = Date.now();
       setDurationMs(0);
 
@@ -238,6 +230,7 @@ function useVoiceRecorderImpl(
       log.error("Failed to start recording", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
       setIsRecording(false);
+      isRecordingRef.current = false;
     }
   }, [hasPermission, requestPermission, audioRecorder, maxDuration]);
 
@@ -263,6 +256,7 @@ function useVoiceRecorderImpl(
           : durationMs;
 
         setIsRecording(false);
+        isRecordingRef.current = false;
         recordingStartTime.current = null;
 
         // Reset audio mode
@@ -295,6 +289,7 @@ function useVoiceRecorderImpl(
       } catch (error) {
         log.error("Failed to stop recording", error);
         setIsRecording(false);
+        isRecordingRef.current = false;
         return null;
       }
     }, [isRecording, audioRecorder, durationMs, onRecordingComplete]);
@@ -312,6 +307,7 @@ function useVoiceRecorderImpl(
       }
 
       setIsRecording(false);
+      isRecordingRef.current = false;
       setDurationMs(0);
       recordingStartTime.current = null;
 
@@ -326,6 +322,7 @@ function useVoiceRecorderImpl(
     } catch (error) {
       log.error("Failed to cancel recording", error);
       setIsRecording(false);
+      isRecordingRef.current = false;
     }
   }, [isRecording, audioRecorder, onRecordingCancelled]);
 
@@ -338,8 +335,24 @@ function useVoiceRecorderImpl(
       if (durationInterval.current) {
         clearInterval(durationInterval.current);
       }
+      // Stop active recording on unmount to prevent orphaned recording
+      if (isRecordingRef.current) {
+        isRecordingRef.current = false;
+        try {
+          audioRecorder.stop();
+          setAudioModeAsync?.({
+            allowsRecording: false,
+            playsInSilentMode: true,
+          });
+        } catch (e) {
+          // Best-effort cleanup on unmount
+          log.warn("Failed to stop recording on unmount", {
+            data: { error: e },
+          });
+        }
+      }
     };
-  }, []);
+  }, [audioRecorder]);
 
   // ==========================================================================
   // Return

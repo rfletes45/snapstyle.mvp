@@ -312,6 +312,18 @@ export default function TileSlideGameScreen({
 
   // Ref for game state
   const gameStateRef = useRef(gameState);
+
+  // Timer refs for cleanup on unmount
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    };
+  }, []);
   gameStateRef.current = gameState;
 
   // Start a new game
@@ -391,7 +403,7 @@ export default function TileSlideGameScreen({
       }
 
       // Clear animation state after animation completes
-      setTimeout(() => {
+      animTimerRef.current = setTimeout(() => {
         setGameState((prev) => (prev ? clearAnimationState(prev) : null));
       }, SLIDE_ANIMATION_MS);
 
@@ -410,7 +422,7 @@ export default function TileSlideGameScreen({
     haptics.trigger("selection");
 
     // Clear hint after 3 seconds
-    setTimeout(() => {
+    hintTimerRef.current = setTimeout(() => {
       setHintTileIndex(null);
     }, 3000);
   }, [gameState, haptics]);

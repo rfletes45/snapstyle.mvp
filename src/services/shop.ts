@@ -133,7 +133,7 @@ export async function getShopItemsByCategory(
  * @param itemId - The shop item ID
  * @returns Shop item or null if not found
  */
-export async function getShopItem(itemId: string): Promise<ShopItem | null> {
+async function getShopItem(itemId: string): Promise<ShopItem | null> {
   const db = getFirestoreInstance();
 
   try {

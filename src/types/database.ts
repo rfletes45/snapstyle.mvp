@@ -38,7 +38,14 @@ export interface MessageRow {
   scope: "dm" | "group";
   sender_id: string;
   sender_name: string | null;
-  kind: "text" | "media" | "voice" | "file" | "system" | "scorecard";
+  kind:
+    | "text"
+    | "media"
+    | "voice"
+    | "file"
+    | "system"
+    | "scorecard"
+    | "game_invite";
   text: string | null;
   created_at: number;
   server_received_at: number | null;

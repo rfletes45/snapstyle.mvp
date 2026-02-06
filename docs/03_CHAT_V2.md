@@ -120,7 +120,14 @@ Both `ChatScreen` (DM) and `GroupChatScreen` use the same hooks stack for consis
 
 ```typescript
 type MessageScope = "dm" | "group";
-type MessageKind = "text" | "media" | "voice" | "file" | "scorecard" | "system";
+type MessageKind =
+  | "text"
+  | "media"
+  | "voice"
+  | "file"
+  | "scorecard"
+  | "system"
+  | "game_invite";
 type AttachmentKind = "image" | "video" | "audio" | "file";
 
 interface MessageV2 {
@@ -1241,11 +1248,11 @@ convertLegacyMessage(legacy: LegacyMessage): MessageV2
 
 > **Completed: January 2026**
 >
-> See [INBOX_OVERHAUL_PLAN.md](./INBOX_OVERHAUL_PLAN.md) for implementation summary.
+> Implementation summary archived in [ARCHIVE.md](ARCHIVE.md).
 
 ### Overview
 
-The inbox screen was completely redesigned with modern UX features:
+The inbox screen (`ChatListScreenV2`) is the **default screen** when the app opens (`initialRouteName="Inbox"` in RootNavigator). It was completely redesigned with modern UX features:
 
 - **Filter tabs**: All, Unread, Groups, DMs, Requests
 - **Swipe actions**: Pin, Mute, Delete

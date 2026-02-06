@@ -26,6 +26,61 @@
 | Perf        | Chat loading optimization            | ✅ Complete (Jan 2026)   |
 | Reply       | Enhanced reply system design         | ✅ Complete (2025)       |
 | Calls       | Voice/video calling system           | ✅ Complete (Feb 2026)   |
+| SP Games    | 4 new single-player games            | ✅ Complete (Feb 2026)   |
+| Notifs      | In-app notification overhaul         | ✅ Complete (Feb 2026)   |
+| Inbox++     | Inbox default, unread sort, game msg | ✅ Complete (Feb 2026)   |
+
+---
+
+## New Single-Player Games Summary
+
+**Completed**: February 2026
+
+### Overview
+
+Implemented 4 new single-player games with full test coverage (217 total tests):
+
+| Game          | Category | Tests | Description                             |
+| ------------- | -------- | ----- | --------------------------------------- |
+| Tile Slide    | Puzzle   | 39    | Classic sliding puzzle (3×3, 4×4, 5×5)  |
+| Hex Collapse  | Puzzle   | 54    | Hexagonal match-3 with chain reactions  |
+| Color Flow    | Puzzle   | 62    | Flow Free-style path connection puzzles |
+| Brick Breaker | Action   | 62    | Classic Breakout with power-ups         |
+
+### Key Files
+
+- Logic: `src/services/games/{tileSlide,hexCollapse,colorFlow,brickBreaker}Logic.ts`
+- Screens: `src/screens/games/{TileSlide,HexCollapse,ColorFlow,BrickBreaker}GameScreen.tsx`
+- Tests: `__tests__/games/{tileSlide,hexCollapse,colorFlow,brickBreaker}Logic.test.ts`
+- Types: `src/types/singlePlayerGames.ts`
+
+### Documentation
+
+All game details consolidated into [06_GAMES.md](06_GAMES.md).
+
+**Deleted**: `NEW_SINGLEPLAYER_GAMES_PLAN.md` — Plan completed, details in 06_GAMES.md.
+
+---
+
+## In-App Notifications & Inbox Improvements Summary
+
+**Completed**: February 2026
+
+### In-App Notifications Overhaul
+
+- Added `game_invite` and `achievement` notification types
+- Added per-screen suppression (suppress game invites on game screens, achievements on achievements screen)
+- Added Firestore listener for real-time game invite notifications
+- Updated `InAppToast` with game_invite (green 🎮) and achievement (gold 🏆) icons/colors
+
+### Inbox Improvements
+
+- Made Inbox the default screen (`initialRouteName="Inbox"`)
+- Added `recentlyReadRef` guard to prevent marking conversations as read on every render
+- Added `game_invite` message kind for game invite conversation previews
+- Added `profilePictureUrl` and `decorationId` fields to inbox conversation items
+- Fixed own profile theme colors and added avatar decoration equip UI
+- Added `ProfilePictureWithDecoration` throughout inbox and group chat screens
 
 ---
 
@@ -315,11 +370,11 @@ Complete redesign of the ChatListScreen (now `ChatListScreenV2`) to create a mod
 
 ### Documentation
 
-- [INBOX_OVERHAUL_PLAN.md](./INBOX_OVERHAUL_PLAN.md) — Implementation summary
 - [03_CHAT_V2.md](./03_CHAT_V2.md) — Includes Inbox Overhaul section
 
 > **Deleted during cleanup (Jan 2026):**
 >
+> - `INBOX_OVERHAUL_PLAN.md` — Consolidated into this file and 03_CHAT_V2
 > - `INBOX_OVERHAUL_CHANGELOG.md` — Consolidated into this file
 > - `INBOX_OVERHAUL_PLAN_DETAILED.md` — 3500-line spec, obsolete after completion
 
@@ -713,11 +768,15 @@ These patterns were removed and should not be reintroduced:
 
 ### Deleted February 2026 (Consolidation)
 
-| File                      | Reason                                          |
-| ------------------------- | ----------------------------------------------- |
-| CHAT_SETTINGS_AUDIT.md    | Summarized in ARCHIVE.md, details in 03_CHAT_V2 |
-| CHAT_OPTIMIZATION_PLAN.md | Summarized in ARCHIVE.md                        |
-| REPLY_SYSTEM_DESIGN.md    | Summarized in ARCHIVE.md, details in 03_CHAT_V2 |
+| File                                | Reason                                             |
+| ----------------------------------- | -------------------------------------------------- |
+| CHAT_SETTINGS_AUDIT.md              | Summarized in ARCHIVE.md, details in 03_CHAT_V2    |
+| CHAT_OPTIMIZATION_PLAN.md           | Summarized in ARCHIVE.md                           |
+| REPLY_SYSTEM_DESIGN.md              | Summarized in ARCHIVE.md, details in 03_CHAT_V2    |
+| NEW_SINGLEPLAYER_GAMES_PLAN.md      | Completed, game details in 06_GAMES.md             |
+| PROFILE_SCREEN_OVERHAUL_PLAN.md     | Superseded by NEW_PROFILE_SYSTEM_PLAN.md           |
+| AVATAR_ROLLOUT_GUIDE.md (ref)       | Reference removed, file never existed in archived/ |
+| DIGITAL_AVATAR_SYSTEM_PLAN.md (ref) | Reference removed, file never existed in archived/ |
 
 ### Deleted (No Longer Relevant)
 

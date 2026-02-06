@@ -9,7 +9,7 @@
  * - Account management section
  */
 
-import { getAuthInstance } from "@/services/firebase";
+import { logout } from "@/services/auth";
 import { updateProfile } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
@@ -17,9 +17,12 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { isValidDisplayName } from "@/utils/validators";
-import { deleteUser, signOut } from "firebase/auth";
-import React, { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import * as Haptics from "expo-haptics";
+import { deleteUser } from "firebase/auth";
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
 import {
   Button,
   Dialog,
@@ -31,6 +34,8 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
+
+const NOTIFICATION_SETTINGS_KEY = "@vibe/notification_settings";
 
 // =============================================================================
 // Types
@@ -73,13 +78,25 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   // Get current theme info
   const currentThemeMeta = availableThemes.find((t) => t.id === themeId);
 
-  // Notification toggles (local state - persisted to Firestore in future)
+  // Notification toggles (persisted to AsyncStorage)
   const [notifications, setNotifications] = useState<NotificationSettings>({
     messages: true,
     friendRequests: true,
     stories: true,
     streaks: true,
   });
+
+  // Load saved notification settings on mount
+  useEffect(() => {
+    AsyncStorage.getItem(NOTIFICATION_SETTINGS_KEY).then((stored) => {
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as NotificationSettings;
+          setNotifications(parsed);
+        } catch {}
+      }
+    });
+  }, []);
 
   // Edit display name state
   const [showEditName, setShowEditName] = useState(false);
@@ -96,16 +113,24 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   // Handlers
   // =============================================================================
 
-  const toggleNotification = (key: keyof NotificationSettings) => {
-    setNotifications((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-    // TODO: Persist to Firestore in future phase
-    showSuccess(
-      `${key.charAt(0).toUpperCase() + key.slice(1)} notifications ${!notifications[key] ? "enabled" : "disabled"}`,
-    );
-  };
+  const toggleNotification = useCallback(
+    (key: keyof NotificationSettings) => {
+      Haptics.selectionAsync();
+      setNotifications((prev) => {
+        const updated = { ...prev, [key]: !prev[key] };
+        // Persist to AsyncStorage
+        AsyncStorage.setItem(
+          NOTIFICATION_SETTINGS_KEY,
+          JSON.stringify(updated),
+        ).catch(console.warn);
+        return updated;
+      });
+      showSuccess(
+        `${key.charAt(0).toUpperCase() + key.slice(1)} notifications ${!notifications[key] ? "enabled" : "disabled"}`,
+      );
+    },
+    [notifications, showSuccess],
+  );
 
   const handleSaveDisplayName = async () => {
     if (!editDisplayName.trim()) {
@@ -155,15 +180,24 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     }
   };
 
-  const handleSignOut = async () => {
-    try {
-      const auth = getAuthInstance();
-      await signOut(auth);
-    } catch (error: any) {
-      console.error("Sign out error:", error);
-      showError("Failed to sign out");
-    }
-  };
+  const handleSignOut = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await logout();
+          } catch (error: any) {
+            console.error("Sign out error:", error);
+            showError("Failed to sign out");
+          }
+        },
+      },
+    ]);
+  }, [showError]);
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== "DELETE") {
@@ -382,6 +416,14 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         </List.Subheader>
 
         <List.Item
+          title="Privacy Settings"
+          description="Control who can see your profile and contact you"
+          left={(props) => <List.Icon {...props} icon="shield-account" />}
+          right={(props) => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => navigation.navigate("PrivacySettings")}
+        />
+
+        <List.Item
           title="Blocked Users"
           description="Manage blocked users"
           left={(props) => <List.Icon {...props} icon="account-cancel" />}
@@ -395,8 +437,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           left={(props) => <List.Icon {...props} icon="shield-lock" />}
           right={(props) => <List.Icon {...props} icon="chevron-right" />}
           onPress={() => {
-            // TODO: Link to privacy policy in future phase
-            showInfo("Privacy policy coming soon");
+            Linking.openURL("https://vibeapp.com/privacy").catch(() =>
+              showInfo("Could not open privacy policy"),
+            );
           }}
         />
       </List.Section>
@@ -433,28 +476,34 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         </>
       )}
 
-      {/* Debug Section (Development) */}
-      <List.Section>
-        <List.Subheader style={styles.sectionHeader}>Developer</List.Subheader>
+      {/* Debug Section (Development only) */}
+      {__DEV__ && (
+        <>
+          <List.Section>
+            <List.Subheader style={styles.sectionHeader}>
+              Developer
+            </List.Subheader>
 
-        <List.Item
-          title="Debug Tools"
-          description="Streaks & cosmetics debugging"
-          left={(props) => <List.Icon {...props} icon="bug" />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => navigation.navigate("Debug")}
-        />
+            <List.Item
+              title="Debug Tools"
+              description="Streaks & cosmetics debugging"
+              left={(props) => <List.Icon {...props} icon="bug" />}
+              right={(props) => <List.Icon {...props} icon="chevron-right" />}
+              onPress={() => navigation.navigate("Debug")}
+            />
 
-        <List.Item
-          title="Local Storage Debug"
-          description="SQLite database, sync & cache testing"
-          left={(props) => <List.Icon {...props} icon="database" />}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => navigation.navigate("LocalStorageDebug")}
-        />
-      </List.Section>
+            <List.Item
+              title="Local Storage Debug"
+              description="SQLite database, sync & cache testing"
+              left={(props) => <List.Icon {...props} icon="database" />}
+              right={(props) => <List.Icon {...props} icon="chevron-right" />}
+              onPress={() => navigation.navigate("LocalStorageDebug")}
+            />
+          </List.Section>
 
-      <Divider />
+          <Divider />
+        </>
+      )}
 
       {/* Account Actions */}
       <View style={styles.actionsSection}>
@@ -486,7 +535,11 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       <Text
         style={[styles.versionText, { color: theme.colors.onSurfaceVariant }]}
       >
-        SnapStyle MVP v1.0.0
+        Vibe v{Constants.expoConfig?.version || "1.0.0"} (Build{" "}
+        {Constants.expoConfig?.ios?.buildNumber ||
+          Constants.expoConfig?.android?.versionCode ||
+          "dev"}
+        )
       </Text>
 
       {/* Edit Display Name Dialog */}

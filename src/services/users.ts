@@ -1,17 +1,17 @@
+import { User } from "@/types/models";
 import {
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  query,
   collection,
-  where,
+  doc,
+  getDoc,
   getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
-import { getFirestoreInstance } from "./firebase";
-import { User } from "@/types/models";
 import { Latte } from "../../constants/theme";
+import { getFirestoreInstance } from "./firebase";
 
 /**
  * Check if a username is available (not reserved)
@@ -44,7 +44,7 @@ export async function checkUsernameAvailable(
  * @param uid User ID
  * @returns true if successful, false if username was taken
  */
-export async function reserveUsername(
+async function reserveUsername(
   username: string,
   uid: string,
 ): Promise<boolean> {
@@ -115,7 +115,7 @@ export async function getUserProfile(uid: string): Promise<User | null> {
  * @param baseColor Avatar base color (optional)
  * @returns The created user object
  */
-export async function createUserProfile(
+async function createUserProfile(
   uid: string,
   username: string,
   displayName: string,

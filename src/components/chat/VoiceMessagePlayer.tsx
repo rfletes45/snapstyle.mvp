@@ -12,6 +12,7 @@
  * @module components/chat/VoiceMessagePlayer
  */
 
+import { formatDurationMs as formatDuration } from "@/utils/time";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -51,17 +52,6 @@ export interface VoiceMessagePlayerProps {
 // =============================================================================
 
 const WAVEFORM_BARS = 20;
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
 
 // Generate fake waveform data (in real app, you'd analyze the audio)
 function generateWaveformData(bars: number): number[] {

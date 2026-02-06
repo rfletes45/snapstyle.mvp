@@ -7,7 +7,7 @@
  * @module components/chat/inbox/ProfilePreviewModal
  */
 
-import Avatar from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { getFriends } from "@/services/friends";
 import { getUserProfile } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
@@ -59,6 +59,8 @@ export interface ProfilePreviewModalProps {
 interface ProfileData extends User {
   friendsSince?: number;
   streakDays?: number;
+  profilePicture?: { url: string; updatedAt?: number };
+  avatarDecoration?: { decorationId: string; equippedAt?: number };
 }
 
 // =============================================================================
@@ -187,9 +189,8 @@ export function ProfilePreviewModal({
     if (!userId) return;
 
     handleCloseWithCallback(() => {
-      // Navigate to DM chat to see full profile - ChatDetail has profile viewing functionality
-      // The ProfilePreviewModal IS the quick profile view; ChatDetail shows more interaction
-      navigation.navigate("ChatDetail", { friendUid: userId });
+      // Navigate to the full UserProfile screen
+      navigation.navigate("UserProfile", { userId });
     });
   }, [userId, handleCloseWithCallback, navigation]);
 
@@ -313,9 +314,13 @@ export function ProfilePreviewModal({
                 <>
                   {/* Avatar */}
                   <View style={styles.avatarContainer}>
-                    <Avatar
-                      config={profile.avatarConfig}
-                      size={100}
+                    <ProfilePictureWithDecoration
+                      pictureUrl={profile.profilePicture?.url || null}
+                      name={profile.displayName}
+                      decorationId={
+                        profile.avatarDecoration?.decorationId || null
+                      }
+                      size={96}
                     />
                   </View>
 
@@ -356,21 +361,21 @@ export function ProfilePreviewModal({
                   <View style={styles.actions}>
                     <Button
                       mode="contained"
+                      icon="account"
+                      onPress={handleFullProfile}
+                      style={styles.actionButton}
+                      contentStyle={styles.actionButtonContent}
+                    >
+                      View Profile
+                    </Button>
+                    <Button
+                      mode="outlined"
                       icon="message"
                       onPress={handleMessage}
                       style={styles.actionButton}
                       contentStyle={styles.actionButtonContent}
                     >
                       Message
-                    </Button>
-                    <Button
-                      mode="outlined"
-                      icon="account"
-                      onPress={handleFullProfile}
-                      style={styles.actionButton}
-                      contentStyle={styles.actionButtonContent}
-                    >
-                      Profile
                     </Button>
                   </View>
 

@@ -14,8 +14,7 @@ import { StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import Animated, { FadeIn, Layout } from "react-native-reanimated";
 
-import Avatar from "@/components/Avatar";
-import type { AvatarConfig } from "@/types/models";
+import { ProfilePicture } from "@/components/profile/ProfilePicture";
 import type { PlayerSlot } from "@/types/turnBased";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 
@@ -42,13 +41,22 @@ export interface PlayerSlotsProps {
 // Helper Functions
 // =============================================================================
 
-function parseAvatarConfig(avatarString?: string): AvatarConfig {
-  if (!avatarString) return { baseColor: "#ccd5ae" };
-  try {
-    return JSON.parse(avatarString) as AvatarConfig;
-  } catch {
-    return { baseColor: "#ccd5ae" };
+/**
+ * Determine if the playerAvatar string is a URL (profile picture)
+ * or a JSON avatar config string.
+ * Returns the URL if it's a valid picture URL, otherwise null.
+ */
+function getProfilePictureUrl(playerAvatar?: string): string | null {
+  if (!playerAvatar) return null;
+  // If it starts with http(s), it's a profile picture URL
+  if (
+    playerAvatar.startsWith("http://") ||
+    playerAvatar.startsWith("https://")
+  ) {
+    return playerAvatar;
   }
+  // Otherwise it's a JSON avatar config — no profile picture URL available
+  return null;
 }
 
 // =============================================================================
@@ -106,7 +114,11 @@ function FilledSlot({
       )}
 
       {/* Avatar */}
-      <Avatar config={parseAvatarConfig(slot.playerAvatar)} size={size} />
+      <ProfilePicture
+        url={getProfilePictureUrl(slot.playerAvatar)}
+        name={slot.playerName}
+        size={size}
+      />
 
       {/* Name */}
       {!compact && (

@@ -42,7 +42,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "../../store/ThemeContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -59,7 +58,6 @@ export default function ShopScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
   const theme = useTheme();
-  const colors = useColors();
 
   // State
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -78,6 +76,14 @@ export default function ShopScreen({ navigation }: any) {
 
   // Timer ref for countdown updates
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const purchaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup purchase timer on unmount
+  useEffect(() => {
+    return () => {
+      if (purchaseTimerRef.current) clearTimeout(purchaseTimerRef.current);
+    };
+  }, []);
 
   // Load shop data
   const loadShopData = useCallback(async () => {
@@ -162,7 +168,7 @@ export default function ShopScreen({ navigation }: any) {
         // Reload shop data to reflect ownership
         loadShopData();
         // Close modal after a short delay
-        setTimeout(() => {
+        purchaseTimerRef.current = setTimeout(() => {
           setSelectedItem(null);
           setPurchaseSuccess(false);
         }, 1500);

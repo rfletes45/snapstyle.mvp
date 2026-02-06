@@ -41,14 +41,8 @@ export * from "./tasks";
 // Badge service (Profile Overhaul)
 export * from "./badges";
 
-// Profile Frames service (Profile Overhaul Phase 4)
-export * from "./profileFrames";
-
 // Profile Themes service (Profile Overhaul Phase 5)
 export * from "./profileThemes";
-
-// Chat Bubbles service (Profile Overhaul Phase 5)
-export * from "./chatBubbles";
 
 // IAP and Bundles service (Profile Overhaul Phase 6)
 export * from "./bundles";

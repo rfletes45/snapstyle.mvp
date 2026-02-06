@@ -1,11 +1,13 @@
 import { err, mapAuthError, ok, Result } from "@/utils/errors";
 import {
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   UserCredential,
 } from "firebase/auth";
 import { getAuthInstance } from "./firebase";
+import { removePushToken } from "./notifications";
 
 /**
  * Sign up a new user with email and password
@@ -57,11 +59,24 @@ export async function login(
 
 /**
  * Sign out the current user
+ * Removes push token BEFORE signing out (while Firestore permissions are still valid)
  * @returns Result indicating success or failure
  */
 export async function logout(): Promise<Result<void>> {
   try {
     const auth = getAuthInstance();
+
+    // Remove push token while we still have Firestore auth permissions
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        await removePushToken(user.uid);
+      } catch (tokenError) {
+        // Non-fatal — proceed with sign-out regardless
+        console.warn("[auth/logout] Failed to remove push token:", tokenError);
+      }
+    }
+
     await signOut(auth);
     console.log("✅ [auth] User logged out");
     return ok(undefined);
@@ -79,4 +94,22 @@ export async function logout(): Promise<Result<void>> {
 export function getCurrentUser() {
   const auth = getAuthInstance();
   return auth.currentUser;
+}
+
+/**
+ * Send a password reset email
+ * @param email The user's email address
+ * @returns Result indicating success or failure
+ */
+export async function resetPassword(email: string): Promise<Result<void>> {
+  try {
+    const auth = getAuthInstance();
+    await sendPasswordResetEmail(auth, email);
+    console.log("✅ [auth] Password reset email sent to:", email);
+    return ok(undefined);
+  } catch (error) {
+    const appError = mapAuthError(error);
+    appError.log("auth/resetPassword");
+    return err(appError);
+  }
 }

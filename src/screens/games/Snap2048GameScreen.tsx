@@ -1,9 +1,29 @@
 /**
- * Snap2048GameScreen - 2048 Puzzle Game with Sliding Animations
+ * Snap2048GameScreen – The classic 2048 game
  *
- * Features smooth tile sliding animations using React Native Reanimated.
- * Each tile has a unique ID that persists across moves, allowing us to
- * animate tiles from their old position to their new position.
+ * Game logic is a line-for-line TypeScript port of the original open-source
+ * 2048 by Gabriele Cirulli (https://github.com/gabrielecirulli/2048):
+ *   - js/tile.js       → Tile class
+ *   - js/grid.js       → Grid class
+ *   - js/game_manager.js → GameManager class
+ *
+ * Animation faithfully reproduces the original's visual behaviour:
+ *   - CSS `transition: 100ms ease-in-out` on `transform`
+ *       → Reanimated `withTiming(100ms, easeInOut)` on translateX/Y
+ *   - `@keyframes appear` (scale 0→1, 200ms, delayed 100ms)
+ *       → new tiles scale in with `withDelay`
+ *   - `@keyframes pop` (scale 0→1.2→1, 200ms, delayed 100ms)
+ *       → merged tiles pop with `withDelay` + `withSequence`
+ *   - HTMLActuator clears DOM & re-creates nodes each move
+ *       → we increment a `moveId` counter; each tile gets a stable React key
+ *         composed of `tileId-moveId` so React unmounts old instances and
+ *         mounts fresh ones each move, just like the original's DOM rebuild.
+ *         This guarantees every tile starts its animation from the correct
+ *         previousPosition without stale shared-value state.
+ *
+ * The rendering layer uses React Native + Reanimated and the app's standard
+ * game-screen patterns (header, scores, GameOverModal, FriendPickerModal,
+ * haptics, single-player session recording).
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
@@ -34,46 +54,17 @@ import {
 } from "react-native";
 import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withSequence,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
 
 // =============================================================================
-// Types
-// =============================================================================
-
-interface Snap2048GameScreenProps {
-  navigation: any;
-}
-
-type Direction = "up" | "down" | "left" | "right";
-
-/**
- * A tile with a unique ID for tracking across moves
- */
-interface TileData {
-  id: number;
-  value: number;
-  row: number;
-  col: number;
-  isNew?: boolean;
-  isMerging?: boolean;
-}
-
-interface GameState {
-  tiles: TileData[];
-  score: number;
-  bestTile: number;
-  moveCount: number;
-  isGameOver: boolean;
-  hasWon: boolean;
-}
-
-// =============================================================================
-// Constants
+// Layout constants
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -82,10 +73,15 @@ const BOARD_SIZE = Math.min(SCREEN_WIDTH - 48, 380);
 const CELL_GAP = 8;
 const CELL_SIZE = (BOARD_SIZE - CELL_GAP * (GRID_SIZE + 1)) / GRID_SIZE;
 const SWIPE_THRESHOLD = 30;
-const WIN_TILE = 2048;
-const SLIDE_DURATION = 100; // ms for slide animation
 
-// Tile colors matching the classic 2048 game
+// Original 2048: $transition-speed: 100ms
+const TRANSITION_SPEED = 100;
+const APPEAR_DURATION = 200;
+
+// Original 2048: merged.value === 2048  →  this.won = true
+const WIN_VALUE = 2048;
+
+// Classic 2048 tile colours (from original SCSS $special-colors + base colours)
 const TILE_COLORS: Record<number, string> = {
   2: "#EEE4DA",
   4: "#EDE0C8",
@@ -103,376 +99,578 @@ const TILE_COLORS: Record<number, string> = {
 };
 
 // =============================================================================
-// Utility Functions
+// Tile class  (direct port of js/tile.js)
 // =============================================================================
 
-let nextTileId = 1;
-function generateTileId(): number {
-  return nextTileId++;
-}
+let _nextTileId = 1;
 
-function resetTileIds(): void {
-  nextTileId = 1;
-}
+class Tile {
+  x: number;
+  y: number;
+  value: number;
+  id: number;
+  previousPosition: { x: number; y: number } | null = null;
+  mergedFrom: [Tile, Tile] | null = null;
 
-/**
- * Convert pixel position to grid position
- */
-function getPixelPosition(gridPos: number): number {
-  return CELL_GAP + gridPos * (CELL_SIZE + CELL_GAP);
-}
-
-/**
- * Convert tiles to a 2D board for game logic
- */
-function tilesToBoard(tiles: TileData[]): number[][] {
-  const board: number[][] = Array.from({ length: GRID_SIZE }, () =>
-    Array.from({ length: GRID_SIZE }, () => 0),
-  );
-  for (const tile of tiles) {
-    board[tile.row][tile.col] = tile.value;
-  }
-  return board;
-}
-
-/**
- * Get empty cells from a board
- */
-function getEmptyCells(board: number[][]): Array<{ row: number; col: number }> {
-  const empty: Array<{ row: number; col: number }> = [];
-  for (let row = 0; row < GRID_SIZE; row++) {
-    for (let col = 0; col < GRID_SIZE; col++) {
-      if (board[row][col] === 0) {
-        empty.push({ row, col });
-      }
-    }
-  }
-  return empty;
-}
-
-/**
- * Get the max tile value
- */
-function getMaxTile(tiles: TileData[]): number {
-  return tiles.reduce((max, tile) => Math.max(max, tile.value), 0);
-}
-
-/**
- * Check if any moves are possible
- */
-function canMakeMove(tiles: TileData[]): boolean {
-  const board = tilesToBoard(tiles);
-
-  // Check for empty cells
-  for (let row = 0; row < GRID_SIZE; row++) {
-    for (let col = 0; col < GRID_SIZE; col++) {
-      if (board[row][col] === 0) return true;
-    }
+  constructor(position: { x: number; y: number }, value?: number) {
+    this.x = position.x;
+    this.y = position.y;
+    this.value = value ?? 2;
+    this.id = _nextTileId++;
   }
 
-  // Check for possible merges
-  for (let row = 0; row < GRID_SIZE; row++) {
-    for (let col = 0; col < GRID_SIZE - 1; col++) {
-      if (board[row][col] === board[row][col + 1]) return true;
-    }
-  }
-  for (let row = 0; row < GRID_SIZE - 1; row++) {
-    for (let col = 0; col < GRID_SIZE; col++) {
-      if (board[row][col] === board[row + 1][col]) return true;
-    }
+  savePosition(): void {
+    this.previousPosition = { x: this.x, y: this.y };
   }
 
-  return false;
+  updatePosition(position: { x: number; y: number }): void {
+    this.x = position.x;
+    this.y = position.y;
+  }
 }
 
 // =============================================================================
-// Move Logic with Tile Tracking
+// Grid class  (direct port of js/grid.js)
 // =============================================================================
 
-interface MoveResult {
-  newTiles: TileData[];
-  scoreEarned: number;
-  moved: boolean;
-  newTilePosition?: { row: number; col: number };
+type CellGrid = (Tile | null)[][];
+
+class Grid {
+  size: number;
+  cells: CellGrid;
+
+  constructor(size: number) {
+    this.size = size;
+    this.cells = this.empty();
+  }
+
+  // Build a grid of the specified size
+  empty(): CellGrid {
+    const cells: CellGrid = [];
+    for (let x = 0; x < this.size; x++) {
+      const row: (Tile | null)[] = [];
+      for (let y = 0; y < this.size; y++) {
+        row.push(null);
+      }
+      cells.push(row);
+    }
+    return cells;
+  }
+
+  // Find the first available random position
+  randomAvailableCell(): { x: number; y: number } | undefined {
+    const cells = this.availableCells();
+    if (cells.length) {
+      return cells[Math.floor(Math.random() * cells.length)];
+    }
+    return undefined;
+  }
+
+  availableCells(): Array<{ x: number; y: number }> {
+    const cells: Array<{ x: number; y: number }> = [];
+    this.eachCell((x, y, tile) => {
+      if (!tile) cells.push({ x, y });
+    });
+    return cells;
+  }
+
+  // Call callback for every cell
+  eachCell(callback: (x: number, y: number, tile: Tile | null) => void): void {
+    for (let x = 0; x < this.size; x++) {
+      for (let y = 0; y < this.size; y++) {
+        callback(x, y, this.cells[x][y]);
+      }
+    }
+  }
+
+  // Check if there are any cells available
+  cellsAvailable(): boolean {
+    return this.availableCells().length > 0;
+  }
+
+  // Check if the specified cell is taken
+  cellAvailable(cell: { x: number; y: number }): boolean {
+    return !this.cellOccupied(cell);
+  }
+
+  cellOccupied(cell: { x: number; y: number }): boolean {
+    return !!this.cellContent(cell);
+  }
+
+  cellContent(cell: { x: number; y: number }): Tile | null {
+    if (this.withinBounds(cell)) {
+      return this.cells[cell.x][cell.y];
+    }
+    return null;
+  }
+
+  // Inserts a tile at its position
+  insertTile(tile: Tile): void {
+    this.cells[tile.x][tile.y] = tile;
+  }
+
+  removeTile(tile: Tile): void {
+    this.cells[tile.x][tile.y] = null;
+  }
+
+  withinBounds(position: { x: number; y: number }): boolean {
+    return (
+      position.x >= 0 &&
+      position.x < this.size &&
+      position.y >= 0 &&
+      position.y < this.size
+    );
+  }
 }
 
-/**
- * Process a move and track tile movements
- */
-function processMove(tiles: TileData[], direction: Direction): MoveResult {
-  // Create a map of positions to tiles
-  const tileMap = new Map<string, TileData>();
-  for (const tile of tiles) {
-    tileMap.set(`${tile.row},${tile.col}`, tile);
+// =============================================================================
+// GameManager  (direct port of js/game_manager.js)
+//
+// Differences from original:
+//   - No InputManager / Actuator / StorageManager dependencies
+//   - move() returns boolean instead of void (so React layer knows if grid changed)
+//   - snapshot() added to produce an immutable render-list for React
+//   - bestTile() helper added
+// =============================================================================
+
+// 0: up, 1: right, 2: down, 3: left  (matches original exactly)
+type Direction = 0 | 1 | 2 | 3;
+
+const VECTORS: Record<Direction, { x: number; y: number }> = {
+  0: { x: 0, y: -1 }, // Up
+  1: { x: 1, y: 0 }, // Right
+  2: { x: 0, y: 1 }, // Down
+  3: { x: -1, y: 0 }, // Left
+};
+
+class GameManager {
+  size: number;
+  grid!: Grid;
+  score = 0;
+  over = false;
+  won = false;
+  _keepPlaying = false;
+  moveCount = 0;
+  private startTiles = 2;
+
+  constructor(size: number) {
+    this.size = size;
+    this.setup();
   }
 
-  const newTiles: TileData[] = [];
-  let scoreEarned = 0;
-  let moved = false;
+  // Set up the game
+  setup(): void {
+    _nextTileId = 1;
+    this.grid = new Grid(this.size);
+    this.score = 0;
+    this.over = false;
+    this.won = false;
+    this._keepPlaying = false;
+    this.moveCount = 0;
+    // Add the initial tiles
+    this.addStartTiles();
+  }
 
-  // Determine the order to process tiles based on direction
-  const rows = Array.from({ length: GRID_SIZE }, (_, i) => i);
-  const cols = Array.from({ length: GRID_SIZE }, (_, i) => i);
+  // Restart the game
+  restart(): void {
+    this.setup();
+  }
 
-  if (direction === "right") cols.reverse();
-  if (direction === "down") rows.reverse();
+  // Keep playing after winning (allows going over 2048)
+  keepPlaying(): void {
+    this._keepPlaying = true;
+  }
 
-  // Track which positions have been merged this move
-  const mergedPositions = new Set<string>();
+  // Return true if the game is lost, or has won and the user hasn't kept playing
+  isGameTerminated(): boolean {
+    return this.over || (this.won && !this._keepPlaying);
+  }
 
-  // Process based on direction
-  if (direction === "left" || direction === "right") {
-    // Process row by row
-    for (const row of rows) {
-      // Get tiles in this row, sorted by column
-      const rowTiles: TileData[] = [];
-      for (let col = 0; col < GRID_SIZE; col++) {
-        const tile = tileMap.get(`${row},${col}`);
-        if (tile) rowTiles.push({ ...tile });
-      }
-
-      if (direction === "right") rowTiles.reverse();
-
-      // Slide and merge
-      let targetCol = direction === "left" ? 0 : GRID_SIZE - 1;
-      const step = direction === "left" ? 1 : -1;
-
-      for (let i = 0; i < rowTiles.length; i++) {
-        const tile = rowTiles[i];
-        const nextTile = rowTiles[i + 1];
-
-        if (
-          nextTile &&
-          tile.value === nextTile.value &&
-          !mergedPositions.has(`${row},${targetCol}`)
-        ) {
-          // Merge
-          const mergedTile: TileData = {
-            id: generateTileId(),
-            value: tile.value * 2,
-            row,
-            col: targetCol,
-            isMerging: true,
-          };
-          newTiles.push(mergedTile);
-          scoreEarned += tile.value * 2;
-          mergedPositions.add(`${row},${targetCol}`);
-
-          // Track if tiles actually moved
-          if (tile.col !== targetCol || nextTile.col !== targetCol) {
-            moved = true;
-          }
-
-          i++; // Skip the next tile since it merged
-          targetCol += step;
-        } else {
-          // Just move
-          const movedTile: TileData = {
-            ...tile,
-            row,
-            col: targetCol,
-          };
-          newTiles.push(movedTile);
-
-          if (tile.col !== targetCol) {
-            moved = true;
-          }
-
-          targetCol += step;
-        }
-      }
+  // Set up the initial tiles to start the game with
+  addStartTiles(): void {
+    for (let i = 0; i < this.startTiles; i++) {
+      this.addRandomTile();
     }
-  } else {
-    // Process column by column (up/down)
-    for (const col of cols) {
-      // Get tiles in this column, sorted by row
-      const colTiles: TileData[] = [];
-      for (let row = 0; row < GRID_SIZE; row++) {
-        const tile = tileMap.get(`${row},${col}`);
-        if (tile) colTiles.push({ ...tile });
-      }
+  }
 
-      if (direction === "down") colTiles.reverse();
-
-      // Slide and merge
-      let targetRow = direction === "up" ? 0 : GRID_SIZE - 1;
-      const step = direction === "up" ? 1 : -1;
-
-      for (let i = 0; i < colTiles.length; i++) {
-        const tile = colTiles[i];
-        const nextTile = colTiles[i + 1];
-
-        if (
-          nextTile &&
-          tile.value === nextTile.value &&
-          !mergedPositions.has(`${targetRow},${col}`)
-        ) {
-          // Merge
-          const mergedTile: TileData = {
-            id: generateTileId(),
-            value: tile.value * 2,
-            row: targetRow,
-            col,
-            isMerging: true,
-          };
-          newTiles.push(mergedTile);
-          scoreEarned += tile.value * 2;
-          mergedPositions.add(`${targetRow},${col}`);
-
-          if (tile.row !== targetRow || nextTile.row !== targetRow) {
-            moved = true;
-          }
-
-          i++;
-          targetRow += step;
-        } else {
-          // Just move
-          const movedTile: TileData = {
-            ...tile,
-            row: targetRow,
-            col,
-          };
-          newTiles.push(movedTile);
-
-          if (tile.row !== targetRow) {
-            moved = true;
-          }
-
-          targetRow += step;
-        }
+  // Adds a tile in a random position
+  addRandomTile(): void {
+    if (this.grid.cellsAvailable()) {
+      const value = Math.random() < 0.9 ? 2 : 4;
+      const cell = this.grid.randomAvailableCell();
+      if (cell) {
+        const tile = new Tile(cell, value);
+        this.grid.insertTile(tile);
       }
     }
   }
 
-  // Add a new random tile if the board changed
-  let newTilePosition: { row: number; col: number } | undefined;
-  if (moved) {
-    const board = tilesToBoard(newTiles);
-    const emptyCells = getEmptyCells(board);
-
-    if (emptyCells.length > 0) {
-      const cell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-      newTiles.push({
-        id: generateTileId(),
-        value: Math.random() < 0.9 ? 2 : 4,
-        row: cell.row,
-        col: cell.col,
-        isNew: true,
-      });
-      newTilePosition = cell;
-    }
-  }
-
-  return { newTiles, scoreEarned, moved, newTilePosition };
-}
-
-/**
- * Create initial game state with two tiles
- */
-function createInitialState(): GameState {
-  resetTileIds();
-
-  const tiles: TileData[] = [];
-  const positions: Set<string> = new Set();
-
-  for (let i = 0; i < 2; i++) {
-    let row, col;
-    do {
-      row = Math.floor(Math.random() * GRID_SIZE);
-      col = Math.floor(Math.random() * GRID_SIZE);
-    } while (positions.has(`${row},${col}`));
-
-    positions.add(`${row},${col}`);
-    tiles.push({
-      id: generateTileId(),
-      value: Math.random() < 0.9 ? 2 : 4,
-      row,
-      col,
-      isNew: true,
+  // Save all tile positions and remove merger info
+  prepareTiles(): void {
+    this.grid.eachCell((_x, _y, tile) => {
+      if (tile) {
+        tile.mergedFrom = null;
+        tile.savePosition();
+      }
     });
   }
 
-  return {
-    tiles,
-    score: 0,
-    bestTile: getMaxTile(tiles),
-    moveCount: 0,
-    isGameOver: false,
-    hasWon: false,
-  };
+  // Move a tile and its representation
+  moveTile(tile: Tile, cell: { x: number; y: number }): void {
+    this.grid.cells[tile.x][tile.y] = null;
+    this.grid.cells[cell.x][cell.y] = tile;
+    tile.updatePosition(cell);
+  }
+
+  // Move tiles on the grid in the specified direction
+  move(direction: Direction): boolean {
+    // 0: up, 1: right, 2: down, 3: left
+    if (this.isGameTerminated()) return false;
+
+    const vector = this.getVector(direction);
+    const traversals = this.buildTraversals(vector);
+    let moved = false;
+
+    // Save the current tile positions and remove merger information
+    this.prepareTiles();
+
+    // Traverse the grid in the right direction and move tiles
+    traversals.x.forEach((x) => {
+      traversals.y.forEach((y) => {
+        const cell = { x, y };
+        const tile = this.grid.cellContent(cell);
+
+        if (tile) {
+          const positions = this.findFarthestPosition(cell, vector);
+          const next = this.grid.cellContent(positions.next);
+
+          // Only one merger per row traversal
+          if (next && next.value === tile.value && !next.mergedFrom) {
+            const merged = new Tile(positions.next, tile.value * 2);
+            merged.mergedFrom = [tile, next];
+
+            this.grid.insertTile(merged);
+            this.grid.removeTile(tile);
+
+            // Converge the two tiles' positions
+            tile.updatePosition(positions.next);
+
+            // Update the score
+            this.score += merged.value;
+
+            // The mighty 2048 tile
+            if (merged.value === WIN_VALUE) this.won = true;
+          } else {
+            this.moveTile(tile, positions.farthest);
+          }
+
+          if (!this.positionsEqual(cell, tile)) {
+            moved = true; // The tile moved from its original cell!
+          }
+        }
+      });
+    });
+
+    if (moved) {
+      this.addRandomTile();
+      this.moveCount++;
+
+      if (!this.movesAvailable()) {
+        this.over = true; // Game over!
+      }
+    }
+
+    return moved;
+  }
+
+  // Get the vector representing the chosen direction
+  getVector(direction: Direction): { x: number; y: number } {
+    return VECTORS[direction];
+  }
+
+  // Build a list of positions to traverse in the right order
+  buildTraversals(vector: { x: number; y: number }): {
+    x: number[];
+    y: number[];
+  } {
+    const traversals: { x: number[]; y: number[] } = { x: [], y: [] };
+
+    for (let pos = 0; pos < this.size; pos++) {
+      traversals.x.push(pos);
+      traversals.y.push(pos);
+    }
+
+    // Always traverse from the farthest cell in the chosen direction
+    if (vector.x === 1) traversals.x = traversals.x.reverse();
+    if (vector.y === 1) traversals.y = traversals.y.reverse();
+
+    return traversals;
+  }
+
+  findFarthestPosition(
+    cell: { x: number; y: number },
+    vector: { x: number; y: number },
+  ): { farthest: { x: number; y: number }; next: { x: number; y: number } } {
+    let previous: { x: number; y: number };
+    let current = cell;
+
+    // Progress towards the vector direction until an obstacle is found
+    do {
+      previous = current;
+      current = { x: previous.x + vector.x, y: previous.y + vector.y };
+    } while (
+      this.grid.withinBounds(current) &&
+      this.grid.cellAvailable(current)
+    );
+
+    return {
+      farthest: previous,
+      next: current, // Used to check if a merge is required
+    };
+  }
+
+  movesAvailable(): boolean {
+    return this.grid.cellsAvailable() || this.tileMatchesAvailable();
+  }
+
+  // Check for available matches between tiles (more expensive check)
+  tileMatchesAvailable(): boolean {
+    for (let x = 0; x < this.size; x++) {
+      for (let y = 0; y < this.size; y++) {
+        const tile = this.grid.cellContent({ x, y });
+
+        if (tile) {
+          for (let direction = 0; direction < 4; direction++) {
+            const vector = this.getVector(direction as Direction);
+            const other = this.grid.cellContent({
+              x: x + vector.x,
+              y: y + vector.y,
+            });
+
+            if (other && other.value === tile.value) {
+              return true; // These two tiles can be merged
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  positionsEqual(
+    first: { x: number; y: number },
+    second: { x: number; y: number },
+  ): boolean {
+    return first.x === second.x && first.y === second.y;
+  }
+
+  // ── Helpers for the React rendering layer ──
+
+  bestTile(): number {
+    let best = 0;
+    this.grid.eachCell((_x, _y, tile) => {
+      if (tile && tile.value > best) best = tile.value;
+    });
+    return best;
+  }
+
+  /**
+   * Produce an array of render-ready tile descriptors.
+   *
+   * This mirrors what HTMLActuator.addTile does in the original:
+   *
+   * 1. For a tile with `previousPosition` (it moved):
+   *    - First render at previousPosition, then animate to current position
+   *
+   * 2. For a tile with `mergedFrom` (two tiles merged into it):
+   *    - Render both source tiles sliding into the merge cell
+   *    - Render the merged tile itself with a "pop" animation (delayed)
+   *
+   * 3. For a tile with neither (brand new):
+   *    - Render with an "appear" animation (scale 0→1, delayed)
+   */
+  snapshot(): RenderTile[] {
+    const tiles: RenderTile[] = [];
+
+    this.grid.eachCell((_x, _y, tile) => {
+      if (!tile) return;
+
+      if (tile.mergedFrom) {
+        // Emit the two source tiles that slide into the merge cell
+        for (const source of tile.mergedFrom) {
+          const prev = source.previousPosition ?? {
+            x: source.x,
+            y: source.y,
+          };
+          tiles.push({
+            id: source.id,
+            value: source.value,
+            toX: tile.x,
+            toY: tile.y,
+            fromX: prev.x,
+            fromY: prev.y,
+            anim: "slide",
+          });
+        }
+        // Emit the merged tile (pops in after slide completes)
+        tiles.push({
+          id: tile.id,
+          value: tile.value,
+          toX: tile.x,
+          toY: tile.y,
+          fromX: tile.x,
+          fromY: tile.y,
+          anim: "pop",
+        });
+      } else if (tile.previousPosition) {
+        // Regular tile that moved
+        tiles.push({
+          id: tile.id,
+          value: tile.value,
+          toX: tile.x,
+          toY: tile.y,
+          fromX: tile.previousPosition.x,
+          fromY: tile.previousPosition.y,
+          anim: "slide",
+        });
+      } else {
+        // Brand-new tile
+        tiles.push({
+          id: tile.id,
+          value: tile.value,
+          toX: tile.x,
+          toY: tile.y,
+          fromX: tile.x,
+          fromY: tile.y,
+          anim: "appear",
+        });
+      }
+    });
+
+    return tiles;
+  }
 }
 
 // =============================================================================
-// Animated Tile Component
+// Types for the React rendering layer
 // =============================================================================
 
-interface AnimatedTileProps {
-  tile: TileData;
-  previousPositions: Map<number, { row: number; col: number }>;
+interface RenderTile {
+  id: number;
+  value: number;
+  toX: number; // destination grid column
+  toY: number; // destination grid row
+  fromX: number; // origin grid column (for slide start)
+  fromY: number; // origin grid row
+  anim: "slide" | "appear" | "pop";
 }
 
-function AnimatedTile({ tile, previousPositions }: AnimatedTileProps) {
-  const prevPos = previousPositions.get(tile.id);
+// =============================================================================
+// Helper: grid coordinate → pixel offset
+// =============================================================================
 
-  // Shared values for position
-  const translateX = useSharedValue(
-    prevPos ? getPixelPosition(prevPos.col) : getPixelPosition(tile.col),
-  );
-  const translateY = useSharedValue(
-    prevPos ? getPixelPosition(prevPos.row) : getPixelPosition(tile.row),
-  );
-  const scale = useSharedValue(tile.isNew ? 0 : 1);
+function gridToPx(pos: number): number {
+  return CELL_GAP + pos * (CELL_SIZE + CELL_GAP);
+}
 
-  // Target positions
-  const targetX = getPixelPosition(tile.col);
-  const targetY = getPixelPosition(tile.row);
+// =============================================================================
+// AnimatedTile
+//
+// Mirrors the original 2048's rendering approach:
+//
+// The original HTMLActuator.addTile():
+//   1. Creates a wrapper <div> at previousPosition (via CSS class)
+//   2. In requestAnimationFrame, updates the class to current position
+//      → CSS transition: 100ms ease-in-out slides it smoothly
+//   3. New tiles get class "tile-new" → @keyframes appear (200ms, delayed 100ms)
+//   4. Merged tiles get class "tile-merged" → @keyframes pop (200ms, delayed 100ms)
+//
+// We replicate this exactly:
+//   - Component mounts with translateX/Y at the FROM position
+//   - useEffect immediately animates to the TO position (100ms ease-in-out)
+//   - "appear" tiles start at scale=0, then withDelay(100ms) scale to 1
+//   - "pop" tiles start at scale=0, then withDelay(100ms) scale 0→1.2→1
+//
+// CRITICAL: Each tile instance is fresh-mounted per move (via unique React key
+// that includes moveId). This matches the original which clears and rebuilds
+// the entire tile-container DOM each actuate() call. Fresh mount guarantees
+// shared values start at the correct FROM position.
+// =============================================================================
+
+const SLIDE_CONFIG = {
+  duration: TRANSITION_SPEED,
+  easing: Easing.inOut(Easing.ease),
+};
+
+function AnimatedTile({ tile }: { tile: RenderTile }) {
+  // Pixel positions
+  const startX = gridToPx(tile.fromX);
+  const startY = gridToPx(tile.fromY);
+  const endX = gridToPx(tile.toX);
+  const endY = gridToPx(tile.toY);
+
+  // Initialize at the FROM position (component is fresh-mounted each move)
+  const translateX = useSharedValue(startX);
+  const translateY = useSharedValue(startY);
+  const scale = useSharedValue(tile.anim === "slide" ? 1 : 0);
 
   useEffect(() => {
-    // Animate to new position
-    translateX.value = withTiming(targetX, { duration: SLIDE_DURATION });
-    translateY.value = withTiming(targetY, { duration: SLIDE_DURATION });
+    // ── Slide: transition 100ms ease-in-out (matches original CSS) ──
+    translateX.value = withTiming(endX, SLIDE_CONFIG);
+    translateY.value = withTiming(endY, SLIDE_CONFIG);
 
-    // Pop animation for new tiles or merged tiles
-    if (tile.isNew) {
-      scale.value = withSequence(
-        withTiming(0, { duration: 0 }),
-        withTiming(1.1, { duration: SLIDE_DURATION }),
-        withSpring(1, { damping: 12, stiffness: 200 }),
+    if (tile.anim === "appear") {
+      // ── @keyframes appear: opacity 0→1, scale 0→1, 200ms ease ──
+      // Original CSS: animation: appear 200ms ease $transition-speed
+      // $transition-speed = 100ms delay (waits for slides to finish)
+      scale.value = withDelay(
+        TRANSITION_SPEED,
+        withTiming(1, {
+          duration: APPEAR_DURATION,
+          easing: Easing.out(Easing.ease),
+        }),
       );
-    } else if (tile.isMerging) {
-      scale.value = withSequence(
-        withTiming(1.2, { duration: SLIDE_DURATION / 2 }),
-        withSpring(1, { damping: 12, stiffness: 200 }),
+    } else if (tile.anim === "pop") {
+      // ── @keyframes pop: scale 0→1.2→1, 200ms ease ──
+      // Original CSS: animation: pop 200ms ease $transition-speed
+      // z-index: 20 on .tile-merged .tile-inner
+      scale.value = withDelay(
+        TRANSITION_SPEED,
+        withSequence(
+          withTiming(1.2, {
+            duration: APPEAR_DURATION / 2,
+            easing: Easing.out(Easing.ease),
+          }),
+          withSpring(1, { damping: 14, stiffness: 200 }),
+        ),
       );
     }
-  }, [
-    tile.col,
-    tile.row,
-    tile.isNew,
-    tile.isMerging,
-    targetX,
-    targetY,
-    translateX,
-    translateY,
-    scale,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const animatedStyle = useAnimatedStyle(() => ({
+  const animStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
       { scale: scale.value },
     ],
+    // Original: .tile-merged .tile-inner { z-index: 20 }, regular: z-index: 10
+    zIndex: tile.anim === "pop" ? 20 : 10,
   }));
 
-  const backgroundColor = TILE_COLORS[tile.value] || "#3C3A32";
-  const textColor = tile.value <= 4 ? "#776E65" : "#FFFFFF";
+  // Tile colours & text
+  const bgColor = TILE_COLORS[tile.value] || "#3C3A32";
+  const textColor = tile.value <= 4 ? "#776E65" : "#F9F6F2";
 
+  // Font size rules matching original CSS breakpoints
   const digits = tile.value.toString().length;
-  let fontSize = CELL_SIZE * 0.45;
-  if (digits === 3) fontSize = CELL_SIZE * 0.38;
-  else if (digits === 4) fontSize = CELL_SIZE * 0.32;
-  else if (digits >= 5) fontSize = CELL_SIZE * 0.26;
+  let fontSize = CELL_SIZE * 0.45; // base: 55px / 107px ≈ 0.51, slightly smaller for mobile
+  if (digits === 3)
+    fontSize = CELL_SIZE * 0.38; // 45px in original
+  else if (digits === 4)
+    fontSize = CELL_SIZE * 0.3; // 35px
+  else if (digits >= 5) fontSize = CELL_SIZE * 0.25; // 30px (super)
 
   return (
     <Animated.View
@@ -481,9 +679,9 @@ function AnimatedTile({ tile, previousPositions }: AnimatedTileProps) {
         {
           width: CELL_SIZE,
           height: CELL_SIZE,
-          backgroundColor,
+          backgroundColor: bgColor,
         },
-        animatedStyle,
+        animStyle,
       ]}
     >
       <Text style={[styles.tileText, { color: textColor, fontSize }]}>
@@ -494,8 +692,12 @@ function AnimatedTile({ tile, previousPositions }: AnimatedTileProps) {
 }
 
 // =============================================================================
-// Main Component
+// Main component
 // =============================================================================
+
+interface Snap2048GameScreenProps {
+  navigation: any;
+}
 
 export default function Snap2048GameScreen({
   navigation,
@@ -506,64 +708,84 @@ export default function Snap2048GameScreen({
   const { showSuccess, showError } = useSnackbar();
   const haptics = useGameHaptics();
 
-  // Core game state
-  const [gameState, setGameState] = useState<GameState>(createInitialState);
+  // ---------------------------------------------------------------------------
+  // Game engine lives in a ref (mutable). React state holds render snapshots.
+  // ---------------------------------------------------------------------------
+  const managerRef = useRef(new GameManager(GRID_SIZE));
+
+  // moveId increments each move. It's embedded in tile React keys so React
+  // unmounts old AnimatedTile instances and mounts fresh ones — exactly like
+  // the original's HTMLActuator.actuate() which clears the tile-container and
+  // re-creates all DOM nodes.
+  const [moveId, setMoveId] = useState(0);
+  const [tiles, setTiles] = useState<RenderTile[]>(() =>
+    managerRef.current.snapshot(),
+  );
+  const [score, setScore] = useState(0);
+  const [isOver, setIsOver] = useState(false);
+  const [isWon, setIsWon] = useState(false);
+  const [totalMoves, setTotalMoves] = useState(0);
+
   const [highScore, setHighScore] = useState(0);
   const [showWinDialog, setShowWinDialog] = useState(false);
   const [hasShownWinDialog, setHasShownWinDialog] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
-  const [startTime] = useState(Date.now());
-
-  // Track previous tile positions for animations
-  const [previousPositions, setPreviousPositions] = useState<
-    Map<number, { row: number; col: number }>
-  >(new Map());
-
-  // Share state
   const [showFriendPicker, setShowFriendPicker] = useState(false);
-
-  // Prevent rapid swipes
-  const isProcessingMove = useRef(false);
-
-  // Refs for pan responder
-  const gameStateRef = useRef(gameState);
-  gameStateRef.current = gameState;
+  const startTimeRef = useRef(Date.now());
+  const isProcessingRef = useRef(false);
 
   // Score animation
   const scoreScale = useSharedValue(1);
 
   useEffect(() => {
-    if (gameState.score > 0) {
+    if (score > 0) {
       scoreScale.value = withSequence(
         withSpring(1.15, { damping: 8, stiffness: 400 }),
         withSpring(1, { damping: 12, stiffness: 200 }),
       );
     }
-  }, [gameState.score, scoreScale]);
+  }, [score, scoreScale]);
 
-  const scoreAnimatedStyle = useAnimatedStyle(() => ({
+  const scoreAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scoreScale.value }],
   }));
 
-  // Handle game over
+  // ---------------------------------------------------------------------------
+  // actuate() — read engine state into React, mirrors original's actuate()
+  // ---------------------------------------------------------------------------
+  const actuate = useCallback(() => {
+    const mgr = managerRef.current;
+    setTiles(mgr.snapshot());
+    setScore(mgr.score);
+    setIsOver(mgr.over);
+    setIsWon(mgr.won);
+    setTotalMoves(mgr.moveCount);
+    setMoveId((id) => id + 1);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Handle game over — record session to Firebase
+  // ---------------------------------------------------------------------------
   const handleGameOver = useCallback(
-    async (finalState: GameState) => {
-      haptics.gameOverPattern(finalState.hasWon);
+    async (finalScore: number, didWin: boolean, moves: number) => {
+      const best = managerRef.current.bestTile();
+
+      haptics.gameOverPattern(didWin);
 
       if (currentFirebaseUser?.uid) {
         const stats: Snap2048Stats = {
           gameType: "snap_2048",
-          bestTile: finalState.bestTile,
-          moveCount: finalState.moveCount,
+          bestTile: best,
+          moveCount: moves,
           mergeCount: 0,
-          didWin: finalState.hasWon,
+          didWin,
         };
 
-        const duration = Math.floor((Date.now() - startTime) / 1000);
+        const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
         await recordSinglePlayerSession(currentFirebaseUser.uid, {
           gameType: "snap_2048",
-          finalScore: finalState.score,
+          finalScore,
           stats,
           duration,
         });
@@ -571,122 +793,103 @@ export default function Snap2048GameScreen({
 
       setShowGameOverModal(true);
     },
-    [currentFirebaseUser, startTime, haptics],
+    [currentFirebaseUser, haptics],
   );
 
-  // Process a swipe
+  // ---------------------------------------------------------------------------
+  // handleSwipe — the core move handler
+  // ---------------------------------------------------------------------------
   const handleSwipe = useCallback(
     (direction: Direction) => {
-      if (isProcessingMove.current) return;
+      if (isProcessingRef.current) return;
 
-      const currentState = gameStateRef.current;
-      if (currentState.isGameOver) return;
+      const mgr = managerRef.current;
+      if (mgr.isGameTerminated()) return;
 
-      isProcessingMove.current = true;
+      isProcessingRef.current = true;
 
-      // Store current positions before the move
-      const prevPositions = new Map<number, { row: number; col: number }>();
-      for (const tile of currentState.tiles) {
-        prevPositions.set(tile.id, { row: tile.row, col: tile.col });
-      }
+      const moved = mgr.move(direction);
 
-      const result = processMove(currentState.tiles, direction);
-
-      if (result.moved) {
+      if (moved) {
         haptics.trigger("move");
+        actuate();
 
-        // Update previous positions for animation
-        setPreviousPositions(prevPositions);
-
-        const newBestTile = getMaxTile(result.newTiles);
-        const newHasWon = currentState.hasWon || newBestTile >= WIN_TILE;
-        const newIsGameOver = !canMakeMove(result.newTiles);
-
-        const newState: GameState = {
-          tiles: result.newTiles,
-          score: currentState.score + result.scoreEarned,
-          bestTile: newBestTile,
-          moveCount: currentState.moveCount + 1,
-          isGameOver: newIsGameOver,
-          hasWon: newHasWon,
-        };
-
-        setGameState(newState);
-
-        // Update high score
-        if (newState.score > highScore) {
-          setHighScore(newState.score);
+        if (mgr.score > highScore) {
+          setHighScore(mgr.score);
         }
 
-        // Show win dialog once
-        if (newState.hasWon && !hasShownWinDialog) {
+        if (mgr.won && !hasShownWinDialog) {
           setHasShownWinDialog(true);
           setShowWinDialog(true);
           haptics.celebrationPattern();
         }
 
-        // Handle game over
-        if (newState.isGameOver) {
-          handleGameOver(newState);
+        if (mgr.over) {
+          handleGameOver(mgr.score, mgr.won, mgr.moveCount);
         }
       }
 
-      // Allow next move after animation completes
+      // Debounce: allow next move after animations complete
       setTimeout(() => {
-        isProcessingMove.current = false;
-      }, SLIDE_DURATION + 50);
+        isProcessingRef.current = false;
+      }, TRANSITION_SPEED + 50);
     },
-    [highScore, hasShownWinDialog, haptics, handleGameOver],
+    [highScore, hasShownWinDialog, haptics, handleGameOver, actuate],
   );
 
-  // Ref for handleSwipe
   const handleSwipeRef = useRef(handleSwipe);
   handleSwipeRef.current = handleSwipe;
 
-  // Pan responder
-  const panResponder = useMemo(() => {
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderRelease: (
-        _event: GestureResponderEvent,
-        gestureState: PanResponderGestureState,
-      ) => {
-        const { dx, dy } = gestureState;
+  // ---------------------------------------------------------------------------
+  // Pan responder — touch → direction mapping (matches original's touch handler)
+  //
+  // Original: absDx > absDy ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0)
+  // ---------------------------------------------------------------------------
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderRelease: (
+          _evt: GestureResponderEvent,
+          gs: PanResponderGestureState,
+        ) => {
+          const { dx, dy } = gs;
+          const absDx = Math.abs(dx);
+          const absDy = Math.abs(dy);
 
-        if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) {
-          return;
-        }
+          // Original uses threshold of 10; we use 30 for mobile
+          if (Math.max(absDx, absDy) < SWIPE_THRESHOLD) return;
 
-        let direction: Direction;
-        if (Math.abs(dx) > Math.abs(dy)) {
-          direction = dx > 0 ? "right" : "left";
-        } else {
-          direction = dy > 0 ? "down" : "up";
-        }
+          // (right : left) : (down : up)  — exact same logic as original
+          const direction: Direction =
+            absDx > absDy ? (dx > 0 ? 1 : 3) : dy > 0 ? 2 : 0;
 
-        handleSwipeRef.current(direction);
-      },
-    });
-  }, []);
+          handleSwipeRef.current(direction);
+        },
+      }),
+    [],
+  );
 
-  // Start a new game
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
   const startNewGame = useCallback(() => {
     haptics.trigger("selection");
-    setPreviousPositions(new Map());
-    setGameState(createInitialState());
+    managerRef.current.restart();
+    actuate();
     setHasShownWinDialog(false);
     setShowWinDialog(false);
     setShowGameOverModal(false);
-    isProcessingMove.current = false;
-  }, [haptics]);
+    isProcessingRef.current = false;
+    startTimeRef.current = Date.now();
+  }, [haptics, actuate]);
 
-  // Continue after winning
   const continueGame = useCallback(() => {
+    managerRef.current.keepPlaying();
     setShowWinDialog(false);
   }, []);
 
-  // Share score
   const handleShare = useCallback(() => {
     setShowFriendPicker(true);
   }, []);
@@ -707,7 +910,7 @@ export default function Snap2048GameScreen({
           friend.friendUid,
           {
             gameId: "snap_2048",
-            score: gameState.score,
+            score,
             playerName: profile.displayName || profile.username || "Player",
           },
         );
@@ -721,22 +924,26 @@ export default function Snap2048GameScreen({
         showError("Failed to share score. Try again.");
       }
     },
-    [currentFirebaseUser, profile, gameState.score, showSuccess, showError],
+    [currentFirebaseUser, profile, score, showSuccess, showError],
   );
 
-  // Render background grid cells
+  // ---------------------------------------------------------------------------
+  // Derived
+  // ---------------------------------------------------------------------------
+  const bestTile = managerRef.current.bestTile();
+
   const gridCells = useMemo(() => {
-    const cells = [];
-    for (let row = 0; row < GRID_SIZE; row++) {
-      for (let col = 0; col < GRID_SIZE; col++) {
+    const cells: React.ReactElement[] = [];
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
         cells.push(
           <View
-            key={`cell-${row}-${col}`}
+            key={`bg-${r}-${c}`}
             style={[
               styles.gridCell,
               {
-                left: getPixelPosition(col),
-                top: getPixelPosition(row),
+                left: gridToPx(c),
+                top: gridToPx(r),
                 width: CELL_SIZE,
                 height: CELL_SIZE,
               },
@@ -748,6 +955,9 @@ export default function Snap2048GameScreen({
     return cells;
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -769,12 +979,12 @@ export default function Snap2048GameScreen({
       </View>
 
       {/* Score Display */}
-      <View style={styles.scoreContainer}>
+      <View style={styles.scoreRow}>
         <Animated.View
           style={[
             styles.scoreBox,
             { backgroundColor: theme.colors.primaryContainer },
-            scoreAnimatedStyle,
+            scoreAnimStyle,
           ]}
         >
           <Text
@@ -790,7 +1000,7 @@ export default function Snap2048GameScreen({
               fontWeight: "bold",
             }}
           >
-            {gameState.score}
+            {score}
           </Text>
         </Animated.View>
 
@@ -813,17 +1023,17 @@ export default function Snap2048GameScreen({
               fontWeight: "bold",
             }}
           >
-            {Math.max(highScore, gameState.score)}
+            {Math.max(highScore, score)}
           </Text>
         </View>
       </View>
 
       {/* Best Tile */}
-      <View style={styles.bestTileContainer}>
+      <View style={styles.bestTileRow}>
         <Text variant="labelLarge" style={{ color: theme.colors.onBackground }}>
-          Best Tile: {gameState.bestTile}
+          Best Tile: {bestTile}
         </Text>
-        {gameState.hasWon && (
+        {isWon && (
           <View style={styles.winBadge}>
             <MaterialCommunityIcons name="trophy" size={16} color="#FFD700" />
             <Text style={styles.winBadgeText}>2048!</Text>
@@ -838,20 +1048,21 @@ export default function Snap2048GameScreen({
       >
         {gridCells}
 
-        {/* Render tiles */}
-        {gameState.tiles.map((tile) => (
-          <AnimatedTile
-            key={tile.id}
-            tile={tile}
-            previousPositions={previousPositions}
-          />
+        {/*
+          Each tile gets a key that includes moveId so React creates a fresh
+          AnimatedTile instance per move — matching the original's DOM rebuild.
+          The index suffix handles the case where two source tiles from a merge
+          share the same tileId within a single snapshot.
+        */}
+        {tiles.map((t, i) => (
+          <AnimatedTile key={`${t.id}-${t.anim}-${moveId}-${i}`} tile={t} />
         ))}
 
         {/* Game Over Overlay */}
-        {gameState.isGameOver && (
+        {isOver && (
           <View style={styles.gameOverOverlay}>
             <Text style={styles.gameOverText}>Game Over!</Text>
-            <Text style={styles.gameOverScore}>Score: {gameState.score}</Text>
+            <Text style={styles.gameOverScore}>Score: {score}</Text>
           </View>
         )}
       </View>
@@ -868,7 +1079,7 @@ export default function Snap2048GameScreen({
       <Button
         mode="contained"
         onPress={startNewGame}
-        style={styles.newGameButton}
+        style={styles.newGameBtn}
         icon="refresh"
       >
         New Game
@@ -881,7 +1092,7 @@ export default function Snap2048GameScreen({
           <Dialog.Content>
             <Text variant="bodyLarge">Congratulations! You reached 2048!</Text>
             <Text variant="bodyMedium" style={{ marginTop: 8 }}>
-              Score: {gameState.score}
+              Score: {score}
             </Text>
             <Text
               variant="bodySmall"
@@ -902,23 +1113,19 @@ export default function Snap2048GameScreen({
       {/* Game Over Modal */}
       <GameOverModal
         visible={showGameOverModal}
-        result={gameState.hasWon ? "win" : "loss"}
+        result={isWon ? "win" : "loss"}
         stats={{
-          score: gameState.score,
+          score,
           personalBest: highScore,
-          isNewBest: gameState.score > highScore,
-          moves: gameState.moveCount,
+          isNewBest: score > highScore,
+          moves: totalMoves,
         }}
         onRematch={startNewGame}
         onShare={handleShare}
         onExit={() => navigation.goBack()}
         showRematch={true}
         showShare={true}
-        title={
-          gameState.hasWon
-            ? `🏆 ${gameState.bestTile} Achieved!`
-            : `Best Tile: ${gameState.bestTile}`
-        }
+        title={isWon ? `🏆 ${bestTile} Achieved!` : `Best Tile: ${bestTile}`}
       />
 
       {/* Friend Picker */}
@@ -954,7 +1161,7 @@ const styles = StyleSheet.create({
   title: {
     fontWeight: "bold",
   },
-  scoreContainer: {
+  scoreRow: {
     flexDirection: "row",
     gap: 16,
     marginBottom: 16,
@@ -966,7 +1173,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minWidth: 100,
   },
-  bestTileContainer: {
+  bestTileRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -991,6 +1198,7 @@ const styles = StyleSheet.create({
     height: BOARD_SIZE,
     borderRadius: 8,
     position: "relative",
+    overflow: "hidden",
   },
   gridCell: {
     position: "absolute",
@@ -1016,6 +1224,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 100,
   },
   gameOverText: {
     fontSize: 48,
@@ -1031,7 +1240,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     textAlign: "center",
   },
-  newGameButton: {
+  newGameBtn: {
     marginTop: 16,
   },
 });

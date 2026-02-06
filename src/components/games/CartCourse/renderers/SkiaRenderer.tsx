@@ -143,7 +143,7 @@ export const SkiaRenderer: React.FC<SkiaRendererProps> = ({ entities }) => {
 
   return (
     <View style={styles.container}>
-      <Canvas style={styles.canvas} mode="default">
+      <Canvas style={styles.canvas}>
         {/* Camera transform group */}
         <Group
           transform={[

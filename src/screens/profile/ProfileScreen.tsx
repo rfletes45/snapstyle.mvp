@@ -10,21 +10,18 @@
  * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md
  */
 
-import { signOut } from "firebase/auth";
 import React, { useCallback, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Divider, Text, TextInput, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BadgeShowcase } from "@/components/badges";
-import {
-  ProfileActions,
-  ProfileHeader,
-  ProfileStats,
-} from "@/components/profile";
+import { ProfileStats } from "@/components/profile";
+import { ProfileActions } from "@/components/profile/LegacyProfileActions";
+import { ProfileHeader } from "@/components/profile/LegacyProfileHeader";
 import { LoadingState } from "@/components/ui";
 import { useProfileData } from "@/hooks/useProfileData";
-import { getAuthInstance } from "@/services/firebase";
+import { logout } from "@/services/auth";
 import { updateProfile } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
@@ -110,8 +107,7 @@ export default function ProfileScreen({ navigation }: any) {
   // Handle sign out
   const handleSignOut = useCallback(async () => {
     try {
-      const auth = getAuthInstance();
-      await signOut(auth);
+      await logout();
     } catch (error: any) {
       console.error("Sign out error:", error);
     }
@@ -261,7 +257,10 @@ export default function ProfileScreen({ navigation }: any) {
           <View
             style={[
               styles.avatarCircle,
-              { backgroundColor: baseProfile.avatarConfig?.baseColor || theme.colors.primary },
+              {
+                backgroundColor:
+                  baseProfile.avatarConfig?.baseColor || theme.colors.primary,
+              },
             ]}
           >
             <Text style={styles.avatarEmoji}>

@@ -222,7 +222,16 @@ export function useUnifiedMessages(
             ...msgs.map((m) => m.serverReceivedAt),
           );
           if (latestTimestamp > lastWatermarkRef.current) {
-            updateWatermarkRef.current?.(latestTimestamp);
+            // Use Date.now() as watermark instead of serverReceivedAt.
+            // The Chat/Group doc's lastMessageAt is a server timestamp written
+            // AFTER the message's serverReceivedAt (separate Firestore write),
+            // so lastMessageAt > serverReceivedAt. Using serverReceivedAt as
+            // lastSeenAtPrivate would leave lastMessageAt > lastSeenAtPrivate,
+            // causing the conversation to perpetually show as unread.
+            // Date.now() is always after the message was received, so it's
+            // guaranteed to be >= lastMessageAt.
+            const watermark = Math.max(latestTimestamp, Date.now());
+            updateWatermarkRef.current?.(watermark);
             lastWatermarkRef.current = latestTimestamp;
           }
         }

@@ -52,7 +52,6 @@ import {
   InboxTabs,
   MuteOptionsSheet,
   PinnedSection,
-  ProfilePreviewModal,
   SwipeableConversation,
 } from "@/components/chat/inbox";
 import { ErrorState, LoadingState } from "@/components/ui";
@@ -82,8 +81,11 @@ export default function ChatListScreen() {
   const isFocused = useIsFocused();
 
   // In-app notifications context (for tracking last viewed chat)
-  const { consumeLastViewedChatId, registerNotificationPressHandler } =
-    useInAppNotifications();
+  const {
+    consumeLastViewedChatId,
+    registerNotificationPressHandler,
+    setCurrentScreen,
+  } = useInAppNotifications();
 
   // Data from useInboxData hook
   const {
@@ -125,12 +127,6 @@ export default function ChatListScreen() {
     useState<InboxConversation | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Profile preview modal state
-  const [profilePreviewVisible, setProfilePreviewVisible] = useState(false);
-  const [profilePreviewUserId, setProfilePreviewUserId] = useState<
-    string | null
-  >(null);
-
   // Block user modal state
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [blockTargetUser, setBlockTargetUser] = useState<{
@@ -171,6 +167,19 @@ export default function ChatListScreen() {
 
     return unsubscribe;
   }, [registerNotificationPressHandler, markConversationReadOptimistic]);
+
+  // =============================================================================
+  // Track Current Screen for Notification Suppression
+  // =============================================================================
+
+  // Tell the notification system we're on the inbox so message notifications
+  // are suppressed while the user can already see the list.
+  useFocusEffect(
+    useCallback(() => {
+      setCurrentScreen("ChatList");
+      return () => setCurrentScreen(null);
+    }, [setCurrentScreen]),
+  );
 
   // =============================================================================
   // Load Friend Requests / Invites
@@ -261,13 +270,16 @@ export default function ChatListScreen() {
     [navigation, actions, markConversationReadOptimistic],
   );
 
-  const handleAvatarPress = useCallback((conversation: InboxConversation) => {
-    if (conversation.type === "dm" && conversation.otherUserId) {
-      // Show profile preview modal instead of navigating directly
-      setProfilePreviewUserId(conversation.otherUserId);
-      setProfilePreviewVisible(true);
-    }
-  }, []);
+  const handleAvatarPress = useCallback(
+    (conversation: InboxConversation) => {
+      if (conversation.type === "dm" && conversation.otherUserId) {
+        navigation.navigate("UserProfile", {
+          userId: conversation.otherUserId,
+        });
+      }
+    },
+    [navigation],
+  );
 
   const handleLongPress = useCallback(
     (
@@ -330,11 +342,13 @@ export default function ChatListScreen() {
     [declineRequest],
   );
 
-  const handleRequestPress = useCallback((request: FriendRequestWithUser) => {
-    // Show profile preview modal for the requesting user
-    setProfilePreviewUserId(request.fromUserId);
-    setProfilePreviewVisible(true);
-  }, []);
+  const handleRequestPress = useCallback(
+    (request: FriendRequestWithUser) => {
+      // Navigate to the requesting user's full profile
+      navigation.navigate("UserProfile", { userId: request.fromUserId });
+    },
+    [navigation],
+  );
 
   // =============================================================================
   // Group Invite Handlers
@@ -433,56 +447,6 @@ export default function ChatListScreen() {
     setDeleteTargetConversation(null);
   }, []);
 
-  const handleCloseProfilePreview = useCallback(() => {
-    setProfilePreviewVisible(false);
-    setProfilePreviewUserId(null);
-  }, []);
-
-  // =============================================================================
-  // Profile Preview Modal Action Handlers
-  // =============================================================================
-
-  const handleProfileMute = useCallback(
-    (userId: string) => {
-      // Find the conversation for this user and show mute sheet
-      const conversation = [
-        ...pinnedConversations,
-        ...regularConversations,
-      ].find((c) => c.type === "dm" && c.otherUserId === userId);
-
-      if (!conversation) {
-        log.warn("No conversation found for user to mute", { userId });
-        return;
-      }
-
-      // Use setTimeout to ensure modal is fully closed before showing mute sheet
-      setTimeout(() => {
-        if (conversation.memberState.mutedUntil) {
-          // Already muted - unmute
-          actions.unmute(conversation);
-        } else {
-          // Show mute options sheet
-          setMuteTargetConversation(conversation);
-          setMuteSheetVisible(true);
-        }
-      }, 150);
-    },
-    [pinnedConversations, regularConversations, actions],
-  );
-
-  const handleProfileReport = useCallback(
-    (userId: string, username: string) => {
-      setReportTargetUser({ userId, username });
-      setReportModalVisible(true);
-    },
-    [],
-  );
-
-  const handleProfileBlock = useCallback((userId: string, username: string) => {
-    setBlockTargetUser({ userId, username });
-    setBlockModalVisible(true);
-  }, []);
-
   const handleConfirmBlock = useCallback(
     async (reason?: string) => {
       if (!blockTargetUser || !uid) return;
@@ -573,11 +537,9 @@ export default function ChatListScreen() {
     const conversation = contextMenu.conversation;
     handleCloseContextMenu();
     if (conversation?.type === "dm" && conversation.otherUserId) {
-      // Show profile preview modal instead of navigating directly
-      setProfilePreviewUserId(conversation.otherUserId);
-      setProfilePreviewVisible(true);
+      navigation.navigate("UserProfile", { userId: conversation.otherUserId });
     }
-  }, [contextMenu.conversation, handleCloseContextMenu]);
+  }, [contextMenu.conversation, handleCloseContextMenu, navigation]);
 
   const handleContextMenuDelete = useCallback(() => {
     const conversation = contextMenu.conversation;
@@ -872,16 +834,6 @@ export default function ChatListScreen() {
         conversationName={deleteTargetConversation?.name ?? ""}
         isGroup={deleteTargetConversation?.type === "group"}
         loading={deleteLoading}
-      />
-
-      {/* Profile Preview Modal */}
-      <ProfilePreviewModal
-        visible={profilePreviewVisible}
-        userId={profilePreviewUserId}
-        onClose={handleCloseProfilePreview}
-        onMute={handleProfileMute}
-        onReport={handleProfileReport}
-        onBlock={handleProfileBlock}
       />
 
       {/* Block User Modal */}

@@ -34,6 +34,7 @@ import {
   createLiveSession,
   startLiveSession,
 } from "@/services/liveSpectatorSession";
+import { getFullProfileData } from "@/services/profileService";
 import { SinglePlayerGameType } from "@/types/games";
 import type { UniversalGameInvite } from "@/types/turnBased";
 
@@ -93,9 +94,39 @@ export function ChatGameInvites({
   );
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [loading, setLoading] = useState(false);
+  const [resolvedAvatar, setResolvedAvatar] = useState<string | undefined>(
+    currentUserAvatar,
+  );
 
   // Total invite count for badge
   const totalInviteCount = invites.length + spectatorInvites.length;
+
+  // -------------------------------------------------------------------------
+  // Fetch current user's profile picture URL if not provided via prop
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (currentUserAvatar) {
+      setResolvedAvatar(currentUserAvatar);
+      return;
+    }
+    if (!currentUserId) return;
+
+    let cancelled = false;
+    getFullProfileData(currentUserId)
+      .then((profile) => {
+        if (!cancelled && profile?.profilePicture?.url) {
+          setResolvedAvatar(profile.profilePicture.url);
+        }
+      })
+      .catch((err) => {
+        console.warn("[ChatGameInvites] Failed to fetch profile picture:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, currentUserAvatar]);
 
   // -------------------------------------------------------------------------
   // Cleanup completed game invites on mount
@@ -178,10 +209,10 @@ export function ChatGameInvites({
         invite.id,
         currentUserId,
         currentUserName,
-        currentUserAvatar,
+        resolvedAvatar,
       );
     },
-    [currentUserId, currentUserName, currentUserAvatar],
+    [currentUserId, currentUserName, resolvedAvatar],
   );
 
   const handleLeave = useCallback(
@@ -197,7 +228,7 @@ export function ChatGameInvites({
         invite.id,
         currentUserId,
         currentUserName,
-        currentUserAvatar,
+        resolvedAvatar,
       );
 
       if (result.success && result.gameId) {
@@ -210,7 +241,7 @@ export function ChatGameInvites({
         // The invite subscription will update state if needed
       }
     },
-    [currentUserId, currentUserName, currentUserAvatar, onNavigateToGame],
+    [currentUserId, currentUserName, resolvedAvatar, onNavigateToGame],
   );
 
   const handleStartEarly = useCallback(
@@ -265,13 +296,13 @@ export function ChatGameInvites({
           invite.id,
           currentUserId,
           currentUserName,
-          currentUserAvatar,
+          resolvedAvatar,
         );
       } catch (error) {
         console.error("[ChatGameInvites] Join spectate failed:", error);
       }
     },
-    [currentUserId, currentUserName, currentUserAvatar],
+    [currentUserId, currentUserName, resolvedAvatar],
   );
 
   const handleLeaveSpectate = useCallback(
@@ -293,7 +324,7 @@ export function ChatGameInvites({
           gameType: invite.gameType as SinglePlayerGameType,
           hostId: currentUserId,
           hostName: currentUserName,
-          hostAvatar: currentUserAvatar,
+          hostAvatar: resolvedAvatar,
           invitedUserIds: invite.eligibleUserIds,
           conversationId: invite.conversationId,
           conversationType: invite.context === "group" ? "group" : "dm",
@@ -327,13 +358,13 @@ export function ChatGameInvites({
         );
       }
     },
-    [onNavigateToGame, currentUserId, currentUserName, currentUserAvatar],
+    [onNavigateToGame, currentUserId, currentUserName, resolvedAvatar],
   );
 
   const handleSpectatorCancel = useCallback(
     async (invite: SpectatorInvite) => {
       try {
-        await cancelSpectatorInvite(invite.id, currentUserId);
+        await cancelSpectatorInvite(invite.id);
       } catch (error) {
         console.error(
           "[ChatGameInvites] Cancel spectator invite failed:",

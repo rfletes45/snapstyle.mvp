@@ -281,11 +281,11 @@ export const LEVEL_PATTERNS: (BrickType | null)[][][] = [
 
   // Level 10: Fortress
   parsePattern([
-    "igssssgI",
+    "igssssgi",
     "i.vvvv.i",
     "i.vggv.i",
     "i.vvvv.i",
-    "igssssgI",
+    "igssssgi",
     "........",
   ]),
 

@@ -28,7 +28,10 @@ import {
 
 // Import Games functions
 import {
+  cleanupOldGameSessions,
   cleanupOldGames,
+  cleanupResolvedInvites,
+  cleanupStaleMatchmakingEntries,
   createGameFromInvite,
   expireGameInvites,
   expireMatchmakingEntries,
@@ -82,7 +85,10 @@ export const toggleReactionV2 = toggleReactionV2Function;
 
 // Re-export Games functions
 export {
+  cleanupOldGameSessions,
   cleanupOldGames,
+  cleanupResolvedInvites,
+  cleanupStaleMatchmakingEntries,
   createGameFromInvite,
   expireGameInvites,
   expireMatchmakingEntries,

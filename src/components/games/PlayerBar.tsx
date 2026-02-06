@@ -24,6 +24,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { formatDurationSeconds as formatTime } from "@/utils/time";
 import {
   GAME_BORDER_RADIUS,
   GAME_SHADOWS,
@@ -70,12 +71,6 @@ export interface PlayerBarProps {
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
 
 function getPlayerColor(color?: PlayerInfo["color"]): string | null {
   switch (color) {

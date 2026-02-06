@@ -610,9 +610,8 @@ export default function CheckersGameScreen({
     setBoard(newBoard);
     Vibration.vibrate(20);
 
-    // Check for multi-jump
-    if (move.isJump) {
-      const newPiece = newBoard[move.to.row][move.to.col]!;
+    // Check for multi-jump (but stop if piece was just kinged)
+    if (move.isJump && !(shouldKing && !piece.isKing)) {
       const moreJumps = getValidMoves(newBoard, move.to, true).filter(
         (m) => m.isJump,
       );

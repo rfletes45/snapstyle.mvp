@@ -129,6 +129,8 @@ export async function createGroup(
     displayName: creatorProfile.displayName,
     username: creatorProfile.username,
     avatarConfig: creatorProfile.avatarConfig,
+    profilePictureUrl: creatorProfile.profilePicture?.url || null,
+    decorationId: creatorProfile.avatarDecoration?.equippedId || null,
   };
   batch.set(creatorMemberRef, { uid: creatorUid, ...creatorMemberData });
 
@@ -459,6 +461,8 @@ export async function acceptGroupInvite(
     displayName: userProfile.displayName,
     username: userProfile.username,
     avatarConfig: userProfile.avatarConfig,
+    profilePictureUrl: userProfile.profilePicture?.url || null,
+    decorationId: userProfile.avatarDecoration?.equippedId || null,
   };
   batch.set(memberRef, memberData);
 
@@ -705,6 +709,8 @@ export async function getGroupMembers(groupId: string): Promise<GroupMember[]> {
       displayName: data.displayName,
       username: data.username,
       avatarConfig: data.avatarConfig,
+      profilePictureUrl: data.profilePictureUrl || null,
+      decorationId: data.decorationId || null,
     } as GroupMember;
   });
 }
@@ -742,6 +748,8 @@ export function subscribeToGroupMembers(
           displayName: data.displayName,
           username: data.username,
           avatarConfig: data.avatarConfig,
+          profilePictureUrl: data.profilePictureUrl || null,
+          decorationId: data.decorationId || null,
         } as GroupMember;
       });
 
@@ -1025,108 +1033,6 @@ export async function transferOwnership(
 // =============================================================================
 // Group Messages
 // =============================================================================
-
-/**
- * Send a message to a group
- *
- * @deprecated Use `sendMessage` from `@/services/messaging` instead:
- *
- * ```typescript
- * // OLD (deprecated):
- * import { sendGroupMessage } from "@/services/groups";
- * await sendGroupMessage(groupId, senderUid, text, "text");
- *
- * // NEW (recommended):
- * import { sendMessage } from "@/services/messaging";
- * await sendMessage({
- *   scope: "group",
- *   conversationId: groupId,
- *   kind: "text",
- *   text: text,
- * });
- * ```
- *
- * The unified API provides:
- * - Offline support via outbox
- * - Optimistic UI patterns
- * - Consistent API for DM and Group
- *
- * @param mentionUids - Array of mentioned user UIDs (H9)
- * @param replyTo - Reply-to metadata (H6)
- */
-export async function sendGroupMessage(
-  groupId: string,
-  senderUid: string,
-  content: string,
-  type: "text" | "image" | "scorecard" | "voice" = "text",
-  scorecard?: GroupMessage["scorecard"],
-  mentionUids?: string[],
-  voiceMetadata?: GroupMessage["voiceMetadata"],
-  replyTo?: GroupMessage["replyTo"],
-): Promise<GroupMessage> {
-  const db = getFirestoreInstance();
-
-  // Verify sender is a member
-  const isMember = await isGroupMember(groupId, senderUid);
-  if (!isMember) {
-    throw new Error("You are not a member of this group");
-  }
-
-  // Get sender profile
-  const senderProfile = await getUserProfileByUid(senderUid);
-  if (!senderProfile) {
-    throw new Error("Sender profile not found");
-  }
-
-  const now = Date.now();
-  const messageRef = doc(collection(db, "Groups", groupId, "Messages"));
-
-  const messageData: Omit<GroupMessage, "id"> & { mentionUids?: string[] } = {
-    groupId,
-    sender: senderUid,
-    senderDisplayName: senderProfile.displayName,
-    type,
-    content,
-    createdAt: now,
-    ...(type === "image" && { imagePath: content }),
-    ...(type === "scorecard" && scorecard && { scorecard }),
-    ...(type === "voice" && voiceMetadata && { voiceMetadata }),
-    ...(mentionUids && mentionUids.length > 0 && { mentionUids }),
-    ...(replyTo && { replyTo }),
-  };
-
-  const batch = writeBatch(db);
-
-  batch.set(messageRef, messageData);
-
-  // Update group with last message info
-  let previewText = content;
-  if (type === "image") {
-    previewText = "📷 Photo";
-  } else if (type === "scorecard") {
-    previewText = "🎮 Shared a score";
-  } else if (type === "voice") {
-    previewText = "🎤 Voice message";
-  } else if (content.length > 50) {
-    previewText = content.substring(0, 50) + "...";
-  }
-
-  batch.update(doc(db, "Groups", groupId), {
-    lastMessageText: previewText,
-    lastMessageAt: now,
-    lastMessageSenderId: senderUid,
-    updatedAt: now,
-  });
-
-  await batch.commit();
-
-  console.log(`✅ [groups] Message sent to group ${groupId}`);
-
-  return {
-    id: messageRef.id,
-    ...messageData,
-  };
-}
 
 /**
  * Get group messages (paginated)

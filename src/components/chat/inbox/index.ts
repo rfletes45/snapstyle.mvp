@@ -13,7 +13,7 @@
  * - MuteOptionsSheet: Mute duration picker bottom sheet
  * - DeleteConfirmDialog: Conversation delete confirmation
  * - FriendRequestItem: Friend request row with accept/decline
- * - ProfilePreviewModal: Quick profile preview bottom sheet
+ * (ProfilePreviewModal removed — replaced by direct UserProfile navigation)
  */
 
 export { InboxHeader } from "./InboxHeader";
@@ -53,7 +53,3 @@ export type { FriendRequestItemProps } from "./FriendRequestItem";
 
 export { GroupInviteItem } from "./GroupInviteItem";
 export type { GroupInviteItemProps } from "./GroupInviteItem";
-
-// Visual Polish Components
-export { ProfilePreviewModal } from "./ProfilePreviewModal";
-export type { ProfilePreviewModalProps } from "./ProfilePreviewModal";

@@ -39,6 +39,7 @@ export type HapticFeedbackType =
   | "brick_hit" // Ball hitting a brick
   | "brick_destroy" // Brick destroyed
   | "powerup_collect" // Power-up collected
+  | "path_complete" // Path/course completed
   | "ball_launch" // Ball launched
   | "combo"; // Combo achieved
 

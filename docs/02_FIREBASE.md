@@ -30,6 +30,8 @@ Users/{uid}
 ├── usernameLower: string
 ├── displayName: string
 ├── avatarConfig: { hat, glasses, background, color }
+├── profilePictureUrl?: string
+├── decorationId?: string
 ├── expoPushToken?: string
 ├── coins: number (wallet balance)
 ├── isAdmin?: boolean
@@ -39,7 +41,12 @@ Users/{uid}
 ├── /inventory/{itemId}        # Owned cosmetics
 ├── /blockedUsers/{blockedUid} # Block list
 ├── /Achievements/{id}         # Earned achievements
-└── /TaskProgress/{taskId}     # Daily task progress
+├── /TaskProgress/{taskId}     # Daily task progress
+├── /GameStats/{gameType}      # Per-game statistics
+├── /ActiveGames/{gameId}      # Active games index
+└── /settings/inbox            # Inbox privacy/notification prefs
+    ├── showReadReceipts, showOnlineStatus, showTypingIndicators
+    └── defaultNotifyLevel, swipeActionsEnabled, confirmBeforeDelete
 ```
 
 ### Chats Collection (DM)
@@ -52,7 +59,7 @@ Chats/{chatId}
 ├── /Messages/{messageId}
 │   ├── senderId: string
 │   ├── text?: string
-│   ├── kind: "text" | "media" | "voice" | "scorecard" | "system"
+│   ├── kind: "text" | "media" | "voice" | "scorecard" | "system" | "game_invite"
 │   ├── attachments?: AttachmentV2[]
 │   ├── voiceMetadata?: { durationMs, storagePath, sizeBytes }
 │   ├── replyTo?: { messageId, senderId, senderName, previewText }
@@ -141,8 +148,25 @@ stories/{storyId}               # 24-hour moments
 ├── viewedBy: string[]
 ├── expiresAt: Timestamp (TTL)
 
-GameSessions/{sessionId}        # Game scores
+GameSessions/{sessionId}        # Single-player game scores
 Leaderboards/{gameId}_{weekKey}/Entries/{uid}
+
+turnBasedMatches/{matchId}      # Turn-based multiplayer games
+├── gameType, status, players, currentTurn, boardState
+├── createdAt, updatedAt, lastMoveAt
+└── /moves/{moveId}             # Move history
+
+GameInvites/{inviteId}          # Universal game invitations
+├── gameType, fromUid, toUid, status
+├── requiredPlayers, maxPlayers, claimedSlots
+├── targeting: { type, eligibleUserIds }
+├── spectators: { enabled, maxCount, current }
+├── createdAt, expiresAt
+
+matchmakingQueue/{queueId}      # Players waiting for match
+
+Users/{uid}/GameStats/{gameType} # Per-game statistics
+Users/{uid}/ActiveGames/{gameId} # Active games index
 
 Wallets/{uid}                   # Token balance
 Transactions/{transactionId}    # Economy audit trail

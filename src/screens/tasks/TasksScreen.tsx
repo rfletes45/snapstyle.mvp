@@ -149,7 +149,6 @@ export default function TasksScreen({ navigation }: any) {
 
   // Calculate overall progress
   const completedCount = tasks.filter((t) => t.isCompleted).length;
-  const claimedCount = tasks.filter((t) => t.claimed).length;
   const totalTasks = tasks.length;
   const overallProgress = totalTasks > 0 ? completedCount / totalTasks : 0;
 

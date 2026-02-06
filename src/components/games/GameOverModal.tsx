@@ -38,6 +38,7 @@ import {
   AchievementNotification,
   GameAchievementDefinition,
 } from "@/types/achievements";
+import { formatDurationSeconds as formatTime } from "@/utils/time";
 import {
   ACHIEVEMENT_TIER_COLORS,
   GAME_ANIMATIONS,
@@ -135,12 +136,6 @@ function getResultConfig(result: GameResult, isDarkMode: boolean) {
         confetti: false,
       };
   }
-}
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 // =============================================================================

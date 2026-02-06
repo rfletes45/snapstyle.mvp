@@ -11,13 +11,7 @@ import { CallControls } from "../../components/calls/CallControls";
 import { useCallContext } from "../../contexts/CallContext";
 import { useCall } from "../../hooks/calls";
 import { useColors } from "../../store/ThemeContext";
-
-// Format duration helper
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
+import { formatDurationSecondsPadded as formatDuration } from "../../utils/time";
 
 type AudioCallRouteParams = {
   AudioCall: {

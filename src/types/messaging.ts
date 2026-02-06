@@ -28,7 +28,8 @@ export type MessageKind =
   | "voice"
   | "file"
   | "system"
-  | "scorecard";
+  | "scorecard"
+  | "game_invite";
 
 /** Attachment content type */
 export type AttachmentKind = "image" | "video" | "audio" | "file";
@@ -536,6 +537,12 @@ export interface InboxConversation {
   /** Avatar configuration for DMs (custom avatar) */
   avatarConfig?: AvatarConfig;
 
+  /** Profile picture URL for DMs (actual photo) */
+  profilePictureUrl?: string | null;
+
+  /** Avatar decoration ID for DMs */
+  decorationId?: string | null;
+
   /** Avatar user IDs for group avatar generation */
   avatarIds?: string[];
 
@@ -551,7 +558,13 @@ export interface InboxConversation {
     /** Message timestamp */
     timestamp: number;
     /** Message type */
-    type: "text" | "image" | "voice" | "attachment";
+    type:
+      | "text"
+      | "image"
+      | "voice"
+      | "attachment"
+      | "scorecard"
+      | "game_invite";
   } | null;
 
   /** User's private state for this conversation */

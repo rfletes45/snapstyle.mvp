@@ -19,6 +19,7 @@ import {
   SinglePlayerLeaderboardEntry,
 } from "@/types/singlePlayerGames";
 import { generateId } from "@/utils/ids";
+import { createLogger } from "@/utils/log";
 import {
   Timestamp,
   collection,
@@ -35,11 +36,13 @@ import {
 } from "firebase/firestore";
 import { getAuthInstance, getFirestoreInstance } from "./firebase";
 
+const log = createLogger("singlePlayerSessions");
+
 // =============================================================================
 // Types
 // =============================================================================
 
-export interface RecordSessionInput {
+interface RecordSessionInput {
   gameType: SinglePlayerGameType;
   finalScore: number;
   stats: SinglePlayerGameStats;
@@ -69,22 +72,22 @@ export async function recordSinglePlayerSession(
   const currentUser = auth.currentUser;
 
   // Debug: Check if authenticated user matches playerId
-  console.log("[singlePlayerSessions] Auth UID:", currentUser?.uid);
-  console.log("[singlePlayerSessions] PlayerId param:", playerId);
-  console.log("[singlePlayerSessions] Match:", currentUser?.uid === playerId);
+  log.debug("Auth check", {
+    data: {
+      authUid: currentUser?.uid,
+      playerId,
+      match: currentUser?.uid === playerId,
+    },
+  });
 
   // Validate authentication state
   if (!currentUser) {
-    console.error(
-      "[singlePlayerSessions] No authenticated user - cannot record session",
-    );
+    log.error("No authenticated user - cannot record session");
     return null;
   }
 
   if (currentUser.uid !== playerId) {
-    console.error(
-      "[singlePlayerSessions] Auth UID does not match playerId - potential security issue",
-    );
+    log.error("Auth UID does not match playerId - potential security issue");
     return null;
   }
 
@@ -143,11 +146,7 @@ export async function recordSinglePlayerSession(
       createdAt: Timestamp.now(),
     };
 
-    console.log("[singlePlayerSessions] Saving session for user:", playerId);
-    console.log(
-      "[singlePlayerSessions] Session data:",
-      JSON.stringify(sessionDoc, null, 2),
-    );
+    log.debug("Saving session", { data: { playerId, sessionId } });
 
     await setDoc(
       doc(db, "Users", playerId, "GameSessions", sessionId),
@@ -187,24 +186,19 @@ export async function recordSinglePlayerSession(
       });
     }
 
-    console.log("[singlePlayerSessions] Session recorded:", sessionId);
+    log.info("Session recorded", { data: { sessionId } });
     return session;
   } catch (error: any) {
-    console.error("[singlePlayerSessions] Error recording session:", error);
+    log.error("Error recording session", error);
 
     // Provide more helpful error messages
     if (
       error?.code === "permission-denied" ||
       error?.message?.includes("permission")
     ) {
-      console.error(
-        "[singlePlayerSessions] PERMISSION DENIED - This likely means:",
+      log.error(
+        "PERMISSION DENIED - Check: 1) Firestore rules deployed, 2) User authenticated, 3) playerId matches auth UID",
       );
-      console.error(
-        "  1. Firestore rules may need to be deployed: firebase deploy --only firestore:rules",
-      );
-      console.error("  2. User may not be properly authenticated");
-      console.error("  3. The playerId may not match the authenticated user");
     }
 
     return null;
@@ -218,7 +212,7 @@ export async function recordSinglePlayerSession(
 /**
  * Get player's high score for a game
  */
-export async function getHighScore(
+async function getHighScore(
   playerId: string,
   gameType: SinglePlayerGameType,
 ): Promise<PlayerHighScore | null> {
@@ -239,7 +233,7 @@ export async function getHighScore(
       totalGames: data.totalGames || 0,
     };
   } catch (error) {
-    console.error("[singlePlayerSessions] Error getting high score:", error);
+    log.error("Error getting high score", error);
     return null;
   }
 }
@@ -267,10 +261,7 @@ export async function getAllHighScores(
       };
     });
   } catch (error) {
-    console.error(
-      "[singlePlayerSessions] Error getting all high scores:",
-      error,
-    );
+    log.error("Error getting all high scores", error);
     return [];
   }
 }
@@ -309,10 +300,7 @@ export async function getRecentSessions(
     const querySnap = await getDocs(q);
     return querySnap.docs.map((doc) => doc.data() as SinglePlayerGameSession);
   } catch (error) {
-    console.error(
-      "[singlePlayerSessions] Error getting recent sessions:",
-      error,
-    );
+    log.error("Error getting recent sessions", error);
     return [];
   }
 }
@@ -373,7 +361,7 @@ async function updateLeaderboard(
       },
     );
   } catch (error) {
-    console.error("[singlePlayerSessions] Error updating leaderboard:", error);
+    log.error("Error updating leaderboard", error);
   }
 }
 
@@ -419,7 +407,7 @@ export async function getLeaderboard(
       };
     });
   } catch (error) {
-    console.error("[singlePlayerSessions] Error getting leaderboard:", error);
+    log.error("Error getting leaderboard", error);
     return [];
   }
 }

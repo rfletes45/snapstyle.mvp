@@ -247,7 +247,7 @@ export default function StoryViewerScreen({
       const compressedUri = await compressImage(displayImage);
 
       // Post story using service (handles upload + Firestore doc creation)
-      const storyId = await postStory(currentFirebaseUser.uid, compressedUri);
+      await postStory(currentFirebaseUser.uid, compressedUri);
 
       Alert.alert("Success", "Story posted successfully!");
       navigation.goBack();

@@ -7,6 +7,7 @@
  * @file src/services/database/index.ts
  */
 
+import type { SQLiteDatabase } from "expo-sqlite";
 import { Platform } from "react-native";
 
 // =============================================================================
@@ -36,24 +37,24 @@ function getSQLiteModule(): typeof import("expo-sqlite") {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     SQLite = require("expo-sqlite");
   }
-  return SQLite;
+  return SQLite!;
 }
 
 // =============================================================================
 // Singleton Instance
 // =============================================================================
 
-// Use 'any' for the db type to avoid importing expo-sqlite types at module level
-let db: any = null;
+// Singleton database instance
+let db: SQLiteDatabase | null = null;
 
 /**
- * Get or create the database instance
- * Returns null on web platform where SQLite sync operations are not available
+ * Get or create the database instance.
+ * Throws on web platform where SQLite sync operations are not available.
  */
-export function getDatabase(): any {
+export function getDatabase(): SQLiteDatabase {
   // SQLite sync operations are not available on web
   if (!IS_SQLITE_AVAILABLE) {
-    return null;
+    throw new Error("SQLite is not available on this platform");
   }
 
   if (!db) {
@@ -78,8 +79,7 @@ export function closeDatabase(): void {
 // Schema Initialization
 // =============================================================================
 
-// Use 'any' for the database parameter since we're lazy-loading the module
-function initializeSchema(database: any): void {
+function initializeSchema(database: SQLiteDatabase): void {
   const currentVersion =
     database.getFirstSync<{ user_version: number }>("PRAGMA user_version")
       ?.user_version ?? 0;

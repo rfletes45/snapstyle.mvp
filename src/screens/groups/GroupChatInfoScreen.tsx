@@ -9,7 +9,7 @@
  * - Role management (owner only)
  */
 
-import { AvatarMini } from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ErrorState, LoadingState } from "@/components/ui";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
 import {
@@ -176,18 +176,46 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   useEffect(() => {
     if (!groupId) return;
 
-    const unsubscribe = subscribeToGroupMembers(groupId, (membersData) => {
-      // Sort: owner first, then admins, then members
-      const sorted = [...membersData].sort((a, b) => {
-        const roleOrder: Record<GroupRole, number> = {
-          owner: 0,
-          admin: 1,
-          member: 2,
-        };
-        return roleOrder[a.role] - roleOrder[b.role];
-      });
-      setMembers(sorted);
-    });
+    const unsubscribe = subscribeToGroupMembers(
+      groupId,
+      async (membersData) => {
+        // Enrich members missing profile picture data
+        const enriched = await Promise.all(
+          membersData.map(async (member) => {
+            if (
+              member.profilePictureUrl !== undefined &&
+              member.profilePictureUrl !== null
+            ) {
+              return member;
+            }
+            try {
+              const profile = await getUserProfileByUid(member.uid);
+              if (profile) {
+                return {
+                  ...member,
+                  profilePictureUrl: profile.profilePicture?.url || null,
+                  decorationId: profile.avatarDecoration?.equippedId || null,
+                };
+              }
+            } catch {
+              // Fall back to initials
+            }
+            return member;
+          }),
+        );
+
+        // Sort: owner first, then admins, then members
+        const sorted = [...enriched].sort((a, b) => {
+          const roleOrder: Record<GroupRole, number> = {
+            owner: 0,
+            admin: 1,
+            member: 2,
+          };
+          return roleOrder[a.role] - roleOrder[b.role];
+        });
+        setMembers(sorted);
+      },
+    );
 
     return () => unsubscribe();
   }, [groupId]);
@@ -216,6 +244,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             displayName: profile.displayName,
             username: profile.username,
             avatarConfig: profile.avatarConfig,
+            profilePictureUrl: profile.profilePicture?.url || null,
+            decorationId: profile.avatarDecoration?.equippedId || null,
           };
         }),
       );
@@ -372,7 +402,12 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
     return (
       <View key={member.uid} style={styles.memberItem}>
         <View style={styles.memberLeft}>
-          <AvatarMini config={member.avatarConfig} size={44} />
+          <ProfilePictureWithDecoration
+            pictureUrl={member.profilePictureUrl}
+            name={member.displayName}
+            decorationId={member.decorationId}
+            size={40}
+          />
           <View style={styles.memberInfo}>
             <View style={styles.memberNameRow}>
               <Text style={styles.memberName}>
@@ -696,7 +731,12 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               {invitableFriends.map((item) => (
                 <View key={item.uid} style={styles.inviteFriendItem}>
                   <View style={styles.inviteFriendLeft}>
-                    <AvatarMini config={item.avatarConfig} size={44} />
+                    <ProfilePictureWithDecoration
+                      pictureUrl={item.profilePictureUrl}
+                      name={item.displayName}
+                      decorationId={item.decorationId}
+                      size={40}
+                    />
                     <Text style={styles.inviteFriendName} numberOfLines={1}>
                       {item.displayName}
                     </Text>

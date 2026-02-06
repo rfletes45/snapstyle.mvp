@@ -16,9 +16,13 @@
  * - NEW: ModernGameCard and SearchResultsView (Phase 2)
  */
 
-import { GameInviteBadge } from "@/components/GameInviteCard";
 import { UniversalInviteCard } from "@/components/games";
+import { GameInviteBadge } from "@/components/games/GameInviteBadge";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ErrorState, LoadingState } from "@/components/ui";
+import { GAME_SCREEN_MAP } from "@/config/gameCategories";
+import { useProfileData } from "@/hooks/useProfileData";
+import { useProfilePicture } from "@/hooks/useProfilePicture";
 import {
   cancelGameInvite,
   claimInviteSlot,
@@ -61,7 +65,6 @@ import { GameSession } from "@/types/models";
 import {
   CATEGORY_CONFIGS,
   DEFAULT_SEARCH_FILTERS,
-  FeaturedGame,
   GameSearchFilters,
 } from "@/types/playScreen";
 import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
@@ -81,21 +84,24 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Card, Chip, Divider, Text, useTheme } from "react-native-paper";
+import {
+  Card,
+  Chip,
+  Divider,
+  ProgressBar,
+  Text,
+  useTheme,
+} from "react-native-paper";
 import { PLAY_SCREEN_FEATURES } from "../../../constants/featureFlags";
 import { BorderRadius, Spacing } from "../../../constants/theme";
 import {
   ActiveGamesMini,
   ActiveGamesSection,
   DailyChallengeCard,
-  FeaturedGameBanner,
-  FriendsPlayingNow,
   GameCategoryCarousel,
   GameFilterBar,
   GameInvitesBanner,
   GameQuickActionsModal,
-  GameRecommendations,
-  GameStatsSummary,
   ModernGameCard,
   PlayHeader,
   PlaySearchBar,
@@ -116,22 +122,6 @@ interface GameCardProps {
   onPlay: () => void;
   isComingSoon?: boolean;
 }
-
-// =============================================================================
-// Phase 4: Featured Game Configuration
-// =============================================================================
-
-/**
- * Current featured game for the promotional banner.
- * Update this to promote new games or seasonal content.
- */
-const FEATURED_GAME: FeaturedGame = {
-  gameType: "memory_snap",
-  headline: "New! Memory Snap",
-  subheadline: "Test your memory in this exciting new puzzle game!",
-  backgroundColor: "#4ECDC4",
-  gradientEndColor: "#2D9F9A",
-};
 
 // =============================================================================
 // Game Card Component
@@ -401,6 +391,12 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
 
+  // Profile data for the profile card
+  const { levelInfo } = useProfileData(currentFirebaseUser?.uid);
+  const { picture, decoration } = useProfilePicture({
+    userId: currentFirebaseUser?.uid || "",
+  });
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -575,25 +571,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   };
 
   const navigateToGame = (gameId: ExtendedGameType) => {
-    const screenMap: Partial<Record<ExtendedGameType, string>> = {
-      reaction_tap: "ReactionTapGame",
-      timed_tap: "TimedTapGame",
-      bounce_blitz: "BounceBlitzGame",
-      memory_snap: "MemorySnapGame",
-      word_snap: "WordSnapGame",
-      snap_2048: "Snap2048Game",
-      snap_snake: "SnapSnakeGame",
-      cart_course: "CartCourseGame",
-      tic_tac_toe: "TicTacToeGame",
-      checkers: "CheckersGame",
-      chess: "ChessGame",
-      crazy_eights: "CrazyEightsGame",
-      // New single-player games (Phase 1)
-      tile_slide: "TileSlideGame",
-      brick_breaker: "BrickBreakerGame",
-    };
-
-    const screen = screenMap[gameId];
+    const screen = GAME_SCREEN_MAP[gameId];
     if (screen) {
       navigation.navigate(screen);
     }
@@ -1072,41 +1050,99 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
             </>
           )}
 
-          {/* Phase 4: Featured Game Banner */}
-          {PLAY_SCREEN_FEATURES.FEATURED_BANNER && (
-            <FeaturedGameBanner
-              featuredGame={FEATURED_GAME}
-              onPress={() => navigateToGame(FEATURED_GAME.gameType)}
-              testID="featured-game-banner"
+          {/* Profile Card */}
+          <View
+            style={[
+              styles.profileCard,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderColor: theme.colors.outlineVariant,
+              },
+            ]}
+          >
+            <ProfilePictureWithDecoration
+              pictureUrl={picture?.url || null}
+              name={currentFirebaseUser?.displayName || "User"}
+              size={56}
+              decorationId={decoration?.decorationId}
             />
-          )}
-
-          {/* Phase 7: Game Stats Summary */}
-          {PLAY_SCREEN_FEATURES.GAME_STATS_SUMMARY && (
-            <GameStatsSummary
-              onViewDetails={() => navigation.navigate("GameHistory")}
-              testID="game-stats-summary"
-            />
-          )}
-
-          {/* Phase 7: Friends Playing Now */}
-          {PLAY_SCREEN_FEATURES.FRIENDS_PLAYING_NOW && (
-            <FriendsPlayingNow
-              onFriendPress={(friendId, gameType) => {
-                // Navigate to friend's profile or spectate their game
-                console.log("Friend pressed:", friendId, gameType);
-              }}
-              testID="friends-playing-now"
-            />
-          )}
-
-          {/* Phase 7: Game Recommendations */}
-          {PLAY_SCREEN_FEATURES.GAME_RECOMMENDATIONS && (
-            <GameRecommendations
-              onGamePress={navigateToGame}
-              testID="game-recommendations"
-            />
-          )}
+            <View style={styles.profileCardInfo}>
+              <Text
+                style={[
+                  styles.profileCardName,
+                  { color: theme.colors.onSurface },
+                ]}
+                numberOfLines={1}
+              >
+                {currentFirebaseUser?.displayName || "Player"}
+              </Text>
+              <View style={styles.profileCardLevel}>
+                <Text
+                  style={[
+                    styles.profileCardLevelText,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  Level {levelInfo?.current ?? 1}
+                </Text>
+                <ProgressBar
+                  progress={
+                    levelInfo ? levelInfo.xp / levelInfo.xpToNextLevel : 0
+                  }
+                  color={theme.colors.primary}
+                  style={styles.profileCardProgress}
+                />
+              </View>
+              <View style={styles.profileCardButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.profileCardButton,
+                    { backgroundColor: theme.colors.primary },
+                  ]}
+                  onPress={() => navigation.navigate("Tasks", { tab: "daily" })}
+                >
+                  <MaterialCommunityIcons
+                    name="calendar-check"
+                    size={14}
+                    color={theme.colors.onPrimary}
+                  />
+                  <Text
+                    style={[
+                      styles.profileCardButtonText,
+                      { color: theme.colors.onPrimary },
+                    ]}
+                  >
+                    Daily Tasks
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.profileCardButton,
+                    {
+                      backgroundColor: theme.colors.secondaryContainer,
+                    },
+                  ]}
+                  onPress={() =>
+                    navigation.navigate("Tasks", { tab: "monthly" })
+                  }
+                >
+                  <MaterialCommunityIcons
+                    name="calendar-month"
+                    size={14}
+                    color={theme.colors.onSecondaryContainer}
+                  />
+                  <Text
+                    style={[
+                      styles.profileCardButtonText,
+                      { color: theme.colors.onSecondaryContainer },
+                    ]}
+                  >
+                    Monthly Tasks
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
 
           {/* Phase 4: Category Carousels Mode vs Legacy Vertical Lists */}
           {PLAY_SCREEN_FEATURES.CATEGORY_CAROUSELS ? (
@@ -1196,108 +1232,6 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
               />
             </>
           )}
-
-          {/* Leaderboards, Achievements & History Section */}
-          <Divider style={styles.divider} />
-          <Text
-            style={[styles.sectionTitle, { color: theme.colors.onBackground }]}
-          >
-            Compete & Collect
-          </Text>
-
-          <View style={styles.navCardsRow}>
-            <TouchableOpacity
-              style={[
-                styles.navCard,
-                {
-                  backgroundColor: theme.colors.surfaceVariant,
-                  borderColor: theme.colors.outlineVariant,
-                },
-              ]}
-              onPress={() => navigation.navigate("Leaderboard")}
-            >
-              <MaterialCommunityIcons name="trophy" size={32} color="#FFD700" />
-              <Text
-                style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
-              >
-                Leaderboards
-              </Text>
-              <Text
-                style={[
-                  styles.navCardSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Weekly rankings
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.navCard,
-                {
-                  backgroundColor: theme.colors.surfaceVariant,
-                  borderColor: theme.colors.outlineVariant,
-                },
-              ]}
-              onPress={() => navigation.navigate("Achievements")}
-            >
-              <MaterialCommunityIcons
-                name="medal"
-                size={32}
-                color={theme.colors.primary}
-              />
-              <Text
-                style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
-              >
-                Achievements
-              </Text>
-              <Text
-                style={[
-                  styles.navCardSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Unlock badges
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Second row with Game History */}
-          <View style={styles.navCardsRow}>
-            <TouchableOpacity
-              style={[
-                styles.navCard,
-                {
-                  backgroundColor: theme.colors.surfaceVariant,
-                  borderColor: theme.colors.outlineVariant,
-                },
-              ]}
-              onPress={() => navigation.navigate("GameHistory")}
-            >
-              <MaterialCommunityIcons
-                name="history"
-                size={32}
-                color={theme.colors.secondary}
-              />
-              <Text
-                style={[styles.navCardTitle, { color: theme.colors.onSurface }]}
-              >
-                Game History
-              </Text>
-              <Text
-                style={[
-                  styles.navCardSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Past matches & stats
-              </Text>
-            </TouchableOpacity>
-
-            {/* Placeholder for future card - keeps layout balanced */}
-            <View style={[styles.navCard, { opacity: 0 }]} />
-          </View>
 
           {/* Recent Games Section - Hidden when Phase 6 REMOVE_RECENT_GAMES is enabled */}
           {!PLAY_SCREEN_FEATURES.REMOVE_RECENT_GAMES &&
@@ -1586,5 +1520,51 @@ const styles = StyleSheet.create({
   // Phase 3: Modern game card in category sections
   modernGameCard: {
     marginBottom: Spacing.md,
+  },
+  // Profile card
+  profileCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    gap: Spacing.md,
+  },
+  profileCardInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  profileCardName: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  profileCardLevel: {
+    gap: 4,
+  },
+  profileCardLevelText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  profileCardProgress: {
+    height: 4,
+    borderRadius: 2,
+  },
+  profileCardButtons: {
+    gap: 6,
+    marginTop: 2,
+  },
+  profileCardButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.sm,
+    gap: 6,
+  },
+  profileCardButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
 });

@@ -61,7 +61,6 @@ import { useUnifiedChatScreen } from "@/hooks/useUnifiedChatScreen";
 import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 
 // Chat components
-import { AvatarMini } from "@/components/Avatar";
 import {
   AttachmentTray,
   CameraLongPressButton,
@@ -82,10 +81,12 @@ import {
 } from "@/components/chat";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { EmptyState, ErrorState } from "@/components/ui";
 
 // Services
+import { getUserProfileByUid } from "@/services/friends";
 import {
   getGroup,
   getGroupMembers,
@@ -304,7 +305,33 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         navigation.setOptions({ title: groupData.name });
 
         const members = await getGroupMembers(groupId);
-        setGroupMembers(members);
+
+        // Enrich members missing profile picture data from their user profiles
+        const enrichedMembers = await Promise.all(
+          members.map(async (member) => {
+            if (
+              member.profilePictureUrl !== undefined &&
+              member.profilePictureUrl !== null
+            ) {
+              return member;
+            }
+            try {
+              const profile = await getUserProfileByUid(member.uid);
+              if (profile) {
+                return {
+                  ...member,
+                  profilePictureUrl: profile.profilePicture?.url || null,
+                  decorationId: profile.avatarDecoration?.equippedId || null,
+                };
+              }
+            } catch {
+              // Silently fall back to initials avatar
+            }
+            return member;
+          }),
+        );
+
+        setGroupMembers(enrichedMembers);
       } catch (err: any) {
         console.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
@@ -902,10 +929,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Get sender info from group members
   // ==========================================================================
 
-  const getSenderAvatarConfig = useCallback(
+  const getSenderProfileInfo = useCallback(
     (senderId: string) => {
       const member = groupMembers.find((m) => m.uid === senderId);
-      return member?.avatarConfig || { baseColor: "#6200EE" };
+      return {
+        displayName: member?.displayName || member?.username || "Unknown",
+        profilePictureUrl: member?.profilePictureUrl || null,
+        decorationId: member?.decorationId || null,
+      };
     },
     [groupMembers],
   );
@@ -931,7 +962,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const showAvatar = shouldShowAvatar(index, item);
       const isGrouped = isGroupedMessage(index, item);
       const senderDisplayName = getSenderDisplayName(item);
-      const senderAvatarConfig = getSenderAvatarConfig(item.senderId);
+      const senderProfile = getSenderProfileInfo(item.senderId);
 
       if (item.kind === "system") {
         return (
@@ -1008,12 +1039,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               {!isOwnMessage && (
                 <View style={styles.avatarColumn}>
                   {showAvatar ? (
-                    <AvatarMini
-                      config={senderAvatarConfig || { baseColor: "#6200EE" }}
+                    <ProfilePictureWithDecoration
+                      pictureUrl={senderProfile.profilePictureUrl}
+                      name={senderDisplayName}
+                      decorationId={senderProfile.decorationId}
                       size={32}
                     />
                   ) : (
-                    <View style={{ width: 32 }} />
+                    <View style={{ width: 37 }} />
                   )}
                 </View>
               )}
@@ -1185,6 +1218,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       shouldShowTimestamp,
       shouldShowAvatar,
       isGroupedMessage,
+      getSenderDisplayName,
+      getSenderProfileInfo,
       linkPreviews,
       loadingPreviews,
       messageReactions,
@@ -1253,18 +1288,28 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             style={styles.headerTitle}
             onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
           >
-            <View
-              style={[
-                styles.groupIcon,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="account-group"
-                size={20}
-                color={theme.colors.primary}
+            {group?.avatarUrl ? (
+              <Image
+                source={{ uri: group.avatarUrl }}
+                style={[
+                  styles.groupIcon,
+                  { width: 36, height: 36, borderRadius: 18 },
+                ]}
               />
-            </View>
+            ) : (
+              <View
+                style={[
+                  styles.groupIcon,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account-group"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </View>
+            )}
             <View>
               <Text
                 style={[
@@ -1344,11 +1389,19 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               ) : null
             }
             ListEmptyComponent={
-              <EmptyState
-                icon="chat-outline"
-                title="No Messages Yet"
-                subtitle="Be the first to send a message!"
-              />
+              <View
+                style={{
+                  transform: [{ scaleY: -1 }],
+                  flexGrow: 1,
+                  justifyContent: "center",
+                }}
+              >
+                <EmptyState
+                  icon="chat-outline"
+                  title="No Messages Yet"
+                  subtitle="Be the first to send a message!"
+                />
+              </View>
             }
             flatListProps={{
               onEndReached: screen.chat.loadOlder,

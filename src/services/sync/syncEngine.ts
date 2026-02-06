@@ -40,6 +40,7 @@ import {
 import { LocalAttachment, uploadMultipleAttachments } from "@/services/storage";
 import { AttachmentV2, MessageV2 } from "@/types/messaging";
 import { toTimestamp } from "@/utils/dates";
+import { Platform } from "react-native";
 
 // =============================================================================
 // Types
@@ -492,15 +493,15 @@ export async function fullSyncConversation(
   conversationId: string,
   messageLimit: number = 50,
 ): Promise<number> {
-  // Check if SQLite is available (not on web)
-  const db = getDatabase();
-  if (!db) {
+  // SQLite is not available on web
+  if (Platform.OS === "web") {
     console.warn(
       "[SyncEngine] fullSyncConversation called on web - SQLite not available",
     );
     return 0;
   }
 
+  const db = getDatabase();
   const firestore = getFirestoreInstance();
 
   // Both DM and Group messages use uppercase 'Messages'
@@ -638,14 +639,15 @@ export function subscribeToConversation(
   conversationId: string,
   onNewMessage?: (message: MessageV2) => void,
 ): () => void {
-  // Check if SQLite is available (not on web)
-  const db = getDatabase();
-  if (!db) {
+  // SQLite is not available on web
+  if (Platform.OS === "web") {
     console.warn(
       "[SyncEngine] subscribeToConversation called on web - SQLite not available",
     );
     return () => {}; // Return no-op unsubscribe
   }
+
+  const db = getDatabase();
 
   // Unsubscribe from existing if any
   const existingUnsub = activeSubscriptions.get(conversationId);
@@ -918,5 +920,5 @@ export function getConversationsWithPending(): string[] {
     `SELECT DISTINCT conversation_id FROM messages 
      WHERE sync_status IN ('pending', 'failed') AND retry_count < 10`,
   );
-  return results.map((r) => r.conversation_id);
+  return results.map((r: { conversation_id: string }) => r.conversation_id);
 }

@@ -8,7 +8,8 @@
  * - Sending scorecard messages
  */
 
-import { GAME_SCORE_LIMITS, GameSession, GameType } from "@/types/models";
+import { EXTENDED_GAME_SCORE_LIMITS, ExtendedGameType } from "@/types/games";
+import { GameSession, GameType } from "@/types/models";
 import { generateId } from "@/utils/ids";
 import {
   collection,
@@ -68,7 +69,8 @@ export async function recordGameSession(
 
   try {
     // Validate score is within acceptable bounds
-    const limits = GAME_SCORE_LIMITS[result.gameId];
+    const limits =
+      EXTENDED_GAME_SCORE_LIMITS[result.gameId as ExtendedGameType];
     if (!limits) {
       console.error("[games] Unknown game type:", result.gameId);
       return null;

@@ -23,6 +23,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
+import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import ScorecardBubble from "@/components/ScorecardBubble";
 import type { ReplyToMetadata } from "@/types/messaging";
 import { Spacing } from "../../constants/theme";
@@ -40,12 +41,16 @@ export interface MessageWithProfile {
   id: string;
   sender: string;
   content: string;
-  type: "text" | "image" | "scorecard";
+  type: "text" | "image" | "scorecard" | "voice";
   createdAt: Date;
   status?: "sending" | "sent" | "delivered" | "read" | "failed";
   /** Server received timestamp for read receipt calculation */
   serverReceivedAt?: number;
   replyTo?: ReplyToMetadata;
+  /** Voice message URL */
+  voiceUrl?: string;
+  /** Voice message duration in milliseconds */
+  voiceDurationMs?: number;
 }
 
 interface DMMessageItemProps {
@@ -71,6 +76,10 @@ interface DMMessageItemProps {
   onRetry: (message: MessageWithProfile) => Promise<void>;
   /** Whether this message should be highlighted (reply navigation) */
   isHighlighted?: boolean;
+  /** Whether this message is grouped with the one above (same sender, close time) */
+  isGrouped?: boolean;
+  /** Whether to show the timestamp for this message */
+  showTimestamp?: boolean;
 }
 
 export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
@@ -84,6 +93,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     onScrollToMessage,
     onRetry,
     isHighlighted = false,
+    isGrouped = false,
+    showTimestamp = true,
   }) => {
     const theme = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -145,8 +156,18 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       switch (message.status) {
         case "sending":
           return (
-            <View style={styles.statusContainer}>
-              <Text style={styles.sendingStatus}>○</Text>
+            <View
+              style={styles.statusContainer}
+              accessibilityLabel="Sending message"
+            >
+              <Text
+                style={[
+                  styles.sendingStatus,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                ○
+              </Text>
             </View>
           );
         case "failed":
@@ -154,26 +175,55 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             <TouchableOpacity
               style={styles.statusContainer}
               onPress={() => onRetry(message)}
+              accessibilityLabel="Message failed to send. Tap to retry"
+              accessibilityRole="button"
             >
               <Text style={styles.failedStatus}>⚠️ Tap to retry</Text>
             </TouchableOpacity>
           );
         case "sent":
           return (
-            <View style={styles.statusContainer}>
-              <Text style={styles.sentStatus}>✓</Text>
+            <View
+              style={styles.statusContainer}
+              accessibilityLabel="Message sent"
+            >
+              <Text
+                style={[
+                  styles.sentStatus,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                ✓
+              </Text>
             </View>
           );
         case "delivered":
           return (
-            <View style={styles.statusContainer}>
-              <Text style={styles.deliveredStatus}>✓✓</Text>
+            <View
+              style={styles.statusContainer}
+              accessibilityLabel="Message delivered"
+            >
+              <Text
+                style={[
+                  styles.deliveredStatus,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                ✓✓
+              </Text>
             </View>
           );
         case "read":
           return (
-            <View style={styles.statusContainer}>
-              <Text style={styles.readStatus}>✓✓</Text>
+            <View
+              style={styles.statusContainer}
+              accessibilityLabel="Message read"
+            >
+              <Text
+                style={[styles.readStatus, { color: theme.colors.primary }]}
+              >
+                ✓✓
+              </Text>
             </View>
           );
         default:
@@ -183,6 +233,16 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
 
     // Render message content
     const renderContent = () => {
+      if (message.type === "voice") {
+        return (
+          <VoiceMessagePlayer
+            url={message.voiceUrl || message.content}
+            durationMs={message.voiceDurationMs || 0}
+            isOwn={isSentByMe}
+          />
+        );
+      }
+
       if (message.type === "image") {
         return <Text style={{ fontSize: 24 }}>🔒</Text>;
       }
@@ -227,7 +287,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       conversationId: chatId || "",
       senderId: message.sender,
       senderName: isSentByMe ? "You" : friendProfile?.displayName,
-      kind: message.type === "image" ? ("media" as const) : ("text" as const),
+      kind:
+        message.type === "image"
+          ? ("media" as const)
+          : message.type === "voice"
+            ? ("voice" as const)
+            : ("text" as const),
       text: message.type === "text" ? message.content : undefined,
       createdAt: createdAtTimestamp,
       serverReceivedAt: createdAtTimestamp,
@@ -249,6 +314,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
               ? styles.sentMessageContainer
               : styles.receivedMessageContainer,
             message.status === "failed" && styles.failedMessageContainer,
+            isGrouped && styles.groupedMessageContainer,
           ]}
         >
           {/* Highlight overlay for reply navigation */}
@@ -279,6 +345,17 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   onLongPress={() => onLongPress(message)}
                   onPress={handlePress}
                   delayLongPress={300}
+                  accessibilityLabel={
+                    message.type === "voice"
+                      ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a voice message`
+                      : message.type === "image"
+                        ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a snap`
+                        : message.type === "scorecard"
+                          ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a scorecard`
+                          : `${isSentByMe ? "You" : friendProfile?.displayName || "Friend"}: ${message.content}`
+                  }
+                  accessibilityRole="button"
+                  accessibilityHint="Long press for message options, swipe right to reply"
                 >
                   <View
                     style={[
@@ -293,7 +370,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                             {
                               backgroundColor: theme.dark
                                 ? theme.colors.surfaceVariant
-                                : "#e8e8e8",
+                                : theme.colors.surfaceVariant,
                             },
                           ],
                       message.status === "sending" && styles.sendingBubble,
@@ -310,28 +387,30 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   </View>
                 </TouchableOpacity>
 
-                {/* Timestamp and status row */}
-                <View
-                  style={[
-                    styles.timestampStatusRow,
-                    isSentByMe
-                      ? styles.timestampStatusRowSent
-                      : styles.timestampStatusRowReceived,
-                  ]}
-                >
-                  {renderStatus()}
-                  <Text
+                {/* Timestamp and status row - only shown on last message of group */}
+                {showTimestamp && (
+                  <View
                     style={[
-                      styles.timestamp,
-                      { color: theme.dark ? "#888" : "#666" },
+                      styles.timestampStatusRow,
+                      isSentByMe
+                        ? styles.timestampStatusRowSent
+                        : styles.timestampStatusRowReceived,
                     ]}
                   >
-                    {new Date(message.createdAt).toLocaleTimeString("en-US", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </View>
+                    {renderStatus()}
+                    <Text
+                      style={[
+                        styles.timestamp,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                    >
+                      {new Date(message.createdAt).toLocaleTimeString("en-US", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -350,6 +429,9 @@ const styles = StyleSheet.create({
   },
   sentMessageContainer: {},
   receivedMessageContainer: {},
+  groupedMessageContainer: {
+    marginBottom: 2,
+  },
   messageBubbleWrapper: {
     flexDirection: "column",
     width: "100%",
@@ -402,18 +484,18 @@ const styles = StyleSheet.create({
   statusContainer: {},
   sendingStatus: {
     fontSize: 10,
-    color: "#999",
+    color: undefined, // Use theme.colors.onSurfaceVariant inline
   },
   sentStatus: {
     fontSize: 10,
-    color: "#888",
+    color: undefined, // Use theme.colors.onSurfaceVariant inline
   },
   deliveredStatus: {
     fontSize: 10,
   },
   readStatus: {
     fontSize: 10,
-    color: "#3B82F6", // Blue color for read receipts
+    color: undefined, // Use theme.colors.primary inline for read receipts
   },
   failedStatus: {
     fontSize: 10,

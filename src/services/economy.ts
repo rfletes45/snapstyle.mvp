@@ -29,7 +29,7 @@ import { getFirestoreInstance } from "./firebase";
 // =============================================================================
 
 /** Default starting balance for new users */
-export const DEFAULT_STARTING_TOKENS = 100;
+const DEFAULT_STARTING_TOKENS = 100;
 
 /** Maximum transactions to fetch in history */
 const MAX_TRANSACTION_HISTORY = 50;
@@ -42,7 +42,7 @@ const MAX_TRANSACTION_HISTORY = 50;
  * Get user's wallet
  * @returns Wallet or null if not found
  */
-export async function getWallet(uid: string): Promise<Wallet | null> {
+async function getWallet(uid: string): Promise<Wallet | null> {
   const db = getFirestoreInstance();
 
   try {
@@ -114,7 +114,7 @@ export function subscribeToWallet(
  * Get user's token balance (convenience function)
  * @returns Token balance or 0 if wallet not found
  */
-export async function getTokenBalance(uid: string): Promise<number> {
+async function getTokenBalance(uid: string): Promise<number> {
   const wallet = await getWallet(uid);
   return wallet?.tokensBalance || 0;
 }
@@ -129,7 +129,7 @@ export async function getTokenBalance(uid: string): Promise<number> {
  * @param type Optional filter by transaction type
  * @param maxResults Maximum results to return
  */
-export async function getTransactionHistory(
+async function getTransactionHistory(
   uid: string,
   type?: TransactionType,
   maxResults: number = MAX_TRANSACTION_HISTORY,

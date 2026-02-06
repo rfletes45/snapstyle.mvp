@@ -184,12 +184,17 @@ export async function updateReadWatermark(
     }
 
     // Always update private last seen (for unread badge computation)
+    // Use the max of the provided timestamp and Date.now() to ensure
+    // lastSeenAtPrivate >= lastMessageAt. The Chat doc's lastMessageAt is a
+    // server timestamp written after the message's serverReceivedAt, so using
+    // serverReceivedAt alone would leave a gap where lastMessageAt >
+    // lastSeenAtPrivate, causing perpetual unread badges.
     const privateDocRef = doc(db, "Chats", chatId, "MembersPrivate", uid);
     await setDoc(
       privateDocRef,
       {
         uid,
-        lastSeenAtPrivate: timestamp,
+        lastSeenAtPrivate: Math.max(timestamp, Date.now()),
         lastMarkedUnreadAt: null, // Clear manual unread marker
       },
       { merge: true },

@@ -52,9 +52,9 @@ export const MEDIA_PATHS = {
 // Types
 // =============================================================================
 
-export type MediaKind = "image" | "video" | "audio" | "file";
+type MediaKind = "image" | "video" | "audio" | "file";
 
-export interface DownloadProgress {
+interface DownloadProgress {
   totalBytesWritten: number;
   totalBytesExpectedToWrite: number;
   progress: number;
@@ -113,7 +113,7 @@ async function ensureInitialized(): Promise<void> {
 /**
  * Download and cache a remote attachment
  */
-export async function downloadAttachment(
+async function downloadAttachment(
   attachmentId: string,
   remoteUrl: string,
   kind: MediaKind,
@@ -181,7 +181,7 @@ export async function downloadAttachment(
 /**
  * Download thumbnail for an attachment
  */
-export async function downloadThumbnail(
+async function downloadThumbnail(
   attachmentId: string,
   thumbUrl: string,
 ): Promise<string> {
@@ -223,7 +223,7 @@ export async function downloadThumbnail(
 /**
  * Get attachment from cache or download if not present
  */
-export async function getOrDownloadAttachment(
+async function getOrDownloadAttachment(
   attachmentId: string,
   remoteUrl: string,
   kind: MediaKind,
@@ -255,7 +255,7 @@ export async function getOrDownloadAttachment(
 /**
  * Get thumbnail from cache or download if not present
  */
-export async function getOrDownloadThumbnail(
+async function getOrDownloadThumbnail(
   attachmentId: string,
   thumbUrl: string,
 ): Promise<string> {
@@ -284,9 +284,7 @@ export async function getOrDownloadThumbnail(
 /**
  * Check if attachment is cached locally
  */
-export async function isAttachmentCached(
-  attachmentId: string,
-): Promise<boolean> {
+async function isAttachmentCached(attachmentId: string): Promise<boolean> {
   const db = getDatabase();
   const attachment = db.getFirstSync<{ local_uri: string | null }>(
     "SELECT local_uri FROM attachments WHERE id = ?",
@@ -309,7 +307,7 @@ export async function isAttachmentCached(
  * Copy a local file to upload staging area
  * Returns the staged file path
  */
-export async function stageFileForUpload(
+async function stageFileForUpload(
   sourceUri: string,
   attachmentId: string,
   extension: string,
@@ -342,7 +340,7 @@ export async function stageFileForUpload(
 /**
  * Move staged file to permanent location after successful upload
  */
-export async function moveToMediaCache(
+async function moveToMediaCache(
   stagedPath: string,
   attachmentId: string,
   kind: MediaKind,
@@ -364,7 +362,7 @@ export async function moveToMediaCache(
  * Stage file and immediately move to permanent cache
  * Use this when not uploading to remote storage
  */
-export async function cacheLocalFile(
+async function cacheLocalFile(
   sourceUri: string,
   attachmentId: string,
   kind: MediaKind,
@@ -381,7 +379,7 @@ export async function cacheLocalFile(
 /**
  * Clean up staged files older than specified age
  */
-export async function cleanupStagedFiles(
+async function cleanupStagedFiles(
   maxAgeMs: number = 24 * 60 * 60 * 1000,
 ): Promise<number> {
   await ensureInitialized();
@@ -474,7 +472,7 @@ export async function getCacheSize(): Promise<number> {
 /**
  * Format cache size for display
  */
-export function formatCacheSize(bytes: number): string {
+function formatCacheSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024)
@@ -515,9 +513,7 @@ export async function clearMediaCache(): Promise<void> {
 /**
  * Delete cached file for a specific attachment
  */
-export async function deleteAttachmentCache(
-  attachmentId: string,
-): Promise<void> {
+async function deleteAttachmentCache(attachmentId: string): Promise<void> {
   const db = getDatabase();
   const attachment = db.getFirstSync<{
     local_uri: string | null;
@@ -550,7 +546,7 @@ export async function deleteAttachmentCache(
 /**
  * Delete cached files for all attachments in a conversation
  */
-export async function deleteConversationCache(
+async function deleteConversationCache(
   conversationId: string,
 ): Promise<number> {
   const db = getDatabase();
@@ -600,7 +596,7 @@ export async function deleteConversationCache(
  * Prune cache to stay under a size limit
  * Removes oldest files first until under limit
  */
-export async function pruneCache(maxSizeBytes: number): Promise<number> {
+async function pruneCache(maxSizeBytes: number): Promise<number> {
   await ensureInitialized();
 
   const stats = await getCacheStats();
@@ -670,7 +666,7 @@ export async function pruneCache(maxSizeBytes: number): Promise<number> {
 /**
  * Check if a local file exists
  */
-export async function fileExists(uri: string): Promise<boolean> {
+async function fileExists(uri: string): Promise<boolean> {
   try {
     const info = await getInfoAsync(uri);
     return info.exists;
@@ -682,7 +678,7 @@ export async function fileExists(uri: string): Promise<boolean> {
 /**
  * Get file size in bytes
  */
-export async function getFileSize(uri: string): Promise<number | null> {
+async function getFileSize(uri: string): Promise<number | null> {
   try {
     const info = await getInfoAsync(uri);
     return info.exists ? (info.size ?? null) : null;
@@ -694,14 +690,14 @@ export async function getFileSize(uri: string): Promise<number | null> {
 /**
  * Copy file to a new location
  */
-export async function copyFile(from: string, to: string): Promise<void> {
+async function copyFile(from: string, to: string): Promise<void> {
   await copyAsync({ from, to });
 }
 
 /**
  * Read file as base64
  */
-export async function readFileAsBase64(uri: string): Promise<string> {
+async function readFileAsBase64(uri: string): Promise<string> {
   return readAsStringAsync(uri, {
     encoding: EncodingType.Base64,
   });
@@ -710,10 +706,7 @@ export async function readFileAsBase64(uri: string): Promise<string> {
 /**
  * Write base64 data to file
  */
-export async function writeBase64ToFile(
-  base64: string,
-  uri: string,
-): Promise<void> {
+async function writeBase64ToFile(base64: string, uri: string): Promise<void> {
   await writeAsStringAsync(uri, base64, {
     encoding: EncodingType.Base64,
   });
@@ -787,7 +780,7 @@ async function writeDataUrlToFile(
 /**
  * Get MIME type from extension
  */
-export function getMimeTypeFromExtension(extension: string): string {
+function getMimeTypeFromExtension(extension: string): string {
   const ext = extension.toLowerCase().replace(".", "");
   const mimeTypes: Record<string, string> = {
     jpg: "image/jpeg",
@@ -815,7 +808,7 @@ export function getMimeTypeFromExtension(extension: string): string {
 /**
  * Get media kind from MIME type
  */
-export function getMediaKindFromMime(mime: string): MediaKind {
+function getMediaKindFromMime(mime: string): MediaKind {
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";

@@ -1,17 +1,17 @@
-import React, { useState } from "react";
-import { StyleSheet, ScrollView, View } from "react-native";
-import {
-  TextInput,
-  Button,
-  Text,
-  ActivityIndicator,
-  useTheme,
-} from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { checkUsernameAvailable, setupNewUser } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
-import { isValidUsername, isValidDisplayName } from "@/utils/validators";
-import { checkUsernameAvailable, setupNewUser } from "@/services/users";
+import { isValidDisplayName, isValidUsername } from "@/utils/validators";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useState } from "react";
+import { Platform, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Button,
+  Text,
+  TextInput,
+  useTheme,
+} from "react-native-paper";
 import { Latte } from "../../../constants/theme";
 
 // Avatar colors from Catppuccin palette (vibrant options)
@@ -248,6 +248,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
     paddingBottom: 40,
   },
   title: {

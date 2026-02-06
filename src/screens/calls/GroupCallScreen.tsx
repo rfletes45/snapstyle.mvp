@@ -33,13 +33,7 @@ import { webRTCService } from "../../services/calls/webRTCService";
 import { getAuthInstance } from "../../services/firebase";
 import { useColors } from "../../store/ThemeContext";
 import { GroupCallLayout, GroupCallParticipant } from "../../types/call";
-
-// Format duration helper
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
+import { formatDurationSecondsPadded as formatDuration } from "../../utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const auth = getAuthInstance();

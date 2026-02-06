@@ -10,9 +10,11 @@ import React from "react";
 
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
+import { navigationRef } from "@/services/navigationRef";
 import { useAppTheme } from "@/store/ThemeContext";
 
 // Auth screens
+import ForgotPasswordScreen from "@/screens/auth/ForgotPasswordScreen";
 import LoginScreen from "@/screens/auth/LoginScreen";
 import ProfileSetupScreen from "@/screens/auth/ProfileSetupScreen";
 import SignupScreen from "@/screens/auth/SignupScreen";
@@ -20,6 +22,8 @@ import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 
 // App screens
 import CartCourseScreen from "@/components/games/CartCourse/CartCourseScreen";
+import { withErrorBoundary } from "@/components/withErrorBoundary";
+import { PROFILE_FEATURES } from "@/constants/featureFlags";
 import ChatListScreen from "@/screens/chat/ChatListScreenV2";
 import ChatScreen from "@/screens/chat/ChatScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
@@ -37,15 +41,28 @@ import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
 import MemorySnapGameScreen from "@/screens/games/MemorySnapGameScreen";
 import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
 import Snap2048GameScreen from "@/screens/games/Snap2048GameScreen";
+import SnapAimGameScreen from "@/screens/games/SnapAimGameScreen";
+import SnapDotsGameScreen from "@/screens/games/SnapDotsGameScreen";
+import SnapFourGameScreen from "@/screens/games/SnapFourGameScreen";
+import SnapGomokuGameScreen from "@/screens/games/SnapGomokuGameScreen";
+import SnapLightsGameScreen from "@/screens/games/SnapLightsGameScreen";
+import SnapMinesweeperGameScreen from "@/screens/games/SnapMinesweeperGameScreen";
+import SnapNumberGameScreen from "@/screens/games/SnapNumberGameScreen";
 import SnapSnakeGameScreen from "@/screens/games/SnapSnakeGameScreen";
+import SnapStackGameScreen from "@/screens/games/SnapStackGameScreen";
 import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TileSlideGameScreen from "@/screens/games/TileSlideGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
 import WordSnapGameScreen from "@/screens/games/WordSnapGameScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
+import MutualFriendsListScreen from "@/screens/profile/MutualFriendsListScreen";
+import OwnProfileScreen from "@/screens/profile/OwnProfileScreen";
 import ProfileScreen from "@/screens/profile/ProfileScreen";
+import SetStatusScreen from "@/screens/profile/SetStatusScreen";
+import UserProfileScreen from "@/screens/profile/UserProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
+import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
 import ThemeSettingsScreen from "@/screens/settings/ThemeSettingsScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
@@ -80,6 +97,9 @@ import InboxSettingsScreen from "@/screens/chat/InboxSettingsScreen";
 
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
 
+// Social screens
+import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
+
 // Call screens
 import {
   AudioCallScreen,
@@ -91,6 +111,30 @@ import {
 
 const Stack = createNativeStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
+
+// Wrap game screens with ErrorBoundary to prevent crashes from bubbling up
+const SafeBounceBlitzGame = withErrorBoundary(BounceBlitzGameScreen);
+const SafeBrickBreakerGame = withErrorBoundary(BrickBreakerGameScreen);
+const SafeCheckersGame = withErrorBoundary(CheckersGameScreen);
+const SafeChessGame = withErrorBoundary(ChessGameScreen);
+const SafeCrazyEightsGame = withErrorBoundary(CrazyEightsGameScreen);
+const SafeMemorySnapGame = withErrorBoundary(MemorySnapGameScreen);
+const SafeReactionTapGame = withErrorBoundary(ReactionTapGameScreen);
+const SafeSnap2048Game = withErrorBoundary(Snap2048GameScreen);
+const SafeSnapSnakeGame = withErrorBoundary(SnapSnakeGameScreen);
+const SafeTicTacToeGame = withErrorBoundary(TicTacToeGameScreen);
+const SafeTileSlideGame = withErrorBoundary(TileSlideGameScreen);
+const SafeTimedTapGame = withErrorBoundary(TimedTapGameScreen);
+const SafeWordSnapGame = withErrorBoundary(WordSnapGameScreen);
+const SafeCartCourseGame = withErrorBoundary(CartCourseScreen);
+const SafeSnapStackGame = withErrorBoundary(SnapStackGameScreen);
+const SafeSnapFourGame = withErrorBoundary(SnapFourGameScreen);
+const SafeSnapMinesweeperGame = withErrorBoundary(SnapMinesweeperGameScreen);
+const SafeSnapNumberGame = withErrorBoundary(SnapNumberGameScreen);
+const SafeSnapDotsGame = withErrorBoundary(SnapDotsGameScreen);
+const SafeSnapAimGame = withErrorBoundary(SnapAimGameScreen);
+const SafeSnapLightsGame = withErrorBoundary(SnapLightsGameScreen);
+const SafeSnapGomokuGame = withErrorBoundary(SnapGomokuGameScreen);
 
 /**
  * Routes that should hide the bottom tab bar.
@@ -117,6 +161,14 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "ChessGame",
   "CrazyEightsGame",
   "CartCourseGame",
+  "SnapStackGame",
+  "SnapFourGame",
+  "SnapMinesweeperGame",
+  "SnapNumberGame",
+  "SnapDotsGame",
+  "SnapAimGame",
+  "SnapLightsGame",
+  "SnapGomokuGame",
   "SpectatorView",
   "Leaderboard",
   "Achievements",
@@ -159,6 +211,7 @@ function AuthStack() {
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
     </Stack.Navigator>
   );
@@ -291,7 +344,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="ReactionTapGame"
-        component={ReactionTapGameScreen}
+        component={SafeReactionTapGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -299,7 +352,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="TimedTapGame"
-        component={TimedTapGameScreen}
+        component={SafeTimedTapGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -307,7 +360,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="BounceBlitzGame"
-        component={BounceBlitzGameScreen}
+        component={SafeBounceBlitzGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -315,7 +368,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="MemorySnapGame"
-        component={MemorySnapGameScreen}
+        component={SafeMemorySnapGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -323,7 +376,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="WordSnapGame"
-        component={WordSnapGameScreen}
+        component={SafeWordSnapGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -331,7 +384,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="Snap2048Game"
-        component={Snap2048GameScreen}
+        component={SafeSnap2048Game}
         options={{
           headerShown: false,
           presentation: "card",
@@ -340,7 +393,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="SnapSnakeGame"
-        component={SnapSnakeGameScreen}
+        component={SafeSnapSnakeGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -350,7 +403,7 @@ function PlayStack() {
       {/* New Single-Player Games (Phase 1) */}
       <Stack.Screen
         name="BrickBreakerGame"
-        component={BrickBreakerGameScreen}
+        component={SafeBrickBreakerGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -359,7 +412,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="TileSlideGame"
-        component={TileSlideGameScreen}
+        component={SafeTileSlideGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -367,7 +420,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="TicTacToeGame"
-        component={TicTacToeGameScreen}
+        component={SafeTicTacToeGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -375,7 +428,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="CheckersGame"
-        component={CheckersGameScreen}
+        component={SafeCheckersGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -383,7 +436,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="ChessGame"
-        component={ChessGameScreen}
+        component={SafeChessGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -391,7 +444,7 @@ function PlayStack() {
       />
       <Stack.Screen
         name="CrazyEightsGame"
-        component={CrazyEightsGameScreen}
+        component={SafeCrazyEightsGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -399,11 +452,78 @@ function PlayStack() {
       />
       <Stack.Screen
         name="CartCourseGame"
-        component={CartCourseScreen}
+        component={SafeCartCourseGame}
         options={{
           headerShown: false,
           presentation: "card",
           gestureEnabled: false,
+        }}
+      />
+      {/* New Phase 2 Games */}
+      <Stack.Screen
+        name="SnapStackGame"
+        component={SafeSnapStackGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapFourGame"
+        component={SafeSnapFourGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapMinesweeperGame"
+        component={SafeSnapMinesweeperGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapNumberGame"
+        component={SafeSnapNumberGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapDotsGame"
+        component={SafeSnapDotsGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapAimGame"
+        component={SafeSnapAimGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapLightsGame"
+        component={SafeSnapLightsGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapGomokuGame"
+        component={SafeSnapGomokuGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
         }}
       />
       {/* Spectator View for watching single-player games */}
@@ -440,6 +560,11 @@ function PlayStack() {
 function ProfileStack() {
   const { colors } = useAppTheme();
 
+  // Use new OwnProfileScreen when feature flag is enabled
+  const ProfileMainScreen = PROFILE_FEATURES.NEW_PROFILE_LAYOUT
+    ? OwnProfileScreen
+    : ProfileScreen;
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -460,7 +585,7 @@ function ProfileStack() {
     >
       <Stack.Screen
         name="ProfileMain"
-        component={ProfileScreen}
+        component={ProfileMainScreen}
         options={{ headerShown: false }}
       />
       {/* Debug screens only available in development */}
@@ -482,6 +607,11 @@ function ProfileStack() {
         name="BlockedUsers"
         component={BlockedUsersScreen}
         options={{ title: "Blocked" }}
+      />
+      <Stack.Screen
+        name="PrivacySettings"
+        component={PrivacySettingsScreen}
+        options={{ title: "Privacy Settings" }}
       />
       <Stack.Screen
         name="BadgeCollection"
@@ -538,6 +668,7 @@ function AppTabs() {
 
   return (
     <Tab.Navigator
+      initialRouteName="Inbox"
       screenOptions={({ route }) => ({
         headerShown: true,
         headerStyle: {
@@ -763,6 +894,27 @@ function MainStack() {
         options={{ title: "Connections" }}
       />
 
+      {/* User Profile screen - view other users' profiles */}
+      <Stack.Screen
+        name="UserProfile"
+        component={UserProfileScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Set Status screen - Phase 6 */}
+      <Stack.Screen
+        name="SetStatus"
+        component={SetStatusScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Mutual Friends List screen - Phase 6 */}
+      <Stack.Screen
+        name="MutualFriendsList"
+        component={MutualFriendsListScreen}
+        options={{ headerShown: false }}
+      />
+
       {/* Shop Overhaul Screens - accessible from Shop tab */}
       <Stack.Screen
         name="PointsShop"
@@ -777,6 +929,13 @@ function MainStack() {
       <Stack.Screen
         name="PurchaseHistory"
         component={PurchaseHistoryScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Activity Feed */}
+      <Stack.Screen
+        name="ActivityFeed"
+        component={ActivityFeedScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
@@ -802,30 +961,55 @@ interface RootNavigatorProps {
  * - Needs profile: ProfileSetupStack
  * - Ready: MainStack (tabs + full-screen overlays)
  */
-export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
+export default function RootNavigator({
+  navigationRef: externalRef,
+}: RootNavigatorProps) {
   const { theme } = useAppTheme();
+
+  // Use external ref if provided, otherwise use the shared global one
+  const navRef = externalRef || navigationRef;
 
   // For web, we need a linking configuration
   const linking = {
-    prefixes: ["exp://", "exp-app://", "http://", "https://"],
+    prefixes: ["exp://", "exp-app://", "vibe://", "http://", "https://"],
     config: {
       screens: {
         Welcome: "welcome",
         Login: "login",
         Signup: "signup",
+        ForgotPassword: "forgot-password",
         ProfileSetup: "profile-setup",
         MainTabs: {
           screens: {
             Shop: "shop",
-            Play: "play",
-            Inbox: "inbox",
+            Play: {
+              screens: {
+                GamesHub: "play",
+                Leaderboard: "leaderboard",
+                Achievements: "achievements",
+              },
+            },
+            Inbox: {
+              screens: {
+                ChatList: "inbox",
+              },
+            },
             Moments: "moments",
-            Profile: "profile",
+            Profile: {
+              screens: {
+                ProfileMain: "profile",
+                Settings: "settings",
+                BadgeCollection: "badges",
+                Wallet: "wallet",
+              },
+            },
           },
         },
         Connections: "connections",
         ChatDetail: "chat/:friendUid",
         GroupChat: "group/:groupId",
+        UserProfile: "user/:userId",
+        ActivityFeed: "activity",
       },
     },
   };
@@ -834,7 +1018,7 @@ export default function RootNavigator({ navigationRef }: RootNavigatorProps) {
     <AppGate loadingMessage="Just a moment...">
       {({ hydrationState }) => (
         <NavigationContainer
-          ref={navigationRef}
+          ref={navRef}
           linking={linking}
           theme={theme.navigation}
         >

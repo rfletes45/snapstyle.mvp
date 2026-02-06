@@ -11,7 +11,7 @@
  * @module components/chat/inbox/ConversationItem
  */
 
-import { AvatarMini } from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import { formatRelativeTime, toTimestamp } from "@/utils/dates";
@@ -102,6 +102,8 @@ export const ConversationItem = memo(function ConversationItem({
     name,
     avatarUrl,
     avatarConfig,
+    profilePictureUrl,
+    decorationId,
     type,
     lastMessage,
     memberState,
@@ -129,6 +131,10 @@ export const ConversationItem = memo(function ConversationItem({
         return `${prefix}🎤 Voice message`;
       case "attachment":
         return `${prefix}📎 Attachment`;
+      case "scorecard":
+        return `${prefix}🎮 Shared a score`;
+      case "game_invite":
+        return `${prefix}${lastMessage.text || "🎮 Game invite"}`;
       default:
         return `${prefix}${lastMessage.text}`;
     }
@@ -176,9 +182,7 @@ export const ConversationItem = memo(function ConversationItem({
               { width: 52, height: 52, borderRadius: 26 },
             ]}
           />
-        ) : avatarConfig ? (
-          <AvatarMini config={avatarConfig} size={52} />
-        ) : (
+        ) : type === "group" ? (
           <View
             style={[
               styles.avatarPlaceholder,
@@ -186,11 +190,18 @@ export const ConversationItem = memo(function ConversationItem({
             ]}
           >
             <MaterialCommunityIcons
-              name={type === "group" ? "account-group" : "account"}
+              name="account-group"
               size={28}
               color={colors.textSecondary}
             />
           </View>
+        ) : (
+          <ProfilePictureWithDecoration
+            pictureUrl={profilePictureUrl || avatarUrl}
+            name={name}
+            decorationId={decorationId}
+            size={48}
+          />
         )}
 
         {/* Online indicator (DM only) */}

@@ -128,6 +128,60 @@ export interface BounceCollectible {
   collected: boolean;
 }
 
+// =============================================================================
+// Flappy Snap
+// =============================================================================
+
+/**
+ * A pipe/hoop obstacle in Flappy Snap
+ */
+export interface FlappyHoop {
+  id: number;
+  x: number;
+  centerY: number;
+  gapSize: number;
+  passed: boolean;
+  scoredPerfect: boolean;
+  moving?: {
+    direction: "up" | "down";
+    speed: number;
+    minY: number;
+    maxY: number;
+  };
+}
+
+/**
+ * Flappy Snap configuration constants
+ */
+export const FLAPPY_DUNK_CONFIG = {
+  // World
+  worldWidth: 400,
+
+  // Physics
+  gravity: 0.6,
+  jumpVelocity: -10,
+  terminalVelocity: 12,
+
+  // Ball
+  ballRadius: 15,
+
+  // Hoops/Pipes
+  hoopWidth: 60,
+  baseHoopGap: 160,
+  minHoopGap: 100,
+  hoopSpacing: 200,
+  gapDecrease: 5,
+
+  // Scoring
+  scorePerHoop: 10,
+  perfectDunkBonus: 5,
+  comboMultiplier: 2,
+
+  // Difficulty
+  difficultyIncreaseInterval: 50,
+  speedIncrease: 0.3,
+};
+
 /**
  * Bounce Master constants
  */
@@ -961,6 +1015,7 @@ export interface SinglePlayerGameSession {
  */
 export type SinglePlayerGameStats =
   | BounceBlitzStats
+  | FlappySnapStats
   | MemorySnapStats
   | WordSnapStats
   | Snap2048Stats
@@ -968,6 +1023,14 @@ export type SinglePlayerGameStats =
   // New game stats (Phase 1)
   | BrickBreakerStats
   | TileSlideStats;
+
+export interface FlappySnapStats {
+  gameType: "flappy_snap";
+  pipesPassed: number;
+  perfectPasses: number;
+  maxCombo: number;
+  totalJumps: number;
+}
 
 export interface BounceBlitzStats {
   gameType: "bounce_blitz";

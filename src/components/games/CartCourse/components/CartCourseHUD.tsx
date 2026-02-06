@@ -3,6 +3,7 @@
  * Heads-Up Display showing score, lives, timer, and area info
  */
 
+import { formatDurationMs } from "@/utils/time";
 import React, { useEffect, useRef } from "react";
 import {
   Animated,
@@ -65,14 +66,10 @@ export interface CartCourseHUDProps {
 // ============================================
 
 /**
- * Format milliseconds to MM:SS or M:SS
+ * Format milliseconds to M:SS
+ * @deprecated Use `formatDurationMs` from `@/utils/time` directly
  */
-export function formatTime(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
+export const formatTime = formatDurationMs;
 
 /**
  * Format remaining time

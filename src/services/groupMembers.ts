@@ -203,8 +203,10 @@ export async function updateGroupReadWatermark(
   serverReceivedAt: number,
 ): Promise<void> {
   try {
+    // Use the max of serverReceivedAt and Date.now() to ensure
+    // lastSeenAtPrivate >= lastMessageAt (see chatMembers.ts for details)
     await updateDoc(getMemberPrivateRef(groupId, uid), {
-      lastSeenAtPrivate: serverReceivedAt,
+      lastSeenAtPrivate: Math.max(serverReceivedAt, Date.now()),
       lastMarkedUnreadAt: null, // Clear manual unread marker
     });
     log.debug("Updated group read watermark", { operation: "updateWatermark" });

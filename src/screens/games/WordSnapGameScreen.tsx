@@ -326,10 +326,8 @@ const WORD_LIST = [
   "LIMIT",
   "LINKS",
   "LIVER",
-  "LIVING",
   "LOCAL",
   "LOGIC",
-  "LONELY",
   "LOOSE",
   "LOVER",
   "LOWER",
@@ -732,6 +730,16 @@ export default function WordSnapGameScreen({
   // Animation
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
+  // Timer ref for win/loss reveal cleanup
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup reveal timer on unmount
+  useEffect(() => {
+    return () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+    };
+  }, []);
+
   // Initialize empty grid
   useEffect(() => {
     const emptyGrid: LetterGuess[][] = [];
@@ -821,8 +829,14 @@ export default function WordSnapGameScreen({
       return;
     }
 
-    // Check if word is valid (in our word list - simplified validation)
     const upperGuess = currentGuess.toUpperCase();
+
+    // Check if word is valid (must be in our word list)
+    if (!WORD_LIST.includes(upperGuess)) {
+      showInfo("Not in word list!");
+      triggerShake();
+      return;
+    }
 
     // Evaluate the guess
     const states = evaluateGuess(upperGuess);
@@ -868,7 +882,7 @@ export default function WordSnapGameScreen({
 
     // Check win/loss
     if (upperGuess === targetWord) {
-      setTimeout(
+      revealTimerRef.current = setTimeout(
         () => {
           setStatus("won");
           if (Platform.OS !== "web") {
@@ -896,7 +910,7 @@ export default function WordSnapGameScreen({
         WORD_LENGTH * 150 + 300,
       );
     } else if (currentRow === MAX_GUESSES - 1) {
-      setTimeout(
+      revealTimerRef.current = setTimeout(
         () => {
           setStatus("lost");
           if (Platform.OS !== "web") {

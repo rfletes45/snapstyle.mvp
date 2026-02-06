@@ -5,6 +5,7 @@
  * Tracks unlock requirements and progression.
  */
 
+import { formatDurationMs as formatTime } from "@/utils/time";
 import type { CourseStats } from "./stamps";
 
 // ============================================
@@ -672,13 +673,6 @@ export function getCourseUnlockableById(
 function getCourseDisplayName(courseId: string): string {
   const course = UNLOCKABLE_COURSES.find((c) => c.id === courseId);
   return course?.name ?? courseId;
-}
-
-function formatTime(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 // ============================================

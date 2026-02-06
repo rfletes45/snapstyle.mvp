@@ -271,7 +271,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
               Description:
             </Text>
             <Text
-              style={[styles.descriptionText, { color: colors.textPrimary }]}
+              style={[styles.descriptionText, { color: colors.text }]}
             >
               {report.description}
             </Text>
@@ -363,9 +363,9 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
         <IconButton
           icon="arrow-left"
           onPress={() => navigation.goBack()}
-          iconColor={colors.textPrimary}
+          iconColor={colors.text}
         />
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
           Reports Queue
         </Text>
         <View style={[styles.headerBadge, { backgroundColor: colors.primary }]}>
@@ -411,11 +411,11 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
           ]}
         >
           <ScrollView>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
               Take Action
             </Text>
 
-            <Text style={[styles.sectionLabel, { color: colors.textPrimary }]}>
+            <Text style={[styles.sectionLabel, { color: colors.text }]}>
               Action
             </Text>
             <RadioButton.Group
@@ -427,22 +427,22 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
               <RadioButton.Item
                 label="Dismiss (No action)"
                 value="none"
-                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
+                labelStyle={[styles.radioLabel, { color: colors.text }]}
               />
               <RadioButton.Item
                 label="Warning"
                 value="warning"
-                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
+                labelStyle={[styles.radioLabel, { color: colors.text }]}
               />
               <RadioButton.Item
                 label="Issue Strike"
                 value="strike"
-                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
+                labelStyle={[styles.radioLabel, { color: colors.text }]}
               />
               <RadioButton.Item
                 label="Ban User"
                 value="ban"
-                labelStyle={[styles.radioLabel, { color: colors.textPrimary }]}
+                labelStyle={[styles.radioLabel, { color: colors.text }]}
               />
             </RadioButton.Group>
 
@@ -452,7 +452,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                   style={[styles.divider, { backgroundColor: colors.divider }]}
                 />
                 <Text
-                  style={[styles.sectionLabel, { color: colors.textPrimary }]}
+                  style={[styles.sectionLabel, { color: colors.text }]}
                 >
                   Ban Duration
                 </Text>
@@ -467,7 +467,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                     onPress={() => setBanDuration(option.value)}
                     labelStyle={[
                       styles.radioLabel,
-                      { color: colors.textPrimary },
+                      { color: colors.text },
                     ]}
                   />
                 ))}
@@ -530,7 +530,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
             <ActivityIndicator size="large" color={colors.primary} />
           ) : (
             <ScrollView>
-              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
                 User Info
               </Text>
 
@@ -548,7 +548,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                     <Text
                       style={[
                         styles.userInfoValue,
-                        { color: colors.textPrimary },
+                        { color: colors.text },
                       ]}
                     >
                       @{selectedUser.username}
@@ -566,7 +566,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                     <Text
                       style={[
                         styles.userInfoValue,
-                        { color: colors.textPrimary },
+                        { color: colors.text },
                       ]}
                     >
                       {selectedUser.displayName}
@@ -602,7 +602,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                     <Text
                       style={[
                         styles.userInfoValue,
-                        { color: colors.textPrimary },
+                        { color: colors.text },
                       ]}
                     >
                       {new Date(selectedUser.createdAt).toLocaleDateString()}
@@ -616,7 +616,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
               />
 
               <Text
-                style={[styles.sectionLabel, { color: colors.textPrimary }]}
+                style={[styles.sectionLabel, { color: colors.text }]}
               >
                 Strike History
               </Text>
@@ -651,7 +651,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
                       <Text
                         style={[
                           styles.strikeReason,
-                          { color: colors.textPrimary },
+                          { color: colors.text },
                         ]}
                       >
                         {BAN_REASON_LABELS[strike.reason as BanReason] ||

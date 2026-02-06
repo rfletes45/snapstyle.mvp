@@ -12,7 +12,9 @@
  * @module components/chat/inbox/InboxHeader
  */
 
-import { AvatarMini } from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { useProfilePicture } from "@/hooks/useProfilePicture";
+import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import * as haptics from "@/utils/haptics";
@@ -50,6 +52,10 @@ export function InboxHeader({
 }: InboxHeaderProps) {
   const { colors } = useAppTheme();
   const { profile } = useUser();
+  const { currentFirebaseUser } = useAuth();
+  const { picture, decoration } = useProfilePicture({
+    userId: currentFirebaseUser?.uid || "",
+  });
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
@@ -101,46 +107,38 @@ export function InboxHeader({
       ]}
       statusBarHeight={0}
     >
-      {/* Left: User Avatar */}
+      {/* Left: User Avatar + Search Button */}
       <TouchableOpacity
         onPress={handleAvatarPress}
         style={styles.avatarContainer}
         accessibilityLabel="Go to profile"
         accessibilityRole="button"
       >
-        {profile?.avatarConfig ? (
-          <AvatarMini config={profile.avatarConfig} size={36} />
-        ) : (
-          <View
-            style={[
-              styles.avatarPlaceholder,
-              { backgroundColor: colors.primary },
-            ]}
-          />
-        )}
+        <ProfilePictureWithDecoration
+          pictureUrl={picture?.url || null}
+          name={profile?.displayName || ""}
+          decorationId={decoration?.decorationId || null}
+          size={32}
+        />
       </TouchableOpacity>
-
-      {/* Center: Title */}
-      <Appbar.Content
-        title={showArchived ? "Archive" : "Inbox"}
-        titleStyle={[styles.title, { color: colors.text }]}
-      />
-
-      {/* Right: Actions */}
-      <IconButton
-        icon={showArchived ? "inbox" : "archive"}
-        iconColor={colors.textSecondary}
-        size={24}
-        onPress={handleArchiveToggle}
-        accessibilityLabel={showArchived ? "Show inbox" : "Show archive"}
-      />
       <IconButton
         icon="magnify"
         iconColor={colors.textSecondary}
         size={24}
         onPress={handleSearchPress}
         accessibilityLabel="Search conversations"
+        style={styles.searchButton}
       />
+
+      {/* Center: Title */}
+      <View style={styles.titleContainer}>
+        <Appbar.Content
+          title={showArchived ? "Archive" : "Inbox"}
+          titleStyle={[styles.title, { color: colors.text }]}
+        />
+      </View>
+
+      {/* Right: Actions */}
       <IconButton
         icon="account-group-outline"
         iconColor={colors.textSecondary}
@@ -154,6 +152,13 @@ export function InboxHeader({
         size={24}
         onPress={handleSettingsPress}
         accessibilityLabel="Inbox settings"
+      />
+      <IconButton
+        icon={showArchived ? "inbox" : "archive"}
+        iconColor={colors.textSecondary}
+        size={24}
+        onPress={handleArchiveToggle}
+        accessibilityLabel={showArchived ? "Show inbox" : "Show archive"}
       />
     </Appbar.Header>
   );
@@ -172,6 +177,14 @@ const styles = StyleSheet.create({
   avatarContainer: {
     marginLeft: Spacing.md,
     marginRight: Spacing.xs,
+  },
+  searchButton: {
+    marginRight: 0,
+  },
+  titleContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
   avatarPlaceholder: {
     width: 36,

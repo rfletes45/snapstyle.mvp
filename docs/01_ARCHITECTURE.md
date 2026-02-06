@@ -213,13 +213,14 @@ RootNavigator
 
 ### Context Providers (src/store/)
 
-| Context                     | Purpose        | Key State                     |
-| --------------------------- | -------------- | ----------------------------- |
-| `AuthContext`               | Firebase auth  | `user`, `loading`, `isAdmin`  |
-| `UserContext`               | User profile   | `profile`, `refreshProfile()` |
-| `ThemeContext`              | Theme mode     | `isDark`, `toggleTheme()`     |
-| `SnackbarContext`           | Toast messages | `showSnackbar()`              |
-| `InAppNotificationsContext` | In-app banners | Real-time notifications       |
+| Context                     | Purpose        | Key State                                                                                                                                 |
+| --------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `AuthContext`               | Firebase auth  | `user`, `loading`, `isAdmin`                                                                                                              |
+| `UserContext`               | User profile   | `profile`, `refreshProfile()`                                                                                                             |
+| `ThemeContext`              | Theme mode     | `isDark`, `toggleTheme()`                                                                                                                 |
+| `SnackbarContext`           | Toast messages | `showSnackbar()`                                                                                                                          |
+| `InAppNotificationsContext` | In-app banners | Supports `chat`, `game_invite`, `achievement` notification types. Per-screen suppression (e.g., game invites suppressed on game screens). |
+| `ProfileThemeColorsContext` | Profile themes | Profile-specific color overrides for own/other profile views                                                                              |
 
 ### Provider Hierarchy (App.tsx)
 

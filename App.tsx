@@ -128,7 +128,7 @@ export default function App() {
   return (
     <KeyboardProvider>
       <ErrorBoundary onError={handleError}>
-        <ThemeProvider initialMode="system">
+        <ThemeProvider>
           <ThemedRootWrapper>
             <AppContent />
           </ThemedRootWrapper>

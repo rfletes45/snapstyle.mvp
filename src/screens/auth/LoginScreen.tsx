@@ -1,143 +1,257 @@
 /**
  * LoginScreen
- * Vibe branded sign-in screen
+ * Vibe branded sign-in screen with:
+ * - Email / password login
+ * - Password visibility toggle
+ * - "Forgot Password?" link → ForgotPasswordScreen
+ * - Google Sign-In button (UI-ready, pending SDK integration)
+ * - Back navigation to WelcomeScreen
+ * - OR-divider and link to Signup
  */
 
-import React, { useState } from "react";
-import { StyleSheet, ScrollView, View } from "react-native";
-import { TextInput, Button, Text, useTheme } from "react-native-paper";
 import { login } from "@/services/auth";
 import { isValidEmail } from "@/utils/validators";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useState } from "react";
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TouchableWithoutFeedback,
+  View,
+} from "react-native";
+import {
+  Button,
+  IconButton,
+  Text,
+  TextInput,
+  useTheme,
+} from "react-native-paper";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 export default function LoginScreen({ navigation }: any) {
   const theme = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // Debug: State to trigger render-time error
-  const [shouldThrowError, setShouldThrowError] = useState(false);
 
   const handleLogin = async () => {
+    Keyboard.dismiss();
     setError("");
 
     // Validation
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       setError("Email and password are required");
       return;
     }
 
-    if (!isValidEmail(email)) {
+    if (!isValidEmail(email.trim())) {
       setError("Please enter a valid email address");
       return;
     }
 
     setLoading(true);
 
-    // Sign in with Firebase Authentication
     console.log("🔵 [LoginScreen] Attempting to log in with", email);
     const result = await login(email.trim(), password);
 
     if (result.ok) {
       console.log("✅ [LoginScreen] Login successful");
-      // Navigation will happen automatically via AuthContext when user state updates
+      // Navigation happens automatically via AuthContext
     } else {
       console.log("❌ [LoginScreen] Login failed:", result.error.code);
-      // Use the user-friendly error message from the error utility
       setError(result.error.userMessage);
     }
 
     setLoading(false);
   };
 
-  // Debug: Throw error during render to test ErrorBoundary
-  if (shouldThrowError) {
-    throw new Error("🧪 Test render error - ErrorBoundary should catch this");
-  }
+  const handleGoogleSignIn = () => {
+    // TODO: Integrate @react-native-google-signin/google-signin
+    // For now, show a message that it's coming soon
+    setError("Google Sign-In is coming soon!");
+  };
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      contentContainerStyle={styles.content}
-    >
-      <Text
-        variant="headlineLarge"
-        style={[styles.title, { color: theme.colors.onBackground }]}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        Welcome back
-      </Text>
-      <Text
-        variant="bodyMedium"
-        style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
-      >
-        Sign in to continue to Vibe
-      </Text>
-
-      <TextInput
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        mode="outlined"
-        keyboardType="email-address"
-        disabled={loading}
-        style={styles.input}
-        autoCapitalize="none"
-      />
-
-      <TextInput
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        mode="outlined"
-        secureTextEntry
-        disabled={loading}
-        style={styles.input}
-      />
-
-      {error ? (
-        <View
-          style={[
-            styles.errorContainer,
-            { backgroundColor: theme.colors.errorContainer },
-          ]}
-        >
-          <Text style={[styles.error, { color: theme.colors.error }]}>
-            {error}
-          </Text>
+        {/* Back button */}
+        <View style={styles.topBar}>
+          <IconButton
+            icon="arrow-left"
+            onPress={() => navigation.goBack()}
+            iconColor={theme.colors.onBackground}
+          />
         </View>
-      ) : null}
 
-      <Button
-        mode="contained"
-        onPress={handleLogin}
-        loading={loading}
-        disabled={loading}
-        style={styles.button}
-      >
-        Sign In
-      </Button>
-
-      <Button
-        mode="text"
-        onPress={() => navigation.navigate("Signup")}
-        disabled={loading}
-      >
-        Don&apos;t have an account? Get started
-      </Button>
-
-      {/* Debug: Test ErrorBoundary - Remove after testing */}
-      {__DEV__ && (
-        <Button
-          mode="outlined"
-          onPress={() => setShouldThrowError(true)}
-          style={styles.debugButton}
-          textColor={theme.colors.error}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          🧪 Test Error Boundary
-        </Button>
-      )}
-    </ScrollView>
+          {/* Header */}
+          <Text
+            variant="headlineLarge"
+            style={[styles.title, { color: theme.colors.onBackground }]}
+          >
+            Welcome back
+          </Text>
+          <Text
+            variant="bodyMedium"
+            style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
+          >
+            Sign in to continue to Vibe
+          </Text>
+
+          {/* Google Sign-In Button */}
+          <Button
+            mode="outlined"
+            onPress={handleGoogleSignIn}
+            disabled={loading}
+            style={styles.googleBtn}
+            contentStyle={styles.googleBtnContent}
+            icon={({ size }) => (
+              <MaterialCommunityIcons
+                name="google"
+                size={size}
+                color={theme.colors.onBackground}
+              />
+            )}
+            textColor={theme.colors.onBackground}
+          >
+            Continue with Google
+          </Button>
+
+          {/* OR Divider */}
+          <View style={styles.dividerRow}>
+            <View
+              style={[
+                styles.dividerLine,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
+            <Text
+              variant="labelMedium"
+              style={[
+                styles.dividerText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              OR
+            </Text>
+            <View
+              style={[
+                styles.dividerLine,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
+          </View>
+
+          {/* Email Input */}
+          <TextInput
+            label="Email"
+            value={email}
+            onChangeText={(text) => {
+              setEmail(text);
+              if (error) setError("");
+            }}
+            mode="outlined"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+            disabled={loading}
+            left={<TextInput.Icon icon="email-outline" />}
+            style={styles.input}
+          />
+
+          {/* Password Input */}
+          <TextInput
+            label="Password"
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (error) setError("");
+            }}
+            mode="outlined"
+            secureTextEntry={!showPassword}
+            disabled={loading}
+            left={<TextInput.Icon icon="lock-outline" />}
+            right={
+              <TextInput.Icon
+                icon={showPassword ? "eye-off" : "eye"}
+                onPress={() => setShowPassword(!showPassword)}
+              />
+            }
+            style={styles.input}
+          />
+
+          {/* Forgot Password Link */}
+          <View style={styles.forgotRow}>
+            <Button
+              mode="text"
+              compact
+              onPress={() => navigation.navigate("ForgotPassword")}
+              disabled={loading}
+              labelStyle={styles.forgotLabel}
+            >
+              Forgot password?
+            </Button>
+          </View>
+
+          {/* Error Message */}
+          {error ? (
+            <View
+              style={[
+                styles.errorContainer,
+                { backgroundColor: theme.colors.errorContainer },
+              ]}
+            >
+              <Text style={[styles.error, { color: theme.colors.error }]}>
+                {error}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Sign In Button */}
+          <Button
+            mode="contained"
+            onPress={handleLogin}
+            loading={loading}
+            disabled={loading}
+            style={styles.signInBtn}
+            contentStyle={styles.btnContent}
+          >
+            Sign In
+          </Button>
+
+          {/* Signup Link */}
+          <View style={styles.bottomLinkRow}>
+            <Text
+              variant="bodyMedium"
+              style={{ color: theme.colors.onSurfaceVariant }}
+            >
+              Don't have an account?{" "}
+            </Text>
+            <Button
+              mode="text"
+              compact
+              onPress={() => navigation.navigate("Signup")}
+              disabled={loading}
+              labelStyle={styles.linkLabel}
+            >
+              Get started
+            </Button>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -145,28 +259,52 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  topBar: {
+    paddingTop: Platform.OS === "ios" ? 50 : 16,
+    paddingHorizontal: Spacing.xs,
+    alignItems: "flex-start",
+  },
   content: {
-    padding: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.xxxl,
+    flexGrow: 1,
     justifyContent: "center",
-    minHeight: "100%",
   },
   title: {
     fontWeight: "bold",
     marginBottom: Spacing.xs,
   },
   subtitle: {
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.xxl,
   },
-  input: {
+  googleBtn: {
+    borderRadius: BorderRadius.md,
     marginBottom: Spacing.lg,
   },
-  button: {
-    marginTop: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.md,
+  googleBtnContent: {
+    paddingVertical: 6,
   },
-  debugButton: {
-    marginTop: Spacing.xl,
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: Spacing.md,
+  },
+  input: {
+    marginBottom: Spacing.md,
+  },
+  forgotRow: {
+    alignItems: "flex-end",
+    marginBottom: Spacing.sm,
+  },
+  forgotLabel: {
+    fontSize: 13,
   },
   errorContainer: {
     padding: Spacing.md,
@@ -175,5 +313,22 @@ const styles = StyleSheet.create({
   },
   error: {
     textAlign: "center",
+  },
+  signInBtn: {
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.md,
+  },
+  btnContent: {
+    paddingVertical: 4,
+  },
+  bottomLinkRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: Spacing.lg,
+  },
+  linkLabel: {
+    fontWeight: "bold",
   },
 });

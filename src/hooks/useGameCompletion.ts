@@ -20,13 +20,14 @@ import {
 } from "@/services/achievementTriggers";
 import { calculateUserStats } from "@/services/gameHistory";
 import { useAuth } from "@/store/AuthContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import {
   AchievementNotification,
   GameAchievementDefinition,
 } from "@/types/achievements";
 import { GameHistoryStats } from "@/types/gameHistory";
 import { TurnBasedMatch } from "@/types/turnBased";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useGameNavigation,
   UseGameNavigationOptions,
@@ -140,6 +141,7 @@ export function useGameCompletion(
 
   const { currentFirebaseUser } = useAuth();
   const userId = currentFirebaseUser?.uid;
+  const { pushNotification } = useInAppNotifications();
 
   // Navigation hook
   const { exitGame, goToChat, goToPlayScreen, goToGameHistory, hasChat } =
@@ -156,6 +158,18 @@ export function useGameCompletion(
 
   // Track processed matches to avoid duplicate processing
   const processedMatchesRef = useRef<Set<string>>(new Set());
+
+  // Track auto-exit timer for cleanup on unmount
+  const autoExitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (autoExitTimerRef.current) {
+        clearTimeout(autoExitTimerRef.current);
+      }
+    };
+  }, []);
 
   /**
    * Process game completion
@@ -256,6 +270,20 @@ export function useGameCompletion(
 
             setNotifications((prev) => [...prev, ...newNotifications]);
 
+            // Push through in-app notification system for global visibility
+            for (const def of achievementResult.awardedDefinitions) {
+              pushNotification({
+                type: "achievement",
+                title: "Achievement Unlocked! 🏆",
+                body: `${def.name} — ${def.description}`,
+                entityId: def.id,
+                fromUserId: userId || "",
+                navigateTo: {
+                  screen: "Achievements",
+                },
+              });
+            }
+
             // Callback
             if (onAchievementsAwarded) {
               onAchievementsAwarded(achievementResult.awardedDefinitions);
@@ -285,7 +313,7 @@ export function useGameCompletion(
 
         // Auto-exit if configured
         if (autoExitOnComplete) {
-          setTimeout(() => {
+          autoExitTimerRef.current = setTimeout(() => {
             exitGame();
           }, autoExitDelay);
         }

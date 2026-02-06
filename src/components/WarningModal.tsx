@@ -106,7 +106,7 @@ export default function WarningModal() {
             >
               Reason
             </Text>
-            <Text style={[styles.reasonText, { color: colors.textPrimary }]}>
+            <Text style={[styles.reasonText, { color: colors.text }]}>
               {BAN_REASON_LABELS[currentWarning.reason as BanReason] ||
                 currentWarning.reason}
             </Text>
@@ -126,7 +126,7 @@ export default function WarningModal() {
                 ]}
               >
                 <Text
-                  style={[styles.detailsText, { color: colors.textPrimary }]}
+                  style={[styles.detailsText, { color: colors.text }]}
                 >
                   {currentWarning.details}
                 </Text>

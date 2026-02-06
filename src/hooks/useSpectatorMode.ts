@@ -31,9 +31,11 @@ import {
   joinAsSpectator as joinAsSpectatorService,
   leaveAsSpectator,
 } from "@/services/turnBasedGames";
+import { createLogger } from "@/utils/log";
 
 // Helper to get Firestore instance
 const getDb = () => getFirestoreInstance();
+const log = createLogger("SpectatorMode");
 
 // =============================================================================
 // Types
@@ -105,6 +107,8 @@ export function useSpectatorMode({
       return;
     }
 
+    let cancelled = false;
+
     const joinSpectator = async () => {
       setLoading(true);
       setError(null);
@@ -112,10 +116,12 @@ export function useSpectatorMode({
       try {
         // Try match-level spectator first
         const docId = await joinAsSpectatorService(matchId, userId, userName);
+        if (cancelled) return;
         setSpectatorDocId(docId);
         setIsSpectator(true);
-        console.log(`[SpectatorMode] Joined match ${matchId} as spectator`);
+        log.info(`Joined match ${matchId} as spectator`);
       } catch (err) {
+        if (cancelled) return;
         // If match-level fails, try invite-level
         if (inviteId) {
           try {
@@ -125,28 +131,32 @@ export function useSpectatorMode({
               userName,
               userAvatar,
             );
+            if (cancelled) return;
             if (result.success) {
               setIsSpectator(true);
-              console.log(
-                `[SpectatorMode] Joined invite ${inviteId} as spectator`,
-              );
+              log.info(`Joined invite ${inviteId} as spectator`);
             } else {
               setError(result.error || "Failed to join as spectator");
             }
           } catch (inviteErr) {
+            if (cancelled) return;
             setError("Failed to join as spectator");
-            console.error("[SpectatorMode] Error joining:", inviteErr);
+            log.error("Error joining via invite", inviteErr);
           }
         } else {
           setError("Failed to join as spectator");
-          console.error("[SpectatorMode] Error joining:", err);
+          log.error("Error joining", err);
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     joinSpectator();
+
+    return () => {
+      cancelled = true;
+    };
   }, [spectatorMode, matchId, inviteId, userId, userName, userAvatar]);
 
   // ==========================================================================
@@ -177,7 +187,7 @@ export function useSpectatorMode({
         setSpectators(spectatorList);
       },
       (err) => {
-        console.error("[SpectatorMode] Error subscribing to spectators:", err);
+        log.error("Error subscribing to spectators", err);
       },
     );
 
@@ -197,19 +207,19 @@ export function useSpectatorMode({
       // Leave match-level spectator
       if (spectatorDocId) {
         await leaveAsSpectator(matchId, spectatorDocId);
-        console.log(`[SpectatorMode] Left match ${matchId}`);
+        log.info(`Left match ${matchId}`);
       }
 
       // Leave invite-level spectator
       if (inviteId) {
         await leaveInviteSpectator(inviteId, userId);
-        console.log(`[SpectatorMode] Left invite ${inviteId}`);
+        log.info(`Left invite ${inviteId}`);
       }
 
       setIsSpectator(false);
       setSpectatorDocId(null);
     } catch (err) {
-      console.error("[SpectatorMode] Error leaving:", err);
+      log.error("Error leaving", err);
     } finally {
       setLoading(false);
     }
@@ -223,7 +233,9 @@ export function useSpectatorMode({
     return () => {
       // Auto-leave when component unmounts
       if (isSpectator && matchId && spectatorDocId) {
-        leaveAsSpectator(matchId, spectatorDocId).catch(console.error);
+        leaveAsSpectator(matchId, spectatorDocId).catch((e) =>
+          log.warn("Failed to leave spectator on unmount", e),
+        );
       }
     };
   }, [isSpectator, matchId, spectatorDocId]);

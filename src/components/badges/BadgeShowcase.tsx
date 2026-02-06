@@ -5,12 +5,13 @@
  * Shows up to 5 badges with "View All" option.
  */
 
+import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
 import { getBadgeById } from "@/data/badges";
 import type { UserBadge } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { BadgeCard } from "./BadgeCard";
 
 export interface BadgeShowcaseProps {
@@ -36,7 +37,7 @@ function BadgeShowcaseBase({
   showHeader = true,
   title = "Featured Badges",
 }: BadgeShowcaseProps) {
-  const theme = useTheme();
+  const colors = useProfileThemeColors();
 
   const displayBadges = badges.slice(0, maxDisplay);
 
@@ -45,30 +46,26 @@ function BadgeShowcaseBase({
       <View style={styles.container}>
         {showHeader && (
           <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-              {title}
-            </Text>
+            <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
           </View>
         )}
         <View
           style={[
             styles.emptyContainer,
-            { backgroundColor: theme.colors.surfaceVariant },
+            { backgroundColor: colors.surfaceVariant },
           ]}
         >
           <MaterialCommunityIcons
             name="medal-outline"
             size={32}
-            color={theme.colors.onSurfaceVariant}
+            color={colors.textSecondary}
           />
-          <Text
-            style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}
-          >
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             No featured badges yet
           </Text>
           {onViewAll && (
             <TouchableOpacity onPress={onViewAll}>
-              <Text style={[styles.emptyLink, { color: theme.colors.primary }]}>
+              <Text style={[styles.emptyLink, { color: colors.primary }]}>
                 View all badges
               </Text>
             </TouchableOpacity>
@@ -82,20 +79,16 @@ function BadgeShowcaseBase({
     <View style={styles.container}>
       {showHeader && (
         <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-            {title}
-          </Text>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
           {onViewAll && (
             <TouchableOpacity onPress={onViewAll} style={styles.viewAllButton}>
-              <Text
-                style={[styles.viewAllText, { color: theme.colors.primary }]}
-              >
+              <Text style={[styles.viewAllText, { color: colors.primary }]}>
                 View All
               </Text>
               <MaterialCommunityIcons
                 name="chevron-right"
                 size={20}
-                color={theme.colors.primary}
+                color={colors.primary}
               />
             </TouchableOpacity>
           )}

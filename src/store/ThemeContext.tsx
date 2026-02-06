@@ -9,6 +9,7 @@
  * - Quick toggle between light/dark variants
  */
 
+import { getAuthInstance } from "@/services/firebase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
@@ -69,19 +70,58 @@ interface ThemeProviderProps {
   initialThemeId?: ThemeId;
 }
 
+// Default theme when not logged in (always catppuccin-mocha)
+const DEFAULT_LOGGED_OUT_THEME: ThemeId = "catppuccin-mocha";
+
 export function ThemeProvider({
   children,
   initialThemeId,
 }: ThemeProviderProps) {
   const systemColorScheme = useColorScheme();
   const [themeId, setThemeId] = useState<ThemeId>(
-    initialThemeId ||
-      (systemColorScheme === "dark" ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME),
+    initialThemeId || DEFAULT_LOGGED_OUT_THEME,
   );
-  const [useSystemTheme, setUseSystemThemeState] = useState(!initialThemeId);
+  const [useSystemTheme, setUseSystemThemeState] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Load persisted theme on mount
+  // Listen to Firebase auth state to know when to apply user theme
+  useEffect(() => {
+    try {
+      const auth = getAuthInstance();
+      const unsubscribe = auth.onAuthStateChanged(async (user: any) => {
+        const wasAuthenticated = isAuthenticated;
+        const nowAuthenticated = !!user;
+        setIsAuthenticated(nowAuthenticated);
+
+        if (nowAuthenticated && !wasAuthenticated) {
+          // User just logged in → load their stored theme preference
+          try {
+            const stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
+                setThemeId(parsed.themeId);
+                setUseSystemThemeState(parsed.useSystemTheme ?? false);
+              }
+            }
+          } catch {
+            // Ignore storage read errors
+          }
+        } else if (!nowAuthenticated && wasAuthenticated) {
+          // User signed out → revert to default
+          setThemeId(DEFAULT_LOGGED_OUT_THEME);
+          setUseSystemThemeState(false);
+        }
+      });
+      return unsubscribe;
+    } catch {
+      // Firebase not initialized yet — that's fine
+      return undefined;
+    }
+  }, [isAuthenticated]);
+
+  // Load persisted theme on mount — but only apply if user is authenticated
   useEffect(() => {
     const loadTheme = async () => {
       try {
@@ -89,8 +129,16 @@ export function ThemeProvider({
         if (stored) {
           const parsed = JSON.parse(stored);
           if (parsed.themeId && THEME_METADATA[parsed.themeId as ThemeId]) {
-            setThemeId(parsed.themeId);
-            setUseSystemThemeState(parsed.useSystemTheme ?? false);
+            // Only apply stored theme if user is currently authenticated
+            try {
+              const auth = getAuthInstance();
+              if (auth.currentUser) {
+                setThemeId(parsed.themeId);
+                setUseSystemThemeState(parsed.useSystemTheme ?? false);
+              }
+            } catch {
+              // Firebase not ready — skip applying stored theme
+            }
           }
         }
       } catch (error) {
@@ -102,9 +150,9 @@ export function ThemeProvider({
     loadTheme();
   }, []);
 
-  // Persist theme changes
+  // Persist theme changes (only when authenticated)
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && isAuthenticated) {
       AsyncStorage.setItem(
         THEME_STORAGE_KEY,
         JSON.stringify({ themeId, useSystemTheme }),
@@ -112,16 +160,16 @@ export function ThemeProvider({
         console.warn("Failed to save theme preference:", error),
       );
     }
-  }, [themeId, useSystemTheme, isLoading]);
+  }, [themeId, useSystemTheme, isLoading, isAuthenticated]);
 
-  // Handle system theme changes
+  // Handle system theme changes (only when authenticated and using system theme)
   useEffect(() => {
-    if (useSystemTheme) {
+    if (useSystemTheme && isAuthenticated) {
       const newThemeId =
         systemColorScheme === "dark" ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
       setThemeId(newThemeId);
     }
-  }, [systemColorScheme, useSystemTheme]);
+  }, [systemColorScheme, useSystemTheme, isAuthenticated]);
 
   // Get the full theme object
   const theme = useMemo(() => getThemeById(themeId), [themeId]);

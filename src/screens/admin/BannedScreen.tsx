@@ -60,7 +60,7 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Reason:
             </Text>
-            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+            <Text style={[styles.infoValue, { color: colors.text }]}>
               {reasonLabel}
             </Text>
           </View>
@@ -70,7 +70,7 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
               <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
                 Details:
               </Text>
-              <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              <Text style={[styles.infoValue, { color: colors.text }]}>
                 {ban.reasonDetails}
               </Text>
             </View>
@@ -83,7 +83,7 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
             <Text
               style={[
                 styles.infoValue,
-                { color: colors.textPrimary },
+                { color: colors.text },
                 isPermanent && { color: colors.error },
               ]}
             >
@@ -95,7 +95,7 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
             <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
               Banned on:
             </Text>
-            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+            <Text style={[styles.infoValue, { color: colors.text }]}>
               {new Date(ban.createdAt).toLocaleDateString()}
             </Text>
           </View>

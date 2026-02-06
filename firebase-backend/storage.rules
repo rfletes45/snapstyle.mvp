@@ -127,6 +127,26 @@ service firebase.storage {
     }
 
     // ============================================================
+    // USERS: User profile data (profile pictures, decorations, etc.)
+    // ============================================================
+    
+    // Path: /users/{userId}/profile/{filename}
+    // Used for profile pictures and related assets
+    match /users/{userId}/profile/{filename} {
+      // Read: Anyone authenticated can view profile pictures
+      allow read: if isAuth();
+      
+      // Write: Only the owner can upload to their profile
+      // Added: UID format validation
+      allow write: if isAuth() && 
+                     request.auth.uid == userId &&
+                     isValidUid(userId) &&
+                     isValidImageType() &&
+                     // Max 5MB for profile pictures
+                     validFileSize(5 * 1024 * 1024);
+    }
+
+    // ============================================================
     // GROUPS: Group chat images and attachments
     // ============================================================
     

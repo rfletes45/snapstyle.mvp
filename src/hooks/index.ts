@@ -8,7 +8,6 @@
  * - useChatComposer: Chat composer state management (ARCH-D03)
  * - useUnifiedChatScreen: Screen-ready hook that composes useChat + useChatComposer (UNI-04)
  * - useSnapCapture: Snap/photo capture and upload hook (UNI-05)
- * - useMessagesV2: @deprecated - Use useChat or useLocalMessages instead
  * - useUnreadCount: Unread count calculation
  * - useMentionAutocomplete: @mention autocomplete state management
  * - useAttachmentPicker: Multi-attachment selection and upload management
@@ -64,25 +63,12 @@ export type {
 } from "./useUnifiedChatScreen";
 
 export { useSnapCapture } from "./useSnapCapture";
-export type {} from "./useSnapCapture";
 
 export { useTypingStatus } from "./useTypingStatus";
-export type {} from "./useTypingStatus";
 
 export { usePresence } from "./usePresence";
-export type {} from "./usePresence";
 
 export { useReadReceipts } from "./useReadReceipts";
-export type {} from "./useReadReceipts";
-
-export { useHighlightedMessage } from "./useHighlightedMessage";
-
-// =============================================================================
-// Legacy Hooks (Deprecated)
-// =============================================================================
-
-/** @deprecated Use useChat or useLocalMessages instead */
-export { useMessagesV2, useUnreadCount } from "./useMessagesV2";
 
 // =============================================================================
 // Feature-Specific Hooks
@@ -110,7 +96,7 @@ export type {
 export { useOutboxProcessor } from "./useOutboxProcessor";
 
 // Inbox Overhaul hooks
-export { useInboxData, useInboxUnreadCount } from "./useInboxData";
+export { useInboxData } from "./useInboxData";
 export type {
   InboxFilter,
   InboxSort,
@@ -179,34 +165,6 @@ export { useBadges } from "./useBadges";
 export { useProfileData } from "./useProfileData";
 
 // =============================================================================
-// Customization Hook (Profile Overhaul Phase 4)
-// =============================================================================
-
-export { useCustomization } from "./useCustomization";
-export type {
-  UseCustomizationConfig,
-  UseCustomizationReturn,
-} from "./useCustomization";
-
-// =============================================================================
-// Animation Hooks (Profile Overhaul Phase 7)
-// =============================================================================
-
-export {
-  useAnimatedValue,
-  useAnimationQueue,
-  useBadgeEarnAnimation,
-  useLevelUpAnimation,
-  useProfileAnimations,
-} from "./useAnimations";
-export type {
-  AnimationQueueItem,
-  BadgeEarnAnimationState,
-  LevelUpAnimationState,
-  ProfileAnimationsState,
-} from "./useAnimations";
-
-// =============================================================================
 // Shop Hooks (Shop Overhaul Phase 2)
 // =============================================================================
 
@@ -222,9 +180,6 @@ export type { UsePremiumShopReturn } from "./usePremiumShop";
 // =============================================================================
 // Phase 4: Additional Shop Features
 // =============================================================================
-
-export { useWishlist } from "./useWishlist";
-export type { UseWishlistReturn } from "./useWishlist";
 
 export {
   getPerspective,
@@ -259,15 +214,17 @@ export type {
 } from "../components/games/CartCourse/hooks/useCartCourseNavigation";
 
 // =============================================================================
-// Call System Hooks (Video Call Phase 4)
+// Profile System Hooks (Profile V2)
 // =============================================================================
 
-export {
-  formatBandwidth,
-  formatLatency,
-  getQualityColor,
-  getQualityIcon,
-  getSignalBars,
-  useCallQuality,
-} from "./useCallQuality";
-export type { CallQualityState, UseCallQualityOptions } from "./useCallQuality";
+export { useProfilePicture } from "./useProfilePicture";
+export type {
+  UseProfilePictureOptions,
+  UseProfilePictureReturn,
+} from "./useProfilePicture";
+
+export { useFullProfileData } from "./useFullProfileData";
+export type {
+  UseFullProfileDataOptions,
+  UseFullProfileDataReturn,
+} from "./useFullProfileData";

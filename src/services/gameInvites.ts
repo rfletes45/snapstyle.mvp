@@ -46,6 +46,7 @@ import {
   UniversalGameInvite,
   UniversalInviteStatus,
 } from "../types/turnBased";
+import { getOrCreateChat } from "./chat";
 import { getAuthInstance, getFirestoreInstance } from "./firebase";
 import { createMatch } from "./turnBasedGames";
 
@@ -75,7 +76,7 @@ export type InviteStatus =
 /**
  * Game invite document
  */
-export interface GameInvite {
+interface GameInvite {
   id: string;
   gameType: InviteGameType;
   category: GameCategory;
@@ -278,6 +279,21 @@ const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
+  snap_four: {
+    isRated: true,
+    timeControl: { type: "per_turn", seconds: 60 },
+    chatEnabled: true,
+  },
+  snap_dots: {
+    isRated: true,
+    timeControl: { type: "per_turn", seconds: 60 },
+    chatEnabled: true,
+  },
+  snap_gomoku: {
+    isRated: true,
+    timeControl: { type: "per_turn", seconds: 120 },
+    chatEnabled: true,
+  },
 };
 
 // =============================================================================
@@ -349,6 +365,21 @@ function getDefaultInviteSettings(
     air_hockey: {
       isRated: true,
       timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    snap_four: {
+      isRated: true,
+      timeControl: { type: "per_turn", seconds: 60 },
+      chatEnabled: true,
+    },
+    snap_dots: {
+      isRated: true,
+      timeControl: { type: "per_turn", seconds: 60 },
+      chatEnabled: true,
+    },
+    snap_gomoku: {
+      isRated: true,
+      timeControl: { type: "per_turn", seconds: 120 },
       chatEnabled: true,
     },
   };
@@ -453,13 +484,31 @@ export async function sendGameInvite(
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
   await setDoc(inviteRef, invite);
 
+  // Update the DM conversation so the invite bumps it to the top of the inbox
+  try {
+    const chatId = await getOrCreateChat(senderId, input.recipientId);
+    const chatRef = doc(getDb(), "Chats", chatId);
+    const gameLabel =
+      GAME_METADATA[input.gameType]?.name || input.gameType || "a game";
+    await updateDoc(chatRef, {
+      lastMessageAt: Timestamp.now(),
+      lastMessageText: `🎮 ${senderName} sent a game invite: ${gameLabel}`,
+      lastMessageSenderId: senderId,
+      lastMessageType: "game_invite",
+      updatedAt: Timestamp.now(),
+    });
+  } catch (e) {
+    // Non-critical — don't fail the invite if the conversation update fails
+    console.warn("[GameInvites] Failed to update chat preview for invite", e);
+  }
+
   return invite as unknown as GameInvite;
 }
 
 /**
  * Accept a game invite
  */
-export async function acceptGameInvite(
+async function acceptGameInvite(
   inviteId: string,
   userId: string,
 ): Promise<{ invite: GameInvite; gameId: string }> {
@@ -515,7 +564,7 @@ export async function acceptGameInvite(
 /**
  * Decline a game invite
  */
-export async function declineGameInvite(
+async function declineGameInvite(
   inviteId: string,
   userId: string,
 ): Promise<void> {
@@ -732,6 +781,40 @@ export async function sendUniversalInvite(
   // Save to Firestore
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
   await setDoc(inviteRef, cleanInvite);
+
+  // Update the conversation so the invite bumps it to the top of the inbox
+  try {
+    const gameLabel = GAME_METADATA[gameType]?.name || gameType || "a game";
+    const previewText = `🎮 ${senderName} sent a game invite: ${gameLabel}`;
+
+    if (context === "dm" && recipientId) {
+      const chatId = await getOrCreateChat(senderId, recipientId);
+      const chatRef = doc(getDb(), "Chats", chatId);
+      await updateDoc(chatRef, {
+        lastMessageAt: Timestamp.now(),
+        lastMessageText: previewText,
+        lastMessageSenderId: senderId,
+        lastMessageType: "game_invite",
+        updatedAt: Timestamp.now(),
+      });
+    } else if (context === "group" && conversationId) {
+      const groupRef = doc(getDb(), "Groups", conversationId);
+      await updateDoc(groupRef, {
+        lastMessageAt: Timestamp.now(),
+        lastMessageText: previewText,
+        lastMessageSenderId: senderId,
+        lastMessageSenderName: senderName,
+        lastMessageType: "game_invite",
+        updatedAt: Timestamp.now(),
+      });
+    }
+  } catch (e) {
+    // Non-critical — don't fail the invite if the conversation update fails
+    console.warn(
+      "[GameInvites] Failed to update conversation preview for invite",
+      e,
+    );
+  }
 
   console.log(`[GameInvites] Created universal invite: ${inviteId}`, {
     context,
@@ -1235,9 +1318,7 @@ export async function cancelUniversalInvite(
 /**
  * Get invite by ID
  */
-export async function getInviteById(
-  inviteId: string,
-): Promise<GameInvite | null> {
+async function getInviteById(inviteId: string): Promise<GameInvite | null> {
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
   const inviteSnap = await getDoc(inviteRef);
 
@@ -1251,7 +1332,7 @@ export async function getInviteById(
 /**
  * Get invites sent by user
  */
-export async function getSentInvites(
+async function getSentInvites(
   userId: string,
   options: InviteFilterOptions = {},
 ): Promise<GameInvite[]> {
@@ -1280,7 +1361,7 @@ export async function getSentInvites(
 /**
  * Get invites received by user
  */
-export async function getReceivedInvites(
+async function getReceivedInvites(
   userId: string,
   options: InviteFilterOptions = {},
 ): Promise<GameInvite[]> {
@@ -1372,7 +1453,7 @@ async function getExistingInvite(
  * - Status is pending or filling
  * - User is NOT the sender
  */
-export async function getPlayPageInvites(
+async function getPlayPageInvites(
   userId: string,
 ): Promise<UniversalGameInvite[]> {
   const q = query(
@@ -1398,7 +1479,7 @@ export async function getPlayPageInvites(
  * - conversationId matches
  * - Status is pending, filling, ready, or active
  */
-export async function getConversationInvites(
+async function getConversationInvites(
   conversationId: string,
   userId: string,
 ): Promise<UniversalGameInvite[]> {
@@ -1420,7 +1501,7 @@ export async function getConversationInvites(
 /**
  * Get a universal invite by ID
  */
-export async function getUniversalInviteById(
+async function getUniversalInviteById(
   inviteId: string,
 ): Promise<UniversalGameInvite | null> {
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
@@ -1473,7 +1554,7 @@ export function subscribeToPendingInvites(
 /**
  * Subscribe to a specific invite
  */
-export function subscribeToInvite(
+function subscribeToInvite(
   inviteId: string,
   onUpdate: (invite: GameInvite | null) => void,
   onError?: (error: Error) => void,
@@ -1505,7 +1586,7 @@ export function subscribeToInvite(
  *
  * Use this to show real-time slot updates in UI.
  */
-export function subscribeToUniversalInvite(
+function subscribeToUniversalInvite(
   inviteId: string,
   onUpdate: (invite: UniversalGameInvite | null) => void,
   onError?: (error: Error) => void,
@@ -1622,7 +1703,7 @@ export function subscribeToConversationInvites(
  * Mark expired invites (called by Cloud Function)
  * This is a placeholder - actual implementation in Cloud Functions
  */
-export async function markExpiredInvites(): Promise<number> {
+async function markExpiredInvites(): Promise<number> {
   const now = Timestamp.now();
 
   const q = query(
@@ -1649,7 +1730,7 @@ export async function markExpiredInvites(): Promise<number> {
  * Delete old invites (called by Cloud Function)
  * Removes invites older than specified days
  */
-export async function deleteOldInvites(daysOld: number = 30): Promise<number> {
+async function deleteOldInvites(daysOld: number = 30): Promise<number> {
   const cutoff = Timestamp.fromMillis(
     Date.now() - daysOld * 24 * 60 * 60 * 1000,
   );
@@ -2005,7 +2086,7 @@ export async function startSpectatorInvite(
 /**
  * End a spectator invite session
  */
-export async function endSpectatorInvite(inviteId: string): Promise<boolean> {
+async function endSpectatorInvite(inviteId: string): Promise<boolean> {
   try {
     const inviteRef = doc(getDb(), SPECTATOR_INVITES_COLLECTION, inviteId);
     await updateDoc(inviteRef, {
@@ -2046,7 +2127,7 @@ export async function cancelSpectatorInvite(
 /**
  * Get a spectator invite by ID
  */
-export async function getSpectatorInviteById(
+async function getSpectatorInviteById(
   inviteId: string,
 ): Promise<SpectatorInvite | null> {
   try {
@@ -2180,7 +2261,7 @@ export async function leaveSpectatorInvite(
 /**
  * Subscribe to a spectator invite
  */
-export function subscribeToSpectatorInvite(
+function subscribeToSpectatorInvite(
   inviteId: string,
   onUpdate: (invite: SpectatorInvite | null) => void,
   onError?: (error: Error) => void,
@@ -2209,7 +2290,7 @@ export function subscribeToSpectatorInvite(
 /**
  * Get spectator invites for a conversation
  */
-export async function getConversationSpectatorInvites(
+async function getConversationSpectatorInvites(
   conversationId: string,
 ): Promise<SpectatorInvite[]> {
   const currentUser = getAuth().currentUser;
@@ -2383,5 +2464,3 @@ export const gameInvites = {
   getConversationSpectatorInvites,
   subscribeToConversationSpectatorInvites,
 };
-
-export default gameInvites;

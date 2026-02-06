@@ -27,9 +27,16 @@ export type SinglePlayerGameType =
   | "reaction_tap" // Existing - tap when green
   | "timed_tap" // Existing - tap count in 10s
   | "cart_course" // DK Crash Course-style tilt game
+  | "flappy_snap" // Flappy Bird-style pipe game
   // New single-player games (Phase 1)
   | "brick_breaker" // Classic Breakout/Arkanoid
-  | "tile_slide"; // Classic 15-puzzle sliding tiles
+  | "tile_slide" // Classic 15-puzzle sliding tiles
+  // New single-player games (Phase 2)
+  | "snap_stack" // Stacking tower game
+  | "snap_minesweeper" // Classic Minesweeper
+  | "snap_number" // Mental math speed game
+  | "snap_aim" // Target shooting accuracy
+  | "snap_lights"; // Lights Out puzzle
 
 /**
  * Turn-based multiplayer games
@@ -38,7 +45,10 @@ export type TurnBasedGameType =
   | "chess"
   | "checkers"
   | "crazy_eights"
-  | "tic_tac_toe";
+  | "tic_tac_toe"
+  | "snap_four" // Connect Four
+  | "snap_dots" // Dots and Boxes
+  | "snap_gomoku"; // Five in a Row (Gomoku)
 
 /**
  * Real-time multiplayer games (simulated turn-based for pool)
@@ -210,6 +220,20 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // New Single-player Games (Phase 1)
+  flappy_snap: {
+    id: "flappy_snap",
+    name: "Flappy Snap",
+    shortName: "Flappy",
+    description: "Tap to flap through pipes and score big!",
+    icon: "🐦",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+  },
   brick_breaker: {
     id: "brick_breaker",
     name: "Brick Breaker",
@@ -231,6 +255,83 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     shortName: "Slide",
     description: "Slide tiles to solve the puzzle!",
     icon: "🔢",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+
+  // Phase 2 Single-player Games
+  snap_stack: {
+    id: "snap_stack",
+    name: "Snap Stack",
+    shortName: "Stack",
+    description: "Stack blocks as high as you can!",
+    icon: "🏗️",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_minesweeper: {
+    id: "snap_minesweeper",
+    name: "Snap Minesweeper",
+    shortName: "Mines",
+    description: "Find all mines without detonating them!",
+    icon: "💣",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_number: {
+    id: "snap_number",
+    name: "Snap Number",
+    shortName: "Number",
+    description: "Solve math puzzles against the clock!",
+    icon: "🔢",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_aim: {
+    id: "snap_aim",
+    name: "Snap Aim",
+    shortName: "Aim",
+    description: "Tap targets before they shrink away!",
+    icon: "🎯",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_lights: {
+    id: "snap_lights",
+    name: "Snap Lights",
+    shortName: "Lights",
+    description: "Toggle all the lights off!",
+    icon: "💡",
     category: "puzzle",
     minPlayers: 1,
     maxPlayers: 1,
@@ -297,6 +398,51 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasLeaderboard: false,
     hasAchievements: true,
     isAvailable: true,
+  },
+  snap_four: {
+    id: "snap_four",
+    name: "Snap Four",
+    shortName: "Four",
+    description: "Connect four discs in a row to win!",
+    icon: "🔴",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_dots: {
+    id: "snap_dots",
+    name: "Snap Dots",
+    shortName: "Dots",
+    description: "Draw lines to claim boxes!",
+    icon: "⬜",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_gomoku: {
+    id: "snap_gomoku",
+    name: "Snap Gomoku",
+    shortName: "Gomoku",
+    description: "Get five in a row on the board!",
+    icon: "⚫",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
   },
 
   // Multiplayer: Real-time (simulated)
@@ -370,6 +516,11 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "higher", // Higher score is better
   },
+  flappy_snap: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher", // Higher score is better
+  },
   snap_2048: {
     minScore: 0,
     maxScore: 999999,
@@ -397,6 +548,41 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 6,
     scoreDirection: "lower", // Fewer guesses is better
   },
+  brick_breaker: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher",
+  },
+  tile_slide: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "lower", // Fewer moves is better
+  },
+  snap_stack: {
+    minScore: 0,
+    maxScore: 999,
+    scoreDirection: "higher", // More blocks stacked is better
+  },
+  snap_minesweeper: {
+    minScore: 1,
+    maxScore: 9999,
+    scoreDirection: "lower", // Fewer seconds is better
+  },
+  snap_number: {
+    minScore: 1,
+    maxScore: 9999,
+    scoreDirection: "lower", // Fewer seconds is better
+  },
+  snap_aim: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher", // Higher points is better
+  },
+  snap_lights: {
+    minScore: 1,
+    maxScore: 999,
+    scoreDirection: "lower", // Fewer moves is better
+  },
 
   // Multiplayer games (score = wins for leaderboard)
   chess: {
@@ -418,6 +604,21 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher",
+  },
+  snap_four: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+  snap_dots: {
+    minScore: 0,
+    maxScore: 16,
+    scoreDirection: "higher", // Boxes captured
+  },
+  snap_gomoku: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
   },
   "8ball_pool": {
     minScore: 0,
@@ -484,14 +685,35 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     case "bounce_blitz":
     case "snap_2048":
     case "snap_snake":
+    case "brick_breaker":
+    case "flappy_snap":
+    case "cart_course":
       return score.toLocaleString();
     case "memory_snap":
       return `${score}s`;
     case "word_snap":
       return score === 1 ? "1 guess" : `${score} guesses`;
+    case "tile_slide":
+      return score === 1 ? "1 move" : `${score} moves`;
+    case "snap_stack":
+      return `${score} blocks`;
+    case "snap_minesweeper":
+    case "snap_number":
+      return `${score}s`;
+    case "snap_aim":
+      return score.toLocaleString();
+    case "snap_lights":
+      return score === 1 ? "1 move" : `${score} moves`;
+    case "snap_dots":
+      return `${score} boxes`;
     case "chess":
     case "checkers":
     case "8ball_pool":
+    case "tic_tac_toe":
+    case "crazy_eights":
+    case "air_hockey":
+    case "snap_four":
+    case "snap_gomoku":
       return `${score} wins`;
     default:
       return score.toString();

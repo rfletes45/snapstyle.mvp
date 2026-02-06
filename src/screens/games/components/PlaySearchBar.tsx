@@ -271,12 +271,10 @@ const styles = StyleSheet.create({
   },
   chipsScroll: {
     marginTop: 4,
-    marginHorizontal: -spacing.horizontalPadding,
   },
   chipsContainer: {
     flexDirection: "row",
     gap: spacing.chipGap,
-    paddingHorizontal: spacing.horizontalPadding,
   },
   chip: {
     paddingHorizontal: 14,

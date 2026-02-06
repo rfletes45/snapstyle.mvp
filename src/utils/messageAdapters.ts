@@ -22,8 +22,10 @@ export function messageV2ToWithProfile(
   friendProfile: { displayName?: string; username?: string } | null,
 ): MessageWithProfile {
   // Determine message type from V2 kind
-  let type: "text" | "image" | "scorecard" = "text";
-  if (msg.kind === "media" || msg.kind === "voice") {
+  let type: "text" | "image" | "scorecard" | "voice" = "text";
+  if (msg.kind === "voice") {
+    type = "voice";
+  } else if (msg.kind === "media") {
     type = "image";
   } else if (msg.text?.startsWith('{"game":')) {
     type = "scorecard";
@@ -55,6 +57,13 @@ export function messageV2ToWithProfile(
     status,
     serverReceivedAt: msg.serverReceivedAt,
     replyTo: msg.replyTo,
+    // Voice message metadata
+    ...(type === "voice" && msg.attachments?.[0]
+      ? {
+          voiceUrl: msg.attachments[0].url,
+          voiceDurationMs: (msg.attachments[0] as any).durationMs ?? 0,
+        }
+      : {}),
   };
 }
 

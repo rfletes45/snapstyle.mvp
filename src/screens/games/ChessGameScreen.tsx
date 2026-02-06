@@ -786,6 +786,15 @@ export default function ChessGameScreen({
       setGameResult("draw");
       setWinMethod("Draw");
       haptics.trigger("game_over");
+
+      // End online match as draw
+      if (gameMode === "online" && matchId) {
+        try {
+          await endMatch(matchId, null, "draw_agreement");
+        } catch (error) {
+          console.error("[Chess] Error ending match (draw):", error);
+        }
+      }
     }
   };
 

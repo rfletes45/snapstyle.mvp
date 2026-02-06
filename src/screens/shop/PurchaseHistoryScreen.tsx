@@ -42,7 +42,6 @@ import {
   getPurchaseTypeIcon,
   getPurchaseTypeName,
   getRarityColor,
-  groupPurchasesByMonth,
   PurchaseFilter,
   PurchaseRecord,
   PurchaseStats,
@@ -199,19 +198,6 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
     return result;
   }, [purchases, searchQuery]);
 
-  const groupedPurchases = useMemo(() => {
-    return groupPurchasesByMonth(filteredPurchases);
-  }, [filteredPurchases]);
-
-  const sections = useMemo(() => {
-    return Object.entries(groupedPurchases)
-      .sort(([a], [b]) => b.localeCompare(a))
-      .map(([month, items]) => ({
-        title: formatMonthTitle(month),
-        data: items,
-      }));
-  }, [groupedPurchases]);
-
   // =============================================================================
   // Render Functions
   // =============================================================================
@@ -310,12 +296,6 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
       </TouchableOpacity>
     );
   };
-
-  const renderSectionHeader = (title: string) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-    </View>
-  );
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -618,26 +598,6 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-function formatMonthTitle(monthKey: string): string {
-  const [year, month] = monthKey.split("-");
-  const date = new Date(parseInt(year), parseInt(month) - 1);
-  const now = new Date();
-
-  if (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth()
-  ) {
-    return "This Month";
-  }
-
-  const options: Intl.DateTimeFormatOptions = {
-    month: "long",
-    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  };
-
-  return date.toLocaleDateString("en-US", options);
-}
 
 // =============================================================================
 // Styles - Default colors (will be overridden by theme in components)

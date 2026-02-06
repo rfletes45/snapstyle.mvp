@@ -23,6 +23,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -38,15 +39,20 @@ import {
   createDeck,
   createInitialCheckersBoard,
   createInitialChessBoard,
+  createInitialSnapDotsBoard,
+  createInitialSnapFourBoard,
+  createInitialSnapGomokuBoard,
   createInitialTicTacToeBoard,
   GameEndReason,
   GameInvite,
-  GameInviteStatus,
   MatchChatMessage,
   MatchmakingQueueEntry,
   MatchStatus,
   RatingUpdate,
   shuffleArray,
+  SnapDotsGameState,
+  SnapFourGameState,
+  SnapGomokuGameState,
   Spectator,
   TicTacToeGameState,
   TurnBasedGameType,
@@ -188,6 +194,38 @@ function gameStateToFirestore(
       (gameState as { board: unknown[][] }).board[0]?.length || 0;
   }
 
+  // Handle Snap Dots: convert hLines, vLines, boxes (separate 2D arrays)
+  if (
+    state.hLines &&
+    Array.isArray(state.hLines) &&
+    Array.isArray((state.hLines as unknown[])[0])
+  ) {
+    const hLines = state.hLines as boolean[][];
+    state.hLines = boardToMap(hLines as unknown as (unknown | null)[][]);
+    state._hLinesRows = hLines.length;
+    state._hLinesCols = hLines[0]?.length || 0;
+  }
+  if (
+    state.vLines &&
+    Array.isArray(state.vLines) &&
+    Array.isArray((state.vLines as unknown[])[0])
+  ) {
+    const vLines = state.vLines as boolean[][];
+    state.vLines = boardToMap(vLines as unknown as (unknown | null)[][]);
+    state._vLinesRows = vLines.length;
+    state._vLinesCols = vLines[0]?.length || 0;
+  }
+  if (
+    state.boxes &&
+    Array.isArray(state.boxes) &&
+    Array.isArray((state.boxes as unknown[])[0])
+  ) {
+    const boxes = state.boxes as number[][];
+    state.boxes = boardToMap(boxes as unknown as (unknown | null)[][]);
+    state._boxesRows = boxes.length;
+    state._boxesCols = boxes[0]?.length || 0;
+  }
+
   // Remove all undefined values recursively (Firestore rejects them)
   return removeUndefined(state);
 }
@@ -216,6 +254,53 @@ function firestoreToGameState<T extends AnyGameState>(
     );
     delete state._boardRows;
     delete state._boardCols;
+  }
+
+  // Convert Snap Dots arrays back from maps
+  if (
+    state.hLines &&
+    !Array.isArray(state.hLines) &&
+    typeof state.hLines === "object"
+  ) {
+    const rows = (state._hLinesRows as number) || 5;
+    const cols = (state._hLinesCols as number) || 4;
+    state.hLines = mapToBoard(
+      state.hLines as Record<string, unknown>,
+      rows,
+      cols,
+    );
+    delete state._hLinesRows;
+    delete state._hLinesCols;
+  }
+  if (
+    state.vLines &&
+    !Array.isArray(state.vLines) &&
+    typeof state.vLines === "object"
+  ) {
+    const rows = (state._vLinesRows as number) || 4;
+    const cols = (state._vLinesCols as number) || 5;
+    state.vLines = mapToBoard(
+      state.vLines as Record<string, unknown>,
+      rows,
+      cols,
+    );
+    delete state._vLinesRows;
+    delete state._vLinesCols;
+  }
+  if (
+    state.boxes &&
+    !Array.isArray(state.boxes) &&
+    typeof state.boxes === "object"
+  ) {
+    const rows = (state._boxesRows as number) || 4;
+    const cols = (state._boxesCols as number) || 4;
+    state.boxes = mapToBoard(
+      state.boxes as Record<string, unknown>,
+      rows,
+      cols,
+    );
+    delete state._boxesRows;
+    delete state._boxesCols;
   }
 
   return state as T;
@@ -370,7 +455,11 @@ export function subscribeToMatch(
     `[TurnBasedGames][${Date.now()}] Subscribing to match: ${matchId}`,
   );
 
-  return onSnapshot(
+  /** Terminal statuses — once reached, no further updates are expected */
+  const TERMINAL_STATUSES: MatchStatus[] = ["completed", "abandoned"];
+  let unsubscribeFn: (() => void) | null = null;
+
+  const unsub = onSnapshot(
     docRef,
     (snapshot) => {
       const meta = snapshot.metadata;
@@ -398,7 +487,20 @@ export function subscribeToMatch(
           data.gameState as Record<string, unknown>,
         );
       }
-      onUpdate({ id: snapshot.id, ...data } as AnyMatch);
+      const match = { id: snapshot.id, ...data } as AnyMatch;
+      onUpdate(match);
+
+      // Auto-unsubscribe once the game reaches a terminal state.
+      // Deliver the final update first, then detach the listener to avoid
+      // holding an open Firestore connection for a game that will never
+      // change again.
+      if (TERMINAL_STATUSES.includes(data.status)) {
+        console.log(
+          `[TurnBasedGames][${Date.now()}] Match ${matchId} reached terminal state "${data.status}" — unsubscribing`,
+        );
+        // Use queueMicrotask so the unsubscribe happens after onSnapshot returns
+        queueMicrotask(() => unsubscribeFn?.());
+      }
     },
     (error) => {
       console.error(
@@ -408,6 +510,9 @@ export function subscribeToMatch(
       onError?.(error);
     },
   );
+
+  unsubscribeFn = unsub;
+  return unsub;
 }
 
 /**
@@ -487,6 +592,7 @@ export async function endMatch(
     status: "completed" as MatchStatus,
     winnerId,
     endReason,
+    endedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
@@ -920,124 +1026,9 @@ export async function getMatchHistory(
 
 // =============================================================================
 // Game Invites
-// NOTE: sendGameInvite has been moved to gameInvites.ts to avoid duplication.
-// Use gameInvites.sendGameInvite() or the new sendUniversalInvite() instead.
+// NOTE: All invite functions have been moved to gameInvites.ts.
+// Use gameInvites.sendGameInvite() or sendUniversalInvite() instead.
 // =============================================================================
-
-/**
- * Get pending invites for a user
- */
-export async function getPendingInvites(userId: string): Promise<GameInvite[]> {
-  const q = query(
-    collection(getDb(), COLLECTIONS.invites),
-    where("recipientId", "==", userId),
-    where("status", "==", "pending"),
-    orderBy("createdAt", "desc"),
-  );
-
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((docSnapshot) => {
-    const data = docSnapshot.data();
-    return parseInviteDoc(docSnapshot.id, data);
-  });
-}
-
-/**
- * Subscribe to invites for a user
- */
-export function subscribeToInvites(
-  userId: string,
-  onUpdate: (invites: GameInvite[]) => void,
-): () => void {
-  const q = query(
-    collection(getDb(), COLLECTIONS.invites),
-    where("recipientId", "==", userId),
-    where("status", "==", "pending"),
-  );
-
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const invites = snapshot.docs.map((docSnapshot) => {
-        const data = docSnapshot.data();
-        return parseInviteDoc(docSnapshot.id, data);
-      });
-      onUpdate(invites);
-    },
-    (error) => {
-      console.error("[turnBasedGames] subscribeToInvites - Error:", error);
-    },
-  );
-}
-
-/**
- * Respond to a game invite
- */
-export async function respondToInvite(
-  inviteId: string,
-  accept: boolean,
-): Promise<string | null> {
-  const docRef = doc(getDb(), COLLECTIONS.invites, inviteId);
-  const snapshot = await getDoc(docRef);
-
-  if (!snapshot.exists()) {
-    throw new Error("Invite not found");
-  }
-
-  const invite = parseInviteDoc(snapshot.id, snapshot.data());
-
-  if (invite.status !== "pending") {
-    throw new Error("Invite is no longer pending");
-  }
-
-  if (!accept) {
-    await updateDoc(docRef, { status: "declined" as GameInviteStatus });
-    return null;
-  }
-
-  // Build player objects, excluding undefined values (Firestore rejects undefined)
-  const player1: TurnBasedPlayer = {
-    userId: invite.senderId,
-    displayName: invite.senderName,
-    color: "white",
-  };
-  // Only add avatarUrl if it exists
-  if (invite.senderAvatar) {
-    player1.avatarUrl = invite.senderAvatar;
-  }
-
-  const player2: TurnBasedPlayer = {
-    userId: invite.recipientId,
-    displayName: invite.recipientName,
-    color: "black",
-  };
-  // Only add avatarUrl if it exists
-  if (invite.recipientAvatar) {
-    player2.avatarUrl = invite.recipientAvatar;
-  }
-
-  const matchId = await createMatch(
-    invite.gameType as TurnBasedGameType,
-    player1,
-    player2,
-    invite.config,
-  );
-
-  await updateDoc(docRef, {
-    status: "accepted" as GameInviteStatus,
-    matchId,
-  });
-
-  return matchId;
-}
-
-/**
- * Cancel a sent invite
- */
-export async function cancelInvite(inviteId: string): Promise<void> {
-  const docRef = doc(getDb(), COLLECTIONS.invites, inviteId);
-  await updateDoc(docRef, { status: "cancelled" as GameInviteStatus });
-}
 
 // =============================================================================
 // Matchmaking
@@ -1211,8 +1202,26 @@ async function updateRatings(match: AnyMatch, winnerId: string): Promise<void> {
   );
 
   await Promise.all([
-    updateDoc(ratingDoc1, { rating: newRating1, updatedAt: serverTimestamp() }),
-    updateDoc(ratingDoc2, { rating: newRating2, updatedAt: serverTimestamp() }),
+    setDoc(
+      ratingDoc1,
+      {
+        rating: newRating1,
+        userId: player1.userId,
+        gameType: match.gameType,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    ),
+    setDoc(
+      ratingDoc2,
+      {
+        rating: newRating2,
+        userId: player2.userId,
+        gameType: match.gameType,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    ),
   ]);
 
   // Record rating history
@@ -1402,6 +1411,12 @@ function createInitialGameState(
       return createInitialTicTacToeState();
     case "crazy_eights":
       return createInitialCrazyEightsState(player1Id, player2Id);
+    case "snap_four":
+      return createInitialSnapFourState();
+    case "snap_dots":
+      return createInitialSnapDotsState();
+    case "snap_gomoku":
+      return createInitialSnapGomokuState();
     default:
       throw new Error(`Unknown game type: ${gameType}`);
   }
@@ -1491,6 +1506,32 @@ function createInitialCrazyEightsState(
   };
 }
 
+function createInitialSnapFourState(): SnapFourGameState {
+  return {
+    board: createInitialSnapFourBoard(),
+    currentTurn: 1, // Player 1 (red) goes first
+  };
+}
+
+function createInitialSnapDotsState(): SnapDotsGameState {
+  const { hLines, vLines, boxes } = createInitialSnapDotsBoard();
+  return {
+    hLines,
+    vLines,
+    boxes,
+    currentTurn: 1,
+    scores: { player1: 0, player2: 0 },
+    linesDrawn: 0,
+  };
+}
+
+function createInitialSnapGomokuState(): SnapGomokuGameState {
+  return {
+    board: createInitialSnapGomokuBoard(),
+    currentTurn: 1, // Black (player 1) goes first
+  };
+}
+
 // =============================================================================
 // Exports
 // =============================================================================
@@ -1519,11 +1560,7 @@ export const turnBasedGameService = {
   declineDraw,
   withdrawDrawOffer,
 
-  // Invites (NOTE: sendGameInvite moved to gameInvites.ts)
-  getPendingInvites,
-  subscribeToInvites,
-  respondToInvite,
-  cancelInvite,
+  // Invites: all moved to gameInvites.ts
 
   // Matchmaking
   joinMatchmakingQueue,

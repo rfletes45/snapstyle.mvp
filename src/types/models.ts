@@ -885,6 +885,10 @@ export interface GroupMember {
   displayName: string;
   username: string;
   avatarConfig: AvatarConfig;
+  /** Profile picture URL (actual photo) */
+  profilePictureUrl?: string | null;
+  /** Equipped avatar decoration ID */
+  decorationId?: string | null;
 }
 
 /**

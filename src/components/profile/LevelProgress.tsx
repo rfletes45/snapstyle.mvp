@@ -4,11 +4,12 @@
  * Displays user's level with XP progress bar.
  */
 
+import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
 import type { LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
-import { ProgressBar, Text, useTheme } from "react-native-paper";
+import { ProgressBar, Text } from "react-native-paper";
 
 export interface LevelProgressProps {
   /** Level information */
@@ -24,7 +25,7 @@ function LevelProgressBase({
   showDetails = true,
   compact = false,
 }: LevelProgressProps) {
-  const theme = useTheme();
+  const colors = useProfileThemeColors();
 
   const progress = level.xpToNextLevel > 0 ? level.xp / level.xpToNextLevel : 1;
 
@@ -32,17 +33,14 @@ function LevelProgressBase({
     return (
       <View style={styles.compactContainer}>
         <View
-          style={[
-            styles.levelBadgeSmall,
-            { backgroundColor: theme.colors.primary },
-          ]}
+          style={[styles.levelBadgeSmall, { backgroundColor: colors.primary }]}
         >
           <Text style={styles.levelTextSmall}>{level.current}</Text>
         </View>
         <View style={styles.compactProgressWrapper}>
           <ProgressBar
             progress={progress}
-            color={theme.colors.primary}
+            color={colors.primary}
             style={styles.compactProgress}
           />
         </View>
@@ -57,16 +55,14 @@ function LevelProgressBase({
           <MaterialCommunityIcons
             name="star-circle"
             size={20}
-            color={theme.colors.primary}
+            color={colors.primary}
           />
-          <Text style={[styles.levelLabel, { color: theme.colors.onSurface }]}>
+          <Text style={[styles.levelLabel, { color: colors.text }]}>
             Level {level.current}
           </Text>
         </View>
         {showDetails && (
-          <Text
-            style={[styles.xpText, { color: theme.colors.onSurfaceVariant }]}
-          >
+          <Text style={[styles.xpText, { color: colors.textSecondary }]}>
             {level.xp.toLocaleString()} / {level.xpToNextLevel.toLocaleString()}{" "}
             XP
           </Text>
@@ -74,11 +70,8 @@ function LevelProgressBase({
       </View>
       <ProgressBar
         progress={progress}
-        color={theme.colors.primary}
-        style={[
-          styles.progressBar,
-          { backgroundColor: theme.colors.surfaceVariant },
-        ]}
+        color={colors.primary}
+        style={[styles.progressBar, { backgroundColor: colors.surfaceVariant }]}
       />
     </View>
   );

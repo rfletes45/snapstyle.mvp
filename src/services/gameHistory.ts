@@ -423,7 +423,7 @@ export async function getGameHistory(
  * @param historyId - The ID of the history record to retrieve
  * @returns The history record or null if not found
  */
-export async function getGameHistoryById(
+async function getGameHistoryById(
   historyId: string,
 ): Promise<GameHistoryRecord | null> {
   try {
@@ -451,7 +451,7 @@ export async function getGameHistoryById(
  * @param limitCount - Maximum number of records to return
  * @returns Array of history records between the two players
  */
-export async function getHeadToHeadHistory(
+async function getHeadToHeadHistory(
   userId: string,
   opponentId: string,
   gameType?: TurnBasedGameType,
@@ -476,7 +476,7 @@ export async function getHeadToHeadHistory(
  * @param opponentAvatar - The opponent's avatar URL
  * @returns Aggregated head-to-head statistics
  */
-export async function getHeadToHeadRecord(
+async function getHeadToHeadRecord(
   userId: string,
   opponentId: string,
   opponentName: string,
@@ -740,7 +740,7 @@ export async function calculateUserStats(
  * @param gameType - The specific game type
  * @returns Stats for just that game type
  */
-export async function getGameTypeStats(
+async function getGameTypeStats(
   userId: string,
   gameType: TurnBasedGameType,
 ): Promise<GameTypeStats> {

@@ -80,7 +80,10 @@ export const DEBUG_UNIFIED_MESSAGING = __DEV__;
 
 /**
  * Profile overhaul feature flags
- * Enable these progressively as each phase completes
+ *
+ * @graduated All phases complete — every flag is permanently `true`.
+ * Conditional checks can be safely inlined (remove the `if` and keep
+ * the body). Left as flags only for quick rollback during hotfixes.
  *
  * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md
  */
@@ -115,6 +118,12 @@ export const PROFILE_FEATURES = {
   /** Phase 5: Custom chat bubble styles */
   CHAT_BUBBLES: true,
 
+  /** Phase 5: Game scores display on profile */
+  GAME_SCORES: true,
+
+  /** Phase 5: Privacy settings */
+  PRIVACY_SETTINGS: true,
+
   /** Phase 6: In-app purchases for cosmetics */
   COSMETIC_IAP: true,
 
@@ -142,12 +151,134 @@ export const PROFILE_FEATURES = {
 } as const;
 
 // =============================================================================
+// New Profile System Feature Flags (Profile V2)
+// =============================================================================
+
+/**
+ * New Profile System feature flags
+ * Controls rollout of the comprehensive profile overhaul
+ *
+ * @see docs/NEW_PROFILE_SYSTEM_PLAN.md
+ */
+export const PROFILE_V2_FEATURES = {
+  // =========================================================================
+  // Phase 1: Foundation
+  // =========================================================================
+
+  /** Enable new profile picture system (custom upload) */
+  PROFILE_PICTURE_UPLOAD: true,
+
+  /** Enable avatar decorations (320x320 overlays) */
+  AVATAR_DECORATIONS: true,
+
+  /** Enable comprehensive privacy settings */
+  PRIVACY_SETTINGS: true,
+
+  /** Enable new profile types and data structure */
+  NEW_PROFILE_DATA: true,
+
+  // =========================================================================
+  // Phase 2: Profile Picture & Decorations
+  // =========================================================================
+
+  /** Show decoration picker in profile edit */
+  DECORATION_PICKER: false,
+
+  /** Enable decoration animations (GIFs) */
+  ANIMATED_DECORATIONS: false,
+
+  /** Enable decoration preview before equipping */
+  DECORATION_PREVIEW: false,
+
+  // =========================================================================
+  // Phase 3: Profile Screens
+  // =========================================================================
+
+  /** Enable new OwnProfileScreen (replaces current) */
+  OWN_PROFILE_SCREEN: false,
+
+  /** Enable new UserProfileScreen (view others) */
+  USER_PROFILE_SCREEN: true,
+
+  /** Enable profile navigation from all entry points */
+  NEW_PROFILE_NAVIGATION: true,
+
+  // =========================================================================
+  // Phase 4: Themes & Backgrounds
+  // =========================================================================
+
+  /** Enable profile theme background customization */
+  PROFILE_THEMES_V2: false,
+
+  /** Enable theme inheritance (view in their theme) */
+  THEME_INHERITANCE: false,
+
+  /** Enable custom background upload (premium) */
+  CUSTOM_BACKGROUNDS: false,
+
+  // =========================================================================
+  // Phase 5: Game Scores & Polish
+  // =========================================================================
+
+  /** Enable game scores display on profile */
+  GAME_SCORES_DISPLAY: false,
+
+  /** Enable score comparison with viewer */
+  SCORE_COMPARISON: false,
+
+  /** Enable profile animations and transitions */
+  PROFILE_ANIMATIONS: false,
+
+  // =========================================================================
+  // Phase 6: Advanced Features
+  // =========================================================================
+
+  /** Enable status/mood indicator */
+  PROFILE_STATUS: true,
+
+  /** Enable mutual friends display */
+  MUTUAL_FRIENDS: true,
+
+  /** Enable profile sharing (link, QR) */
+  PROFILE_SHARING: true,
+
+  /** Enable friendship info (duration, streak) */
+  FRIENDSHIP_INFO: true,
+
+  // =========================================================================
+  // Phase 7: Block/Report/Mute & DM Migration
+  // =========================================================================
+
+  /** Enable block/report/mute from profile */
+  PROFILE_MODERATION: true,
+
+  /** Navigate to UserProfileScreen from DM context menu */
+  DM_PROFILE_NAVIGATION: true,
+
+  /** Show profile view counter */
+  PROFILE_VIEW_COUNTER: false,
+
+  // =========================================================================
+  // Debug Flags
+  // =========================================================================
+
+  /** Log profile system events */
+  DEBUG_PROFILE: __DEV__,
+
+  /** Show feature flag badges in UI */
+  SHOW_FEATURE_BADGES: __DEV__,
+} as const;
+
+// =============================================================================
 // Shop Overhaul Feature Flags
 // =============================================================================
 
 /**
  * Shop overhaul feature flags
- * Enable these progressively as each phase completes
+ *
+ * @graduated All phases complete — every flag is permanently `true`.
+ * Conditional checks can be safely inlined. Left as flags only
+ * for quick rollback during hotfixes.
  *
  * @see docs/SHOP_OVERHAUL_PLAN.md
  */
@@ -566,42 +697,3 @@ export const CALL_FEATURES = {
   /** Debug: Show call state overlay */
   DEBUG_CALL_STATE_OVERLAY: __DEV__,
 } as const;
-
-/**
- * Check if a user should have calling enabled based on rollout
- * Uses consistent hashing for stable bucket assignment
- */
-export function isCallsEnabledForUser(userId: string): boolean {
-  if (!CALL_FEATURES.CALLS_ENABLED) return false;
-  if (!CALL_FEATURES.PERCENTAGE_ROLLOUT_ENABLED) return true;
-
-  // Simple hash function for bucket assignment
-  const hash = userId.split("").reduce((acc, char) => {
-    return ((acc << 5) - acc + char.charCodeAt(0)) | 0;
-  }, 0);
-
-  const bucket = Math.abs(hash) % 100;
-  return bucket < CALL_FEATURES.ROLLOUT_PERCENTAGE;
-}
-
-/**
- * Check if a specific call feature is enabled
- */
-export function isCallFeatureEnabled(
-  feature: keyof typeof CALL_FEATURES,
-  userId?: string,
-): boolean {
-  // Master switch check
-  if (!CALL_FEATURES.CALLS_ENABLED && feature !== "CALLS_ENABLED") {
-    return false;
-  }
-
-  // Rollout check for user-specific features
-  if (userId && CALL_FEATURES.PERCENTAGE_ROLLOUT_ENABLED) {
-    if (!isCallsEnabledForUser(userId)) {
-      return false;
-    }
-  }
-
-  return CALL_FEATURES[feature] as boolean;
-}

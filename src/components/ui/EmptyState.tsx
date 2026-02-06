@@ -5,9 +5,9 @@
  */
 
 import React from "react";
-import { View, StyleSheet } from "react-native";
-import { Text, Button, Icon, useTheme } from "react-native-paper";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { StyleSheet, View } from "react-native";
+import { Button, Icon, Text, useTheme } from "react-native-paper";
+import { BorderRadius, Spacing } from "../../../constants/theme";
 
 interface EmptyStateProps {
   icon?: string;

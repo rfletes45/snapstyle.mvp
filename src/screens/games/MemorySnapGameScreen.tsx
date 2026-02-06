@@ -185,6 +185,14 @@ export default function MemorySnapGameScreen({
   // Refs
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isChecking = useRef(false);
+  const flipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup flip timer on unmount
+  useEffect(() => {
+    return () => {
+      if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
+    };
+  }, []);
 
   // Get current config
   const config = DIFFICULTY_CONFIG[difficulty];
@@ -262,7 +270,7 @@ export default function MemorySnapGameScreen({
 
         if (firstCard.emoji === secondCard.emoji) {
           // Match found!
-          setTimeout(() => {
+          flipTimerRef.current = setTimeout(() => {
             if (Platform.OS !== "web") {
               Vibration.vibrate([0, 30, 30, 30]);
             }
@@ -283,7 +291,7 @@ export default function MemorySnapGameScreen({
           }, 300);
         } else {
           // No match - flip back
-          setTimeout(() => {
+          flipTimerRef.current = setTimeout(() => {
             const resetCards = [...newCards];
             resetCards[firstIndex] = {
               ...resetCards[firstIndex],

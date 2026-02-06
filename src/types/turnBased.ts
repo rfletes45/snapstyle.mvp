@@ -94,7 +94,10 @@ export type TurnBasedGameType =
   | "chess"
   | "checkers"
   | "tic_tac_toe"
-  | "crazy_eights";
+  | "crazy_eights"
+  | "snap_four"
+  | "snap_dots"
+  | "snap_gomoku";
 
 /**
  * Match status
@@ -445,6 +448,126 @@ export type CrazyEightsMatch = TurnBasedMatch<
 >;
 
 // =============================================================================
+// Snap Four (Connect Four) Types
+// =============================================================================
+
+/**
+ * Snap Four cell: 0 = empty, 1 = player 1 (red), 2 = player 2 (yellow)
+ */
+export type SnapFourCell = 0 | 1 | 2;
+
+/**
+ * Snap Four board (6 rows × 7 columns)
+ */
+export type SnapFourBoard = SnapFourCell[][];
+
+/**
+ * Snap Four move — drop a disc into a column
+ */
+export interface SnapFourMove {
+  column: number; // 0-6
+  row: number; // The row where the disc landed
+  player: 1 | 2;
+  timestamp: number;
+}
+
+/**
+ * Snap Four game state
+ */
+export interface SnapFourGameState {
+  board: SnapFourBoard;
+  currentTurn: 1 | 2;
+}
+
+/**
+ * Snap Four match type
+ */
+export type SnapFourMatch = TurnBasedMatch<SnapFourGameState, SnapFourMove>;
+
+// =============================================================================
+// Snap Dots (Dots & Boxes) Types
+// =============================================================================
+
+/**
+ * Snap Dots box owner: 0 = unclaimed, 1 = player 1, 2 = player 2
+ */
+export type SnapDotsOwner = 0 | 1 | 2;
+
+/**
+ * Snap Dots move — draw a horizontal or vertical line
+ */
+export interface SnapDotsMove {
+  type: "h" | "v"; // horizontal or vertical line
+  row: number;
+  col: number;
+  player: 1 | 2;
+  completedBoxes: number; // How many boxes were completed by this move
+  timestamp: number;
+}
+
+/**
+ * Snap Dots game state (5×5 dots → 4×4 boxes)
+ *
+ * hLines[row][col]: horizontal line from dot(row,col) to dot(row,col+1)
+ * vLines[row][col]: vertical line from dot(row,col) to dot(row+1,col)
+ * boxes[row][col]: owner of box at position (row,col)
+ */
+export interface SnapDotsGameState {
+  hLines: boolean[][]; // [5][4] — 5 rows of horizontal lines, 4 per row
+  vLines: boolean[][]; // [4][5] — 4 rows of vertical lines, 5 per row
+  boxes: SnapDotsOwner[][]; // [4][4] — 4×4 box grid
+  currentTurn: 1 | 2;
+  scores: { player1: number; player2: number };
+  linesDrawn: number;
+}
+
+/**
+ * Snap Dots match type
+ */
+export type SnapDotsMatch = TurnBasedMatch<SnapDotsGameState, SnapDotsMove>;
+
+// =============================================================================
+// Snap Gomoku (Five in a Row) Types
+// =============================================================================
+
+/**
+ * Snap Gomoku cell: 0 = empty, 1 = black, 2 = white
+ */
+export type SnapGomokuCell = 0 | 1 | 2;
+
+/**
+ * Snap Gomoku board (15×15)
+ */
+export type SnapGomokuBoard = SnapGomokuCell[][];
+
+/**
+ * Snap Gomoku move — place a stone on an intersection
+ */
+export interface SnapGomokuMove {
+  row: number; // 0-14
+  col: number; // 0-14
+  player: 1 | 2;
+  timestamp: number;
+}
+
+/**
+ * Snap Gomoku game state
+ */
+export interface SnapGomokuGameState {
+  board: SnapGomokuBoard;
+  currentTurn: 1 | 2;
+  lastMove?: { row: number; col: number };
+}
+
+/**
+ * Snap Gomoku match type
+ */
+export type SnapGomokuMatch = TurnBasedMatch<
+  SnapGomokuGameState,
+  SnapGomokuMove
+>;
+
+// =============================================================================
 // Game Invite Types
 // =============================================================================
 
@@ -715,7 +838,10 @@ export type AnyGameState =
   | ChessGameState
   | CheckersGameState
   | TicTacToeGameState
-  | CrazyEightsGameState;
+  | CrazyEightsGameState
+  | SnapFourGameState
+  | SnapDotsGameState
+  | SnapGomokuGameState;
 
 /**
  * Union type for all moves
@@ -724,7 +850,10 @@ export type AnyMove =
   | ChessMove
   | CheckersMove
   | TicTacToeMove
-  | CrazyEightsMove;
+  | CrazyEightsMove
+  | SnapFourMove
+  | SnapDotsMove
+  | SnapGomokuMove;
 
 /**
  * Union type for all matches
@@ -733,7 +862,10 @@ export type AnyMatch =
   | ChessMatch
   | CheckersMatch
   | TicTacToeMatch
-  | CrazyEightsMatch;
+  | CrazyEightsMatch
+  | SnapFourMatch
+  | SnapDotsMatch
+  | SnapGomokuMatch;
 
 // =============================================================================
 // Initial State Factories
@@ -819,6 +951,38 @@ export function createInitialTicTacToeBoard(): TicTacToeBoard {
     [null, null, null],
     [null, null, null],
   ];
+}
+
+/**
+ * Create initial Snap Four (Connect Four) board — 6 rows × 7 columns, all empty
+ */
+export function createInitialSnapFourBoard(): SnapFourBoard {
+  return Array.from({ length: 6 }, () => Array(7).fill(0) as SnapFourCell[]);
+}
+
+/**
+ * Create initial Snap Dots (Dots & Boxes) board state — 5×5 dots
+ */
+export function createInitialSnapDotsBoard(): {
+  hLines: boolean[][];
+  vLines: boolean[][];
+  boxes: SnapDotsOwner[][];
+} {
+  return {
+    hLines: Array.from({ length: 5 }, () => Array(4).fill(false)),
+    vLines: Array.from({ length: 4 }, () => Array(5).fill(false)),
+    boxes: Array.from({ length: 4 }, () => Array(4).fill(0) as SnapDotsOwner[]),
+  };
+}
+
+/**
+ * Create initial Snap Gomoku board — 15×15, all empty
+ */
+export function createInitialSnapGomokuBoard(): SnapGomokuBoard {
+  return Array.from(
+    { length: 15 },
+    () => Array(15).fill(0) as SnapGomokuCell[],
+  );
 }
 
 /**

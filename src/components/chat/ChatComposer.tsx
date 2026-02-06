@@ -223,10 +223,9 @@ export function ChatComposer({
   const hasContent = hasText || hasAttachments;
   const canSend = hasContent && !sendDisabled;
 
-  // Show voice button for groups when no content and not recording
+  // Show voice button when no content and not recording
   // Can use custom voiceButtonComponent or built-in VoiceRecordButton
   const showVoiceButton =
-    scope === "group" &&
     !hasContent &&
     !rightAccessory &&
     (onVoicePress || onVoiceComplete || voiceButtonComponent);
@@ -404,7 +403,7 @@ const styles = StyleSheet.create({
   textInputContainer: {
     flex: 1,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     borderRadius: BorderRadius.xl,
     minHeight: 40,
     maxHeight: 100,
@@ -424,7 +423,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     alignSelf: "center",
-    marginBottom: 4,
+    justifyContent: "center",
+    alignItems: "center",
   },
   actionButton: {
     margin: 0,

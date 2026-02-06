@@ -47,7 +47,7 @@ import { ShopItemWithStatus, Wallet } from "@/types/models";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dimensions,
   FlatList,
@@ -165,6 +165,16 @@ export default function ShopScreenV2({ navigation }: any) {
 
   // Timer ref for countdown updates
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Timer ref for purchase success auto-dismiss
+  const purchaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup purchase timer on unmount
+  useEffect(() => {
+    return () => {
+      if (purchaseTimerRef.current) clearTimeout(purchaseTimerRef.current);
+    };
+  }, []);
 
   // Initialize IAP on mount
   useEffect(() => {
@@ -290,7 +300,7 @@ export default function ShopScreenV2({ navigation }: any) {
         if (result.success) {
           setPurchaseSuccess(true);
           loadShopData();
-          setTimeout(() => {
+          purchaseTimerRef.current = setTimeout(() => {
             setShowPurchaseModal(false);
             setPurchaseSuccess(false);
           }, 1500);
@@ -304,7 +314,7 @@ export default function ShopScreenV2({ navigation }: any) {
           if (result.success) {
             setPurchaseSuccess(true);
             loadShopData();
-            setTimeout(() => {
+            purchaseTimerRef.current = setTimeout(() => {
               setShowPurchaseModal(false);
               setPurchaseSuccess(false);
             }, 1500);
@@ -317,7 +327,7 @@ export default function ShopScreenV2({ navigation }: any) {
           if (result.success) {
             setPurchaseSuccess(true);
             loadShopData();
-            setTimeout(() => {
+            purchaseTimerRef.current = setTimeout(() => {
               setShowPurchaseModal(false);
               setPurchaseSuccess(false);
             }, 1500);
@@ -330,7 +340,7 @@ export default function ShopScreenV2({ navigation }: any) {
         const result = await purchaseTokenPack(purchaseItem.id, user.uid);
         if (result.success) {
           setPurchaseSuccess(true);
-          setTimeout(() => {
+          purchaseTimerRef.current = setTimeout(() => {
             setShowPurchaseModal(false);
             setPurchaseSuccess(false);
           }, 1500);

@@ -10,17 +10,6 @@
  */
 
 import {
-  ref,
-  uploadBytesResumable,
-  getDownloadURL,
-  deleteObject,
-  UploadTaskSnapshot,
-} from "firebase/storage";
-import { getStorageInstance } from "./firebase";
-
-// Lazy initialization - don't call at module load time
-const getStorage = () => getStorageInstance();
-import {
   AttachmentV2,
   LocalAttachment,
   MAX_ATTACHMENTS_PER_MESSAGE,
@@ -89,7 +78,7 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
 /**
  * Get attachment kind from MIME type
  */
-export function getKindFromMime(mime: string): AttachmentV2["kind"] | null {
+function getKindFromMime(mime: string): AttachmentV2["kind"] | null {
   for (const [kind, types] of Object.entries(ALLOWED_MIME_TYPES)) {
     if (types.includes(mime)) {
       return kind as AttachmentV2["kind"];
@@ -101,14 +90,14 @@ export function getKindFromMime(mime: string): AttachmentV2["kind"] | null {
 /**
  * Check if MIME type is allowed
  */
-export function isAllowedMimeType(mime: string): boolean {
+function isAllowedMimeType(mime: string): boolean {
   return getKindFromMime(mime) !== null;
 }
 
 /**
  * Validate file before upload
  */
-export function validateFile(file: { size: number; type: string }): {
+function validateFile(file: { size: number; type: string }): {
   valid: boolean;
   error?: string;
 } {
@@ -129,7 +118,7 @@ export function validateFile(file: { size: number; type: string }): {
 /**
  * Validate attachment count
  */
-export function validateAttachmentCount(currentCount: number): {
+function validateAttachmentCount(currentCount: number): {
   valid: boolean;
   error?: string;
 } {
@@ -246,7 +235,7 @@ export async function uploadAttachments(
  *
  * TODO: Implement in H10
  */
-export function cancelUpload(attachmentId: string): boolean {
+function cancelUpload(attachmentId: string): boolean {
   log.warn("cancelUpload: Not yet implemented (H10)");
   return false;
 }
@@ -262,9 +251,7 @@ export function cancelUpload(attachmentId: string): boolean {
  *
  * TODO: Implement caching in H10
  */
-export async function getAttachmentUrl(
-  attachment: AttachmentV2,
-): Promise<string> {
+async function getAttachmentUrl(attachment: AttachmentV2): Promise<string> {
   // URL is already in the attachment
   return attachment.url;
 }
@@ -274,7 +261,7 @@ export async function getAttachmentUrl(
  *
  * @param attachment - Attachment object
  */
-export function getThumbnailUrl(attachment: AttachmentV2): string | undefined {
+function getThumbnailUrl(attachment: AttachmentV2): string | undefined {
   return attachment.thumbUrl;
 }
 
@@ -289,7 +276,7 @@ export function getThumbnailUrl(attachment: AttachmentV2): string | undefined {
  *
  * TODO: Implement in H10 (called when message is deleted)
  */
-export async function deleteAttachment(
+async function deleteAttachment(
   attachment: AttachmentV2,
 ): Promise<{ success: boolean; error?: string }> {
   log.warn("deleteAttachment: Not yet implemented (H10)");
@@ -303,7 +290,7 @@ export async function deleteAttachment(
  *
  * TODO: Implement in H10
  */
-export async function deleteMessageAttachments(
+async function deleteMessageAttachments(
   attachments: AttachmentV2[],
 ): Promise<void> {
   log.warn("deleteMessageAttachments: Not yet implemented (H10)");
@@ -320,7 +307,7 @@ export async function deleteMessageAttachments(
  *
  * TODO: Implement in H10
  */
-export async function generateImageThumbnail(
+async function generateImageThumbnail(
   uri: string,
 ): Promise<{ uri: string; width: number; height: number } | null> {
   log.debug("generateImageThumbnail: Not yet implemented (H10)");
@@ -334,7 +321,7 @@ export async function generateImageThumbnail(
  *
  * TODO: Implement in H10
  */
-export async function resizeImageIfNeeded(uri: string): Promise<{
+async function resizeImageIfNeeded(uri: string): Promise<{
   uri: string;
   width: number;
   height: number;
@@ -374,7 +361,7 @@ export async function getImageDimensions(
  *
  * TODO: Implement in H10
  */
-export async function generateVideoThumbnail(
+async function generateVideoThumbnail(
   uri: string,
 ): Promise<{ uri: string; width: number; height: number } | null> {
   log.debug("generateVideoThumbnail: Not yet implemented (H10)");
@@ -388,7 +375,7 @@ export async function generateVideoThumbnail(
  *
  * TODO: Implement in H10
  */
-export async function getVideoDuration(uri: string): Promise<number | null> {
+async function getVideoDuration(uri: string): Promise<number | null> {
   log.debug("getVideoDuration: Not yet implemented (H10)");
   return null;
 }
@@ -409,7 +396,7 @@ export function formatFileSize(bytes: number): string {
 /**
  * Get file extension from filename
  */
-export function getFileExtension(filename: string): string {
+function getFileExtension(filename: string): string {
   const parts = filename.split(".");
   return parts.length > 1 ? parts.pop()?.toLowerCase() || "" : "";
 }
@@ -417,10 +404,7 @@ export function getFileExtension(filename: string): string {
 /**
  * Get display name for file
  */
-export function getDisplayFilename(
-  filename: string,
-  maxLength: number = 30,
-): string {
+function getDisplayFilename(filename: string, maxLength: number = 30): string {
   if (filename.length <= maxLength) return filename;
 
   const ext = getFileExtension(filename);

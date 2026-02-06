@@ -1,19 +1,19 @@
+import { Friend, FriendRequest } from "@/types/models";
 import {
   collection,
-  query,
-  where,
-  getDocs,
-  setDoc,
-  doc,
-  updateDoc,
   deleteDoc,
-  writeBatch,
+  doc,
   getDoc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
+import { isUserBlocked } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 import { getUserProfile } from "./users";
-import { Friend, FriendRequest } from "@/types/models";
-import { isUserBlocked } from "./blocking";
 
 /**
  * Send a friend request by searching for user by username
@@ -421,7 +421,7 @@ export async function removeFriend(
  * @param block true to block, false to unblock
  * @returns true if successful
  */
-export async function toggleBlockFriend(
+async function toggleBlockFriend(
   blockerUid: string,
   blockedUid: string,
   block: boolean,
@@ -462,7 +462,7 @@ export async function toggleBlockFriend(
  * @param uid2 Second user ID
  * @returns Friendship document ID or null if not found
  */
-export async function getFriendshipId(
+async function getFriendshipId(
   uid1: string,
   uid2: string,
 ): Promise<string | null> {
@@ -493,7 +493,7 @@ export async function getFriendshipId(
  * @param senderUid User sending the message
  * @returns true if successful
  */
-export async function updateStreak(
+async function updateStreak(
   friendshipId: string,
   senderUid: string,
 ): Promise<boolean> {
@@ -557,9 +557,7 @@ export async function updateStreak(
  * @param uid User ID
  * @returns Username or undefined if not found
  */
-export async function getUsernameByUid(
-  uid: string,
-): Promise<string | undefined> {
+async function getUsernameByUid(uid: string): Promise<string | undefined> {
   try {
     const db = getFirestoreInstance();
     const userDocRef = doc(db, "Users", uid);
@@ -593,6 +591,8 @@ export async function getUserProfileByUid(uid: string) {
         username: data.username,
         displayName: data.displayName,
         avatarConfig: data.avatarConfig,
+        profilePicture: data.profilePicture || { url: null, updatedAt: 0 },
+        avatarDecoration: data.avatarDecoration || { equippedId: null },
       };
     }
     return undefined;

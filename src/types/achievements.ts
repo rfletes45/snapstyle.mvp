@@ -63,7 +63,8 @@ export type AchievementProgressType =
   | "instant" // Triggered by single event (no progress bar)
   | "count" // Cumulative count (e.g., play 100 games)
   | "threshold" // Reach a specific value (e.g., score 50 points)
-  | "streak"; // Maintain consecutive days/wins
+  | "streak" // Maintain consecutive days/wins
+  | "highscore"; // High score milestone
 
 // =============================================================================
 // Achievement Trigger System
@@ -124,7 +125,11 @@ export type AchievementTriggerType =
   // Time-based triggers
   | "time_played" // Total time in games
   | "night_owl" // Playing late at night
-  | "early_bird"; // Playing early morning
+  | "early_bird" // Playing early morning
+
+  // Meta triggers
+  | "stat_reached" // Generic stat milestone
+  | "special_event"; // Special/seasonal event trigger
 
 /**
  * Achievement trigger conditions

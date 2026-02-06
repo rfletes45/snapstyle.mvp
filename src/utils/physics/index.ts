@@ -35,3 +35,16 @@ export {
   // Ball movement
   updateBallPosition as updatePoolBallPosition,
 } from "./poolPhysics";
+
+// Flappy Physics
+export {
+  // Types
+  Bird,
+  // Constants
+  FLAPPY_PHYSICS,
+  FlappyGameState,
+  Pipe,
+  // Functions
+  generatePipe,
+  physicsTick,
+} from "./flappyPhysics";

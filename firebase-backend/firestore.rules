@@ -126,6 +126,70 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // NEW PROFILE SYSTEM VALIDATION HELPERS
+    // ============================================================
+
+    // Validate bio structure and length
+    function validBio(bio) {
+      return bio is map &&
+             bio.text is string &&
+             bio.text.size() <= 200 &&
+             bio.updatedAt is number;
+    }
+
+    // Validate status structure
+    function validStatus(status) {
+      return status == null || (
+             status is map &&
+             status.text is string &&
+             status.text.size() <= 60 &&
+             status.mood in ['happy', 'excited', 'chill', 'busy', 'gaming', 'studying', 'away', 'sleeping', 'custom'] &&
+             status.setAt is number
+      );
+    }
+
+    // Validate privacy visibility enum
+    function validPrivacyVisibility(value) {
+      return value in ['everyone', 'friends', 'nobody'];
+    }
+
+    // Validate privacy settings structure
+    function validPrivacySettings(privacy) {
+      return privacy is map &&
+             validPrivacyVisibility(privacy.profileVisibility) &&
+             validPrivacyVisibility(privacy.showProfilePicture) &&
+             validPrivacyVisibility(privacy.showBio) &&
+             validPrivacyVisibility(privacy.showStatus) &&
+             validPrivacyVisibility(privacy.showGameScores) &&
+             validPrivacyVisibility(privacy.showBadges) &&
+             validPrivacyVisibility(privacy.showLastActive) &&
+             validPrivacyVisibility(privacy.showOnlineStatus) &&
+             privacy.showMutualFriends is bool &&
+             privacy.allowProfileSharing is bool;
+    }
+
+    // Validate avatar decoration structure
+    function validAvatarDecoration(decoration) {
+      return decoration is map &&
+             (decoration.decorationId == null || decoration.decorationId is string);
+    }
+
+    // Validate theme config structure
+    function validThemeConfig(theme) {
+      return theme is map &&
+             theme.equippedThemeId is string &&
+             theme.updatedAt is number;
+    }
+
+    // Validate featured badges (max 5)
+    function validFeaturedBadges(badges) {
+      return badges is map &&
+             badges.badgeIds is list &&
+             badges.badgeIds.size() <= 5 &&
+             badges.updatedAt is number;
+    }
+
+    // ============================================================
     // USERS COLLECTION
     // ============================================================
 
@@ -149,7 +213,26 @@ service cloud.firestore {
                        validStringLength(request.resource.data.displayName, 1, 50)) &&
                       // Validate digital avatar if present in update
                       (!request.resource.data.keys().hasAll(['digitalAvatar']) ||
-                       validDigitalAvatar(request.resource.data.digitalAvatar));
+                       validDigitalAvatar(request.resource.data.digitalAvatar)) &&
+                      // NEW PROFILE SYSTEM VALIDATIONS
+                      // Validate bio if present
+                      (!request.resource.data.keys().hasAll(['bio']) ||
+                       validBio(request.resource.data.bio)) &&
+                      // Validate status if present
+                      (!request.resource.data.keys().hasAll(['status']) ||
+                       validStatus(request.resource.data.status)) &&
+                      // Validate privacy settings if present
+                      (!request.resource.data.keys().hasAll(['privacy']) ||
+                       validPrivacySettings(request.resource.data.privacy)) &&
+                      // Validate avatar decoration if present
+                      (!request.resource.data.keys().hasAll(['avatarDecoration']) ||
+                       validAvatarDecoration(request.resource.data.avatarDecoration)) &&
+                      // Validate theme if present
+                      (!request.resource.data.keys().hasAll(['theme']) ||
+                       validThemeConfig(request.resource.data.theme)) &&
+                      // Validate featured badges if present
+                      (!request.resource.data.keys().hasAll(['featuredBadges']) ||
+                       validFeaturedBadges(request.resource.data.featuredBadges));
       
       allow delete: if isAuth() && isOwner(uid);
 
@@ -341,6 +424,88 @@ service cloud.firestore {
         // This ensures integrity with payment processing
         allow create, update, delete: if false;
       }
+
+      // --------------------------------------------------------
+      // OwnedDecorations subcollection (New Profile System)
+      // Tracks avatar decorations owned by user
+      // Users/{uid}/OwnedDecorations/{decorationId}
+      // --------------------------------------------------------
+      match /OwnedDecorations/{decorationId} {
+        // User can read their owned decorations
+        allow read: if isAuth() && isOwner(uid);
+        
+        // Decorations can be granted by owner (free) or server (purchase/achievement)
+        allow create: if isAuth() && isOwner(uid) &&
+          request.resource.data.decorationId == decorationId &&
+          request.resource.data.obtainedAt is number &&
+          request.resource.data.obtainedVia in ['free', 'achievement', 'purchase', 'event', 'gift'];
+        
+        // Owned decorations are immutable
+        allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // OwnedThemes subcollection (New Profile System)
+      // Tracks profile themes owned by user
+      // Users/{uid}/OwnedThemes/{themeId}
+      // --------------------------------------------------------
+      match /OwnedThemes/{themeId} {
+        // User can read their owned themes
+        allow read: if isAuth() && isOwner(uid);
+        
+        // Themes can be granted by owner (free) or server (purchase/achievement)
+        allow create: if isAuth() && isOwner(uid) &&
+          request.resource.data.themeId == themeId &&
+          request.resource.data.obtainedAt is number;
+        
+        // Owned themes are immutable
+        allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // mutedUsers subcollection (New Profile System)
+      // Tracks users muted by this user (softer than blocking)
+      // Users/{uid}/mutedUsers/{mutedUid}
+      // --------------------------------------------------------
+      match /mutedUsers/{mutedUid} {
+        // Only owner can read their muted list
+        allow read: if isAuth() && isOwner(uid);
+        
+        // Owner can mute users
+        allow create: if isAuth() && isOwner(uid) &&
+          request.resource.data.mutedUserId == mutedUid &&
+          request.resource.data.mutedAt is number;
+        
+        // Owner can update mute settings (duration, options)
+        allow update: if isAuth() && isOwner(uid) &&
+          request.resource.data.mutedUserId == mutedUid;
+        
+        // Owner can unmute users
+        allow delete: if isAuth() && isOwner(uid);
+      }
+    }
+
+    // ============================================================
+    // USER REPORTS COLLECTION (Moderation)
+    // Stores reports submitted by users about other users
+    // ============================================================
+
+    match /UserReports/{reportId} {
+      // Users can read their own submitted reports
+      allow read: if isAuth() && resource.data.reporterId == request.auth.uid;
+      
+      // Users can submit reports
+      allow create: if isAuth() &&
+        request.resource.data.reporterId == request.auth.uid &&
+        request.resource.data.reportedId is string &&
+        request.resource.data.reportedId != request.auth.uid && // Can't report self
+        request.resource.data.category in ['harassment', 'spam', 'inappropriate_content', 'impersonation', 'scam', 'underage', 'hate_speech', 'threats', 'other'] &&
+        validStringLength(request.resource.data.description, 10, 1000) &&
+        request.resource.data.createdAt is number &&
+        request.resource.data.status == 'pending';
+      
+      // Reports are immutable after creation (moderation is server-side)
+      allow update, delete: if false;
     }
 
     // ============================================================

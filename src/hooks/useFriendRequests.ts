@@ -80,6 +80,7 @@ export function useFriendRequests(uid: string): UseFriendRequestsResult {
       return;
     }
 
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
@@ -145,6 +146,8 @@ export function useFriendRequests(uid: string): UseFriendRequestsResult {
             }),
           );
 
+          if (cancelled) return;
+
           // Sort by sent time (newest first)
           requestsWithUsers.sort((a, b) => b.sentAt - a.sentAt);
 
@@ -152,19 +155,24 @@ export function useFriendRequests(uid: string): UseFriendRequestsResult {
           setLoading(false);
           setError(null);
         } catch (e) {
+          if (cancelled) return;
           log.error("Error processing friend requests:", e);
           setError(e instanceof Error ? e : new Error("Unknown error"));
           setLoading(false);
         }
       },
       (err) => {
+        if (cancelled) return;
         log.error("Friend requests subscription error:", err);
         setError(err);
         setLoading(false);
       },
     );
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [uid, refreshKey]);
 
   // Accept request handler

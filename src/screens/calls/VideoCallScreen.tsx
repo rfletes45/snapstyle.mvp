@@ -29,13 +29,7 @@ import {
   useRemoteParticipants,
 } from "../../hooks/calls";
 import { useColors } from "../../store/ThemeContext";
-
-// Format duration helper
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
+import { formatDurationSecondsPadded as formatDuration } from "../../utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 

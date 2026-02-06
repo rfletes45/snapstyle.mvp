@@ -1,9 +1,9 @@
 import { getAuthInstance } from "@/services/firebase";
+import { navigate as globalNavigate } from "@/services/navigationRef";
 import {
   addNotificationReceivedListener,
   addNotificationResponseListener,
   registerForPushNotifications,
-  removePushToken,
   savePushToken,
 } from "@/services/notifications";
 import { cleanupPresence, initializePresence } from "@/services/presence";
@@ -60,14 +60,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           "📱 Notification tapped:",
           response.notification.request.content,
         );
-        // TODO: Handle navigation based on notification data
         const data = response.notification.request.content.data;
-        if (data?.type === "message" && data?.chatId) {
-          // Could navigate to chat here
-          console.log("Would navigate to chat:", data.chatId);
+        if (data?.type === "message" && data?.friendUid) {
+          // Navigate to the DM chat with this friend
+          globalNavigate("ChatDetail", {
+            friendUid: data.friendUid,
+            initialData: {
+              chatId: data.chatId,
+              friendName: data.friendName,
+            },
+          });
+        } else if (data?.type === "group_message" && data?.groupId) {
+          // Navigate to the group chat
+          globalNavigate("GroupChat", {
+            groupId: data.groupId,
+            groupName: data.groupName,
+          });
         } else if (data?.type === "friend_request") {
-          // Could navigate to friends screen
-          console.log("Would navigate to friends");
+          // Navigate to connections/friends screen
+          globalNavigate("Connections");
+        } else if (data?.type === "game_invite" && data?.gameType) {
+          // Navigate to the game
+          globalNavigate("MainTabs", {
+            screen: "Play",
+            params: {
+              screen: "GamesHub",
+            },
+          });
         }
       },
     );
@@ -99,13 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("[AuthContext] Error registering push token:", error);
         }
       } else if (!currentFirebaseUser && previousUserIdRef.current) {
-        // User logged out - remove push token
-        try {
-          await removePushToken(previousUserIdRef.current);
-          previousUserIdRef.current = null;
-        } catch (error) {
-          console.error("[AuthContext] Error removing push token:", error);
-        }
+        // User logged out - token was already removed before signOut
+        // (see logout() in auth.ts). Just clear the ref.
+        previousUserIdRef.current = null;
       }
     };
 

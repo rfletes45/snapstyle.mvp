@@ -71,6 +71,7 @@ export default function ReactionTapGameScreen({
 
   const startTimeRef = useRef<number>(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Load personal best
@@ -82,11 +83,14 @@ export default function ReactionTapGameScreen({
     }
   }, [currentFirebaseUser]);
 
-  // Cleanup timeout on unmount
+  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+      }
+      if (resultTimerRef.current) {
+        clearTimeout(resultTimerRef.current);
       }
     };
   }, []);
@@ -199,7 +203,7 @@ export default function ReactionTapGameScreen({
       }
 
       // Show result after a brief moment
-      setTimeout(() => {
+      resultTimerRef.current = setTimeout(() => {
         setGameState("result");
       }, 1000);
     }

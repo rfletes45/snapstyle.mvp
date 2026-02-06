@@ -166,6 +166,7 @@ function GameCategoryCarouselComponent({
 const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.sectionGap,
+    overflow: "hidden",
   },
 
   // Header

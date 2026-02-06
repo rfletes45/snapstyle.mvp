@@ -60,7 +60,7 @@ async function loadInboxCache(uid: string): Promise<InboxCacheData | null> {
       }
     }
   } catch (e) {
-    log.warn("Failed to load inbox cache", { error: e });
+    log.warn("Failed to load inbox cache", { data: { error: e } });
   }
   return null;
 }
@@ -84,7 +84,7 @@ async function saveInboxCache(
       JSON.stringify(data),
     );
   } catch (e) {
-    log.warn("Failed to save inbox cache", { error: e });
+    log.warn("Failed to save inbox cache", { data: { error: e } });
   }
 }
 
@@ -148,6 +148,8 @@ interface CachedUserProfile {
   displayName: string;
   avatarUrl: string | null;
   avatarConfig: any;
+  profilePictureUrl: string | null;
+  decorationId: string | null;
   fetchedAt: number;
 }
 
@@ -182,6 +184,8 @@ async function getCachedUserProfile(
         displayName: userData.displayName || userData.username || "User",
         avatarUrl: userData.avatarUrl || null,
         avatarConfig: userData.avatarConfig || undefined,
+        profilePictureUrl: userData.profilePicture?.url || null,
+        decorationId: userData.avatarDecoration?.decorationId || null,
         fetchedAt: now,
       };
       userProfileCache.set(userId, profile);
@@ -197,6 +201,8 @@ async function getCachedUserProfile(
     displayName: "User",
     avatarUrl: null,
     avatarConfig: undefined,
+    profilePictureUrl: null,
+    decorationId: null,
     fetchedAt: now,
   };
 }
@@ -230,6 +236,16 @@ function toMillis(value: unknown): number {
   if (typeof value === "number") return value;
   return 0;
 }
+
+/**
+ * Tolerance window (ms) for comparing lastMessageAt vs lastSeenAtPrivate.
+ *
+ * lastMessageAt is a Firestore server timestamp (set by Cloud Functions),
+ * while lastSeenAtPrivate is client-side Date.now(). Server-vs-client clock
+ * skew can cause lastMessageAt > lastSeenAtPrivate even when the user has
+ * already viewed the message. A 5-second tolerance absorbs this skew.
+ */
+const UNREAD_TOLERANCE_MS = 5000;
 
 /**
  * Get default member state
@@ -274,6 +290,11 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // Track if we've loaded cached data (to avoid double-loading)
   const cacheLoadedRef = useRef(false);
 
+  // Track recently-read conversation IDs to prevent Firestore snapshots from
+  // resetting the optimistic unread state before the watermark write propagates.
+  // Entries expire after 30 seconds (more than enough for the write to land).
+  const recentlyReadRef = useRef<Map<string, number>>(new Map());
+
   // Loading is false if we have cached data OR both subscriptions are done
   const hasCachedData =
     dmConversations.length > 0 || groupConversations.length > 0;
@@ -313,6 +334,15 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // This immediately updates the UI while the actual Firestore write happens in the background
   const markConversationReadOptimistic = useCallback(
     (conversationId: string) => {
+      // Track this conversation as recently read to prevent snapshot overwrites
+      recentlyReadRef.current.set(conversationId, Date.now());
+
+      // Clean up old entries (>30 seconds)
+      const now = Date.now();
+      for (const [id, ts] of recentlyReadRef.current) {
+        if (now - ts > 30000) recentlyReadRef.current.delete(id);
+      }
+
       // Update DM conversations
       setDmConversations((prev) =>
         prev.map((c) =>
@@ -360,6 +390,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       return;
     }
 
+    let cancelled = false;
     const db = getFirestoreInstance();
 
     // Query DM threads where user is a participant
@@ -451,13 +482,22 @@ export function useInboxData(uid: string): UseInboxDataResult {
             // Calculate unread count
             const lastMessageAt = toMillis(chatData.lastMessageAt);
             let unreadCount = 0;
-            if (
+
+            // If this conversation was recently read optimistically, force unread to 0
+            // to prevent snapshot race conditions before the Firestore write lands
+            const recentlyReadAt = recentlyReadRef.current.get(chatId);
+            if (recentlyReadAt && Date.now() - recentlyReadAt < 30000) {
+              unreadCount = 0;
+            } else if (
               memberState.lastMarkedUnreadAt &&
               memberState.lastMarkedUnreadAt > memberState.lastSeenAtPrivate
             ) {
               unreadCount = 1; // Manual unread marker
-            } else if (lastMessageAt > memberState.lastSeenAtPrivate) {
-              unreadCount = 1; // Has new messages
+            } else if (
+              lastMessageAt >
+              memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS
+            ) {
+              unreadCount = 1; // Has new messages (with tolerance for clock skew)
             }
 
             // Get user profile from cache
@@ -465,6 +505,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
               displayName: "User",
               avatarUrl: null,
               avatarConfig: undefined,
+              profilePictureUrl: null,
+              decorationId: null,
             };
 
             conversations.push({
@@ -473,6 +515,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
               name: profile.displayName,
               avatarUrl: profile.avatarUrl,
               avatarConfig: profile.avatarConfig,
+              profilePictureUrl: profile.profilePictureUrl,
+              decorationId: profile.decorationId,
               otherUserId,
               lastMessage: chatData.lastMessageText
                 ? {
@@ -489,22 +533,31 @@ export function useInboxData(uid: string): UseInboxDataResult {
             });
           }
 
-          setDmConversations(conversations);
-          setDmLoading(false);
+          if (!cancelled) {
+            setDmConversations(conversations);
+            setDmLoading(false);
+          }
         } catch (e) {
           log.error("Error processing DM conversations", { error: e });
-          setError(e as Error);
-          setDmLoading(false);
+          if (!cancelled) {
+            setError(e as Error);
+            setDmLoading(false);
+          }
         }
       },
       (err) => {
         log.error("DM subscription error", { error: err });
-        setError(err);
-        setDmLoading(false);
+        if (!cancelled) {
+          setError(err);
+          setDmLoading(false);
+        }
       },
     );
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [uid, refreshKey]);
 
   // =============================================================================
@@ -516,6 +569,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
       setGroupLoading(false);
       return;
     }
+
+    let cancelled = false;
 
     const db = getFirestoreInstance();
 
@@ -590,13 +645,21 @@ export function useInboxData(uid: string): UseInboxDataResult {
             // Calculate unread count
             const lastMessageAt = toMillis(groupData.lastMessageAt);
             let unreadCount = 0;
-            if (
+
+            // If this conversation was recently read optimistically, force unread to 0
+            const recentlyReadAt = recentlyReadRef.current.get(groupId);
+            if (recentlyReadAt && Date.now() - recentlyReadAt < 30000) {
+              unreadCount = 0;
+            } else if (
               memberState.lastMarkedUnreadAt &&
               memberState.lastMarkedUnreadAt > memberState.lastSeenAtPrivate
             ) {
               unreadCount = 1; // Manual unread marker
-            } else if (lastMessageAt > memberState.lastSeenAtPrivate) {
-              unreadCount = 1; // Has new messages
+            } else if (
+              lastMessageAt >
+              memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS
+            ) {
+              unreadCount = 1; // Has new messages (with tolerance for clock skew)
             }
 
             conversations.push({
@@ -624,22 +687,31 @@ export function useInboxData(uid: string): UseInboxDataResult {
             });
           }
 
-          setGroupConversations(conversations);
-          setGroupLoading(false);
+          if (!cancelled) {
+            setGroupConversations(conversations);
+            setGroupLoading(false);
+          }
         } catch (e) {
           log.error("Error processing group conversations", { error: e });
-          setError(e as Error);
-          setGroupLoading(false);
+          if (!cancelled) {
+            setError(e as Error);
+            setGroupLoading(false);
+          }
         }
       },
       (err) => {
         log.error("Group subscription error", { error: err });
-        setError(err);
-        setGroupLoading(false);
+        if (!cancelled) {
+          setError(err);
+          setGroupLoading(false);
+        }
       },
     );
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [uid, refreshKey]);
 
   // =============================================================================
@@ -744,21 +816,4 @@ export function useInboxData(uid: string): UseInboxDataResult {
     refresh,
     markConversationReadOptimistic,
   };
-}
-
-// =============================================================================
-// Unread Count Hook (Standalone)
-// =============================================================================
-
-/**
- * Hook to get just the total unread count
- *
- * Lighter weight than useInboxData when you only need the count.
- *
- * @param uid - Current user's ID
- * @returns Total unread count
- */
-export function useInboxUnreadCount(uid: string): number {
-  const { totalUnread } = useInboxData(uid);
-  return totalUnread;
 }

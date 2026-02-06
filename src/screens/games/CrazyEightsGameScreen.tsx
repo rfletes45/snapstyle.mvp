@@ -1413,7 +1413,11 @@ export default function CrazyEightsGameScreen({
       {/* Turn Transition Modal (for local multiplayer) */}
       <TurnTransitionModal
         visible={showTurnTransition}
-        playerName={nextTurnPlayer === "player1" ? "Player 1" : "Player 2"}
+        playerName={
+          nextTurnPlayer
+            ? `Player ${nextTurnPlayer.replace("player", "")}`
+            : "Player 1"
+        }
         onContinue={() => setShowTurnTransition(false)}
       />
 
