@@ -299,7 +299,7 @@ export interface PollOption {
 
 /**
  * ============================================================================
- * SNAP & STORY OBJECTS
+ * PICTURE & STORY OBJECTS
  * ============================================================================
  */
 
@@ -373,11 +373,18 @@ export interface PictureReply {
   userId: string;
   displayName: string;
   avatar?: string;
-  messageType: "text" | "snap";
-  content: string; // Text or Snap ID
+  messageType: "text" | "picture";
+  content: string; // Text or Picture ID
   timestamp: number;
   read: boolean;
 }
+
+// Backwards compatibility aliases
+export type Snap = Picture;
+export type SnapRecipient = PictureRecipient;
+export type SnapView = PictureView;
+export type SnapReaction = PictureReaction;
+export type SnapReply = PictureReply;
 
 /**
  * ============================================================================
@@ -455,7 +462,7 @@ export type StickerCategory =
 
 /**
  * ============================================================================
- * SNAP DRAFT
+ * PICTURE DRAFT
  * ============================================================================
  */
 
@@ -470,20 +477,26 @@ export interface PictureDraft {
   expiresAt: number; // Auto-delete after 30 days
 }
 
+// Backwards compatibility alias
+export type SnapDraft = PictureDraft;
+
 /**
  * ============================================================================
- * SNAP VIEWER STATE
+ * PICTURE VIEWER STATE
  * ============================================================================
  */
 
 export interface PictureViewerState {
-  snapId: string;
-  snap: Snap;
+  pictureId: string;
+  picture: Picture;
   viewedAt: number;
   canReply: boolean;
   canReact: boolean;
   replies: PictureReply[];
 }
+
+// Backwards compatibility alias
+export type SnapViewerState = PictureViewerState;
 
 /**
  * ============================================================================
@@ -537,12 +550,12 @@ export interface AudioMix {
 
 /**
  * ============================================================================
- * SNAP METADATA FOR STORAGE
+ * PICTURE METADATA FOR STORAGE
  * ============================================================================
  */
 
 export interface PictureStorageMetadata {
-  snapId: string;
+  pictureId: string;
   senderId: string;
   mediaType: "photo" | "video";
   fileSize: number;
@@ -550,4 +563,7 @@ export interface PictureStorageMetadata {
   expiresAt?: number;
   compressionRatio: number;
 }
+
+// Backwards compatibility alias
+export type SnapStorageMetadata = PictureStorageMetadata;
 

@@ -20,7 +20,7 @@
  */
 export type SinglePlayerGameType =
   | "bounce_blitz" // Ballz-style
-  | "snap_2048" // 2048 puzzle
+  | "play_2048" // 2048 puzzle
   | "snake_master" // Classic snake
   | "memory_master" // Memory matching
   | "word_master" // Daily word puzzle (Wordle-style)

@@ -640,7 +640,7 @@ export const snake_master_CONFIG = {
 // 2048 Stats
 // =============================================================================
 
-export interface Snap2048Stats {
+export interface Play2048Stats {
   gameType: "snap_2048";
   bestTile: number;
   moveCount: number;
@@ -652,7 +652,7 @@ export interface Snap2048Stats {
 // Snake Stats
 // =============================================================================
 
-export interface SnapSnakeStats {
+export interface SnakeMasterStats {
   gameType: "snake_master";
   foodEaten: number;
   maxLength: number;
@@ -1015,16 +1015,16 @@ export interface SinglePlayerGameSession {
  */
 export type SinglePlayerGameStats =
   | BounceBlitzStats
-  | FlappySnapStats
-  | MemorySnapStats
-  | WordSnapStats
-  | Snap2048Stats
-  | SnapSnakeStats
+  | FlappyBirdStats
+  | MemoryMasterStats
+  | WordMasterStats
+  | Play2048Stats
+  | SnakeMasterStats
   // New game stats (Phase 1)
   | BrickBreakerStats
   | TileSlideStats;
 
-export interface FlappySnapStats {
+export interface FlappyBirdStats {
   gameType: "flappy_bird";
   pipesPassed: number;
   perfectPasses: number;
@@ -1040,7 +1040,7 @@ export interface BounceBlitzStats {
   totalBounces: number;
 }
 
-export interface MemorySnapStats {
+export interface MemoryMasterStats {
   gameType: "memory_master";
   pairsMatched: number;
   attempts: number;
@@ -1048,7 +1048,7 @@ export interface MemorySnapStats {
   bestTime: number;
 }
 
-export interface WordSnapStats {
+export interface WordMasterStats {
   gameType: "word_master";
   wordGuessed: boolean;
   attemptsUsed: number;
@@ -1091,5 +1091,6 @@ export interface LeaderboardRequest {
   limit?: number;
   aroundPlayer?: string; // Center on this player
 }
+
 
 
