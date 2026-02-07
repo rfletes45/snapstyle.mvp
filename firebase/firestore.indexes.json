@@ -1,0 +1,116 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "Snaps",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "senderId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Snaps",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "recipientIds",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Snaps",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "storyVisible",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "Snaps",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "senderId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isPrivate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "SnapViews",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "snapId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "viewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "SnapReplies",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "snapId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ChatMessages",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "conversationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "SnapReactions",
+      "queryScope": "Collection",
+      "fields": [
+        {
+          "fieldPath": "snapId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ]
+}

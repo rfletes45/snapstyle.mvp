@@ -5,6 +5,12 @@
 
 export { AuthProvider, useAuth } from "./AuthContext";
 export {
+  CameraProvider,
+  useCameraState,
+  useEditorState,
+  useSnapState,
+} from "./CameraContext";
+export {
   InAppNotificationsProvider,
   useInAppNotifications,
 } from "./InAppNotificationsContext";

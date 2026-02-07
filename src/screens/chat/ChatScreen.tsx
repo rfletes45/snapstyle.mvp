@@ -80,6 +80,7 @@ import { ExtendedGameType } from "@/types/games";
 import { CallButtonGroup } from "@/components/calls";
 
 // Types & Utils
+import { playQuack } from "@/services/chat/quackService";
 import type { ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
 import {
@@ -201,6 +202,7 @@ export default function ChatScreen({
     friendUid,
     chatId,
     debug: DEBUG_CHAT,
+    routeParams: route.params as Record<string, any>,
   });
 
   // Typing indicator
@@ -670,6 +672,23 @@ export default function ChatScreen({
     setGamePickerVisible(true);
   }, []);
 
+  // Duck button press handler — sends a duck bubble + quack sound
+  const handleDuckPress = useCallback(async () => {
+    if (!uid || !chatId) return;
+    try {
+      // Play quack sound + haptic (fire and forget but still catch errors)
+      await playQuack();
+    } catch (e) {
+      console.warn("❌ [ChatScreen] Quack sound error:", e);
+    }
+    try {
+      // Send the duck marker as a text message
+      await screen.chat.sendMessage("🦆", {});
+    } catch (error) {
+      console.error("❌ [ChatScreen] Duck send error:", error);
+    }
+  }, [uid, chatId, screen.chat]);
+
   // Handle single-player game selection - navigate directly to game
   // Optionally receives a spectatorInviteId and liveSessionId if the player wants to invite spectators
   const handleSinglePlayerGame = useCallback(
@@ -924,6 +943,7 @@ export default function ChatScreen({
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
+          onDuckPress={handleDuckPress}
           onGamePress={handleGamePress}
           voiceButtonComponent={
             voiceRecorder.isAvailable && !screen.composer.text.trim() ? (

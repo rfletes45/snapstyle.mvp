@@ -147,6 +147,10 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   brick_breaker: "BrickBreakerGame",
   snap_stack: "SnapStackGame",
   snap_aim: "SnapAimGame",
+  // Phase 3 Action/Quick Play
+  snap_pong: "SnapPongGame",
+  tap_tap_snap: "TapTapSnapGame",
+  snap_slice: "SnapSliceGame",
   // Puzzle
   snap_2048: "Snap2048Game",
   memory_snap: "MemorySnapGame",
@@ -155,8 +159,14 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   snap_minesweeper: "SnapMinesweeperGame",
   snap_number: "SnapNumberGame",
   snap_lights: "SnapLightsGame",
+  // Phase 3 Puzzle
+  snap_match: "SnapMatchGame",
+  snap_pipes: "SnapPipesGame",
+  snap_nonogram: "SnapNonogramGame",
   // Daily
   word_snap: "WordSnapGame",
+  // Phase 3 Daily
+  snap_crossword: "SnapCrosswordGame",
   // Multiplayer
   tic_tac_toe: "TicTacToeGame",
   checkers: "CheckersGame",
@@ -165,6 +175,13 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   snap_four: "SnapFourGame",
   snap_dots: "SnapDotsGame",
   snap_gomoku: "SnapGomokuGame",
+  // Phase 3 Multiplayer
+  snap_reversi: "SnapReversiGame",
+  snap_words: "SnapWordsGame",
+  snap_war: "SnapWarGame",
+  snap_hex: "SnapHexGame",
+  snap_draw: "SnapDrawGame",
+  snap_race: "SnapRaceGame",
   // Coming Soon
   "8ball_pool": "PoolGame",
   air_hockey: "AirHockeyGame",

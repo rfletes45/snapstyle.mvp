@@ -146,6 +146,32 @@ export function refreshPendingCount(): void {
 // =============================================================================
 
 /**
+ * Clean up orphaned messages that have no conversation_id.
+ * These can never be synced so mark them as permanently failed.
+ */
+function cleanupOrphanedMessages(): void {
+  const db = getDatabase();
+  const orphaned = db.getAllSync<{ id: string }>(
+    `SELECT id FROM messages
+     WHERE sync_status IN ('pending', 'failed')
+     AND (conversation_id IS NULL OR conversation_id = '')
+     AND retry_count < 999`,
+  );
+
+  if (orphaned.length > 0) {
+    console.warn(
+      `[SyncEngine] Cleaning up ${orphaned.length} orphaned messages with empty conversation_id`,
+    );
+    for (const msg of orphaned) {
+      markMessagePermanentlyFailed(
+        msg.id,
+        "Message has no conversation ID — cannot sync",
+      );
+    }
+  }
+}
+
+/**
  * Sync all pending messages to server
  */
 export async function syncPendingMessages(): Promise<void> {
@@ -154,6 +180,9 @@ export async function syncPendingMessages(): Promise<void> {
   }
 
   updateSyncState({ isSyncing: true, error: null });
+
+  // Clean up orphaned messages before processing
+  cleanupOrphanedMessages();
 
   try {
     const pendingMessages = getPendingMessages(20);
@@ -238,6 +267,17 @@ async function syncSingleMessage(
           }));
 
         if (localAttachments.length > 0) {
+          // Guard: conversation_id must be set for storage paths
+          if (!message.conversation_id) {
+            console.error(
+              "[SyncEngine] Cannot upload attachments: conversation_id is empty for message",
+              message.id,
+            );
+            throw new Error(
+              "Cannot upload attachments without a conversation ID",
+            );
+          }
+
           // Determine storage path based on scope and attachment type
           // Voice messages go to /voice/ (groups) or /dm-voice/ (DMs)
           // Images go to /messages/ (groups) or /snaps/ (DMs)
@@ -365,7 +405,8 @@ async function syncSingleMessage(
       errorMessage.includes("not-found") ||
       errorMessage.includes("NOT_FOUND") ||
       errorMessage.includes("unauthenticated") ||
-      errorMessage.includes("UNAUTHENTICATED");
+      errorMessage.includes("UNAUTHENTICATED") ||
+      errorMessage.includes("without a conversation ID");
 
     if (isPermanentError) {
       console.warn(

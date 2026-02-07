@@ -26,6 +26,7 @@ import {
   StyleSheet,
   TextInput,
   TextInputProps,
+  TouchableOpacity,
   View,
   ViewStyle,
 } from "react-native";
@@ -34,6 +35,7 @@ import type { SharedValue } from "react-native-reanimated";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BorderRadius, Spacing } from "../../../constants/theme";
+import DuckIcon from "./DuckIcon";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { VoiceRecordButton } from "./VoiceRecordButton";
 
@@ -87,6 +89,8 @@ export interface ChatComposerProps {
   onVoiceCancelled?: () => void;
   /** Maximum voice recording duration in ms (default: 60000 = 60s) */
   maxVoiceDuration?: number;
+  /** Duck button handler (sends a duck bubble) */
+  onDuckPress?: () => void;
   /** Game button handler (opens game picker) */
   onGamePress?: () => void;
   /** Upload progress indicator (shown when uploading) */
@@ -140,6 +144,7 @@ export function ChatComposer({
   onVoiceComplete,
   onVoiceCancelled,
   maxVoiceDuration = 60000,
+  onDuckPress,
   onGamePress,
   uploadProgress,
   mentionAutocomplete,
@@ -296,6 +301,9 @@ export function ChatComposer({
             maxLength={1000}
             textAlignVertical="center"
             editable={!isRecording}
+            returnKeyType="send"
+            blurOnSubmit={false}
+            onSubmitEditing={canSend ? handleSend : undefined}
             {...textInputProps}
           />
 
@@ -358,17 +366,17 @@ export function ChatComposer({
           />
         )}
 
-        {/* Send button - shown when there's text */}
-        {canSend && (
-          <IconButton
-            icon="send"
-            size={24}
-            iconColor={theme.colors.primary}
-            onPress={handleSend}
-            disabled={!canSend || isSending}
-            loading={isSending}
-            style={styles.sendButton}
-          />
+        {/* Duck button - sends a duck bubble */}
+        {onDuckPress && (
+          <TouchableOpacity
+            onPress={onDuckPress}
+            activeOpacity={0.7}
+            style={styles.duckButton}
+            accessibilityLabel="Send duck"
+            accessibilityRole="button"
+          >
+            <DuckIcon size={25} wide />
+          </TouchableOpacity>
         )}
       </View>
     </Animated.View>
@@ -436,10 +444,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
   },
-  sendButton: {
+  duckButton: {
     margin: 0,
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 28,
+    alignSelf: "center",
+    justifyContent: "center",
+    alignItems: "center",
   },
   uploadProgressContainer: {
     flexDirection: "row",

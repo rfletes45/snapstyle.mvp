@@ -294,6 +294,43 @@ const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
     timeControl: { type: "per_turn", seconds: 120 },
     chatEnabled: true,
   },
+  // Phase 3 turn-based games
+  snap_reversi: {
+    isRated: true,
+    timeControl: { type: "per_turn", seconds: 120 },
+    chatEnabled: true,
+  },
+  snap_words: {
+    isRated: true,
+    timeControl: { type: "per_turn", seconds: 180 },
+    chatEnabled: true,
+  },
+  snap_war: {
+    isRated: false,
+    timeControl: { type: "per_turn", seconds: 30 },
+    chatEnabled: true,
+  },
+  snap_hex: {
+    isRated: true,
+    timeControl: { type: "per_turn", seconds: 120 },
+    chatEnabled: true,
+  },
+  // Phase 3 real-time games
+  snap_draw: {
+    isRated: false,
+    timeControl: { type: "none", seconds: 0 },
+    chatEnabled: true,
+  },
+  snap_race: {
+    isRated: false,
+    timeControl: { type: "none", seconds: 0 },
+    chatEnabled: true,
+  },
+  snap_crossword: {
+    isRated: false,
+    timeControl: { type: "none", seconds: 0 },
+    chatEnabled: true,
+  },
 };
 
 // =============================================================================
@@ -380,6 +417,43 @@ function getDefaultInviteSettings(
     snap_gomoku: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 120 },
+      chatEnabled: true,
+    },
+    // Phase 3 turn-based games
+    snap_reversi: {
+      isRated: true,
+      timeControl: { type: "per_turn", seconds: 120 },
+      chatEnabled: true,
+    },
+    snap_words: {
+      isRated: true,
+      timeControl: { type: "per_turn", seconds: 180 },
+      chatEnabled: true,
+    },
+    snap_war: {
+      isRated: false,
+      timeControl: { type: "per_turn", seconds: 30 },
+      chatEnabled: true,
+    },
+    snap_hex: {
+      isRated: true,
+      timeControl: { type: "per_turn", seconds: 120 },
+      chatEnabled: true,
+    },
+    // Phase 3 real-time games
+    snap_draw: {
+      isRated: false,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    snap_race: {
+      isRated: false,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    snap_crossword: {
+      isRated: false,
+      timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
   };

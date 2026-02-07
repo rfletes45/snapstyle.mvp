@@ -23,6 +23,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
+import DuckBubble from "@/components/chat/DuckBubble";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import ScorecardBubble from "@/components/ScorecardBubble";
 import type { ReplyToMetadata } from "@/types/messaging";
@@ -233,6 +234,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
 
     // Render message content
     const renderContent = () => {
+      // Duck message — single 🦆 emoji means a duck bubble
+      if (message.type === "text" && message.content.trim() === "🦆") {
+        return <DuckBubble isMine={isSentByMe} />;
+      }
+
       if (message.type === "voice") {
         return (
           <VoiceMessagePlayer
@@ -272,6 +278,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         </Text>
       );
     };
+
+    // Is this a duck message?
+    const isDuck = message.type === "text" && message.content.trim() === "🦆";
 
     // Create SwipeableMessage format - convert Date to timestamp
     const createdAtTimestamp =
@@ -360,19 +369,21 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   <View
                     style={[
                       styles.messageBubble,
-                      isSentByMe
-                        ? [
-                            styles.sentBubble,
-                            { backgroundColor: theme.colors.primary },
-                          ]
-                        : [
-                            styles.receivedBubble,
-                            {
-                              backgroundColor: theme.dark
-                                ? theme.colors.surfaceVariant
-                                : theme.colors.surfaceVariant,
-                            },
-                          ],
+                      !isDuck &&
+                        (isSentByMe
+                          ? [
+                              styles.sentBubble,
+                              { backgroundColor: theme.colors.primary },
+                            ]
+                          : [
+                              styles.receivedBubble,
+                              {
+                                backgroundColor: theme.dark
+                                  ? theme.colors.surfaceVariant
+                                  : theme.colors.surfaceVariant,
+                              },
+                            ]),
+                      isDuck && { padding: 0, backgroundColor: "transparent" },
                       message.status === "sending" && styles.sendingBubble,
                       message.status === "failed" && [
                         styles.failedBubble,

@@ -97,7 +97,12 @@ export type TurnBasedGameType =
   | "crazy_eights"
   | "snap_four"
   | "snap_dots"
-  | "snap_gomoku";
+  | "snap_gomoku"
+  // Phase 3
+  | "snap_reversi"
+  | "snap_words"
+  | "snap_war"
+  | "snap_hex";
 
 /**
  * Match status
@@ -568,6 +573,154 @@ export type SnapGomokuMatch = TurnBasedMatch<
 >;
 
 // =============================================================================
+// Snap Reversi (Othello) Types
+// =============================================================================
+
+/** Snap Reversi cell: 0 = empty, 1 = black, 2 = white */
+export type SnapReversiCell = 0 | 1 | 2;
+
+/** Snap Reversi board (8×8) */
+export type SnapReversiBoard = SnapReversiCell[][];
+
+/** Snap Reversi move — place a disc to outflank opponent */
+export interface SnapReversiMove {
+  row: number;
+  col: number;
+  player: 1 | 2;
+  flipped: { row: number; col: number }[];
+  timestamp: number;
+}
+
+/** Snap Reversi game state */
+export interface SnapReversiGameState {
+  board: SnapReversiBoard;
+  currentTurn: 1 | 2;
+  scores: { player1: number; player2: number };
+  lastMove?: { row: number; col: number };
+  consecutivePasses: number;
+}
+
+export type SnapReversiMatch = TurnBasedMatch<
+  SnapReversiGameState,
+  SnapReversiMove
+>;
+
+// =============================================================================
+// Snap Hex Types
+// =============================================================================
+
+/** Snap Hex cell: 0 = empty, 1 = player 1 (red, connects top-bottom), 2 = player 2 (blue, connects left-right) */
+export type SnapHexCell = 0 | 1 | 2;
+
+/** Snap Hex board (11×11 hex grid) */
+export type SnapHexBoard = SnapHexCell[][];
+
+/** Snap Hex move — claim a hex cell */
+export interface SnapHexMove {
+  row: number;
+  col: number;
+  player: 1 | 2;
+  timestamp: number;
+}
+
+/** Snap Hex game state */
+export interface SnapHexGameState {
+  board: SnapHexBoard;
+  currentTurn: 1 | 2;
+  lastMove?: { row: number; col: number };
+}
+
+export type SnapHexMatch = TurnBasedMatch<SnapHexGameState, SnapHexMove>;
+
+// =============================================================================
+// Snap War (Card War) Types
+// =============================================================================
+
+/** Snap War move — flip a card */
+export interface SnapWarMove {
+  type: "flip" | "war_flip";
+  card: Card;
+  timestamp: number;
+}
+
+/** Snap War game state */
+export interface SnapWarGameState {
+  /** Cards remaining per player (face-down) */
+  player1Deck: number;
+  player2Deck: number;
+  /** Cards on table this round */
+  tableCards: { player1: Card[]; player2: Card[] };
+  /** Is a war in progress? */
+  warActive: boolean;
+  /** Number of wars in current round */
+  warCount: number;
+  currentTurn: 1 | 2;
+  /** Both flip simultaneously, but we model as sequential */
+  waitingForFlip: 1 | 2 | "both";
+  roundWinner?: 1 | 2;
+}
+
+export type SnapWarMatch = TurnBasedMatch<
+  SnapWarGameState,
+  SnapWarMove,
+  { deck: Card[] }
+>;
+
+// =============================================================================
+// Snap Words (Scrabble-lite) Types
+// =============================================================================
+
+/** Letter tile for Snap Words */
+export interface LetterTile {
+  letter: string;
+  value: number;
+  id: string;
+}
+
+/** Board cell bonus type */
+export type WordsBonusType =
+  | "none"
+  | "double_letter"
+  | "triple_letter"
+  | "double_word"
+  | "triple_word"
+  | "center";
+
+/** A placed tile on the board */
+export interface PlacedTile {
+  tile: LetterTile;
+  row: number;
+  col: number;
+  placedBy: 1 | 2;
+  turnPlaced: number;
+}
+
+/** Snap Words move — place tiles to form a word */
+export interface SnapWordsMove {
+  tiles: { tile: LetterTile; row: number; col: number }[];
+  word: string;
+  score: number;
+  player: 1 | 2;
+  timestamp: number;
+}
+
+/** Snap Words game state (9×9 board) */
+export interface SnapWordsGameState {
+  board: (PlacedTile | null)[][];
+  bonusBoard: WordsBonusType[][];
+  currentTurn: 1 | 2;
+  scores: { player1: number; player2: number };
+  tilesRemaining: number;
+  consecutivePasses: number;
+}
+
+export type SnapWordsMatch = TurnBasedMatch<
+  SnapWordsGameState,
+  SnapWordsMove,
+  { rack: LetterTile[] }
+>;
+
+// =============================================================================
 // Game Invite Types
 // =============================================================================
 
@@ -841,7 +994,11 @@ export type AnyGameState =
   | CrazyEightsGameState
   | SnapFourGameState
   | SnapDotsGameState
-  | SnapGomokuGameState;
+  | SnapGomokuGameState
+  | SnapReversiGameState
+  | SnapHexGameState
+  | SnapWarGameState
+  | SnapWordsGameState;
 
 /**
  * Union type for all moves
@@ -853,7 +1010,11 @@ export type AnyMove =
   | CrazyEightsMove
   | SnapFourMove
   | SnapDotsMove
-  | SnapGomokuMove;
+  | SnapGomokuMove
+  | SnapReversiMove
+  | SnapHexMove
+  | SnapWarMove
+  | SnapWordsMove;
 
 /**
  * Union type for all matches
@@ -865,7 +1026,11 @@ export type AnyMatch =
   | CrazyEightsMatch
   | SnapFourMatch
   | SnapDotsMatch
-  | SnapGomokuMatch;
+  | SnapGomokuMatch
+  | SnapReversiMatch
+  | SnapHexMatch
+  | SnapWarMatch
+  | SnapWordsMatch;
 
 // =============================================================================
 // Initial State Factories
@@ -983,6 +1148,75 @@ export function createInitialSnapGomokuBoard(): SnapGomokuBoard {
     { length: 15 },
     () => Array(15).fill(0) as SnapGomokuCell[],
   );
+}
+
+/**
+ * Create initial Snap Reversi (Othello) board — 8×8 with 4 center pieces
+ */
+export function createInitialSnapReversiBoard(): SnapReversiBoard {
+  const board: SnapReversiBoard = Array.from(
+    { length: 8 },
+    () => Array(8).fill(0) as SnapReversiCell[],
+  );
+  // Standard Othello starting position
+  board[3][3] = 2; // white
+  board[3][4] = 1; // black
+  board[4][3] = 1; // black
+  board[4][4] = 2; // white
+  return board;
+}
+
+/**
+ * Create initial Snap Hex board — 11×11, all empty
+ */
+export function createInitialSnapHexBoard(): SnapHexBoard {
+  return Array.from({ length: 11 }, () => Array(11).fill(0) as SnapHexCell[]);
+}
+
+/**
+ * Create initial Snap Words board — 9×9 with bonus squares
+ */
+export function createInitialSnapWordsBoard(): {
+  board: (PlacedTile | null)[][];
+  bonusBoard: WordsBonusType[][];
+} {
+  const board: (PlacedTile | null)[][] = Array.from({ length: 9 }, () =>
+    Array(9).fill(null),
+  );
+  const bonusBoard: WordsBonusType[][] = Array.from({ length: 9 }, () =>
+    Array(9).fill("none" as WordsBonusType),
+  );
+  // Center
+  bonusBoard[4][4] = "center";
+  // Triple word
+  bonusBoard[0][0] = "triple_word";
+  bonusBoard[0][8] = "triple_word";
+  bonusBoard[8][0] = "triple_word";
+  bonusBoard[8][8] = "triple_word";
+  // Double word
+  bonusBoard[1][1] = "double_word";
+  bonusBoard[1][7] = "double_word";
+  bonusBoard[7][1] = "double_word";
+  bonusBoard[7][7] = "double_word";
+  bonusBoard[2][2] = "double_word";
+  bonusBoard[2][6] = "double_word";
+  bonusBoard[6][2] = "double_word";
+  bonusBoard[6][6] = "double_word";
+  // Triple letter
+  bonusBoard[0][4] = "triple_letter";
+  bonusBoard[4][0] = "triple_letter";
+  bonusBoard[4][8] = "triple_letter";
+  bonusBoard[8][4] = "triple_letter";
+  // Double letter
+  bonusBoard[1][4] = "double_letter";
+  bonusBoard[4][1] = "double_letter";
+  bonusBoard[4][7] = "double_letter";
+  bonusBoard[7][4] = "double_letter";
+  bonusBoard[3][3] = "double_letter";
+  bonusBoard[3][5] = "double_letter";
+  bonusBoard[5][3] = "double_letter";
+  bonusBoard[5][5] = "double_letter";
+  return { board, bonusBoard };
 }
 
 /**

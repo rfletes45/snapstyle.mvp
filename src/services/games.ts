@@ -31,7 +31,7 @@ import { getFirestoreInstance } from "./firebase";
 // =============================================================================
 
 export interface GameResult {
-  gameId: GameType;
+  gameId: ExtendedGameType | string;
   score: number;
   duration?: number;
   tapCount?: number;
@@ -39,7 +39,7 @@ export interface GameResult {
 }
 
 export interface PersonalBest {
-  gameId: GameType;
+  gameId: ExtendedGameType | string;
   bestScore: number;
   achievedAt: number;
 }
@@ -176,7 +176,7 @@ export async function getRecentGames(
  */
 export async function getPersonalBest(
   playerId: string,
-  gameId: GameType,
+  gameId: ExtendedGameType | string,
 ): Promise<PersonalBest | null> {
   const db = getFirestoreInstance();
 

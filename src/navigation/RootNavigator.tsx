@@ -55,6 +55,20 @@ import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TileSlideGameScreen from "@/screens/games/TileSlideGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
 import WordSnapGameScreen from "@/screens/games/WordSnapGameScreen";
+// Phase 3 game screens
+import SnapCrosswordGameScreen from "@/screens/games/SnapCrosswordGameScreen";
+import SnapDrawGameScreen from "@/screens/games/SnapDrawGameScreen";
+import SnapHexGameScreen from "@/screens/games/SnapHexGameScreen";
+import SnapMatchGameScreen from "@/screens/games/SnapMatchGameScreen";
+import SnapNonogramGameScreen from "@/screens/games/SnapNonogramGameScreen";
+import SnapPipesGameScreen from "@/screens/games/SnapPipesGameScreen";
+import SnapPongGameScreen from "@/screens/games/SnapPongGameScreen";
+import SnapRaceGameScreen from "@/screens/games/SnapRaceGameScreen";
+import SnapReversiGameScreen from "@/screens/games/SnapReversiGameScreen";
+import SnapSliceGameScreen from "@/screens/games/SnapSliceGameScreen";
+import SnapWarGameScreen from "@/screens/games/SnapWarGameScreen";
+import SnapWordsGameScreen from "@/screens/games/SnapWordsGameScreen";
+import TapTapSnapGameScreen from "@/screens/games/TapTapSnapGameScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import MutualFriendsListScreen from "@/screens/profile/MutualFriendsListScreen";
 import OwnProfileScreen from "@/screens/profile/OwnProfileScreen";
@@ -100,6 +114,10 @@ import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
 // Social screens
 import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
 
+// Camera screens
+import CameraScreen from "@/screens/camera/CameraScreen";
+import CameraShareScreen from "@/screens/camera/ShareScreen";
+
 // Call screens
 import {
   AudioCallScreen,
@@ -135,6 +153,20 @@ const SafeSnapDotsGame = withErrorBoundary(SnapDotsGameScreen);
 const SafeSnapAimGame = withErrorBoundary(SnapAimGameScreen);
 const SafeSnapLightsGame = withErrorBoundary(SnapLightsGameScreen);
 const SafeSnapGomokuGame = withErrorBoundary(SnapGomokuGameScreen);
+// Phase 3 safe wrappers
+const SafeSnapPongGame = withErrorBoundary(SnapPongGameScreen);
+const SafeSnapWarGame = withErrorBoundary(SnapWarGameScreen);
+const SafeSnapReversiGame = withErrorBoundary(SnapReversiGameScreen);
+const SafeSnapCrosswordGame = withErrorBoundary(SnapCrosswordGameScreen);
+const SafeSnapPipesGame = withErrorBoundary(SnapPipesGameScreen);
+const SafeSnapNonogramGame = withErrorBoundary(SnapNonogramGameScreen);
+const SafeTapTapSnapGame = withErrorBoundary(TapTapSnapGameScreen);
+const SafeSnapSliceGame = withErrorBoundary(SnapSliceGameScreen);
+const SafeSnapRaceGame = withErrorBoundary(SnapRaceGameScreen);
+const SafeSnapHexGame = withErrorBoundary(SnapHexGameScreen);
+const SafeSnapDrawGame = withErrorBoundary(SnapDrawGameScreen);
+const SafeSnapMatchGame = withErrorBoundary(SnapMatchGameScreen);
+const SafeSnapWordsGame = withErrorBoundary(SnapWordsGameScreen);
 
 /**
  * Routes that should hide the bottom tab bar.
@@ -169,6 +201,20 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "SnapAimGame",
   "SnapLightsGame",
   "SnapGomokuGame",
+  // Phase 3 game screens
+  "SnapPongGame",
+  "SnapWarGame",
+  "SnapReversiGame",
+  "SnapCrosswordGame",
+  "SnapPipesGame",
+  "SnapNonogramGame",
+  "TapTapSnapGame",
+  "SnapSliceGame",
+  "SnapRaceGame",
+  "SnapHexGame",
+  "SnapDrawGame",
+  "SnapMatchGame",
+  "SnapWordsGame",
   "SpectatorView",
   "Leaderboard",
   "Achievements",
@@ -526,6 +572,115 @@ function PlayStack() {
           presentation: "card",
         }}
       />
+      {/* Phase 3 Games */}
+      <Stack.Screen
+        name="SnapPongGame"
+        component={SafeSnapPongGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapWarGame"
+        component={SafeSnapWarGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapReversiGame"
+        component={SafeSnapReversiGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapCrosswordGame"
+        component={SafeSnapCrosswordGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapPipesGame"
+        component={SafeSnapPipesGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapNonogramGame"
+        component={SafeSnapNonogramGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="TapTapSnapGame"
+        component={SafeTapTapSnapGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapSliceGame"
+        component={SafeSnapSliceGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapRaceGame"
+        component={SafeSnapRaceGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapHexGame"
+        component={SafeSnapHexGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapDrawGame"
+        component={SafeSnapDrawGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="SnapMatchGame"
+        component={SafeSnapMatchGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="SnapWordsGame"
+        component={SafeSnapWordsGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
       {/* Spectator View for watching single-player games */}
       <Stack.Screen
         name="SpectatorView"
@@ -832,6 +987,25 @@ function MainStack() {
         options={{
           headerShown: false,
           presentation: "modal",
+        }}
+      />
+
+      {/* Camera screens - full-screen immersive experience */}
+      <Stack.Screen
+        name="Camera"
+        component={CameraScreen}
+        options={{
+          headerShown: false,
+          animation: "slide_from_bottom",
+        }}
+      />
+
+      <Stack.Screen
+        name="CameraShare"
+        component={CameraShareScreen}
+        options={{
+          headerShown: false,
+          animation: "slide_from_right",
         }}
       />
 

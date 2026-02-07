@@ -26,8 +26,9 @@ import {
   captureImageFromWebcam,
   pickImageFromWeb,
 } from "@/utils/webImagePicker";
+import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Platform } from "react-native";
 
 const log = createLogger("useAttachmentPicker");
@@ -53,6 +54,12 @@ export interface UseAttachmentPickerOptions {
   allowedTypes?: AttachmentKind[];
   /** Callback when attachments change */
   onAttachmentsChange?: (attachments: LocalAttachment[]) => void;
+  /** Route params from navigation (to receive captured image from Camera) */
+  routeParams?: Record<string, any>;
+  /** The route name for the calling screen (used to return from Camera) */
+  returnRoute?: string;
+  /** Data to pass back when returning from Camera (e.g. groupId, chatId) */
+  returnData?: Record<string, any>;
 }
 
 export interface UseAttachmentPickerReturn {
@@ -107,7 +114,12 @@ export function useAttachmentPicker(
     maxFileSize = DEFAULT_MAX_FILE_SIZE,
     allowedTypes = DEFAULT_ALLOWED_TYPES,
     onAttachmentsChange,
+    routeParams,
+    returnRoute,
+    returnData,
   } = options;
+
+  const navigation = useNavigation<any>();
 
   // ==========================================================================
   // State
@@ -117,6 +129,32 @@ export function useAttachmentPicker(
   const [uploadProgress, setUploadProgress] =
     useState<AttachmentUploadProgress>({});
   const [isUploading, setIsUploading] = useState(false);
+
+  // ==========================================================================
+  // Handle captured image returned from CameraScreen
+  // ==========================================================================
+
+  useEffect(() => {
+    if (routeParams?.capturedImageUri) {
+      log.debug(
+        "Received captured image from Camera:",
+        routeParams.capturedImageUri,
+      );
+      (async () => {
+        try {
+          const attachment = await createLocalAttachment(
+            routeParams.capturedImageUri,
+            "image",
+          );
+          if (attachment) {
+            updateAttachments([...attachments, attachment]);
+          }
+        } catch (error) {
+          log.error("Failed to process captured image", error);
+        }
+      })();
+    }
+  }, [routeParams?.capturedImageUri]);
 
   // ==========================================================================
   // Computed Values
@@ -287,36 +325,13 @@ export function useAttachmentPicker(
         return;
       }
 
-      // Native platforms: Request permissions
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Denied",
-          "Camera access is required to take photos",
-        );
-        return;
-      }
-
-      // Launch camera
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["images"],
-        quality: 1,
-        exif: false,
+      // Native platforms: navigate to built-in Camera screen
+      log.debug("Navigating to Camera screen (chat mode)");
+      navigation.navigate("Camera", {
+        mode: "chat",
+        returnRoute: returnRoute || "GroupChat",
+        returnData: returnData || {},
       });
-
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        log.debug("Camera capture cancelled");
-        return;
-      }
-
-      const asset = result.assets[0];
-      const attachment = await createLocalAttachment(asset.uri, "image");
-
-      if (attachment) {
-        attachment.width = asset.width;
-        attachment.height = asset.height;
-        updateAttachments([...attachments, attachment]);
-      }
     } catch (error) {
       log.error("Camera capture error", error);
       Alert.alert("Error", "Failed to capture photo");
@@ -327,6 +342,9 @@ export function useAttachmentPicker(
     attachments,
     createLocalAttachment,
     updateAttachments,
+    navigation,
+    returnRoute,
+    returnData,
   ]);
 
   // ==========================================================================

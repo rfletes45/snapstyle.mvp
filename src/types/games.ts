@@ -36,7 +36,14 @@ export type SinglePlayerGameType =
   | "snap_minesweeper" // Classic Minesweeper
   | "snap_number" // Mental math speed game
   | "snap_aim" // Target shooting accuracy
-  | "snap_lights"; // Lights Out puzzle
+  | "snap_lights" // Lights Out puzzle
+  // New single-player games (Phase 3)
+  | "snap_match" // Match-3 (Candy Crush/Bejeweled)
+  | "snap_pipes" // Pipe Mania rotate-to-connect
+  | "snap_nonogram" // Picross / Nonogram
+  | "tap_tap_snap" // Rhythm / Piano Tiles
+  | "snap_slice" // Fruit Ninja swipe-to-slice
+  | "snap_pong"; // Pong with AI
 
 /**
  * Turn-based multiplayer games
@@ -48,12 +55,23 @@ export type TurnBasedGameType =
   | "tic_tac_toe"
   | "snap_four" // Connect Four
   | "snap_dots" // Dots and Boxes
-  | "snap_gomoku"; // Five in a Row (Gomoku)
+  | "snap_gomoku" // Five in a Row (Gomoku)
+  // New turn-based games (Phase 3)
+  | "snap_reversi" // Othello / Reversi
+  | "snap_words" // Scrabble-lite
+  | "snap_war" // Card War
+  | "snap_hex"; // Hex board game
 
 /**
  * Real-time multiplayer games (simulated turn-based for pool)
  */
-export type RealTimeGameType = "8ball_pool" | "air_hockey";
+export type RealTimeGameType =
+  | "8ball_pool"
+  | "air_hockey"
+  // New real-time games (Phase 3)
+  | "snap_draw" // Pictionary drawing game
+  | "snap_race" // Typing race
+  | "snap_crossword"; // Daily mini crossword
 
 /**
  * All game types combined
@@ -342,6 +360,98 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isNew: true,
   },
 
+  // Phase 3: New Single-player Games
+  snap_match: {
+    id: "snap_match",
+    name: "Snap Match",
+    shortName: "Match",
+    description: "Match 3 gems in a row to score combos!",
+    icon: "💎",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_pipes: {
+    id: "snap_pipes",
+    name: "Snap Pipes",
+    shortName: "Pipes",
+    description: "Rotate pipes to connect the water flow!",
+    icon: "🔧",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_nonogram: {
+    id: "snap_nonogram",
+    name: "Snap Nonogram",
+    shortName: "Nonogram",
+    description: "Fill cells by clues to reveal a pixel picture!",
+    icon: "🖼️",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  tap_tap_snap: {
+    id: "tap_tap_snap",
+    name: "Tap Tap Snap",
+    shortName: "TapTap",
+    description: "Tap falling notes to the beat!",
+    icon: "🎵",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_slice: {
+    id: "snap_slice",
+    name: "Snap Slice",
+    shortName: "Slice",
+    description: "Swipe to slice shapes — avoid bombs!",
+    icon: "🔪",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_pong: {
+    id: "snap_pong",
+    name: "Snap Pong",
+    shortName: "Pong",
+    description: "Classic Pong — drag your paddle to win!",
+    icon: "🏓",
+    category: "quick_play",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+
   // Multiplayer: Turn-based
   chess: {
     id: "chess",
@@ -440,6 +550,115 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     maxPlayers: 2,
     isMultiplayer: true,
     hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+
+  // Phase 3: New Multiplayer Turn-Based Games
+  snap_reversi: {
+    id: "snap_reversi",
+    name: "Snap Reversi",
+    shortName: "Reversi",
+    description: "Outflank and flip your opponent's discs!",
+    icon: "⚪",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_words: {
+    id: "snap_words",
+    name: "Snap Words",
+    shortName: "Words",
+    description: "Place letter tiles on the board to score!",
+    icon: "🔤",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_war: {
+    id: "snap_war",
+    name: "Snap War",
+    shortName: "War",
+    description: "Flip cards — higher wins! War on ties!",
+    icon: "⚔️",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: false,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_hex: {
+    id: "snap_hex",
+    name: "Snap Hex",
+    shortName: "Hex",
+    description: "Connect your two sides of the hex board!",
+    icon: "⬡",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+
+  // Phase 3: New Real-Time Multiplayer Games
+  snap_draw: {
+    id: "snap_draw",
+    name: "Snap Draw",
+    shortName: "Draw",
+    description: "Draw the prompt — others guess!",
+    icon: "🎨",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 8,
+    isMultiplayer: true,
+    hasLeaderboard: false,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_race: {
+    id: "snap_race",
+    name: "Snap Race",
+    shortName: "Race",
+    description: "Type the sentence fastest to win!",
+    icon: "🏎️",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  snap_crossword: {
+    id: "snap_crossword",
+    name: "Snap Crossword",
+    shortName: "Crossword",
+    description: "Solve the daily 5×5 mini crossword!",
+    icon: "📰",
+    category: "daily",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: false,
     hasAchievements: true,
     isAvailable: true,
     isNew: true,
@@ -630,6 +849,75 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 9999,
     scoreDirection: "higher",
   },
+
+  // Phase 3: New single-player games
+  snap_match: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher", // Higher combo score is better
+  },
+  snap_pipes: {
+    minScore: 1,
+    maxScore: 9999,
+    scoreDirection: "lower", // Fewer seconds is better
+  },
+  snap_nonogram: {
+    minScore: 1,
+    maxScore: 9999,
+    scoreDirection: "lower", // Fewer seconds is better
+  },
+  tap_tap_snap: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher", // Higher score is better
+  },
+  snap_slice: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher", // Higher score is better
+  },
+  snap_pong: {
+    minScore: 0,
+    maxScore: 999,
+    scoreDirection: "higher", // Games won vs AI
+  },
+
+  // Phase 3: New multiplayer games
+  snap_reversi: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+  snap_words: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+  snap_war: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+  snap_hex: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+  snap_draw: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Points from correct guesses
+  },
+  snap_race: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+  snap_crossword: {
+    minScore: 1,
+    maxScore: 9999,
+    scoreDirection: "lower", // Fewer seconds is better
+  },
 };
 
 // =============================================================================
@@ -706,6 +994,18 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return score === 1 ? "1 move" : `${score} moves`;
     case "snap_dots":
       return `${score} boxes`;
+    // Phase 3 single-player
+    case "snap_match":
+    case "tap_tap_snap":
+    case "snap_slice":
+      return score.toLocaleString();
+    case "snap_pipes":
+    case "snap_nonogram":
+    case "snap_crossword":
+      return `${score}s`;
+    case "snap_pong":
+      return `${score} wins`;
+    // Multiplayer games
     case "chess":
     case "checkers":
     case "8ball_pool":
@@ -714,6 +1014,12 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     case "air_hockey":
     case "snap_four":
     case "snap_gomoku":
+    case "snap_reversi":
+    case "snap_words":
+    case "snap_war":
+    case "snap_hex":
+    case "snap_draw":
+    case "snap_race":
       return `${score} wins`;
     default:
       return score.toString();

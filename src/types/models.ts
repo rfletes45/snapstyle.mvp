@@ -126,7 +126,7 @@ export type ExtendedGameType =
 
 export interface GameSession {
   id: string;
-  gameId: GameType;
+  gameId: string;
   playerId: string;
   score: number;
   playedAt: number; // Always converted to number in service layer

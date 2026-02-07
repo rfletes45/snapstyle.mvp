@@ -223,37 +223,27 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
   const capturePhoto = async () => {
     try {
       console.log("🔵 [capturePhoto] Starting capture");
-      let imageUri: string | null = null;
 
       if (Platform.OS === "web") {
         console.log("🔵 [capturePhoto] Using web camera capture");
-        imageUri = await captureImageFromWebcam();
+        const imageUri = await captureImageFromWebcam();
         console.log(
           "✅ [capturePhoto] Got image URI:",
           imageUri ? "success" : "null",
         );
-      } else {
-        console.log("🔵 [capturePhoto] Using expo camera");
-        const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          allowsEditing: false,
-          aspect: [1, 1],
-          quality: 1,
-        });
 
-        if (!result.canceled && result.assets.length > 0) {
-          imageUri = result.assets[0].uri;
-          console.log("✅ [capturePhoto] Got image from expo");
+        if (imageUri) {
+          console.log("🔵 [capturePhoto] Navigating to viewer");
+          navigateToStoryViewer(imageUri);
         } else {
-          console.log("ℹ️  [capturePhoto] User cancelled capture");
+          console.warn("⚠️  [capturePhoto] No image URI to navigate with");
         }
-      }
-
-      if (imageUri) {
-        console.log("🔵 [capturePhoto] Navigating to viewer");
-        navigateToStoryViewer(imageUri);
       } else {
-        console.warn("⚠️  [capturePhoto] No image URI to navigate with");
+        // On native platforms, navigate to built-in CameraScreen
+        console.log("🔵 [capturePhoto] Navigating to Camera screen");
+        navigation.navigate("Camera", {
+          mode: "full",
+        });
       }
     } catch (error) {
       console.error("❌ [capturePhoto] Camera error:", error);

@@ -12,8 +12,9 @@ import {
   captureImageFromWebcam,
   pickImageFromWeb,
 } from "@/utils/webImagePicker";
+import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 
 const DEBUG_SNAP = false;
@@ -29,6 +30,8 @@ interface UseSnapCaptureConfig {
   onUploadComplete?: () => void;
   /** Enable debug logging */
   debug?: boolean;
+  /** Route params from navigation (to receive captured image back) */
+  routeParams?: Record<string, any>;
 }
 
 interface UseSnapCaptureReturn {
@@ -66,8 +69,23 @@ export function useSnapCapture(
     chatId,
     onUploadComplete,
     debug = DEBUG_SNAP,
+    routeParams,
   } = config;
   const [uploadingSnap, setUploadingSnap] = useState(false);
+  const navigation = useNavigation<any>();
+
+  // Listen for captured image returned from CameraScreen in chat mode
+  useEffect(() => {
+    if (routeParams?.capturedImageUri) {
+      if (debug) {
+        console.log(
+          "🔵 [useSnapCapture] Received captured image from Camera:",
+          routeParams.capturedImageUri,
+        );
+      }
+      handleSnapUpload(routeParams.capturedImageUri);
+    }
+  }, [routeParams?.capturedImageUri]);
 
   // Request media library permission
   const requestMediaLibraryPermission =
@@ -230,17 +248,10 @@ export function useSnapCapture(
     [uid, chatId, friendUid, debug, onUploadComplete],
   );
 
-  // Capture photo from camera
+  // Capture photo from camera — navigates to built-in CameraScreen
   const handleCapturePhoto = useCallback(async (): Promise<void> => {
     if (debug) {
       console.log("🔵 [useSnapCapture] Starting camera capture");
-    }
-    const hasPermission = await requestCameraPermission();
-    if (!hasPermission) {
-      if (debug) {
-        console.warn("⚠️  [useSnapCapture] Permission denied");
-      }
-      return;
     }
 
     try {
@@ -248,51 +259,36 @@ export function useSnapCapture(
         console.log("🔵 [useSnapCapture] Platform:", Platform.OS);
       }
 
-      let imageUri: string | null = null;
-
       // On web, use webcam or file picker
       if (Platform.OS === "web") {
         if (debug) {
           console.log("🔵 [useSnapCapture] Using web-specific capture");
         }
-        imageUri = await captureImageFromWebcam();
+        const imageUri = await captureImageFromWebcam();
+        if (imageUri) {
+          if (debug) {
+            console.log("✅ [useSnapCapture] Image captured, uploading...");
+          }
+          await handleSnapUpload(imageUri);
+        }
       } else {
-        // On native platforms, use expo-image-picker
+        // On native platforms, navigate to the built-in CameraScreen
         if (debug) {
-          console.log("🔵 [useSnapCapture] Launching camera...");
+          console.log(
+            "🔵 [useSnapCapture] Navigating to Camera screen (chat mode)",
+          );
         }
-        const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          allowsEditing: false,
-          aspect: [1, 1],
-          quality: 1,
+        navigation.navigate("Camera", {
+          mode: "chat",
+          returnRoute: "ChatDetail",
+          returnData: { friendUid, chatId },
         });
-
-        if (debug) {
-          console.log("✅ [useSnapCapture] Camera result:", {
-            canceled: result.canceled,
-            assetsCount: result.assets?.length || 0,
-          });
-        }
-
-        if (!result.canceled && result.assets.length > 0) {
-          imageUri = result.assets[0].uri;
-        }
-      }
-
-      if (imageUri) {
-        if (debug) {
-          console.log("✅ [useSnapCapture] Image captured, uploading...");
-        }
-        await handleSnapUpload(imageUri);
-      } else if (debug) {
-        console.log("ℹ️  [useSnapCapture] User cancelled capture");
       }
     } catch (error) {
       console.error("❌ [useSnapCapture] Camera error:", error);
       Alert.alert("Error", `Failed to capture photo: ${String(error)}`);
     }
-  }, [debug, requestCameraPermission, handleSnapUpload]);
+  }, [debug, handleSnapUpload, navigation, friendUid, chatId]);
 
   // Select photo from gallery
   const handleSelectPhoto = useCallback(async (): Promise<void> => {

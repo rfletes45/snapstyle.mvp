@@ -132,7 +132,12 @@ export {
 export type { ChatGameInvitesProps } from "./ChatGameInvites";
 
 // Typing Indicator
+// Typing Indicator
 export { TypingIndicator } from "./TypingIndicator";
+
+// Duck Feature
+export { default as DuckBubble } from "./DuckBubble";
+export { DUCK_BG, DUCK_FG, default as DuckIcon } from "./DuckIcon";
 
 // Inbox Components
 export {

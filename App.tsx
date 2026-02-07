@@ -12,6 +12,7 @@ import {
 import { initializeFirebase } from "@/services/firebase";
 import { firebaseConfig } from "@/services/firebaseConfig.local";
 import { AuthProvider } from "@/store/AuthContext";
+import { CameraProvider } from "@/store/CameraContext";
 import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
 import { SnackbarProvider } from "@/store/SnackbarContext";
 import { ThemeProvider, useAppTheme } from "@/store/ThemeContext";
@@ -78,18 +79,20 @@ function AppContent() {
           <UserProvider>
             <CallProvider>
               <InAppNotificationsProvider>
-                <OutboxProcessorProvider />
-                <View
-                  style={[
-                    styles.container,
-                    { backgroundColor: colors.background },
-                  ]}
-                >
-                  <RootNavigator navigationRef={navigationRef} />
-                  <InAppToast onNavigate={handleToastNavigate} />
-                  <IncomingCallOverlay />
-                </View>
-                <ExpoStatusBar style={isDark ? "light" : "dark"} />
+                <CameraProvider>
+                  <OutboxProcessorProvider />
+                  <View
+                    style={[
+                      styles.container,
+                      { backgroundColor: colors.background },
+                    ]}
+                  >
+                    <RootNavigator navigationRef={navigationRef} />
+                    <InAppToast onNavigate={handleToastNavigate} />
+                    <IncomingCallOverlay />
+                  </View>
+                  <ExpoStatusBar style={isDark ? "light" : "dark"} />
+                </CameraProvider>
               </InAppNotificationsProvider>
             </CallProvider>
           </UserProvider>

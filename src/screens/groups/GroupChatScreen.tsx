@@ -107,6 +107,10 @@ import {
   scheduleMessage,
 } from "@/services/scheduledMessages";
 
+// Duck feature
+import DuckBubble from "@/components/chat/DuckBubble";
+import { playQuack } from "@/services/chat/quackService";
+
 // Group Calls (Phase 3) - lazy loaded to avoid native module issues
 import { CallType } from "@/types/call";
 import Constants from "expo-constants";
@@ -270,6 +274,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     maxAttachments: 10,
     maxFileSize: 10 * 1024 * 1024,
     allowedTypes: ["image"],
+    routeParams: route.params as Record<string, any>,
+    returnRoute: "GroupChat",
+    returnData: { groupId, groupName: initialGroupName },
   });
 
   const voiceRecorder = useVoiceRecorder({
@@ -655,6 +662,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const handleGamePress = useCallback(() => {
     setGamePickerVisible(true);
   }, []);
+
+  // Duck button press handler — sends a duck bubble + quack sound
+  const handleDuckPress = useCallback(async () => {
+    if (!uid || !groupId || screen.sending) return;
+    try {
+      await playQuack();
+    } catch (e) {
+      console.warn("❌ [GroupChatScreen] Quack sound error:", e);
+    }
+    try {
+      await screen.chat.sendMessage("🦆", {});
+    } catch (error) {
+      console.error("❌ [GroupChatScreen] Duck send error:", error);
+    }
+  }, [uid, groupId, screen.chat, screen.sending]);
 
   // Handle single-player game selection - navigate directly to game
   // Optionally receives a spectatorInviteId and liveSessionId if the player wants to invite spectators
@@ -1066,107 +1088,115 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   onLongPress={() => handleMessageLongPress(item)}
                   delayLongPress={300}
                 >
-                  <View
-                    style={[
-                      styles.messageBubble,
-                      isOwnMessage
-                        ? [
-                            styles.ownMessage,
-                            { backgroundColor: theme.colors.primary },
-                          ]
-                        : [
-                            styles.otherMessage,
-                            {
-                              backgroundColor: theme.dark
-                                ? "#1A1A1A"
-                                : "#e8e8e8",
-                            },
-                          ],
-                      item.kind === "media" && styles.imageOnlyBubble,
-                      item.kind === "voice" && styles.voiceBubble,
-                    ]}
-                  >
-                    {item.kind === "media" && imageAttachment ? (
-                      <Image
-                        source={{ uri: imageAttachment.url }}
-                        style={styles.standaloneImage}
-                        resizeMode="cover"
-                      />
-                    ) : item.kind === "voice" && voiceAttachment ? (
-                      <VoiceMessagePlayer
-                        url={voiceAttachment.url}
-                        durationMs={voiceAttachment.durationMs || 0}
-                        isOwn={isOwnMessage}
-                      />
-                    ) : item.kind === "scorecard" && item.scorecard ? (
-                      <View style={styles.scorecardContent}>
-                        <MaterialCommunityIcons
-                          name="gamepad-variant"
-                          size={24}
-                          color={
-                            isOwnMessage
-                              ? theme.colors.onPrimary
-                              : theme.colors.onSurface
-                          }
+                  {/* Duck message — render self-contained DuckBubble */}
+                  {item.text?.trim() === "🦆" &&
+                  item.kind !== "media" &&
+                  item.kind !== "voice" &&
+                  item.kind !== "scorecard" ? (
+                    <DuckBubble isMine={isOwnMessage} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        isOwnMessage
+                          ? [
+                              styles.ownMessage,
+                              { backgroundColor: theme.colors.primary },
+                            ]
+                          : [
+                              styles.otherMessage,
+                              {
+                                backgroundColor: theme.dark
+                                  ? "#1A1A1A"
+                                  : "#e8e8e8",
+                              },
+                            ],
+                        item.kind === "media" && styles.imageOnlyBubble,
+                        item.kind === "voice" && styles.voiceBubble,
+                      ]}
+                    >
+                      {item.kind === "media" && imageAttachment ? (
+                        <Image
+                          source={{ uri: imageAttachment.url }}
+                          style={styles.standaloneImage}
+                          resizeMode="cover"
                         />
-                        <Text
-                          style={[
-                            styles.scorecardGame,
-                            {
-                              color: isOwnMessage
+                      ) : item.kind === "voice" && voiceAttachment ? (
+                        <VoiceMessagePlayer
+                          url={voiceAttachment.url}
+                          durationMs={voiceAttachment.durationMs || 0}
+                          isOwn={isOwnMessage}
+                        />
+                      ) : item.kind === "scorecard" && item.scorecard ? (
+                        <View style={styles.scorecardContent}>
+                          <MaterialCommunityIcons
+                            name="gamepad-variant"
+                            size={24}
+                            color={
+                              isOwnMessage
                                 ? theme.colors.onPrimary
-                                : theme.colors.onSurface,
-                            },
-                          ]}
-                        >
-                          {item.scorecard.gameId === "reaction_tap"
-                            ? "Reaction Tap"
-                            : "Timed Tap"}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.scorecardScore,
-                            {
-                              color: isOwnMessage
-                                ? theme.colors.onPrimary
-                                : theme.colors.onSurface,
-                            },
-                          ]}
-                        >
-                          {item.scorecard.gameId === "reaction_tap"
-                            ? `${item.scorecard.score}ms`
-                            : `${item.scorecard.score} taps`}
-                        </Text>
-                      </View>
-                    ) : (
-                      <>
-                        <Text
-                          style={[
-                            styles.messageText,
-                            {
-                              color: isOwnMessage
-                                ? theme.colors.onPrimary
-                                : theme.colors.onSurface,
-                            },
-                          ]}
-                        >
-                          {item.text}
-                        </Text>
-                        {hasUrls(item.text || "") && (
-                          <LinkPreviewCard
-                            preview={
-                              linkPreviews.get(item.id) || {
-                                url: extractUrls(item.text || "")[0] || "",
-                                fetchedAt: Date.now(),
-                              }
+                                : theme.colors.onSurface
                             }
-                            isOwn={isOwnMessage}
-                            loading={loadingPreviews.has(item.id)}
                           />
-                        )}
-                      </>
-                    )}
-                  </View>
+                          <Text
+                            style={[
+                              styles.scorecardGame,
+                              {
+                                color: isOwnMessage
+                                  ? theme.colors.onPrimary
+                                  : theme.colors.onSurface,
+                              },
+                            ]}
+                          >
+                            {item.scorecard.gameId === "reaction_tap"
+                              ? "Reaction Tap"
+                              : "Timed Tap"}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.scorecardScore,
+                              {
+                                color: isOwnMessage
+                                  ? theme.colors.onPrimary
+                                  : theme.colors.onSurface,
+                              },
+                            ]}
+                          >
+                            {item.scorecard.gameId === "reaction_tap"
+                              ? `${item.scorecard.score}ms`
+                              : `${item.scorecard.score} taps`}
+                          </Text>
+                        </View>
+                      ) : (
+                        <>
+                          <Text
+                            style={[
+                              styles.messageText,
+                              {
+                                color: isOwnMessage
+                                  ? theme.colors.onPrimary
+                                  : theme.colors.onSurface,
+                              },
+                            ]}
+                          >
+                            {item.text}
+                          </Text>
+                          {hasUrls(item.text || "") && (
+                            <LinkPreviewCard
+                              preview={
+                                linkPreviews.get(item.id) || {
+                                  url: extractUrls(item.text || "")[0] || "",
+                                  fetchedAt: Date.now(),
+                                }
+                              }
+                              isOwn={isOwnMessage}
+                              loading={loadingPreviews.has(item.id)}
+                            />
+                          )}
+                        </>
+                      )}
+                    </View>
+                  )}
                 </TouchableOpacity>
 
                 {/* Only show timestamp on last message of group */}
@@ -1481,6 +1511,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
+          onDuckPress={handleDuckPress}
           onGamePress={handleGamePress}
           keyboardHeight={screen.keyboard.keyboardHeight}
           safeAreaBottom={insets.bottom}

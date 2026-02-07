@@ -32,7 +32,11 @@ type TurnBasedGameType =
   | "checkers"
   | "tic_tac_toe"
   | "crazy_eights"
-  | "8ball_pool";
+  | "8ball_pool"
+  | "snap_reversi"
+  | "snap_hex"
+  | "snap_war"
+  | "snap_words";
 type GameStatus = "invited" | "active" | "completed" | "abandoned";
 type GameOutcome = "win" | "loss" | "draw";
 
@@ -272,9 +276,56 @@ function getInitialGameState(gameType: TurnBasedGameType): any {
         consecutiveFouls: { player1: 0, player2: 0 },
       };
 
+    // Phase 3 turn-based games
+    case "snap_reversi":
+      return {
+        board: createInitialReversiBoard(),
+        consecutivePasses: 0,
+        flippedThisTurn: [],
+      };
+
+    case "snap_hex":
+      return {
+        board: Array.from({ length: 9 }, () => Array(9).fill(0)),
+      };
+
+    case "snap_war":
+      return {
+        player1Deck: [],
+        player2Deck: [],
+        player1WarPile: [],
+        player2WarPile: [],
+        isWar: false,
+        roundNumber: 0,
+      };
+
+    case "snap_words":
+      return {
+        board: createInitialWordsBoard(),
+        letterBag: [],
+        player1Rack: [],
+        player2Rack: [],
+        player1Score: 0,
+        player2Score: 0,
+        consecutivePasses: 0,
+      };
+
     default:
       return {};
   }
+}
+
+function createInitialReversiBoard(): number[][] {
+  const board = Array.from({ length: 8 }, () => Array(8).fill(0));
+  board[3][3] = 2;
+  board[3][4] = 1;
+  board[4][3] = 1;
+  board[4][4] = 2;
+  return board;
+}
+
+function createInitialWordsBoard(): string[][] {
+  return Array.from({ length: 9 }, () => Array(9).fill(""));
 }
 
 function getInitialChessBoard(): string[][] {
