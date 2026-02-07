@@ -1,6 +1,6 @@
 /**
- * PROFILE SYSTEM - SNAP GALLERY SERVICE
- * Manages user snap galleries and profile integration
+ * PROFILE SYSTEM - PICTURE GALLERY SERVICE
+ * Manages user picture galleries and profile integration
  * Uses Firebase Web SDK v12 modular API
  */
 
@@ -15,16 +15,16 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Snap } from "../../types/camera";
+import { Picture, Snap } from "../../types/camera";
 import { getFirestoreInstance } from "../firebase";
 
 /**
- * Snap gallery item for profile display
+ * Picture gallery item for profile display
  */
-export interface SnapGalleryItem {
+export interface PictureGalleryItem {
   id: string;
   userId: string;
-  snapId: string;
+  pictureId: string;
   thumbnailUrl: string;
   mediaType: "photo" | "video";
   createdAt: Date;
@@ -33,6 +33,9 @@ export interface SnapGalleryItem {
   replyCount: number;
   isFavorite: boolean;
 }
+
+// Backwards compatibility alias
+export type SnapGalleryItem = PictureGalleryItem;
 
 /**
  * User snap gallery

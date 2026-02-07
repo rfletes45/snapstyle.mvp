@@ -1,6 +1,6 @@
 /**
- * SNAP SERVICE
- * Handles snap uploads, sharing, viewing, and Firestore operations
+ * PICTURE SERVICE
+ * Handles picture uploads, sharing, viewing, and Firestore operations
  */
 
 import {
@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import {
+  Picture,
   Snap,
   SnapDraft,
   SnapRecipient,
@@ -25,7 +26,7 @@ import { getFirestoreInstance, getStorageInstance } from "../firebase";
 
 /**
  * ============================================================================
- * SNAP UPLOAD
+ * PICTURE UPLOAD
  * ============================================================================
  */
 

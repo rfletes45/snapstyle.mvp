@@ -1,7 +1,7 @@
 /**
- * CHAT SYSTEM - SNAP MESSAGE SERVICE
- * Integration of snaps into the chat system
- * Allows sending snaps as direct messages
+ * CHAT SYSTEM - PICTURE MESSAGE SERVICE
+ * Integration of pictures into the chat system
+ * Allows sending pictures as direct messages
  *
  * Uses Firebase Web SDK v12 modular API
  */
@@ -21,23 +21,23 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Snap } from "../../types/camera";
+import { Picture, Snap } from "../../types/camera";
 import { getFirestoreInstance } from "../firebase";
 
 /**
- * Snap message type in chat
+ * Picture message type in chat
  */
-export interface SnapMessage {
+export interface PictureMessage {
   id: string;
   conversationId: string;
   messageId: string;
   senderId: string;
   senderName: string;
-  snapId: string;
-  snapThumbnailUrl: string;
-  snapMediaUrl: string;
-  snapStatus: "sent" | "viewed" | "expired";
-  snapDuration?: number;
+  pictureId: string;
+  pictureThumbnailUrl: string;
+  pictureMediaUrl: string;
+  pictureStatus: "sent" | "viewed" | "expired";
+  pictureDuration?: number;
   caption?: string;
   createdAt: Date;
   viewedAt?: Date;
@@ -46,8 +46,11 @@ export interface SnapMessage {
   expiresAt: Date;
 }
 
+// Backwards compatibility alias
+export type SnapMessage = PictureMessage;
+
 /**
- * Send snap to chat conversation
+ * Send picture to chat conversation
  * Creates message document and links to snap
  */
 export async function sendSnapToChat(
