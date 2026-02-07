@@ -1,5 +1,5 @@
 /**
- * SnapNumberGameScreen - Mental Math Speed Game
+ * NumberMasterGameScreen - Mental Math Speed Game
  *
  * How to play:
  * 1. You are given a target number and a set of available numbers + operators
@@ -55,7 +55,7 @@ interface RoundData {
   difficulty: number;
 }
 
-interface SnapNumberGameScreenProps {
+interface NumberMasterGameScreenProps {
   navigation: any;
 }
 
@@ -65,7 +65,7 @@ interface SnapNumberGameScreenProps {
 
 const TOTAL_ROUNDS = 10;
 const ALL_OPERATORS: Operator[] = ["+", "-", "×", "÷"];
-const GAME_TYPE = "snap_number";
+const GAME_TYPE = "number_master";
 
 // =============================================================================
 // Helpers
@@ -260,9 +260,9 @@ function formatTime(ms: number): string {
 // Component
 // =============================================================================
 
-export default function SnapNumberGameScreen({
+export default function NumberMasterGameScreen({
   navigation,
-}: SnapNumberGameScreenProps) {
+}: NumberMasterGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -520,7 +520,7 @@ export default function SnapNumberGameScreen({
           showError("Failed to share score. Try again.");
         }
       } catch (error) {
-        console.error("[SnapNumber] Error sharing score:", error);
+        console.error("[GameNumber] Error sharing score:", error);
         showError("Failed to share score. Try again.");
       } finally {
         setIsSending(false);
@@ -1346,3 +1346,6 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 });
+
+
+

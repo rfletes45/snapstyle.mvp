@@ -359,7 +359,7 @@ service cloud.firestore {
         // User can create/update their own high scores with validation
         allow create, update: if isAuth() && isOwner(uid) &&
           // gameType must be valid single-player game
-          gameType in ['flappy_snap', 'bounce_blitz', 'snap_2048', 'snap_snake', 'memory_snap', 'word_snap', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'] &&
+          gameType in ['flappy_bird', 'bounce_blitz', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'] &&
           // Must have required fields
           request.resource.data.gameType == gameType &&
           request.resource.data.highScore is number &&
@@ -929,7 +929,7 @@ service cloud.firestore {
                                 request.auth.uid == playerId &&
                                 request.resource.data.playerId == playerId &&
                                 request.resource.data.score >= 0 &&
-                                leaderboardId in ['word_snap', 'bounce_blitz', 'tic_tac_toe', 'snap_2048', 'snap_snake', 'flappy_snap', 'memory_snap', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'];
+                                leaderboardId in ['word_master', 'bounce_blitz', 'tic_tac_toe', 'play_2048', 'snake_master', 'flappy_bird', 'memory_master', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'];
         
         // No deletes from client
         allow delete: if false;
@@ -1936,7 +1936,7 @@ service cloud.firestore {
       // Create: user can record own session
       allow create: if isAuth() &&
                       request.resource.data.playerId == request.auth.uid &&
-                      request.resource.data.gameType in ['flappy_dunk', 'bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'snap_2048', 'snap_snake', 'word_snap'] &&
+                      request.resource.data.gameType in ['flappy_dunk', 'bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'play_2048', 'snake_master', 'word_master'] &&
                       request.resource.data.finalScore is number &&
                       request.resource.data.finalScore >= 0 &&
                       request.resource.data.startedAt is number &&
@@ -2043,3 +2043,4 @@ service cloud.firestore {
     }
   }
 }
+

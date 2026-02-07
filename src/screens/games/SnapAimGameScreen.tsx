@@ -1,5 +1,5 @@
 /**
- * SnapAimGameScreen - Target Shooting Accuracy Game
+ * TargetMasterGameScreen - Target Shooting Accuracy Game
  *
  * How to play:
  * 1. Tap START to begin a 30-second round
@@ -53,7 +53,7 @@ interface Target {
   anim: Animated.Value;
 }
 
-interface SnapAimGameScreenProps {
+interface TargetMasterGameScreenProps {
   navigation: any;
 }
 
@@ -153,9 +153,9 @@ const TARGET_COLORS = [
 // Component
 // =============================================================================
 
-export default function SnapAimGameScreen({
+export default function TargetMasterGameScreen({
   navigation,
-}: SnapAimGameScreenProps) {
+}: TargetMasterGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -228,7 +228,7 @@ export default function SnapAimGameScreen({
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "snap_aim" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "target_master" as any).then(
         setPersonalBest,
       );
     }
@@ -435,14 +435,14 @@ export default function SnapAimGameScreen({
     // Record session
     if (currentFirebaseUser && finalScore > 0) {
       const session = await recordGameSession(currentFirebaseUser.uid, {
-        gameId: "snap_aim" as any,
+        gameId: "target_master" as any,
         score: finalScore,
         duration: difficultyRef.current.gameDuration,
       });
 
       if (session && newBest) {
         setPersonalBest({
-          gameId: "snap_aim" as any,
+          gameId: "target_master" as any,
           bestScore: finalScore,
           achievedAt: Date.now(),
         });
@@ -577,7 +577,7 @@ export default function SnapAimGameScreen({
         currentFirebaseUser.uid,
         friend.friendUid,
         {
-          gameId: "snap_aim",
+          gameId: "target_master",
           score: scoreRef.current,
           playerName: profile.displayName || profile.username || "Player",
         },
@@ -589,7 +589,7 @@ export default function SnapAimGameScreen({
         showError("Failed to share score. Try again.");
       }
     } catch (error) {
-      console.error("[SnapAim] Error sharing score:", error);
+      console.error("[GameAim] Error sharing score:", error);
       showError("Failed to share score. Try again.");
     } finally {
       setIsSending(false);
@@ -989,7 +989,7 @@ export default function SnapAimGameScreen({
           <Dialog.Title>Share Your Score</Dialog.Title>
           <Dialog.Content>
             <Text>
-              Share your Snap Aim score of {score} points with a friend?
+              Share your Picture Aim score of {score} points with a friend?
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
@@ -1230,3 +1230,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
 });
+
+
+

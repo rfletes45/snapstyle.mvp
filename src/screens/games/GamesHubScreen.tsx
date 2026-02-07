@@ -808,16 +808,16 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   const quickPlayGames: ExtendedGameType[] = [
     "reaction_tap",
     "timed_tap",
-    "flappy_snap",
+    "flappy_bird",
     "bounce_blitz",
   ];
   const puzzleGames: ExtendedGameType[] = [
     "snap_2048",
-    "snap_snake",
-    "memory_snap",
+    "snake_master",
+    "memory_master",
     "cart_course",
   ];
-  const dailyGames: ExtendedGameType[] = ["word_snap"];
+  const dailyGames: ExtendedGameType[] = ["word_master"];
   const multiplayerGames: ExtendedGameType[] = [
     "tic_tac_toe",
     "checkers",
@@ -1568,3 +1568,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+

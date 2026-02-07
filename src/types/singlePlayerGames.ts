@@ -216,7 +216,7 @@ export const BOUNCE_MASTER_CONFIG = {
  * Memory Snap game state (memory matching)
  */
 export interface MemorySnapState extends BaseSinglePlayerState {
-  gameType: "memory_snap";
+  gameType: "memory_master";
   category: "puzzle";
 
   // Grid state
@@ -336,7 +336,7 @@ export type DailyPuzzleType =
  * Word Snap game state (daily word puzzle)
  */
 export interface WordSnapState extends BaseSinglePlayerState {
-  gameType: "word_snap";
+  gameType: "word_master";
   category: "daily";
 
   // Puzzle info
@@ -573,7 +573,7 @@ export const SNAP_2048_CONFIG = {
  * Snap Snake game state
  */
 export interface SnapSnakeState extends BaseSinglePlayerState {
-  gameType: "snap_snake";
+  gameType: "snake_master";
   category: "quick_play";
 
   // Snake body segments (head is at index 0)
@@ -610,7 +610,7 @@ export type SnakeDirection = "up" | "down" | "left" | "right";
 /**
  * Snap Snake game constants
  */
-export const SNAP_SNAKE_CONFIG = {
+export const snake_master_CONFIG = {
   // Grid
   defaultGridWidth: 20,
   defaultGridHeight: 28,
@@ -653,7 +653,7 @@ export interface Snap2048Stats {
 // =============================================================================
 
 export interface SnapSnakeStats {
-  gameType: "snap_snake";
+  gameType: "snake_master";
   foodEaten: number;
   maxLength: number;
   survivalTime: number; // seconds
@@ -1025,7 +1025,7 @@ export type SinglePlayerGameStats =
   | TileSlideStats;
 
 export interface FlappySnapStats {
-  gameType: "flappy_snap";
+  gameType: "flappy_bird";
   pipesPassed: number;
   perfectPasses: number;
   maxCombo: number;
@@ -1041,7 +1041,7 @@ export interface BounceBlitzStats {
 }
 
 export interface MemorySnapStats {
-  gameType: "memory_snap";
+  gameType: "memory_master";
   pairsMatched: number;
   attempts: number;
   perfectMatches: number;
@@ -1049,7 +1049,7 @@ export interface MemorySnapStats {
 }
 
 export interface WordSnapStats {
-  gameType: "word_snap";
+  gameType: "word_master";
   wordGuessed: boolean;
   attemptsUsed: number;
   hintsUsed: number;
@@ -1091,3 +1091,5 @@ export interface LeaderboardRequest {
   limit?: number;
   aroundPlayer?: string; // Center on this player
 }
+
+

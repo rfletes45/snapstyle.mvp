@@ -1,5 +1,5 @@
 /**
- * SnapReversiGameScreen — Othello / Reversi
+ * ReversiGameScreen — Othello / Reversi
  *
  * How to play:
  * 1. Players take turns placing discs on an 8×8 board
@@ -43,7 +43,7 @@ const BOARD_PADDING = 8;
 const CELL_SIZE = Math.floor(
   (SCREEN_WIDTH - 32 - BOARD_PADDING * 2) / BOARD_SIZE,
 );
-const GAME_TYPE = "snap_reversi";
+const GAME_TYPE = "reversi_game";
 
 type CellState = 0 | 1 | 2; // 0=empty, 1=black, 2=white
 type Board = CellState[][];
@@ -174,7 +174,7 @@ function getAIMove(board: Board, player: CellState): [number, number] | null {
 // Component
 // =============================================================================
 
-export default function SnapReversiGameScreen({
+export default function ReversiGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -586,3 +586,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+

@@ -149,7 +149,7 @@ onChangeText={(text) => dispatch(setCaption(text))}
 
 ### 1.5 Incomplete Snap Object Creation ❌ → ✅ FIXED
 
-**Issue**: ShareScreen creating Snap objects without all required fields  
+**Issue**: ShareScreen creating Picture objects without all required fields  
 **Impact**: Would fail Firestore schema validation and cause runtime errors
 
 **Before (Missing Fields)**:
@@ -392,3 +392,4 @@ npm install react-native-camera expo-camera expo-image-manipulator expo-file-sys
 - 🟠 High: 5 (Import paths, Redux dispatches, Missing utility)
 - 🟡 Medium: 0
 - 🟢 Low: 0
+

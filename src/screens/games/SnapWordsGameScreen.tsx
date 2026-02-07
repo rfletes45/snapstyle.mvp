@@ -1,5 +1,5 @@
 /**
- * SnapWordsGameScreen — Scrabble-Lite / Word Builder
+ * WordsGameScreen — Scrabble-Lite / Word Builder
  *
  * How to play:
  * 1. You have a rack of 7 letter tiles
@@ -41,7 +41,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const GAME_TYPE = "snap_words";
+const GAME_TYPE = "words_game";
 const BOARD_SIZE = 9;
 const CELL_SIZE = Math.floor((SCREEN_WIDTH - 32) / BOARD_SIZE);
 const RACK_SIZE = 7;
@@ -288,7 +288,7 @@ const VALID_WORDS = new Set([
 // Component
 // =============================================================================
 
-export default function SnapWordsGameScreen({
+export default function WordsGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -901,3 +901,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+

@@ -1,5 +1,5 @@
 /**
- * SnapPongGameScreen — Classic Pong with AI
+ * PongGameScreen — Classic Pong with AI
  *
  * How to play:
  * 1. Drag your paddle (bottom) to hit the ball
@@ -51,7 +51,7 @@ const PADDLE_W = 80;
 const PADDLE_H = 14;
 const BALL_R = 10;
 const WIN_SCORE = 7;
-const GAME_TYPE = "snap_pong";
+const GAME_TYPE = "pong_game";
 
 type GameState = "menu" | "playing" | "paused" | "result";
 
@@ -75,7 +75,7 @@ interface PowerUp {
 // Component
 // =============================================================================
 
-export default function SnapPongGameScreen({
+export default function PongGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -624,3 +624,5 @@ const styles = StyleSheet.create({
   powerUpText: { fontSize: 14 },
   dialogActions: { justifyContent: "center" },
 });
+
+

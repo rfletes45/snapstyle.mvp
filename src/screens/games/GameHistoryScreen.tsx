@@ -92,12 +92,12 @@ const SINGLEPLAYER_GAMES: {
   icon: string;
 }[] = [
   { type: "all", label: "All Games", icon: "🎮" },
-  { type: "word_snap", label: "Word Snap", icon: "📝" },
-  { type: "flappy_snap", label: "Flappy Snap", icon: "🐦" },
+  { type: "word_master", label: "Word Snap", icon: "📝" },
+  { type: "flappy_bird", label: "Flappy Snap", icon: "🐦" },
   { type: "bounce_blitz", label: "Bounce Blitz", icon: "⚪" },
   { type: "snap_2048", label: "Snap 2048", icon: "🔢" },
-  { type: "snap_snake", label: "Snake", icon: "🐍" },
-  { type: "memory_snap", label: "Memory Snap", icon: "🧠" },
+  { type: "snake_master", label: "Snake", icon: "🐍" },
+  { type: "memory_master", label: "Memory Snap", icon: "🧠" },
 ];
 
 // =============================================================================
@@ -615,14 +615,14 @@ export function GameHistoryScreen() {
     }
 
     switch (stats.gameType) {
-      case "word_snap": {
+      case "word_master": {
         const ws = stats as WordSnapStats;
         if (ws.wordGuessed) {
           return `✅ Guessed in ${ws.attemptsUsed} attempt${ws.attemptsUsed !== 1 ? "s" : ""}`;
         }
         return `❌ ${ws.attemptsUsed}/6 attempts`;
       }
-      case "snap_snake": {
+      case "snake_master": {
         const ss = stats as SnapSnakeStats;
         return `🍎 ${ss.foodEaten} apples • ${ss.maxLength} max length`;
       }
@@ -630,7 +630,7 @@ export function GameHistoryScreen() {
         const s2 = stats as Snap2048Stats;
         return `🔢 Best: ${s2.bestTile} • ${s2.moveCount} moves`;
       }
-      case "memory_snap": {
+      case "memory_master": {
         const ms = stats as MemorySnapStats;
         return `🧠 ${ms.pairsMatched} pairs • ${ms.attempts} attempts`;
       }
@@ -1083,3 +1083,4 @@ const styles = StyleSheet.create({
 });
 
 export default GameHistoryScreen;
+

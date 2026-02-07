@@ -1,5 +1,5 @@
 /**
- * SnapRaceGameScreen — Typing Race
+ * RaceGameScreen — Typing Race
  *
  * How to play:
  * 1. A sentence is displayed at the top
@@ -37,7 +37,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // Constants
 // =============================================================================
 
-const GAME_TYPE = "snap_race";
+const GAME_TYPE = "race_game";
 type GameState = "menu" | "countdown" | "playing" | "result";
 
 const SENTENCES = [
@@ -62,7 +62,7 @@ const SENTENCES = [
 // Component
 // =============================================================================
 
-export default function SnapRaceGameScreen({
+export default function RaceGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -527,3 +527,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+

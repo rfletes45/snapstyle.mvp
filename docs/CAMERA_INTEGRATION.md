@@ -584,7 +584,7 @@ export async function notifySnapScreenshotted(
 }
 ```
 
-#### Step 2: Hook Notifications into Snap Service
+#### Step 2: Hook Notifications into Picture service
 
 **File**: `src/services/camera/snapService.ts` (modify)
 
@@ -818,3 +818,4 @@ If integration fails:
 
 **Integration Guide Complete**  
 All components ready for production integration.
+

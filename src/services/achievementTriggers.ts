@@ -610,13 +610,13 @@ function gameTypeToStatsType(gameType: TurnBasedGameType): StatsGameType {
     checkers: "checkers",
     tic_tac_toe: "tic_tac_toe",
     crazy_eights: "crazy_eights",
-    snap_four: "snap_four",
-    snap_dots: "snap_dots",
-    snap_gomoku: "snap_gomoku",
-    snap_reversi: "snap_reversi" as StatsGameType,
-    snap_words: "snap_words" as StatsGameType,
-    snap_war: "snap_war" as StatsGameType,
-    snap_hex: "snap_hex" as StatsGameType,
+    connect_four: "connect_four",
+    dot_match: "dot_match",
+    gomoku_master: "gomoku_master",
+    reversi_game: "reversi_game" as StatsGameType,
+    words_game: "words_game" as StatsGameType,
+    war_game: "war_game" as StatsGameType,
+    hex_game: "hex_game" as StatsGameType,
   };
 
   return typeMap[gameType] || gameType;
@@ -691,3 +691,4 @@ export const achievementTriggers = {
 };
 
 export default achievementTriggers;
+

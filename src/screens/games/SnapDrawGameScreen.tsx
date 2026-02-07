@@ -1,5 +1,5 @@
 /**
- * SnapDrawGameScreen — Pictionary / Drawing Game
+ * DrawGameScreen — Pictionary / Drawing Game
  *
  * How to play:
  * 1. A random word prompt is shown
@@ -40,7 +40,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const GAME_TYPE = "snap_draw";
+const GAME_TYPE = "draw_game";
 const CANVAS_SIZE = SCREEN_WIDTH - 32;
 const TIME_LIMIT = 60;
 
@@ -125,7 +125,7 @@ const BRUSH_SIZES = [3, 6, 10, 16];
 // Component
 // =============================================================================
 
-export default function SnapDrawGameScreen({
+export default function DrawGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -569,3 +569,5 @@ const styles = StyleSheet.create({
   actionBtn: { padding: 6 },
   dialogActions: { justifyContent: "center" },
 });
+
+

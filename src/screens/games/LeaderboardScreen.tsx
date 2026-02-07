@@ -105,7 +105,7 @@ const LEADERBOARD_GAMES: LeaderboardGame[] = [
   },
   // Single-player games (new)
   {
-    id: "flappy_snap",
+    id: "flappy_bird",
     name: "Flappy",
     icon: "bird",
     category: "single-player",
@@ -117,7 +117,7 @@ const LEADERBOARD_GAMES: LeaderboardGame[] = [
     category: "single-player",
   },
   {
-    id: "memory_snap",
+    id: "memory_master",
     name: "Memory",
     icon: "cards",
     category: "single-player",
@@ -835,3 +835,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+

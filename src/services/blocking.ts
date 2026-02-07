@@ -258,7 +258,7 @@ async function cancelPendingRequests(
       where("status", "==", "pending"),
     );
 
-    const [snapshot1, snapshot2] = await Promise.all([
+    const [Gameshot1, snapshot2] = await Promise.all([
       getDocs(q1),
       getDocs(q2),
     ]);
@@ -279,3 +279,4 @@ async function cancelPendingRequests(
     console.error("❌ [blocking] Error cancelling requests:", error);
   }
 }
+

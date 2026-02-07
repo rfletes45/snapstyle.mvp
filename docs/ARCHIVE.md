@@ -787,3 +787,4 @@ These patterns were removed and should not be reintroduced:
 - CHAT*V2_AUDIT*\*.md — Consolidated to V2 docs
 - WEB_PHOTO_CAPTURE_FIX.md — Issue resolved
 - TESTING_PHASE_0.md — Old test plan
+

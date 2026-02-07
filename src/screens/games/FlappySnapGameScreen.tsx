@@ -1,5 +1,5 @@
 /**
- * FlappySnapGameScreen - Flappy Bird-style Game
+ * FlappyBirdGameScreen - Flappy Bird-style Game
  *
  * How to play:
  * 1. Tap anywhere to make the ball jump/flap
@@ -43,7 +43,7 @@ import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
 
 type GameStatus = "idle" | "playing" | "paused" | "gameOver";
 
-interface FlappySnapGameScreenProps {
+interface FlappyBirdGameScreenProps {
   navigation: any;
 }
 
@@ -153,9 +153,9 @@ function checkCollision(
 // Component
 // =============================================================================
 
-export default function FlappySnapGameScreen({
+export default function FlappyBirdGameScreen({
   navigation,
-}: FlappySnapGameScreenProps) {
+}: FlappyBirdGameScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -438,10 +438,10 @@ export default function FlappySnapGameScreen({
     if (currentFirebaseUser) {
       try {
         await recordSinglePlayerSession(currentFirebaseUser.uid, {
-          gameType: "flappy_snap",
+          gameType: "flappy_bird",
           finalScore: currentScore,
           stats: {
-            gameType: "flappy_snap",
+            gameType: "flappy_bird",
             pipesPassed: score,
             perfectPasses: perfectCount,
             maxCombo,
@@ -493,7 +493,7 @@ export default function FlappySnapGameScreen({
         currentFirebaseUser.uid,
         friend.friendUid,
         {
-          gameId: "flappy_snap",
+          gameId: "flappy_bird",
           score,
           playerName: profile.displayName || profile.username || "Player",
         },
@@ -933,3 +933,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+
+

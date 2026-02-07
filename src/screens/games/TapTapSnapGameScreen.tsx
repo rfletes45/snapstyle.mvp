@@ -1,5 +1,5 @@
 /**
- * TapTapSnapGameScreen — Piano Tiles / Rhythm Tap
+ * TapTapGameScreen — Piano Tiles / Rhythm Tap
  *
  * How to play:
  * 1. Tiles scroll down across 4 columns
@@ -38,7 +38,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const GAME_TYPE = "tap_tap_snap";
+const GAME_TYPE = "tap_tap_game";
 const COLS = 4;
 const COL_WIDTH = (SCREEN_WIDTH - 32) / COLS;
 const TILE_HEIGHT = 100;
@@ -60,7 +60,7 @@ interface Tile {
 // Component
 // =============================================================================
 
-export default function TapTapSnapGameScreen({
+export default function TapTapGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -437,3 +437,5 @@ const styles = StyleSheet.create({
   tapZone: { position: "absolute", top: 0 },
   dialogActions: { justifyContent: "center" },
 });
+
+

@@ -1411,11 +1411,11 @@ function createInitialGameState(
       return createInitialTicTacToeState();
     case "crazy_eights":
       return createInitialCrazyEightsState(player1Id, player2Id);
-    case "snap_four":
+    case "connect_four":
       return createInitialSnapFourState();
-    case "snap_dots":
+    case "dot_match":
       return createInitialSnapDotsState();
-    case "snap_gomoku":
+    case "gomoku_master":
       return createInitialSnapGomokuState();
     default:
       throw new Error(`Unknown game type: ${gameType}`);
@@ -1581,3 +1581,4 @@ export const turnBasedGameService = {
 };
 
 export default turnBasedGameService;
+

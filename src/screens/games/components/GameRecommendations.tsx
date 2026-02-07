@@ -229,7 +229,7 @@ export function GameRecommendations({
         // Rule 3: Popular games (trending)
         const popularGames = availableGames.filter(
           (g) =>
-            ["flappy_snap", "snap_2048", "word_snap"].includes(g.id) &&
+            ["flappy_bird", "snap_2048", "word_master"].includes(g.id) &&
             !newGames.includes(g),
         );
         popularGames.forEach((game) => {
@@ -403,3 +403,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+

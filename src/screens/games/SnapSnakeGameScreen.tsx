@@ -1,5 +1,5 @@
 /**
- * SnapSnakeGameScreen - Classic Snake Game
+ * SnakeMasterGameScreen - Classic Snake Game
  *
  * How to play:
  * 1. Swipe to change the snake's direction
@@ -37,7 +37,7 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import {
   SnakeDirection,
-  SNAP_SNAKE_CONFIG,
+  snake_master_CONFIG,
   SnapSnakeState,
   SnapSnakeStats,
 } from "@/types/singlePlayerGames";
@@ -63,7 +63,7 @@ import Animated, {
 // Types
 // =============================================================================
 
-interface SnapSnakeGameScreenProps {
+interface SnakeMasterGameScreenProps {
   navigation: any;
 }
 
@@ -98,9 +98,9 @@ const SWIPE_THRESHOLD = 20;
 // Main Component
 // =============================================================================
 
-export default function SnapSnakeGameScreen({
+export default function SnakeMasterGameScreen({
   navigation,
-}: SnapSnakeGameScreenProps) {
+}: SnakeMasterGameScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -223,14 +223,14 @@ export default function SnapSnakeGameScreen({
       const recordSession = async () => {
         if (currentFirebaseUser?.uid) {
           const stats: SnapSnakeStats = {
-            gameType: "snap_snake",
+            gameType: "snake_master",
             foodEaten: gameState.foodEaten,
             maxLength: gameState.maxLength,
             survivalTime: getGameDuration(gameState),
           };
 
           await recordSinglePlayerSession(currentFirebaseUser.uid, {
-            gameType: "snap_snake",
+            gameType: "snake_master",
             finalScore: gameState.score,
             stats,
             duration: getGameDuration(gameState),
@@ -281,7 +281,7 @@ export default function SnapSnakeGameScreen({
       setIsSending(true);
       try {
         await sendScorecard(currentFirebaseUser.uid, friend.friendUid, {
-          gameId: "snap_snake",
+          gameId: "snake_master",
           score: gameState.score,
           playerName: profile.displayName || profile.username || "Player",
         });
@@ -312,7 +312,7 @@ export default function SnapSnakeGameScreen({
               top: 0,
               width: 1,
               height: BOARD_DIMENSIONS.height,
-              backgroundColor: SNAP_SNAKE_CONFIG.gridLineColor,
+              backgroundColor: snake_master_CONFIG.gridLineColor,
             },
           ]}
         />,
@@ -331,7 +331,7 @@ export default function SnapSnakeGameScreen({
               top: y * CELL_SIZE,
               width: BOARD_DIMENSIONS.width,
               height: 1,
-              backgroundColor: SNAP_SNAKE_CONFIG.gridLineColor,
+              backgroundColor: snake_master_CONFIG.gridLineColor,
             },
           ]}
         />,
@@ -383,7 +383,7 @@ export default function SnapSnakeGameScreen({
           top: gameState.food.y * CELL_SIZE + 2,
           width: CELL_SIZE - 4,
           height: CELL_SIZE - 4,
-          backgroundColor: SNAP_SNAKE_CONFIG.foodColor,
+          backgroundColor: snake_master_CONFIG.foodColor,
         },
       ]}
     />
@@ -393,7 +393,7 @@ export default function SnapSnakeGameScreen({
     <View
       style={[
         styles.container,
-        { backgroundColor: SNAP_SNAKE_CONFIG.gridColor },
+        { backgroundColor: snake_master_CONFIG.gridColor },
       ]}
     >
       {/* Header */}
@@ -455,7 +455,7 @@ export default function SnapSnakeGameScreen({
           {
             width: BOARD_DIMENSIONS.width,
             height: BOARD_DIMENSIONS.height,
-            backgroundColor: SNAP_SNAKE_CONFIG.gridColor,
+            backgroundColor: snake_master_CONFIG.gridColor,
           },
         ]}
         {...panResponder.panHandlers}
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: SNAP_SNAKE_CONFIG.gridLineColor,
+    borderColor: snake_master_CONFIG.gridLineColor,
   },
   gridLine: {
     position: "absolute",
@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
   food: {
     position: "absolute",
     borderRadius: 999,
-    shadowColor: SNAP_SNAKE_CONFIG.foodColor,
+    shadowColor: snake_master_CONFIG.foodColor,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 8,
@@ -690,3 +690,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+

@@ -3,7 +3,7 @@ import { ConfigContext, ExpoConfig } from "expo/config";
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "Vibe",
-  slug: "snapstyle-mvp", // Must match EAS projectId slug
+  slug: "snapstyle-mvp", // Must match EAS projectId slug - keep app name, removing snap game prefix
   version: "1.0.0",
   orientation: "portrait",
   userInterfaceStyle: "automatic",

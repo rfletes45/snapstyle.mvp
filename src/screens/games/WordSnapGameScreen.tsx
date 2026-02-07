@@ -1,5 +1,5 @@
 /**
- * WordSnapGameScreen - Daily Wordle-style Game
+ * WordMasterGameScreen - Daily Wordle-style Game
  *
  * How to play:
  * 1. Guess the 5-letter word in 6 attempts
@@ -47,7 +47,7 @@ interface LetterGuess {
   animValue: Animated.Value;
 }
 
-interface WordSnapGameScreenProps {
+interface WordMasterGameScreenProps {
   navigation: any;
 }
 
@@ -704,9 +704,9 @@ const KEYBOARD_ROWS = [
 // Component
 // =============================================================================
 
-export default function WordSnapGameScreen({
+export default function WordMasterGameScreen({
   navigation,
-}: WordSnapGameScreenProps) {
+}: WordMasterGameScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -895,10 +895,10 @@ export default function WordSnapGameScreen({
           // Record session
           if (currentFirebaseUser) {
             recordSinglePlayerSession(currentFirebaseUser.uid, {
-              gameType: "word_snap",
+              gameType: "word_master",
               finalScore: (MAX_GUESSES - currentRow) * 100 + 500,
               stats: {
-                gameType: "word_snap",
+                gameType: "word_master",
                 wordGuessed: true,
                 attemptsUsed: currentRow + 1,
                 hintsUsed: 0,
@@ -922,10 +922,10 @@ export default function WordSnapGameScreen({
           // Record session
           if (currentFirebaseUser) {
             recordSinglePlayerSession(currentFirebaseUser.uid, {
-              gameType: "word_snap",
+              gameType: "word_master",
               finalScore: 0,
               stats: {
-                gameType: "word_snap",
+                gameType: "word_master",
                 wordGuessed: false,
                 attemptsUsed: MAX_GUESSES,
                 hintsUsed: 0,
@@ -1053,7 +1053,7 @@ export default function WordSnapGameScreen({
         currentFirebaseUser.uid,
         friend.friendUid,
         {
-          gameId: "word_snap",
+          gameId: "word_master",
           score,
           playerName: profile.displayName || profile.username || "Player",
         },
@@ -1358,3 +1358,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 });
+
+

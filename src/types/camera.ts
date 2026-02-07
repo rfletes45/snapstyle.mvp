@@ -42,7 +42,7 @@ export interface CameraDevice {
  */
 
 export type MediaType = "photo" | "video";
-export type SnapType = "photo" | "video" | "story" | "memory";
+export type PictureType = "photo" | "video" | "story" | "memory";
 
 export interface CapturedMedia {
   id: string;
@@ -325,7 +325,7 @@ export interface Snap {
   updatedAt: number;
 
   // Visibility
-  recipients: SnapRecipient[];
+  recipients: PictureRecipient[];
   storyVisible: boolean;
   storyExpiresAt?: number;
 
@@ -335,9 +335,9 @@ export interface Snap {
   overlayElements: OverlayElement[];
 
   // Engagement
-  viewedBy: SnapView[];
-  reactions: SnapReaction[];
-  replies: SnapReply[];
+  viewedBy: PictureView[];
+  reactions: PictureReaction[];
+  replies: PictureReply[];
 
   // Settings
   allowReplies: boolean;
@@ -350,25 +350,25 @@ export interface Snap {
   uploadProgress: number; // 0 to 100
 }
 
-export interface SnapRecipient {
+export interface PictureRecipient {
   userId: string;
   addedAt: number;
   recipientType: "direct" | "story" | "group";
 }
 
-export interface SnapView {
+export interface PictureView {
   userId: string;
   viewedAt: number;
   screenshotTaken: boolean;
 }
 
-export interface SnapReaction {
+export interface PictureReaction {
   userId: string;
   emoji: string;
   timestamp: number;
 }
 
-export interface SnapReply {
+export interface PictureReply {
   id: string;
   userId: string;
   displayName: string;
@@ -459,7 +459,7 @@ export type StickerCategory =
  * ============================================================================
  */
 
-export interface SnapDraft {
+export interface PictureDraft {
   id: string;
   userId: string;
   media: CapturedMedia;
@@ -476,13 +476,13 @@ export interface SnapDraft {
  * ============================================================================
  */
 
-export interface SnapViewerState {
+export interface PictureViewerState {
   snapId: string;
   snap: Snap;
   viewedAt: number;
   canReply: boolean;
   canReact: boolean;
-  replies: SnapReply[];
+  replies: PictureReply[];
 }
 
 /**
@@ -541,7 +541,7 @@ export interface AudioMix {
  * ============================================================================
  */
 
-export interface SnapStorageMetadata {
+export interface PictureStorageMetadata {
   snapId: string;
   senderId: string;
   mediaType: "photo" | "video";
@@ -550,3 +550,4 @@ export interface SnapStorageMetadata {
   expiresAt?: number;
   compressionRatio: number;
 }
+

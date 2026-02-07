@@ -352,7 +352,7 @@ eas build --platform ios --local
 
 - All data access requires authentication
 - Screenshot detection and alerts
-- 24-hour snap expiry with auto-delete
+- 24-hour Picture expiry with auto-delete
 - Access control lists for sensitive operations
 
 ### Testing
@@ -428,3 +428,4 @@ eas build --platform ios --local
 **Document Version**: 1.0  
 **Last Updated**: February 6, 2026  
 **Maintained By**: Development Team
+

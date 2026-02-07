@@ -51,14 +51,14 @@ export interface SnapMessage {
  * Creates message document and links to snap
  */
 export async function sendSnapToChat(
-  snap: Snap,
+  picture: Picture,
   conversationId: string,
   userId: string,
   userName: string,
 ): Promise<SnapMessage> {
   try {
     console.log(
-      `[Snap Chat Service] Sending snap ${snap.id} to conversation ${conversationId}`,
+      `[Game Chat Service] Sending snap ${snap.id} to conversation ${conversationId}`,
     );
 
     const db = getFirestoreInstance();
@@ -94,7 +94,7 @@ export async function sendSnapToChat(
     const messageDocRef = await addDoc(messagesRef, messageData);
 
     // Update snap document to mark as sent to chat
-    const snapRef = doc(db, "Snaps", snap.id);
+    const snapRef = doc(db, "Pictures", snap.id);
     await updateDoc(snapRef, {
       sentToChat: true,
       chatMessageId: messageDocRef.id,
@@ -110,7 +110,7 @@ export async function sendSnapToChat(
     });
 
     console.log(
-      `[Snap Chat Service] Snap message created: ${messageDocRef.id}`,
+      `[Game Chat Service] Snap message created: ${messageDocRef.id}`,
     );
 
     return {
@@ -133,7 +133,7 @@ export async function sendSnapToChat(
         : new Date(Date.now() + 24 * 60 * 60 * 1000),
     };
   } catch (error) {
-    console.error("[Snap Chat Service] Failed to send snap to chat:", error);
+    console.error("[Game Chat Service] Failed to send snap to chat:", error);
     throw error;
   }
 }
@@ -149,7 +149,7 @@ export async function recordSnapViewInChat(
 ): Promise<void> {
   try {
     console.log(
-      `[Snap Chat Service] Recording snap view for message ${messageId}`,
+      `[Game Chat Service] Recording snap view for message ${messageId}`,
     );
 
     const db = getFirestoreInstance();
@@ -168,7 +168,7 @@ export async function recordSnapViewInChat(
     });
 
     // Record view in snap document
-    const viewsRef = collection(db, "Snaps", snapId, "Views");
+    const viewsRef = collection(db, "Pictures", snapId, "Views");
     await addDoc(viewsRef, {
       userId: viewerId,
       viewedAt: new Date(),
@@ -180,15 +180,15 @@ export async function recordSnapViewInChat(
     });
 
     // Increment snap view count
-    const snapRef = doc(db, "Snaps", snapId);
+    const snapRef = doc(db, "Pictures", snapId);
     await updateDoc(snapRef, {
       viewCount: increment(1),
     });
 
-    console.log("[Snap Chat Service] Snap view recorded");
+    console.log("[Game Chat Service] Snap view recorded");
   } catch (error) {
     console.error(
-      "[Snap Chat Service] Failed to record snap view in chat:",
+      "[Game Chat Service] Failed to record snap view in chat:",
       error,
     );
     throw error;
@@ -204,7 +204,7 @@ export async function markSnapAsViewedInChat(
 ): Promise<void> {
   try {
     console.log(
-      `[Snap Chat Service] Marking snap message ${messageId} as viewed`,
+      `[Game Chat Service] Marking snap message ${messageId} as viewed`,
     );
 
     const db = getFirestoreInstance();
@@ -221,9 +221,9 @@ export async function markSnapAsViewedInChat(
       viewedAt: new Date(),
     });
 
-    console.log("[Snap Chat Service] Snap marked as viewed");
+    console.log("[Game Chat Service] Snap marked as viewed");
   } catch (error) {
-    console.error("[Snap Chat Service] Failed to mark snap as viewed:", error);
+    console.error("[Game Chat Service] Failed to mark snap as viewed:", error);
     throw error;
   }
 }
@@ -239,7 +239,7 @@ export async function recordSnapScreenshot(
 ): Promise<void> {
   try {
     console.log(
-      `[Snap Chat Service] Recording screenshot of snap message ${messageId}`,
+      `[Game Chat Service] Recording screenshot of snap message ${messageId}`,
     );
 
     const db = getFirestoreInstance();
@@ -257,7 +257,7 @@ export async function recordSnapScreenshot(
     });
 
     // Record screenshot in snap views
-    const viewsRef = collection(db, "Snaps", snapId, "Views");
+    const viewsRef = collection(db, "Pictures", snapId, "Views");
     await addDoc(viewsRef, {
       userId,
       screenshotTaken: true,
@@ -267,9 +267,9 @@ export async function recordSnapScreenshot(
       conversationId,
     });
 
-    console.log("[Snap Chat Service] Screenshot recorded");
+    console.log("[Game Chat Service] Screenshot recorded");
   } catch (error) {
-    console.error("[Snap Chat Service] Failed to record screenshot:", error);
+    console.error("[Game Chat Service] Failed to record screenshot:", error);
     throw error;
   }
 }
@@ -283,7 +283,7 @@ export async function getSnapMessagesInConversation(
 ): Promise<SnapMessage[]> {
   try {
     console.log(
-      `[Snap Chat Service] Fetching snap messages from conversation ${conversationId}`,
+      `[Game Chat Service] Fetching snap messages from conversation ${conversationId}`,
     );
 
     const db = getFirestoreInstance();
@@ -326,10 +326,10 @@ export async function getSnapMessagesInConversation(
       });
     });
 
-    console.log(`[Snap Chat Service] Fetched ${messages.length} snap messages`);
+    console.log(`[Game Chat Service] Fetched ${messages.length} snap messages`);
     return messages;
   } catch (error) {
-    console.error("[Snap Chat Service] Failed to get snap messages:", error);
+    console.error("[Game Chat Service] Failed to get snap messages:", error);
     throw error;
   }
 }
@@ -343,7 +343,7 @@ export async function deleteSnapMessageFromChat(
 ): Promise<void> {
   try {
     console.log(
-      `[Snap Chat Service] Deleting snap message ${messageId} from chat`,
+      `[Game Chat Service] Deleting snap message ${messageId} from chat`,
     );
 
     const db = getFirestoreInstance();
@@ -357,9 +357,9 @@ export async function deleteSnapMessageFromChat(
     );
     await deleteDoc(messageRef);
 
-    console.log("[Snap Chat Service] Snap message deleted");
+    console.log("[Game Chat Service] Snap message deleted");
   } catch (error) {
-    console.error("[Snap Chat Service] Failed to delete snap message:", error);
+    console.error("[Game Chat Service] Failed to delete snap message:", error);
     throw error;
   }
 }
@@ -375,7 +375,7 @@ export async function addReactionToSnapMessage(
 ): Promise<void> {
   try {
     console.log(
-      `[Snap Chat Service] Adding reaction ${emoji} to snap message ${messageId}`,
+      `[Game Chat Service] Adding reaction ${emoji} to snap message ${messageId}`,
     );
 
     const db = getFirestoreInstance();
@@ -392,10 +392,10 @@ export async function addReactionToSnapMessage(
       [`reactions.${emoji}`]: arrayUnion(userId),
     });
 
-    console.log("[Snap Chat Service] Reaction added to snap message");
+    console.log("[Game Chat Service] Reaction added to snap message");
   } catch (error) {
     console.error(
-      "[Snap Chat Service] Failed to add reaction to snap message:",
+      "[Game Chat Service] Failed to add reaction to snap message:",
       error,
     );
     throw error;
@@ -409,15 +409,15 @@ export async function getSnapMetadataForChat(
   snapId: string,
 ): Promise<Partial<SnapMessage> | null> {
   try {
-    console.log(`[Snap Chat Service] Fetching snap metadata for ${snapId}`);
+    console.log(`[Game Chat Service] Fetching snap metadata for ${snapId}`);
 
     const db = getFirestoreInstance();
 
-    const snapRef = doc(db, "Snaps", snapId);
+    const snapRef = doc(db, "Pictures", snapId);
     const snapDoc = await getDoc(snapRef);
 
     if (!snapDoc.exists()) {
-      console.warn("[Snap Chat Service] Snap not found");
+      console.warn("[Game Chat Service] Snap not found");
       return null;
     }
 
@@ -432,7 +432,9 @@ export async function getSnapMetadataForChat(
       expiresAt: data.expiresAt?.toDate?.() || new Date(),
     };
   } catch (error) {
-    console.error("[Snap Chat Service] Failed to get snap metadata:", error);
+    console.error("[Game Chat Service] Failed to get snap metadata:", error);
     return null;
   }
 }
+
+

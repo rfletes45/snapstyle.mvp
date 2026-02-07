@@ -411,7 +411,7 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     tier: "bronze",
     category: "single_player",
     trigger: "score",
-    gameType: "flappy_snap",
+    gameType: "flappy_bird",
     threshold: 10,
     coinReward: 15,
     xpReward: 30,
@@ -426,7 +426,7 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     tier: "silver",
     category: "single_player",
     trigger: "score",
-    gameType: "flappy_snap",
+    gameType: "flappy_bird",
     threshold: 25,
     coinReward: 50,
     xpReward: 100,
@@ -441,7 +441,7 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     tier: "gold",
     category: "single_player",
     trigger: "score",
-    gameType: "flappy_snap",
+    gameType: "flappy_bird",
     threshold: 50,
     coinReward: 150,
     xpReward: 300,
@@ -456,7 +456,7 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     tier: "gold",
     category: "single_player",
     trigger: "perfect",
-    gameType: "flappy_snap",
+    gameType: "flappy_bird",
     threshold: 10,
     coinReward: 100,
     xpReward: 200,
@@ -1178,3 +1178,4 @@ export const gameAchievements = {
 };
 
 export default gameAchievements;
+

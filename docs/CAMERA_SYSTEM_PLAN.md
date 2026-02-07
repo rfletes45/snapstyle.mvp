@@ -1,4 +1,4 @@
-# Snapchat-Like Camera System - Comprehensive Implementation Plan
+# Camera-Based Camera System - Comprehensive Implementation Plan
 
 **Version:** 1.0
 **Date:** February 6, 2026
@@ -1118,7 +1118,7 @@ export function getElementBounds(element: OverlayElement): {
 };
 ```
 
-### 7.4 Snap Service
+### 7.4 Picture service
 
 ```typescript
 // src/services/snapService.ts
@@ -1771,7 +1771,7 @@ interface ShareScreenState {
  */
 ```
 
-### 10.6 Snap Encryption
+### 10.6 Picture encryption
 
 ```typescript
 /**
@@ -1788,7 +1788,7 @@ interface ShareScreenState {
  */
 ```
 
-### 10.7 Snap Expiry & Deletion
+### 10.7 Picture expiry & Deletion
 
 ```typescript
 /**
@@ -2343,17 +2343,17 @@ describe("Camera Performance", () => {
    - Draw while on call
    - Share screen for collaborative editing
 
-2. **Snap Marketplace**
+2. **Picture Marketplace**
    - Sell custom filters
    - Creator economy
    - Trending effects
 
-3. **Group Snaps**
+3. **Group Pictures**
    - Collaborative snap creation
    - Multiple contributors
    - Real-time sync
 
-4. **Snap Memories**
+4. **Picture Memories**
    - On this day: Show snaps from 1 year ago
    - Monthly recap
    - Year in review video
@@ -2369,12 +2369,12 @@ describe("Camera Performance", () => {
    - Speech to text
    - Sound effects library
 
-7. **Snap Remixing**
+7. **Picture Remixing**
    - Use others' snaps as base
    - Add your own elements
    - Collaborative art
 
-8. **Snap Reactions**
+8. **Picture Reactions**
    - More emoji reactions
    - Custom reaction packs
    - Animated reactions (Lottie)
@@ -2384,27 +2384,27 @@ describe("Camera Performance", () => {
    - Recurring snaps
    - Birthday reminders
 
-10. **Snap NFTs**
+10. **Picture NFTs**
     - Mint special snaps as NFTs
-    - Tradeable snap collections
+    - Tradeable Picture collections
     - Blockchain integration
 
-11. **Snap Comments**
+11. **Picture Comments**
     - Threaded comments on snaps
     - @ mentions
     - Comment notifications
 
-12. **Snap Editing After Send**
+12. **Picture Editing After Send**
     - Edit caption
     - Add more recipients
     - Change expiry time
 
-13. **Snap Analytics**
+13. **Picture Analytics**
     - View analytics for story snaps
     - Peak view times
     - Engagement metrics
 
-14. **Snap Backup**
+14. **Picture Backup**
     - Auto-backup to cloud
     - Sync across devices
     - Recovery options
@@ -2413,7 +2413,7 @@ describe("Camera Performance", () => {
 
 ## Summary
 
-This comprehensive plan covers a Snapchat-like camera system with:
+This comprehensive plan covers a Camera-Based camera system with:
 
 ### Core Features (MVP)
 
@@ -2468,3 +2468,4 @@ This comprehensive plan covers a Snapchat-like camera system with:
 3. Finalize technology stack
 4. Create detailed sprint planning
 5. Begin Phase 1 implementation
+

@@ -38,12 +38,12 @@ service firebase.storage {
     }
 
     // ============================================================
-    // SNAPS: Chat images between two users
+    // PICTURES: Chat images between two users
     // ============================================================
     
-    // Path: /snaps/{chatId}/{filename}
+    // Path: /pictures/{chatId}/{filename}
     // Chat ID format is uid1_uid2 (sorted alphabetically)
-    match /snaps/{chatId}/{allPaths=**} {
+    match /pictures/{chatId}/{allPaths=**} {
       // Read: Only chat members (UID in chatId)
       // Strengthened: Exact boundary match with underscore
       allow read: if isAuth() && (
@@ -204,3 +204,4 @@ service firebase.storage {
     }
   }
 }
+

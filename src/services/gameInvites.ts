@@ -279,54 +279,54 @@ const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
-  snap_four: {
+  connect_four: {
     isRated: true,
     timeControl: { type: "per_turn", seconds: 60 },
     chatEnabled: true,
   },
-  snap_dots: {
+  dot_match: {
     isRated: true,
     timeControl: { type: "per_turn", seconds: 60 },
     chatEnabled: true,
   },
-  snap_gomoku: {
+  gomoku_master: {
     isRated: true,
     timeControl: { type: "per_turn", seconds: 120 },
     chatEnabled: true,
   },
   // Phase 3 turn-based games
-  snap_reversi: {
+  reversi_game: {
     isRated: true,
     timeControl: { type: "per_turn", seconds: 120 },
     chatEnabled: true,
   },
-  snap_words: {
+  words_game: {
     isRated: true,
     timeControl: { type: "per_turn", seconds: 180 },
     chatEnabled: true,
   },
-  snap_war: {
+  war_game: {
     isRated: false,
     timeControl: { type: "per_turn", seconds: 30 },
     chatEnabled: true,
   },
-  snap_hex: {
+  hex_game: {
     isRated: true,
     timeControl: { type: "per_turn", seconds: 120 },
     chatEnabled: true,
   },
   // Phase 3 real-time games
-  snap_draw: {
+  draw_game: {
     isRated: false,
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
-  snap_race: {
+  race_game: {
     isRated: false,
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
-  snap_crossword: {
+  crossword_puzzle: {
     isRated: false,
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
@@ -404,54 +404,54 @@ function getDefaultInviteSettings(
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
-    snap_four: {
+    connect_four: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 60 },
       chatEnabled: true,
     },
-    snap_dots: {
+    dot_match: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 60 },
       chatEnabled: true,
     },
-    snap_gomoku: {
+    gomoku_master: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 120 },
       chatEnabled: true,
     },
     // Phase 3 turn-based games
-    snap_reversi: {
+    reversi_game: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 120 },
       chatEnabled: true,
     },
-    snap_words: {
+    words_game: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 180 },
       chatEnabled: true,
     },
-    snap_war: {
+    war_game: {
       isRated: false,
       timeControl: { type: "per_turn", seconds: 30 },
       chatEnabled: true,
     },
-    snap_hex: {
+    hex_game: {
       isRated: true,
       timeControl: { type: "per_turn", seconds: 120 },
       chatEnabled: true,
     },
     // Phase 3 real-time games
-    snap_draw: {
+    draw_game: {
       isRated: false,
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
-    snap_race: {
+    race_game: {
       isRated: false,
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
-    snap_crossword: {
+    crossword_puzzle: {
       isRated: false,
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
@@ -2538,3 +2538,4 @@ export const gameInvites = {
   getConversationSpectatorInvites,
   subscribeToConversationSpectatorInvites,
 };
+

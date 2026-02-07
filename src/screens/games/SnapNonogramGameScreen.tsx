@@ -1,5 +1,5 @@
 /**
- * SnapNonogramGameScreen — Picross / Nonogram
+ * NonogramGameScreen — Picross / Nonogram
  *
  * How to play:
  * 1. Use row and column clues (numbers) to determine which cells to fill
@@ -37,7 +37,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const GAME_TYPE = "snap_nonogram";
+const GAME_TYPE = "nonogram_puzzle";
 type GameState = "menu" | "playing" | "result";
 type CellState = "empty" | "filled" | "marked"; // empty = unknown, filled = colored, marked = X
 
@@ -185,7 +185,7 @@ function computeClues(solution: boolean[][]): {
 // Component
 // =============================================================================
 
-export default function SnapNonogramGameScreen({
+export default function NonogramGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -643,3 +643,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+

@@ -1,5 +1,5 @@
 /**
- * SnapCrosswordGameScreen — Daily 5×5 Mini Crossword
+ * CrosswordGameScreen — Daily 5×5 Mini Crossword
  *
  * How to play:
  * 1. Fill in the 5×5 grid using the across/down clues
@@ -48,7 +48,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_SIZE = 5;
 const CELL_SIZE = Math.floor((SCREEN_WIDTH - 64) / GRID_SIZE);
-const GAME_TYPE = "snap_crossword";
+const GAME_TYPE = "crossword_puzzle";
 
 type GameState = "playing" | "result";
 
@@ -227,7 +227,7 @@ function getDailyPuzzle(): CrosswordPuzzle {
 // Component
 // =============================================================================
 
-export default function SnapCrosswordGameScreen({
+export default function CrosswordGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -650,3 +650,5 @@ const styles = StyleSheet.create({
   clueText: { fontSize: 14, lineHeight: 22, marginBottom: 4 },
   dialogActions: { justifyContent: "center" },
 });
+
+

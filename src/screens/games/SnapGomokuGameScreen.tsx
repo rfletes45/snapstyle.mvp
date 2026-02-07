@@ -1,5 +1,5 @@
 /**
- * SnapGomokuGameScreen - Five in a Row
+ * GomokuMasterGameScreen - Five in a Row
  *
  * How to play:
  * 1. Two players take turns placing stones on a 15×15 grid
@@ -47,7 +47,7 @@ const CELL_SIZE = Math.floor((SCREEN_WIDTH - BOARD_PADDING * 2) / BOARD_COLS);
 const BOARD_PIXEL_SIZE = CELL_SIZE * BOARD_COLS;
 const STONE_RADIUS = Math.floor(CELL_SIZE * 0.42);
 
-const GAME_TYPE = "snap_gomoku";
+const GAME_TYPE = "gomoku_master";
 
 // =============================================================================
 // Types
@@ -240,13 +240,13 @@ function getAIMove(board: Board, aiPlayer: CellState): Coord {
 // Component
 // =============================================================================
 
-interface SnapGomokuGameScreenProps {
+interface GomokuMasterGameScreenProps {
   navigation: any;
 }
 
-export default function SnapGomokuGameScreen({
+export default function GomokuMasterGameScreen({
   navigation,
-}: SnapGomokuGameScreenProps) {
+}: GomokuMasterGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -906,3 +906,5 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
 });
+
+

@@ -1,5 +1,5 @@
 /**
- * SnapFourGameScreen - Connect Four Game
+ * ConnectFourGameScreen - Connect Four Game
  *
  * How to play:
  * 1. Two players take turns dropping colored discs
@@ -261,13 +261,13 @@ function getAIMove(board: Board): number {
 // Component
 // =============================================================================
 
-interface SnapFourGameScreenProps {
+interface ConnectFourGameScreenProps {
   navigation: any;
 }
 
-export default function SnapFourGameScreen({
+export default function ConnectFourGameScreen({
   navigation,
-}: SnapFourGameScreenProps) {
+}: ConnectFourGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -296,7 +296,7 @@ export default function SnapFourGameScreen({
 
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "snap_four" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "connect_four" as any).then(
         setPersonalBest,
       );
     }
@@ -391,13 +391,13 @@ export default function SnapFourGameScreen({
           setWins(newWins);
           if (currentFirebaseUser) {
             recordGameSession(currentFirebaseUser.uid, {
-              gameId: "snap_four" as any,
+              gameId: "connect_four" as any,
               score: newWins,
             }).then(() => {
               const newBest = !personalBest || newWins > personalBest.bestScore;
               if (newBest) {
                 setPersonalBest({
-                  gameId: "snap_four" as any,
+                  gameId: "connect_four" as any,
                   bestScore: newWins,
                   achievedAt: Date.now(),
                 });
@@ -437,7 +437,7 @@ export default function SnapFourGameScreen({
       setIsSending(true);
       try {
         await sendScorecard(currentFirebaseUser.uid, friendUid, {
-          gameId: "snap_four",
+          gameId: "connect_four",
           score: wins,
           playerName: profile.displayName || "Player",
         });
@@ -472,7 +472,7 @@ export default function SnapFourGameScreen({
             ? JSON.stringify(profile.avatarConfig)
             : undefined,
           {
-            gameType: "snap_four",
+            gameType: "connect_four",
             recipientId: friend.friendUid,
             recipientName: friend.displayName || "Friend",
             settings: { isRated: false, chatEnabled: false },
@@ -667,7 +667,7 @@ export default function SnapFourGameScreen({
         onDismiss={() => setShowInvitePicker(false)}
         onSelectFriend={handleSelectFriendForInvite}
         currentUserId={currentFirebaseUser?.uid || ""}
-        title="Invite to Snap Four"
+        title="Invite to game Four"
       />
     </View>
   );
@@ -744,3 +744,6 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
 });
+
+
+

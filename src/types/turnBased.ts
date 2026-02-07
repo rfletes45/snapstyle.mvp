@@ -95,14 +95,14 @@ export type TurnBasedGameType =
   | "checkers"
   | "tic_tac_toe"
   | "crazy_eights"
-  | "snap_four"
-  | "snap_dots"
-  | "snap_gomoku"
+  | "connect_four"
+  | "dot_match"
+  | "gomoku_master"
   // Phase 3
-  | "snap_reversi"
-  | "snap_words"
-  | "snap_war"
-  | "snap_hex";
+  | "reversi_game"
+  | "words_game"
+  | "war_game"
+  | "hex_game";
 
 /**
  * Match status
@@ -1307,3 +1307,4 @@ export function getPieceSymbol(type: ChessPieceType): string {
   };
   return symbols[type];
 }
+

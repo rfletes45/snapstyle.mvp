@@ -21,29 +21,29 @@
 export type SinglePlayerGameType =
   | "bounce_blitz" // Ballz-style
   | "snap_2048" // 2048 puzzle
-  | "snap_snake" // Classic snake
-  | "memory_snap" // Memory matching
-  | "word_snap" // Daily word puzzle (Wordle-style)
+  | "snake_master" // Classic snake
+  | "memory_master" // Memory matching
+  | "word_master" // Daily word puzzle (Wordle-style)
   | "reaction_tap" // Existing - tap when green
   | "timed_tap" // Existing - tap count in 10s
   | "cart_course" // DK Crash Course-style tilt game
-  | "flappy_snap" // Flappy Bird-style pipe game
+  | "flappy_bird" // Flappy Bird-style pipe game
   // New single-player games (Phase 1)
   | "brick_breaker" // Classic Breakout/Arkanoid
   | "tile_slide" // Classic 15-puzzle sliding tiles
   // New single-player games (Phase 2)
-  | "snap_stack" // Stacking tower game
-  | "snap_minesweeper" // Classic Minesweeper
-  | "snap_number" // Mental math speed game
-  | "snap_aim" // Target shooting accuracy
-  | "snap_lights" // Lights Out puzzle
+  | "stack_puzzle" // Stacking tower game
+  | "minesweeper_classic" // Classic Minesweeper
+  | "number_master" // Mental math speed game
+  | "target_master" // Target shooting accuracy
+  | "lights_out" // Lights Out puzzle
   // New single-player games (Phase 3)
-  | "snap_match" // Match-3 (Candy Crush/Bejeweled)
-  | "snap_pipes" // Pipe Mania rotate-to-connect
-  | "snap_nonogram" // Picross / Nonogram
-  | "tap_tap_snap" // Rhythm / Piano Tiles
-  | "snap_slice" // Fruit Ninja swipe-to-slice
-  | "snap_pong"; // Pong with AI
+  | "match_game" // Match-3 (Candy Crush/Bejeweled)
+  | "pipes_game" // Pipe Mania rotate-to-connect
+  | "nonogram_puzzle" // Picross / Nonogram
+  | "tap_tap_game" // Rhythm / Piano Tiles
+  | "slice_game" // Fruit Ninja swipe-to-slice
+  | "pong_game"; // Pong with AI
 
 /**
  * Turn-based multiplayer games
@@ -53,14 +53,14 @@ export type TurnBasedGameType =
   | "checkers"
   | "crazy_eights"
   | "tic_tac_toe"
-  | "snap_four" // Connect Four
-  | "snap_dots" // Dots and Boxes
-  | "snap_gomoku" // Five in a Row (Gomoku)
+  | "connect_four" // Connect Four
+  | "dot_match" // Dots and Boxes
+  | "gomoku_master" // Five in a Row (Gomoku)
   // New turn-based games (Phase 3)
-  | "snap_reversi" // Othello / Reversi
-  | "snap_words" // Scrabble-lite
-  | "snap_war" // Card War
-  | "snap_hex"; // Hex board game
+  | "reversi_game" // Othello / Reversi
+  | "words_game" // Scrabble-lite
+  | "war_game" // Card War
+  | "hex_game"; // Hex board game
 
 /**
  * Real-time multiplayer games (simulated turn-based for pool)
@@ -69,9 +69,9 @@ export type RealTimeGameType =
   | "8ball_pool"
   | "air_hockey"
   // New real-time games (Phase 3)
-  | "snap_draw" // Pictionary drawing game
-  | "snap_race" // Typing race
-  | "snap_crossword"; // Daily mini crossword
+  | "draw_game" // Pictionary drawing game
+  | "race_game" // Typing race
+  | "crossword_puzzle"; // Daily mini crossword
 
 /**
  * All game types combined
@@ -158,8 +158,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasAchievements: true,
     isAvailable: true,
   },
-  snap_snake: {
-    id: "snap_snake",
+  snake_master: {
+    id: "snake_master",
     name: "Snap Snake",
     shortName: "Snake",
     description: "Eat food and grow without hitting walls!",
@@ -188,8 +188,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasAchievements: true,
     isAvailable: true,
   },
-  memory_snap: {
-    id: "memory_snap",
+  memory_master: {
+    id: "memory_master",
     name: "Memory Snap",
     shortName: "Memory",
     description: "Match pairs of cards!",
@@ -221,8 +221,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // Single-player: Daily
-  word_snap: {
-    id: "word_snap",
+  word_master: {
+    id: "word_master",
     name: "Word Snap",
     shortName: "Word",
     description: "Guess the daily word in 6 tries!",
@@ -238,8 +238,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // New Single-player Games (Phase 1)
-  flappy_snap: {
-    id: "flappy_snap",
+  flappy_bird: {
+    id: "flappy_bird",
     name: "Flappy Snap",
     shortName: "Flappy",
     description: "Tap to flap through pipes and score big!",
@@ -284,8 +284,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // Phase 2 Single-player Games
-  snap_stack: {
-    id: "snap_stack",
+  stack_puzzle: {
+    id: "stack_puzzle",
     name: "Snap Stack",
     shortName: "Stack",
     description: "Stack blocks as high as you can!",
@@ -299,8 +299,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_minesweeper: {
-    id: "snap_minesweeper",
+  minesweeper_classic: {
+    id: "minesweeper_classic",
     name: "Snap Minesweeper",
     shortName: "Mines",
     description: "Find all mines without detonating them!",
@@ -314,8 +314,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_number: {
-    id: "snap_number",
+  number_master: {
+    id: "number_master",
     name: "Snap Number",
     shortName: "Number",
     description: "Solve math puzzles against the clock!",
@@ -329,8 +329,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_aim: {
-    id: "snap_aim",
+  target_master: {
+    id: "target_master",
     name: "Snap Aim",
     shortName: "Aim",
     description: "Tap targets before they shrink away!",
@@ -344,8 +344,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_lights: {
-    id: "snap_lights",
+  lights_out: {
+    id: "lights_out",
     name: "Snap Lights",
     shortName: "Lights",
     description: "Toggle all the lights off!",
@@ -361,8 +361,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // Phase 3: New Single-player Games
-  snap_match: {
-    id: "snap_match",
+  match_game: {
+    id: "match_game",
     name: "Snap Match",
     shortName: "Match",
     description: "Match 3 gems in a row to score combos!",
@@ -376,8 +376,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_pipes: {
-    id: "snap_pipes",
+  pipes_game: {
+    id: "pipes_game",
     name: "Snap Pipes",
     shortName: "Pipes",
     description: "Rotate pipes to connect the water flow!",
@@ -391,8 +391,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_nonogram: {
-    id: "snap_nonogram",
+  nonogram_puzzle: {
+    id: "nonogram_puzzle",
     name: "Snap Nonogram",
     shortName: "Nonogram",
     description: "Fill cells by clues to reveal a pixel picture!",
@@ -406,8 +406,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  tap_tap_snap: {
-    id: "tap_tap_snap",
+  tap_tap_game: {
+    id: "tap_tap_game",
     name: "Tap Tap Snap",
     shortName: "TapTap",
     description: "Tap falling notes to the beat!",
@@ -421,8 +421,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_slice: {
-    id: "snap_slice",
+  slice_game: {
+    id: "slice_game",
     name: "Snap Slice",
     shortName: "Slice",
     description: "Swipe to slice shapes — avoid bombs!",
@@ -436,8 +436,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_pong: {
-    id: "snap_pong",
+  pong_game: {
+    id: "pong_game",
     name: "Snap Pong",
     shortName: "Pong",
     description: "Classic Pong — drag your paddle to win!",
@@ -509,8 +509,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasAchievements: true,
     isAvailable: true,
   },
-  snap_four: {
-    id: "snap_four",
+  connect_four: {
+    id: "connect_four",
     name: "Snap Four",
     shortName: "Four",
     description: "Connect four discs in a row to win!",
@@ -524,8 +524,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_dots: {
-    id: "snap_dots",
+  dot_match: {
+    id: "dot_match",
     name: "Snap Dots",
     shortName: "Dots",
     description: "Draw lines to claim boxes!",
@@ -539,8 +539,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_gomoku: {
-    id: "snap_gomoku",
+  gomoku_master: {
+    id: "gomoku_master",
     name: "Snap Gomoku",
     shortName: "Gomoku",
     description: "Get five in a row on the board!",
@@ -556,8 +556,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // Phase 3: New Multiplayer Turn-Based Games
-  snap_reversi: {
-    id: "snap_reversi",
+  reversi_game: {
+    id: "reversi_game",
     name: "Snap Reversi",
     shortName: "Reversi",
     description: "Outflank and flip your opponent's discs!",
@@ -571,8 +571,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_words: {
-    id: "snap_words",
+  words_game: {
+    id: "words_game",
     name: "Snap Words",
     shortName: "Words",
     description: "Place letter tiles on the board to score!",
@@ -586,8 +586,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_war: {
-    id: "snap_war",
+  war_game: {
+    id: "war_game",
     name: "Snap War",
     shortName: "War",
     description: "Flip cards — higher wins! War on ties!",
@@ -601,8 +601,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_hex: {
-    id: "snap_hex",
+  hex_game: {
+    id: "hex_game",
     name: "Snap Hex",
     shortName: "Hex",
     description: "Connect your two sides of the hex board!",
@@ -618,8 +618,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // Phase 3: New Real-Time Multiplayer Games
-  snap_draw: {
-    id: "snap_draw",
+  draw_game: {
+    id: "draw_game",
     name: "Snap Draw",
     shortName: "Draw",
     description: "Draw the prompt — others guess!",
@@ -633,8 +633,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_race: {
-    id: "snap_race",
+  race_game: {
+    id: "race_game",
     name: "Snap Race",
     shortName: "Race",
     description: "Type the sentence fastest to win!",
@@ -648,8 +648,8 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  snap_crossword: {
-    id: "snap_crossword",
+  crossword_puzzle: {
+    id: "crossword_puzzle",
     name: "Snap Crossword",
     shortName: "Crossword",
     description: "Solve the daily 5×5 mini crossword!",
@@ -735,7 +735,7 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "higher", // Higher score is better
   },
-  flappy_snap: {
+  flappy_bird: {
     minScore: 0,
     maxScore: 999999,
     scoreDirection: "higher", // Higher score is better
@@ -745,12 +745,12 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "higher",
   },
-  snap_snake: {
+  snake_master: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher",
   },
-  memory_snap: {
+  memory_master: {
     minScore: 1,
     maxScore: 9999,
     maxDuration: 300000, // 5 minutes max
@@ -762,7 +762,7 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxDuration: 600000, // 10 minutes max
     scoreDirection: "higher", // Higher score is better
   },
-  word_snap: {
+  word_master: {
     minScore: 1,
     maxScore: 6,
     scoreDirection: "lower", // Fewer guesses is better
@@ -777,27 +777,27 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "lower", // Fewer moves is better
   },
-  snap_stack: {
+  stack_puzzle: {
     minScore: 0,
     maxScore: 999,
     scoreDirection: "higher", // More blocks stacked is better
   },
-  snap_minesweeper: {
+  minesweeper_classic: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
   },
-  snap_number: {
+  number_master: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
   },
-  snap_aim: {
+  target_master: {
     minScore: 0,
     maxScore: 999999,
     scoreDirection: "higher", // Higher points is better
   },
-  snap_lights: {
+  lights_out: {
     minScore: 1,
     maxScore: 999,
     scoreDirection: "lower", // Fewer moves is better
@@ -824,17 +824,17 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 9999,
     scoreDirection: "higher",
   },
-  snap_four: {
+  connect_four: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  snap_dots: {
+  dot_match: {
     minScore: 0,
     maxScore: 16,
     scoreDirection: "higher", // Boxes captured
   },
-  snap_gomoku: {
+  gomoku_master: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
@@ -851,69 +851,69 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
   },
 
   // Phase 3: New single-player games
-  snap_match: {
+  match_game: {
     minScore: 0,
     maxScore: 999999,
     scoreDirection: "higher", // Higher combo score is better
   },
-  snap_pipes: {
+  pipes_game: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
   },
-  snap_nonogram: {
+  nonogram_puzzle: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
   },
-  tap_tap_snap: {
+  tap_tap_game: {
     minScore: 0,
     maxScore: 999999,
     scoreDirection: "higher", // Higher score is better
   },
-  snap_slice: {
+  slice_game: {
     minScore: 0,
     maxScore: 999999,
     scoreDirection: "higher", // Higher score is better
   },
-  snap_pong: {
+  pong_game: {
     minScore: 0,
     maxScore: 999,
     scoreDirection: "higher", // Games won vs AI
   },
 
   // Phase 3: New multiplayer games
-  snap_reversi: {
+  reversi_game: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  snap_words: {
+  words_game: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  snap_war: {
+  war_game: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  snap_hex: {
+  hex_game: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  snap_draw: {
+  draw_game: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Points from correct guesses
   },
-  snap_race: {
+  race_game: {
     minScore: 0,
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  snap_crossword: {
+  crossword_puzzle: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
@@ -972,38 +972,38 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return `${score} taps`;
     case "bounce_blitz":
     case "snap_2048":
-    case "snap_snake":
+    case "snake_master":
     case "brick_breaker":
-    case "flappy_snap":
+    case "flappy_bird":
     case "cart_course":
       return score.toLocaleString();
-    case "memory_snap":
+    case "memory_master":
       return `${score}s`;
-    case "word_snap":
+    case "word_master":
       return score === 1 ? "1 guess" : `${score} guesses`;
     case "tile_slide":
       return score === 1 ? "1 move" : `${score} moves`;
-    case "snap_stack":
+    case "stack_puzzle":
       return `${score} blocks`;
-    case "snap_minesweeper":
-    case "snap_number":
+    case "minesweeper_classic":
+    case "number_master":
       return `${score}s`;
-    case "snap_aim":
+    case "target_master":
       return score.toLocaleString();
-    case "snap_lights":
+    case "lights_out":
       return score === 1 ? "1 move" : `${score} moves`;
-    case "snap_dots":
+    case "dot_match":
       return `${score} boxes`;
     // Phase 3 single-player
-    case "snap_match":
-    case "tap_tap_snap":
-    case "snap_slice":
+    case "match_game":
+    case "tap_tap_game":
+    case "slice_game":
       return score.toLocaleString();
-    case "snap_pipes":
-    case "snap_nonogram":
-    case "snap_crossword":
+    case "pipes_game":
+    case "nonogram_puzzle":
+    case "crossword_puzzle":
       return `${score}s`;
-    case "snap_pong":
+    case "pong_game":
       return `${score} wins`;
     // Multiplayer games
     case "chess":
@@ -1012,16 +1012,17 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     case "tic_tac_toe":
     case "crazy_eights":
     case "air_hockey":
-    case "snap_four":
-    case "snap_gomoku":
-    case "snap_reversi":
-    case "snap_words":
-    case "snap_war":
-    case "snap_hex":
-    case "snap_draw":
-    case "snap_race":
+    case "connect_four":
+    case "gomoku_master":
+    case "reversi_game":
+    case "words_game":
+    case "war_game":
+    case "hex_game":
+    case "draw_game":
+    case "race_game":
       return `${score} wins`;
     default:
       return score.toString();
   }
 }
+

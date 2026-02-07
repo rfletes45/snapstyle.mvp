@@ -1328,3 +1328,4 @@ The inbox screen (`ChatListScreenV2`) is the **default screen** when the app ope
   confirmBeforeDelete: boolean;
 }
 ```
+

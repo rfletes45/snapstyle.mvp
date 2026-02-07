@@ -13,8 +13,8 @@ service firebase.storage {
     // ============================================================================
     // SNAP MEDIA
     // ============================================================================
-    // Snaps/{snapId}/{filename}
-    match /Snaps/{snapId}/{filename} {
+    // Pictures/{snapId}/{filename}
+    match /pictures/{snapId}/{filename} {
       // Allow upload if authenticated
       allow create: if isSignedIn() && 
         request.resource.size < 100 * 1024 * 1024 && // 100 MB limit
@@ -85,3 +85,4 @@ service firebase.storage {
     }
   }
 }
+

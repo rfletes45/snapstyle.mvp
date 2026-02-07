@@ -89,7 +89,7 @@
    - Media upload to Firebase Storage
    - Snap document creation in Firestore
    - Recipient view list management
-   - Snap deletion
+   - Picture deletion
    - View tracking
    - Screenshot detection
    - Reaction management
@@ -465,3 +465,4 @@ All files created with:
 **DOCUMENTATION STATUS**: ✅ COMPREHENSIVE
 
 Ready for integration into production.
+

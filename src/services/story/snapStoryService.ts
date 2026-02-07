@@ -51,18 +51,18 @@ export interface SnapStory {
  * Publish snap to stories
  */
 export async function publishSnapToStory(
-  snap: Snap,
+  picture: Picture,
   userId: string,
   userName: string,
   userImage: string,
 ): Promise<void> {
   try {
-    console.log(`[Snap Story Service] Publishing snap ${snap.id} to stories`);
+    console.log(`[Game Story Service] Publishing snap ${snap.id} to stories`);
 
     const db = getFirestoreInstance();
 
     // Update snap document to mark as story
-    const snapRef = doc(db, "Snaps", snap.id);
+    const snapRef = doc(db, "Pictures", snap.id);
     await updateDoc(snapRef, {
       storyVisible: true,
       storyPublishedAt: new Date(),
@@ -97,11 +97,11 @@ export async function publishSnapToStory(
     }
 
     console.log(
-      `[Snap Story Service] Snap published to stories for user ${userId}`,
+      `[Game Story Service] Snap published to stories for user ${userId}`,
     );
   } catch (error) {
     console.error(
-      "[Snap Story Service] Failed to publish snap to stories:",
+      "[Game Story Service] Failed to publish snap to stories:",
       error,
     );
     throw error;
@@ -113,19 +113,19 @@ export async function publishSnapToStory(
  */
 export async function removeSnapFromStory(snapId: string): Promise<void> {
   try {
-    console.log(`[Snap Story Service] Removing snap ${snapId} from stories`);
+    console.log(`[Game Story Service] Removing snap ${snapId} from stories`);
 
     const db = getFirestoreInstance();
 
-    const snapRef = doc(db, "Snaps", snapId);
+    const snapRef = doc(db, "Pictures", snapId);
     await updateDoc(snapRef, {
       storyVisible: false,
     });
 
-    console.log("[Snap Story Service] Snap removed from stories");
+    console.log("[Game Story Service] Snap removed from stories");
   } catch (error) {
     console.error(
-      "[Snap Story Service] Failed to remove snap from stories:",
+      "[Game Story Service] Failed to remove snap from stories:",
       error,
     );
     throw error;
@@ -141,7 +141,7 @@ export async function getVisibleStories(
 ): Promise<SnapStoryUser[]> {
   try {
     console.log(
-      `[Snap Story Service] Fetching visible stories for user ${userId}`,
+      `[Game Story Service] Fetching visible stories for user ${userId}`,
     );
 
     const db = getFirestoreInstance();
@@ -149,7 +149,7 @@ export async function getVisibleStories(
     const storyUsers: SnapStoryUser[] = [];
 
     for (const friendId of friendIds) {
-      const snapsRef = collection(db, "Snaps");
+      const snapsRef = collection(db, "Pictures");
       const q = query(
         snapsRef,
         where("senderId", "==", friendId),
@@ -169,7 +169,7 @@ export async function getVisibleStories(
           let viewedCount = 0;
 
           for (const snapDoc of snapshot.docs) {
-            const viewsRef = collection(db, "Snaps", snapDoc.id, "Views");
+            const viewsRef = collection(db, "Pictures", snapDoc.id, "Views");
             const viewQuery = query(viewsRef, where("userId", "==", userId));
             const viewSnapshot = await getDocs(viewQuery);
 
@@ -198,11 +198,11 @@ export async function getVisibleStories(
     );
 
     console.log(
-      `[Snap Story Service] Fetched ${storyUsers.length} visible stories`,
+      `[Game Story Service] Fetched ${storyUsers.length} visible stories`,
     );
     return storyUsers;
   } catch (error) {
-    console.error("[Snap Story Service] Failed to get visible stories:", error);
+    console.error("[Game Story Service] Failed to get visible stories:", error);
     return [];
   }
 }
@@ -215,12 +215,12 @@ export async function getStoriesFromFriend(
   _viewerId: string,
 ): Promise<SnapStory | null> {
   try {
-    console.log(`[Snap Story Service] Fetching story from friend ${friendId}`);
+    console.log(`[Game Story Service] Fetching story from friend ${friendId}`);
 
     const db = getFirestoreInstance();
     const now = new Date();
 
-    const snapsRef = collection(db, "Snaps");
+    const snapsRef = collection(db, "Pictures");
     const q = query(
       snapsRef,
       where("senderId", "==", friendId),
@@ -232,7 +232,7 @@ export async function getStoriesFromFriend(
 
     if (snapshot.empty) {
       console.log(
-        `[Snap Story Service] No stories found from friend ${friendId}`,
+        `[Game Story Service] No stories found from friend ${friendId}`,
       );
       return null;
     }
@@ -286,12 +286,12 @@ export async function getStoriesFromFriend(
     };
 
     console.log(
-      `[Snap Story Service] Fetched story with ${snaps.length} snaps`,
+      `[Game Story Service] Fetched story with ${snaps.length} snaps`,
     );
     return story;
   } catch (error) {
     console.error(
-      "[Snap Story Service] Failed to get story from friend:",
+      "[Game Story Service] Failed to get story from friend:",
       error,
     );
     return null;
@@ -308,12 +308,12 @@ export async function markStoryAsViewed(
 ): Promise<void> {
   try {
     console.log(
-      `[Snap Story Service] Marking story from ${friendId} as viewed by ${viewerId}`,
+      `[Game Story Service] Marking story from ${friendId} as viewed by ${viewerId}`,
     );
 
     const db = getFirestoreInstance();
 
-    const snapsRef = collection(db, "Snaps");
+    const snapsRef = collection(db, "Pictures");
     const q = query(
       snapsRef,
       where("senderId", "==", friendId),
@@ -324,7 +324,7 @@ export async function markStoryAsViewed(
     const batch = writeBatch(db);
 
     for (const snapDoc of snapshot.docs) {
-      const viewsRef = collection(db, "Snaps", snapDoc.id, "Views");
+      const viewsRef = collection(db, "Pictures", snapDoc.id, "Views");
       const viewQuery = query(viewsRef, where("userId", "==", viewerId));
       const viewSnapshot = await getDocs(viewQuery);
 
@@ -346,10 +346,10 @@ export async function markStoryAsViewed(
 
     await batch.commit();
 
-    console.log("[Snap Story Service] Story marked as viewed");
+    console.log("[Game Story Service] Story marked as viewed");
   } catch (error) {
     console.error(
-      "[Snap Story Service] Failed to mark story as viewed:",
+      "[Game Story Service] Failed to mark story as viewed:",
       error,
     );
     throw error;
@@ -398,7 +398,7 @@ export function getStoryExpiryStatus(
  */
 export async function archiveExpiredStories(): Promise<number> {
   try {
-    console.log("[Snap Story Service] Archiving expired stories");
+    console.log("[Game Story Service] Archiving expired stories");
 
     const db = getFirestoreInstance();
     const now = new Date();
@@ -414,7 +414,7 @@ export async function archiveExpiredStories(): Promise<number> {
     let count = 0;
 
     for (const storyDoc of expiredSnapshot.docs) {
-      const snapsRef = collection(db, "Snaps");
+      const snapsRef = collection(db, "Pictures");
       const snapQuery = query(
         snapsRef,
         where("senderId", "==", storyDoc.id),
@@ -434,12 +434,12 @@ export async function archiveExpiredStories(): Promise<number> {
     }
 
     console.log(
-      `[Snap Story Service] Archived ${count} expired story collections`,
+      `[Game Story Service] Archived ${count} expired story collections`,
     );
     return count;
   } catch (error) {
     console.error(
-      "[Snap Story Service] Failed to archive expired stories:",
+      "[Game Story Service] Failed to archive expired stories:",
       error,
     );
     return 0;
@@ -457,13 +457,13 @@ export async function getStoryStats(userId: string): Promise<{
 }> {
   try {
     console.log(
-      `[Snap Story Service] Getting story statistics for user ${userId}`,
+      `[Game Story Service] Getting story statistics for user ${userId}`,
     );
 
     const db = getFirestoreInstance();
     const now = new Date();
 
-    const snapsRef = collection(db, "Snaps");
+    const snapsRef = collection(db, "Pictures");
     const q = query(
       snapsRef,
       where("senderId", "==", userId),
@@ -492,7 +492,7 @@ export async function getStoryStats(userId: string): Promise<{
     };
   } catch (error) {
     console.error(
-      "[Snap Story Service] Failed to get story statistics:",
+      "[Game Story Service] Failed to get story statistics:",
       error,
     );
     return {
@@ -503,3 +503,5 @@ export async function getStoryStats(userId: string): Promise<{
     };
   }
 }
+
+

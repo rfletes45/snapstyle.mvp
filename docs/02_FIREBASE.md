@@ -310,3 +310,4 @@ firebase deploy --only firestore:indexes
 # Deploy everything
 firebase deploy
 ```
+

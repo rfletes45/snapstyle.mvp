@@ -1,5 +1,5 @@
 /**
- * MemorySnapGameScreen - Memory Card Matching Game
+ * MemoryMasterGameScreen - Memory Card Matching Game
  *
  * How to play:
  * 1. Tap cards to flip them over
@@ -55,7 +55,7 @@ interface Card {
   flipAnim: Animated.Value;
 }
 
-interface MemorySnapGameScreenProps {
+interface MemoryMasterGameScreenProps {
   navigation: any;
 }
 
@@ -158,9 +158,9 @@ function generateCards(rows: number, cols: number): Card[] {
 // Component
 // =============================================================================
 
-export default function MemorySnapGameScreen({
+export default function MemoryMasterGameScreen({
   navigation,
-}: MemorySnapGameScreenProps) {
+}: MemoryMasterGameScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -343,10 +343,10 @@ export default function MemorySnapGameScreen({
       // Record session
       if (currentFirebaseUser) {
         recordSinglePlayerSession(currentFirebaseUser.uid, {
-          gameType: "memory_snap",
+          gameType: "memory_master",
           finalScore,
           stats: {
-            gameType: "memory_snap",
+            gameType: "memory_master",
             pairsMatched: totalPairs,
             attempts,
             perfectMatches: totalPairs === attempts ? 1 : 0,
@@ -404,7 +404,7 @@ export default function MemorySnapGameScreen({
         currentFirebaseUser.uid,
         friend.friendUid,
         {
-          gameId: "memory_snap",
+          gameId: "memory_master",
           score: calculateScore(),
           playerName: profile.displayName || profile.username || "Player",
         },
@@ -901,3 +901,5 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 });
+
+

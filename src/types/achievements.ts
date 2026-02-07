@@ -34,12 +34,12 @@ export type AchievementCategory =
 
   // Single-player games
   | "casual_games" // General single-player
-  | "flappy_snap" // Flappy Snap specific
+  | "flappy_bird" // Flappy Snap specific
   | "bounce_blitz" // Bounce Blitz specific
   | "snap_2048" // 2048 specific
-  | "memory_snap" // Memory game specific
-  | "word_snap" // Word game specific
-  | "snap_snake" // Snake game specific
+  | "memory_master" // Memory game specific
+  | "word_master" // Word game specific
+  | "snake_master" // Snake game specific
   // New single-player games (Phase 1)
   | "brick_breaker" // Brick Breaker specific
   | "tile_slide" // Tile Slide specific
@@ -379,12 +379,12 @@ export function getCategoryDisplayName(category: AchievementCategory): string {
     daily: "Daily Challenges",
     seasonal: "Seasonal",
     casual_games: "Casual Games",
-    flappy_snap: "Flappy Snap",
+    flappy_bird: "Flappy Snap",
     bounce_blitz: "Bounce Blitz",
     snap_2048: "Snap 2048",
-    memory_snap: "Memory Snap",
-    word_snap: "Word Snap",
-    snap_snake: "Snap Snake",
+    memory_master: "Memory Snap",
+    word_master: "Word Snap",
+    snake_master: "Snap Snake",
     // New games (Phase 1)
     brick_breaker: "Brick Breaker",
     tile_slide: "Tile Slide",
@@ -399,3 +399,4 @@ export function getCategoryDisplayName(category: AchievementCategory): string {
   };
   return names[category];
 }
+

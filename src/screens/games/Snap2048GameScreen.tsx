@@ -1,5 +1,5 @@
 /**
- * Snap2048GameScreen – The classic 2048 game
+ * Play2048GameScreen – The classic 2048 game
  *
  * Game logic is a line-for-line TypeScript port of the original open-source
  * 2048 by Gabriele Cirulli (https://github.com/gabrielecirulli/2048):
@@ -695,13 +695,13 @@ function AnimatedTile({ tile }: { tile: RenderTile }) {
 // Main component
 // =============================================================================
 
-interface Snap2048GameScreenProps {
+interface Play2048GameScreenProps {
   navigation: any;
 }
 
-export default function Snap2048GameScreen({
+export default function Play2048GameScreen({
   navigation,
-}: Snap2048GameScreenProps) {
+}: Play2048GameScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -774,7 +774,7 @@ export default function Snap2048GameScreen({
 
       if (currentFirebaseUser?.uid) {
         const stats: Snap2048Stats = {
-          gameType: "snap_2048",
+          gameType: "play_2048",
           bestTile: best,
           moveCount: moves,
           mergeCount: 0,
@@ -784,7 +784,7 @@ export default function Snap2048GameScreen({
         const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
         await recordSinglePlayerSession(currentFirebaseUser.uid, {
-          gameType: "snap_2048",
+          gameType: "play_2048",
           finalScore,
           stats,
           duration,
@@ -909,7 +909,7 @@ export default function Snap2048GameScreen({
           currentFirebaseUser.uid,
           friend.friendUid,
           {
-            gameId: "snap_2048",
+            gameId: "play_2048",
             score,
             playerName: profile.displayName || profile.username || "Player",
           },
@@ -1244,3 +1244,5 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 });
+
+

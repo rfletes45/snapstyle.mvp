@@ -1,5 +1,5 @@
 /**
- * SnapHexGameScreen — Hex Board Game
+ * HexGameScreen — Hex Board Game
  *
  * How to play:
  * 1. Two players take turns placing pieces on an 11×11 hex grid
@@ -40,7 +40,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const GAME_TYPE = "snap_hex";
+const GAME_TYPE = "hex_game";
 const BOARD_SIZE = 9; // Use 9x9 for mobile friendliness
 const HEX_SIZE = Math.floor((SCREEN_WIDTH - 80) / (BOARD_SIZE + 2));
 
@@ -184,7 +184,7 @@ function getAIMove(board: HexBoard): [number, number] | null {
 // Component
 // =============================================================================
 
-export default function SnapHexGameScreen({ navigation }: { navigation: any }) {
+export default function HexGameScreen({ navigation }: { navigation: any }) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -528,3 +528,5 @@ const styles = StyleSheet.create({
   edgeLabel: { fontSize: 12, fontWeight: "700", marginVertical: 4 },
   dialogActions: { justifyContent: "center" },
 });
+
+

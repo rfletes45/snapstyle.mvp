@@ -198,13 +198,13 @@ export const GENERAL_ACHIEVEMENTS: GameAchievementDefinition[] = [
 // Flappy Snap Achievements
 // =============================================================================
 
-export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
+export const flappy_bird_ACHIEVEMENTS: GameAchievementDefinition[] = [
   {
     id: "flappy_first",
     name: "First Flight",
     description: "Score your first point in Flappy Snap",
     icon: "🐤",
-    category: "flappy_snap",
+    category: "flappy_bird",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -218,7 +218,7 @@ export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Getting Wings",
     description: "Score 10 points in Flappy Snap",
     icon: "🐦",
-    category: "flappy_snap",
+    category: "flappy_bird",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -233,7 +233,7 @@ export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Soaring High",
     description: "Score 25 points in Flappy Snap",
     icon: "🦅",
-    category: "flappy_snap",
+    category: "flappy_bird",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -248,7 +248,7 @@ export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Sky King",
     description: "Score 50 points in Flappy Snap",
     icon: "🦚",
-    category: "flappy_snap",
+    category: "flappy_bird",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
     coinReward: TIER_REWARDS.gold.coins,
@@ -264,7 +264,7 @@ export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Legend of the Skies",
     description: "Score 100 points in Flappy Snap",
     icon: "🌟",
-    category: "flappy_snap",
+    category: "flappy_bird",
     tier: "platinum",
     xpReward: TIER_REWARDS.platinum.xp,
     coinReward: TIER_REWARDS.platinum.coins,
@@ -280,7 +280,7 @@ export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Marathon Flapper",
     description: "Play 50 games of Flappy Snap",
     icon: "🏃",
-    category: "flappy_snap",
+    category: "flappy_bird",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -288,7 +288,7 @@ export const FLAPPY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "game_played",
-      conditions: { gameType: "flappy_snap", count: 50 },
+      conditions: { gameType: "flappy_bird", count: 50 },
     },
     progressType: "count",
     progressTarget: 50,
@@ -410,13 +410,13 @@ export const BOUNCE_BLITZ_ACHIEVEMENTS: GameAchievementDefinition[] = [
 // Memory Snap Achievements
 // =============================================================================
 
-export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
+export const memory_master_ACHIEVEMENTS: GameAchievementDefinition[] = [
   {
     id: "memory_first_win",
     name: "Memory Lane",
     description: "Complete your first Memory Snap game",
     icon: "🧠",
-    category: "memory_snap",
+    category: "memory_master",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -424,7 +424,7 @@ export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "game_played",
-      conditions: { gameType: "memory_snap", count: 1 },
+      conditions: { gameType: "memory_master", count: 1 },
     },
     progressType: "instant",
   },
@@ -433,7 +433,7 @@ export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Perfect Memory",
     description: "Complete a game with no mismatches",
     icon: "⭐",
-    category: "memory_snap",
+    category: "memory_master",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
     coinReward: TIER_REWARDS.gold.coins,
@@ -448,7 +448,7 @@ export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Quick Recall",
     description: "Complete a game in under 30 seconds",
     icon: "⚡",
-    category: "memory_snap",
+    category: "memory_master",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -462,7 +462,7 @@ export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Lightning Memory",
     description: "Complete a game in under 20 seconds",
     icon: "⚡",
-    category: "memory_snap",
+    category: "memory_master",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
     coinReward: TIER_REWARDS.gold.coins,
@@ -477,7 +477,7 @@ export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Memory Training",
     description: "Play 10 games of Memory Snap",
     icon: "📚",
-    category: "memory_snap",
+    category: "memory_master",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -485,7 +485,7 @@ export const MEMORY_SNAP_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "game_played",
-      conditions: { gameType: "memory_snap", count: 10 },
+      conditions: { gameType: "memory_master", count: 10 },
     },
     progressType: "count",
     progressTarget: 10,
@@ -658,13 +658,13 @@ export const SNAP_2048_ACHIEVEMENTS: GameAchievementDefinition[] = [
 // Snap Snake Achievements
 // =============================================================================
 
-export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
+export const snake_master_ACHIEVEMENTS: GameAchievementDefinition[] = [
   {
     id: "snake_first_game",
     name: "Slithering Start",
     description: "Play your first game of Snake",
     icon: "🐍",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -672,7 +672,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "game_played",
-      conditions: { gameType: "snap_snake", count: 1 },
+      conditions: { gameType: "snake_master", count: 1 },
     },
     progressType: "instant",
   },
@@ -681,7 +681,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Growing Snake",
     description: "Reach a length of 10",
     icon: "📏",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -695,7 +695,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Long Snake",
     description: "Reach a length of 25",
     icon: "🐍",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -709,7 +709,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Mega Snake",
     description: "Reach a length of 50",
     icon: "🏆",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
     coinReward: TIER_REWARDS.gold.coins,
@@ -724,7 +724,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Snake Legend",
     description: "Reach a length of 100",
     icon: "👑",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "platinum",
     xpReward: TIER_REWARDS.platinum.xp,
     coinReward: TIER_REWARDS.platinum.coins,
@@ -739,7 +739,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Snake Scorer",
     description: "Reach a score of 500",
     icon: "💯",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -747,7 +747,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "score_reached",
-      conditions: { score: 500, gameType: "snap_snake" },
+      conditions: { score: 500, gameType: "snake_master" },
     },
     progressType: "instant",
   },
@@ -756,7 +756,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Score Master",
     description: "Reach a score of 1000",
     icon: "⭐",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
     coinReward: TIER_REWARDS.gold.coins,
@@ -764,7 +764,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "score_reached",
-      conditions: { score: 1000, gameType: "snap_snake" },
+      conditions: { score: 1000, gameType: "snake_master" },
     },
     progressType: "instant",
   },
@@ -773,7 +773,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Hungry Snake",
     description: "Eat 50 food items in a single game",
     icon: "🍎",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -787,7 +787,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Snake Enthusiast",
     description: "Play 10 games of Snake",
     icon: "🎮",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
@@ -795,7 +795,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     repeatable: false,
     trigger: {
       type: "game_played",
-      conditions: { gameType: "snap_snake", count: 10 },
+      conditions: { gameType: "snake_master", count: 10 },
     },
     progressType: "count",
     progressTarget: 10,
@@ -805,7 +805,7 @@ export const SNAP_SNAKE_ACHIEVEMENTS: GameAchievementDefinition[] = [
     name: "Survival Expert",
     description: "Survive for 60 seconds",
     icon: "⏱️",
-    category: "snap_snake",
+    category: "snake_master",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
     coinReward: TIER_REWARDS.silver.coins,
@@ -2124,11 +2124,11 @@ export const STREAK_ACHIEVEMENTS: GameAchievementDefinition[] = [
  */
 export const ALL_GAME_ACHIEVEMENTS: GameAchievementDefinition[] = [
   ...GENERAL_ACHIEVEMENTS,
-  ...FLAPPY_SNAP_ACHIEVEMENTS,
+  ...flappy_bird_ACHIEVEMENTS,
   ...BOUNCE_BLITZ_ACHIEVEMENTS,
-  ...MEMORY_SNAP_ACHIEVEMENTS,
+  ...memory_master_ACHIEVEMENTS,
   ...SNAP_2048_ACHIEVEMENTS,
-  ...SNAP_SNAKE_ACHIEVEMENTS,
+  ...snake_master_ACHIEVEMENTS,
   ...TILE_SLIDE_ACHIEVEMENTS,
   ...BRICK_BREAKER_ACHIEVEMENTS,
   ...MULTIPLAYER_ACHIEVEMENTS,
@@ -2217,3 +2217,4 @@ export function getAchievementStats(earnedIds: Set<string>): {
     byTier,
   };
 }
+

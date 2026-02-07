@@ -105,9 +105,9 @@ export type GameType = "reaction_tap" | "timed_tap";
 export type SinglePlayerGameType =
   | "bounce_blitz"
   | "snap_2048"
-  | "snap_snake"
-  | "memory_snap"
-  | "word_snap";
+  | "snake_master"
+  | "memory_master"
+  | "word_master";
 
 export type TurnBasedGameType =
   | "chess"
@@ -1014,3 +1014,4 @@ export const GROUP_LIMITS = {
   MAX_NAME_LENGTH: 50,
   INVITE_EXPIRY_DAYS: 7,
 } as const;
+

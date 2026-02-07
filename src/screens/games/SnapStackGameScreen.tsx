@@ -1,5 +1,5 @@
 /**
- * SnapStackGameScreen - Stacking Puzzle Game
+ * StackPuzzleGameScreen - Stacking Puzzle Game
  *
  * How to play:
  * 1. Blocks slide back and forth across the screen
@@ -79,13 +79,13 @@ const COLORS = [
 // Component
 // =============================================================================
 
-interface SnapStackGameScreenProps {
+interface StackPuzzleGameScreenProps {
   navigation: any;
 }
 
-export default function SnapStackGameScreen({
+export default function StackPuzzleGameScreen({
   navigation,
-}: SnapStackGameScreenProps) {
+}: StackPuzzleGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -113,7 +113,7 @@ export default function SnapStackGameScreen({
   // Load personal best
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "snap_stack" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "stack_puzzle" as any).then(
         setPersonalBest,
       );
     }
@@ -278,14 +278,14 @@ export default function SnapStackGameScreen({
     if (currentFirebaseUser && score > 0) {
       try {
         await recordGameSession(currentFirebaseUser.uid, {
-          gameId: "snap_stack" as any,
+          gameId: "stack_puzzle" as any,
           score,
         });
         const newBest = !personalBest || score > personalBest.bestScore;
         if (newBest) {
           setIsNewBest(true);
           setPersonalBest({
-            gameId: "snap_stack" as any,
+            gameId: "stack_puzzle" as any,
             bestScore: score,
             achievedAt: Date.now(),
           });
@@ -311,7 +311,7 @@ export default function SnapStackGameScreen({
       setIsSending(true);
       try {
         await sendScorecard(currentFirebaseUser.uid, friendUid, {
-          gameId: "snap_stack",
+          gameId: "stack_puzzle",
           score,
           playerName: profile.displayName || "Player",
         });
@@ -572,3 +572,5 @@ const styles = StyleSheet.create({
   },
   resultCombo: { fontSize: 14, textAlign: "center", opacity: 0.7 },
 });
+
+

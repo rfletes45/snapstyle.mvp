@@ -1,5 +1,5 @@
 /**
- * SnapMatchGameScreen — Match-3 Puzzle (Candy Crush style)
+ * MatchGameScreen — Match-3 Puzzle (Candy Crush style)
  *
  * How to play:
  * 1. Swap adjacent gems to create lines of 3+ matching colors
@@ -38,7 +38,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const GAME_TYPE = "snap_match";
+const GAME_TYPE = "match_game";
 const GRID_SIZE = 7;
 const CELL_SIZE = Math.floor((SCREEN_WIDTH - 48) / GRID_SIZE);
 const TOTAL_MOVES = 30;
@@ -196,7 +196,7 @@ function swapGems(
 // Component
 // =============================================================================
 
-export default function SnapMatchGameScreen({
+export default function MatchGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -506,3 +506,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+

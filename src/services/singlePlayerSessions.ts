@@ -449,16 +449,16 @@ function calculateCoinsEarned(
 
   // Game-specific bonuses
   switch (gameType) {
-    case "flappy_snap":
+    case "flappy_bird":
       coins += Math.floor(score / 10);
       break;
     case "bounce_blitz":
       coins += Math.floor(score / 50);
       break;
-    case "memory_snap":
+    case "memory_master":
       coins += Math.floor(score / 100);
       break;
-    case "word_snap":
+    case "word_master":
       coins += score > 0 ? 15 : 0;
       break;
     default:
@@ -516,19 +516,20 @@ export function formatScore(
   score: number,
 ): string {
   switch (gameType) {
-    case "flappy_snap":
+    case "flappy_bird":
       return `${score} pipes`;
     case "bounce_blitz":
       return `${score} pts`;
-    case "memory_snap":
+    case "memory_master":
       return `${score} pts`;
-    case "word_snap":
+    case "word_master":
       return score > 0 ? `${score} pts` : "X";
     case "snap_2048":
       return score.toLocaleString();
-    case "snap_snake":
+    case "snake_master":
       return `${score} length`;
     default:
       return score.toString();
   }
 }
+

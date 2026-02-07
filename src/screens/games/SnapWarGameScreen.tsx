@@ -1,5 +1,5 @@
 /**
- * SnapWarGameScreen — Card War
+ * WarGameScreen — Card War
  *
  * How to play:
  * 1. Each player flips a card simultaneously
@@ -41,7 +41,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_W = 80;
 const CARD_H = 110;
-const GAME_TYPE = "snap_war";
+const GAME_TYPE = "war_game";
 
 const RANKS = [
   "2",
@@ -97,7 +97,7 @@ function shuffle<T>(arr: T[]): T[] {
 // Component
 // =============================================================================
 
-export default function SnapWarGameScreen({ navigation }: { navigation: any }) {
+export default function WarGameScreen({ navigation }: { navigation: any }) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -489,3 +489,5 @@ const styles = StyleSheet.create({
   flipBtnText: { color: "#fff", fontSize: 18, fontWeight: "700" },
   dialogActions: { justifyContent: "center" },
 });
+
+

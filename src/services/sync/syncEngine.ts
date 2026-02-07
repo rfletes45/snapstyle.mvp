@@ -280,7 +280,7 @@ async function syncSingleMessage(
 
           // Determine storage path based on scope and attachment type
           // Voice messages go to /voice/ (groups) or /dm-voice/ (DMs)
-          // Images go to /messages/ (groups) or /snaps/ (DMs)
+          // Images go to /messages/ (groups) or /Pictures/ (DMs)
           const isVoice =
             message.kind === "voice" ||
             localAttachments.some((a) => a.kind === "audio");
@@ -963,3 +963,4 @@ export function getConversationsWithPending(): string[] {
   );
   return results.map((r: { conversation_id: string }) => r.conversation_id);
 }
+

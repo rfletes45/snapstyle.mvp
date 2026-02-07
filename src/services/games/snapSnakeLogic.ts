@@ -13,7 +13,7 @@
 
 import {
   SnakeDirection,
-  SNAP_SNAKE_CONFIG,
+  snake_master_CONFIG,
   SnapSnakeState,
 } from "@/types/singlePlayerGames";
 
@@ -44,9 +44,9 @@ export function createInitialSnakeState(
   sessionId: string,
   config?: Partial<SnakeConfig>,
 ): SnapSnakeState {
-  const gridWidth = config?.gridWidth ?? SNAP_SNAKE_CONFIG.defaultGridWidth;
-  const gridHeight = config?.gridHeight ?? SNAP_SNAKE_CONFIG.defaultGridHeight;
-  const initialSpeed = config?.initialSpeed ?? SNAP_SNAKE_CONFIG.initialSpeed;
+  const gridWidth = config?.gridWidth ?? snake_master_CONFIG.defaultGridWidth;
+  const gridHeight = config?.gridHeight ?? snake_master_CONFIG.defaultGridHeight;
+  const initialSpeed = config?.initialSpeed ?? snake_master_CONFIG.initialSpeed;
 
   // Start snake in the center, moving right
   const centerX = Math.floor(gridWidth / 2);
@@ -54,7 +54,7 @@ export function createInitialSnakeState(
 
   // Create initial snake (head + body segments)
   const snake: Position[] = [];
-  for (let i = 0; i < SNAP_SNAKE_CONFIG.initialLength; i++) {
+  for (let i = 0; i < snake_master_CONFIG.initialLength; i++) {
     snake.push({ x: centerX - i, y: centerY });
   }
 
@@ -62,7 +62,7 @@ export function createInitialSnakeState(
   const food = generateFood(snake, gridWidth, gridHeight);
 
   return {
-    gameType: "snap_snake",
+    gameType: "snake_master",
     category: "quick_play",
     playerId,
     sessionId,
@@ -79,7 +79,7 @@ export function createInitialSnakeState(
     gridHeight,
     speed: initialSpeed,
     foodEaten: 0,
-    maxLength: SNAP_SNAKE_CONFIG.initialLength,
+    maxLength: snake_master_CONFIG.initialLength,
   };
 }
 
@@ -291,13 +291,13 @@ export function tick(state: SnapSnakeState): SnapSnakeState {
   if (ateFood) {
     // Calculate score
     const scoreGain =
-      SNAP_SNAKE_CONFIG.baseScorePerFood +
-      newSnake.length * SNAP_SNAKE_CONFIG.lengthBonusMultiplier;
+      snake_master_CONFIG.baseScorePerFood +
+      newSnake.length * snake_master_CONFIG.lengthBonusMultiplier;
 
     // Calculate new speed
     const newSpeed = Math.max(
-      SNAP_SNAKE_CONFIG.minSpeed,
-      state.speed - SNAP_SNAKE_CONFIG.speedDecreasePerFood,
+      snake_master_CONFIG.minSpeed,
+      state.speed - snake_master_CONFIG.speedDecreasePerFood,
     );
 
     // Generate new food
@@ -418,12 +418,12 @@ export function isTail(index: number, snakeLength: number): boolean {
  */
 export function getSegmentColor(index: number, snakeLength: number): string {
   if (isHead(index)) {
-    return SNAP_SNAKE_CONFIG.snakeHeadColor;
+    return snake_master_CONFIG.snakeHeadColor;
   }
   if (isTail(index, snakeLength)) {
-    return SNAP_SNAKE_CONFIG.snakeTailColor;
+    return snake_master_CONFIG.snakeTailColor;
   }
-  return SNAP_SNAKE_CONFIG.snakeBodyColor;
+  return snake_master_CONFIG.snakeBodyColor;
 }
 
 /**
@@ -435,3 +435,4 @@ export function getGameDuration(state: SnapSnakeState): number {
     (endTime - state.startedAt - state.totalPauseDuration) / 1000,
   );
 }
+

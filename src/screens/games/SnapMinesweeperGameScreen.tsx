@@ -1,5 +1,5 @@
 /**
- * SnapMinesweeperGameScreen - Classic Minesweeper
+ * MinesweeperGameScreen - Classic Minesweeper
  *
  * How to play:
  * 1. Select a difficulty: Easy (9×9, 10 mines), Medium (16×16, 40 mines), Hard (16×30, 99 mines)
@@ -67,7 +67,7 @@ interface Cell {
   adjacentMines: number;
 }
 
-const GAME_TYPE = "snap_minesweeper";
+const GAME_TYPE = "minesweeper_classic";
 
 const DIFFICULTIES: Record<string, Difficulty> = {
   easy: {
@@ -249,13 +249,13 @@ function formatTime(seconds: number): string {
 // Component
 // =============================================================================
 
-interface SnapMinesweeperGameScreenProps {
+interface MinesweeperGameScreenProps {
   navigation: any;
 }
 
-export default function SnapMinesweeperGameScreen({
+export default function MinesweeperGameScreen({
   navigation,
-}: SnapMinesweeperGameScreenProps) {
+}: MinesweeperGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -376,7 +376,7 @@ export default function SnapMinesweeperGameScreen({
           showSuccess("🎉 New personal best!");
         }
       } catch (error) {
-        console.error("[snap_minesweeper] Error recording session:", error);
+        console.error("[minesweeper_classic] Error recording session:", error);
       }
     }
 
@@ -1194,3 +1194,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+

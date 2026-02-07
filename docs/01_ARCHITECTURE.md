@@ -437,3 +437,4 @@ Read/unread tracking uses watermarks instead of per-message flags:
 | Streaks  | **Rituals**     |
 | Games    | **Play**        |
 | Chat     | **Inbox**       |
+

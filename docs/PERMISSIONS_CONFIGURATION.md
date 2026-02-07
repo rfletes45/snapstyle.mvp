@@ -223,14 +223,14 @@ try {
 
 ### Screenshot Detection
 
-- Snapchat-like feature to alert users when snaps are screenshotted
+- Camera-Based feature to alert users when snaps are screenshotted
 - Implemented via `notifySnapScreenshotted()` in snap notifications service
 - Privacy critical - screenshot event always triggers high-priority notification
 
 ### Data Storage
 
 - Photos/videos temporarily stored in app cache
-- Auto-deleted after snap expiry (24 hours by default)
+- Auto-deleted after Picture expiry (24 hours by default)
 - User can manually delete snaps from their gallery
 
 ### Permission Revocation
@@ -291,3 +291,4 @@ eas build --platform android --local
 
 **Updated**: February 6, 2026  
 **Status**: Complete - Ready for Production
+

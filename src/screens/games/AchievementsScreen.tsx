@@ -70,12 +70,12 @@ const CATEGORY_TO_TAB: Record<AchievementCategory, AchievementTab> = {
 
   // Single player tab
   casual_games: "single_player",
-  flappy_snap: "single_player",
+  flappy_bird: "single_player",
   bounce_blitz: "single_player",
   snap_2048: "single_player",
-  memory_snap: "single_player",
-  word_snap: "single_player",
-  snap_snake: "single_player",
+  memory_master: "single_player",
+  word_master: "single_player",
+  snake_master: "single_player",
   brick_breaker: "single_player",
   tile_slide: "single_player",
 
@@ -100,12 +100,12 @@ const CATEGORY_CONFIG: Record<
   general: { title: "General", icon: "gamepad-variant", order: 1 },
   social: { title: "Social", icon: "account-multiple", order: 2 },
   streak: { title: "Streaks", icon: "fire", order: 3 },
-  flappy_snap: { title: "Flappy Snap", icon: "bird", order: 4 },
+  flappy_bird: { title: "Flappy Snap", icon: "bird", order: 4 },
   bounce_blitz: { title: "Bounce Blitz", icon: "circle-multiple", order: 5 },
-  memory_snap: { title: "Memory Snap", icon: "cards", order: 6 },
+  memory_master: { title: "Memory Snap", icon: "cards", order: 6 },
   snap_2048: { title: "2048", icon: "numeric", order: 7 },
-  snap_snake: { title: "Snake", icon: "snake", order: 8 },
-  word_snap: { title: "Word Snap", icon: "alphabetical", order: 9 },
+  snake_master: { title: "Snake", icon: "snake", order: 8 },
+  word_master: { title: "Word Snap", icon: "alphabetical", order: 9 },
   brick_breaker: { title: "Brick Breaker", icon: "wall", order: 10 },
   tile_slide: { title: "Tile Slide", icon: "view-grid", order: 11 },
   casual_games: {
@@ -126,11 +126,11 @@ const CATEGORY_CONFIG: Record<
 /** Map game IDs to their specific achievement categories */
 const gameIdToCategoryMap: Record<string, AchievementCategory[]> = {
   bounce_blitz: ["bounce_blitz"],
-  memory_snap: ["memory_snap"],
+  memory_master: ["memory_master"],
   snap_2048: ["snap_2048"],
-  snap_snake: ["snap_snake"],
-  word_snap: ["word_snap"],
-  flappy_snap: ["flappy_snap"],
+  snake_master: ["snake_master"],
+  word_master: ["word_master"],
+  flappy_bird: ["flappy_bird"],
   brick_breaker: ["brick_breaker"],
   tile_slide: ["tile_slide"],
   reaction_tap: ["casual_games"],
@@ -828,3 +828,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+

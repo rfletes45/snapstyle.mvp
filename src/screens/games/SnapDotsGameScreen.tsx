@@ -1,5 +1,5 @@
 /**
- * SnapDotsGameScreen - Dots & Boxes Game
+ * DotMatchGameScreen - Dots & Boxes Game
  *
  * How to play:
  * 1. Two players take turns drawing lines between adjacent dots
@@ -308,7 +308,7 @@ function getAIMove(
 // Component
 // =============================================================================
 
-export default function SnapDotsGameScreen({
+export default function DotMatchGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -337,7 +337,7 @@ export default function SnapDotsGameScreen({
   // Load personal best
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "snap_dots" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "dot_match" as any).then(
         setPersonalBest,
       );
     }
@@ -366,12 +366,12 @@ export default function SnapDotsGameScreen({
       if (currentFirebaseUser && pScore > 0) {
         const newBest = !personalBest || pScore > personalBest.bestScore;
         recordGameSession(currentFirebaseUser.uid, {
-          gameId: "snap_dots" as any,
+          gameId: "dot_match" as any,
           score: pScore,
         }).then((session) => {
           if (session && newBest) {
             setPersonalBest({
-              gameId: "snap_dots" as any,
+              gameId: "dot_match" as any,
               bestScore: pScore,
               achievedAt: Date.now(),
             });
@@ -496,7 +496,7 @@ export default function SnapDotsGameScreen({
       setIsSending(true);
       try {
         await sendScorecard(currentFirebaseUser.uid, friendUid, {
-          gameId: "snap_dots",
+          gameId: "dot_match",
           score: playerScore,
           playerName: profile.displayName || "Player",
         });
@@ -531,7 +531,7 @@ export default function SnapDotsGameScreen({
             ? JSON.stringify(profile.avatarConfig)
             : undefined,
           {
-            gameType: "snap_dots",
+            gameType: "dot_match",
             recipientId: friend.friendUid,
             recipientName: friend.displayName || "Friend",
             settings: { isRated: false, chatEnabled: false },
@@ -846,7 +846,7 @@ export default function SnapDotsGameScreen({
         onDismiss={() => setShowInvitePicker(false)}
         onSelectFriend={handleSelectFriendForInvite}
         currentUserId={currentFirebaseUser?.uid || ""}
-        title="Invite to Snap Dots"
+        title="Invite to game Dots"
       />
     </View>
   );
@@ -1010,3 +1010,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+
+

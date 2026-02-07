@@ -1,5 +1,5 @@
 /**
- * SnapLightsGameScreen - Lights Out Puzzle
+ * LightsOutGameScreen - Lights Out Puzzle
  *
  * How to play:
  * 1. A 5×5 grid of lights is shown — some are ON, some are OFF
@@ -41,7 +41,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 type GamePhase = "menu" | "playing" | "result";
 
 const GRID_SIZE = 5;
-const GAME_TYPE = "snap_lights";
+const GAME_TYPE = "lights_out";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BOARD_PADDING = 24;
@@ -230,7 +230,7 @@ function LightCell({ isOn, onPress, disabled }: LightCellProps) {
 // Component
 // =============================================================================
 
-export default function SnapLightsGameScreen({
+export default function LightsOutGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -379,7 +379,7 @@ export default function SnapLightsGameScreen({
           showError("Failed to share score. Try again.");
         }
       } catch (error) {
-        console.error("[SnapLights] Error sharing score:", error);
+        console.error("[GameLights] Error sharing score:", error);
         showError("Failed to share score. Try again.");
       } finally {
         setIsSending(false);
@@ -775,3 +775,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+
+

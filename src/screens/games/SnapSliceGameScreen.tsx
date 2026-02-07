@@ -1,5 +1,5 @@
 /**
- * SnapSliceGameScreen — Fruit Ninja / Slice Game
+ * SliceGameScreen — Fruit Ninja / Slice Game
  *
  * How to play:
  * 1. Shapes are tossed from the bottom of the screen
@@ -39,7 +39,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 // =============================================================================
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const GAME_TYPE = "snap_slice";
+const GAME_TYPE = "slice_game";
 const GRAVITY = 0.25;
 const SPAWN_INTERVAL = 900; // ms base
 const SHAPE_SIZE = 50;
@@ -73,7 +73,7 @@ const SHAPE_CONFIGS = [
 // Component
 // =============================================================================
 
-export default function SnapSliceGameScreen({
+export default function SliceGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -491,3 +491,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+

@@ -1,5 +1,5 @@
 /**
- * SnapPipesGameScreen — Pipe Mania
+ * PipesGameScreen — Pipe Mania
  *
  * How to play:
  * 1. Tap pipe segments to rotate them
@@ -40,7 +40,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_ROWS = 6;
 const GRID_COLS = 6;
 const CELL_SIZE = Math.floor((SCREEN_WIDTH - 48) / GRID_COLS);
-const GAME_TYPE = "snap_pipes";
+const GAME_TYPE = "pipes_game";
 const TIME_LIMIT = 120; // seconds
 
 type GameState = "menu" | "playing" | "result";
@@ -284,7 +284,7 @@ function getRotationDeg(rotation: Rotation): string {
 // Component
 // =============================================================================
 
-export default function SnapPipesGameScreen({
+export default function PipesGameScreen({
   navigation,
 }: {
   navigation: any;
@@ -571,3 +571,5 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, marginTop: 12 },
   dialogActions: { justifyContent: "center" },
 });
+
+
