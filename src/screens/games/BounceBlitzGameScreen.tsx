@@ -31,6 +31,15 @@ import {
   Vibration,
   View,
 } from "react-native";
+import {
+  Canvas,
+  Circle as SkiaCircle,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
 
 // =============================================================================
@@ -102,6 +111,22 @@ function getBlockColor(health: number): string {
   if (health <= 75) return BLOCK_COLORS[5];
   if (health <= 100) return BLOCK_COLORS[6];
   return BLOCK_COLORS[7];
+}
+
+/** Lighten a hex color by amount (0–255) */
+function lightenColor(hex: string, amount: number): string {
+  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + amount);
+  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + amount);
+  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + amount);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+/** Darken a hex color by amount (0–255) */
+function darkenColor(hex: string, amount: number): string {
+  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - amount);
+  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - amount);
+  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - amount);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
 // =============================================================================
@@ -903,6 +928,31 @@ export default function BounceBlitzGameScreen({
         style={[styles.gameArea, { width: GAME_WIDTH, height: GAME_HEIGHT }]}
         {...panResponder.panHandlers}
       >
+        {/* Skia background gradient */}
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <RoundedRect x={0} y={0} width={GAME_WIDTH} height={GAME_HEIGHT} r={16}>
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(0, GAME_HEIGHT)}
+              colors={["#1A2744", "#16213E", "#0F1A2E"]}
+            />
+            <Shadow dx={0} dy={2} blur={10} color="rgba(0,0,0,0.5)" inner />
+          </RoundedRect>
+          {/* Subtle grid lines */}
+          {Array.from({ length: 8 }).map((_, i) => {
+            const x = (i + 1) * CELL_SIZE;
+            return (
+              <RoundedRect key={`vg-${i}`} x={x} y={0} width={0.5} height={GAME_HEIGHT} r={0}>
+                <LinearGradient
+                  start={vec(x, 0)}
+                  end={vec(x, GAME_HEIGHT)}
+                  colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.03)", "rgba(255,255,255,0)"]}
+                />
+              </RoundedRect>
+            );
+          })}
+        </Canvas>
+
         {/* Blocks */}
         {blocks.current.map((block) => (
           <View
@@ -927,7 +977,6 @@ export default function BounceBlitzGameScreen({
                     top: (block.row + 1) * CELL_SIZE + BLOCK_PADDING,
                     width: BLOCK_SIZE,
                     height: BLOCK_SIZE,
-                    backgroundColor: block.color,
                   },
             ]}
           >
@@ -938,12 +987,36 @@ export default function BounceBlitzGameScreen({
                 color="#FFFC00"
               />
             ) : (
-              <Text style={styles.blockText}>{block.health}</Text>
+              <>
+                <Canvas style={{ width: BLOCK_SIZE, height: BLOCK_SIZE }}>
+                  <RoundedRect x={0} y={0} width={BLOCK_SIZE} height={BLOCK_SIZE} r={6}>
+                    <LinearGradient
+                      start={vec(0, 0)}
+                      end={vec(0, BLOCK_SIZE)}
+                      colors={[
+                        lightenColor(block.color, 30),
+                        block.color,
+                        darkenColor(block.color, 30),
+                      ]}
+                    />
+                    <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.3)" />
+                  </RoundedRect>
+                  {/* Top highlight */}
+                  <RoundedRect x={2} y={1} width={BLOCK_SIZE - 4} height={4} r={2}>
+                    <LinearGradient
+                      start={vec(0, 1)}
+                      end={vec(0, 5)}
+                      colors={["rgba(255,255,255,0.35)", "rgba(255,255,255,0)"]}
+                    />
+                  </RoundedRect>
+                </Canvas>
+                <Text style={[styles.blockText, { position: "absolute" }]}>{block.health}</Text>
+              </>
             )}
           </View>
         ))}
 
-        {/* Balls */}
+        {/* Balls — Skia glowing */}
         {balls.current.map((ball) =>
           ball.active ? (
             <View
@@ -951,13 +1024,33 @@ export default function BounceBlitzGameScreen({
               style={[
                 styles.ball,
                 {
-                  left: ball.x - BALL_RADIUS,
-                  top: ball.y - BALL_RADIUS,
-                  width: BALL_RADIUS * 2,
-                  height: BALL_RADIUS * 2,
+                  left: ball.x - BALL_RADIUS - 2,
+                  top: ball.y - BALL_RADIUS - 2,
+                  width: (BALL_RADIUS + 2) * 2,
+                  height: (BALL_RADIUS + 2) * 2,
                 },
               ]}
-            />
+            >
+              <Canvas style={{ width: (BALL_RADIUS + 2) * 2, height: (BALL_RADIUS + 2) * 2 }}>
+                {/* Glow halo */}
+                <SkiaCircle cx={BALL_RADIUS + 2} cy={BALL_RADIUS + 2} r={BALL_RADIUS + 2}>
+                  <RadialGradient
+                    c={vec(BALL_RADIUS + 2, BALL_RADIUS + 2)}
+                    r={BALL_RADIUS + 2}
+                    colors={["rgba(255,252,0,0.4)", "rgba(255,252,0,0)"]}
+                  />
+                </SkiaCircle>
+                {/* Ball body */}
+                <SkiaCircle cx={BALL_RADIUS + 2} cy={BALL_RADIUS + 2} r={BALL_RADIUS}>
+                  <RadialGradient
+                    c={vec(BALL_RADIUS, BALL_RADIUS - 1)}
+                    r={BALL_RADIUS}
+                    colors={["#FFFFFF", "#E8E8E8", "#CCCCCC"]}
+                  />
+                  <Shadow dx={0} dy={1} blur={3} color="rgba(255,252,0,0.6)" />
+                </SkiaCircle>
+              </Canvas>
+            </View>
           ) : null,
         )}
 

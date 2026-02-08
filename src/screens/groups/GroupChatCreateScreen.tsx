@@ -7,7 +7,7 @@
  * - Create group and send invites
  */
 
-import { AvatarMini } from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { EmptyState, LoadingState } from "@/components/ui";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
 import { createGroup } from "@/services/groups";
@@ -45,6 +45,8 @@ interface SelectableFriend {
   username: string;
   displayName: string;
   avatarConfig: User["avatarConfig"];
+  profilePictureUrl?: string | null;
+  decorationId?: string | null;
   selected: boolean;
 }
 
@@ -74,7 +76,7 @@ export default function GroupChatCreateScreen({ navigation }: any) {
 
         // Fetch profiles for each friend
         const friendsWithProfiles = await Promise.all(
-          friendsData.map(async (friend) => {
+          friendsData.map(async (friend): Promise<SelectableFriend | null> => {
             const friendUid = friend.users.find((u) => u !== uid);
             if (!friendUid) return null;
 
@@ -86,6 +88,8 @@ export default function GroupChatCreateScreen({ navigation }: any) {
               username: profile.username,
               displayName: profile.displayName,
               avatarConfig: profile.avatarConfig,
+              profilePictureUrl: profile.profilePicture?.url ?? null,
+              decorationId: profile.avatarDecoration?.decorationId ?? null,
               selected: false,
             };
           }),
@@ -191,7 +195,12 @@ export default function GroupChatCreateScreen({ navigation }: any) {
       activeOpacity={0.7}
     >
       <View style={styles.friendLeft}>
-        <AvatarMini config={item.avatarConfig} size={44} />
+        <ProfilePictureWithDecoration
+          pictureUrl={item.profilePictureUrl}
+          name={item.displayName}
+          decorationId={item.decorationId}
+          size={40}
+        />
         <View style={styles.friendInfo}>
           <Text style={styles.friendName}>{item.displayName}</Text>
           <Text style={styles.friendUsername}>@{item.username}</Text>
@@ -393,6 +402,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: "#1A1A1A",
     borderRadius: 12,
+    overflow: "visible" as const,
     padding: 12,
     marginBottom: 8,
   },

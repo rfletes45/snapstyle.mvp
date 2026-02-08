@@ -524,7 +524,7 @@ export function formatScore(
       return `${score} pts`;
     case "word_master":
       return score > 0 ? `${score} pts` : "X";
-    case "snap_2048":
+    case "play_2048":
       return score.toLocaleString();
     case "snake_master":
       return `${score} length`;

@@ -2028,7 +2028,7 @@ function generateSpectatorInviteId(): string {
  * const invite = await sendSpectatorInvite({
  *   hostId: uid,
  *   hostName: "Alice",
- *   gameType: "snap_2048",
+ *   gameType: "play_2048",
  *   context: "group",
  *   conversationId: groupId,
  *   conversationName: "Game Night",

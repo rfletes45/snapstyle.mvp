@@ -38,6 +38,8 @@ export interface FriendRequestWithUser {
     avatarUrl: string | null;
     avatarConfig: AvatarConfig | null;
     username: string;
+    profilePictureUrl?: string | null;
+    decorationId?: string | null;
   };
   /** When the request was sent (ms) */
   sentAt: number;
@@ -109,16 +111,22 @@ export function useFriendRequests(uid: string): UseFriendRequestsResult {
                 avatarUrl: null as string | null,
                 avatarConfig: null as AvatarConfig | null,
                 username: "",
+                profilePictureUrl: null as string | null,
+                decorationId: null as string | null,
               };
 
               try {
                 const profile = await getUserProfile(fromUserId);
                 if (profile) {
+                  const profileData = profile as any;
                   fromUser = {
                     displayName: profile.displayName || "Unknown User",
                     avatarUrl: null,
                     avatarConfig: profile.avatarConfig || null,
                     username: profile.username || "",
+                    profilePictureUrl: profileData.profilePicture?.url ?? null,
+                    decorationId:
+                      profileData.avatarDecoration?.decorationId ?? null,
                   };
                 }
               } catch (e) {

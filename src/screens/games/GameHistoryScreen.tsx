@@ -48,11 +48,11 @@ import {
 } from "@/types/games";
 import {
   BounceBlitzStats,
-  MemorySnapStats,
+  MemoryMasterStats,
+  Play2048Stats,
   SinglePlayerGameStats,
-  Snap2048Stats,
-  SnapSnakeStats,
-  WordSnapStats,
+  SnakeMasterStats,
+  WordMasterStats,
 } from "@/types/singlePlayerGames";
 import { TurnBasedGameType } from "@/types/turnBased";
 
@@ -92,12 +92,12 @@ const SINGLEPLAYER_GAMES: {
   icon: string;
 }[] = [
   { type: "all", label: "All Games", icon: "🎮" },
-  { type: "word_master", label: "Word Snap", icon: "📝" },
-  { type: "flappy_bird", label: "Flappy Snap", icon: "🐦" },
+  { type: "word_master", label: "Word", icon: "📝" },
+  { type: "flappy_bird", label: "Flappy Bird", icon: "🐦" },
   { type: "bounce_blitz", label: "Bounce Blitz", icon: "⚪" },
-  { type: "snap_2048", label: "Snap 2048", icon: "🔢" },
+  { type: "play_2048", label: "2048", icon: "🔢" },
   { type: "snake_master", label: "Snake", icon: "🐍" },
-  { type: "memory_master", label: "Memory Snap", icon: "🧠" },
+  { type: "memory_master", label: "Memory", icon: "🧠" },
 ];
 
 // =============================================================================
@@ -616,22 +616,22 @@ export function GameHistoryScreen() {
 
     switch (stats.gameType) {
       case "word_master": {
-        const ws = stats as WordSnapStats;
+        const ws = stats as WordMasterStats;
         if (ws.wordGuessed) {
           return `✅ Guessed in ${ws.attemptsUsed} attempt${ws.attemptsUsed !== 1 ? "s" : ""}`;
         }
         return `❌ ${ws.attemptsUsed}/6 attempts`;
       }
       case "snake_master": {
-        const ss = stats as SnapSnakeStats;
+        const ss = stats as SnakeMasterStats;
         return `🍎 ${ss.foodEaten} apples • ${ss.maxLength} max length`;
       }
-      case "snap_2048": {
-        const s2 = stats as Snap2048Stats;
+      case "play_2048": {
+        const s2 = stats as Play2048Stats;
         return `🔢 Best: ${s2.bestTile} • ${s2.moveCount} moves`;
       }
       case "memory_master": {
-        const ms = stats as MemorySnapStats;
+        const ms = stats as MemoryMasterStats;
         return `🧠 ${ms.pairsMatched} pairs • ${ms.attempts} attempts`;
       }
       case "bounce_blitz": {
@@ -1083,4 +1083,3 @@ const styles = StyleSheet.create({
 });
 
 export default GameHistoryScreen;
-

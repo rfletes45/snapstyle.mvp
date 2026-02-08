@@ -27,6 +27,13 @@ import {
 } from "react-native";
 import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  Canvas,
+  LinearGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
@@ -143,7 +150,41 @@ function CardComponent({
 
   if (faceDown) {
     return (
-      <View style={[styles.card, styles.cardBack, style]}>
+      <View style={[styles.card, { backgroundColor: "transparent" }, style]}>
+        <Canvas style={StyleSheet.absoluteFill}>
+          <RoundedRect
+            x={0}
+            y={0}
+            width={CARD_WIDTH}
+            height={CARD_HEIGHT}
+            r={CARD_BORDER_RADIUS}
+          >
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(CARD_WIDTH, CARD_HEIGHT)}
+              colors={["#2A5A8C", "#1A3A5C", "#0D2137"]}
+            />
+            <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.2)" inner />
+          </RoundedRect>
+          {/* Inner border pattern */}
+          <RoundedRect
+            x={4}
+            y={4}
+            width={CARD_WIDTH - 8}
+            height={CARD_HEIGHT - 8}
+            r={4}
+          >
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(CARD_WIDTH - 8, CARD_HEIGHT - 8)}
+              colors={[
+                "rgba(255,255,255,0.06)",
+                "rgba(255,255,255,0)",
+                "rgba(255,255,255,0.04)",
+              ]}
+            />
+          </RoundedRect>
+        </Canvas>
         <View style={styles.cardBackPattern}>
           <Text style={styles.cardBackIcon}>🎴</Text>
         </View>
@@ -163,12 +204,29 @@ function CardComponent({
       <Animated.View
         style={[
           styles.card,
+          { backgroundColor: "transparent" },
           !isPlayable && styles.cardUnplayable,
           isSelected && styles.cardSelected,
           { transform: [{ scale: scaleAnim }] },
           style,
         ]}
       >
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <RoundedRect
+            x={0}
+            y={0}
+            width={CARD_WIDTH}
+            height={CARD_HEIGHT}
+            r={CARD_BORDER_RADIUS}
+          >
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(CARD_WIDTH, CARD_HEIGHT)}
+              colors={["#FFFFFF", "#F8F8F8", "#F0F0F0"]}
+            />
+            <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.08)" inner />
+          </RoundedRect>
+        </Canvas>
         {/* Top left corner */}
         <View style={styles.cardCornerTop}>
           <Text style={[styles.cardRank, { color: suitColor }]}>
@@ -1214,6 +1272,23 @@ export default function CrazyEightsGameScreen({
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: FELT_GREEN }]}>
+      {/* Skia felt table gradient */}
+      <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+        <RoundedRect
+          x={0}
+          y={0}
+          width={SCREEN_WIDTH}
+          height={SCREEN_HEIGHT}
+          r={0}
+        >
+          <LinearGradient
+            start={vec(0, 0)}
+            end={vec(SCREEN_WIDTH, SCREEN_HEIGHT)}
+            colors={["#1E4D1E", "#2D5A27", "#1A4A1A", "#2D5A27"]}
+          />
+          <Shadow dx={0} dy={0} blur={40} color="rgba(0,0,0,0.3)" inner />
+        </RoundedRect>
+      </Canvas>{" "}
       {/* Spectator Banner */}
       <SpectatorBanner
         isSpectator={isSpectator}
@@ -1222,7 +1297,6 @@ export default function CrazyEightsGameScreen({
         playerNames={[player1Name, player2Name]}
         loading={spectatorLoading}
       />
-
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
@@ -1245,7 +1319,6 @@ export default function CrazyEightsGameScreen({
           </TouchableOpacity>
         )}
       </View>
-
       {/* Opponent Area */}
       <View style={styles.opponentArea}>
         {gameMode === "local" ? (
@@ -1298,7 +1371,6 @@ export default function CrazyEightsGameScreen({
           </>
         )}
       </View>
-
       {/* Play Area */}
       <View style={styles.playArea}>
         {/* Deck */}
@@ -1345,12 +1417,10 @@ export default function CrazyEightsGameScreen({
           )}
         </View>
       </View>
-
       {/* Status */}
       <View style={styles.statusContainer}>
         <Text style={styles.statusText}>{getStatusText()}</Text>
       </View>
-
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
         {selectedCard && (
@@ -1385,7 +1455,6 @@ export default function CrazyEightsGameScreen({
           </Button>
         )}
       </View>
-
       {/* Player Hand */}
       <View style={styles.playerArea}>
         <Text style={styles.playerName}>
@@ -1403,13 +1472,11 @@ export default function CrazyEightsGameScreen({
           isMyTurn={isMyTurn()}
         />
       </View>
-
       {/* Suit Selector Modal */}
       <SuitSelectorModal
         visible={pendingSuitSelection}
         onSelect={handleSuitSelected}
       />
-
       {/* Turn Transition Modal (for local multiplayer) */}
       <TurnTransitionModal
         visible={showTurnTransition}
@@ -1420,7 +1487,6 @@ export default function CrazyEightsGameScreen({
         }
         onContinue={() => setShowTurnTransition(false)}
       />
-
       {/* Game Over Modal */}
       <GameOverModal
         visible={showGameOverModal}
@@ -1440,7 +1506,6 @@ export default function CrazyEightsGameScreen({
           }
         }}
       />
-
       <FriendPickerModal
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}

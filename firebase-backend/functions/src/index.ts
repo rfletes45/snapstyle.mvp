@@ -321,7 +321,7 @@ export const onNewMessage = functions.firestore
         // Determine notification content based on message type
         const isSnap = message.type === "image";
         const title = senderName;
-        const body = isSnap ? "📸 Sent you a snap!" : message.content;
+        const body = isSnap ? "📸 Sent you a picture!" : message.content;
 
         await sendExpoPushNotification({
           to: pushToken,
@@ -1327,7 +1327,7 @@ export const processScheduledMessages = functions.pubsub
             .update({
               lastMessage:
                 scheduledMessage.type === "image"
-                  ? "📸 Snap"
+                  ? "📸 Picture"
                   : scheduledMessage.content,
               lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -2237,9 +2237,9 @@ export const seedDailyTasks = functions.https.onRequest(async (req, res) => {
       sortOrder: 1,
     },
     {
-      id: "daily_send_3_snaps",
-      title: "Snap Happy",
-      description: "Send 3 snaps to friends",
+      id: "daily_send_3_pictures",
+      title: "Picture Perfect",
+      description: "Send 3 pictures to friends",
       icon: "camera",
       cadence: "daily",
       type: "send_snap",

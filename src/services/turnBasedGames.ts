@@ -39,9 +39,9 @@ import {
   createDeck,
   createInitialCheckersBoard,
   createInitialChessBoard,
-  createInitialSnapDotsBoard,
-  createInitialSnapFourBoard,
-  createInitialSnapGomokuBoard,
+  createInitialDotsBoard,
+  createInitialFourBoard,
+  createInitialGomokuBoard,
   createInitialTicTacToeBoard,
   GameEndReason,
   GameInvite,
@@ -50,9 +50,9 @@ import {
   MatchStatus,
   RatingUpdate,
   shuffleArray,
-  SnapDotsGameState,
-  SnapFourGameState,
-  SnapGomokuGameState,
+  DotsGameState,
+  FourGameState,
+  GomokuGameState,
   Spectator,
   TicTacToeGameState,
   TurnBasedGameType,
@@ -194,7 +194,7 @@ function gameStateToFirestore(
       (gameState as { board: unknown[][] }).board[0]?.length || 0;
   }
 
-  // Handle Snap Dots: convert hLines, vLines, boxes (separate 2D arrays)
+  // Handle Dots: convert hLines, vLines, boxes (separate 2D arrays)
   if (
     state.hLines &&
     Array.isArray(state.hLines) &&
@@ -256,7 +256,7 @@ function firestoreToGameState<T extends AnyGameState>(
     delete state._boardCols;
   }
 
-  // Convert Snap Dots arrays back from maps
+  // Convert Dots arrays back from maps
   if (
     state.hLines &&
     !Array.isArray(state.hLines) &&
@@ -1412,11 +1412,11 @@ function createInitialGameState(
     case "crazy_eights":
       return createInitialCrazyEightsState(player1Id, player2Id);
     case "connect_four":
-      return createInitialSnapFourState();
+      return createInitialFourState();
     case "dot_match":
-      return createInitialSnapDotsState();
+      return createInitialDotsState();
     case "gomoku_master":
-      return createInitialSnapGomokuState();
+      return createInitialGomokuState();
     default:
       throw new Error(`Unknown game type: ${gameType}`);
   }
@@ -1506,15 +1506,15 @@ function createInitialCrazyEightsState(
   };
 }
 
-function createInitialSnapFourState(): SnapFourGameState {
+function createInitialFourState(): FourGameState {
   return {
-    board: createInitialSnapFourBoard(),
+    board: createInitialFourBoard(),
     currentTurn: 1, // Player 1 (red) goes first
   };
 }
 
-function createInitialSnapDotsState(): SnapDotsGameState {
-  const { hLines, vLines, boxes } = createInitialSnapDotsBoard();
+function createInitialDotsState(): DotsGameState {
+  const { hLines, vLines, boxes } = createInitialDotsBoard();
   return {
     hLines,
     vLines,
@@ -1525,9 +1525,9 @@ function createInitialSnapDotsState(): SnapDotsGameState {
   };
 }
 
-function createInitialSnapGomokuState(): SnapGomokuGameState {
+function createInitialGomokuState(): GomokuGameState {
   return {
-    board: createInitialSnapGomokuBoard(),
+    board: createInitialGomokuBoard(),
     currentTurn: 1, // Black (player 1) goes first
   };
 }

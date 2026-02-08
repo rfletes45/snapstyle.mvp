@@ -138,7 +138,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         if (isSentByMe) {
           Alert.alert(
             "Cannot Open",
-            "You sent this snap. Only the receiver can open it.",
+            "You sent this picture. Only the receiver can open it.",
           );
           return;
         }
@@ -358,7 +358,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                     message.type === "voice"
                       ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a voice message`
                       : message.type === "image"
-                        ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a snap`
+                        ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a picture`
                         : message.type === "scorecard"
                           ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a scorecard`
                           : `${isSentByMe ? "You" : friendProfile?.displayName || "Friend"}: ${message.content}`

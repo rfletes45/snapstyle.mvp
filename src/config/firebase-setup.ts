@@ -62,7 +62,7 @@ export interface SnapDocument {
 }
 
 /**
- * SNAP VIEWS SUBCOLLECTION
+ * PICTURE VIEWS SUBCOLLECTION
  *
  * /Snaps/{snapId}/Views/{viewId}
  */
@@ -74,7 +74,7 @@ export interface SnapViewDocument {
 }
 
 /**
- * SNAP REACTIONS SUBCOLLECTION
+ * PICTURE REACTIONS SUBCOLLECTION
  *
  * /Snaps/{snapId}/Reactions/{reactionId}
  */
@@ -86,7 +86,7 @@ export interface SnapReactionDocument {
 }
 
 /**
- * SNAP REPLIES SUBCOLLECTION
+ * PICTURE REPLIES SUBCOLLECTION
  *
  * /Snaps/{snapId}/Replies/{replyId}
  */
@@ -163,10 +163,10 @@ export interface ChatMessageDocument {
   senderName: string;
 
   // Message content
-  messageType: "text" | "snap" | "image" | "video" | "reaction";
+  messageType: "text" | "picture" | "image" | "video" | "reaction";
   content: string;
 
-  // Snap-specific fields
+  // Picture-specific fields
   snapId?: string;
   snapThumbnailUrl?: string;
   snapStatus?: "sent" | "viewed" | "expired";
@@ -194,11 +194,11 @@ export interface NotificationDocument {
 
   // Notification type
   type:
-    | "snap_received"
-    | "snap_viewed"
-    | "snap_screenshot"
-    | "snap_reaction"
-    | "snap_reply"
+    | "picture_received"
+    | "picture_viewed"
+    | "picture_screenshot"
+    | "picture_reaction"
+    | "picture_reply"
     | "message_received"
     | "friend_request"
     | "friend_accepted";
@@ -307,16 +307,16 @@ export interface BlockedUserDocument {
  * 4. Snaps - Query user snaps with privacy
  *    Fields: senderId (ASC), isPrivate (ASC)
  *
- * 5. SnapViews - Query views by snap
+ * 5. PictureViews - Query views by picture
  *    Fields: snapId (ASC), viewedAt (DESC)
  *
- * 6. SnapReplies - Query replies by snap
+ * 6. PictureReplies - Query replies by picture
  *    Fields: snapId (ASC), createdAt (DESC)
  *
  * 7. ChatMessages - Query messages by conversation
  *    Fields: conversationId (ASC), createdAt (DESC)
  *
- * 8. SnapReactions - Query reactions by snap
+ * 8. PictureReactions - Query reactions by picture
  *    Fields: snapId (ASC), createdAt (DESC)
  */
 
@@ -329,7 +329,7 @@ export interface BlockedUserDocument {
  *
  * Key principles:
  * 1. Users can only read/write their own data
- * 2. Snap access controlled by senderId, recipientIds, and storyVisible
+ * 2. Picture access controlled by senderId, recipientIds, and storyVisible
  * 3. Chat messages accessible only to conversation participants
  * 4. Notifications only readable by recipient
  * 5. Storage files protected by Firestore document ownership
@@ -342,7 +342,7 @@ export interface BlockedUserDocument {
  */
 
 /**
- * Example: Send snap to multiple recipients
+ * Example: Send picture to multiple recipients
  */
 export async function sendSnapBatch(
   firebaseDb: any,
@@ -352,7 +352,7 @@ export async function sendSnapBatch(
 ) {
   const batch = firebaseDb.batch();
 
-  // Create snap document
+  // Create picture document
   const snapRef = firebaseDb.collection("Snaps").doc(snapId);
   batch.set(snapRef, {
     ...senderData,
@@ -368,7 +368,7 @@ export async function sendSnapBatch(
     const notifRef = firebaseDb.collection("Notifications").doc();
     batch.set(notifRef, {
       userId: recipientId,
-      type: "snap_received",
+      type: "picture_received",
       senderId: senderData.senderId,
       snapId,
       read: false,
@@ -381,7 +381,7 @@ export async function sendSnapBatch(
 }
 
 /**
- * Example: Record snap view
+ * Example: Record picture view
  */
 export async function recordSnapViewBatch(
   firebaseDb: any,

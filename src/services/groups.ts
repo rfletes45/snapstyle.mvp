@@ -1094,7 +1094,7 @@ export async function getGroupMessages(
   });
 
   const lastDoc =
-    snapshot.docs.length > 0 ? snapshot.docs[Gameshot.docs.length - 1] : null;
+    snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
 
   return { messages, lastDoc };
 }
@@ -1324,4 +1324,3 @@ export async function deleteGroup(
 
   console.log(`✅ [groups] Deleted group ${groupId}`);
 }
-

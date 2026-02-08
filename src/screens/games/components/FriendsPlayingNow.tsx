@@ -32,7 +32,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
-import Avatar from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType } from "@/types/games";
@@ -54,6 +54,8 @@ interface FriendPlaying {
   friendId: string;
   name: string;
   avatarColor: string;
+  profilePictureUrl?: string | null;
+  decorationId?: string | null;
   gameType?: ExtendedGameType;
   gameName?: string;
   gameIcon?: string;
@@ -107,14 +109,11 @@ function FriendPlayingItem({ friend, onPress }: FriendPlayingItemProps) {
       >
         {/* Avatar with online indicator */}
         <View style={styles.avatarContainer}>
-          <Avatar
-            config={{
-              baseColor: friend.avatarColor,
-              hat: undefined,
-              glasses: undefined,
-              background: undefined,
-            }}
-            size={AVATAR_SIZE}
+          <ProfilePictureWithDecoration
+            pictureUrl={friend.profilePictureUrl}
+            name={friend.name}
+            decorationId={friend.decorationId}
+            size={44}
           />
           {/* Online/playing indicator */}
           <View
@@ -294,7 +293,7 @@ const styles = StyleSheet.create({
     borderRadius: PLAY_SCREEN_TOKENS.borderRadius.cardLarge,
     borderWidth: 1,
     paddingVertical: 12,
-    overflow: "hidden",
+    // overflow: visible so avatar decorations can bleed outside the card
   },
   header: {
     flexDirection: "row",

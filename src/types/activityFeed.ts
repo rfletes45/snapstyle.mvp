@@ -42,6 +42,8 @@ export interface ActivityEvent {
   avatarUrl?: string;
   /** Avatar config for fallback */
   avatarConfig?: { baseColor: string };
+  /** Equipped avatar decoration ID */
+  decorationId?: string | null;
   /** Type of activity */
   type: ActivityEventType;
   /** Timestamp when the activity occurred */

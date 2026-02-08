@@ -25,10 +25,10 @@ export function generateId(prefix: string = ""): string {
 }
 
 /**
- * Generate a snap ID with snap- prefix
+ * Generate a picture ID with pic- prefix
  */
 export function generateSnapId(): string {
-  return generateId("snap");
+  return generateId("pic");
 }
 
 /**

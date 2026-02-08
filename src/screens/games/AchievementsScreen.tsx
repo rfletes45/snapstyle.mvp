@@ -72,7 +72,7 @@ const CATEGORY_TO_TAB: Record<AchievementCategory, AchievementTab> = {
   casual_games: "single_player",
   flappy_bird: "single_player",
   bounce_blitz: "single_player",
-  snap_2048: "single_player",
+  play_2048: "single_player",
   memory_master: "single_player",
   word_master: "single_player",
   snake_master: "single_player",
@@ -100,12 +100,12 @@ const CATEGORY_CONFIG: Record<
   general: { title: "General", icon: "gamepad-variant", order: 1 },
   social: { title: "Social", icon: "account-multiple", order: 2 },
   streak: { title: "Streaks", icon: "fire", order: 3 },
-  flappy_bird: { title: "Flappy Snap", icon: "bird", order: 4 },
+  flappy_bird: { title: "Flappy Bird", icon: "bird", order: 4 },
   bounce_blitz: { title: "Bounce Blitz", icon: "circle-multiple", order: 5 },
-  memory_master: { title: "Memory Snap", icon: "cards", order: 6 },
-  snap_2048: { title: "2048", icon: "numeric", order: 7 },
+  memory_master: { title: "Memory", icon: "cards", order: 6 },
+  play_2048: { title: "2048", icon: "numeric", order: 7 },
   snake_master: { title: "Snake", icon: "snake", order: 8 },
-  word_master: { title: "Word Snap", icon: "alphabetical", order: 9 },
+  word_master: { title: "Word", icon: "alphabetical", order: 9 },
   brick_breaker: { title: "Brick Breaker", icon: "wall", order: 10 },
   tile_slide: { title: "Tile Slide", icon: "view-grid", order: 11 },
   casual_games: {
@@ -127,7 +127,7 @@ const CATEGORY_CONFIG: Record<
 const gameIdToCategoryMap: Record<string, AchievementCategory[]> = {
   bounce_blitz: ["bounce_blitz"],
   memory_master: ["memory_master"],
-  snap_2048: ["snap_2048"],
+  play_2048: ["play_2048"],
   snake_master: ["snake_master"],
   word_master: ["word_master"],
   flappy_bird: ["flappy_bird"],
@@ -828,4 +828,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-

@@ -206,12 +206,12 @@ export async function applyFiltersToImage(
 
 /**
  * ============================================================================
- * SNAP EXPORT
+ * PICTURE EXPORT
  * ============================================================================
  */
 
 /**
- * Export snap as final image
+ * Export picture as final image
  * Combines base media + overlays + filters
  */
 export async function exportSnapAsImage(
@@ -220,7 +220,7 @@ export async function exportSnapAsImage(
   filters: AppliedFilter[],
 ): Promise<string> {
   try {
-    console.log("[Editor Service] Exporting snap as image");
+    console.log("[Editor Service] Exporting picture as image");
 
     // Process in order:
     // 1. Apply filters
@@ -244,13 +244,13 @@ export async function exportSnapAsImage(
 
     return optimized.uri;
   } catch (error) {
-    console.error("[Editor Service] Failed to export snap as image:", error);
+    console.error("[Editor Service] Failed to export picture as image:", error);
     throw error;
   }
 }
 
 /**
- * Export snap as video
+ * Export picture as video
  * Applies overlays and filters to video frames
  */
 export async function exportSnapAsVideo(
@@ -259,7 +259,7 @@ export async function exportSnapAsVideo(
   filters: AppliedFilter[],
 ): Promise<string> {
   try {
-    console.log("[Editor Service] Exporting snap as video");
+    console.log("[Editor Service] Exporting picture as video");
 
     // This requires FFmpeg for video processing:
     // 1. Extract frames
@@ -271,7 +271,7 @@ export async function exportSnapAsVideo(
     // Placeholder: return original
     return videoUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to export snap as video:", error);
+    console.error("[Editor Service] Failed to export picture as video:", error);
     throw error;
   }
 }

@@ -24,12 +24,24 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Dimensions,
   Platform,
   StyleSheet,
   TouchableOpacity,
   Vibration,
   View,
 } from "react-native";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+import {
+  Canvas,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  Circle,
+  vec,
+} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 
 // =============================================================================
@@ -311,6 +323,40 @@ export default function ReactionTapGameScreen({
     }
   };
 
+  const getGradientColors = (): [string, string, string] => {
+    switch (gameState) {
+      case "waiting":
+        return ["#1A2332", "#0F1923", "#0A1118"];
+      case "ready":
+        return ["#FF6B6B", "#D32F2F", "#8E1A1A"];
+      case "go":
+        return ["#66BB6A", "#4CAF50", "#2E7D32"];
+      case "tapped":
+        return ["#64B5F6", "#2196F3", "#1565C0"];
+      case "too_early":
+        return ["#FFB74D", "#FF9800", "#E65100"];
+      case "result":
+        return ["#1A2332", "#0F1923", "#0A1118"];
+      default:
+        return ["#1A2332", "#0F1923", "#0A1118"];
+    }
+  };
+
+  const getGlowColor = (): string => {
+    switch (gameState) {
+      case "go":
+        return "#4CAF5060";
+      case "ready":
+        return "#D32F2F50";
+      case "tapped":
+        return "#2196F360";
+      case "too_early":
+        return "#FF980060";
+      default:
+        return "#00000000";
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Game Area */}
@@ -319,6 +365,28 @@ export default function ReactionTapGameScreen({
         onPress={handleTap}
         activeOpacity={0.9}
       >
+        {/* Skia gradient overlay */}
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <RoundedRect x={0} y={0} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} r={0}>
+            <LinearGradient
+              start={vec(SCREEN_WIDTH / 2, 0)}
+              end={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT)}
+              colors={getGradientColors()}
+            />
+          </RoundedRect>
+          {/* Center glow */}
+          <Circle
+            cx={SCREEN_WIDTH / 2}
+            cy={SCREEN_HEIGHT / 2.5}
+            r={SCREEN_WIDTH * 0.6}
+          >
+            <RadialGradient
+              c={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2.5)}
+              r={SCREEN_WIDTH * 0.6}
+              colors={[getGlowColor(), "#00000000"]}
+            />
+          </Circle>
+        </Canvas>
         <Animated.View
           style={[
             styles.instructionContainer,

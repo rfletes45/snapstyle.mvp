@@ -32,6 +32,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
 import SpectatorBanner from "@/components/games/SpectatorBanner";
+import { SkiaChessPieces } from "@/components/games/graphics/SkiaChessPieces";
+import { SkiaCellHighlight } from "@/components/games/graphics/SkiaCellHighlight";
+import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectatorMode } from "@/hooks/useSpectatorMode";
@@ -146,8 +149,6 @@ function PieceComponent({ piece, isSelected, size }: PieceComponentProps) {
     };
   }, [isSelected, scaleAnim]);
 
-  const pieceSymbol = getPieceDisplay(piece);
-
   return (
     <Animated.View
       style={[
@@ -159,20 +160,7 @@ function PieceComponent({ piece, isSelected, size }: PieceComponentProps) {
         },
       ]}
     >
-      <Text
-        style={[
-          styles.pieceText,
-          {
-            fontSize: size * 0.8,
-            color: piece.color === "white" ? "#FFFFFF" : "#000000",
-            textShadowColor: piece.color === "white" ? "#000000" : "#FFFFFF",
-            textShadowOffset: { width: 1, height: 1 },
-            textShadowRadius: 2,
-          },
-        ]}
-      >
-        {pieceSymbol}
-      </Text>
+      <SkiaChessPieces type={piece.type} color={piece.color} size={size} />
     </Animated.View>
   );
 }
@@ -223,18 +211,37 @@ function CellComponent({
 
   return (
     <TouchableOpacity
-      style={[
-        styles.cell,
-        { backgroundColor },
-        isLastMove && styles.lastMoveCell,
-        isSelected && styles.selectedCell,
-        isValid && styles.validMoveCell,
-        isCheck && styles.checkCell,
-      ]}
+      style={[styles.cell, { backgroundColor }]}
       onPress={onPress}
       disabled={disabled && !isValid && !piece}
       activeOpacity={0.8}
     >
+      {/* Skia-powered cell highlights */}
+      {isLastMove && (
+        <SkiaCellHighlight
+          width={CELL_SIZE}
+          height={CELL_SIZE}
+          type="lastMove"
+        />
+      )}
+      {isSelected && (
+        <SkiaCellHighlight
+          width={CELL_SIZE}
+          height={CELL_SIZE}
+          type="selected"
+        />
+      )}
+      {isValid && !piece && (
+        <SkiaCellHighlight
+          width={CELL_SIZE}
+          height={CELL_SIZE}
+          type="validMove"
+        />
+      )}
+      {isCheck && (
+        <SkiaCellHighlight width={CELL_SIZE} height={CELL_SIZE} type="check" />
+      )}
+
       {/* Coordinates on edge */}
       {displayCol === 0 && (
         <Text
@@ -298,9 +305,7 @@ function PromotionModal({ visible, color, onSelect }: PromotionModalProps) {
               style={styles.promotionOption}
               onPress={() => onSelect(type)}
             >
-              <Text style={styles.promotionPiece}>
-                {getPieceDisplay({ type, color, hasMoved: true })}
-              </Text>
+              <SkiaChessPieces type={type} color={color} size={40} />
             </TouchableOpacity>
           ))}
         </View>
@@ -1120,10 +1125,18 @@ export default function ChessGameScreen({
         </Text>
       </View>
 
-      {/* Board */}
-      <View style={styles.boardContainer}>
+      {/* Board — Skia wood-grain gradient frame */}
+      <SkiaGameBoard
+        width={BOARD_SIZE}
+        height={BOARD_SIZE}
+        borderRadius={6}
+        gradientColors={["#5D3A1A", "#3C2410", "#5D3A1A"]}
+        borderColor="#7D5A2A"
+        borderWidth={BOARD_BORDER}
+        innerShadowBlur={6}
+      >
         <View style={styles.board}>{renderBoard()}</View>
-      </View>
+      </SkiaGameBoard>
 
       {/* Player Info & Captured Pieces */}
       <View style={styles.playerInfo}>

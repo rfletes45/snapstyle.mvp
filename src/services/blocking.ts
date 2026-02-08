@@ -258,15 +258,15 @@ async function cancelPendingRequests(
       where("status", "==", "pending"),
     );
 
-    const [Gameshot1, snapshot2] = await Promise.all([
+    const [snapshot1, snapshot2] = await Promise.all([
       getDocs(q1),
       getDocs(q2),
     ]);
 
     // Delete all pending requests
     const deletePromises = [
-      ...snapshot1.docs.map((d) => deleteDoc(d.ref)),
-      ...snapshot2.docs.map((d) => deleteDoc(d.ref)),
+      ...snapshot1.docs.map((d: any) => deleteDoc(d.ref)),
+      ...snapshot2.docs.map((d: any) => deleteDoc(d.ref)),
     ];
 
     await Promise.all(deletePromises);
@@ -279,4 +279,3 @@ async function cancelPendingRequests(
     console.error("❌ [blocking] Error cancelling requests:", error);
   }
 }
-

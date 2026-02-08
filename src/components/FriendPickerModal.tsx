@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { Button, Searchbar, Text, useTheme } from "react-native-paper";
 import { BorderRadius, Mocha, Spacing } from "../../constants/theme";
-import { AvatarMini } from "./Avatar";
+import { ProfilePictureWithDecoration } from "./profile/ProfilePicture";
 
 // =============================================================================
 // Types
@@ -27,6 +27,8 @@ interface FriendItem {
   username: string;
   displayName: string;
   avatarConfig: AvatarConfig;
+  profilePictureUrl?: string | null;
+  decorationId?: string | null;
 }
 
 interface FriendPickerModalProps {
@@ -94,6 +96,10 @@ export default function FriendPickerModal({
             avatarConfig: details.friendProfile.avatarConfig || {
               baseColor: theme.colors.primary,
             },
+            profilePictureUrl:
+              details.friendProfile.profilePicture?.url ?? null,
+            decorationId:
+              details.friendProfile.avatarDecoration?.decorationId ?? null,
           });
         }
       }
@@ -121,7 +127,12 @@ export default function FriendPickerModal({
       onPress={() => handleSelectFriend(item)}
       activeOpacity={0.7}
     >
-      <AvatarMini config={item.avatarConfig} size={44} />
+      <ProfilePictureWithDecoration
+        pictureUrl={item.profilePictureUrl}
+        name={item.displayName}
+        decorationId={item.decorationId}
+        size={40}
+      />
       <View style={styles.friendInfo}>
         <Text
           style={[styles.friendDisplayName, { color: theme.colors.onSurface }]}
@@ -328,6 +339,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
+    overflow: "visible" as const,
     marginBottom: Spacing.sm,
   },
   friendInfo: {

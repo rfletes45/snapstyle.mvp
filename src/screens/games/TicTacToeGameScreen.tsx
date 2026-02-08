@@ -28,6 +28,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import SpectatorBanner from "@/components/games/SpectatorBanner";
+import {
+  SkiaTicTacToePieces,
+} from "@/components/games/graphics/SkiaTicTacToePieces";
+import {
+  SkiaCellHighlight,
+} from "@/components/games/graphics/SkiaCellHighlight";
+import {
+  SkiaWinLine,
+} from "@/components/games/graphics/SkiaWinLine";
+import {
+  SkiaGameBoard,
+} from "@/components/games/graphics/SkiaGameBoard";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useSpectatorMode } from "@/hooks/useSpectatorMode";
 import { sendGameInvite } from "@/services/gameInvites";
@@ -219,7 +231,7 @@ function Cell({
   const borderStyle = {
     borderRightWidth: col < 2 ? LINE_THICKNESS : 0,
     borderBottomWidth: row < 2 ? LINE_THICKNESS : 0,
-    borderColor: theme.colors.outline,
+    borderColor: "rgba(255,255,255,0.15)",
   };
 
   return (
@@ -229,6 +241,14 @@ function Cell({
       disabled={disabled || value !== null}
       activeOpacity={0.7}
     >
+      {/* Winning cell glow highlight */}
+      {isWinningCell && (
+        <SkiaCellHighlight
+          width={CELL_SIZE}
+          height={CELL_SIZE}
+          type="winning"
+        />
+      )}
       {value && (
         <Animated.View
           style={[
@@ -238,17 +258,7 @@ function Cell({
             },
           ]}
         >
-          <Text
-            style={[
-              styles.cellText,
-              {
-                color:
-                  value === "X" ? theme.colors.primary : theme.colors.error,
-              },
-            ]}
-          >
-            {value}
-          </Text>
+          <SkiaTicTacToePieces value={value} size={CELL_SIZE * 0.7} />
         </Animated.View>
       )}
     </TouchableOpacity>
@@ -829,12 +839,15 @@ export default function TicTacToeGameScreen({
         </Text>
       </View>
 
-      {/* Game Board */}
-      <View
-        style={[
-          styles.boardContainer,
-          { backgroundColor: theme.colors.surface },
-        ]}
+      {/* Game Board — Skia gradient background */}
+      <SkiaGameBoard
+        width={BOARD_SIZE}
+        height={BOARD_SIZE}
+        borderRadius={BorderRadius.lg}
+        gradientColors={["#2A2A3E", "#1E1E30", "#16162A"]}
+        borderColor="rgba(255,255,255,0.1)"
+        borderWidth={2}
+        innerShadowBlur={10}
       >
         <View style={styles.board}>
           {board.map((row, rowIndex) => (
@@ -855,7 +868,20 @@ export default function TicTacToeGameScreen({
             </View>
           ))}
         </View>
-      </View>
+        {/* Animated win line overlay */}
+        {winningLine && (
+          <SkiaWinLine
+            width={BOARD_SIZE}
+            height={BOARD_SIZE}
+            x1={winningLine[0].col * CELL_SIZE + CELL_SIZE / 2}
+            y1={winningLine[0].row * CELL_SIZE + CELL_SIZE / 2}
+            x2={winningLine[2].col * CELL_SIZE + CELL_SIZE / 2}
+            y2={winningLine[2].row * CELL_SIZE + CELL_SIZE / 2}
+            strokeWidth={6}
+            duration={400}
+          />
+        )}
+      </SkiaGameBoard>
 
       {/* Game Over Modal */}
       <Portal>
@@ -1005,13 +1031,6 @@ const styles = StyleSheet.create({
   },
   boardContainer: {
     alignSelf: "center",
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
   board: {
     width: BOARD_SIZE,
@@ -1026,14 +1045,11 @@ const styles = StyleSheet.create({
     height: CELL_SIZE,
     justifyContent: "center",
     alignItems: "center",
+    position: "relative",
   },
   cellContent: {
     justifyContent: "center",
     alignItems: "center",
-  },
-  cellText: {
-    fontSize: 64,
-    fontWeight: "bold",
   },
   controls: {
     marginTop: Spacing.xl,

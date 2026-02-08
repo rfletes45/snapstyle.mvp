@@ -12,7 +12,7 @@
  * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 8
  */
 
-import { AvatarMini } from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { formatScore } from "@/services/games";
 import {
@@ -364,9 +364,11 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
           </View>
 
           {/* Avatar */}
-          <AvatarMini
-            config={item.avatarConfig || { baseColor: "#6200EE" }}
-            size={40}
+          <ProfilePictureWithDecoration
+            pictureUrl={item.profilePictureUrl}
+            name={item.displayName}
+            decorationId={item.decorationId}
+            size={36}
           />
 
           {/* Name */}
@@ -443,9 +445,11 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
           </View>
 
           {/* Avatar */}
-          <AvatarMini
-            config={item.avatarConfig || { baseColor: "#6200EE" }}
-            size={40}
+          <ProfilePictureWithDecoration
+            pictureUrl={item.profilePictureUrl || item.avatarUrl}
+            name={item.displayName}
+            decorationId={item.decorationId}
+            size={36}
           />
 
           {/* Name and Stats */}
@@ -835,4 +839,3 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
-

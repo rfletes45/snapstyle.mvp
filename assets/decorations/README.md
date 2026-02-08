@@ -38,23 +38,15 @@ decorations/
 
 1. Create your 320x320 PNG or GIF asset
 2. Place it in the appropriate category folder
-3. Register in `src/data/avatarDecorations.ts`:
+3. Uncomment (or add) the `require()` line in `assets/decorations/assetMap.ts`:
 
 ```typescript
-{
-  id: "unique_id",
-  name: "Display Name",
-  description: "Short description",
-  assetPath: require("@assets/decorations/category/filename.png"),
-  animated: false, // true for GIFs
-  rarity: "common", // common, rare, epic, legendary, mythic
-  obtainMethod: { type: "free" }, // or purchase, achievement, event
-  category: "basic", // basic, achievement, premium, seasonal, exclusive
-  available: true,
-  tags: ["tag1", "tag2"],
-  sortOrder: 0,
-}
+// In assetMap.ts, uncomment the line for your decoration:
+basic_circle_gold: require('./basic/circle_gold.png'),
 ```
+
+4. The decoration will automatically become available in the app
+   (the `available` flag in `avatarDecorations.ts` reads from the asset map)
 
 ## Placeholder Assets
 

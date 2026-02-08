@@ -34,23 +34,23 @@ import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
 import BrickBreakerGameScreen from "@/screens/games/BrickBreakerGameScreen";
 import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
 import ChessGameScreen from "@/screens/games/ChessGameScreen";
+import ConnectFourGameScreen from "@/screens/games/ConnectFourGameScreen";
 import CrazyEightsGameScreen from "@/screens/games/CrazyEightsGameScreen";
+import DotMatchGameScreen from "@/screens/games/DotMatchGameScreen";
 import GameHistoryScreen from "@/screens/games/GameHistoryScreen";
 import GamesHubScreen from "@/screens/games/GamesHubScreen";
-import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
-import MemoryMasterGameScreen from "@/screens/games/MemoryMasterGameScreen";
-import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
-import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
-import TargetMasterGameScreen from "@/screens/games/TargetMasterGameScreen";
-import DotMatchGameScreen from "@/screens/games/DotMatchGameScreen";
-import ConnectFourGameScreen from "@/screens/games/ConnectFourGameScreen";
 import GomokuMasterGameScreen from "@/screens/games/GomokuMasterGameScreen";
+import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
 import LightsOutGameScreen from "@/screens/games/LightsOutGameScreen";
+import MemoryMasterGameScreen from "@/screens/games/MemoryMasterGameScreen";
 import MinesweeperGameScreen from "@/screens/games/MinesweeperGameScreen";
 import NumberMasterGameScreen from "@/screens/games/NumberMasterGameScreen";
+import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
+import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
 import SnakeMasterGameScreen from "@/screens/games/SnakeMasterGameScreen";
-import StackPuzzleGameScreen from "@/screens/games/StackPuzzleGameScreen";
 import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
+import StackPuzzleGameScreen from "@/screens/games/StackPuzzleGameScreen";
+import TargetMasterGameScreen from "@/screens/games/TargetMasterGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TileSlideGameScreen from "@/screens/games/TileSlideGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
@@ -66,9 +66,9 @@ import PongGameScreen from "@/screens/games/PongGameScreen";
 import RaceGameScreen from "@/screens/games/RaceGameScreen";
 import ReversiGameScreen from "@/screens/games/ReversiGameScreen";
 import SliceGameScreen from "@/screens/games/SliceGameScreen";
+import TapTapGameScreen from "@/screens/games/TapTapGameScreen";
 import WarGameScreen from "@/screens/games/WarGameScreen";
 import WordsGameScreen from "@/screens/games/WordsGameScreen";
-import TapTapGameScreen from "@/screens/games/TapTapGameScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import MutualFriendsListScreen from "@/screens/profile/MutualFriendsListScreen";
 import OwnProfileScreen from "@/screens/profile/OwnProfileScreen";
@@ -136,37 +136,37 @@ const SafeBrickBreakerGame = withErrorBoundary(BrickBreakerGameScreen);
 const SafeCheckersGame = withErrorBoundary(CheckersGameScreen);
 const SafeChessGame = withErrorBoundary(ChessGameScreen);
 const SafeCrazyEightsGame = withErrorBoundary(CrazyEightsGameScreen);
-const SafeMemorySnapGame = withErrorBoundary(MemoryMasterGameScreen);
+const SafeMemoryGame = withErrorBoundary(MemoryMasterGameScreen);
 const SafeReactionTapGame = withErrorBoundary(ReactionTapGameScreen);
-const SafeSnap2048Game = withErrorBoundary(Play2048GameScreen);
-const SafeSnapSnakeGame = withErrorBoundary(SnakeMasterGameScreen);
+const SafePlay2048Game = withErrorBoundary(Play2048GameScreen);
+const SafeSnakeGame = withErrorBoundary(SnakeMasterGameScreen);
 const SafeTicTacToeGame = withErrorBoundary(TicTacToeGameScreen);
 const SafeTileSlideGame = withErrorBoundary(TileSlideGameScreen);
 const SafeTimedTapGame = withErrorBoundary(TimedTapGameScreen);
-const SafeWordSnapGame = withErrorBoundary(WordMasterGameScreen);
+const SafeWordGame = withErrorBoundary(WordMasterGameScreen);
 const SafeCartCourseGame = withErrorBoundary(CartCourseScreen);
-const SafeSnapStackGame = withErrorBoundary(StackPuzzleGameScreen);
-const SafeSnapFourGame = withErrorBoundary(ConnectFourGameScreen);
-const SafeSnapMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
-const SafeSnapNumberGame = withErrorBoundary(NumberMasterGameScreen);
-const SafeSnapDotsGame = withErrorBoundary(DotMatchGameScreen);
-const SafeSnapAimGame = withErrorBoundary(TargetMasterGameScreen);
-const SafeSnapLightsGame = withErrorBoundary(LightsOutGameScreen);
-const SafeSnapGomokuGame = withErrorBoundary(GomokuMasterGameScreen);
+const SafeStackGame = withErrorBoundary(StackPuzzleGameScreen);
+const SafeFourGame = withErrorBoundary(ConnectFourGameScreen);
+const SafeMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
+const SafeNumberGame = withErrorBoundary(NumberMasterGameScreen);
+const SafeDotsGame = withErrorBoundary(DotMatchGameScreen);
+const SafeAimGame = withErrorBoundary(TargetMasterGameScreen);
+const SafeLightsGame = withErrorBoundary(LightsOutGameScreen);
+const SafeGomokuGame = withErrorBoundary(GomokuMasterGameScreen);
 // Phase 3 safe wrappers
-const SafeSnapPongGame = withErrorBoundary(PongGameScreen);
-const SafeSnapWarGame = withErrorBoundary(WarGameScreen);
-const SafeSnapReversiGame = withErrorBoundary(ReversiGameScreen);
-const SafeSnapCrosswordGame = withErrorBoundary(CrosswordGameScreen);
-const SafeSnapPipesGame = withErrorBoundary(PipesGameScreen);
-const SafeSnapNonogramGame = withErrorBoundary(NonogramGameScreen);
-const SafeTapTapSnapGame = withErrorBoundary(TapTapGameScreen);
-const SafeSnapSliceGame = withErrorBoundary(SliceGameScreen);
-const SafeSnapRaceGame = withErrorBoundary(RaceGameScreen);
-const SafeSnapHexGame = withErrorBoundary(HexGameScreen);
-const SafeSnapDrawGame = withErrorBoundary(DrawGameScreen);
-const SafeSnapMatchGame = withErrorBoundary(MatchGameScreen);
-const SafeSnapWordsGame = withErrorBoundary(WordsGameScreen);
+const SafePongGame = withErrorBoundary(PongGameScreen);
+const SafeWarGame = withErrorBoundary(WarGameScreen);
+const SafeReversiGame = withErrorBoundary(ReversiGameScreen);
+const SafeCrosswordGame = withErrorBoundary(CrosswordGameScreen);
+const SafePipesGame = withErrorBoundary(PipesGameScreen);
+const SafeNonogramGame = withErrorBoundary(NonogramGameScreen);
+const SafeTapTapGame = withErrorBoundary(TapTapGameScreen);
+const SafeSliceGame = withErrorBoundary(SliceGameScreen);
+const SafeRaceGame = withErrorBoundary(RaceGameScreen);
+const SafeHexGame = withErrorBoundary(HexGameScreen);
+const SafeDrawGame = withErrorBoundary(DrawGameScreen);
+const SafeMatchGame = withErrorBoundary(MatchGameScreen);
+const SafeWordsGame = withErrorBoundary(WordsGameScreen);
 
 /**
  * Routes that should hide the bottom tab bar.
@@ -182,10 +182,10 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "ReactionTapGame",
   "TimedTapGame",
   "BounceBlitzGame",
-  "MemorySnapGame",
-  "WordSnapGame",
-  "Snap2048Game",
-  "SnapSnakeGame",
+  "MemoryGame",
+  "WordGame",
+  "Play2048Game",
+  "SnakeGame",
   "BrickBreakerGame",
   "TileSlideGame",
   "TicTacToeGame",
@@ -193,28 +193,28 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "ChessGame",
   "CrazyEightsGame",
   "CartCourseGame",
-  "SnapStackGame",
-  "SnapFourGame",
-  "SnapMinesweeperGame",
-  "SnapNumberGame",
-  "SnapDotsGame",
-  "SnapAimGame",
-  "SnapLightsGame",
-  "SnapGomokuGame",
+  "StackGame",
+  "FourGame",
+  "MinesweeperGame",
+  "NumberGame",
+  "DotsGame",
+  "AimGame",
+  "LightsGame",
+  "GomokuGame",
   // Phase 3 game screens
-  "SnapPongGame",
-  "SnapWarGame",
-  "SnapReversiGame",
-  "SnapCrosswordGame",
-  "SnapPipesGame",
-  "SnapNonogramGame",
-  "TapTapSnapGame",
-  "SnapSliceGame",
-  "SnapRaceGame",
-  "SnapHexGame",
-  "SnapDrawGame",
-  "SnapMatchGame",
-  "SnapWordsGame",
+  "PongGame",
+  "WarGame",
+  "ReversiGame",
+  "CrosswordGame",
+  "PipesGame",
+  "NonogramGame",
+  "TapTapGame",
+  "SliceGame",
+  "RaceGame",
+  "HexGame",
+  "DrawGame",
+  "MatchGame",
+  "WordsGame",
   "SpectatorView",
   "Leaderboard",
   "Achievements",
@@ -413,24 +413,24 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="MemorySnapGame"
-        component={SafeMemorySnapGame}
+        name="MemoryGame"
+        component={SafeMemoryGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="WordSnapGame"
-        component={SafeWordSnapGame}
+        name="WordGame"
+        component={SafeWordGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="Snap2048Game"
-        component={SafeSnap2048Game}
+        name="Play2048Game"
+        component={SafePlay2048Game}
         options={{
           headerShown: false,
           presentation: "card",
@@ -438,8 +438,8 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="SnapSnakeGame"
-        component={SafeSnapSnakeGame}
+        name="SnakeGame"
+        component={SafeSnakeGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -507,8 +507,8 @@ function PlayStack() {
       />
       {/* New Phase 2 Games */}
       <Stack.Screen
-        name="SnapStackGame"
-        component={SafeSnapStackGame}
+        name="StackGame"
+        component={SafeStackGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -516,40 +516,40 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="SnapFourGame"
-        component={SafeSnapFourGame}
+        name="FourGame"
+        component={SafeFourGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapMinesweeperGame"
-        component={SafeSnapMinesweeperGame}
+        name="MinesweeperGame"
+        component={SafeMinesweeperGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapNumberGame"
-        component={SafeSnapNumberGame}
+        name="NumberGame"
+        component={SafeNumberGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapDotsGame"
-        component={SafeSnapDotsGame}
+        name="DotsGame"
+        component={SafeDotsGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapAimGame"
-        component={SafeSnapAimGame}
+        name="AimGame"
+        component={SafeAimGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -557,16 +557,16 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="SnapLightsGame"
-        component={SafeSnapLightsGame}
+        name="LightsGame"
+        component={SafeLightsGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapGomokuGame"
-        component={SafeSnapGomokuGame}
+        name="GomokuGame"
+        component={SafeGomokuGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -574,8 +574,8 @@ function PlayStack() {
       />
       {/* Phase 3 Games */}
       <Stack.Screen
-        name="SnapPongGame"
-        component={SafeSnapPongGame}
+        name="PongGame"
+        component={SafePongGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -583,57 +583,48 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="SnapWarGame"
-        component={SafeSnapWarGame}
+        name="WarGame"
+        component={SafeWarGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapReversiGame"
-        component={SafeSnapReversiGame}
+        name="ReversiGame"
+        component={SafeReversiGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapCrosswordGame"
-        component={SafeSnapCrosswordGame}
+        name="CrosswordGame"
+        component={SafeCrosswordGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapPipesGame"
-        component={SafeSnapPipesGame}
+        name="PipesGame"
+        component={SafePipesGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapNonogramGame"
-        component={SafeSnapNonogramGame}
+        name="NonogramGame"
+        component={SafeNonogramGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="TapTapSnapGame"
-        component={SafeTapTapSnapGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
-        name="SnapSliceGame"
-        component={SafeSnapSliceGame}
+        name="TapTapGame"
+        component={SafeTapTapGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -641,24 +632,8 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="SnapRaceGame"
-        component={SafeSnapRaceGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
-        name="SnapHexGame"
-        component={SafeSnapHexGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
-        name="SnapDrawGame"
-        component={SafeSnapDrawGame}
+        name="SliceGame"
+        component={SafeSliceGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -666,16 +641,41 @@ function PlayStack() {
         }}
       />
       <Stack.Screen
-        name="SnapMatchGame"
-        component={SafeSnapMatchGame}
+        name="RaceGame"
+        component={SafeRaceGame}
         options={{
           headerShown: false,
           presentation: "card",
         }}
       />
       <Stack.Screen
-        name="SnapWordsGame"
-        component={SafeSnapWordsGame}
+        name="HexGame"
+        component={SafeHexGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="DrawGame"
+        component={SafeDrawGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="MatchGame"
+        component={SafeMatchGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="WordsGame"
+        component={SafeWordsGame}
         options={{
           headerShown: false,
           presentation: "card",
@@ -1224,4 +1224,3 @@ export default function RootNavigator({
     </AppGate>
   );
 }
-

@@ -309,7 +309,7 @@ export type OverlayElement =
   | DrawingElement
   | PollElement;
 
-export interface Snap {
+export interface Picture {
   id: string;
   senderId: string;
   senderDisplayName: string;
@@ -566,4 +566,3 @@ export interface PictureStorageMetadata {
 
 // Backwards compatibility alias
 export type SnapStorageMetadata = PictureStorageMetadata;
-

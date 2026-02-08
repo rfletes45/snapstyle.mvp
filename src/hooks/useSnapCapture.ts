@@ -1,7 +1,7 @@
 /**
  * useSnapCapture Hook (UNI-05 Extraction)
  *
- * Extracts snap/photo capture functionality from ChatScreen to reduce duplication.
+ * Extracts photo capture functionality from ChatScreen to reduce duplication.
  * Handles camera/gallery permissions, image selection, compression, and upload.
  */
 
@@ -17,7 +17,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 
-const DEBUG_SNAP = false;
+const DEBUG_CAPTURE = false;
 
 interface UseSnapCaptureConfig {
   /** Current user ID */
@@ -35,7 +35,7 @@ interface UseSnapCaptureConfig {
 }
 
 interface UseSnapCaptureReturn {
-  /** Whether a snap is currently being uploaded */
+  /** Whether a picture is currently being uploaded */
   uploadingSnap: boolean;
   /** Capture a photo from camera */
   handleCapturePhoto: () => Promise<void>;
@@ -68,7 +68,7 @@ export function useSnapCapture(
     friendUid,
     chatId,
     onUploadComplete,
-    debug = DEBUG_SNAP,
+    debug = DEBUG_CAPTURE,
     routeParams,
   } = config;
   const [uploadingSnap, setUploadingSnap] = useState(false);
@@ -141,7 +141,7 @@ export function useSnapCapture(
     }
   }, [debug]);
 
-  // Handle snap upload and send
+  // Handle picture upload and send
   const handleSnapUpload = useCallback(
     async (imageUri: string): Promise<void> => {
       if (debug) {
@@ -211,7 +211,7 @@ export function useSnapCapture(
         // Wait for send to complete
         const sendResult = await sendPromise;
         if (!sendResult.success) {
-          throw new Error(sendResult.error || "Failed to send snap");
+          throw new Error(sendResult.error || "Failed to send picture");
         }
         if (debug) {
           console.log("✅ [useSnapCapture] Message sent successfully");
@@ -234,13 +234,13 @@ export function useSnapCapture(
             `🎉 ${milestoneReached}-day streak milestone!`;
           Alert.alert("Streak Milestone! 🎉", message);
         } else {
-          Alert.alert("Success", "Snap sent!");
+          Alert.alert("Success", "Picture sent!");
         }
 
         onUploadComplete?.();
       } catch (error) {
         console.error("❌ [useSnapCapture] Error:", error);
-        Alert.alert("Error", `Failed to send snap: ${String(error)}`);
+        Alert.alert("Error", `Failed to send picture: ${String(error)}`);
       } finally {
         setUploadingSnap(false);
       }
@@ -371,7 +371,7 @@ export function useSnapCapture(
       }
 
       const useCamera = window.confirm(
-        "Send Snap\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
+        "Send Picture\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
       );
 
       if (debug) {
@@ -415,7 +415,7 @@ export function useSnapCapture(
       if (debug) {
         console.log("🔵 [useSnapCapture] Using Alert dialog");
       }
-      Alert.alert("Send Snap", "Choose an option", [
+      Alert.alert("Send Picture", "Choose an option", [
         {
           text: "Cancel",
           onPress: () => {

@@ -812,7 +812,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     "bounce_blitz",
   ];
   const puzzleGames: ExtendedGameType[] = [
-    "snap_2048",
+    "play_2048",
     "snake_master",
     "memory_master",
     "cart_course",

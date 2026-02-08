@@ -905,7 +905,7 @@ export default function ChatScreen({
                 <EmptyState
                   icon="chat-outline"
                   title="No messages yet"
-                  subtitle="Send a message or snap to start the conversation!"
+                  subtitle="Send a message or picture to start the conversation!"
                 />
               </View>
             }

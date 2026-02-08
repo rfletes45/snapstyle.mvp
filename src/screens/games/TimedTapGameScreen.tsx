@@ -21,12 +21,24 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Dimensions,
   Platform,
   StyleSheet,
   TouchableOpacity,
   Vibration,
   View,
 } from "react-native";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+import {
+  Canvas,
+  Circle,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
 import {
   Button,
   Dialog,
@@ -267,6 +279,28 @@ export default function TimedTapGameScreen({
 
   return (
     <View style={styles.container}>
+      {/* Skia background gradient */}
+      <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+        <RoundedRect x={0} y={0} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} r={0}>
+          <LinearGradient
+            start={vec(SCREEN_WIDTH / 2, 0)}
+            end={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT)}
+            colors={["#1A2332", "#0F1923", "#0A1118"]}
+          />
+        </RoundedRect>
+        {/* Subtle glow behind button area */}
+        <Circle
+          cx={SCREEN_WIDTH / 2}
+          cy={SCREEN_HEIGHT * 0.72}
+          r={140}
+        >
+          <RadialGradient
+            c={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.72)}
+            r={140}
+            colors={[colors.primary + "30", "#00000000"]}
+          />
+        </Circle>
+      </Canvas>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -307,11 +341,24 @@ export default function TimedTapGameScreen({
               <Text style={[styles.timerText, { color: colors.primary }]}>
                 {(timeRemaining / 1000).toFixed(1)}s
               </Text>
-              <ProgressBar
-                progress={progress}
-                color={theme.colors.primary}
-                style={styles.progressBar}
-              />
+              {/* Skia gradient progress bar */}
+              <Canvas style={{ width: SCREEN_WIDTH - 96, height: 12, borderRadius: 6 }}>
+                <RoundedRect x={0} y={0} width={SCREEN_WIDTH - 96} height={12} r={6}>
+                  <LinearGradient
+                    start={vec(0, 0)}
+                    end={vec(SCREEN_WIDTH - 96, 0)}
+                    colors={["#33333380", "#22222280"]}
+                  />
+                </RoundedRect>
+                <RoundedRect x={0} y={0} width={(SCREEN_WIDTH - 96) * progress} height={12} r={6}>
+                  <LinearGradient
+                    start={vec(0, 0)}
+                    end={vec((SCREEN_WIDTH - 96) * progress, 0)}
+                    colors={[colors.primary, "#FFD700"]}
+                  />
+                  <Shadow dx={0} dy={0} blur={6} color={colors.primary + "80"} />
+                </RoundedRect>
+              </Canvas>
             </View>
             <Text style={styles.tapCountBig}>{tapCount}</Text>
             <Text style={styles.tapsPerSecond}>
@@ -334,6 +381,16 @@ export default function TimedTapGameScreen({
 
       {/* Tap Button */}
       <View style={styles.buttonArea}>
+        {/* Skia glow ring behind button */}
+        <Canvas style={{ position: "absolute", width: 220, height: 220, alignSelf: "center" }} pointerEvents="none">
+          <Circle cx={110} cy={110} r={108}>
+            <RadialGradient
+              c={vec(110, 110)}
+              r={108}
+              colors={[colors.primary + "60", colors.primary + "20", "#00000000"]}
+            />
+          </Circle>
+        </Canvas>
         <TouchableOpacity
           onPress={handleTap}
           activeOpacity={1}

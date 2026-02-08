@@ -33,7 +33,7 @@ export const PROFILE_THEMES: ProfileTheme[] = [
   {
     id: "default",
     name: "Default",
-    description: "The classic SnapStyle look",
+    description: "The classic look",
     previewImagePath: "themes/default_preview.png",
     rarity: "common",
     colors: {

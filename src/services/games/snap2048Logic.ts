@@ -1,13 +1,13 @@
 /**
- * Snap 2048 Game Logic
+ * Play 2048 Game Logic
  *
  * Simple, clean implementation of 2048 game mechanics.
  * All functions are pure - no side effects.
  */
 
-import { SNAP_2048_CONFIG, Snap2048Direction } from "@/types/singlePlayerGames";
+import { PLAY_2048_CONFIG, Play2048Direction } from "@/types/singlePlayerGames";
 
-const GRID_SIZE = SNAP_2048_CONFIG.gridSize;
+const GRID_SIZE = PLAY_2048_CONFIG.gridSize;
 
 // =============================================================================
 // Board Utilities
@@ -120,7 +120,7 @@ export function canMove(board: number[][]): boolean {
  * Check if player has won (reached 2048)
  */
 export function checkWin(board: number[][]): boolean {
-  return getBestTile(board) >= SNAP_2048_CONFIG.winTile;
+  return getBestTile(board) >= PLAY_2048_CONFIG.winTile;
 }
 
 /**
@@ -200,7 +200,7 @@ interface MoveResult {
  */
 export function executeMove(
   board: number[][],
-  direction: Snap2048Direction,
+  direction: Play2048Direction,
 ): MoveResult {
   const newBoard = cloneBoard(board);
   let totalScore = 0;
@@ -299,7 +299,7 @@ export function createInitial2048State(): Simple2048State {
  */
 export function applyMove(
   state: Simple2048State,
-  direction: Snap2048Direction,
+  direction: Play2048Direction,
 ): Simple2048State {
   if (state.gameOver) return state;
 
@@ -313,7 +313,7 @@ export function applyMove(
   // Add new random tile
   const boardWithNewTile = addRandomTile(result.newBoard);
   const bestTile = getBestTile(boardWithNewTile);
-  const hasWon = state.hasWon || bestTile >= SNAP_2048_CONFIG.winTile;
+  const hasWon = state.hasWon || bestTile >= PLAY_2048_CONFIG.winTile;
   const gameOver = !canMove(boardWithNewTile);
 
   return {

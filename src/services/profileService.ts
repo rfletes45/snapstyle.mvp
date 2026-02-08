@@ -633,10 +633,18 @@ export async function equipDecoration(
     // Verify user owns the decoration
     const userDoc = await getDoc(userRef);
     const userData = userDoc.data() as Partial<UserProfileData>;
-    const ownedDecorations = userData.ownedDecorations || [];
+    let ownedDecorations = userData.ownedDecorations || [];
 
+    // Auto-grant free decorations on first equip
     if (!ownedDecorations.includes(decorationId)) {
-      throw new Error("You do not own this decoration");
+      const { getDecorationById } = await import("@/data/avatarDecorations");
+      const decoration = getDecorationById(decorationId);
+      if (decoration?.obtainMethod.type === "free" && decoration.available) {
+        ownedDecorations = [...ownedDecorations, decorationId];
+        await updateDoc(userRef, { ownedDecorations });
+      } else {
+        throw new Error("You do not own this decoration");
+      }
     }
 
     await updateDoc(userRef, {
@@ -679,7 +687,7 @@ export async function unequipDecoration(userId: string): Promise<void> {
 /**
  * Grant a decoration to user
  */
-async function grantDecoration(
+export async function grantDecoration(
   userId: string,
   decorationId: string,
   obtainedVia: "free" | "achievement" | "purchase" | "event" | "gift",

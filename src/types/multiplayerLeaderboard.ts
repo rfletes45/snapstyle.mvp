@@ -36,6 +36,12 @@ export interface MultiplayerLeaderboardEntry {
   /** Avatar URL (alternative to config) */
   avatarUrl?: string;
 
+  /** Profile picture URL */
+  profilePictureUrl?: string | null;
+
+  /** Equipped decoration ID */
+  decorationId?: string | null;
+
   /** Current rank in the leaderboard */
   rank: number;
 

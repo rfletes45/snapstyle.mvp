@@ -182,20 +182,20 @@ export const PROFILE_V2_FEATURES = {
   // =========================================================================
 
   /** Show decoration picker in profile edit */
-  DECORATION_PICKER: false,
+  DECORATION_PICKER: true,
 
   /** Enable decoration animations (GIFs) */
-  ANIMATED_DECORATIONS: false,
+  ANIMATED_DECORATIONS: true,
 
   /** Enable decoration preview before equipping */
-  DECORATION_PREVIEW: false,
+  DECORATION_PREVIEW: true,
 
   // =========================================================================
   // Phase 3: Profile Screens
   // =========================================================================
 
   /** Enable new OwnProfileScreen (replaces current) */
-  OWN_PROFILE_SCREEN: false,
+  OWN_PROFILE_SCREEN: true,
 
   /** Enable new UserProfileScreen (view others) */
   USER_PROFILE_SCREEN: true,
@@ -208,10 +208,10 @@ export const PROFILE_V2_FEATURES = {
   // =========================================================================
 
   /** Enable profile theme background customization */
-  PROFILE_THEMES_V2: false,
+  PROFILE_THEMES_V2: true,
 
   /** Enable theme inheritance (view in their theme) */
-  THEME_INHERITANCE: false,
+  THEME_INHERITANCE: true,
 
   /** Enable custom background upload (premium) */
   CUSTOM_BACKGROUNDS: false,

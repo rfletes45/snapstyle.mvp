@@ -457,7 +457,7 @@ export async function claimTaskReward(
 export function getTaskTypeDisplay(type: string): string {
   const typeMap: Record<string, string> = {
     send_message: "Send Messages",
-    send_snap: "Send Snaps",
+    send_picture: "Send Pictures",
     view_story: "View Stories",
     post_story: "Post Stories",
     play_game: "Play Games",
@@ -476,7 +476,7 @@ export function getTaskTypeDisplay(type: string): string {
 export function getTaskTypeIcon(type: string): string {
   const iconMap: Record<string, string> = {
     send_message: "message-text",
-    send_snap: "camera",
+    send_picture: "camera",
     view_story: "eye",
     post_story: "image-plus",
     play_game: "gamepad-variant",

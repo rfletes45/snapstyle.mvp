@@ -10,7 +10,10 @@
 export { ProfilePicture } from "./ProfilePicture";
 export type { ProfilePictureProps } from "./ProfilePicture";
 
-export { ProfilePictureWithDecoration } from "./ProfilePictureWithDecoration";
+export {
+  DECORATION_SCALE,
+  ProfilePictureWithDecoration,
+} from "./ProfilePictureWithDecoration";
 export type { ProfilePictureWithDecorationProps } from "./ProfilePictureWithDecoration";
 
 export { InitialsAvatar } from "./InitialsAvatar";

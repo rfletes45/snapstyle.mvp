@@ -1,6 +1,6 @@
 /**
  * Storage Service
- * Handles Firebase Storage operations for photo snaps:
+ * Handles Firebase Storage operations for pictures:
  * - Upload compressed images to snaps/{chatId}/{messageId}.jpg
  * - Download images from Storage for display
  * - Delete images from Storage
@@ -174,10 +174,10 @@ function dataURLtoBlob(dataUrl: string): Blob {
 }
 
 /**
- * Upload snap image to Firebase Storage
+ * Upload picture image to Firebase Storage
  * Stores at snaps/{chatId}/{messageId}.jpg
  * Handles both data URLs (web) and file URIs (native)
- * @param chatId - Chat ID for organizing snaps
+ * @param chatId - Chat ID for organizing pictures
  * @param messageId - Message ID for unique file naming
  * @param imageUri - Local file URI or data URL (should be pre-compressed)
  * @returns Storage path string for saving in Message doc
@@ -192,7 +192,7 @@ export async function uploadSnapImage(
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
-    console.log("🔵 [uploadSnapImage] Uploading snap image");
+    console.log("🔵 [uploadSnapImage] Uploading picture image");
 
     let blob: Blob;
 
@@ -210,16 +210,16 @@ export async function uploadSnapImage(
     // Upload to Firebase Storage
     await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
 
-    console.log(`✅ [uploadSnapImage] Uploaded snap to: ${storagePath}`);
+    console.log(`✅ [uploadSnapImage] Uploaded picture to: ${storagePath}`);
     return storagePath;
   } catch (error) {
-    console.error("❌ [uploadSnapImage] Error uploading snap image:", error);
+    console.error("❌ [uploadSnapImage] Error uploading picture image:", error);
     throw error;
   }
 }
 
 /**
- * Download snap image from Firebase Storage
+ * Download picture image from Firebase Storage
  * Retrieves download URL for displaying in SnapViewer
  * Works on both native and web platforms
  * @param storagePath - Storage path (e.g., "snaps/chatId/messageId.jpg")
@@ -233,16 +233,16 @@ export async function downloadSnapImage(storagePath: string): Promise<string> {
     // Get download URL - works on all platforms and handles CORS properly
     const downloadUrl = await getDownloadURL(storageRef);
 
-    console.log(`Got download URL for snap: ${storagePath}`);
+    console.log(`Got download URL for picture: ${storagePath}`);
     return downloadUrl;
   } catch (error) {
-    console.error("Error downloading snap image:", error);
+    console.error("Error downloading picture image:", error);
     throw error;
   }
 }
 
 /**
- * Delete snap image from Firebase Storage
+ * Delete picture image from Firebase Storage
  * Called after viewing (view-once) or when message TTL expires
  * Cloud Function also triggers on message doc delete for redundancy
  * @param storagePath - Storage path to delete
@@ -252,11 +252,11 @@ export async function deleteSnapImage(storagePath: string): Promise<void> {
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
     await deleteObject(storageRef);
-    console.log(`Deleted snap: ${storagePath}`);
+    console.log(`Deleted picture: ${storagePath}`);
   } catch (error: any) {
     // File may already be deleted; only log if not a 404 error
     if (error.code !== "storage/object-not-found") {
-      console.error("Error deleting snap image:", error);
+      console.error("Error deleting picture image:", error);
     }
   }
 }

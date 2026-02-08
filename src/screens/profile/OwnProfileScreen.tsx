@@ -337,8 +337,8 @@ export default function OwnProfileScreen({
   }
 
   return (
-    <ProfileThemeColorsProvider theme={null}>
-      <ProfileBackground theme={null} style={styles.container}>
+    <ProfileThemeColorsProvider theme={equippedTheme}>
+      <ProfileBackground theme={equippedTheme} style={styles.container}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[

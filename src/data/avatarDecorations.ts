@@ -19,24 +19,29 @@ import type {
   DecorationRarity,
 } from "@/types/userProfile";
 
+import {
+  getDecorationAsset,
+  hasDecorationAsset,
+} from "../../assets/decorations/assetMap";
+
 // =============================================================================
 // Asset Loading
 // =============================================================================
 
 /**
- * Placeholder image for decorations without assets
- * Uses a simple transparent placeholder
+ * Resolve the asset for a decoration by its ID.
+ * Returns the require()'d image source from the asset map, or null if missing.
  */
-const PLACEHOLDER_ASSET = null;
+function resolveAsset(decorationId: string): any {
+  return getDecorationAsset(decorationId);
+}
 
 /**
- * Safely require an asset, returning placeholder if not found
- * This allows the app to run before all assets are created
+ * Whether a decoration should be marked available.
+ * A decoration is available when its image asset exists.
  */
-function safeRequire(path: string): any {
-  // For now, return placeholder - replace with actual require() when assets exist
-  // Example: return require('@assets/decorations/basic/circle_gold.png');
-  return PLACEHOLDER_ASSET;
+function isAssetAvailable(decorationId: string): boolean {
+  return hasDecorationAsset(decorationId);
 }
 
 // =============================================================================
@@ -44,11 +49,11 @@ function safeRequire(path: string): any {
 // =============================================================================
 
 /**
- * All decorations use safeRequire() and are marked available: false until assets exist.
- * When adding real assets:
- * 1. Add the image to the appropriate assets/decorations/{category}/ folder
- * 2. Update the asset path in the DECORATION_ASSETS map below
- * 3. Set available: true for that decoration
+ * All decorations reference the asset map and are automatically available
+ * when their image file is added. To add a new decoration:
+ * 1. Add the image file to assets/decorations/{category}/
+ * 2. Uncomment the require() line in assets/decorations/assetMap.ts
+ * 3. The decoration will appear in the picker automatically
  */
 
 export const AVATAR_DECORATIONS: AvatarDecoration[] = [
@@ -59,12 +64,12 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "basic_circle_gold",
     name: "Golden Ring",
     description: "A simple golden circle frame",
-    assetPath: safeRequire("@assets/decorations/basic/circle_gold.png"),
+    assetPath: resolveAsset("basic_circle_gold"),
     animated: false,
     rarity: "common",
     obtainMethod: { type: "free" },
     category: "basic",
-    available: false,
+    available: isAssetAvailable("basic_circle_gold"),
     tags: ["circle", "gold", "simple"],
     sortOrder: 0,
   },
@@ -72,12 +77,12 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "basic_circle_silver",
     name: "Silver Ring",
     description: "A simple silver circle frame",
-    assetPath: safeRequire("@assets/decorations/basic/circle_silver.png"),
+    assetPath: resolveAsset("basic_circle_silver"),
     animated: false,
     rarity: "common",
     obtainMethod: { type: "free" },
     category: "basic",
-    available: false,
+    available: isAssetAvailable("basic_circle_silver"),
     tags: ["circle", "silver", "simple"],
     sortOrder: 1,
   },
@@ -85,12 +90,12 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "basic_circle_rainbow",
     name: "Rainbow Ring",
     description: "A colorful rainbow circle frame",
-    assetPath: safeRequire("@assets/decorations/basic/circle_rainbow.png"),
+    assetPath: resolveAsset("basic_circle_rainbow"),
     animated: false,
     rarity: "common",
     obtainMethod: { type: "free" },
     category: "basic",
-    available: false,
+    available: isAssetAvailable("basic_circle_rainbow"),
     tags: ["circle", "rainbow", "colorful"],
     sortOrder: 2,
   },
@@ -98,12 +103,12 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "basic_stars",
     name: "Starry Border",
     description: "Stars surrounding your profile",
-    assetPath: safeRequire("@assets/decorations/basic/stars.png"),
+    assetPath: resolveAsset("basic_stars"),
     animated: false,
     rarity: "common",
     obtainMethod: { type: "free" },
     category: "basic",
-    available: false,
+    available: isAssetAvailable("basic_stars"),
     tags: ["stars", "sparkle"],
     sortOrder: 3,
   },
@@ -115,7 +120,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "achievement_streak_7",
     name: "Week Warrior Frame",
     description: "Earned by maintaining a 7-day streak",
-    assetPath: safeRequire("@assets/decorations/achievement/streak_7.png"),
+    assetPath: resolveAsset("achievement_streak_7"),
     animated: false,
     rarity: "rare",
     obtainMethod: {
@@ -123,7 +128,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       achievementId: "streak_7_days",
     },
     category: "achievement",
-    available: false,
+    available: isAssetAvailable("achievement_streak_7"),
     tags: ["streak", "fire", "achievement"],
     sortOrder: 10,
   },
@@ -131,7 +136,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "achievement_streak_30",
     name: "Month Master Frame",
     description: "Earned by maintaining a 30-day streak",
-    assetPath: safeRequire("@assets/decorations/achievement/streak_30.png"),
+    assetPath: resolveAsset("achievement_streak_30"),
     animated: true,
     rarity: "epic",
     obtainMethod: {
@@ -139,7 +144,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       achievementId: "streak_30_days",
     },
     category: "achievement",
-    available: false,
+    available: isAssetAvailable("achievement_streak_30"),
     tags: ["streak", "fire", "achievement", "animated"],
     sortOrder: 11,
   },
@@ -147,7 +152,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "achievement_streak_100",
     name: "Legendary Blazer",
     description: "Earned by maintaining a 100-day streak",
-    assetPath: safeRequire("@assets/decorations/achievement/streak_100.gif"),
+    assetPath: resolveAsset("achievement_streak_100"),
     animated: true,
     rarity: "legendary",
     obtainMethod: {
@@ -155,7 +160,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       achievementId: "streak_100_days",
     },
     category: "achievement",
-    available: false,
+    available: isAssetAvailable("achievement_streak_100"),
     tags: ["streak", "fire", "achievement", "animated", "legendary"],
     sortOrder: 12,
   },
@@ -163,7 +168,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "achievement_gamer",
     name: "Pro Gamer",
     description: "Earned by playing 100 games",
-    assetPath: safeRequire("@assets/decorations/achievement/gamer.png"),
+    assetPath: resolveAsset("achievement_gamer"),
     animated: false,
     rarity: "rare",
     obtainMethod: {
@@ -171,7 +176,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       achievementId: "games_played_100",
     },
     category: "achievement",
-    available: false,
+    available: isAssetAvailable("achievement_gamer"),
     tags: ["games", "controller", "achievement"],
     sortOrder: 13,
   },
@@ -179,7 +184,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "achievement_social_butterfly",
     name: "Social Butterfly",
     description: "Earned by having 50 friends",
-    assetPath: safeRequire("@assets/decorations/achievement/social.png"),
+    assetPath: resolveAsset("achievement_social_butterfly"),
     animated: false,
     rarity: "epic",
     obtainMethod: {
@@ -187,7 +192,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       achievementId: "friends_50",
     },
     category: "achievement",
-    available: false,
+    available: isAssetAvailable("achievement_social_butterfly"),
     tags: ["friends", "social", "butterfly", "achievement"],
     sortOrder: 14,
   },
@@ -195,7 +200,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "achievement_champion",
     name: "Champion Crown",
     description: "Earned by getting #1 on any leaderboard",
-    assetPath: safeRequire("@assets/decorations/achievement/champion.gif"),
+    assetPath: resolveAsset("achievement_champion"),
     animated: true,
     rarity: "legendary",
     obtainMethod: {
@@ -203,7 +208,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       achievementId: "leaderboard_first",
     },
     category: "achievement",
-    available: false,
+    available: isAssetAvailable("achievement_champion"),
     tags: ["crown", "champion", "first", "animated"],
     sortOrder: 15,
   },
@@ -215,7 +220,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "premium_neon_blue",
     name: "Neon Glow Blue",
     description: "Pulsing blue neon effect",
-    assetPath: safeRequire("@assets/decorations/premium/neon_blue.gif"),
+    assetPath: resolveAsset("premium_neon_blue"),
     animated: true,
     rarity: "rare",
     obtainMethod: {
@@ -223,7 +228,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       priceTokens: 500,
     },
     category: "premium",
-    available: false,
+    available: isAssetAvailable("premium_neon_blue"),
     tags: ["neon", "blue", "glow", "animated"],
     sortOrder: 20,
   },
@@ -231,7 +236,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "premium_neon_pink",
     name: "Neon Glow Pink",
     description: "Pulsing pink neon effect",
-    assetPath: safeRequire("@assets/decorations/premium/neon_pink.gif"),
+    assetPath: resolveAsset("premium_neon_pink"),
     animated: true,
     rarity: "rare",
     obtainMethod: {
@@ -239,7 +244,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       priceTokens: 500,
     },
     category: "premium",
-    available: false,
+    available: isAssetAvailable("premium_neon_pink"),
     tags: ["neon", "pink", "glow", "animated"],
     sortOrder: 21,
   },
@@ -247,7 +252,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "premium_diamond",
     name: "Diamond Frame",
     description: "Sparkling diamond border",
-    assetPath: safeRequire("@assets/decorations/premium/diamond.gif"),
+    assetPath: resolveAsset("premium_diamond"),
     animated: true,
     rarity: "epic",
     obtainMethod: {
@@ -255,7 +260,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       priceTokens: 1000,
     },
     category: "premium",
-    available: false,
+    available: isAssetAvailable("premium_diamond"),
     tags: ["diamond", "sparkle", "luxury", "animated"],
     sortOrder: 22,
   },
@@ -263,7 +268,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "premium_fire",
     name: "Flames",
     description: "Burning flames around your profile",
-    assetPath: safeRequire("@assets/decorations/premium/fire.gif"),
+    assetPath: resolveAsset("premium_fire"),
     animated: true,
     rarity: "epic",
     obtainMethod: {
@@ -271,7 +276,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       priceTokens: 800,
     },
     category: "premium",
-    available: false,
+    available: isAssetAvailable("premium_fire"),
     tags: ["fire", "flames", "hot", "animated"],
     sortOrder: 23,
   },
@@ -279,7 +284,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "premium_galaxy",
     name: "Galaxy Swirl",
     description: "Cosmic galaxy effect",
-    assetPath: safeRequire("@assets/decorations/premium/galaxy.gif"),
+    assetPath: resolveAsset("premium_galaxy"),
     animated: true,
     rarity: "legendary",
     obtainMethod: {
@@ -287,7 +292,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       priceTokens: 1500,
     },
     category: "premium",
-    available: false,
+    available: isAssetAvailable("premium_galaxy"),
     tags: ["galaxy", "space", "cosmic", "animated"],
     sortOrder: 24,
   },
@@ -295,7 +300,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "premium_hearts",
     name: "Floating Hearts",
     description: "Cute floating hearts",
-    assetPath: safeRequire("@assets/decorations/premium/hearts.gif"),
+    assetPath: resolveAsset("premium_hearts"),
     animated: true,
     rarity: "rare",
     obtainMethod: {
@@ -303,7 +308,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       priceTokens: 400,
     },
     category: "premium",
-    available: false,
+    available: isAssetAvailable("premium_hearts"),
     tags: ["hearts", "love", "cute", "animated"],
     sortOrder: 25,
   },
@@ -315,7 +320,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "seasonal_valentines_2026",
     name: "Valentine's Love",
     description: "Limited Valentine's Day 2026 frame",
-    assetPath: safeRequire("@assets/decorations/seasonal/valentines_2026.gif"),
+    assetPath: resolveAsset("seasonal_valentines_2026"),
     animated: true,
     rarity: "epic",
     obtainMethod: {
@@ -326,7 +331,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       availableTo: new Date("2026-02-28").getTime(),
     },
     category: "seasonal",
-    available: false,
+    available: isAssetAvailable("seasonal_valentines_2026"),
     tags: ["valentines", "hearts", "love", "seasonal", "2026"],
     sortOrder: 30,
   },
@@ -334,7 +339,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "seasonal_halloween_2025",
     name: "Spooky Season",
     description: "Halloween 2025 spooky frame",
-    assetPath: safeRequire("@assets/decorations/seasonal/halloween_2025.gif"),
+    assetPath: resolveAsset("seasonal_halloween_2025"),
     animated: true,
     rarity: "epic",
     obtainMethod: {
@@ -345,7 +350,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       availableTo: new Date("2025-11-01").getTime(),
     },
     category: "seasonal",
-    available: false,
+    available: isAssetAvailable("seasonal_halloween_2025"),
     tags: ["halloween", "spooky", "scary", "seasonal", "2025"],
     sortOrder: 31,
   },
@@ -353,7 +358,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "seasonal_christmas_2025",
     name: "Holiday Spirit",
     description: "Christmas 2025 festive frame",
-    assetPath: safeRequire("@assets/decorations/seasonal/christmas_2025.gif"),
+    assetPath: resolveAsset("seasonal_christmas_2025"),
     animated: true,
     rarity: "epic",
     obtainMethod: {
@@ -364,7 +369,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       availableTo: new Date("2026-01-07").getTime(),
     },
     category: "seasonal",
-    available: false,
+    available: isAssetAvailable("seasonal_christmas_2025"),
     tags: ["christmas", "holiday", "festive", "seasonal", "2025"],
     sortOrder: 32,
   },
@@ -372,7 +377,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "seasonal_spring_2026",
     name: "Spring Blossoms",
     description: "Spring 2026 cherry blossom frame",
-    assetPath: safeRequire("@assets/decorations/seasonal/spring_2026.png"),
+    assetPath: resolveAsset("seasonal_spring_2026"),
     animated: false,
     rarity: "rare",
     obtainMethod: {
@@ -383,7 +388,7 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
       availableTo: new Date("2026-04-30").getTime(),
     },
     category: "seasonal",
-    available: false,
+    available: isAssetAvailable("seasonal_spring_2026"),
     tags: ["spring", "flowers", "blossom", "seasonal", "2026"],
     sortOrder: 33,
   },
@@ -395,14 +400,14 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "exclusive_beta_tester",
     name: "Beta Pioneer",
     description: "Exclusive for beta testers",
-    assetPath: safeRequire("@assets/decorations/exclusive/beta_tester.png"),
+    assetPath: resolveAsset("exclusive_beta_tester"),
     animated: false,
     rarity: "mythic",
     obtainMethod: {
       type: "exclusive",
     },
     category: "exclusive",
-    available: false,
+    available: isAssetAvailable("exclusive_beta_tester"),
     tags: ["beta", "pioneer", "exclusive", "og"],
     sortOrder: 40,
   },
@@ -410,14 +415,14 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "exclusive_founder",
     name: "Founding Member",
     description: "For early adopters who joined in 2025",
-    assetPath: safeRequire("@assets/decorations/exclusive/founder.gif"),
+    assetPath: resolveAsset("exclusive_founder"),
     animated: true,
     rarity: "mythic",
     obtainMethod: {
       type: "exclusive",
     },
     category: "exclusive",
-    available: false,
+    available: isAssetAvailable("exclusive_founder"),
     tags: ["founder", "og", "exclusive", "animated"],
     sortOrder: 41,
   },
@@ -425,14 +430,14 @@ export const AVATAR_DECORATIONS: AvatarDecoration[] = [
     id: "exclusive_influencer",
     name: "Influencer Badge",
     description: "Verified influencer frame",
-    assetPath: safeRequire("@assets/decorations/exclusive/influencer.gif"),
+    assetPath: resolveAsset("exclusive_influencer"),
     animated: true,
     rarity: "mythic",
     obtainMethod: {
       type: "exclusive",
     },
     category: "exclusive",
-    available: false,
+    available: isAssetAvailable("exclusive_influencer"),
     tags: ["influencer", "verified", "exclusive", "animated"],
     sortOrder: 42,
   },

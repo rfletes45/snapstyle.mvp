@@ -1,44 +1,23 @@
 /**
  * Avatar Decorations Asset Index
  *
- * Exports all decoration assets for easy importing.
- * Note: Placeholder until actual assets are created.
+ * Central export for all decoration asset utilities.
+ * Assets are managed via assetMap.ts — uncomment require() lines there
+ * as you add image files to the category subfolders.
+ *
+ * @see assetMap.ts for the full asset registry
+ * @see README.md for asset specifications
  */
 
-// Basic decorations
-// export { default as circleGold } from './basic/circle_gold.png';
-// export { default as circleSilver } from './basic/circle_silver.png';
-// export { default as circleRainbow } from './basic/circle_rainbow.png';
-// export { default as stars } from './basic/stars.png';
-
-// Achievement decorations
-// export { default as streak7 } from './achievement/streak_7.png';
-// export { default as streak30 } from './achievement/streak_30.png';
-// export { default as streak100 } from './achievement/streak_100.gif';
-// export { default as gamer } from './achievement/gamer.png';
-// export { default as social } from './achievement/social.png';
-// export { default as champion } from './achievement/champion.gif';
-
-// Premium decorations
-// export { default as neonBlue } from './premium/neon_blue.gif';
-// export { default as neonPink } from './premium/neon_pink.gif';
-// export { default as diamond } from './premium/diamond.gif';
-// export { default as fire } from './premium/fire.gif';
-// export { default as galaxy } from './premium/galaxy.gif';
-// export { default as hearts } from './premium/hearts.gif';
-
-// Seasonal decorations
-// export { default as valentines2026 } from './seasonal/valentines_2026.gif';
-// export { default as halloween2025 } from './seasonal/halloween_2025.gif';
-// export { default as christmas2025 } from './seasonal/christmas_2025.gif';
-// export { default as spring2026 } from './seasonal/spring_2026.png';
-
-// Exclusive decorations
-// export { default as betaTester } from './exclusive/beta_tester.png';
-// export { default as founder } from './exclusive/founder.gif';
-// export { default as influencer } from './exclusive/influencer.gif';
+export {
+  DECORATION_ASSETS,
+  getDecorationAsset,
+  getLoadedDecorationIds,
+  hasDecorationAsset,
+} from "./assetMap";
 
 /**
- * Placeholder export until assets are created
+ * Whether decoration assets have been added and the system is ready.
+ * This flips to true automatically when at least one asset is loaded.
  */
-export const DECORATIONS_READY = false;
+export { getLoadedDecorationIds as _checkLoaded } from "./assetMap";

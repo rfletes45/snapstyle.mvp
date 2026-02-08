@@ -12,6 +12,13 @@ import { Pressable, StyleSheet, View, ViewStyle } from "react-native";
 import { DecorationOverlay } from "./DecorationOverlay";
 import { ProfilePicture } from "./ProfilePicture";
 
+/**
+ * Scale multiplier applied to the profile picture size to get the decoration
+ * overlay size.  Exported so callers can compute the outer bounds when doing
+ * layout (e.g. list-item row height).
+ */
+export const DECORATION_SCALE = 1.55;
+
 export interface ProfilePictureWithDecorationProps {
   /** Profile picture URL (null for fallback) */
   pictureUrl: string | null | undefined;
@@ -47,46 +54,61 @@ export function ProfilePictureWithDecoration({
   style,
   loading = false,
 }: ProfilePictureWithDecorationProps) {
-  // Calculate decoration size (slightly larger than picture for frame effect)
-  const decorationSize = size * 1.15;
-  const decorationOffset = (decorationSize - size) / 2;
+  // The decoration asset is 320×320 with a ~200×200 clear center, giving a
+  // natural scale of 1.6×.  We use 1.55× as a comfortable fit.
+  //
+  // LAYOUT STRATEGY: The outer container always stays at the base `size` so
+  // consumers never see the decoration bleed into adjacent elements.  The
+  // decoration itself renders in an absolutely-positioned layer that overflows
+  // the container (overflow: 'visible').  This keeps list rows, chat bubbles,
+  // player bars, etc. perfectly aligned whether or not a user has a decoration.
+  const hasDecoration = !!decorationId;
+  const decorationScale = DECORATION_SCALE;
+  const decorationSize = size * decorationScale;
+  // How much the decoration extends beyond the base `size` on each side.
+  const bleed = (decorationSize - size) / 2;
 
   const content = (
     <View
       style={[
         styles.container,
         {
-          width: decorationSize,
-          height: decorationSize,
+          width: size,
+          height: size,
         },
         style,
       ]}
     >
-      {/* Profile picture centered */}
-      <View
-        style={[
-          styles.pictureContainer,
-          {
-            top: decorationOffset,
-            left: decorationOffset,
-          },
-        ]}
-      >
-        <ProfilePicture
-          url={pictureUrl}
-          thumbnailUrl={thumbnailUrl}
-          name={name}
-          size={size}
-          showLoading={loading}
-        />
-      </View>
-
-      {/* Decoration overlay */}
-      <DecorationOverlay
-        decorationId={decorationId}
-        size={decorationSize}
-        visible={!!decorationId}
+      {/* Profile picture — fills the container exactly */}
+      <ProfilePicture
+        url={pictureUrl}
+        thumbnailUrl={thumbnailUrl}
+        name={name}
+        size={size}
+        showLoading={loading}
       />
+
+      {/* Decoration overlay — overflows the container on all sides */}
+      {hasDecoration && (
+        <View
+          style={[
+            styles.decorationLayer,
+            {
+              top: -bleed,
+              left: -bleed,
+              width: decorationSize,
+              height: decorationSize,
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <DecorationOverlay
+            decorationId={decorationId}
+            size={decorationSize}
+            visible
+          />
+        </View>
+      )}
 
       {/* Edit indicator (pencil icon overlay) */}
       {showEditIndicator && (
@@ -123,9 +145,12 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "visible" as const,
   },
-  pictureContainer: {
+  decorationLayer: {
     position: "absolute",
+    // Allow the decoration to render outside the container bounds
+    overflow: "visible" as const,
   },
   pressable: {
     // No additional styles needed

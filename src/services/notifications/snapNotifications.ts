@@ -1,6 +1,6 @@
 /**
- * NOTIFICATION SYSTEM - SNAP NOTIFICATIONS SERVICE
- * Manages notifications for snap-related events
+ * NOTIFICATION SYSTEM - PICTURE NOTIFICATIONS SERVICE
+ * Manages notifications for picture-related events
  * Integrates with push notifications and in-app notification system
  * Uses Firebase Web SDK v12 modular API
  */
@@ -22,18 +22,18 @@ import {
 import { getFirestoreInstance } from "../firebase";
 
 /**
- * Snap notification types
+ * Picture notification types
  */
 export type SnapNotificationType =
-  | "snap_received"
-  | "snap_viewed"
-  | "snap_screenshot"
-  | "snap_reaction"
-  | "snap_reply"
-  | "snap_expiring_soon";
+  | "picture_received"
+  | "picture_viewed"
+  | "picture_screenshot"
+  | "picture_reaction"
+  | "picture_reply"
+  | "picture_expiring_soon";
 
 /**
- * Snap notification document
+ * Picture notification document
  */
 export interface SnapNotification {
   id: string;
@@ -53,7 +53,7 @@ export interface SnapNotification {
 }
 
 /**
- * Notify user that they received a snap
+ * Notify user that they received a picture
  */
 export async function notifySnapReceived(
   recipientId: string,
@@ -64,7 +64,7 @@ export async function notifySnapReceived(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Notifications] Notifying ${recipientId} of snap from ${senderName}`,
+      `[Game Notifications] Notifying ${recipientId} of picture from ${senderName}`,
     );
 
     const db = getFirestoreInstance();
@@ -75,17 +75,17 @@ export async function notifySnapReceived(
 
     const notificationData = {
       userId: recipientId,
-      type: "snap_received" as SnapNotificationType,
+      type: "picture_received" as SnapNotificationType,
       senderId,
       senderName,
       senderImage,
       snapId,
-      title: `📸 ${senderName} sent you a snap`,
+      title: `📸 ${senderName} sent you a picture`,
       body: "Tap to view",
       data: {
         snapId,
         senderId,
-        type: "snap_received",
+        type: "picture_received",
       },
       read: false,
       createdAt: new Date(),
@@ -97,22 +97,22 @@ export async function notifySnapReceived(
     // Send push notification
     await sendPushNotification(
       recipientId,
-      `${senderName} sent you a snap`,
+      `${senderName} sent you a picture`,
       "Tap to view",
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Snap received notification sent");
+    console.log("[Game Notifications] Picture received notification sent");
   } catch (error) {
     console.error(
-      "[Game Notifications] Failed to notify snap received:",
+      "[Game Notifications] Failed to notify picture received:",
       error,
     );
   }
 }
 
 /**
- * Notify snap sender that their snap was viewed
+ * Notify picture sender that their picture was viewed
  */
 export async function notifySnapViewed(
   senderId: string,
@@ -123,7 +123,7 @@ export async function notifySnapViewed(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Notifications] Notifying ${senderId} that snap was viewed by ${viewerName}`,
+      `[Game Notifications] Notifying ${senderId} that picture was viewed by ${viewerName}`,
     );
 
     const db = getFirestoreInstance();
@@ -133,17 +133,17 @@ export async function notifySnapViewed(
 
     const notificationData = {
       userId: senderId,
-      type: "snap_viewed" as SnapNotificationType,
+      type: "picture_viewed" as SnapNotificationType,
       senderId: viewerId,
       senderName: viewerName,
       senderImage: viewerImage,
       snapId,
-      title: `👀 ${viewerName} viewed your snap`,
-      body: "Your snap was seen",
+      title: `👀 ${viewerName} viewed your picture`,
+      body: "Your picture was seen",
       data: {
         snapId,
         viewerId,
-        type: "snap_viewed",
+        type: "picture_viewed",
       },
       read: false,
       createdAt: new Date(),
@@ -155,19 +155,22 @@ export async function notifySnapViewed(
     // Send push notification
     await sendPushNotification(
       senderId,
-      `${viewerName} viewed your snap`,
-      "Your snap was seen",
+      `${viewerName} viewed your picture`,
+      "Your picture was seen",
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Snap viewed notification sent");
+    console.log("[Game Notifications] Picture viewed notification sent");
   } catch (error) {
-    console.error("[Game Notifications] Failed to notify snap viewed:", error);
+    console.error(
+      "[Game Notifications] Failed to notify picture viewed:",
+      error,
+    );
   }
 }
 
 /**
- * Notify snap sender that their snap was screenshotted
+ * Notify picture sender that their picture was screenshotted
  * CRITICAL: Privacy alert notification
  */
 export async function notifySnapScreenshotted(
@@ -179,7 +182,7 @@ export async function notifySnapScreenshotted(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Notifications] ALERT: Snap screenshot by ${screenshotterName}`,
+      `[Game Notifications] ALERT: Picture screenshot by ${screenshotterName}`,
     );
 
     const db = getFirestoreInstance();
@@ -189,17 +192,17 @@ export async function notifySnapScreenshotted(
 
     const notificationData = {
       userId: senderId,
-      type: "snap_screenshot" as SnapNotificationType,
+      type: "picture_screenshot" as SnapNotificationType,
       senderId: screenshotterId,
       senderName: screenshotterName,
       senderImage: screenshotterImage,
       snapId,
       title: `⚠️ ${screenshotterName} took a screenshot`,
-      body: "Your snap privacy has been compromised",
+      body: "Your picture privacy has been compromised",
       data: {
         snapId,
         screenshotterId,
-        type: "snap_screenshot",
+        type: "picture_screenshot",
         priority: "high",
       },
       read: false,
@@ -213,7 +216,7 @@ export async function notifySnapScreenshotted(
     await sendPushNotification(
       senderId,
       `⚠️ ${screenshotterName} took a screenshot`,
-      "Your snap privacy has been compromised",
+      "Your picture privacy has been compromised",
       notificationData.data,
       {
         sound: "default",
@@ -229,7 +232,7 @@ export async function notifySnapScreenshotted(
 }
 
 /**
- * Notify snap sender of reaction
+ * Notify picture sender of reaction
  */
 export async function notifySnapReaction(
   senderId: string,
@@ -251,18 +254,18 @@ export async function notifySnapReaction(
 
     const notificationData = {
       userId: senderId,
-      type: "snap_reaction" as SnapNotificationType,
+      type: "picture_reaction" as SnapNotificationType,
       senderId: reactorId,
       senderName: reactorName,
       senderImage: reactorImage,
       snapId,
-      title: `${emoji} ${reactorName} reacted to your snap`,
-      body: "Someone loved your snap",
+      title: `${emoji} ${reactorName} reacted to your picture`,
+      body: "Someone loved your picture",
       data: {
         snapId,
         reactorId,
         emoji,
-        type: "snap_reaction",
+        type: "picture_reaction",
       },
       read: false,
       createdAt: new Date(),
@@ -274,8 +277,8 @@ export async function notifySnapReaction(
     // Send push notification
     await sendPushNotification(
       senderId,
-      `${emoji} ${reactorName} reacted to your snap`,
-      "Someone loved your snap",
+      `${emoji} ${reactorName} reacted to your picture`,
+      "Someone loved your picture",
       notificationData.data,
     );
 
@@ -286,7 +289,7 @@ export async function notifySnapReaction(
 }
 
 /**
- * Notify snap sender of reply
+ * Notify picture sender of reply
  */
 export async function notifySnapReply(
   senderId: string,
@@ -308,17 +311,17 @@ export async function notifySnapReply(
 
     const notificationData = {
       userId: senderId,
-      type: "snap_reply" as SnapNotificationType,
+      type: "picture_reply" as SnapNotificationType,
       senderId: replierId,
       senderName: replierName,
       senderImage: replierImage,
       snapId,
-      title: `💬 ${replierName} replied to your snap`,
+      title: `💬 ${replierName} replied to your picture`,
       body: replyPreview.substring(0, 100),
       data: {
         snapId,
         replierId,
-        type: "snap_reply",
+        type: "picture_reply",
       },
       read: false,
       createdAt: new Date(),
@@ -330,7 +333,7 @@ export async function notifySnapReply(
     // Send push notification
     await sendPushNotification(
       senderId,
-      `${replierName} replied to your snap`,
+      `${replierName} replied to your picture`,
       replyPreview.substring(0, 100),
       notificationData.data,
     );
@@ -342,7 +345,7 @@ export async function notifySnapReply(
 }
 
 /**
- * Notify user that their snap is expiring soon
+ * Notify user that their picture is expiring soon
  */
 export async function notifySnapExpiringSoon(
   senderId: string,
@@ -351,7 +354,7 @@ export async function notifySnapExpiringSoon(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Notifications] Notifying ${senderId} that snap expires in ${minutesLeft} minutes`,
+      `[Game Notifications] Notifying ${senderId} that picture expires in ${minutesLeft} minutes`,
     );
 
     const db = getFirestoreInstance();
@@ -362,7 +365,7 @@ export async function notifySnapExpiringSoon(
       notificationsRef,
       where("userId", "==", senderId),
       where("snapId", "==", snapId),
-      where("type", "==", "snap_expiring_soon"),
+      where("type", "==", "picture_expiring_soon"),
     );
     const existing = await getDocs(existingQuery);
 
@@ -376,16 +379,16 @@ export async function notifySnapExpiringSoon(
 
     const notificationData = {
       userId: senderId,
-      type: "snap_expiring_soon" as SnapNotificationType,
+      type: "picture_expiring_soon" as SnapNotificationType,
       senderId: "system",
       senderName: "SnapStyle",
       senderImage: "",
       snapId,
-      title: `⏰ Your snap expires soon`,
-      body: `${minutesLeft} minutes left to view your snap`,
+      title: `⏰ Your picture expires soon`,
+      body: `${minutesLeft} minutes left to view your picture`,
       data: {
         snapId,
-        type: "snap_expiring_soon",
+        type: "picture_expiring_soon",
       },
       read: false,
       createdAt: new Date(),
@@ -397,7 +400,7 @@ export async function notifySnapExpiringSoon(
     // Send push notification
     await sendPushNotification(
       senderId,
-      `Your snap expires in ${minutesLeft} minutes`,
+      `Your picture expires in ${minutesLeft} minutes`,
       "View it before it's gone",
       notificationData.data,
     );
@@ -605,4 +608,3 @@ export async function getUnreadNotificationCount(
     return 0;
   }
 }
-

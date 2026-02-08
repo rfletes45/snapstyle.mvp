@@ -7,12 +7,11 @@
  * @module components/chat/inbox/FriendRequestItem
  */
 
-import { AvatarMini } from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
 import { useAppTheme } from "@/store/ThemeContext";
 import { formatRelativeTime, toTimestamp } from "@/utils/dates";
 import * as haptics from "@/utils/haptics";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Button, Text } from "react-native-paper";
@@ -81,35 +80,12 @@ export const FriendRequestItem = memo(function FriendRequestItem({
     >
       {/* Avatar */}
       <View style={styles.avatarContainer}>
-        {fromUser.avatarConfig ? (
-          <AvatarMini config={fromUser.avatarConfig} size={52} />
-        ) : fromUser.avatarUrl ? (
-          <View
-            style={[
-              styles.avatarPlaceholder,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="account"
-              size={28}
-              color={colors.textSecondary}
-            />
-          </View>
-        ) : (
-          <View
-            style={[
-              styles.avatarPlaceholder,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="account"
-              size={28}
-              color={colors.textSecondary}
-            />
-          </View>
-        )}
+        <ProfilePictureWithDecoration
+          pictureUrl={fromUser.profilePictureUrl}
+          name={fromUser.displayName}
+          decorationId={fromUser.decorationId}
+          size={48}
+        />
       </View>
 
       {/* Content */}

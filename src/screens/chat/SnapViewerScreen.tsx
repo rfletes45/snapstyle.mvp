@@ -53,7 +53,7 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
         setImageUri(uri);
       } catch (err: any) {
         console.error("❌ [GameViewerScreen] Failed to load snap:", err);
-        setError(err.message || "Failed to load snap");
+        setError(err.message || "Failed to load picture");
       } finally {
         setLoading(false);
       }
@@ -88,7 +88,7 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
       console.error("❌ [GameViewerScreen] Error marking snap opened:", err);
       Alert.alert(
         "Error",
-        "Failed to save snap view. The snap may still be visible to the sender.",
+        "Failed to save picture view. The picture may still be visible to the sender.",
       );
       // Still navigate back even on error (Cloud Function cleanup will handle fallback)
       navigation.goBack();
@@ -181,4 +181,3 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
     </View>
   );
 }
-

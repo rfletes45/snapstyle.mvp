@@ -1,6 +1,6 @@
 /**
- * STORY SYSTEM - SNAP STORIES SERVICE
- * Manages snap stories (24-hour expiring stories)
+ * STORY SYSTEM - PICTURE STORIES SERVICE
+ * Manages picture stories (24-hour expiring stories)
  * Uses Firebase Web SDK v12 modular API
  */
 
@@ -17,11 +17,11 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { Snap } from "../../types/camera";
+import { Picture, Snap } from "../../types/camera";
 import { getFirestoreInstance } from "../firebase";
 
 /**
- * Snap story user info
+ * Picture story user info
  */
 export interface SnapStoryUser {
   userId: string;
@@ -34,7 +34,7 @@ export interface SnapStoryUser {
 }
 
 /**
- * Snap story data
+ * Picture story data
  */
 export interface SnapStory {
   id: string;
@@ -48,7 +48,7 @@ export interface SnapStory {
 }
 
 /**
- * Publish snap to stories
+ * Publish picture to stories
  */
 export async function publishSnapToStory(
   picture: Picture,
@@ -57,13 +57,15 @@ export async function publishSnapToStory(
   userImage: string,
 ): Promise<void> {
   try {
-    console.log(`[Game Story Service] Publishing snap ${snap.id} to stories`);
+    console.log(
+      `[Game Story Service] Publishing picture ${picture.id} to stories`,
+    );
 
     const db = getFirestoreInstance();
 
-    // Update snap document to mark as story
-    const snapRef = doc(db, "Pictures", snap.id);
-    await updateDoc(snapRef, {
+    // Update picture document to mark as story
+    const pictureRef = doc(db, "Pictures", picture.id);
+    await updateDoc(pictureRef, {
       storyVisible: true,
       storyPublishedAt: new Date(),
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -80,28 +82,28 @@ export async function publishSnapToStory(
         userName,
         userImage,
         snapCount: 1,
-        firstSnapTime: snap.createdAt || Date.now(),
-        lastSnapTime: snap.createdAt || Date.now(),
+        firstSnapTime: picture.createdAt || Date.now(),
+        lastSnapTime: picture.createdAt || Date.now(),
         expiresAt:
-          snap.storyExpiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
+          picture.storyExpiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
         isSnapStory: true,
         viewerCount: 0,
       });
     } else {
       await updateDoc(storyRef, {
         snapCount: increment(1),
-        lastSnapTime: snap.createdAt || Date.now(),
+        lastSnapTime: picture.createdAt || Date.now(),
         expiresAt:
-          snap.storyExpiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
+          picture.storyExpiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
     }
 
     console.log(
-      `[Game Story Service] Snap published to stories for user ${userId}`,
+      `[Game Story Service] Picture published to stories for user ${userId}`,
     );
   } catch (error) {
     console.error(
-      "[Game Story Service] Failed to publish snap to stories:",
+      "[Game Story Service] Failed to publish picture to stories:",
       error,
     );
     throw error;
@@ -109,11 +111,11 @@ export async function publishSnapToStory(
 }
 
 /**
- * Remove snap from stories
+ * Remove picture from stories
  */
 export async function removeSnapFromStory(snapId: string): Promise<void> {
   try {
-    console.log(`[Game Story Service] Removing snap ${snapId} from stories`);
+    console.log(`[Game Story Service] Removing picture ${snapId} from stories`);
 
     const db = getFirestoreInstance();
 
@@ -122,10 +124,10 @@ export async function removeSnapFromStory(snapId: string): Promise<void> {
       storyVisible: false,
     });
 
-    console.log("[Game Story Service] Snap removed from stories");
+    console.log("[Game Story Service] Picture removed from stories");
   } catch (error) {
     console.error(
-      "[Game Story Service] Failed to remove snap from stories:",
+      "[Game Story Service] Failed to remove picture from stories:",
       error,
     );
     throw error;
@@ -503,5 +505,3 @@ export async function getStoryStats(userId: string): Promise<{
     };
   }
 }
-
-

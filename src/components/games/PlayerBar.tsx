@@ -14,7 +14,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, View, ViewStyle, useColorScheme } from "react-native";
-import { Avatar, Text, useTheme } from "react-native-paper";
+import { Text, useTheme } from "react-native-paper";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -24,6 +24,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { formatDurationSeconds as formatTime } from "@/utils/time";
 import {
   GAME_BORDER_RADIUS,
@@ -43,6 +44,8 @@ export interface PlayerInfo {
   avatarUrl?: string | null;
   rating?: number;
   color?: "white" | "black" | "red" | "none";
+  /** Equipped avatar decoration ID */
+  decorationId?: string | null;
 }
 
 export interface PlayerBarProps {
@@ -247,14 +250,12 @@ export function PlayerBar({
       {/* Avatar Section */}
       <View style={styles.avatarSection}>
         <View style={styles.avatarWrapper}>
-          {player.avatarUrl ? (
-            <Avatar.Image size={40} source={{ uri: player.avatarUrl }} />
-          ) : (
-            <Avatar.Text
-              size={40}
-              label={player.displayName.slice(0, 2).toUpperCase()}
-            />
-          )}
+          <ProfilePictureWithDecoration
+            pictureUrl={player.avatarUrl}
+            name={player.displayName}
+            decorationId={player.decorationId}
+            size={36}
+          />
 
           {/* Online Status Indicator */}
           {showOnlineStatus && (
@@ -380,14 +381,12 @@ export function CompactPlayerBar({
       )}
 
       {/* Avatar */}
-      {player.avatarUrl ? (
-        <Avatar.Image size={28} source={{ uri: player.avatarUrl }} />
-      ) : (
-        <Avatar.Text
-          size={28}
-          label={player.displayName.slice(0, 1).toUpperCase()}
-        />
-      )}
+      <ProfilePictureWithDecoration
+        pictureUrl={player.avatarUrl}
+        name={player.displayName}
+        decorationId={player.decorationId}
+        size={24}
+      />
 
       {/* Name */}
       <Text
@@ -431,6 +430,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: GAME_SPACING.md,
     paddingVertical: GAME_SPACING.sm,
     borderRadius: GAME_BORDER_RADIUS.md,
+    overflow: "visible" as const,
   },
   containerTop: {
     borderTopLeftRadius: 0,
@@ -547,6 +547,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: GAME_SPACING.sm,
     paddingVertical: GAME_SPACING.xs,
     borderRadius: GAME_BORDER_RADIUS.md,
+    overflow: "visible" as const,
     borderWidth: 1,
     gap: GAME_SPACING.xs,
   },

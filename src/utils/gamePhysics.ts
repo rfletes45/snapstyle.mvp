@@ -104,7 +104,7 @@ export function vec2DistanceSquared(a: Vector2D, b: Vector2D): number {
 // =============================================================================
 
 /**
- * Physics constants for Flappy Snap
+ * Physics constants for Flappy Bird
  *
  * Research notes:
  * - Original Flappy Bird: ~0.4 px/frame gravity, -8 px/frame jump

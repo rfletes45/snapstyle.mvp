@@ -3,10 +3,10 @@
  *
  * Type definitions for single-player games including:
  * - Bounce Blitz
- * - Memory Snap
- * - Word Snap
- * - Snap 2048
- * - Snap Snake
+ * - Memory Master
+ * - Word Master
+ * - Play 2048
+ * - Snake
  *
  * @see docs/07_GAMES_ARCHITECTURE.md Section 1
  */
@@ -129,11 +129,11 @@ export interface BounceCollectible {
 }
 
 // =============================================================================
-// Flappy Snap
+// Flappy Bird
 // =============================================================================
 
 /**
- * A pipe/hoop obstacle in Flappy Snap
+ * A pipe/hoop obstacle in Flappy Bird
  */
 export interface FlappyHoop {
   id: number;
@@ -151,7 +151,7 @@ export interface FlappyHoop {
 }
 
 /**
- * Flappy Snap configuration constants
+ * Flappy Bird configuration constants
  */
 export const FLAPPY_DUNK_CONFIG = {
   // World
@@ -213,9 +213,9 @@ export const BOUNCE_MASTER_CONFIG = {
 // =============================================================================
 
 /**
- * Memory Snap game state (memory matching)
+ * Memory Master game state (memory matching)
  */
-export interface MemorySnapState extends BaseSinglePlayerState {
+export interface MemoryMasterState extends BaseSinglePlayerState {
   gameType: "memory_master";
   category: "puzzle";
 
@@ -333,9 +333,9 @@ export type DailyPuzzleType =
   | "logic_puzzle";
 
 /**
- * Word Snap game state (daily word puzzle)
+ * Word Master game state (daily word puzzle)
  */
-export interface WordSnapState extends BaseSinglePlayerState {
+export interface WordMasterState extends BaseSinglePlayerState {
   gameType: "word_master";
   category: "daily";
 
@@ -481,14 +481,14 @@ export const DAILY_PUZZLE_CONFIG = {
 };
 
 // =============================================================================
-// Snap 2048
+// Play 2048
 // =============================================================================
 
 /**
- * Snap 2048 game state
+ * Play 2048 game state
  */
-export interface Snap2048State extends BaseSinglePlayerState {
-  gameType: "snap_2048";
+export interface Play2048State extends BaseSinglePlayerState {
+  gameType: "play_2048";
   category: "puzzle";
 
   // 4x4 grid - 0 means empty, 2/4/8/16... means tile value
@@ -505,7 +505,7 @@ export interface Snap2048State extends BaseSinglePlayerState {
 
   // Animation state for smooth tile transitions
   lastMove?: {
-    direction: Snap2048Direction;
+    direction: Play2048Direction;
     mergedPositions: { row: number; col: number; value: number }[];
     movedTiles: {
       from: { row: number; col: number };
@@ -519,12 +519,12 @@ export interface Snap2048State extends BaseSinglePlayerState {
 /**
  * Swipe direction for 2048
  */
-export type Snap2048Direction = "up" | "down" | "left" | "right";
+export type Play2048Direction = "up" | "down" | "left" | "right";
 
 /**
  * 2048 game constants
  */
-export const SNAP_2048_CONFIG = {
+export const PLAY_2048_CONFIG = {
   // Grid
   gridSize: 4,
 
@@ -566,13 +566,13 @@ export const SNAP_2048_CONFIG = {
 };
 
 // =============================================================================
-// Snap Snake
+// Snake
 // =============================================================================
 
 /**
- * Snap Snake game state
+ * Snake game state
  */
-export interface SnapSnakeState extends BaseSinglePlayerState {
+export interface SnakeState extends BaseSinglePlayerState {
   gameType: "snake_master";
   category: "quick_play";
 
@@ -608,7 +608,7 @@ export interface SnapSnakeState extends BaseSinglePlayerState {
 export type SnakeDirection = "up" | "down" | "left" | "right";
 
 /**
- * Snap Snake game constants
+ * Snake game constants
  */
 export const snake_master_CONFIG = {
   // Grid
@@ -641,7 +641,7 @@ export const snake_master_CONFIG = {
 // =============================================================================
 
 export interface Play2048Stats {
-  gameType: "snap_2048";
+  gameType: "play_2048";
   bestTile: number;
   moveCount: number;
   mergeCount: number;
@@ -1091,6 +1091,3 @@ export interface LeaderboardRequest {
   limit?: number;
   aroundPlayer?: string; // Center on this player
 }
-
-
-

@@ -113,7 +113,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Test your brain",
     icon: "puzzle",
     accentColor: "#4ECDC4",
-    games: ["snap_2048", "memory_master"],
+    games: ["play_2048", "memory_master"],
     layout: "carousel",
   },
   {

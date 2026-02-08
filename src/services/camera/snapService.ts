@@ -31,7 +31,7 @@ import { getFirestoreInstance, getStorageInstance } from "../firebase";
  */
 
 /**
- * Upload snap to Firebase with progress tracking
+ * Upload picture to Firebase with progress tracking
  */
 export async function uploadPicture(
   picture: Picture,
@@ -40,30 +40,32 @@ export async function uploadPicture(
   onProgress?: (progress: number) => void,
 ): Promise<string> {
   try {
-    console.log("[Game Service] Starting snap upload");
+    console.log("[Game Service] Starting picture upload");
 
     // 1. Upload media to Firebase Storage
     const mediaUrl = await uploadMediaFile(
       userId,
-      snap.id,
+      picture.id,
       mediaFile,
       onProgress,
     );
 
-    // 2. Update snap with media URL
-    snap.mediaUrl = mediaUrl;
+    // 2. Update picture with media URL
+    picture.mediaUrl = mediaUrl;
 
-    // 3. Create snap document in Firestore
-    const snapDocRef = await createSnapDocument(snap, userId);
+    // 3. Create picture document in Firestore
+    const pictureDocRef = await createSnapDocument(picture, userId);
 
-    console.log(`[Game Service] Snap uploaded successfully: ${snapDocRef}`);
+    console.log(
+      `[Game Service] Picture uploaded successfully: ${pictureDocRef}`,
+    );
 
     // 4. Update recipients' view lists
-    await updateRecipientsViewLists(snap.id, snap.recipients);
+    await updateRecipientsViewLists(picture.id, picture.recipients);
 
-    return snapDocRef;
+    return pictureDocRef;
   } catch (error) {
-    console.error("[Game Service] Snap upload failed:", error);
+    console.error("[Game Service] Picture upload failed:", error);
     throw error;
   }
 }
@@ -112,14 +114,17 @@ async function uploadMediaFile(
 }
 
 /**
- * Create snap document in Firestore
+ * Create picture document in Firestore
  */
-async function createSnapDocument(picture: Picture, userId: string): Promise<string> {
+async function createSnapDocument(
+  picture: Picture,
+  userId: string,
+): Promise<string> {
   try {
     const snapsRef = collection(getFirestoreInstance(), "Pictures");
 
     const docRef = await addDoc(snapsRef, {
-      ...snap,
+      ...picture,
       senderId: userId,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -127,7 +132,7 @@ async function createSnapDocument(picture: Picture, userId: string): Promise<str
 
     return docRef.id;
   } catch (error) {
-    console.error("[Game Service] Failed to create snap document:", error);
+    console.error("[Game Service] Failed to create picture document:", error);
     throw error;
   }
 }
@@ -159,18 +164,18 @@ async function updateRecipientsViewLists(
       "[Game Service] Failed to update recipients view lists:",
       error,
     );
-    // Don't throw - snap is still uploaded
+    // Don't throw - picture is still uploaded
   }
 }
 
 /**
  * ============================================================================
- * SNAP MANAGEMENT
+ * PICTURE MANAGEMENT
  * ============================================================================
  */
 
 /**
- * View a snap and record view timestamp
+ * View a picture and record view timestamp
  */
 export async function viewPicture(
   snapId: string,
@@ -181,11 +186,11 @@ export async function viewPicture(
     const snapRef = doc(getFirestoreInstance(), "Pictures", snapId);
     const snap = await (await import("firebase/firestore")).getDoc(snapRef);
 
-    if (!snap.exists()) throw new Error("Snap not found");
+    if (!snap.exists()) throw new Error("Picture not found");
 
     const snapData = snap.data() as Snap;
 
-    // Add view to snap document
+    // Add view to picture document
     const newView: SnapView = {
       userId,
       viewedAt: Date.now(),
@@ -208,12 +213,12 @@ export async function viewPicture(
       screenshotTaken,
     });
   } catch (error) {
-    console.error("[Game Service] Failed to record snap view:", error);
+    console.error("[Game Service] Failed to record picture view:", error);
   }
 }
 
 /**
- * Delete snap
+ * Delete picture
  */
 export async function deletePicture(
   snapId: string,
@@ -226,15 +231,15 @@ export async function deletePicture(
 
     // Delete storage files
     // Would delete media, thumbnails, etc.
-    console.log(`[Game Service] Deleted snap: ${snapId}`);
+    console.log(`[Game Service] Deleted picture: ${snapId}`);
   } catch (error) {
-    console.error("[Game Service] Failed to delete snap:", error);
+    console.error("[Game Service] Failed to delete picture:", error);
     throw error;
   }
 }
 
 /**
- * Add reaction to snap
+ * Add reaction to picture
  */
 export async function addReaction(
   snapId: string,
@@ -245,7 +250,7 @@ export async function addReaction(
     const snapRef = doc(getFirestoreInstance(), "Pictures", snapId);
     const snap = await (await import("firebase/firestore")).getDoc(snapRef);
 
-    if (!snap.exists()) throw new Error("Snap not found");
+    if (!snap.exists()) throw new Error("Picture not found");
 
     const snapData = snap.data() as Snap;
 
@@ -271,7 +276,7 @@ export async function addReaction(
 }
 
 /**
- * Reply to snap
+ * Reply to picture
  */
 export async function replyToPicture(
   snapId: string,
@@ -282,7 +287,7 @@ export async function replyToPicture(
     const snapRef = doc(getFirestoreInstance(), "Pictures", snapId);
     const snap = await (await import("firebase/firestore")).getDoc(snapRef);
 
-    if (!snap.exists()) throw new Error("Snap not found");
+    if (!snap.exists()) throw new Error("Picture not found");
 
     const snapData = snap.data() as Snap;
 
@@ -290,31 +295,31 @@ export async function replyToPicture(
       replies: [...snapData.replies, reply],
     });
   } catch (error) {
-    console.error("[Game Service] Failed to reply to snap:", error);
+    console.error("[Game Service] Failed to reply to picture:", error);
     throw error;
   }
 }
 
 /**
- * Get snap receipts (view data)
+ * Get picture receipts (view data)
  */
 export async function getPictureReceipts(snapId: string): Promise<SnapView[]> {
   try {
     const snapRef = doc(getFirestoreInstance(), "Pictures", snapId);
     const snap = await (await import("firebase/firestore")).getDoc(snapRef);
 
-    if (!snap.exists()) throw new Error("Snap not found");
+    if (!snap.exists()) throw new Error("Picture not found");
 
     const snapData = snap.data() as Snap;
     return snapData.viewedBy;
   } catch (error) {
-    console.error("[Game Service] Failed to get snap receipts:", error);
+    console.error("[Game Service] Failed to get picture receipts:", error);
     return [];
   }
 }
 
 /**
- * Share snap to story
+ * Share picture to story
  */
 export async function shareToStory(
   picture: Picture,
@@ -322,16 +327,16 @@ export async function shareToStory(
   duration: number = 86400000,
 ): Promise<void> {
   try {
-    snap.storyVisible = true;
-    snap.storyExpiresAt = Date.now() + duration; // Default 24 hours
+    picture.storyVisible = true;
+    picture.storyExpiresAt = Date.now() + duration; // Default 24 hours
 
-    const snapRef = doc(getFirestoreInstance(), "Pictures", snap.id);
-    await updateDoc(snapRef, {
+    const pictureRef = doc(getFirestoreInstance(), "Pictures", picture.id);
+    await updateDoc(pictureRef, {
       storyVisible: true,
-      storyExpiresAt: snap.storyExpiresAt,
+      storyExpiresAt: picture.storyExpiresAt,
     });
 
-    console.log("[Game Service] Snap shared to story");
+    console.log("[Game Service] Picture shared to story");
   } catch (error) {
     console.error("[Game Service] Failed to share to story:", error);
     throw error;
@@ -345,7 +350,7 @@ export async function shareToStory(
  */
 
 /**
- * Save snap as draft
+ * Save picture as draft
  */
 export async function createDraft(
   picture: Partial<Picture>,
@@ -357,7 +362,7 @@ export async function createDraft(
       id: draftId,
       userId,
       media:
-        snap.mediaType === "photo"
+        picture.mediaType === "photo"
           ? {
               id: "",
               type: "photo",
@@ -376,9 +381,9 @@ export async function createDraft(
               mimeType: "video/mp4",
               dimensions: { width: 0, height: 0 },
             },
-      overlayElements: snap.overlayElements || [],
-      filters: snap.filters || [],
-      caption: snap.caption,
+      overlayElements: picture.overlayElements || [],
+      filters: picture.filters || [],
+      caption: picture.caption,
       createdAt: Date.now(),
       expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
     };
@@ -464,7 +469,7 @@ export async function getUserDrafts(userId: string): Promise<SnapDraft[]> {
 
 /**
  * ============================================================================
- * SNAP HISTORY & GALLERY
+ * PICTURE HISTORY & GALLERY
  * ============================================================================
  */
 
@@ -485,7 +490,7 @@ export async function getUserPictures(
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
   } catch (error) {
-    console.error("[Game Service] Failed to get user snaps:", error);
+    console.error("[Game Service] Failed to get user pictures:", error);
     return [];
   }
 }
@@ -513,7 +518,7 @@ export async function getReceivedPictures(
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
   } catch (error) {
-    console.error("[Game Service] Failed to get received snaps:", error);
+    console.error("[Game Service] Failed to get received pictures:", error);
     return [];
   }
 }
@@ -535,7 +540,7 @@ export async function getVisibleStorySnaps(userId: string): Promise<Snap[]> {
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => doc.data() as Snap);
   } catch (error) {
-    console.error("[Game Service] Failed to get story snaps:", error);
+    console.error("[Game Service] Failed to get story pictures:", error);
     return [];
   }
 }
@@ -547,7 +552,7 @@ export async function getVisibleStorySnaps(userId: string): Promise<Snap[]> {
  */
 
 /**
- * Record snap analytics
+ * Record picture analytics
  */
 export async function recordSnapAnalytics(
   snapId: string,
@@ -558,14 +563,16 @@ export async function recordSnapAnalytics(
     // Would record events like:
     // - view, reply, reaction, screenshot, etc.
 
-    console.log(`[Game Service] Recorded event "${event}" for snap ${snapId}`);
+    console.log(
+      `[Game Service] Recorded event "${event}" for picture ${snapId}`,
+    );
   } catch (error) {
     console.error("[Game Service] Failed to record analytics:", error);
   }
 }
 
 /**
- * Get snap statistics
+ * Get picture statistics
  */
 export async function getSnapStatistics(snapId: string): Promise<{
   viewCount: number;
@@ -577,7 +584,7 @@ export async function getSnapStatistics(snapId: string): Promise<{
     const snapRef = doc(getFirestoreInstance(), "Pictures", snapId);
     const snap = await (await import("firebase/firestore")).getDoc(snapRef);
 
-    if (!snap.exists()) throw new Error("Snap not found");
+    if (!snap.exists()) throw new Error("Picture not found");
 
     const snapData = snap.data() as Snap;
 
@@ -598,5 +605,3 @@ export async function getSnapStatistics(snapId: string): Promise<{
     };
   }
 }
-
-

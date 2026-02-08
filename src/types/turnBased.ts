@@ -453,23 +453,23 @@ export type CrazyEightsMatch = TurnBasedMatch<
 >;
 
 // =============================================================================
-// Snap Four (Connect Four) Types
+// Four (Connect Four) Types
 // =============================================================================
 
 /**
- * Snap Four cell: 0 = empty, 1 = player 1 (red), 2 = player 2 (yellow)
+ * Four cell: 0 = empty, 1 = player 1 (red), 2 = player 2 (yellow)
  */
-export type SnapFourCell = 0 | 1 | 2;
+export type FourCell = 0 | 1 | 2;
 
 /**
- * Snap Four board (6 rows × 7 columns)
+ * Four board (6 rows Ã— 7 columns)
  */
-export type SnapFourBoard = SnapFourCell[][];
+export type FourBoard = FourCell[][];
 
 /**
- * Snap Four move — drop a disc into a column
+ * Four move â€” drop a disc into a column
  */
-export interface SnapFourMove {
+export interface FourMove {
   column: number; // 0-6
   row: number; // The row where the disc landed
   player: 1 | 2;
@@ -477,31 +477,31 @@ export interface SnapFourMove {
 }
 
 /**
- * Snap Four game state
+ * Four game state
  */
-export interface SnapFourGameState {
-  board: SnapFourBoard;
+export interface FourGameState {
+  board: FourBoard;
   currentTurn: 1 | 2;
 }
 
 /**
- * Snap Four match type
+ * Four match type
  */
-export type SnapFourMatch = TurnBasedMatch<SnapFourGameState, SnapFourMove>;
+export type FourMatch = TurnBasedMatch<FourGameState, FourMove>;
 
 // =============================================================================
-// Snap Dots (Dots & Boxes) Types
+// Dots (Dots & Boxes) Types
 // =============================================================================
 
 /**
- * Snap Dots box owner: 0 = unclaimed, 1 = player 1, 2 = player 2
+ * Dots box owner: 0 = unclaimed, 1 = player 1, 2 = player 2
  */
-export type SnapDotsOwner = 0 | 1 | 2;
+export type DotsOwner = 0 | 1 | 2;
 
 /**
- * Snap Dots move — draw a horizontal or vertical line
+ * Dots move â€” draw a horizontal or vertical line
  */
-export interface SnapDotsMove {
+export interface DotsMove {
   type: "h" | "v"; // horizontal or vertical line
   row: number;
   col: number;
@@ -511,44 +511,44 @@ export interface SnapDotsMove {
 }
 
 /**
- * Snap Dots game state (5×5 dots → 4×4 boxes)
+ * Dots game state (5Ã—5 dots â†’ 4Ã—4 boxes)
  *
  * hLines[row][col]: horizontal line from dot(row,col) to dot(row,col+1)
  * vLines[row][col]: vertical line from dot(row,col) to dot(row+1,col)
  * boxes[row][col]: owner of box at position (row,col)
  */
-export interface SnapDotsGameState {
-  hLines: boolean[][]; // [5][4] — 5 rows of horizontal lines, 4 per row
-  vLines: boolean[][]; // [4][5] — 4 rows of vertical lines, 5 per row
-  boxes: SnapDotsOwner[][]; // [4][4] — 4×4 box grid
+export interface DotsGameState {
+  hLines: boolean[][]; // [5][4] â€” 5 rows of horizontal lines, 4 per row
+  vLines: boolean[][]; // [4][5] â€” 4 rows of vertical lines, 5 per row
+  boxes: DotsOwner[][]; // [4][4] â€” 4Ã—4 box grid
   currentTurn: 1 | 2;
   scores: { player1: number; player2: number };
   linesDrawn: number;
 }
 
 /**
- * Snap Dots match type
+ * Dots match type
  */
-export type SnapDotsMatch = TurnBasedMatch<SnapDotsGameState, SnapDotsMove>;
+export type DotsMatch = TurnBasedMatch<DotsGameState, DotsMove>;
 
 // =============================================================================
-// Snap Gomoku (Five in a Row) Types
+// Gomoku (Five in a Row) Types
 // =============================================================================
 
 /**
- * Snap Gomoku cell: 0 = empty, 1 = black, 2 = white
+ * Gomoku cell: 0 = empty, 1 = black, 2 = white
  */
-export type SnapGomokuCell = 0 | 1 | 2;
+export type GomokuCell = 0 | 1 | 2;
 
 /**
- * Snap Gomoku board (15×15)
+ * Gomoku board (15Ã—15)
  */
-export type SnapGomokuBoard = SnapGomokuCell[][];
+export type GomokuBoard = GomokuCell[][];
 
 /**
- * Snap Gomoku move — place a stone on an intersection
+ * Gomoku move â€” place a stone on an intersection
  */
-export interface SnapGomokuMove {
+export interface GomokuMove {
   row: number; // 0-14
   col: number; // 0-14
   player: 1 | 2;
@@ -556,34 +556,34 @@ export interface SnapGomokuMove {
 }
 
 /**
- * Snap Gomoku game state
+ * Gomoku game state
  */
-export interface SnapGomokuGameState {
-  board: SnapGomokuBoard;
+export interface GomokuGameState {
+  board: GomokuBoard;
   currentTurn: 1 | 2;
   lastMove?: { row: number; col: number };
 }
 
 /**
- * Snap Gomoku match type
+ * Gomoku match type
  */
-export type SnapGomokuMatch = TurnBasedMatch<
-  SnapGomokuGameState,
-  SnapGomokuMove
+export type GomokuMatch = TurnBasedMatch<
+  GomokuGameState,
+  GomokuMove
 >;
 
 // =============================================================================
-// Snap Reversi (Othello) Types
+// Reversi (Othello) Types
 // =============================================================================
 
-/** Snap Reversi cell: 0 = empty, 1 = black, 2 = white */
-export type SnapReversiCell = 0 | 1 | 2;
+/** Reversi cell: 0 = empty, 1 = black, 2 = white */
+export type ReversiCell = 0 | 1 | 2;
 
-/** Snap Reversi board (8×8) */
-export type SnapReversiBoard = SnapReversiCell[][];
+/** Reversi board (8Ã—8) */
+export type ReversiBoard = ReversiCell[][];
 
-/** Snap Reversi move — place a disc to outflank opponent */
-export interface SnapReversiMove {
+/** Reversi move â€” place a disc to outflank opponent */
+export interface ReversiMove {
   row: number;
   col: number;
   player: 1 | 2;
@@ -591,60 +591,60 @@ export interface SnapReversiMove {
   timestamp: number;
 }
 
-/** Snap Reversi game state */
-export interface SnapReversiGameState {
-  board: SnapReversiBoard;
+/** Reversi game state */
+export interface ReversiGameState {
+  board: ReversiBoard;
   currentTurn: 1 | 2;
   scores: { player1: number; player2: number };
   lastMove?: { row: number; col: number };
   consecutivePasses: number;
 }
 
-export type SnapReversiMatch = TurnBasedMatch<
-  SnapReversiGameState,
-  SnapReversiMove
+export type ReversiMatch = TurnBasedMatch<
+  ReversiGameState,
+  ReversiMove
 >;
 
 // =============================================================================
-// Snap Hex Types
+// Hex Types
 // =============================================================================
 
-/** Snap Hex cell: 0 = empty, 1 = player 1 (red, connects top-bottom), 2 = player 2 (blue, connects left-right) */
-export type SnapHexCell = 0 | 1 | 2;
+/** Hex cell: 0 = empty, 1 = player 1 (red, connects top-bottom), 2 = player 2 (blue, connects left-right) */
+export type HexCell = 0 | 1 | 2;
 
-/** Snap Hex board (11×11 hex grid) */
-export type SnapHexBoard = SnapHexCell[][];
+/** Hex board (11Ã—11 hex grid) */
+export type HexBoard = HexCell[][];
 
-/** Snap Hex move — claim a hex cell */
-export interface SnapHexMove {
+/** Hex move â€” claim a hex cell */
+export interface HexMove {
   row: number;
   col: number;
   player: 1 | 2;
   timestamp: number;
 }
 
-/** Snap Hex game state */
-export interface SnapHexGameState {
-  board: SnapHexBoard;
+/** Hex game state */
+export interface HexGameState {
+  board: HexBoard;
   currentTurn: 1 | 2;
   lastMove?: { row: number; col: number };
 }
 
-export type SnapHexMatch = TurnBasedMatch<SnapHexGameState, SnapHexMove>;
+export type HexMatch = TurnBasedMatch<HexGameState, HexMove>;
 
 // =============================================================================
-// Snap War (Card War) Types
+// War (Card War) Types
 // =============================================================================
 
-/** Snap War move — flip a card */
-export interface SnapWarMove {
+/** War move â€” flip a card */
+export interface WarMove {
   type: "flip" | "war_flip";
   card: Card;
   timestamp: number;
 }
 
-/** Snap War game state */
-export interface SnapWarGameState {
+/** War game state */
+export interface WarGameState {
   /** Cards remaining per player (face-down) */
   player1Deck: number;
   player2Deck: number;
@@ -660,17 +660,17 @@ export interface SnapWarGameState {
   roundWinner?: 1 | 2;
 }
 
-export type SnapWarMatch = TurnBasedMatch<
-  SnapWarGameState,
-  SnapWarMove,
+export type WarMatch = TurnBasedMatch<
+  WarGameState,
+  WarMove,
   { deck: Card[] }
 >;
 
 // =============================================================================
-// Snap Words (Scrabble-lite) Types
+// Words (Scrabble-lite) Types
 // =============================================================================
 
-/** Letter tile for Snap Words */
+/** Letter tile for Words game */
 export interface LetterTile {
   letter: string;
   value: number;
@@ -695,8 +695,8 @@ export interface PlacedTile {
   turnPlaced: number;
 }
 
-/** Snap Words move — place tiles to form a word */
-export interface SnapWordsMove {
+/** Words move â€” place tiles to form a word */
+export interface WordsMove {
   tiles: { tile: LetterTile; row: number; col: number }[];
   word: string;
   score: number;
@@ -704,8 +704,8 @@ export interface SnapWordsMove {
   timestamp: number;
 }
 
-/** Snap Words game state (9×9 board) */
-export interface SnapWordsGameState {
+/** Words game state (9Ã—9 board) */
+export interface WordsGameState {
   board: (PlacedTile | null)[][];
   bonusBoard: WordsBonusType[][];
   currentTurn: 1 | 2;
@@ -714,9 +714,9 @@ export interface SnapWordsGameState {
   consecutivePasses: number;
 }
 
-export type SnapWordsMatch = TurnBasedMatch<
-  SnapWordsGameState,
-  SnapWordsMove,
+export type WordsMatch = TurnBasedMatch<
+  WordsGameState,
+  WordsMove,
   { rack: LetterTile[] }
 >;
 
@@ -992,13 +992,13 @@ export type AnyGameState =
   | CheckersGameState
   | TicTacToeGameState
   | CrazyEightsGameState
-  | SnapFourGameState
-  | SnapDotsGameState
-  | SnapGomokuGameState
-  | SnapReversiGameState
-  | SnapHexGameState
-  | SnapWarGameState
-  | SnapWordsGameState;
+  | FourGameState
+  | DotsGameState
+  | GomokuGameState
+  | ReversiGameState
+  | HexGameState
+  | WarGameState
+  | WordsGameState;
 
 /**
  * Union type for all moves
@@ -1008,13 +1008,13 @@ export type AnyMove =
   | CheckersMove
   | TicTacToeMove
   | CrazyEightsMove
-  | SnapFourMove
-  | SnapDotsMove
-  | SnapGomokuMove
-  | SnapReversiMove
-  | SnapHexMove
-  | SnapWarMove
-  | SnapWordsMove;
+  | FourMove
+  | DotsMove
+  | GomokuMove
+  | ReversiMove
+  | HexMove
+  | WarMove
+  | WordsMove;
 
 /**
  * Union type for all matches
@@ -1024,13 +1024,13 @@ export type AnyMatch =
   | CheckersMatch
   | TicTacToeMatch
   | CrazyEightsMatch
-  | SnapFourMatch
-  | SnapDotsMatch
-  | SnapGomokuMatch
-  | SnapReversiMatch
-  | SnapHexMatch
-  | SnapWarMatch
-  | SnapWordsMatch;
+  | FourMatch
+  | DotsMatch
+  | GomokuMatch
+  | ReversiMatch
+  | HexMatch
+  | WarMatch
+  | WordsMatch;
 
 // =============================================================================
 // Initial State Factories
@@ -1119,44 +1119,44 @@ export function createInitialTicTacToeBoard(): TicTacToeBoard {
 }
 
 /**
- * Create initial Snap Four (Connect Four) board — 6 rows × 7 columns, all empty
+ * Create initial Four (Connect Four) board â€” 6 rows Ã— 7 columns, all empty
  */
-export function createInitialSnapFourBoard(): SnapFourBoard {
-  return Array.from({ length: 6 }, () => Array(7).fill(0) as SnapFourCell[]);
+export function createInitialFourBoard(): FourBoard {
+  return Array.from({ length: 6 }, () => Array(7).fill(0) as FourCell[]);
 }
 
 /**
- * Create initial Snap Dots (Dots & Boxes) board state — 5×5 dots
+ * Create initial Dots (Dots & Boxes) board state â€” 5Ã—5 dots
  */
-export function createInitialSnapDotsBoard(): {
+export function createInitialDotsBoard(): {
   hLines: boolean[][];
   vLines: boolean[][];
-  boxes: SnapDotsOwner[][];
+  boxes: DotsOwner[][];
 } {
   return {
     hLines: Array.from({ length: 5 }, () => Array(4).fill(false)),
     vLines: Array.from({ length: 4 }, () => Array(5).fill(false)),
-    boxes: Array.from({ length: 4 }, () => Array(4).fill(0) as SnapDotsOwner[]),
+    boxes: Array.from({ length: 4 }, () => Array(4).fill(0) as DotsOwner[]),
   };
 }
 
 /**
- * Create initial Snap Gomoku board — 15×15, all empty
+ * Create initial Gomoku board â€” 15Ã—15, all empty
  */
-export function createInitialSnapGomokuBoard(): SnapGomokuBoard {
+export function createInitialGomokuBoard(): GomokuBoard {
   return Array.from(
     { length: 15 },
-    () => Array(15).fill(0) as SnapGomokuCell[],
+    () => Array(15).fill(0) as GomokuCell[],
   );
 }
 
 /**
- * Create initial Snap Reversi (Othello) board — 8×8 with 4 center pieces
+ * Create initial Reversi (Othello) board â€” 8Ã—8 with 4 center pieces
  */
-export function createInitialSnapReversiBoard(): SnapReversiBoard {
-  const board: SnapReversiBoard = Array.from(
+export function createInitialReversiBoard(): ReversiBoard {
+  const board: ReversiBoard = Array.from(
     { length: 8 },
-    () => Array(8).fill(0) as SnapReversiCell[],
+    () => Array(8).fill(0) as ReversiCell[],
   );
   // Standard Othello starting position
   board[3][3] = 2; // white
@@ -1167,16 +1167,16 @@ export function createInitialSnapReversiBoard(): SnapReversiBoard {
 }
 
 /**
- * Create initial Snap Hex board — 11×11, all empty
+ * Create initial Hex board â€” 11Ã—11, all empty
  */
-export function createInitialSnapHexBoard(): SnapHexBoard {
-  return Array.from({ length: 11 }, () => Array(11).fill(0) as SnapHexCell[]);
+export function createInitialHexBoard(): HexBoard {
+  return Array.from({ length: 11 }, () => Array(11).fill(0) as HexCell[]);
 }
 
 /**
- * Create initial Snap Words board — 9×9 with bonus squares
+ * Create initial Words board â€” 9Ã—9 with bonus squares
  */
-export function createInitialSnapWordsBoard(): {
+export function createInitialWordsBoard(): {
   board: (PlacedTile | null)[][];
   bonusBoard: WordsBonusType[][];
 } {

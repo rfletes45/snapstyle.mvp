@@ -8,7 +8,7 @@ import { Camera } from "expo-camera";
 import * as Notifications from "expo-notifications";
 
 /**
- * Permission types for snap features
+ * Permission types for picture features
  */
 export enum PermissionType {
   CAMERA = "camera",
@@ -98,7 +98,7 @@ export async function requestPhotoLibraryPermission(): Promise<boolean> {
 
 /**
  * Request notification permission
- * Required for: Push notifications for snap events
+ * Required for: Push notifications for picture events
  */
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
@@ -129,7 +129,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Request all permissions required for snap features
+ * Request all permissions required for picture features
  */
 export async function requestAllSnapPermissions(): Promise<{
   camera: boolean;
@@ -138,7 +138,7 @@ export async function requestAllSnapPermissions(): Promise<{
   notifications: boolean;
 }> {
   try {
-    console.log("[Permissions] Requesting all snap permissions");
+    console.log("[Permissions] Requesting all picture permissions");
 
     const results = await Promise.all([
       requestCameraPermission(),
@@ -229,7 +229,7 @@ export async function hasNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Check all snap permissions
+ * Check all picture permissions
  */
 export async function checkAllSnapPermissions(): Promise<{
   camera: boolean;
@@ -239,7 +239,7 @@ export async function checkAllSnapPermissions(): Promise<{
   allGranted: boolean;
 }> {
   try {
-    console.log("[Permissions] Checking all snap permissions");
+    console.log("[Permissions] Checking all picture permissions");
 
     const results = await Promise.all([
       hasCameraPermission(),
@@ -300,9 +300,9 @@ export function getPermissionErrorMessage(
     [PermissionType.MICROPHONE]:
       "Microphone access is required to record videos with audio. Please enable it in Settings.",
     [PermissionType.PHOTO_LIBRARY]:
-      "Photo Library access is required to save snaps and upload photos. Please enable it in Settings.",
+      "Photo Library access is required to save pictures and upload photos. Please enable it in Settings.",
     [PermissionType.NOTIFICATIONS]:
-      "Notification permission allows you to receive alerts when someone views or reacts to your snaps.",
+      "Notification permission allows you to receive alerts when someone views or reacts to your pictures.",
   };
 
   return messages[permissionType];
@@ -346,7 +346,7 @@ export async function initializePermissions(): Promise<void> {
     console.log("[Permissions] Initial permission state:", permissions);
 
     // Request critical permissions if not already granted
-    // Camera is essential for snap app functionality
+    // Camera is essential for app functionality
     if (!permissions.camera) {
       console.warn(
         "[Permissions] Camera permission not granted - app functionality limited",
@@ -367,14 +367,14 @@ export async function initializePermissions(): Promise<void> {
 }
 
 /**
- * Get list of required permissions for snap capture
+ * Get list of required permissions for picture capture
  */
 export function getRequiredCapturePermissions(): PermissionType[] {
   return [PermissionType.CAMERA, PermissionType.MICROPHONE];
 }
 
 /**
- * Get list of recommended permissions for snap app
+ * Get list of recommended permissions for app
  */
 export function getRecommendedPermissions(): PermissionType[] {
   return [

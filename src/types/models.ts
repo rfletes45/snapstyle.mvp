@@ -104,7 +104,7 @@ export type GameType = "reaction_tap" | "timed_tap";
 // @see src/types/games.ts for full type definitions and metadata
 export type SinglePlayerGameType =
   | "bounce_blitz"
-  | "snap_2048"
+  | "play_2048"
   | "snake_master"
   | "memory_master"
   | "word_master";
@@ -146,7 +146,7 @@ export interface ExtendedGameSession {
   duration?: number;
   // Game-specific metadata
   metadata?: {
-    // Flappy Snap
+    // Flappy Bird
     pipesCleared?: number;
     // Bounce Blitz
     blocksDestroyed?: number;
@@ -154,10 +154,10 @@ export interface ExtendedGameSession {
     // Snake
     applesEaten?: number;
     maxLength?: number;
-    // Memory Snap
+    // Memory Master
     movesUsed?: number;
     perfectMatches?: number;
-    // Word Snap
+    // Word Master
     wordsFound?: number;
     longestWord?: string;
     // 2048
@@ -501,8 +501,8 @@ export type AchievementType =
   | "streak_100_days" // 100-day streak achieved
   | "social_first_friend" // Added first friend
   | "social_10_friends" // Reached 10 friends
-  | "social_first_snap" // Sent first snap
-  | "social_100_snaps" // Sent 100 snaps
+  | "social_first_picture" // Sent first picture
+  | "social_100_pictures" // Sent 100 pictures
   | "social_first_story" // Posted first story
   | "collection_first_cosmetic" // Acquired first cosmetic
   | "collection_full_set"; // Acquired a complete set
@@ -544,6 +544,8 @@ export interface LeaderboardEntry {
   uid: string;
   displayName: string;
   avatarConfig?: AvatarConfig; // Optional - may not be present for all players
+  profilePictureUrl?: string | null;
+  decorationId?: string | null;
   score: number;
   updatedAt: number;
   rank?: number; // Computed client-side or via function
@@ -634,7 +636,7 @@ export type TaskCadence = "daily" | "weekly" | "one_time";
  */
 export type TaskType =
   | "send_message" // Send X messages
-  | "send_snap" // Send X snaps (image messages)
+  | "send_picture" // Send X pictures (image messages)
   | "view_story" // View X stories
   | "post_story" // Post X stories
   | "play_game" // Play X games
@@ -1014,4 +1016,3 @@ export const GROUP_LIMITS = {
   MAX_NAME_LENGTH: 50,
   INVITE_EXPIRY_DAYS: 7,
 } as const;
-

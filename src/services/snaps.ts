@@ -1,7 +1,7 @@
 /**
  * Snaps Service
  *
- * Handles view-once snap message operations.
+ * Handles view-once picture message operations.
  * Extracted from chat.ts for cleaner separation of concerns.
  *
  * @module services/snaps
@@ -11,12 +11,12 @@ import { deleteDoc, doc, Timestamp, updateDoc } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
 /**
- * Mark snap as opened and delete message document (view-once flow)
+ * Mark picture as opened and delete message document (view-once flow)
  * Records opening metadata and immediately deletes the message doc
  *
- * @param chatId - The chat ID containing the snap
- * @param messageId - The message ID of the snap
- * @param openedBy - The UID of the user opening the snap
+ * @param chatId - The chat ID containing the picture
+ * @param messageId - The message ID of the picture
+ * @param openedBy - The UID of the user opening the picture
  */
 export async function markSnapOpened(
   chatId: string,
@@ -30,7 +30,7 @@ export async function markSnapOpened(
 
     // Update with opening metadata
     console.log(
-      "🔵 [markSnapOpened] Marking snap as opened:",
+      "🔵 [markSnapOpened] Marking picture as opened:",
       messageId,
       "by:",
       openedBy,
@@ -41,10 +41,10 @@ export async function markSnapOpened(
     });
 
     // Immediately delete the message document (view-once)
-    console.log("🔵 [markSnapOpened] Deleting snap message document");
+    console.log("🔵 [markSnapOpened] Deleting picture message document");
     await deleteDoc(messageDocRef);
 
-    console.log("✅ [markSnapOpened] Snap deleted after viewing");
+    console.log("✅ [markSnapOpened] Picture deleted after viewing");
   } catch (error: any) {
     console.error("❌ [markSnapOpened] Error:", error);
     throw error;

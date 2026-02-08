@@ -12,7 +12,7 @@ import React, { useCallback } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 
-import Avatar from "@/components/Avatar";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { Spacing } from "@/constants/theme";
 import { formatTimeAgo } from "@/services/activityFeed";
 import {
@@ -133,9 +133,11 @@ export const ActivityFeedItem: React.FC<ActivityFeedItemProps> = React.memo(
 
         {/* Avatar */}
         <TouchableOpacity onPress={handleUserPress} activeOpacity={0.8}>
-          <Avatar
-            config={{ baseColor: event.avatarConfig?.baseColor || "#7C3AED" }}
-            size={44}
+          <ProfilePictureWithDecoration
+            pictureUrl={event.avatarUrl}
+            name={event.displayName || event.username || "?"}
+            decorationId={event.decorationId}
+            size={40}
           />
         </TouchableOpacity>
 
@@ -224,6 +226,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.sm,
     alignItems: "flex-start",
+    overflow: "visible" as const,
     elevation: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },

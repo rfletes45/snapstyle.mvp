@@ -11,7 +11,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useEffect } from "react";
 import { Modal, StyleSheet, View, useColorScheme } from "react-native";
-import { Avatar, Button, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Portal, Text, useTheme } from "react-native-paper";
 import Animated, {
   Easing,
   FadeIn,
@@ -26,6 +26,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import {
   GAME_ANIMATIONS,
@@ -52,6 +53,7 @@ export interface OpponentInfo {
   displayName: string;
   avatarUrl?: string | null;
   rating?: number;
+  decorationId?: string | null;
 }
 
 export interface MatchmakingModalProps {
@@ -246,7 +248,7 @@ function MatchFoundAnimation({
     <View style={styles.matchFoundContainer}>
       {/* You */}
       <Animated.View style={[styles.playerColumn, leftStyle]}>
-        <Avatar.Icon size={64} icon="account" />
+        <ProfilePictureWithDecoration pictureUrl={null} name="You" size={56} />
         <Text style={[styles.playerName, { color: theme.colors.onSurface }]}>
           You
         </Text>
@@ -271,14 +273,12 @@ function MatchFoundAnimation({
 
       {/* Opponent */}
       <Animated.View style={[styles.playerColumn, rightStyle]}>
-        {opponent.avatarUrl ? (
-          <Avatar.Image size={64} source={{ uri: opponent.avatarUrl }} />
-        ) : (
-          <Avatar.Text
-            size={64}
-            label={opponent.displayName.slice(0, 2).toUpperCase()}
-          />
-        )}
+        <ProfilePictureWithDecoration
+          pictureUrl={opponent.avatarUrl}
+          name={opponent.displayName}
+          decorationId={opponent.decorationId}
+          size={56}
+        />
         <Text
           style={[styles.playerName, { color: theme.colors.onSurface }]}
           numberOfLines={1}

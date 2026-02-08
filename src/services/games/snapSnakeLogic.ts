@@ -1,5 +1,5 @@
 /**
- * Snap Snake Game Logic
+ * Snake Game Logic
  *
  * Core mechanics:
  * - Snake moves continuously in current direction
@@ -14,7 +14,7 @@
 import {
   SnakeDirection,
   snake_master_CONFIG,
-  SnapSnakeState,
+  SnakeState,
 } from "@/types/singlePlayerGames";
 
 // =============================================================================
@@ -43,7 +43,7 @@ export function createInitialSnakeState(
   playerId: string,
   sessionId: string,
   config?: Partial<SnakeConfig>,
-): SnapSnakeState {
+): SnakeState {
   const gridWidth = config?.gridWidth ?? snake_master_CONFIG.defaultGridWidth;
   const gridHeight = config?.gridHeight ?? snake_master_CONFIG.defaultGridHeight;
   const initialSpeed = config?.initialSpeed ?? snake_master_CONFIG.initialSpeed;
@@ -147,9 +147,9 @@ export function isValidDirectionChange(
  * Buffer a direction change
  */
 export function changeDirection(
-  state: SnapSnakeState,
+  state: SnakeState,
   newDirection: SnakeDirection,
-): SnapSnakeState {
+): SnakeState {
   // Don't allow 180° turns
   if (!isValidDirectionChange(state.direction, newDirection)) {
     return state;
@@ -237,7 +237,7 @@ function isAtFood(pos: Position, food: Position): boolean {
 /**
  * Process one game tick - move snake, check collisions, eat food
  */
-export function tick(state: SnapSnakeState): SnapSnakeState {
+export function tick(state: SnakeState): SnakeState {
   if (state.status !== "playing") {
     return state;
   }
@@ -281,7 +281,7 @@ export function tick(state: SnapSnakeState): SnapSnakeState {
   }
 
   // Calculate new state
-  let newState: SnapSnakeState = {
+  let newState: SnakeState = {
     ...state,
     snake: newSnake,
     direction,
@@ -322,7 +322,7 @@ export function tick(state: SnapSnakeState): SnapSnakeState {
 /**
  * Pause the game
  */
-export function pauseGame(state: SnapSnakeState): SnapSnakeState {
+export function pauseGame(state: SnakeState): SnakeState {
   if (state.status !== "playing") {
     return state;
   }
@@ -337,7 +337,7 @@ export function pauseGame(state: SnapSnakeState): SnapSnakeState {
 /**
  * Resume the game
  */
-export function resumeGame(state: SnapSnakeState): SnapSnakeState {
+export function resumeGame(state: SnakeState): SnakeState {
   if (state.status !== "paused" || !state.pausedAt) {
     return state;
   }
@@ -355,7 +355,7 @@ export function resumeGame(state: SnapSnakeState): SnapSnakeState {
 /**
  * Reset the game
  */
-export function resetGame(state: SnapSnakeState): SnapSnakeState {
+export function resetGame(state: SnakeState): SnakeState {
   return createInitialSnakeState(state.playerId, state.sessionId, {
     gridWidth: state.gridWidth,
     gridHeight: state.gridHeight,
@@ -429,7 +429,7 @@ export function getSegmentColor(index: number, snakeLength: number): string {
 /**
  * Calculate game duration in seconds
  */
-export function getGameDuration(state: SnapSnakeState): number {
+export function getGameDuration(state: SnakeState): number {
   const endTime = state.endedAt ?? Date.now();
   return Math.floor(
     (endTime - state.startedAt - state.totalPauseDuration) / 1000,

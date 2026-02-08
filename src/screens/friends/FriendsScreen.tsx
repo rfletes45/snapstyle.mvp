@@ -1,5 +1,5 @@
-import { AvatarMini } from "@/components/Avatar";
 import BlockUserModal from "@/components/BlockUserModal";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ReportUserModal from "@/components/ReportUserModal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { blockUser } from "@/services/blocking";
@@ -53,6 +53,8 @@ interface RequestWithUsername extends FriendRequest {
     username: string;
     displayName: string;
     avatarConfig: AvatarConfig;
+    profilePictureUrl?: string | null;
+    decorationId?: string | null;
   };
 }
 
@@ -61,6 +63,8 @@ interface FriendWithProfile extends Friend {
     username: string;
     displayName: string;
     avatarConfig: AvatarConfig;
+    profilePictureUrl?: string | null;
+    decorationId?: string | null;
   };
 }
 
@@ -126,6 +130,8 @@ export default function FriendsScreen({ navigation }: any) {
                   username: profile.username,
                   displayName: profile.displayName,
                   avatarConfig: profile.avatarConfig,
+                  profilePictureUrl: profile.profilePicture?.url ?? null,
+                  decorationId: profile.avatarDecoration?.decorationId ?? null,
                 }
               : undefined,
           };
@@ -146,6 +152,8 @@ export default function FriendsScreen({ navigation }: any) {
                   username: profile.username,
                   displayName: profile.displayName,
                   avatarConfig: profile.avatarConfig,
+                  profilePictureUrl: profile.profilePicture?.url ?? null,
+                  decorationId: profile.avatarDecoration?.decorationId ?? null,
                 }
               : undefined,
           };
@@ -562,13 +570,13 @@ export default function FriendsScreen({ navigation }: any) {
                   >
                     <Card.Content style={styles.cardContent}>
                       <View style={styles.requestHeader}>
-                        <AvatarMini
-                          config={
-                            request.otherUserProfile?.avatarConfig || {
-                              baseColor: theme.colors.primary,
-                            }
+                        <ProfilePictureWithDecoration
+                          pictureUrl={
+                            request.otherUserProfile?.profilePictureUrl
                           }
-                          size={48}
+                          name={request.otherUserProfile?.displayName || "?"}
+                          decorationId={request.otherUserProfile?.decorationId}
+                          size={44}
                         />
                         <View style={styles.requestInfo}>
                           <Text
@@ -645,13 +653,15 @@ export default function FriendsScreen({ navigation }: any) {
                       <Card.Content style={styles.cardContent}>
                         <View style={styles.friendHeader}>
                           <View style={styles.friendInfo}>
-                            <AvatarMini
-                              config={
-                                friend.otherUserProfile?.avatarConfig || {
-                                  baseColor: theme.colors.primary,
-                                }
+                            <ProfilePictureWithDecoration
+                              pictureUrl={
+                                friend.otherUserProfile?.profilePictureUrl
                               }
-                              size={48}
+                              name={friend.otherUserProfile?.displayName || "?"}
+                              decorationId={
+                                friend.otherUserProfile?.decorationId
+                              }
+                              size={44}
                             />
                             <View style={styles.nameContainer}>
                               <Text
@@ -790,13 +800,13 @@ export default function FriendsScreen({ navigation }: any) {
                   >
                     <Card.Content style={styles.cardContent}>
                       <View style={styles.sentRequestHeader}>
-                        <AvatarMini
-                          config={
-                            request.otherUserProfile?.avatarConfig || {
-                              baseColor: theme.colors.primary,
-                            }
+                        <ProfilePictureWithDecoration
+                          pictureUrl={
+                            request.otherUserProfile?.profilePictureUrl
                           }
-                          size={48}
+                          name={request.otherUserProfile?.displayName || "?"}
+                          decorationId={request.otherUserProfile?.decorationId}
+                          size={44}
                         />
                         <View style={styles.sentRequestInfo}>
                           <View

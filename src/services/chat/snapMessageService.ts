@@ -21,7 +21,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Picture, Snap } from "../../types/camera";
+import { Picture } from "../../types/camera";
 import { getFirestoreInstance } from "../firebase";
 
 /**
@@ -51,7 +51,7 @@ export type SnapMessage = PictureMessage;
 
 /**
  * Send picture to chat conversation
- * Creates message document and links to snap
+ * Creates message document and links to picture
  */
 export async function sendSnapToChat(
   picture: Picture,
@@ -61,7 +61,7 @@ export async function sendSnapToChat(
 ): Promise<SnapMessage> {
   try {
     console.log(
-      `[Game Chat Service] Sending snap ${snap.id} to conversation ${conversationId}`,
+      `[Game Chat Service] Sending picture ${picture.id} to conversation ${conversationId}`,
     );
 
     const db = getFirestoreInstance();
@@ -79,26 +79,26 @@ export async function sendSnapToChat(
       messageType: "snap" as const,
       senderId: userId,
       senderName: userName,
-      snapId: snap.id,
-      snapThumbnailUrl: snap.mediaUrl, // Use mediaUrl as thumbnail fallback
-      snapMediaUrl: snap.mediaUrl,
+      snapId: picture.id,
+      snapThumbnailUrl: picture.mediaUrl, // Use mediaUrl as thumbnail fallback
+      snapMediaUrl: picture.mediaUrl,
       snapStatus: "sent" as const,
-      snapDuration: snap.duration ?? null,
-      caption: snap.caption ?? "",
+      snapDuration: picture.duration ?? null,
+      caption: picture.caption ?? "",
       createdAt: new Date(),
-      expiresAt: snap.storyExpiresAt
-        ? new Date(snap.storyExpiresAt)
+      expiresAt: picture.storyExpiresAt
+        ? new Date(picture.storyExpiresAt)
         : new Date(Date.now() + 24 * 60 * 60 * 1000),
-      allowReplies: snap.allowReplies,
+      allowReplies: picture.allowReplies,
       screenshotTaken: false,
       reactions: [],
     };
 
     const messageDocRef = await addDoc(messagesRef, messageData);
 
-    // Update snap document to mark as sent to chat
-    const snapRef = doc(db, "Pictures", snap.id);
-    await updateDoc(snapRef, {
+    // Update picture document to mark as sent to chat
+    const pictureRef = doc(db, "Pictures", picture.id);
+    await updateDoc(pictureRef, {
       sentToChat: true,
       chatMessageId: messageDocRef.id,
       chatConversationId: conversationId,
@@ -107,13 +107,13 @@ export async function sendSnapToChat(
     // Update conversation's last message
     const conversationRef = doc(db, "Conversations", conversationId);
     await updateDoc(conversationRef, {
-      lastMessage: "📸 Snap",
+      lastMessage: "📸 Picture",
       lastMessageAt: new Date(),
       lastMessageSenderId: userId,
     });
 
     console.log(
-      `[Game Chat Service] Snap message created: ${messageDocRef.id}`,
+      `[Game Chat Service] Picture message created: ${messageDocRef.id}`,
     );
 
     return {
@@ -122,27 +122,27 @@ export async function sendSnapToChat(
       messageId: messageDocRef.id,
       senderId: userId,
       senderName: userName,
-      snapId: snap.id,
-      snapThumbnailUrl: snap.mediaUrl,
-      snapMediaUrl: snap.mediaUrl,
-      snapStatus: "sent",
-      snapDuration: snap.duration ?? undefined,
-      caption: snap.caption,
+      pictureId: picture.id,
+      pictureThumbnailUrl: picture.mediaUrl,
+      pictureMediaUrl: picture.mediaUrl,
+      pictureStatus: "sent",
+      pictureDuration: picture.duration ?? undefined,
+      caption: picture.caption,
       createdAt: new Date(),
       screenshotTaken: false,
-      allowReplies: snap.allowReplies,
-      expiresAt: snap.storyExpiresAt
-        ? new Date(snap.storyExpiresAt)
+      allowReplies: picture.allowReplies,
+      expiresAt: picture.storyExpiresAt
+        ? new Date(picture.storyExpiresAt)
         : new Date(Date.now() + 24 * 60 * 60 * 1000),
     };
   } catch (error) {
-    console.error("[Game Chat Service] Failed to send snap to chat:", error);
+    console.error("[Game Chat Service] Failed to send picture to chat:", error);
     throw error;
   }
 }
 
 /**
- * Record snap view in chat
+ * Record picture view in chat
  */
 export async function recordSnapViewInChat(
   conversationId: string,
@@ -152,7 +152,7 @@ export async function recordSnapViewInChat(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Chat Service] Recording snap view for message ${messageId}`,
+      `[Game Chat Service] Recording picture view for message ${messageId}`,
     );
 
     const db = getFirestoreInstance();
@@ -170,7 +170,7 @@ export async function recordSnapViewInChat(
       viewedAt: new Date(),
     });
 
-    // Record view in snap document
+    // Record view in picture document
     const viewsRef = collection(db, "Pictures", snapId, "Views");
     await addDoc(viewsRef, {
       userId: viewerId,
@@ -182,16 +182,16 @@ export async function recordSnapViewInChat(
       conversationId,
     });
 
-    // Increment snap view count
+    // Increment picture view count
     const snapRef = doc(db, "Pictures", snapId);
     await updateDoc(snapRef, {
       viewCount: increment(1),
     });
 
-    console.log("[Game Chat Service] Snap view recorded");
+    console.log("[Game Chat Service] Picture view recorded");
   } catch (error) {
     console.error(
-      "[Game Chat Service] Failed to record snap view in chat:",
+      "[Game Chat Service] Failed to record picture view in chat:",
       error,
     );
     throw error;
@@ -199,7 +199,7 @@ export async function recordSnapViewInChat(
 }
 
 /**
- * Mark snap as viewed from chat
+ * Mark picture as viewed from chat
  */
 export async function markSnapAsViewedInChat(
   messageId: string,
@@ -207,7 +207,7 @@ export async function markSnapAsViewedInChat(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Chat Service] Marking snap message ${messageId} as viewed`,
+      `[Game Chat Service] Marking picture message ${messageId} as viewed`,
     );
 
     const db = getFirestoreInstance();
@@ -224,15 +224,18 @@ export async function markSnapAsViewedInChat(
       viewedAt: new Date(),
     });
 
-    console.log("[Game Chat Service] Snap marked as viewed");
+    console.log("[Game Chat Service] Picture marked as viewed");
   } catch (error) {
-    console.error("[Game Chat Service] Failed to mark snap as viewed:", error);
+    console.error(
+      "[Game Chat Service] Failed to mark picture as viewed:",
+      error,
+    );
     throw error;
   }
 }
 
 /**
- * Record screenshot of snap in chat
+ * Record screenshot of picture in chat
  */
 export async function recordSnapScreenshot(
   conversationId: string,
@@ -242,7 +245,7 @@ export async function recordSnapScreenshot(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Chat Service] Recording screenshot of snap message ${messageId}`,
+      `[Game Chat Service] Recording screenshot of picture message ${messageId}`,
     );
 
     const db = getFirestoreInstance();
@@ -259,7 +262,7 @@ export async function recordSnapScreenshot(
       screenshotTaken: true,
     });
 
-    // Record screenshot in snap views
+    // Record screenshot in picture views
     const viewsRef = collection(db, "Pictures", snapId, "Views");
     await addDoc(viewsRef, {
       userId,
@@ -278,7 +281,7 @@ export async function recordSnapScreenshot(
 }
 
 /**
- * Get snap messages in conversation
+ * Get picture messages in conversation
  */
 export async function getSnapMessagesInConversation(
   conversationId: string,
@@ -286,7 +289,7 @@ export async function getSnapMessagesInConversation(
 ): Promise<SnapMessage[]> {
   try {
     console.log(
-      `[Game Chat Service] Fetching snap messages from conversation ${conversationId}`,
+      `[Game Chat Service] Fetching picture messages from conversation ${conversationId}`,
     );
 
     const db = getFirestoreInstance();
@@ -315,11 +318,11 @@ export async function getSnapMessagesInConversation(
         messageId: docSnap.id,
         senderId: data.senderId,
         senderName: data.senderName,
-        snapId: data.snapId,
-        snapThumbnailUrl: data.snapThumbnailUrl,
-        snapMediaUrl: data.snapMediaUrl,
-        snapStatus: data.snapStatus,
-        snapDuration: data.snapDuration,
+        pictureId: data.snapId,
+        pictureThumbnailUrl: data.snapThumbnailUrl,
+        pictureMediaUrl: data.snapMediaUrl,
+        pictureStatus: data.snapStatus,
+        pictureDuration: data.snapDuration,
         caption: data.caption,
         createdAt: data.createdAt?.toDate?.() || new Date(),
         viewedAt: data.viewedAt?.toDate?.(),
@@ -329,16 +332,18 @@ export async function getSnapMessagesInConversation(
       });
     });
 
-    console.log(`[Game Chat Service] Fetched ${messages.length} snap messages`);
+    console.log(
+      `[Game Chat Service] Fetched ${messages.length} picture messages`,
+    );
     return messages;
   } catch (error) {
-    console.error("[Game Chat Service] Failed to get snap messages:", error);
+    console.error("[Game Chat Service] Failed to get picture messages:", error);
     throw error;
   }
 }
 
 /**
- * Delete snap message from chat
+ * Delete picture message from chat
  */
 export async function deleteSnapMessageFromChat(
   conversationId: string,
@@ -346,7 +351,7 @@ export async function deleteSnapMessageFromChat(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Chat Service] Deleting snap message ${messageId} from chat`,
+      `[Game Chat Service] Deleting picture message ${messageId} from chat`,
     );
 
     const db = getFirestoreInstance();
@@ -360,15 +365,18 @@ export async function deleteSnapMessageFromChat(
     );
     await deleteDoc(messageRef);
 
-    console.log("[Game Chat Service] Snap message deleted");
+    console.log("[Game Chat Service] Picture message deleted");
   } catch (error) {
-    console.error("[Game Chat Service] Failed to delete snap message:", error);
+    console.error(
+      "[Game Chat Service] Failed to delete picture message:",
+      error,
+    );
     throw error;
   }
 }
 
 /**
- * Add reaction to snap message
+ * Add reaction to picture message
  */
 export async function addReactionToSnapMessage(
   conversationId: string,
@@ -378,7 +386,7 @@ export async function addReactionToSnapMessage(
 ): Promise<void> {
   try {
     console.log(
-      `[Game Chat Service] Adding reaction ${emoji} to snap message ${messageId}`,
+      `[Game Chat Service] Adding reaction ${emoji} to picture message ${messageId}`,
     );
 
     const db = getFirestoreInstance();
@@ -395,10 +403,10 @@ export async function addReactionToSnapMessage(
       [`reactions.${emoji}`]: arrayUnion(userId),
     });
 
-    console.log("[Game Chat Service] Reaction added to snap message");
+    console.log("[Game Chat Service] Reaction added to picture message");
   } catch (error) {
     console.error(
-      "[Game Chat Service] Failed to add reaction to snap message:",
+      "[Game Chat Service] Failed to add reaction to picture message:",
       error,
     );
     throw error;
@@ -406,13 +414,13 @@ export async function addReactionToSnapMessage(
 }
 
 /**
- * Get snap metadata for chat display
+ * Get picture metadata for chat display
  */
 export async function getSnapMetadataForChat(
   snapId: string,
 ): Promise<Partial<SnapMessage> | null> {
   try {
-    console.log(`[Game Chat Service] Fetching snap metadata for ${snapId}`);
+    console.log(`[Game Chat Service] Fetching picture metadata for ${snapId}`);
 
     const db = getFirestoreInstance();
 
@@ -420,24 +428,22 @@ export async function getSnapMetadataForChat(
     const snapDoc = await getDoc(snapRef);
 
     if (!snapDoc.exists()) {
-      console.warn("[Game Chat Service] Snap not found");
+      console.warn("[Game Chat Service] Picture not found");
       return null;
     }
 
     const data = snapDoc.data();
 
     return {
-      snapId: data.id,
-      snapThumbnailUrl: data.thumbnailUrl,
-      snapMediaUrl: data.mediaUrl,
-      snapDuration: data.mediaDuration,
+      pictureId: data.id,
+      pictureThumbnailUrl: data.thumbnailUrl,
+      pictureMediaUrl: data.mediaUrl,
+      pictureDuration: data.mediaDuration,
       caption: data.caption,
       expiresAt: data.expiresAt?.toDate?.() || new Date(),
     };
   } catch (error) {
-    console.error("[Game Chat Service] Failed to get snap metadata:", error);
+    console.error("[Game Chat Service] Failed to get picture metadata:", error);
     return null;
   }
 }
-
-

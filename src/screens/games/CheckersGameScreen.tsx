@@ -28,6 +28,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import SpectatorBanner from "@/components/games/SpectatorBanner";
+import {
+  SkiaCheckersPiece,
+} from "@/components/games/graphics/SkiaCheckersPiece";
+import {
+  SkiaCellHighlight,
+} from "@/components/games/graphics/SkiaCellHighlight";
+import {
+  SkiaGameBoard,
+} from "@/components/games/graphics/SkiaGameBoard";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useSpectatorMode } from "@/hooks/useSpectatorMode";
 import { sendGameInvite } from "@/services/gameInvites";
@@ -280,35 +289,20 @@ function PieceComponent({ piece, isSelected, size }: PieceComponentProps) {
     }
   }, [isSelected]);
 
-  const baseColor = piece.color === "red" ? RED_PIECE : BLACK_PIECE;
-  const darkColor = piece.color === "red" ? RED_PIECE_DARK : BLACK_PIECE_DARK;
-
   return (
     <Animated.View
-      style={[
-        styles.piece,
-        {
-          width: size,
-          height: size,
-          backgroundColor: baseColor,
-          borderColor: darkColor,
-          transform: [{ scale: scaleAnim }],
-        },
-      ]}
+      style={{
+        width: size,
+        height: size,
+        transform: [{ scale: scaleAnim }],
+      }}
     >
-      {/* Inner ring */}
-      <View
-        style={[
-          styles.pieceInner,
-          {
-            width: size * 0.7,
-            height: size * 0.7,
-            borderColor: darkColor,
-          },
-        ]}
+      <SkiaCheckersPiece
+        size={size}
+        color={piece.color === "red" ? "red" : "black"}
+        isKing={piece.isKing}
+        isSelected={isSelected}
       />
-      {/* King crown */}
-      {piece.isKing && <Text style={styles.kingCrown}>👑</Text>}
     </Animated.View>
   );
 }
@@ -346,13 +340,22 @@ function CellComponent({
       style={[
         styles.cell,
         { backgroundColor },
-        isSelected && { backgroundColor: SELECTED_HIGHLIGHT },
-        isValidMove && { backgroundColor: VALID_MOVE_HIGHLIGHT },
       ]}
       onPress={onPress}
       disabled={disabled && !isValidMove && !piece}
       activeOpacity={0.8}
     >
+      {/* Skia-powered cell highlights */}
+      {isSelected && (
+        <SkiaCellHighlight width={CELL_SIZE} height={CELL_SIZE} type="selected" />
+      )}
+      {isValidMove && (
+        <SkiaCellHighlight
+          width={CELL_SIZE}
+          height={CELL_SIZE}
+          type={isJumpMove ? "capture" : "validMove"}
+        />
+      )}
       {piece && (
         <PieceComponent
           piece={piece}
@@ -1085,8 +1088,16 @@ export default function CheckersGameScreen({
         </Text>
       </View>
 
-      {/* Game Board */}
-      <View style={styles.boardContainer}>
+      {/* Game Board — Skia wood-grain frame */}
+      <SkiaGameBoard
+        width={BOARD_SIZE}
+        height={BOARD_SIZE}
+        borderRadius={6}
+        gradientColors={["#5D3A1A", "#3C2410", "#5D3A1A"]}
+        borderColor="#7D5A2A"
+        borderWidth={3}
+        innerShadowBlur={6}
+      >
         <View style={[styles.board, { borderColor: theme.colors.outline }]}>
           {board.map((row, rowIndex) => {
             // Flip board for red player so their pieces are at the bottom
@@ -1127,7 +1138,7 @@ export default function CheckersGameScreen({
             );
           })}
         </View>
-      </View>
+      </SkiaGameBoard>
 
       {/* Game Over Modal */}
       <Portal>

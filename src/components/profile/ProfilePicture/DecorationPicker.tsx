@@ -230,7 +230,11 @@ export function DecorationPicker({
 
   const renderDecoration = useCallback(
     ({ item }: { item: AvatarDecoration }) => {
-      const isOwned = ownedDecorationIds.includes(item.id);
+      // Free decorations with an available asset are always treated as owned
+      const isFreeAndAvailable =
+        item.obtainMethod.type === "free" && item.available;
+      const isOwned =
+        isFreeAndAvailable || ownedDecorationIds.includes(item.id);
       const isEquipped = equippedDecorationId === item.id;
 
       return (

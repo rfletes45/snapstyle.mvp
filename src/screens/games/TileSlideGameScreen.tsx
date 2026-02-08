@@ -70,6 +70,13 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import {
+  Canvas,
+  LinearGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
 
 // =============================================================================
 // Types
@@ -188,15 +195,21 @@ function AnimatedTile({
   if (digits === 2) fontSize = tileSize * 0.38;
   else if (digits >= 3) fontSize = tileSize * 0.3;
 
-  // Tile colors
-  const backgroundColor = isHinted
-    ? "#FFD700"
-    : isCorrect
-      ? "#4CAF50"
-      : theme.colors.primaryContainer;
-
   const textColor =
     isHinted || isCorrect ? "#FFFFFF" : theme.colors.onPrimaryContainer;
+
+  // Tile gradient colors based on state
+  const gradientColors: [string, string, string] = isHinted
+    ? ["#FFE44D", "#FFD700", "#E6B800"]
+    : isCorrect
+      ? ["#66BB6A", "#4CAF50", "#388E3C"]
+      : [
+          theme.colors.primaryContainer,
+          theme.colors.primaryContainer,
+          theme.colors.primaryContainer,
+        ];
+
+  const borderRadius = tileSize * 0.12;
 
   return (
     <Animated.View style={[styles.tileWrapper, animatedStyle]}>
@@ -207,11 +220,41 @@ function AnimatedTile({
           {
             width: tileSize,
             height: tileSize,
-            backgroundColor,
-            borderRadius: tileSize * 0.12,
+            borderRadius,
           },
         ]}
       >
+        <Canvas style={StyleSheet.absoluteFill}>
+          {/* Tile body with gradient */}
+          <RoundedRect
+            x={0}
+            y={0}
+            width={tileSize}
+            height={tileSize}
+            r={borderRadius}
+          >
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(tileSize, tileSize)}
+              colors={gradientColors}
+            />
+            <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.15)" inner />
+          </RoundedRect>
+          {/* Top highlight strip */}
+          <RoundedRect
+            x={1}
+            y={1}
+            width={tileSize - 2}
+            height={tileSize * 0.35}
+            r={borderRadius - 1}
+          >
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(0, tileSize * 0.35)}
+              colors={["rgba(255,255,255,0.22)", "rgba(255,255,255,0)"]}
+            />
+          </RoundedRect>
+        </Canvas>
         <Text
           style={[
             styles.tileText,

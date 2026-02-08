@@ -271,12 +271,12 @@ export function useEditor() {
 
 /**
  * ============================================================================
- * SNAP UPLOAD HOOK
+ * PICTURE UPLOAD HOOK
  * ============================================================================
  */
 
 /**
- * Manage snap upload process
+ * Manage picture upload process
  */
 export function useSnapUpload() {
   const { currentFirebaseUser } = useAuth();
@@ -300,7 +300,7 @@ export function useSnapUpload() {
           throw new Error("User not authenticated");
         }
 
-        const snapId = await SnapService.uploadSnap(
+        const snapId = await SnapService.uploadPicture(
           snap,
           mediaFile,
           currentFirebaseUser.uid,
@@ -379,7 +379,7 @@ export function useFaceDetection() {
  */
 
 /**
- * Manage snap drafts
+ * Manage picture drafts
  */
 export function useSnapDrafts() {
   const { currentFirebaseUser } = useAuth();
@@ -447,12 +447,12 @@ export function useSnapDrafts() {
 
 /**
  * ============================================================================
- * SNAP SHARING HOOK
+ * PICTURE SHARING HOOK
  * ============================================================================
  */
 
 /**
- * Manage snap sharing and recipients
+ * Manage picture sharing and recipients
  */
 export function useSnapSharing() {
   const {

@@ -402,11 +402,11 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     order: 23,
   },
 
-  // ===== Flappy Snap =====
+  // ===== Flappy Bird =====
   {
     id: "flappy_first_10",
     name: "Flappy Fingers",
-    description: "Score 10 in Flappy Snap",
+    description: "Score 10 in Flappy Bird",
     icon: "🐦",
     tier: "bronze",
     category: "single_player",
@@ -421,7 +421,7 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
   {
     id: "flappy_score_25",
     name: "Pipe Master",
-    description: "Score 25 in Flappy Snap",
+    description: "Score 25 in Flappy Bird",
     icon: "🎯",
     tier: "silver",
     category: "single_player",
@@ -436,7 +436,7 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
   {
     id: "flappy_score_50",
     name: "Flappy Legend",
-    description: "Score 50 in Flappy Snap",
+    description: "Score 50 in Flappy Bird",
     icon: "🏆",
     tier: "gold",
     category: "single_player",
@@ -1178,4 +1178,3 @@ export const gameAchievements = {
 };
 
 export default gameAchievements;
-

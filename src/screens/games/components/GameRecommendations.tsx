@@ -9,7 +9,7 @@
  * │ 💡 Recommended for You                                    │
  * │ ┌────────────┐ ┌────────────┐ ┌────────────┐             │
  * │ │   🎯       │ │   🧩       │ │   🎲       │             │
- * │ │  Try Chess │ │ Snap 2048  │ │ Checkers   │             │
+ * │ │  Try Chess │ │   2048     │ │ Checkers   │             │
  * │ │ Based on...│ │ Popular... │ │ Friends... │             │
  * │ └────────────┘ └────────────┘ └────────────┘             │
  * └───────────────────────────────────────────────────────────┘
@@ -229,7 +229,7 @@ export function GameRecommendations({
         // Rule 3: Popular games (trending)
         const popularGames = availableGames.filter(
           (g) =>
-            ["flappy_bird", "snap_2048", "word_master"].includes(g.id) &&
+            ["flappy_bird", "play_2048", "word_master"].includes(g.id) &&
             !newGames.includes(g),
         );
         popularGames.forEach((game) => {
@@ -403,4 +403,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-

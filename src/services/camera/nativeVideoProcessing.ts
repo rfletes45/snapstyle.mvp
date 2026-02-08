@@ -235,7 +235,7 @@ export async function extractVideoFrames(
 
 /**
  * Trim video to specific duration
- * Useful for enforcing 60-second snap limit
+ * Useful for enforcing 60-second picture limit
  */
 export async function trimVideo(
   sourceUri: string,

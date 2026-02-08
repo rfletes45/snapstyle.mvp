@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Games Type Definitions
  *
  * This file contains all type definitions for the games expansion including:
- * - Single-player game types (Flappy Snap, Bounce Blitz, etc.)
+ * - Single-player game types (Flappy Bird, Bounce Blitz, etc.)
  * - Turn-based multiplayer types (Chess, Checkers, Crazy Eights)
  * - Real-time multiplayer types (8-Ball Pool)
  * - Game metadata and configuration
@@ -160,7 +160,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   snake_master: {
     id: "snake_master",
-    name: "Snap Snake",
+    name: "Snake",
     shortName: "Snake",
     description: "Eat food and grow without hitting walls!",
     icon: "🐍",
@@ -174,9 +174,9 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
 
   // Single-player: Puzzle
-  snap_2048: {
-    id: "snap_2048",
-    name: "Snap 2048",
+  play_2048: {
+    id: "play_2048",
+    name: "2048",
     shortName: "2048",
     description: "Merge tiles to reach 2048!",
     icon: "🔢",
@@ -190,7 +190,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   memory_master: {
     id: "memory_master",
-    name: "Memory Snap",
+    name: "Memory",
     shortName: "Memory",
     description: "Match pairs of cards!",
     icon: "🃏",
@@ -223,7 +223,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // Single-player: Daily
   word_master: {
     id: "word_master",
-    name: "Word Snap",
+    name: "Word",
     shortName: "Word",
     description: "Guess the daily word in 6 tries!",
     icon: "📝",
@@ -240,7 +240,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // New Single-player Games (Phase 1)
   flappy_bird: {
     id: "flappy_bird",
-    name: "Flappy Snap",
+    name: "Flappy Bird",
     shortName: "Flappy",
     description: "Tap to flap through pipes and score big!",
     icon: "🐦",
@@ -286,7 +286,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // Phase 2 Single-player Games
   stack_puzzle: {
     id: "stack_puzzle",
-    name: "Snap Stack",
+    name: "Stack",
     shortName: "Stack",
     description: "Stack blocks as high as you can!",
     icon: "🏗️",
@@ -301,7 +301,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   minesweeper_classic: {
     id: "minesweeper_classic",
-    name: "Snap Minesweeper",
+    name: "Minesweeper",
     shortName: "Mines",
     description: "Find all mines without detonating them!",
     icon: "💣",
@@ -316,7 +316,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   number_master: {
     id: "number_master",
-    name: "Snap Number",
+    name: "Number",
     shortName: "Number",
     description: "Solve math puzzles against the clock!",
     icon: "🔢",
@@ -331,7 +331,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   target_master: {
     id: "target_master",
-    name: "Snap Aim",
+    name: "Aim",
     shortName: "Aim",
     description: "Tap targets before they shrink away!",
     icon: "🎯",
@@ -346,7 +346,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   lights_out: {
     id: "lights_out",
-    name: "Snap Lights",
+    name: "Lights",
     shortName: "Lights",
     description: "Toggle all the lights off!",
     icon: "💡",
@@ -363,7 +363,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // Phase 3: New Single-player Games
   match_game: {
     id: "match_game",
-    name: "Snap Match",
+    name: "Match",
     shortName: "Match",
     description: "Match 3 gems in a row to score combos!",
     icon: "💎",
@@ -378,7 +378,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   pipes_game: {
     id: "pipes_game",
-    name: "Snap Pipes",
+    name: "Pipes",
     shortName: "Pipes",
     description: "Rotate pipes to connect the water flow!",
     icon: "🔧",
@@ -393,7 +393,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   nonogram_puzzle: {
     id: "nonogram_puzzle",
-    name: "Snap Nonogram",
+    name: "Nonogram",
     shortName: "Nonogram",
     description: "Fill cells by clues to reveal a pixel picture!",
     icon: "🖼️",
@@ -408,7 +408,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   tap_tap_game: {
     id: "tap_tap_game",
-    name: "Tap Tap Snap",
+    name: "Tap Tap",
     shortName: "TapTap",
     description: "Tap falling notes to the beat!",
     icon: "🎵",
@@ -423,7 +423,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   slice_game: {
     id: "slice_game",
-    name: "Snap Slice",
+    name: "Slice",
     shortName: "Slice",
     description: "Swipe to slice shapes — avoid bombs!",
     icon: "🔪",
@@ -438,7 +438,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   pong_game: {
     id: "pong_game",
-    name: "Snap Pong",
+    name: "Pong",
     shortName: "Pong",
     description: "Classic Pong — drag your paddle to win!",
     icon: "🏓",
@@ -511,7 +511,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   connect_four: {
     id: "connect_four",
-    name: "Snap Four",
+    name: "Four",
     shortName: "Four",
     description: "Connect four discs in a row to win!",
     icon: "🔴",
@@ -526,7 +526,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   dot_match: {
     id: "dot_match",
-    name: "Snap Dots",
+    name: "Dots",
     shortName: "Dots",
     description: "Draw lines to claim boxes!",
     icon: "⬜",
@@ -541,7 +541,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   gomoku_master: {
     id: "gomoku_master",
-    name: "Snap Gomoku",
+    name: "Gomoku",
     shortName: "Gomoku",
     description: "Get five in a row on the board!",
     icon: "⚫",
@@ -558,7 +558,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // Phase 3: New Multiplayer Turn-Based Games
   reversi_game: {
     id: "reversi_game",
-    name: "Snap Reversi",
+    name: "Reversi",
     shortName: "Reversi",
     description: "Outflank and flip your opponent's discs!",
     icon: "⚪",
@@ -573,7 +573,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   words_game: {
     id: "words_game",
-    name: "Snap Words",
+    name: "Words",
     shortName: "Words",
     description: "Place letter tiles on the board to score!",
     icon: "🔤",
@@ -588,7 +588,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   war_game: {
     id: "war_game",
-    name: "Snap War",
+    name: "War",
     shortName: "War",
     description: "Flip cards — higher wins! War on ties!",
     icon: "⚔️",
@@ -603,7 +603,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   hex_game: {
     id: "hex_game",
-    name: "Snap Hex",
+    name: "Hex",
     shortName: "Hex",
     description: "Connect your two sides of the hex board!",
     icon: "⬡",
@@ -620,7 +620,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // Phase 3: New Real-Time Multiplayer Games
   draw_game: {
     id: "draw_game",
-    name: "Snap Draw",
+    name: "Draw",
     shortName: "Draw",
     description: "Draw the prompt — others guess!",
     icon: "🎨",
@@ -635,7 +635,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   race_game: {
     id: "race_game",
-    name: "Snap Race",
+    name: "Race",
     shortName: "Race",
     description: "Type the sentence fastest to win!",
     icon: "🏎️",
@@ -650,7 +650,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   crossword_puzzle: {
     id: "crossword_puzzle",
-    name: "Snap Crossword",
+    name: "Crossword",
     shortName: "Crossword",
     description: "Solve the daily 5×5 mini crossword!",
     icon: "📰",
@@ -740,7 +740,7 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "higher", // Higher score is better
   },
-  snap_2048: {
+  play_2048: {
     minScore: 0,
     maxScore: 999999,
     scoreDirection: "higher",
@@ -971,7 +971,7 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     case "timed_tap":
       return `${score} taps`;
     case "bounce_blitz":
-    case "snap_2048":
+    case "play_2048":
     case "snake_master":
     case "brick_breaker":
     case "flappy_bird":
@@ -1025,4 +1025,3 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return score.toString();
   }
 }
-

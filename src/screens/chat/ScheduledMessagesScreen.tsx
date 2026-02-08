@@ -339,7 +339,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
 
           {/* Message content */}
           <Text style={styles.messageContent} numberOfLines={3}>
-            {item.type === "image" ? "📸 Snap" : item.content}
+            {item.type === "image" ? "📸 Picture" : item.content}
           </Text>
 
           {/* Scheduled time */}

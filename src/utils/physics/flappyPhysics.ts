@@ -1,7 +1,7 @@
 /**
- * Flappy Snap Physics Engine
+ * Flappy Bird Physics Engine
  *
- * Pure physics functions for the Flappy Snap game.
+ * Pure physics functions for the Flappy Bird game.
  * All functions are deterministic and side-effect free.
  */
 

@@ -63,7 +63,7 @@ export const BADGE_DEFINITIONS: Badge[] = [
   {
     id: "flappy_master",
     name: "Sky King",
-    description: "Score 50 points in Flappy Snap",
+    description: "Score 50 points in Flappy Bird",
     icon: "🦅",
     tier: "gold",
     category: "games",
@@ -84,7 +84,7 @@ export const BADGE_DEFINITIONS: Badge[] = [
   {
     id: "memory_master",
     name: "Memory Master",
-    description: "Complete Memory Snap with perfect recall",
+    description: "Complete Memory with perfect recall",
     icon: "🧠",
     tier: "gold",
     category: "games",
@@ -104,7 +104,7 @@ export const BADGE_DEFINITIONS: Badge[] = [
   {
     id: "snake_master",
     name: "Snake Master",
-    description: "Reach length 50 in Snap Snake",
+    description: "Reach length 50 in Snake",
     icon: "🐍",
     tier: "gold",
     category: "games",

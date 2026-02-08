@@ -85,6 +85,15 @@ import Animated, {
   withSequence,
   withTiming,
 } from "react-native-reanimated";
+import {
+  Canvas,
+  Circle as SkiaCircle,
+  LinearGradient as SkiaLinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow as SkiaShadow,
+  vec,
+} from "@shopify/react-native-skia";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // =============================================================================
@@ -115,6 +124,22 @@ const GAME_SCALE = Math.min(1, SCREEN_WIDTH / CONFIG.canvasWidth);
 const SCALED_WIDTH = CONFIG.canvasWidth * GAME_SCALE;
 const SCALED_HEIGHT = CONFIG.canvasHeight * GAME_SCALE;
 
+/** Lighten a hex color */
+function lightenHex(hex: string, amount: number): string {
+  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + amount);
+  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + amount);
+  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + amount);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+/** Darken a hex color */
+function darkenHex(hex: string, amount: number): string {
+  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - amount);
+  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - amount);
+  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - amount);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 // =============================================================================
 // Components
 // =============================================================================
@@ -142,6 +167,9 @@ const Brick = React.memo(
       transform: [{ scale: scaleAnim.value }],
     }));
 
+    const brickW = pos.width * scale;
+    const brickH = pos.height * scale;
+
     return (
       <Animated.View
         style={[
@@ -149,23 +177,34 @@ const Brick = React.memo(
           {
             left: pos.x * scale,
             top: pos.y * scale,
-            width: pos.width * scale,
-            height: pos.height * scale,
-            backgroundColor: color,
-            borderColor:
-              brick.type === "indestructible"
-                ? "#888"
-                : brick.type === "mystery"
-                  ? "#B67FCF"
-                  : "rgba(255,255,255,0.3)",
+            width: brickW,
+            height: brickH,
           },
           animatedStyle,
         ]}
       >
-        {brick.type === "explosive" && <Text style={styles.brickIcon}>💥</Text>}
-        {brick.type === "mystery" && <Text style={styles.brickIcon}>?</Text>}
+        <Canvas style={{ width: brickW, height: brickH }}>
+          <RoundedRect x={0} y={0} width={brickW} height={brickH} r={4}>
+            <SkiaLinearGradient
+              start={vec(0, 0)}
+              end={vec(0, brickH)}
+              colors={[lightenHex(color, 40), color, darkenHex(color, 40)]}
+            />
+            <SkiaShadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.3)" />
+          </RoundedRect>
+          {/* Top highlight */}
+          <RoundedRect x={1} y={1} width={brickW - 2} height={3} r={1.5}>
+            <SkiaLinearGradient
+              start={vec(0, 1)}
+              end={vec(0, 4)}
+              colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0)"]}
+            />
+          </RoundedRect>
+        </Canvas>
+        {brick.type === "explosive" && <Text style={[styles.brickIcon, { position: "absolute" }]}>💥</Text>}
+        {brick.type === "mystery" && <Text style={[styles.brickIcon, { position: "absolute" }]}>?</Text>}
         {brick.type === "gold" && brick.hitsRemaining === 3 && (
-          <Text style={styles.brickIcon}>✨</Text>
+          <Text style={[styles.brickIcon, { position: "absolute" }]}>✨</Text>
         )}
       </Animated.View>
     );
@@ -177,19 +216,40 @@ const Brick = React.memo(
  */
 const Ball = React.memo(
   ({ ball, scale }: { ball: BrickBreakerState["balls"][0]; scale: number }) => {
+    const r = ball.radius * scale;
+    const d = (r + 2) * 2;
     return (
       <View
         style={[
           styles.ball,
           {
-            left: (ball.x - ball.radius) * scale,
-            top: (ball.y - ball.radius) * scale,
-            width: ball.radius * 2 * scale,
-            height: ball.radius * 2 * scale,
-            borderRadius: ball.radius * scale,
+            left: (ball.x - ball.radius) * scale - 2,
+            top: (ball.y - ball.radius) * scale - 2,
+            width: d,
+            height: d,
           },
         ]}
-      />
+      >
+        <Canvas style={{ width: d, height: d }}>
+          {/* Glow */}
+          <SkiaCircle cx={r + 2} cy={r + 2} r={r + 2}>
+            <RadialGradient
+              c={vec(r + 2, r + 2)}
+              r={r + 2}
+              colors={["rgba(255,255,255,0.5)", "rgba(255,255,255,0)"]}
+            />
+          </SkiaCircle>
+          {/* Ball body */}
+          <SkiaCircle cx={r + 2} cy={r + 2} r={r}>
+            <RadialGradient
+              c={vec(r, r - 1)}
+              r={r}
+              colors={["#FFFFFF", "#E0E0E0", "#BBBBBB"]}
+            />
+            <SkiaShadow dx={0} dy={1} blur={3} color="rgba(255,255,255,0.6)" />
+          </SkiaCircle>
+        </Canvas>
+      </View>
     );
   },
 );
@@ -954,10 +1014,20 @@ export default function BrickBreakerGameScreen({
                   {
                     width: SCALED_WIDTH,
                     height: SCALED_HEIGHT,
-                    backgroundColor: "#1a1a2e",
                   },
                 ]}
               >
+                {/* Skia background */}
+                <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+                  <RoundedRect x={0} y={0} width={SCALED_WIDTH} height={SCALED_HEIGHT} r={12}>
+                    <SkiaLinearGradient
+                      start={vec(0, 0)}
+                      end={vec(0, SCALED_HEIGHT)}
+                      colors={["#1A1A3E", "#16162E", "#0F0F22"]}
+                    />
+                    <SkiaShadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
+                  </RoundedRect>
+                </Canvas>
                 {/* Bricks */}
                 {gameState.bricks.map((brick) => (
                   <Brick

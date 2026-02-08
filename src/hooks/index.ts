@@ -7,7 +7,7 @@
  * - useLocalMessages: SQLite-based local message access (Phase 5)
  * - useChatComposer: Chat composer state management (ARCH-D03)
  * - useUnifiedChatScreen: Screen-ready hook that composes useChat + useChatComposer (UNI-04)
- * - useSnapCapture: Snap/photo capture and upload hook (UNI-05)
+ * - useSnapCapture: Photo capture and upload hook (UNI-05)
  * - useUnreadCount: Unread count calculation
  * - useMentionAutocomplete: @mention autocomplete state management
  * - useAttachmentPicker: Multi-attachment selection and upload management

@@ -57,7 +57,7 @@ const SINGLE_PLAYER_FETCH_LIMIT = 50; // Reasonable limit for single-player sess
 const SINGLE_PLAYER_GAME_TYPES: SinglePlayerGameType[] = [
   "flappy_bird",
   "bounce_blitz",
-  "snap_2048",
+  "play_2048",
   "snake_master",
   "memory_master",
   "word_master",
@@ -130,16 +130,16 @@ function determineSinglePlayerWin(session: SinglePlayerGameSession): boolean {
 
   switch (session.gameType) {
     case "word_master":
-      // Word Snap: win if word was guessed
+      // Word: win if word was guessed
       return "wordGuessed" in stats && stats.wordGuessed === true;
 
     case "memory_master":
-      // Memory Snap: always a "win" if completed (matched all pairs)
+      // Memory: always a "win" if completed (matched all pairs)
       return "pairsMatched" in stats && stats.pairsMatched > 0;
 
     case "flappy_bird":
     case "bounce_blitz":
-    case "snap_2048":
+    case "play_2048":
     case "snake_master":
       // Score-based games: win if score > 0 (completed at least something)
       return session.finalScore > 0;
@@ -807,4 +807,3 @@ export async function getConversationGames(
 
   return result.records;
 }
-
