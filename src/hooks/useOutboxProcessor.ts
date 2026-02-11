@@ -3,6 +3,9 @@ import { useAuth } from "@/store/AuthContext";
 import { useEffect, useRef } from "react";
 import { AppState, AppStateStatus } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useOutboxProcessor");
 /**
  * Hook to automatically process pending outbox messages.
  *
@@ -48,12 +51,12 @@ export function useOutboxProcessor(): void {
 
       // Only log if there was work to do
       if (result.sent > 0 || result.failed > 0) {
-        console.log(
+        logger.info(
           `[OutboxProcessor] Processed: ${result.sent} sent, ${result.failed} failed, ${result.skipped} skipped`,
         );
       }
     } catch (error) {
-      console.error("[OutboxProcessor] Error processing outbox:", error);
+      logger.error("[OutboxProcessor] Error processing outbox:", error);
     } finally {
       isProcessing.current = false;
     }
@@ -61,14 +64,20 @@ export function useOutboxProcessor(): void {
 
   // Effect 1: Process on mount when user becomes available
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
     if (currentFirebaseUser) {
       // Small delay to let auth state settle
-      const timer = setTimeout(() => {
-        processIfNeeded();
+      timer = setTimeout(() => {
+        void processIfNeeded();
       }, 1000);
-
-      return () => clearTimeout(timer);
     }
+
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
   }, [currentFirebaseUser?.uid]);
 
   // Effect 2: Process when app comes to foreground
@@ -77,7 +86,7 @@ export function useOutboxProcessor(): void {
 
     const handleAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === "active") {
-        console.log("[OutboxProcessor] App became active, checking outbox...");
+        logger.info("[OutboxProcessor] App became active, checking outbox...");
         processIfNeeded();
       }
     };

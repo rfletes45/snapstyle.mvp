@@ -303,7 +303,7 @@ export async function retryFailedMessage(messageId: string): Promise<boolean> {
       text: item.text,
       replyTo: item.replyTo,
       mentionUids: item.mentionUids,
-      attachments: [], // TODO: Handle attachments
+      attachments: [], // NOTE: Handle attachments
       clientId,
       messageId: item.messageId,
       createdAt: item.createdAt,
@@ -340,7 +340,7 @@ export async function processPendingMessages(): Promise<{
       text: item.text,
       replyTo: item.replyTo,
       mentionUids: item.mentionUids,
-      attachments: [], // TODO: Handle attachments
+      attachments: [], // NOTE: Handle attachments
       clientId,
       messageId: item.messageId,
       createdAt: item.createdAt,
@@ -364,7 +364,7 @@ export async function processPendingMessages(): Promise<{
  * @param senderName - Current user's display name
  * @returns Optimistic MessageV2
  */
-export function createOptimisticMessage(
+function createOptimisticMessage(
   outboxItem: OutboxItem,
   senderId: string,
   senderName?: string,
@@ -446,49 +446,3 @@ export async function getPendingForConversation(
 ): Promise<OutboxItem[]> {
   return getOutboxForConversation(conversationId);
 }
-
-// =============================================================================
-// Attachment Handling (Stub for H10)
-// =============================================================================
-
-/**
- * Send a message with attachments
- *
- * NOTE: For H10, the attachment picker handles uploads.
- * This function is kept for API compatibility but attachments
- * should be uploaded via useAttachmentPicker hook first.
- *
- * @param params - Message parameters with local attachments
- */
-export async function sendMessageWithAttachments(params: {
-  conversationId: string;
-  scope: "dm" | "group";
-  kind: MessageKind;
-  text?: string;
-  replyTo?: ReplyToMetadata;
-  localAttachments: Array<{
-    id: string;
-    kind: "image" | "video" | "audio" | "file";
-    uri: string;
-    mime: string;
-    caption?: string;
-  }>;
-}): Promise<SendWithOutboxResult> {
-  // For now, just enqueue without attachments
-  // Attachments should be uploaded via useAttachmentPicker first
-
-  log.warn("sendMessageWithAttachments: Use useAttachmentPicker for uploads");
-
-  return sendMessageWithOutbox({
-    conversationId: params.conversationId,
-    scope: params.scope,
-    kind: params.kind,
-    text: params.text,
-    replyTo: params.replyTo,
-  });
-}
-
-// =============================================================================
-// Edit & Delete - See src/services/messageActions.ts
-// Reactions - See src/services/reactions.ts
-// =============================================================================

@@ -5,13 +5,16 @@
 
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/foregroundServiceManager");
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[ForegroundService] ${msg}`, data ?? "");
+  logger.info(`[ForegroundService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[ForegroundService] ${msg}`, error ?? "");
+  logger.error(`[ForegroundService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[ForegroundService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[ForegroundService] ${msg}`, data ?? "");
 
 // Notification channel configuration
 export interface CallNotificationConfig {

@@ -13,6 +13,9 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/index");
 // Platform detection
 const isWeb = Platform.OS === "web";
 const isExpoGo = Constants.appOwnership === "expo";
@@ -30,7 +33,7 @@ export { areNativeCallsAvailable };
  */
 export function initializeBackgroundCallHandler(): void {
   if (!areNativeCallsAvailable) {
-    console.log(
+    logger.info(
       "[CallServices] Skipping background handler init - native calls not available",
     );
     return;
@@ -42,7 +45,7 @@ export function initializeBackgroundCallHandler(): void {
       initializeBackgroundCallHandler();
     })
     .catch((e) => {
-      console.warn(
+      logger.warn(
         "[CallServices] Failed to init background handler:",
         e.message,
       );
@@ -54,7 +57,7 @@ export function initializeBackgroundCallHandler(): void {
  */
 export function initializeAppStateListener(): void {
   if (!areNativeCallsAvailable) {
-    console.log(
+    logger.info(
       "[CallServices] Skipping app state listener - native calls not available",
     );
     return;
@@ -65,7 +68,7 @@ export function initializeAppStateListener(): void {
       initializeAppStateListener();
     })
     .catch((e) => {
-      console.warn(
+      logger.warn(
         "[CallServices] Failed to init app state listener:",
         e.message,
       );
@@ -77,7 +80,7 @@ export function initializeAppStateListener(): void {
  */
 export function createCallNotificationChannel(): void {
   if (!areNativeCallsAvailable) {
-    console.log(
+    logger.info(
       "[CallServices] Skipping notification channel - native calls not available",
     );
     return;
@@ -88,7 +91,7 @@ export function createCallNotificationChannel(): void {
       createCallNotificationChannel();
     })
     .catch((e) => {
-      console.warn(
+      logger.warn(
         "[CallServices] Failed to create notification channel:",
         e.message,
       );
@@ -146,7 +149,7 @@ export { callSettingsService } from "./callSettingsService";
  */
 export async function getCallService() {
   if (!areNativeCallsAvailable) {
-    console.warn("[CallServices] callService not available on this platform");
+    logger.warn("[CallServices] callService not available on this platform");
     return null;
   }
   const { callService } = await import("./callService");
@@ -158,7 +161,7 @@ export async function getCallService() {
  */
 export async function getWebRTCService() {
   if (!areNativeCallsAvailable) {
-    console.warn("[CallServices] webRTCService not available on this platform");
+    logger.warn("[CallServices] webRTCService not available on this platform");
     return null;
   }
   const { webRTCService } = await import("./webRTCService");
@@ -170,7 +173,7 @@ export async function getWebRTCService() {
  */
 export async function getCallKeepService() {
   if (!areNativeCallsAvailable) {
-    console.warn(
+    logger.warn(
       "[CallServices] callKeepService not available on this platform",
     );
     return null;
@@ -184,7 +187,7 @@ export async function getCallKeepService() {
  */
 export async function getGroupCallService() {
   if (!areNativeCallsAvailable) {
-    console.warn(
+    logger.warn(
       "[CallServices] groupCallService not available on this platform",
     );
     return null;

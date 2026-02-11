@@ -1,18 +1,15 @@
-import { Chat } from "@/types/models";
 import {
-  collection,
   doc,
   getDoc,
-  getDocs,
-  orderBy,
-  query,
   setDoc,
   Timestamp,
-  where,
 } from "firebase/firestore";
 import { hasBlockBetweenUsers } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/chat");
 /**
  * Generate a deterministic chat ID from two user IDs
  */
@@ -53,35 +50,7 @@ export async function getOrCreateChat(
 
     return chatId;
   } catch (error) {
-    console.error("[getOrCreateChat] Error:", error);
-    throw error;
-  }
-}
-
-/**
- * Get all chats for a user, sorted by last message time
- */
-export async function getUserChats(uid: string): Promise<Chat[]> {
-  const db = getFirestoreInstance();
-
-  try {
-    const chatsRef = collection(db, "Chats");
-    const q = query(
-      chatsRef,
-      where("members", "array-contains", uid),
-      orderBy("lastMessageAt", "desc"),
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      members: doc.data().members,
-      createdAt: doc.data().createdAt?.toMillis?.() || 0,
-      lastMessageText: doc.data().lastMessageText,
-      lastMessageAt: doc.data().lastMessageAt?.toMillis?.() || 0,
-    }));
-  } catch (error) {
-    console.error("Error getting user chats:", error);
+    logger.error("[getOrCreateChat] Error:", error);
     throw error;
   }
 }

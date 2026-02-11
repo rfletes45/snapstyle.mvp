@@ -5,3 +5,4 @@
  */
 
 export * from "./profile";
+export * from "./root";

@@ -8,8 +8,11 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { useColors } from "../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/ScorecardBubble");
 // =============================================================================
 // Types
 // =============================================================================
@@ -136,7 +139,7 @@ export function parseScorecardContent(content: string): ScorecardData | null {
     }
     return null;
   } catch (error) {
-    console.error("[ScorecardBubble] Failed to parse scorecard:", error);
+    logger.error("[ScorecardBubble] Failed to parse scorecard:", error);
     return null;
   }
 }

@@ -15,7 +15,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

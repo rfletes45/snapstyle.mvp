@@ -118,7 +118,10 @@ export function useFriendRequests(uid: string): UseFriendRequestsResult {
               try {
                 const profile = await getUserProfile(fromUserId);
                 if (profile) {
-                  const profileData = profile as any;
+                  const profileData = profile as typeof profile & {
+                    profilePicture?: { url?: string | null } | null;
+                    avatarDecoration?: { decorationId?: string | null } | null;
+                  };
                   fromUser = {
                     displayName: profile.displayName || "Unknown User",
                     avatarUrl: null,

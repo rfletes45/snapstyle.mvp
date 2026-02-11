@@ -11,6 +11,18 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import {
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+} from "@/components/games/TurnBasedOverlay";
+import { useCardGame } from "@/hooks/useCardGame";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,17 +34,6 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
 import {
   Canvas,
   LinearGradient,
@@ -40,6 +41,27 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
+import {
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -73,7 +95,7 @@ const SUIT_COLORS: Record<string, string> = {
   "♦": "#e74c3c",
 };
 
-type GameState = "menu" | "playing" | "war" | "result";
+type GameState = "menu" | "playing" | "war" | "result" | "colyseus";
 
 interface WarCard {
   rank: string;
@@ -104,11 +126,53 @@ function shuffle<T>(arr: T[]): T[] {
 // Component
 // =============================================================================
 
-export default function WarGameScreen({ navigation }: { navigation: any }) {
+function WarGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route?: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "war" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "war", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+
+  // Colyseus multiplayer hook
+  const mp = useCardGame("war_game");
+  const isSpectator = route?.params?.spectatorMode === true;
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+
+  // Handle incoming match from route params (invite flow)
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "war_game",
+    route?.params?.matchId,
+  );
+
+  useEffect(() => {
+    if (resolvedMode && firestoreGameId) {
+      setGameState("colyseus");
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    }
+  }, [resolvedMode, firestoreGameId, isSpectator]);
+
+  // Resign confirmation dialog state (for Colyseus mode)
+  const [showResignDialog, setShowResignDialog] = useState(false);
 
   const [gameState, setGameState] = useState<GameState>("menu");
   const [p1Deck, setP1Deck] = useState<WarCard[]>([]);
@@ -122,8 +186,32 @@ export default function WarGameScreen({ navigation }: { navigation: any }) {
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [roundCount, setRoundCount] = useState(0);
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
 
-  const flipAnim = useRef(new Animated.Value(0)).current;
+  const flipAnim = useSharedValue(0);
+
+  const flipCardStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        scale: interpolate(flipAnim.value, [0, 0.5, 1], [0.8, 1.1, 1]),
+      },
+    ],
+  }));
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     if (currentFirebaseUser) {
@@ -239,20 +327,19 @@ export default function WarGameScreen({ navigation }: { navigation: any }) {
     setP1Card(c1);
     setP2Card(c2);
 
-    flipAnim.setValue(0);
-    Animated.spring(flipAnim, {
-      toValue: 1,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
+    flipAnim.value = 0;
+    flipAnim.value = withSpring(1, {
+      damping: 14,
+      stiffness: 180,
+    });
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Resolve after animation
-    setTimeout(() => {
+    scheduleTimeout(() => {
       resolveRound(c1, c2, warPile, d1, d2);
     }, 600);
-  }, [p1Deck, p2Deck, warPile, flipAnim, resolveRound, endGame]);
+  }, [p1Deck, p2Deck, warPile, flipAnim, resolveRound, endGame, scheduleTimeout]);
 
   const renderCard = (card: WarCard | null, label: string) => {
     if (!card) {
@@ -299,15 +386,8 @@ export default function WarGameScreen({ navigation }: { navigation: any }) {
           styles.card,
           {
             backgroundColor: "transparent",
-            transform: [
-              {
-                scale: flipAnim.interpolate({
-                  inputRange: [0, 0.5, 1],
-                  outputRange: [0.8, 1.1, 1],
-                }),
-              },
-            ],
           },
+          flipCardStyle,
         ]}
       >
         <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -336,6 +416,19 @@ export default function WarGameScreen({ navigation }: { navigation: any }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -366,10 +459,13 @@ export default function WarGameScreen({ navigation }: { navigation: any }) {
           <Button
             mode="contained"
             onPress={startGame}
-            style={{ backgroundColor: colors.primary, marginTop: 24 }}
+            style={{
+              backgroundColor: colors.primary,
+              marginTop: 24,
+            }}
             labelStyle={{ color: "#fff" }}
           >
-            Start Game
+            Play vs AI
           </Button>
         </View>
       )}
@@ -417,6 +513,194 @@ export default function WarGameScreen({ navigation }: { navigation: any }) {
             </Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* Colyseus online play area */}
+      {gameState === "colyseus" && mp.phase === "playing" && (
+        <View style={styles.playArea}>
+          {/* Opponent side */}
+          <View style={styles.playerSection}>
+            <Text style={[styles.deckCount, { color: colors.textSecondary }]}>
+              {mp.opponentName || "Opponent"}:{" "}
+              {mp.myPlayerIndex === 0 ? mp.p2DeckSize : mp.p1DeckSize} cards
+            </Text>
+            {renderCard(
+              mp.myPlayerIndex === 0
+                ? (mp.player2Card as WarCard | null)
+                : (mp.player1Card as WarCard | null),
+              "Opponent",
+            )}
+          </View>
+
+          {/* Message */}
+          <View style={styles.messageRow}>
+            <Text style={[styles.messageText, { color: colors.primary }]}>
+              {mp.isWar
+                ? "⚔️ WAR! ⚔️"
+                : mp.roundResult === "player1"
+                  ? mp.myPlayerIndex === 0
+                    ? "You win this round! 🎉"
+                    : "Opponent wins this round 😤"
+                  : mp.roundResult === "player2"
+                    ? mp.myPlayerIndex === 1
+                      ? "You win this round! 🎉"
+                      : "Opponent wins this round 😤"
+                    : mp.myFlippedCard
+                      ? "Waiting for opponent to flip..."
+                      : "Tap to flip!"}
+            </Text>
+            {mp.warPileSize > 0 && (
+              <Text
+                style={[styles.warPileText, { color: colors.textSecondary }]}
+              >
+                War pile: {mp.warPileSize} cards
+              </Text>
+            )}
+          </View>
+
+          {/* Player side */}
+          <View style={styles.playerSection}>
+            {renderCard(
+              mp.myPlayerIndex === 0
+                ? (mp.player1Card as WarCard | null)
+                : (mp.player2Card as WarCard | null),
+              "You",
+            )}
+            <Text style={[styles.deckCount, { color: colors.textSecondary }]}>
+              You: {mp.myPlayerIndex === 0 ? mp.p1DeckSize : mp.p2DeckSize}{" "}
+              cards
+            </Text>
+          </View>
+
+          {/* Flip button — always enabled unless already flipped this round */}
+          <TouchableOpacity
+            onPress={() => {
+              if (!isSpectator && !mp.myFlippedCard) {
+                mp.flipCard();
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+            }}
+            style={[
+              styles.flipBtn,
+              {
+                backgroundColor: mp.myFlippedCard
+                  ? colors.primary + "66"
+                  : colors.primary,
+              },
+            ]}
+            activeOpacity={0.7}
+            disabled={!!mp.myFlippedCard || isSpectator}
+          >
+            <Text style={styles.flipBtnText}>
+              {mp.myFlippedCard
+                ? "Waiting..."
+                : mp.isWar
+                  ? "⚔️ War Flip!"
+                  : "Flip!"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Resign button */}
+          {!isSpectator && (
+            <TouchableOpacity
+              onPress={() => setShowResignDialog(true)}
+              style={{ marginTop: 12 }}
+            >
+              <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
+                Resign
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameState === "colyseus" && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            gameName="War"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignDialog}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onConfirm={() => {
+              setShowResignDialog(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignDialog(false)}
+          />
+        </>
       )}
 
       {/* Result dialog */}
@@ -529,3 +813,5 @@ const styles = StyleSheet.create({
   flipBtnText: { color: "#fff", fontSize: 18, fontWeight: "700" },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(WarGameScreen, "war");

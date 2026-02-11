@@ -20,6 +20,9 @@ import type {
 } from "@/types/profile";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/profileCache");
 // =============================================================================
 // Types
 // =============================================================================
@@ -56,6 +59,12 @@ interface ProfileCacheData {
   inventory: CacheEntry<Record<string, string[]>> | null;
   badgeDefinitions: CacheEntry<Badge[]> | null;
 }
+
+/**
+ * Extract the data type from a ProfileCacheData entry
+ */
+type ProfileCacheValue<K extends keyof ProfileCacheData> =
+  ProfileCacheData[K] extends CacheEntry<infer T> | null ? T | null : never;
 
 /**
  * Cache invalidation events
@@ -168,13 +177,13 @@ export async function getCached<K extends keyof ProfileCacheData>(
 
     // Fresh data
     if (now < entry.expiresAt) {
-      return entry.data as any;
+      return entry.data as ProfileCacheValue<K>;
     }
 
     // Stale but within stale time - return stale data
     if (config.staleTime && now < entry.expiresAt + config.staleTime) {
       // Trigger background refresh (caller should handle)
-      return entry.data as any;
+      return entry.data as ProfileCacheValue<K>;
     }
   }
 
@@ -190,13 +199,13 @@ export async function getCached<K extends keyof ProfileCacheData>(
 
         if (now < parsed.expiresAt) {
           // Restore to memory cache
-          (cache[key] as any) = parsed;
+          (cache[key] as CacheEntry<unknown> | null) = parsed;
           return parsed.data;
         }
 
         // Stale but usable
         if (config.staleTime && now < parsed.expiresAt + config.staleTime) {
-          (cache[key] as any) = parsed;
+          (cache[key] as CacheEntry<unknown> | null) = parsed;
           return parsed.data;
         }
 
@@ -204,11 +213,11 @@ export async function getCached<K extends keyof ProfileCacheData>(
         await AsyncStorage.removeItem(storageKey);
       }
     } catch (error) {
-      console.warn(`[profileCache] Failed to read ${key} from storage:`, error);
+      logger.warn(`[profileCache] Failed to read ${key} from storage:`, error);
     }
   }
 
-  return null as any;
+  return null as ProfileCacheValue<K>;
 }
 
 /**
@@ -230,7 +239,7 @@ export async function setCached<K extends keyof ProfileCacheData>(
   };
 
   // Update memory cache
-  (cache[key] as any) = entry;
+  (cache[key] as CacheEntry<unknown> | null) = entry;
 
   // Persist if enabled
   if (config.persist) {
@@ -238,7 +247,7 @@ export async function setCached<K extends keyof ProfileCacheData>(
       const storageKey = `${CACHE_PREFIX}${uid}:${key}`;
       await AsyncStorage.setItem(storageKey, JSON.stringify(entry));
     } catch (error) {
-      console.warn(`[profileCache] Failed to persist ${key}:`, error);
+      logger.warn(`[profileCache] Failed to persist ${key}:`, error);
     }
   }
 }
@@ -293,7 +302,7 @@ export async function invalidateCache(
         const storageKey = `${CACHE_PREFIX}${uid}:${key}`;
         await AsyncStorage.removeItem(storageKey);
       } catch (error) {
-        console.warn(`[profileCache] Failed to remove ${key}:`, error);
+        logger.warn(`[profileCache] Failed to remove ${key}:`, error);
       }
     }
   }
@@ -335,7 +344,7 @@ export async function clearUserCache(uid: string): Promise<void> {
       await AsyncStorage.multiRemove(userCacheKeys);
     }
   } catch (error) {
-    console.warn("[profileCache] Failed to clear user cache:", error);
+    logger.warn("[profileCache] Failed to clear user cache:", error);
   }
 }
 
@@ -352,7 +361,7 @@ export async function clearAllCache(): Promise<void> {
       await AsyncStorage.multiRemove(cacheKeys);
     }
   } catch (error) {
-    console.warn("[profileCache] Failed to clear all cache:", error);
+    logger.warn("[profileCache] Failed to clear all cache:", error);
   }
 }
 
@@ -396,7 +405,7 @@ export async function preloadProfileCache(uid: string): Promise<void> {
   // For now, it just ensures the cache structure exists
   getUserCache(uid);
 
-  console.log("[profileCache] Cache initialized for user:", uid);
+  logger.info("[profileCache] Cache initialized for user:", uid);
 }
 
 // =============================================================================

@@ -18,6 +18,9 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("store/AuthContext");
 export interface AuthContextType {
   currentFirebaseUser: FirebaseUser | null;
   loading: boolean;
@@ -49,32 +52,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listener for notifications received while app is foregrounded
     notificationListenerRef.current = addNotificationReceivedListener(
       (notification) => {
-        console.log("📱 Notification received:", notification.request.content);
+        logger.info("📱 Notification received:", notification.request.content);
       },
     );
 
     // Listener for notification taps
     responseListenerRef.current = addNotificationResponseListener(
       (response) => {
-        console.log(
+        logger.info(
           "📱 Notification tapped:",
           response.notification.request.content,
         );
         const data = response.notification.request.content.data;
-        if (data?.type === "message" && data?.friendUid) {
+        if (data?.type === "message" && typeof data.friendUid === "string") {
           // Navigate to the DM chat with this friend
           globalNavigate("ChatDetail", {
             friendUid: data.friendUid,
             initialData: {
               chatId: data.chatId,
-              friendName: data.friendName,
+              friendName:
+                typeof data.friendName === "string"
+                  ? data.friendName
+                  : undefined,
             },
           });
-        } else if (data?.type === "group_message" && data?.groupId) {
+        } else if (
+          data?.type === "group_message" &&
+          typeof data.groupId === "string"
+        ) {
           // Navigate to the group chat
           globalNavigate("GroupChat", {
             groupId: data.groupId,
-            groupName: data.groupName,
+            groupName:
+              typeof data.groupName === "string" ? data.groupName : undefined,
           });
         } else if (data?.type === "friend_request") {
           // Navigate to connections/friends screen
@@ -115,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           previousUserIdRef.current = currentFirebaseUser.uid;
         } catch (error) {
-          console.error("[AuthContext] Error registering push token:", error);
+          logger.error("[AuthContext] Error registering push token:", error);
         }
       } else if (!currentFirebaseUser && previousUserIdRef.current) {
         // User logged out - token was already removed before signOut
@@ -135,7 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const auth = getAuthInstance();
       const unsubscribe = auth.onAuthStateChanged(
         async (user: any) => {
-          console.log(
+          logger.info(
             "🔵 [AuthContext] User state changed:",
             user?.email || "logged out",
           );
@@ -147,12 +157,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // Force refresh to get the latest custom claims
               const idTokenResult = await user.getIdTokenResult(true);
               setCustomClaims(idTokenResult.claims);
-              console.log(
+              logger.info(
                 "🔵 [AuthContext] Custom claims loaded:",
                 idTokenResult.claims,
               );
               // Log admin status specifically for debugging
-              console.log(
+              logger.info(
                 "🔵 [AuthContext] Admin status:",
                 idTokenResult.claims.admin,
               );
@@ -160,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // Initialize presence tracking
               initializePresence(user.uid);
             } catch (error) {
-              console.error(
+              logger.error(
                 "❌ [AuthContext] Error fetching custom claims:",
                 error,
               );
@@ -176,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsHydrated(true);
         },
         (err: any) => {
-          console.warn(
+          logger.warn(
             "Auth state change error (this is OK with placeholder config):",
             err.message,
           );
@@ -189,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return unsubscribe;
     } catch (error: any) {
-      console.warn(
+      logger.warn(
         "Failed to set up auth listener (this is OK with placeholder config):",
         error.message,
       );

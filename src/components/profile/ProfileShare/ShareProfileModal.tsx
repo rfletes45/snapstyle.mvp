@@ -34,6 +34,9 @@ import { generateProfileShare } from "@/services/profileService";
 import type { ProfileShareData } from "@/types/userProfile";
 import * as haptics from "@/utils/haptics";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/ProfileShare/ShareProfileModal");
 // =============================================================================
 // Types
 // =============================================================================
@@ -90,7 +93,7 @@ function ShareOption({
         <ActivityIndicator size={24} color={color || colors.text} />
       ) : (
         <MaterialCommunityIcons
-          name={icon as any}
+          name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
           size={24}
           color={color || colors.text}
         />
@@ -156,7 +159,7 @@ function ShareProfileModalBase({
       setShareData(data);
       return data;
     } catch (error) {
-      console.error("Failed to generate share data:", error);
+      logger.error("Failed to generate share data:", error);
       return null;
     } finally {
       setLoadingShare(false);
@@ -178,7 +181,7 @@ function ShareProfileModalBase({
       });
     } catch (error: any) {
       if (error.name !== "AbortError") {
-        console.error("Share error:", error);
+        logger.error("Share error:", error);
       }
     }
   }, [loadShareData]);
@@ -198,7 +201,7 @@ function ShareProfileModalBase({
 
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error("Copy error:", error);
+      logger.error("Copy error:", error);
     } finally {
       setLoadingCopy(false);
     }

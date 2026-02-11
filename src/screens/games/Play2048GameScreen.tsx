@@ -28,7 +28,13 @@
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
+import { Skia2048Tile, SkiaGameBoard } from "@/components/games/graphics";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
@@ -45,14 +51,13 @@ import React, {
 } from "react";
 import {
   Dimensions,
-  GestureResponderEvent,
-  PanResponder,
-  PanResponderGestureState,
   Platform,
   StyleSheet,
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -62,7 +67,6 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import { Skia2048Tile, SkiaGameBoard } from "@/components/games/graphics";
 
 // =============================================================================
 // Layout constants
@@ -667,9 +671,11 @@ interface Play2048GameScreenProps {
   navigation: any;
 }
 
-export default function Play2048GameScreen({
+function Play2048GameScreen({
   navigation,
 }: Play2048GameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "play_2048" });
+  void __codexGameCompletion;
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -698,9 +704,45 @@ export default function Play2048GameScreen({
   const [showWinDialog, setShowWinDialog] = useState(false);
   const [hasShownWinDialog, setHasShownWinDialog] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+
+  // Back navigation with confirmation dialog
+  const { handleBack } = useGameBackHandler({
+    gameType: "play_2048",
+    isGameOver: showGameOverModal,
+  });
   const [showFriendPicker, setShowFriendPicker] = useState(false);
+
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "play_2048",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   const startTimeRef = useRef(Date.now());
   const isProcessingRef = useRef(false);
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
 
   // Score animation
   const scoreScale = useSharedValue(1);
@@ -759,6 +801,7 @@ export default function Play2048GameScreen({
         });
       }
 
+      spectatorHost.endHosting(finalScore);
       setShowGameOverModal(true);
     },
     [currentFirebaseUser, haptics],
@@ -798,31 +841,28 @@ export default function Play2048GameScreen({
       }
 
       // Debounce: allow next move after animations complete
-      setTimeout(() => {
+      scheduleTimeout(() => {
         isProcessingRef.current = false;
       }, TRANSITION_SPEED + 50);
     },
-    [highScore, hasShownWinDialog, haptics, handleGameOver, actuate],
+    [highScore, hasShownWinDialog, haptics, handleGameOver, actuate, scheduleTimeout],
   );
 
   const handleSwipeRef = useRef(handleSwipe);
   handleSwipeRef.current = handleSwipe;
 
   // ---------------------------------------------------------------------------
-  // Pan responder — touch → direction mapping (matches original's touch handler)
+  // Pan gesture — touch → direction mapping (matches original's touch handler)
   //
   // Original: absDx > absDy ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0)
   // ---------------------------------------------------------------------------
-  const panResponder = useMemo(
+  const swipeGesture = useMemo(
     () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderRelease: (
-          _evt: GestureResponderEvent,
-          gs: PanResponderGestureState,
-        ) => {
-          const { dx, dy } = gs;
+      Gesture.Pan()
+        .runOnJS(true)
+        .onEnd((event) => {
+          const dx = event.translationX;
+          const dy = event.translationY;
           const absDx = Math.abs(dx);
           const absDy = Math.abs(dy);
 
@@ -834,8 +874,7 @@ export default function Play2048GameScreen({
             absDx > absDy ? (dx > 0 ? 1 : 3) : dy > 0 ? 2 : 0;
 
           handleSwipeRef.current(direction);
-        },
-      }),
+        }),
     [],
   );
 
@@ -851,6 +890,7 @@ export default function Play2048GameScreen({
     setShowGameOverModal(false);
     isProcessingRef.current = false;
     startTimeRef.current = Date.now();
+    spectatorHost.startHosting();
   }, [haptics, actuate]);
 
   const continueGame = useCallback(() => {
@@ -861,6 +901,36 @@ export default function Play2048GameScreen({
   const handleShare = useCallback(() => {
     setShowFriendPicker(true);
   }, []);
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    spectatorHost.updateGameState(
+      JSON.stringify({
+        score,
+        bestTile,
+        totalMoves,
+        isOver,
+        // Visual state for spectator renderer — build 4x4 board from grid cells
+        board: (() => {
+          const mgr = managerRef.current;
+          const s = mgr.size;
+          const b: number[][] = [];
+          for (let y = 0; y < s; y++) {
+            const row: number[] = [];
+            for (let x = 0; x < s; x++) {
+              row.push(mgr.grid.cells[x]?.[y]?.value ?? 0);
+            }
+            b.push(row);
+          }
+          return b;
+        })(),
+        hasWon: isWon,
+      }),
+      score,
+      undefined,
+      undefined,
+    );
+  }, [score, totalMoves, isOver]);
 
   const handleSelectFriend = useCallback(
     async (friend: {
@@ -934,7 +1004,7 @@ export default function Play2048GameScreen({
       <View style={styles.header}>
         <Button
           mode="text"
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           icon="arrow-left"
           textColor={theme.colors.onBackground}
         >
@@ -943,7 +1013,20 @@ export default function Play2048GameScreen({
         <Text variant="headlineSmall" style={styles.title}>
           2048
         </Text>
-        <View style={{ width: 80 }} />
+        {spectatorHost.spectatorRoomId ? (
+          <Button
+            mode="contained"
+            icon="eye"
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            buttonColor="#9C27B0"
+            textColor="white"
+            compact
+          >
+            Watch Me
+          </Button>
+        ) : (
+          <View style={{ width: 80 }} />
+        )}
       </View>
 
       {/* Score Display */}
@@ -1010,40 +1093,39 @@ export default function Play2048GameScreen({
       </View>
 
       {/* Game Board */}
-      <SkiaGameBoard
-        width={BOARD_SIZE}
-        height={BOARD_SIZE}
-        borderRadius={8}
-        gradientColors={["#BBADA0", "#A89888", "#BBADA0"]}
-        borderColor="#A09080"
-        borderWidth={2}
-        innerShadowBlur={6}
-      >
-        <View
-          style={[styles.board]}
-          {...panResponder.panHandlers}
+      <GestureDetector gesture={swipeGesture}>
+        <SkiaGameBoard
+          width={BOARD_SIZE}
+          height={BOARD_SIZE}
+          borderRadius={8}
+          gradientColors={["#BBADA0", "#A89888", "#BBADA0"]}
+          borderColor="#A09080"
+          borderWidth={2}
+          innerShadowBlur={6}
         >
-          {gridCells}
+          <View style={[styles.board]}>
+            {gridCells}
 
-          {/*
-            Each tile gets a key that includes moveId so React creates a fresh
-            AnimatedTile instance per move — matching the original's DOM rebuild.
-            The index suffix handles the case where two source tiles from a merge
-            share the same tileId within a single snapshot.
-          */}
-          {tiles.map((t, i) => (
-            <AnimatedTile key={`${t.id}-${t.anim}-${moveId}-${i}`} tile={t} />
-          ))}
+            {/*
+              Each tile gets a key that includes moveId so React creates a fresh
+              AnimatedTile instance per move — matching the original's DOM rebuild.
+              The index suffix handles the case where two source tiles from a merge
+              share the same tileId within a single snapshot.
+            */}
+            {tiles.map((t, i) => (
+              <AnimatedTile key={`${t.id}-${t.anim}-${moveId}-${i}`} tile={t} />
+            ))}
 
-          {/* Game Over Overlay */}
-          {isOver && (
-            <View style={styles.gameOverOverlay}>
-              <Text style={styles.gameOverText}>Game Over!</Text>
-              <Text style={styles.gameOverScore}>Score: {score}</Text>
-            </View>
-          )}
-        </View>
-      </SkiaGameBoard>
+            {/* Game Over Overlay */}
+            {isOver && (
+              <View style={styles.gameOverOverlay}>
+                <Text style={styles.gameOverText}>Game Over!</Text>
+                <Text style={styles.gameOverScore}>Score: {score}</Text>
+              </View>
+            )}
+          </View>
+        </SkiaGameBoard>
+      </GestureDetector>
 
       {/* Instructions */}
       <Text
@@ -1100,19 +1182,47 @@ export default function Play2048GameScreen({
         }}
         onRematch={startNewGame}
         onShare={handleShare}
-        onExit={() => navigation.goBack()}
+        onExit={() => {
+          if (navigation.canGoBack()) navigation.goBack();
+          else navigation.navigate("GamesHub");
+        }}
         showRematch={true}
         showShare={true}
         title={isWon ? `🏆 ${bestTile} Achieved!` : `Best Tile: ${bestTile}`}
       />
 
+      {/* Spectator overlay — shows count of watchers */}
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
       {/* Friend Picker */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSelectFriend}
         title="Share Score With..."
         currentUserId={currentFirebaseUser?.uid || ""}
+      />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "play_2048",
+                hostName: profile?.displayName || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -1219,3 +1329,5 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 });
+
+export default withGameErrorBoundary(Play2048GameScreen, "play_2048");

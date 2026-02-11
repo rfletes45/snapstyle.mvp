@@ -11,6 +11,23 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { SkiaCellHighlight, SkiaGameBoard } from "@/components/games/graphics";
+import {
+  DrawOfferDialog,
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,6 +39,12 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Canvas,
+  Circle,
+  RadialGradient,
+  vec,
+} from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -32,17 +55,11 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
-import {
-  SkiaCellHighlight,
-  SkiaGameBoard,
-} from "@/components/games/graphics";
-import {
-  Canvas,
-  Circle,
-  RadialGradient,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -58,7 +75,7 @@ const GAME_TYPE = "reversi_game";
 
 type CellState = 0 | 1 | 2; // 0=empty, 1=black, 2=white
 type Board = CellState[][];
-type GameMode = "local" | "ai";
+type GameMode = "local" | "ai" | "online";
 type ScreenState = "menu" | "playing" | "result";
 
 const DIRECTIONS = [
@@ -185,7 +202,23 @@ function getAIMove(board: Board, player: CellState): [number, number] | null {
 // Component
 // =============================================================================
 
-export default function ReversiGameScreen({ navigation }: { navigation: any }) {
+function ReversiGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route?: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "reversi" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "reversi", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -204,6 +237,55 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [lastMove, setLastMove] = useState<[number, number] | null>(null);
+
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("reversi_game");
+  const isSpectator = route?.params?.spectatorMode === true;
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+
+  // Handle incoming match from route params (invite flow)
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "reversi_game",
+    route?.params?.matchId,
+  );
+
+  useEffect(() => {
+    if (resolvedMode && firestoreGameId) {
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    }
+  }, [resolvedMode, firestoreGameId, isSpectator]);
+
+  // Derive Colyseus board as 2D array for rendering
+  const colyseusBoard: Board | null =
+    mp.isMultiplayer && mp.board.length === BOARD_SIZE * BOARD_SIZE
+      ? Array.from({ length: BOARD_SIZE }, (_, r) =>
+          Array.from(
+            { length: BOARD_SIZE },
+            (_, c) => mp.board[r * BOARD_SIZE + c] as CellState,
+          ),
+        )
+      : null;
+
+  const effectiveBoard =
+    gameMode === "online" && colyseusBoard ? colyseusBoard : board;
+
+  // Valid moves for effective board
+  const effectiveValidMoves =
+    gameMode === "online" && mp.isMultiplayer && mp.isMyTurn && colyseusBoard
+      ? new Set(
+          getValidMoves(
+            colyseusBoard,
+            mp.myPlayerIndex === 0 ? 1 : (2 as CellState),
+          ).map(([r, c]) => `${r},${c}`),
+        )
+      : validMoves;
 
   useEffect(() => {
     if (currentFirebaseUser) {
@@ -280,6 +362,14 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
 
   const placePiece = useCallback(
     (row: number, col: number) => {
+      // Colyseus multiplayer mode
+      if (gameMode === "online" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+        mp.sendMove({ row, col });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      }
+
       if (screenState !== "playing") return;
       if (gameMode === "ai" && currentPlayer === 2) return;
 
@@ -326,6 +416,19 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -356,11 +459,39 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
             </Text>
           )}
           <View style={styles.modeButtons}>
+            {mp.isAvailable && (
+              <Button
+                mode="contained"
+                onPress={async () => {
+                  setGameMode("online");
+                  const b = createBoard();
+                  setBoard(b);
+                  setCurrentPlayer(1);
+                  setWinner(null);
+                  setIsDraw(false);
+                  setScores({ p1: 2, p2: 2 });
+                  setLastMove(null);
+                  setScreenState("playing");
+                  updateValidMoves(b, 1);
+                  await mp.startMultiplayer(
+                    isSpectator ? { spectator: true } : undefined,
+                  );
+                }}
+                style={[styles.modeBtn, { backgroundColor: colors.primary }]}
+                labelStyle={{ color: "#fff" }}
+                icon="earth"
+              >
+                Online
+              </Button>
+            )}
             <Button
-              mode="contained"
+              mode={mp.isAvailable ? "contained-tonal" : "contained"}
               onPress={() => startGame("ai")}
-              style={[styles.modeBtn, { backgroundColor: colors.primary }]}
-              labelStyle={{ color: "#fff" }}
+              style={[
+                styles.modeBtn,
+                mp.isAvailable ? {} : { backgroundColor: colors.primary },
+              ]}
+              labelStyle={mp.isAvailable ? undefined : { color: "#fff" }}
             >
               vs AI
             </Button>
@@ -372,6 +503,16 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
               2 Players
             </Button>
           </View>
+          {mp.isAvailable && (
+            <Button
+              mode="contained-tonal"
+              onPress={() => setShowInviteModal(true)}
+              icon="account-plus"
+              style={{ marginTop: 12 }}
+            >
+              Challenge Friend
+            </Button>
+          )}
         </View>
       )}
 
@@ -432,84 +573,91 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
             innerShadowBlur={8}
           >
             <View style={{ padding: BOARD_PADDING }}>
-            {board.map((row, r) => (
-              <View key={r} style={styles.boardRow}>
-                {row.map((cell, c) => {
-                  const isValid = validMoves.has(`${r},${c}`);
-                  const isLast = lastMove?.[0] === r && lastMove?.[1] === c;
-                  const pieceSize = CELL_SIZE * 0.78;
-                  return (
-                    <TouchableOpacity
-                      key={c}
-                      onPress={() => placePiece(r, c)}
-                      disabled={!isValid}
-                      style={[
-                        styles.cell,
-                        {
-                          width: CELL_SIZE,
-                          height: CELL_SIZE,
-                          borderColor: "#1e8449",
-                        },
-                      ]}
-                      activeOpacity={0.6}
-                    >
-                      {isLast && (
-                        <SkiaCellHighlight
-                          type="lastMove"
-                          width={CELL_SIZE}
-                          height={CELL_SIZE}
-                        />
-                      )}
-                      {cell !== 0 && (
-                        <Canvas style={{ width: pieceSize, height: pieceSize }}>
-                          {/* Drop shadow */}
-                          <Circle
-                            cx={pieceSize / 2}
-                            cy={pieceSize / 2 + 2}
-                            r={pieceSize / 2 - 2}
-                            color="rgba(0,0,0,0.3)"
+              {effectiveBoard.map((row, r) => (
+                <View key={r} style={styles.boardRow}>
+                  {row.map((cell, c) => {
+                    const isValid = effectiveValidMoves.has(`${r},${c}`);
+                    const isLast = lastMove?.[0] === r && lastMove?.[1] === c;
+                    const pieceSize = CELL_SIZE * 0.78;
+                    return (
+                      <TouchableOpacity
+                        key={c}
+                        onPress={() => placePiece(r, c)}
+                        disabled={
+                          !isValid ||
+                          isSpectator ||
+                          (gameMode === "online" &&
+                            (!mp.isMyTurn || mp.phase !== "playing"))
+                        }
+                        style={[
+                          styles.cell,
+                          {
+                            width: CELL_SIZE,
+                            height: CELL_SIZE,
+                            borderColor: "#1e8449",
+                          },
+                        ]}
+                        activeOpacity={0.6}
+                      >
+                        {isLast && (
+                          <SkiaCellHighlight
+                            type="lastMove"
+                            width={CELL_SIZE}
+                            height={CELL_SIZE}
                           />
-                          {/* Main disc with radial gradient */}
-                          <Circle
-                            cx={pieceSize / 2}
-                            cy={pieceSize / 2}
-                            r={pieceSize / 2 - 2}
+                        )}
+                        {cell !== 0 && (
+                          <Canvas
+                            style={{ width: pieceSize, height: pieceSize }}
                           >
-                            <RadialGradient
-                              c={vec(pieceSize * 0.4, pieceSize * 0.35)}
-                              r={pieceSize * 0.55}
-                              colors={
+                            {/* Drop shadow */}
+                            <Circle
+                              cx={pieceSize / 2}
+                              cy={pieceSize / 2 + 2}
+                              r={pieceSize / 2 - 2}
+                              color="rgba(0,0,0,0.3)"
+                            />
+                            {/* Main disc with radial gradient */}
+                            <Circle
+                              cx={pieceSize / 2}
+                              cy={pieceSize / 2}
+                              r={pieceSize / 2 - 2}
+                            >
+                              <RadialGradient
+                                c={vec(pieceSize * 0.4, pieceSize * 0.35)}
+                                r={pieceSize * 0.55}
+                                colors={
+                                  cell === 1
+                                    ? ["#4A4A6E", "#1a1a2e", "#0a0a1a"]
+                                    : ["#FFFFFF", "#ecf0f1", "#d5dbdb"]
+                                }
+                              />
+                            </Circle>
+                            {/* Specular highlight */}
+                            <Circle
+                              cx={pieceSize * 0.38}
+                              cy={pieceSize * 0.32}
+                              r={pieceSize * 0.15}
+                              color={
                                 cell === 1
-                                  ? ["#4A4A6E", "#1a1a2e", "#0a0a1a"]
-                                  : ["#FFFFFF", "#ecf0f1", "#d5dbdb"]
+                                  ? "rgba(255,255,255,0.2)"
+                                  : "rgba(255,255,255,0.5)"
                               }
                             />
-                          </Circle>
-                          {/* Specular highlight */}
-                          <Circle
-                            cx={pieceSize * 0.38}
-                            cy={pieceSize * 0.32}
-                            r={pieceSize * 0.15}
-                            color={
-                              cell === 1
-                                ? "rgba(255,255,255,0.2)"
-                                : "rgba(255,255,255,0.5)"
-                            }
+                          </Canvas>
+                        )}
+                        {cell === 0 && isValid && (
+                          <SkiaCellHighlight
+                            type="validMove"
+                            width={CELL_SIZE * 0.35}
+                            height={CELL_SIZE * 0.35}
                           />
-                        </Canvas>
-                      )}
-                      {cell === 0 && isValid && (
-                        <SkiaCellHighlight
-                          type="validMove"
-                          width={CELL_SIZE * 0.35}
-                          height={CELL_SIZE * 0.35}
-                        />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))}
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
           </SkiaGameBoard>
         </View>
@@ -560,6 +708,191 @@ export default function ReversiGameScreen({ navigation }: { navigation: any }) {
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Send Score To"
       />
+
+      <FriendPickerModal
+        visible={showInviteModal}
+        onDismiss={() => setShowInviteModal(false)}
+        onSelectFriend={async (friend) => {
+          if (!currentFirebaseUser) return;
+          try {
+            await sendGameInvite(
+              currentFirebaseUser.uid,
+              profile?.displayName || "Player",
+              profile?.avatarConfig
+                ? JSON.stringify(profile.avatarConfig)
+                : undefined,
+              {
+                gameType: GAME_TYPE,
+                recipientId: friend.friendUid,
+                recipientName: friend.displayName || "Friend",
+              },
+            );
+            showSuccess("Invite sent!");
+          } catch {
+            showError("Failed to send invite");
+          }
+          setShowInviteModal(false);
+        }}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        title="Challenge a Friend"
+      />
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "online" && mp.isMultiplayer && mp.phase === "playing" && (
+        <TurnIndicatorBar
+          isMyTurn={mp.isMyTurn}
+          myName={mp.myName}
+          opponentName={mp.opponentName}
+          currentPlayerIndex={mp.currentPlayerIndex}
+          myPlayerIndex={mp.myPlayerIndex}
+          turnNumber={mp.turnNumber}
+          myScore={mp.myScore}
+          opponentScore={mp.opponentScore}
+          opponentDisconnected={mp.opponentDisconnected}
+          showScores
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+            player1: "#1a1a2e",
+            player2: "#ecf0f1",
+          }}
+          player1Label="Black"
+          player2Label="White"
+        />
+      )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "online" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+        <GameActionBar
+          onResign={() => setShowResignConfirm(true)}
+          onOfferDraw={mp.offerDraw}
+          isMyTurn={mp.isMyTurn}
+          drawPending={mp.drawPending}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "online" && mp.isMultiplayer && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setScreenState("menu");
+            }}
+            gameName="Reversi"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            myScore={mp.myScore}
+            opponentScore={mp.opponentScore}
+            showScores
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setScreenState("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <DrawOfferDialog
+            visible={mp.drawPending}
+            opponentName={mp.opponentName}
+            isMyOffer={mp.drawOfferedByMe}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onAccept={mp.acceptDraw}
+            onDecline={mp.declineDraw}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -612,3 +945,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(ReversiGameScreen, "reversi");

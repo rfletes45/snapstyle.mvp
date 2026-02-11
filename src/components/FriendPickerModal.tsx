@@ -15,9 +15,12 @@ import {
   View,
 } from "react-native";
 import { Button, Searchbar, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Mocha, Spacing } from "../../constants/theme";
+import { BorderRadius, Mocha, Spacing } from "@/constants/theme";
 import { ProfilePictureWithDecoration } from "./profile/ProfilePicture";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/FriendPickerModal");
 // =============================================================================
 // Types
 // =============================================================================
@@ -107,7 +110,7 @@ export default function FriendPickerModal({
       setFriends(friendItems);
       setFilteredFriends(friendItems);
     } catch (error) {
-      console.error("[FriendPicker] Error loading friends:", error);
+      logger.error("[FriendPicker] Error loading friends:", error);
     } finally {
       setLoading(false);
     }

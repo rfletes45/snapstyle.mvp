@@ -15,9 +15,12 @@ import {
   DEFAULT_CALL_SETTINGS,
   DNDSchedule,
   RingtoneOption,
-} from "../../types/call";
-import { getAuthInstance, getFirestoreInstance } from "../firebase";
+} from "@/types/call";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/callSettingsService");
 // Lazy getters to avoid accessing Firebase before initialization
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
@@ -28,11 +31,11 @@ const DND_CHECK_INTERVAL = 60000; // 1 minute
 
 // Logging
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallSettingsService] ${msg}`, data ?? "");
+  logger.info(`[CallSettingsService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallSettingsService] ${msg}`, error ?? "");
+  logger.error(`[CallSettingsService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallSettingsService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallSettingsService] ${msg}`, data ?? "");
 
 type SettingsChangeListener = (settings: CallSettings) => void;
 

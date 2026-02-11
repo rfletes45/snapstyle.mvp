@@ -1,325 +1,116 @@
 /**
- * SpectatorViewScreen
+ * SpectatorViewScreen — Dedicated screen for watching single-player games
  *
- * A screen for spectators to watch a live single-player game session.
- * Shows the game state in real-time as the host plays.
+ * Connects to a SpectatorRoom via Colyseus and displays the host's game
+ * state in real-time. Shows score, level, lives, and the serialized game
+ * state from the host.
  *
- * @file src/screens/games/SpectatorViewScreen.tsx
+ * Route params:
+ *   roomId    — Colyseus room ID of the SpectatorRoom
+ *   gameType  — Game type key (for display purposes)
+ *   hostName  — Display name of the host (optional)
+ *
+ * @see docs/SPECTATOR_SYSTEM_PLAN.md §4.4
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
 import React, { useCallback } from "react";
 import {
   ActivityIndicator,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Button, Surface, Text, useTheme } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { SpectatorViewBanner } from "@/components/games/SpectatorOverlay";
-import { useLiveSpectatorSession } from "@/hooks/useLiveSpectatorSession";
-import { useAuth } from "@/store/AuthContext";
-import { GAME_METADATA, SinglePlayerGameType } from "@/types/games";
-import { BorderRadius, Spacing } from "../../../constants/theme";
-
-// =============================================================================
-// Types
-// =============================================================================
-
-interface SpectatorViewScreenRouteParams {
-  liveSessionId: string;
-  gameType?: SinglePlayerGameType;
-  hostName?: string;
-}
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorGameRenderer } from "@/components/games/spectator-renderers";
+import { useSpectator } from "@/hooks/useSpectator";
+import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
-// Game State Renderers
+// Component
 // =============================================================================
 
-// Simple score display for any game
-function GenericGameView({
-  gameType,
-  score,
-  gameState,
+export default function SpectatorViewScreen({
+  navigation,
+  route,
 }: {
-  gameType: SinglePlayerGameType;
-  score: number;
-  gameState: Record<string, unknown>;
+  navigation: any;
+  route: any;
 }) {
   const theme = useTheme();
-  const gameMetadata = GAME_METADATA[gameType];
-  const gameName = gameMetadata?.name || gameType;
-  const gameIcon = gameMetadata?.icon || "🎮";
+  const { width: screenWidth } = useWindowDimensions();
+  const { roomId, gameType, hostName: routeHostName } = route.params ?? {};
 
-  return (
-    <View style={styles.genericGameView}>
-      {/* Game Header */}
-      <View style={styles.gameHeader}>
-        <Text style={styles.gameIcon}>{gameIcon}</Text>
-        <Text style={[styles.gameName, { color: theme.colors.onBackground }]}>
-          {gameName}
-        </Text>
-      </View>
-
-      {/* Score Display */}
-      <Surface
-        style={[
-          styles.scoreCard,
-          { backgroundColor: theme.colors.primaryContainer },
-        ]}
-      >
-        <Text
-          style={[
-            styles.scoreLabel,
-            { color: theme.colors.onPrimaryContainer },
-          ]}
-        >
-          SCORE
-        </Text>
-        <Text
-          style={[
-            styles.scoreValue,
-            { color: theme.colors.onPrimaryContainer },
-          ]}
-        >
-          {score.toLocaleString()}
-        </Text>
-      </Surface>
-
-      {/* Game-specific details */}
-      {gameState && Object.keys(gameState).length > 0 && (
-        <View style={styles.gameDetails}>
-          {/* Level */}
-          {(gameState.level !== undefined ||
-            gameState.currentLevel !== undefined) && (
-            <View
-              style={[
-                styles.statItem,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="stairs"
-                size={20}
-                color={theme.colors.primary}
-              />
-              <Text
-                style={[styles.statValue, { color: theme.colors.onSurface }]}
-              >
-                Level {(gameState.level ?? gameState.currentLevel) as number}
-              </Text>
-            </View>
-          )}
-
-          {/* Lives */}
-          {gameState.lives !== undefined && (
-            <View
-              style={[
-                styles.statItem,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="heart"
-                size={20}
-                color={theme.colors.error}
-              />
-              <Text
-                style={[styles.statValue, { color: theme.colors.onSurface }]}
-              >
-                {gameState.lives as number} lives
-              </Text>
-            </View>
-          )}
-
-          {/* Ball count (for Bounce Blitz) */}
-          {gameState.ballCount !== undefined && (
-            <View
-              style={[
-                styles.statItem,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="circle"
-                size={20}
-                color={theme.colors.tertiary}
-              />
-              <Text
-                style={[styles.statValue, { color: theme.colors.onSurface }]}
-              >
-                {gameState.ballCount as number} balls
-              </Text>
-            </View>
-          )}
-
-          {/* Streak (for various games) */}
-          {gameState.streak !== undefined && (
-            <View
-              style={[
-                styles.statItem,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons name="fire" size={20} color="#FF6B35" />
-              <Text
-                style={[styles.statValue, { color: theme.colors.onSurface }]}
-              >
-                {gameState.streak as number}x streak
-              </Text>
-            </View>
-          )}
-
-          {/* Bricks remaining (for Brick Breaker) */}
-          {gameState.bricksRemaining !== undefined && (
-            <View
-              style={[
-                styles.statItem,
-                { backgroundColor: theme.colors.surfaceVariant },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="cube-outline"
-                size={20}
-                color={theme.colors.secondary}
-              />
-              <Text
-                style={[styles.statValue, { color: theme.colors.onSurface }]}
-              >
-                {gameState.bricksRemaining as number} bricks left
-              </Text>
-            </View>
-          )}
-
-          {/* Phase/Status (for games with phases) */}
-          {gameState.phase !== undefined && gameState.phase !== "playing" && (
-            <View
-              style={[
-                styles.statItem,
-                { backgroundColor: theme.colors.tertiaryContainer },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={
-                  gameState.phase === "levelComplete"
-                    ? "check-circle"
-                    : "information"
-                }
-                size={20}
-                color={theme.colors.onTertiaryContainer}
-              />
-              <Text
-                style={[
-                  styles.statValue,
-                  { color: theme.colors.onTertiaryContainer },
-                ]}
-              >
-                {gameState.phase === "levelComplete"
-                  ? "Level Complete!"
-                  : String(gameState.phase)}
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Watching indicator */}
-      <View style={styles.watchingContainer}>
-        <View
-          style={[styles.pulseDot, { backgroundColor: theme.colors.error }]}
-        />
-        <Text
-          style={[
-            styles.watchingText,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
-        >
-          Watching live...
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// =============================================================================
-// Main Component
-// =============================================================================
-
-export default function SpectatorViewScreen() {
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const route = useRoute();
-  const { currentFirebaseUser } = useAuth();
-
-  const params = route.params as SpectatorViewScreenRouteParams;
-  const { liveSessionId, hostName: initialHostName } = params;
-
-  // Connect to the live session as a spectator
   const {
-    session,
-    gameState,
-    currentScore,
-    spectators,
-    isLive,
+    connected,
     loading,
     error,
-    leaveSession,
-  } = useLiveSpectatorSession({
-    sessionId: liveSessionId,
-    mode: "spectator",
-    userId: currentFirebaseUser?.uid,
-    userName: currentFirebaseUser?.displayName || "Spectator",
+    spectatorCount,
+    spectators,
+    gameState,
+    currentScore,
+    currentLevel,
+    lives,
+    hostName,
+    phase,
+    leaveSpectator,
+  } = useSpectator({
+    mode: "sp-spectator",
+    roomId,
   });
 
-  // Handle leaving
+  const displayHostName = hostName || routeHostName || "Host";
+  const gameName =
+    GAME_METADATA[gameType as ExtendedGameType]?.name || gameType;
+
   const handleLeave = useCallback(async () => {
-    await leaveSession();
+    await leaveSpectator();
     navigation.goBack();
-  }, [leaveSession, navigation]);
+  }, [leaveSpectator, navigation]);
 
-  // Derive values
-  const hostName = session?.hostName || initialHostName || "Player";
-  const gameType = session?.gameType || params.gameType || "bounce_blitz";
-  const status = session?.status || "waiting";
+  // ─── Loading State ────────────────────────────────────────────────────
 
-  // Show loading
-  if (loading && !session) {
+  if (loading) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
-        <View style={styles.centerContent}>
+        <View style={styles.centered}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text
-            style={[styles.loadingText, { color: theme.colors.onBackground }]}
+            variant="bodyLarge"
+            style={[styles.statusText, { color: theme.colors.onBackground }]}
           >
-            Connecting to session...
+            Connecting to spectator room...
           </Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Show error
-  if (error || !session) {
+  // ─── Error State ──────────────────────────────────────────────────────
+
+  if (error && !connected) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
-        <View style={styles.centerContent}>
+        <View style={styles.centered}>
           <MaterialCommunityIcons
-            name="alert-circle"
-            size={64}
+            name="alert-circle-outline"
+            size={48}
             color={theme.colors.error}
           />
           <Text
-            style={[styles.errorText, { color: theme.colors.onBackground }]}
+            variant="bodyLarge"
+            style={[styles.statusText, { color: theme.colors.error }]}
           >
-            {error || "Session not found"}
+            {error}
           </Text>
           <Button
             mode="contained"
@@ -333,82 +124,37 @@ export default function SpectatorViewScreen() {
     );
   }
 
-  // Show waiting state
-  if (status === "waiting") {
-    return (
-      <SafeAreaView
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
-      >
-        <SpectatorViewBanner hostName={hostName} onLeave={handleLeave} />
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text
-            style={[styles.waitingTitle, { color: theme.colors.onBackground }]}
-          >
-            Waiting for {hostName} to start...
-          </Text>
-          <Text
-            style={[
-              styles.waitingSubtitle,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            The game will begin shortly
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // ─── Game Finished ────────────────────────────────────────────────────
 
-  // Show ended state
-  if (status === "completed" || status === "abandoned") {
+  if (phase === "finished") {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
-        <View style={styles.centerContent}>
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={handleLeave}
+          hostName={displayHostName}
+        />
+        <View style={styles.centered}>
           <MaterialCommunityIcons
-            name={status === "completed" ? "check-circle" : "exit-run"}
+            name="flag-checkered"
             size={64}
-            color={
-              status === "completed"
-                ? theme.colors.primary
-                : theme.colors.outline
-            }
+            color={theme.colors.primary}
           />
           <Text
-            style={[styles.endedTitle, { color: theme.colors.onBackground }]}
+            variant="headlineMedium"
+            style={[styles.gameOverText, { color: theme.colors.onBackground }]}
           >
-            {status === "completed" ? "Game Complete!" : "Session Ended"}
+            Game Over
           </Text>
-          <Surface
-            style={[
-              styles.finalScoreCard,
-              { backgroundColor: theme.colors.primaryContainer },
-            ]}
+          <Text
+            variant="bodyLarge"
+            style={{ color: theme.colors.onSurfaceVariant }}
           >
-            <Text
-              style={[
-                styles.finalScoreLabel,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
-              Final Score
-            </Text>
-            <Text
-              style={[
-                styles.finalScoreValue,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
-              {currentScore.toLocaleString()}
-            </Text>
-          </Surface>
-          <Button
-            mode="contained"
-            onPress={() => navigation.goBack()}
-            style={styles.button}
-          >
+            {displayHostName} finished with {currentScore} points
+          </Text>
+          <Button mode="contained" onPress={handleLeave} style={styles.button}>
             Leave
           </Button>
         </View>
@@ -416,44 +162,175 @@ export default function SpectatorViewScreen() {
     );
   }
 
-  // Active game - show live view
+  // ─── Active Spectating ────────────────────────────────────────────────
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
+      edges={["bottom", "left", "right"]}
     >
-      {/* Banner */}
-      <SpectatorViewBanner hostName={hostName} onLeave={handleLeave} />
+      <SpectatorBanner
+        spectatorCount={spectatorCount}
+        onLeave={handleLeave}
+        hostName={displayHostName}
+      />
 
-      {/* Game View */}
-      <View style={styles.gameContainer}>
-        <GenericGameView
-          gameType={gameType}
-          score={currentScore}
-          gameState={gameState || {}}
-        />
-      </View>
-
-      {/* Spectator count */}
-      <View
-        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md }]}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.spectatorCountContainer}>
-          <MaterialCommunityIcons
-            name="eye"
-            size={16}
-            color={theme.colors.onSurfaceVariant}
-          />
+        {/* Game Info Header */}
+        <Surface style={styles.infoCard} elevation={1}>
           <Text
-            style={[
-              styles.spectatorCountText,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
+            variant="titleLarge"
+            style={{ color: theme.colors.onSurface, textAlign: "center" }}
           >
-            {spectators.length + 1} watching (including you)
+            {gameName}
           </Text>
+          <Text
+            variant="bodyMedium"
+            style={{
+              color: theme.colors.onSurfaceVariant,
+              textAlign: "center",
+              marginTop: Spacing.xs,
+            }}
+          >
+            Watching {displayHostName} play
+          </Text>
+        </Surface>
+
+        {/* Stats Row */}
+        <View style={styles.statsRow}>
+          <StatCard
+            icon="star"
+            label="Score"
+            value={currentScore.toString()}
+            color={theme.colors.primary}
+            theme={theme}
+          />
+          <StatCard
+            icon="layers"
+            label="Level"
+            value={currentLevel.toString()}
+            color={theme.colors.tertiary}
+            theme={theme}
+          />
+          <StatCard
+            icon="heart"
+            label="Lives"
+            value={lives.toString()}
+            color={theme.colors.error}
+            theme={theme}
+          />
         </View>
-      </View>
+
+        {/* Live Game View */}
+        {gameState && phase !== "waiting" && (
+          <View style={styles.gameRendererContainer}>
+            <SpectatorGameRenderer
+              gameType={gameType}
+              gameState={gameState}
+              width={screenWidth - Spacing.md * 2}
+              score={currentScore}
+              level={currentLevel}
+              lives={lives}
+            />
+          </View>
+        )}
+
+        {/* Spectator List */}
+        {spectators.length > 0 && (
+          <Surface style={styles.spectatorsCard} elevation={1}>
+            <Text
+              variant="titleSmall"
+              style={{
+                color: theme.colors.onSurface,
+                marginBottom: Spacing.sm,
+              }}
+            >
+              Watching ({spectatorCount})
+            </Text>
+            {spectators.map((spec, idx) => (
+              <View
+                key={spec.sessionId || `spectator-${idx}`}
+                style={styles.spectatorRow}
+              >
+                <MaterialCommunityIcons
+                  name="account"
+                  size={16}
+                  color={theme.colors.onSurfaceVariant}
+                />
+                <Text
+                  variant="bodySmall"
+                  style={{
+                    color: theme.colors.onSurfaceVariant,
+                    marginLeft: 8,
+                  }}
+                >
+                  {spec.displayName}
+                </Text>
+              </View>
+            ))}
+          </Surface>
+        )}
+
+        {/* Phase indicator */}
+        {phase === "waiting" && (
+          <View style={styles.centered}>
+            <ActivityIndicator
+              size="small"
+              color={theme.colors.primary}
+              style={{ marginTop: Spacing.lg }}
+            />
+            <Text
+              variant="bodyMedium"
+              style={[
+                styles.statusText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Waiting for {displayHostName} to start...
+            </Text>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// =============================================================================
+// Sub-Components
+// =============================================================================
+
+function StatCard({
+  icon,
+  label,
+  value,
+  color,
+  theme,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  color: string;
+  theme: any;
+}) {
+  return (
+    <Surface style={styles.statCard} elevation={1}>
+      <MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={24} color={color} />
+      <Text
+        variant="headlineSmall"
+        style={{ color: theme.colors.onSurface, fontWeight: "700" }}
+      >
+        {value}
+      </Text>
+      <Text
+        variant="labelSmall"
+        style={{ color: theme.colors.onSurfaceVariant }}
+      >
+        {label}
+      </Text>
+    </Surface>
   );
 }
 
@@ -465,148 +342,58 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  centerContent: {
+  centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: Spacing.xl,
   },
-  loadingText: {
+  statusText: {
     marginTop: Spacing.md,
-    fontSize: 16,
-  },
-  errorText: {
-    marginTop: Spacing.md,
-    fontSize: 16,
     textAlign: "center",
-  },
-  waitingTitle: {
-    marginTop: Spacing.lg,
-    fontSize: 20,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  waitingSubtitle: {
-    marginTop: Spacing.sm,
-    fontSize: 14,
-    textAlign: "center",
-  },
-  endedTitle: {
-    marginTop: Spacing.lg,
-    fontSize: 24,
-    fontWeight: "600",
-  },
-  finalScoreCard: {
-    marginTop: Spacing.lg,
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    alignItems: "center",
-    minWidth: 200,
-  },
-  finalScoreLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  finalScoreValue: {
-    fontSize: 48,
-    fontWeight: "700",
-    marginTop: Spacing.xs,
   },
   button: {
-    marginTop: Spacing.xl,
-    minWidth: 150,
+    marginTop: Spacing.lg,
+    minWidth: 120,
   },
-  gameContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.lg,
-  },
-  genericGameView: {
-    alignItems: "center",
-    width: "100%",
-    maxWidth: 350,
-  },
-  gameHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: Spacing.lg,
-  },
-  gameIcon: {
-    fontSize: 40,
-    marginRight: Spacing.sm,
-  },
-  gameName: {
-    fontSize: 24,
-    fontWeight: "600",
-  },
-  scoreCard: {
-    padding: Spacing.xl,
-    borderRadius: BorderRadius.xl,
-    alignItems: "center",
-    minWidth: 200,
-    marginBottom: Spacing.xl,
-  },
-  scoreLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 2,
-  },
-  scoreValue: {
-    fontSize: 56,
+  gameOverText: {
     fontWeight: "700",
-    marginTop: Spacing.xs,
-  },
-  gameDetails: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: 6,
-  },
-  statValue: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  watchingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
     marginTop: Spacing.md,
-    gap: 8,
   },
-  pulseDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  scrollContent: {
+    padding: Spacing.md,
+    paddingBottom: Spacing.xxl,
   },
-  watchingText: {
-    fontSize: 14,
-    fontStyle: "italic",
+  infoCard: {
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.md,
   },
-  footer: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(0,0,0,0.1)",
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
-  spectatorCountContainer: {
+  gameRendererContainer: {
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  statCard: {
+    flex: 1,
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    gap: 4,
+  },
+  spectatorsCard: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  spectatorRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  spectatorCountText: {
-    fontSize: 12,
+    paddingVertical: 4,
   },
 });

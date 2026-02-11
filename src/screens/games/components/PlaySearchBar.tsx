@@ -39,7 +39,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 const {
   spacing,

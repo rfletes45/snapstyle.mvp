@@ -11,8 +11,11 @@ import {
   PollElement,
   StickerElement,
   TextElement,
-} from "../../types/camera";
+} from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/editorService");
 /**
  * ============================================================================
  * OVERLAY RENDERING
@@ -27,7 +30,7 @@ export async function renderOverlayElement(
   element: OverlayElement,
 ): Promise<string> {
   try {
-    console.log(`[Editor Service] Rendering overlay element: ${element.type}`);
+    logger.info(`[Editor Service] Rendering overlay element: ${element.type}`);
 
     // This would use native graphics libraries (Skia, Canvas)
     // For now, return base image (placeholder)
@@ -49,7 +52,7 @@ export async function renderOverlayElement(
         return baseImageUri;
     }
   } catch (error) {
-    console.error("[Editor Service] Failed to render overlay element:", error);
+    logger.error("[Editor Service] Failed to render overlay element:", error);
     return baseImageUri;
   }
 }
@@ -64,7 +67,7 @@ export async function renderAllOverlays(
   try {
     if (elements.length === 0) return baseImageUri;
 
-    console.log(
+    logger.info(
       `[Editor Service] Rendering ${elements.length} overlay elements`,
     );
 
@@ -77,7 +80,7 @@ export async function renderAllOverlays(
 
     return resultUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to render all overlays:", error);
+    logger.error("[Editor Service] Failed to render all overlays:", error);
     return baseImageUri;
   }
 }
@@ -96,12 +99,12 @@ async function renderTextElement(
     // - Stroke/shadow effects
     // - Rotation
 
-    console.log(`[Editor Service] Rendering text: "${element.content}"`);
+    logger.info(`[Editor Service] Rendering text: "${element.content}"`);
 
     // Placeholder: return base image
     return baseImageUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to render text element:", error);
+    logger.error("[Editor Service] Failed to render text element:", error);
     return baseImageUri;
   }
 }
@@ -114,7 +117,7 @@ async function renderStickerElement(
   element: StickerElement,
 ): Promise<string> {
   try {
-    console.log(`[Editor Service] Rendering sticker: ${element.stickerId}`);
+    logger.info(`[Editor Service] Rendering sticker: ${element.stickerId}`);
 
     // This would:
     // 1. Load sticker asset
@@ -126,7 +129,7 @@ async function renderStickerElement(
     // Placeholder: return base image
     return baseImageUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to render sticker element:", error);
+    logger.error("[Editor Service] Failed to render sticker element:", error);
     return baseImageUri;
   }
 }
@@ -139,7 +142,7 @@ async function renderDrawingElement(
   element: DrawingElement,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Editor Service] Rendering drawing with ${element.paths.length} paths`,
     );
 
@@ -147,7 +150,7 @@ async function renderDrawingElement(
     const { renderDrawingOnImage } = await import("./nativeDrawing");
     return renderDrawingOnImage(baseImageUri, element.paths);
   } catch (error) {
-    console.error("[Editor Service] Failed to render drawing element:", error);
+    logger.error("[Editor Service] Failed to render drawing element:", error);
     return baseImageUri;
   }
 }
@@ -160,7 +163,7 @@ async function renderPollElement(
   element: PollElement,
 ): Promise<string> {
   try {
-    console.log(`[Editor Service] Rendering poll: "${element.question}"`);
+    logger.info(`[Editor Service] Rendering poll: "${element.question}"`);
 
     // This would:
     // 1. Create poll UI (question + options/results)
@@ -171,7 +174,7 @@ async function renderPollElement(
     // Placeholder: return base image
     return baseImageUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to render poll element:", error);
+    logger.error("[Editor Service] Failed to render poll element:", error);
     return baseImageUri;
   }
 }
@@ -192,14 +195,14 @@ export async function applyFiltersToImage(
   try {
     if (filters.length === 0) return imageUri;
 
-    console.log(`[Editor Service] Applying ${filters.length} filters to image`);
+    logger.info(`[Editor Service] Applying ${filters.length} filters to image`);
 
     // Would apply color adjustments, blur, sepia, etc. using native APIs
     // Placeholder: return image
 
     return imageUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to apply filters:", error);
+    logger.error("[Editor Service] Failed to apply filters:", error);
     return imageUri;
   }
 }
@@ -220,7 +223,7 @@ export async function exportSnapAsImage(
   filters: AppliedFilter[],
 ): Promise<string> {
   try {
-    console.log("[Editor Service] Exporting picture as image");
+    logger.info("[Editor Service] Exporting picture as image");
 
     // Process in order:
     // 1. Apply filters
@@ -244,7 +247,7 @@ export async function exportSnapAsImage(
 
     return optimized.uri;
   } catch (error) {
-    console.error("[Editor Service] Failed to export picture as image:", error);
+    logger.error("[Editor Service] Failed to export picture as image:", error);
     throw error;
   }
 }
@@ -259,7 +262,7 @@ export async function exportSnapAsVideo(
   filters: AppliedFilter[],
 ): Promise<string> {
   try {
-    console.log("[Editor Service] Exporting picture as video");
+    logger.info("[Editor Service] Exporting picture as video");
 
     // This requires FFmpeg for video processing:
     // 1. Extract frames
@@ -271,7 +274,7 @@ export async function exportSnapAsVideo(
     // Placeholder: return original
     return videoUri;
   } catch (error) {
-    console.error("[Editor Service] Failed to export picture as video:", error);
+    logger.error("[Editor Service] Failed to export picture as video:", error);
     throw error;
   }
 }

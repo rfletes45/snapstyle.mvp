@@ -24,6 +24,9 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/economy");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -50,7 +53,7 @@ async function getWallet(uid: string): Promise<Wallet | null> {
     const walletDoc = await getDoc(walletRef);
 
     if (!walletDoc.exists()) {
-      console.log("[economy] Wallet not found for user:", uid);
+      logger.info("[economy] Wallet not found for user:", uid);
       return null;
     }
 
@@ -63,7 +66,7 @@ async function getWallet(uid: string): Promise<Wallet | null> {
       totalSpent: data.totalSpent || 0,
     };
   } catch (error) {
-    console.error("[economy] Error fetching wallet:", error);
+    logger.error("[economy] Error fetching wallet:", error);
     throw error;
   }
 }
@@ -100,7 +103,7 @@ export function subscribeToWallet(
       onUpdate(wallet);
     },
     (error) => {
-      console.error("[economy] Wallet subscription error:", error);
+      logger.error("[economy] Wallet subscription error:", error);
       if (onError) {
         onError(error as Error);
       }
@@ -174,7 +177,7 @@ async function getTransactionHistory(
       } as Transaction;
     });
   } catch (error) {
-    console.error("[economy] Error fetching transactions:", error);
+    logger.error("[economy] Error fetching transactions:", error);
     throw error;
   }
 }
@@ -219,7 +222,7 @@ export function subscribeToTransactions(
       onUpdate(transactions);
     },
     (error) => {
-      console.error("[economy] Transaction subscription error:", error);
+      logger.error("[economy] Transaction subscription error:", error);
     },
   );
 

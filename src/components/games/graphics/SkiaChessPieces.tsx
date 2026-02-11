@@ -9,9 +9,9 @@ import React from "react";
 import Svg, {
   Defs,
   G,
-  LinearGradient as SvgLinearGradient,
   Path,
   Stop,
+  LinearGradient as SvgLinearGradient,
 } from "react-native-svg";
 
 interface ChessPieceProps {

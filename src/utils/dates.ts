@@ -1,3 +1,11 @@
+/** Duck-typed Firestore Timestamp for cross-boundary usage */
+interface FirestoreTimestamp {
+  toDate(): Date;
+  toMillis(): number;
+  seconds: number;
+  nanoseconds: number;
+}
+
 /**
  * Get the day key for streak logic
  * Accounts for timezone
@@ -129,14 +137,15 @@ export function toTimestamp(value: unknown): number {
   if (!value) return 0;
   if (typeof value === "number") return value;
   if (typeof value === "object") {
-    if ("toMillis" in value && typeof (value as any).toMillis === "function") {
-      return (value as any).toMillis();
+    const obj = value as Record<string, unknown>;
+    if ("toMillis" in value && typeof obj.toMillis === "function") {
+      return (value as FirestoreTimestamp).toMillis();
     }
-    if ("getTime" in value && typeof (value as any).getTime === "function") {
-      return (value as any).getTime();
+    if ("getTime" in value && typeof obj.getTime === "function") {
+      return (value as Date).getTime();
     }
-    if ("seconds" in value && typeof (value as any).seconds === "number") {
-      return (value as any).seconds * 1000;
+    if ("seconds" in value && typeof obj.seconds === "number") {
+      return (value as FirestoreTimestamp).seconds * 1000;
     }
   }
   return 0;

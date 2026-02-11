@@ -39,8 +39,11 @@ import {
   View,
 } from "react-native";
 import { FAB, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/stories/StoriesScreen");
 // Story item dimensions for FlatList optimization
 const STORY_ITEM_WIDTH = 88; // 80px thumbnail + 8px margin
 
@@ -137,7 +140,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       // Preload images for first few stories
       preloadStoryImages(validStories, 5);
     } catch (err) {
-      console.error("[MomentsScreen] Error loading moments:", err);
+      logger.error("[MomentsScreen] Error loading moments:", err);
       setError("Couldn't load moments");
     } finally {
       setLoading(false);
@@ -197,7 +200,7 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               try {
                 await capturePhoto();
               } catch (err) {
-                console.error("❌ [MomentsScreen] Capture error:", err);
+                logger.error("❌ [MomentsScreen] Capture error:", err);
               }
             },
           },
@@ -207,14 +210,14 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               try {
                 await selectPhoto();
               } catch (err) {
-                console.error("❌ [MomentsScreen] Select error:", err);
+                logger.error("❌ [MomentsScreen] Select error:", err);
               }
             },
           },
         ]);
       }
     } catch (error) {
-      console.error("❌ [MomentsScreen] Error:", error);
+      logger.error("❌ [MomentsScreen] Error:", error);
       Alert.alert("Error", `Failed to post moment: ${String(error)}`);
       setPostingStory(false);
     }
@@ -222,31 +225,31 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
   const capturePhoto = async () => {
     try {
-      console.log("🔵 [capturePhoto] Starting capture");
+      logger.info("🔵 [capturePhoto] Starting capture");
 
       if (Platform.OS === "web") {
-        console.log("🔵 [capturePhoto] Using web camera capture");
+        logger.info("🔵 [capturePhoto] Using web camera capture");
         const imageUri = await captureImageFromWebcam();
-        console.log(
+        logger.info(
           "✅ [capturePhoto] Got image URI:",
           imageUri ? "success" : "null",
         );
 
         if (imageUri) {
-          console.log("🔵 [capturePhoto] Navigating to viewer");
+          logger.info("🔵 [capturePhoto] Navigating to viewer");
           navigateToStoryViewer(imageUri);
         } else {
-          console.warn("⚠️  [capturePhoto] No image URI to navigate with");
+          logger.warn("⚠️  [capturePhoto] No image URI to navigate with");
         }
       } else {
         // On native platforms, navigate to built-in CameraScreen
-        console.log("🔵 [capturePhoto] Navigating to Camera screen");
+        logger.info("🔵 [capturePhoto] Navigating to Camera screen");
         navigation.navigate("Camera", {
           mode: "full",
         });
       }
     } catch (error) {
-      console.error("❌ [capturePhoto] Camera error:", error);
+      logger.error("❌ [capturePhoto] Camera error:", error);
       Alert.alert("Error", `Failed to capture photo: ${String(error)}`);
     } finally {
       setPostingStory(false);
@@ -255,18 +258,18 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
   const selectPhoto = async () => {
     try {
-      console.log("🔵 [selectPhoto] Starting photo selection");
+      logger.info("🔵 [selectPhoto] Starting photo selection");
       let imageUri: string | null = null;
 
       if (Platform.OS === "web") {
-        console.log("🔵 [selectPhoto] Using web file picker");
+        logger.info("🔵 [selectPhoto] Using web file picker");
         imageUri = await pickImageFromWeb();
-        console.log(
+        logger.info(
           "✅ [selectPhoto] Got image URI:",
           imageUri ? "success" : "null",
         );
       } else {
-        console.log("🔵 [selectPhoto] Using expo image library");
+        logger.info("🔵 [selectPhoto] Using expo image library");
         const result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ["images"],
           allowsEditing: false,
@@ -276,20 +279,20 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
         if (!result.canceled && result.assets.length > 0) {
           imageUri = result.assets[0].uri;
-          console.log("✅ [selectPhoto] Got image from expo");
+          logger.info("✅ [selectPhoto] Got image from expo");
         } else {
-          console.log("ℹ️  [selectPhoto] User cancelled selection");
+          logger.info("ℹ️  [selectPhoto] User cancelled selection");
         }
       }
 
       if (imageUri) {
-        console.log("🔵 [selectPhoto] Navigating to viewer");
+        logger.info("🔵 [selectPhoto] Navigating to viewer");
         navigateToStoryViewer(imageUri);
       } else {
-        console.warn("⚠️  [selectPhoto] No image URI to navigate with");
+        logger.warn("⚠️  [selectPhoto] No image URI to navigate with");
       }
     } catch (error) {
-      console.error("❌ [selectPhoto] Photo selection error:", error);
+      logger.error("❌ [selectPhoto] Photo selection error:", error);
       Alert.alert("Error", `Failed to select photo: ${String(error)}`);
     } finally {
       setPostingStory(false);

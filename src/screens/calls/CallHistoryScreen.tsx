@@ -26,7 +26,7 @@ import {
   CallHistoryStats,
   CallType,
 } from "@/types/call";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
 import {
   areNativeCallsAvailable,
@@ -34,6 +34,9 @@ import {
   getCallService,
 } from "@/services/calls";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/calls/CallHistoryScreen");
 // Filter options
 type FilterOption =
   | "all"
@@ -97,7 +100,7 @@ export function CallHistoryScreen() {
       setHistory(entries);
       setStats(callStats);
     } catch (error) {
-      console.error("Error loading call history:", error);
+      logger.error("Error loading call history:", error);
       Alert.alert("Error", "Failed to load call history");
     } finally {
       setIsLoading(false);
@@ -281,7 +284,7 @@ export function CallHistoryScreen() {
             onPress={() => setActiveFilter(item.key)}
           >
             <Ionicons
-              name={item.icon as any}
+              name={item.icon as keyof typeof Ionicons.glyphMap}
               size={16}
               color={activeFilter === item.key ? "#fff" : colors.textSecondary}
             />

@@ -19,7 +19,7 @@ import {
   View,
 } from "react-native";
 import { Button, Text } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

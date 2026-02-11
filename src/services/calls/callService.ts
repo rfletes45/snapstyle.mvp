@@ -28,8 +28,8 @@ import {
   CallStatus,
   MAX_GROUP_PARTICIPANTS,
   StartCallParams,
-} from "../../types/call";
-import { getAuthInstance, getFirestoreInstance } from "../firebase";
+} from "@/types/call";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 
 // Lazy getters to avoid Firebase initialization issues at module load time
 const getDb = () => getFirestoreInstance();
@@ -39,13 +39,16 @@ const getAuth = () => getAuthInstance();
 import { callKeepService } from "./callKeepService";
 import { webRTCService } from "./webRTCService";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/callService");
 // Simple logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallService] ${msg}`, data ?? "");
+  logger.info(`[CallService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallService] ${msg}`, error ?? "");
+  logger.error(`[CallService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallService] ${msg}`, data ?? "");
 
 const LOG_TAG = "CallService";
 
@@ -108,7 +111,7 @@ class CallService {
       },
       onHoldCall: (callId: string, hold: boolean) => {
         logInfo("CallKeep hold call", { callId, hold });
-        // TODO: Implement hold functionality
+        // NOTE: Implement hold functionality
       },
     });
   }

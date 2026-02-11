@@ -52,8 +52,11 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/groups/GroupChatInfoScreen");
 export default function GroupChatInfoScreen({ route, navigation }: any) {
   const { groupId } = route.params;
   const theme = useTheme();
@@ -105,7 +108,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       }
 
       setUploadingPhoto(true);
-      console.log("🔵 [GroupChatInfo] Starting photo upload...");
+      logger.info("🔵 [GroupChatInfo] Starting photo upload...");
 
       const imageUri = result.assets[0].uri;
 
@@ -113,21 +116,21 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       const { uploadGroupImage } = await import("@/services/storage");
 
       // Upload to storage - use "avatar" as the messageId for avatar images
-      console.log("🔵 [GroupChatInfo] Uploading image to storage...");
+      logger.info("🔵 [GroupChatInfo] Uploading image to storage...");
       const downloadUrl = await uploadGroupImage(groupId, "avatar", imageUri);
-      console.log("✅ [GroupChatInfo] Image uploaded, URL:", downloadUrl);
+      logger.info("✅ [GroupChatInfo] Image uploaded, URL:", downloadUrl);
 
       // Update group document
-      console.log("🔵 [GroupChatInfo] Updating group document...");
+      logger.info("🔵 [GroupChatInfo] Updating group document...");
       await updateGroupPhoto(groupId, uid, downloadUrl);
-      console.log("✅ [GroupChatInfo] Group document updated");
+      logger.info("✅ [GroupChatInfo] Group document updated");
 
       // Update local state
       setGroup((prev) => (prev ? { ...prev, avatarUrl: downloadUrl } : prev));
       setSnackbar({ visible: true, message: "Group photo updated!" });
-      console.log("✅ [GroupChatInfo] Photo change complete");
+      logger.info("✅ [GroupChatInfo] Photo change complete");
     } catch (err: any) {
-      console.error("❌ [GroupChatInfo] Failed to update group photo:", err);
+      logger.error("❌ [GroupChatInfo] Failed to update group photo:", err);
       Alert.alert("Error", err.message || "Failed to update group photo");
     } finally {
       setUploadingPhoto(false);
@@ -162,7 +165,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         setUserRole(role);
         setNewGroupName(groupData.name);
       } catch (err: any) {
-        console.error("Error loading group:", err);
+        logger.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
       } finally {
         setLoading(false);
@@ -257,7 +260,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
       setInvitableFriends(invitable);
     } catch (error) {
-      console.error("[GroupChatInfo] Error loading friends:", error);
+      logger.error("[GroupChatInfo] Error loading friends:", error);
     } finally {
       setInviteLoading(false);
     }
@@ -285,7 +288,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
   // Handle delete group (owner only)
   const handleDeleteGroup = () => {
-    console.log("🗑️ handleDeleteGroup called", {
+    logger.info("🗑️ handleDeleteGroup called", {
       groupId,
       uid,
       userRole,
@@ -295,16 +298,16 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   };
 
   const confirmDeleteGroup = async () => {
-    console.log("🗑️ Delete confirmed by user");
+    logger.info("🗑️ Delete confirmed by user");
     setDeleteConfirmVisible(false);
     try {
       setActionLoading(true);
-      console.log("🗑️ Calling deleteGroup service...");
+      logger.info("🗑️ Calling deleteGroup service...");
       await deleteGroup(groupId, uid!);
-      console.log("🗑️ Delete successful, navigating to ChatList");
+      logger.info("🗑️ Delete successful, navigating to ChatList");
       navigation.navigate("ChatList");
     } catch (error: any) {
-      console.error("🗑️ Delete failed:", error);
+      logger.error("🗑️ Delete failed:", error);
       setSnackbar({
         visible: true,
         message: error.message || "Failed to delete group",
@@ -655,8 +658,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => {
-                console.log("🗑️ Delete button pressed!");
-                console.log("🔍 Actions section state", {
+                logger.info("🗑️ Delete button pressed!");
+                logger.info("🔍 Actions section state", {
                   userRole,
                   showDelete: userRole === "owner",
                   showLeave: userRole !== "owner",

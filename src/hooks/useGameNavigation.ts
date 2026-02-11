@@ -23,6 +23,9 @@
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useMemo } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGameNavigation");
 // =============================================================================
 // Types
 // =============================================================================
@@ -196,7 +199,7 @@ export function useGameNavigation(
    */
   const exitGame = useCallback(() => {
     // Debug logging
-    console.log("[useGameNavigation] exitGame called:", {
+    logger.info("[useGameNavigation] exitGame called:", {
       entryPoint,
       hasChat,
       chatConversationType,
@@ -216,7 +219,7 @@ export function useGameNavigation(
       // Navigate to the associated chat within the Inbox tab
       if (chatConversationType === "dm") {
         if (!opponentId) {
-          console.warn(
+          logger.warn(
             "[useGameNavigation] DM navigation but no opponentId found!",
             { chatConversationId, currentUserId },
           );
@@ -286,7 +289,7 @@ export function useGameNavigation(
    */
   const goToChat = useCallback(() => {
     if (!hasChat) {
-      console.warn("[useGameNavigation] No chat associated with this game");
+      logger.warn("[useGameNavigation] No chat associated with this game");
       return;
     }
 

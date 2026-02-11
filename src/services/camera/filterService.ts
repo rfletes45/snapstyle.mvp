@@ -7,8 +7,11 @@ import {
   AppliedFilter,
   FilterCategory,
   FilterConfig,
-} from "../../types/camera";
+} from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/filterService");
 /**
  * Complete filter library (25+ filters)
  */
@@ -366,14 +369,14 @@ export async function applyFilterToImage(
   intensity: number = 1.0,
 ): Promise<string> {
   try {
-    console.log(`[Filter Service] Applying filter ${filter.id} to image`);
+    logger.info(`[Filter Service] Applying filter ${filter.id} to image`);
 
     // Delegate to native image filtering service
     const { applyFilterToImage: nativeApplyFilter } =
       await import("./nativeImageFiltering");
     return nativeApplyFilter(imageUri, filter, intensity);
   } catch (error) {
-    console.error("[Filter Service] Failed to apply filter to image:", error);
+    logger.error("[Filter Service] Failed to apply filter to image:", error);
     throw error;
   }
 }
@@ -388,14 +391,14 @@ export async function applyFilterToVideo(
   intensity: number = 1.0,
 ): Promise<string> {
   try {
-    console.log(`[Filter Service] Applying filter ${filter.id} to video`);
+    logger.info(`[Filter Service] Applying filter ${filter.id} to video`);
 
     // This would require FFmpeg with complex filter graph
     // e.g., brightness=0.1:contrast=1.1
 
     return videoUri;
   } catch (error) {
-    console.error("[Filter Service] Failed to apply filter to video:", error);
+    logger.error("[Filter Service] Failed to apply filter to video:", error);
     throw error;
   }
 }
@@ -487,10 +490,10 @@ export async function saveFilterPreset(
   try {
     // Would save to Firestore under /Users/{userId}/SavedFilters/{filterId}
     const presetId = `preset_${Date.now()}`;
-    console.log(`[Filter Service] Saved filter preset: ${presetId}`);
+    logger.info(`[Filter Service] Saved filter preset: ${presetId}`);
     return presetId;
   } catch (error) {
-    console.error("[Filter Service] Failed to save filter preset:", error);
+    logger.error("[Filter Service] Failed to save filter preset:", error);
     throw error;
   }
 }
@@ -505,7 +508,7 @@ export async function loadFilterPresets(
     // Would load from Firestore
     return [];
   } catch (error) {
-    console.error("[Filter Service] Failed to load filter presets:", error);
+    logger.error("[Filter Service] Failed to load filter presets:", error);
     return [];
   }
 }

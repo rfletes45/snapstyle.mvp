@@ -27,7 +27,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

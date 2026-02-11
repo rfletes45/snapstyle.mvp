@@ -50,8 +50,11 @@ import {
   TextInput,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/admin/AdminReportsQueueScreen");
 // Ban duration options for the modal
 const BAN_DURATION_OPTIONS = [
   { label: "1 Day", value: 24 * 60 * 60 * 1000 },
@@ -133,7 +136,7 @@ export default function AdminReportsQueueScreen({ navigation }: any) {
       setSelectedUser(profile);
       setSelectedUserStrikes(strikes);
     } catch (err: any) {
-      console.error("Error loading user info:", err);
+      logger.error("Error loading user info:", err);
     } finally {
       setUserInfoLoading(false);
     }

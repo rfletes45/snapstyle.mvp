@@ -12,8 +12,11 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { ExtendedGameType } from "../types/models";
+import { ExtendedGameType } from "@/types/models";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("utils/gameState");
 // =============================================================================
 // Types
 // =============================================================================
@@ -256,7 +259,7 @@ export async function getHighScores(
     const allScores: Record<string, HighScoreEntry[]> = JSON.parse(stored);
     return allScores[gameType] ?? [];
   } catch {
-    console.error("Failed to get high scores");
+    logger.error("Failed to get high scores");
     return [];
   }
 }
@@ -315,7 +318,7 @@ export async function saveHighScore(
       rank,
     };
   } catch {
-    console.error("Failed to save high score");
+    logger.error("Failed to save high score");
     return { isHighScore: false, rank: -1 };
   }
 }
@@ -335,7 +338,7 @@ export async function clearHighScores(
 
     await AsyncStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(allScores));
   } catch {
-    console.error("Failed to clear high scores");
+    logger.error("Failed to clear high scores");
   }
 }
 
@@ -346,7 +349,7 @@ export async function clearAllHighScores(): Promise<void> {
   try {
     await AsyncStorage.removeItem(HIGH_SCORES_KEY);
   } catch {
-    console.error("Failed to clear all high scores");
+    logger.error("Failed to clear all high scores");
   }
 }
 

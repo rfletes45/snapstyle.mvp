@@ -32,7 +32,7 @@ import {
   GAME_SPACING,
   GAME_TYPOGRAPHY,
   getTurnStatusColors,
-} from "../../../constants/gamesTheme";
+} from "@/constants/gamesTheme";
 
 // =============================================================================
 // Types

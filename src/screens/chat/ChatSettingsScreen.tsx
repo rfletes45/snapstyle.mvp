@@ -46,6 +46,9 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/chat/ChatSettingsScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -144,7 +147,7 @@ export default function ChatSettingsScreen({
           });
         }
       } catch (error) {
-        console.error("[ChatSettingsScreen] Failed to load settings:", error);
+        logger.error("[ChatSettingsScreen] Failed to load settings:", error);
         Alert.alert("Error", "Failed to load settings");
       } finally {
         setLoading(false);
@@ -189,7 +192,7 @@ export default function ChatSettingsScreen({
       );
       setMuteModalVisible(false);
     } catch (error) {
-      console.error("[ChatSettingsScreen] Failed to update mute:", error);
+      logger.error("[ChatSettingsScreen] Failed to update mute:", error);
       Alert.alert("Error", "Failed to update mute settings");
     } finally {
       setSaving(false);
@@ -212,7 +215,7 @@ export default function ChatSettingsScreen({
 
       setSettings((prev) => (prev ? { ...prev, archived: newValue } : null));
     } catch (error) {
-      console.error("[ChatSettingsScreen] Failed to update archive:", error);
+      logger.error("[ChatSettingsScreen] Failed to update archive:", error);
       Alert.alert("Error", "Failed to update archive setting");
     } finally {
       setSaving(false);
@@ -237,7 +240,7 @@ export default function ChatSettingsScreen({
         prev ? { ...prev, sendReadReceipts: newValue } : null,
       );
     } catch (error) {
-      console.error(
+      logger.error(
         "[ChatSettingsScreen] Failed to update read receipts:",
         error,
       );
@@ -269,7 +272,7 @@ export default function ChatSettingsScreen({
 
         setSettings((prev) => (prev ? { ...prev, notifyLevel: level } : null));
       } catch (error) {
-        console.error(
+        logger.error(
           "[ChatSettingsScreen] Failed to update notify level:",
           error,
         );

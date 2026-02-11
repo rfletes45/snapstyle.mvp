@@ -15,9 +15,12 @@ import type { BanReason, UserWarning } from "@/types/models";
 import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Button, Divider, Modal, Portal, Text } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../constants/theme";
-import { useColors } from "../store/ThemeContext";
+import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/WarningModal");
 export default function WarningModal() {
   const { currentFirebaseUser } = useAuth();
   const colors = useColors();
@@ -38,7 +41,7 @@ export default function WarningModal() {
         setWarnings(unreadWarnings);
         setCurrentIndex(0);
       } catch (error) {
-        console.error("[WarningModal] Error loading warnings:", error);
+        logger.error("[WarningModal] Error loading warnings:", error);
       }
     };
 
@@ -64,7 +67,7 @@ export default function WarningModal() {
         setCurrentIndex(0);
       }
     } catch (error) {
-      console.error("[WarningModal] Error acknowledging warning:", error);
+      logger.error("[WarningModal] Error acknowledging warning:", error);
     } finally {
       setAcknowledging(false);
     }

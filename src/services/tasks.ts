@@ -31,6 +31,9 @@ import {
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getAppInstance, getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/tasks");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -97,7 +100,7 @@ export async function getActiveTasks(cadence?: TaskCadence): Promise<Task[]> {
         return true;
       });
   } catch (error) {
-    console.error("[tasks] Error fetching active tasks:", error);
+    logger.error("[tasks] Error fetching active tasks:", error);
     throw error;
   }
 }
@@ -133,7 +136,7 @@ export async function getTask(taskId: string): Promise<Task | null> {
       availableTo: data.availableTo?.toMillis?.() || data.availableTo,
     };
   } catch (error) {
-    console.error("[tasks] Error fetching task:", error);
+    logger.error("[tasks] Error fetching task:", error);
     throw error;
   }
 }
@@ -175,7 +178,7 @@ export async function getTaskProgress(
 
     return progressMap;
   } catch (error) {
-    console.error("[tasks] Error fetching task progress:", error);
+    logger.error("[tasks] Error fetching task progress:", error);
     throw error;
   }
 }
@@ -222,7 +225,7 @@ export async function getTaskProgressById(
       claimedAt: data.claimedAt?.toMillis?.() || data.claimedAt,
     };
   } catch (error) {
-    console.error("[tasks] Error fetching task progress:", error);
+    logger.error("[tasks] Error fetching task progress:", error);
     throw error;
   }
 }
@@ -262,7 +265,7 @@ export async function getTasksWithProgress(
       };
     });
   } catch (error) {
-    console.error("[tasks] Error fetching tasks with progress:", error);
+    logger.error("[tasks] Error fetching tasks with progress:", error);
     throw error;
   }
 }
@@ -413,7 +416,7 @@ export async function claimTaskReward(
 
     const currentDayKey = dayKey || getCurrentDayKey(DEFAULT_TIMEZONE);
 
-    console.log(
+    logger.info(
       "[tasks] Claiming reward for task:",
       taskId,
       "dayKey:",
@@ -423,14 +426,14 @@ export async function claimTaskReward(
     const result = await claimReward({ taskId, dayKey: currentDayKey });
 
     if (result.data.success) {
-      console.log("[tasks] Reward claimed successfully:", result.data);
+      logger.info("[tasks] Reward claimed successfully:", result.data);
     } else {
-      console.warn("[tasks] Reward claim failed:", result.data.error);
+      logger.warn("[tasks] Reward claim failed:", result.data.error);
     }
 
     return result.data;
   } catch (error: any) {
-    console.error("[tasks] Error claiming task reward:", error);
+    logger.error("[tasks] Error claiming task reward:", error);
 
     // Handle Firebase function errors
     if (error.code === "functions/already-exists") {

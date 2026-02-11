@@ -21,7 +21,7 @@ import {
   PanResponder,
   PanResponderGestureState,
 } from "react-native";
-import type { PointsShopItem } from "../types/shop";
+import type { PointsShopItem } from "@/types/shop";
 
 // =============================================================================
 // Types

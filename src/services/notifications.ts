@@ -14,8 +14,11 @@ import * as Device from "expo-device";
 import { Platform } from "react-native";
 import { doc, updateDoc } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { LightColors } from "../../constants/theme";
+import { LightColors } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/notifications");
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -33,17 +36,17 @@ Notifications.setNotificationHandler({
  */
 export async function registerForPushNotifications(): Promise<string | null> {
   try {
-    console.log("🔵 [notifications] Registering for push notifications");
+    logger.info("🔵 [notifications] Registering for push notifications");
 
     // Check if running on a physical device (required for push)
     if (!Device.isDevice) {
-      console.warn(
+      logger.warn(
         "⚠️ [notifications] Push notifications require a physical device",
       );
       // For development, return a mock token
       if (__DEV__) {
         const mockToken = `ExponentPushToken[dev-${Date.now()}]`;
-        console.log(
+        logger.info(
           "🔵 [notifications] Using development mock token:",
           mockToken,
         );
@@ -58,17 +61,17 @@ export async function registerForPushNotifications(): Promise<string | null> {
     let finalStatus = existingStatus;
 
     if (existingStatus !== "granted") {
-      console.log("🔵 [notifications] Requesting permission");
+      logger.info("🔵 [notifications] Requesting permission");
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
 
     if (finalStatus !== "granted") {
-      console.warn("⚠️ [notifications] Permission not granted");
+      logger.warn("⚠️ [notifications] Permission not granted");
       return null;
     }
 
-    console.log("✅ [notifications] Permission granted");
+    logger.info("✅ [notifications] Permission granted");
 
     // Get Expo Push Token
     const tokenResponse = await Notifications.getExpoPushTokenAsync({
@@ -76,7 +79,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     });
 
     const token = tokenResponse.data;
-    console.log("✅ [notifications] Got push token:", token);
+    logger.info("✅ [notifications] Got push token:", token);
 
     // Set up Android notification channel
     if (Platform.OS === "android") {
@@ -85,7 +88,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
     return token;
   } catch (error: any) {
-    console.error("❌ [notifications] Error registering:", error);
+    logger.error("❌ [notifications] Error registering:", error);
     return null;
   }
 }
@@ -101,7 +104,7 @@ async function setupAndroidChannel(): Promise<void> {
     lightColor: LightColors.primary,
     sound: "default",
   });
-  console.log("✅ [notifications] Android channel set up");
+  logger.info("✅ [notifications] Android channel set up");
 }
 
 /**
@@ -114,15 +117,15 @@ export async function savePushToken(
   token: string,
 ): Promise<void> {
   try {
-    console.log("🔵 [notifications] Saving push token for user:", userId);
+    logger.info("🔵 [notifications] Saving push token for user:", userId);
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
     await updateDoc(userRef, {
       expoPushToken: token,
     });
-    console.log("✅ [notifications] Push token saved");
+    logger.info("✅ [notifications] Push token saved");
   } catch (error: any) {
-    console.error("❌ [notifications] Error saving token:", error);
+    logger.error("❌ [notifications] Error saving token:", error);
     throw error;
   }
 }
@@ -133,15 +136,15 @@ export async function savePushToken(
  */
 export async function removePushToken(userId: string): Promise<void> {
   try {
-    console.log("🔵 [notifications] Removing push token for user:", userId);
+    logger.info("🔵 [notifications] Removing push token for user:", userId);
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
     await updateDoc(userRef, {
       expoPushToken: null,
     });
-    console.log("✅ [notifications] Push token removed");
+    logger.info("✅ [notifications] Push token removed");
   } catch (error: any) {
-    console.error("❌ [notifications] Error removing token:", error);
+    logger.error("❌ [notifications] Error removing token:", error);
     // Don't throw - this is cleanup
   }
 }
@@ -168,7 +171,7 @@ export async function scheduleLocalNotification(
       seconds,
     },
   });
-  console.log("✅ [notifications] Scheduled local notification:", id);
+  logger.info("✅ [notifications] Scheduled local notification:", id);
   return id;
 }
 
@@ -207,7 +210,7 @@ export async function getLastNotificationResponse(): Promise<Notifications.Notif
  */
 export async function cancelAllNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
-  console.log("✅ [notifications] All notifications cancelled");
+  logger.info("✅ [notifications] All notifications cancelled");
 }
 
 /**

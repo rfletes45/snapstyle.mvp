@@ -12,8 +12,11 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { Latte } from "../../../constants/theme";
+import { Latte } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/auth/ProfileSetupScreen");
 // Avatar colors from Catppuccin palette (vibrant options)
 const AVATAR_COLORS = [
   Latte.lavender,
@@ -53,7 +56,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
       const available = await checkUsernameAvailable(text);
       setUsernameAvailable(available);
     } catch (err) {
-      console.error("Error checking username:", err);
+      logger.error("Error checking username:", err);
       setUsernameAvailable(false);
     } finally {
       setUsernameCheckLoading(false);
@@ -122,7 +125,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
       // The app will detect that the user has a profile and navigate to AppTabs
       setLoading(false);
     } catch (err: any) {
-      console.error("Profile setup error:", err);
+      logger.error("Profile setup error:", err);
       setError(err.message || "Failed to set up profile. Please try again.");
       setLoading(false);
     }

@@ -45,8 +45,11 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/friends/FriendsScreen");
 interface RequestWithUsername extends FriendRequest {
   otherUserUsername?: string;
   otherUserProfile?: {
@@ -163,7 +166,7 @@ export default function FriendsScreen({ navigation }: any) {
       setFriends(friendsWithProfiles);
       setPendingRequests(requestsWithProfiles);
     } catch (err) {
-      console.error("Error loading connections data:", err);
+      logger.error("Error loading connections data:", err);
       setError("Couldn't load connections");
     } finally {
       setLoading(false);
@@ -188,7 +191,7 @@ export default function FriendsScreen({ navigation }: any) {
     const unsubscribeFriends = onSnapshot(
       friendsQuery,
       async (snapshot) => {
-        console.log("🔵 [FriendsScreen] Real-time friends update received");
+        logger.info("🔵 [FriendsScreen] Real-time friends update received");
 
         // Get blocked users list
         const blockedUsersRef = collection(db, "Users", uid, "blockedUsers");
@@ -240,7 +243,7 @@ export default function FriendsScreen({ navigation }: any) {
         setFriends(friendsWithProfiles);
       },
       (error) => {
-        console.error("Error in friends listener:", error);
+        logger.error("Error in friends listener:", error);
       },
     );
 
@@ -264,7 +267,7 @@ export default function FriendsScreen({ navigation }: any) {
     const unsubscribeRequestsTo = onSnapshot(
       toQuery,
       async () => {
-        console.log("🔵 [FriendsScreen] Real-time requests update received");
+        logger.info("🔵 [FriendsScreen] Real-time requests update received");
         // Reload all requests when any change happens
         const requestsData = await getPendingRequests(uid);
 
@@ -291,14 +294,14 @@ export default function FriendsScreen({ navigation }: any) {
         setPendingRequests(requestsWithProfiles);
       },
       (error) => {
-        console.error("Error in requests (to) listener:", error);
+        logger.error("Error in requests (to) listener:", error);
       },
     );
 
     const unsubscribeRequestsFrom = onSnapshot(
       fromQuery,
       async () => {
-        console.log("🔵 [FriendsScreen] Real-time requests update received");
+        logger.info("🔵 [FriendsScreen] Real-time requests update received");
         // Reload all requests when any change happens
         const requestsData = await getPendingRequests(uid);
 
@@ -325,7 +328,7 @@ export default function FriendsScreen({ navigation }: any) {
         setPendingRequests(requestsWithProfiles);
       },
       (error) => {
-        console.error("Error in requests (from) listener:", error);
+        logger.error("Error in requests (from) listener:", error);
       },
     );
 

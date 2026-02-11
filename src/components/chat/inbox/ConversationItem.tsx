@@ -25,7 +25,7 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import { Badge, Text } from "react-native-paper";
-import { Spacing } from "../../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Text Highlighting Helper

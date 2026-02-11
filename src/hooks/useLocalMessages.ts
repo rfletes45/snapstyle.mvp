@@ -21,8 +21,11 @@ import {
   subscribeToConversation,
 } from "@/services/sync/syncEngine";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { USE_LOCAL_STORAGE } from "../../constants/featureFlags";
+import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useLocalMessages");
 // =============================================================================
 // Types
 // =============================================================================
@@ -150,7 +153,7 @@ export function useLocalMessages(
         hasMore: cached.length >= initialLimit,
       };
     } catch (err) {
-      console.warn("[useLocalMessages] Initial sync read failed:", err);
+      logger.warn("[useLocalMessages] Initial sync read failed:", err);
       return { messages: [], hasMore: true };
     }
   }, [conversationId, scope, initialLimit]);
@@ -199,7 +202,7 @@ export function useLocalMessages(
       setPendingCount(pending);
       setFailedCount(failed);
     } catch (err: any) {
-      console.error("[useLocalMessages] Failed to load messages:", err);
+      logger.error("[useLocalMessages] Failed to load messages:", err);
       setError(err.message || "Failed to load messages");
     } finally {
       setIsLoading(false);
@@ -227,14 +230,14 @@ export function useLocalMessages(
       hasSyncedRef.current = true;
       fullSyncConversation(scope, conversationId, initialLimit)
         .then((count) => {
-          console.log(
+          logger.info(
             `[useLocalMessages] Synced ${count} messages from server`,
           );
           // Reload after sync completes
           loadMessages();
         })
         .catch((err) => {
-          console.error("[useLocalMessages] Initial sync failed:", err);
+          logger.error("[useLocalMessages] Initial sync failed:", err);
         });
     }
 
@@ -305,7 +308,7 @@ export function usePendingMessages(): {
       const pending = getMessagesByStatus("pending", 100);
       setPendingMessages(pending);
     } catch (err) {
-      console.error("[usePendingMessages] Failed to load:", err);
+      logger.error("[usePendingMessages] Failed to load:", err);
     }
   }, []);
 
@@ -342,7 +345,7 @@ export function useFailedMessages(): {
       const failed = getMessagesByStatus("failed", 100);
       setFailedMessages(failed);
     } catch (err) {
-      console.error("[useFailedMessages] Failed to load:", err);
+      logger.error("[useFailedMessages] Failed to load:", err);
     }
   }, []);
 

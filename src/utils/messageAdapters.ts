@@ -27,14 +27,14 @@ export function messageV2ToWithProfile(
     type = "voice";
   } else if (msg.kind === "media") {
     type = "image";
-  } else if (msg.text?.startsWith('{"game":')) {
+  } else if (msg.kind === "scorecard" || msg.text?.startsWith('{"game')) {
     type = "scorecard";
   }
 
   // Map V2 status to legacy status
   let status: "sending" | "sent" | "delivered" | "failed" | undefined;
-  const msgStatus = (msg as any).status;
-  if (msgStatus === "pending") {
+  const msgStatus = msg.status;
+  if (msgStatus === "sending") {
     status = "sending";
   } else if (msgStatus === "sent") {
     status = "sent";
@@ -61,7 +61,7 @@ export function messageV2ToWithProfile(
     ...(type === "voice" && msg.attachments?.[0]
       ? {
           voiceUrl: msg.attachments[0].url,
-          voiceDurationMs: (msg.attachments[0] as any).durationMs ?? 0,
+          voiceDurationMs: msg.attachments[0].durationMs ?? 0,
         }
       : {}),
   };

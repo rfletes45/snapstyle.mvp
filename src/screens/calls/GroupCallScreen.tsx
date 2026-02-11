@@ -18,22 +18,22 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MediaStream } from "react-native-webrtc";
-import { CallControls } from "../../components/calls/CallControls";
+import { CallControls } from "@/components/calls/CallControls";
 import {
   CallQualityIndicator,
   NetworkQuality,
-} from "../../components/calls/CallQualityIndicator";
-import { ParticipantListOverlay } from "../../components/calls/ParticipantListOverlay";
-import { SpeakerView } from "../../components/calls/SpeakerView";
-import { VideoGrid } from "../../components/calls/VideoGrid";
-import { useCallContext } from "../../contexts/CallContext";
-import { useGroupCallParticipants } from "../../hooks/useGroupCallParticipants";
-import { groupCallService } from "../../services/calls/groupCallService";
-import { webRTCService } from "../../services/calls/webRTCService";
-import { getAuthInstance } from "../../services/firebase";
-import { useColors } from "../../store/ThemeContext";
-import { GroupCallLayout, GroupCallParticipant } from "../../types/call";
-import { formatDurationSecondsPadded as formatDuration } from "../../utils/time";
+} from "@/components/calls/CallQualityIndicator";
+import { ParticipantListOverlay } from "@/components/calls/ParticipantListOverlay";
+import { SpeakerView } from "@/components/calls/SpeakerView";
+import { VideoGrid } from "@/components/calls/VideoGrid";
+import { useCallContext } from "@/contexts/CallContext";
+import { useGroupCallParticipants } from "@/hooks/useGroupCallParticipants";
+import { groupCallService } from "@/services/calls/groupCallService";
+import { webRTCService } from "@/services/calls/webRTCService";
+import { getAuthInstance } from "@/services/firebase";
+import { useColors } from "@/store/ThemeContext";
+import { GroupCallLayout, GroupCallParticipant } from "@/types/call";
+import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const auth = getAuthInstance();
@@ -322,7 +322,7 @@ export function GroupCallScreen(): JSX.Element {
   }, [pinParticipant]);
 
   const handleInviteMore = useCallback(() => {
-    // TODO: Show invite dialog
+    // NOTE: Show invite dialog
     Alert.alert("Invite", "Invite functionality coming soon");
   }, []);
 

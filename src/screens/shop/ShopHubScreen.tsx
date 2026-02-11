@@ -27,6 +27,9 @@ import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { Wallet } from "@/types/models";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/shop/ShopHubScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -81,7 +84,7 @@ export default function ShopHubScreen() {
         setWalletLoading(false);
       },
       (error) => {
-        console.error("[ShopHubScreen] Wallet subscription error:", error);
+        logger.error("[ShopHubScreen] Wallet subscription error:", error);
         setWalletLoading(false);
       },
     );

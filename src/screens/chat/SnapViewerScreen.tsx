@@ -21,6 +21,9 @@ import {
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/chat/SnapViewerScreen");
 interface SnapViewerScreenProps {
   route: any;
   navigation: any;
@@ -40,7 +43,7 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   useEffect(() => {
     const loadSnap = async () => {
       try {
-        console.log("🔵 [GameViewerScreen] Loading snap:", {
+        logger.info("🔵 [GameViewerScreen] Loading snap:", {
           storagePath,
           messageId,
           chatId,
@@ -49,10 +52,10 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
         setError(null);
 
         const uri = await downloadSnapImage(storagePath);
-        console.log("✅ [GameViewerScreen] Snap loaded successfully");
+        logger.info("✅ [GameViewerScreen] Snap loaded successfully");
         setImageUri(uri);
       } catch (err: any) {
-        console.error("❌ [GameViewerScreen] Failed to load snap:", err);
+        logger.error("❌ [GameViewerScreen] Failed to load snap:", err);
         setError(err.message || "Failed to load picture");
       } finally {
         setLoading(false);
@@ -65,27 +68,27 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   // Handle snap dismissal (view-once: mark opened + delete message + delete storage file)
   const handleDismiss = async () => {
     if (!currentFirebaseUser) {
-      console.error("❌ [GameViewerScreen] No user logged in");
+      logger.error("❌ [GameViewerScreen] No user logged in");
       return;
     }
 
     try {
-      console.log(
+      logger.info(
         "🔵 [GameViewerScreen] Dismissing snap and marking as opened",
       );
 
       // Mark snap as opened in Firestore (records metadata)
       await markSnapOpened(chatId, messageId, currentFirebaseUser.uid);
-      console.log("✅ [GameViewerScreen] Snap marked as opened");
+      logger.info("✅ [GameViewerScreen] Snap marked as opened");
 
       // Delete snap from Storage
       await deleteSnapImage(storagePath);
-      console.log("✅ [GameViewerScreen] Snap deleted from storage");
+      logger.info("✅ [GameViewerScreen] Snap deleted from storage");
 
       // Navigate back to chat
       navigation.goBack();
     } catch (err: any) {
-      console.error("❌ [GameViewerScreen] Error marking snap opened:", err);
+      logger.error("❌ [GameViewerScreen] Error marking snap opened:", err);
       Alert.alert(
         "Error",
         "Failed to save picture view. The picture may still be visible to the sender.",

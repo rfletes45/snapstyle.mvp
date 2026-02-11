@@ -37,12 +37,15 @@ import {
   GameHistoryStats,
   GameTypeStats,
   HeadToHeadRecord,
-} from "../types/gameHistory";
-import { SinglePlayerGameType } from "../types/games";
-import { SinglePlayerGameSession } from "../types/singlePlayerGames";
-import { TurnBasedGameType } from "../types/turnBased";
+} from "@/types/gameHistory";
+import { SinglePlayerGameType } from "@/types/games";
+import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
+import { TurnBasedGameType } from "@/types/turnBased";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/gameHistory");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -55,7 +58,6 @@ const SINGLE_PLAYER_FETCH_LIMIT = 50; // Reasonable limit for single-player sess
 
 // Single-player game types for type checking
 const SINGLE_PLAYER_GAME_TYPES: SinglePlayerGameType[] = [
-  "flappy_bird",
   "bounce_blitz",
   "play_2048",
   "snake_master",
@@ -137,7 +139,6 @@ function determineSinglePlayerWin(session: SinglePlayerGameSession): boolean {
       // Memory: always a "win" if completed (matched all pairs)
       return "pairsMatched" in stats && stats.pairsMatched > 0;
 
-    case "flappy_bird":
     case "bounce_blitz":
     case "play_2048":
     case "snake_master":
@@ -214,7 +215,7 @@ async function getSinglePlayerSessions(
     // Return only up to limitCount records after filtering
     return records.slice(0, limitCount);
   } catch (error) {
-    console.error("[gameHistory] getSinglePlayerSessions failed:", error);
+    logger.error("[gameHistory] getSinglePlayerSessions failed:", error);
     return [];
   }
 }
@@ -359,7 +360,7 @@ export async function getGameHistory(
         multiplayerRecords.push(record);
       });
     } catch (error) {
-      console.error("[gameHistory] Multiplayer query failed:", error);
+      logger.error("[gameHistory] Multiplayer query failed:", error);
     }
   }
 
@@ -384,7 +385,7 @@ export async function getGameHistory(
         });
       }
     } catch (error) {
-      console.error("[gameHistory] Single-player query failed:", error);
+      logger.error("[gameHistory] Single-player query failed:", error);
     }
   }
 
@@ -437,7 +438,7 @@ async function getGameHistoryById(
     const data = snapshot.data() as Omit<GameHistoryRecord, "id">;
     return { ...data, id: snapshot.id };
   } catch (error) {
-    console.error("[gameHistory] getGameHistoryById failed:", error);
+    logger.error("[gameHistory] getGameHistoryById failed:", error);
     return null;
   }
 }

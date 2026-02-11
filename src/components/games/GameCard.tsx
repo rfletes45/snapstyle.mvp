@@ -41,7 +41,7 @@ import {
   GAME_SPACING,
   GAME_TYPOGRAPHY,
   getCategoryColor,
-} from "../../../constants/gamesTheme";
+} from "@/constants/gamesTheme";
 
 // =============================================================================
 // Types

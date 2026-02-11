@@ -15,10 +15,22 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Canvas,
+  LinearGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
+import React, { useEffect, useState } from "react";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import {
   Alert,
-  Animated,
   Dimensions,
   ScrollView,
   StyleSheet,
@@ -27,20 +39,23 @@ import {
 } from "react-native";
 import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Canvas,
-  LinearGradient,
-  RoundedRect,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
-import SpectatorBanner from "@/components/games/SpectatorBanner";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import {
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+} from "@/components/games/TurnBasedOverlay";
+import { useCardGame } from "@/hooks/useCardGame";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { useSpectatorMode } from "@/hooks/useSpectatorMode";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   calculateHandScore,
@@ -62,12 +77,18 @@ import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import {
   Card,
+  CardRank,
   CardSuit,
   CrazyEightsGameState,
   CrazyEightsMatch,
   CrazyEightsMove,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+const logger = createLogger("screens/games/CrazyEightsGameScreen");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -95,13 +116,12 @@ interface CrazyEightsGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
-      /** Whether user is spectating (watching only) */
       spectatorMode?: boolean;
     };
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "waiting";
+type GameMode = "menu" | "local" | "online" | "colyseus" | "waiting";
 
 // Extended state to track hands (not stored in Firestore gameState for privacy)
 interface LocalGameState {
@@ -130,23 +150,22 @@ function CardComponent({
   faceDown = false,
   style,
 }: CardComponentProps) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   useEffect(() => {
-    if (isSelected) {
-      Animated.spring(scaleAnim, {
-        toValue: 1.1,
-        useNativeDriver: true,
-        friction: 5,
-      }).start();
-    } else {
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 5,
-      }).start();
-    }
-  }, [isSelected, scaleAnim]);
+    scale.value = withSpring(isSelected ? 1.1 : 1, {
+      damping: 12,
+      stiffness: 180,
+    });
+
+    return () => {
+      cancelAnimation(scale);
+    };
+  }, [isSelected, scale]);
 
   if (faceDown) {
     return (
@@ -207,7 +226,7 @@ function CardComponent({
           { backgroundColor: "transparent" },
           !isPlayable && styles.cardUnplayable,
           isSelected && styles.cardSelected,
-          { transform: [{ scale: scaleAnim }] },
+          animatedStyle,
           style,
         ]}
       >
@@ -407,14 +426,46 @@ function HandComponent({
 // Main Component
 // =============================================================================
 
-export default function CrazyEightsGameScreen({
+function CrazyEightsGameScreen({
   navigation,
   route,
 }: CrazyEightsGameScreenProps) {
+  useGameBackHandler({ gameType: "crazy_eights", isGameOver: false });
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
   const haptics = useGameHaptics();
+
+  const isSpectator = route.params?.spectatorMode === true;
+
+  // Colyseus multiplayer hook
+  const mp = useCardGame("crazy_eights_game");
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+
+  // Resign confirmation dialog state (for Colyseus mode)
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+
+  // Derive Colyseus hand mapped to the screen's Card type
+  const colyseusHand: Card[] = mp.hand.map((c, i) => ({
+    suit: c.suit as CardSuit,
+    rank: c.rank as CardRank,
+    id: `colyseus-${c.suit}-${c.rank}-${i}`,
+  }));
+
+  // Derive Colyseus top card mapped to Card type
+  const colyseusTopCard: Card | null = mp.topCard
+    ? {
+        suit: mp.topCard.suit as CardSuit,
+        rank: mp.topCard.rank as CardRank,
+        id: "colyseus-top",
+      }
+    : null;
 
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<CrazyEightsMatch | null>(null);
@@ -423,20 +474,6 @@ export default function CrazyEightsGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-
-  // Spectator mode hook
-  const {
-    isSpectator,
-    spectatorCount,
-    leaveSpectatorMode,
-    loading: spectatorLoading,
-  } = useSpectatorMode({
-    matchId,
-    inviteId: route.params?.inviteId,
-    spectatorMode: route.params?.spectatorMode,
-    userId: currentFirebaseUser?.uid,
-    userName: currentFirebaseUser?.displayName || "Spectator",
-  });
 
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
@@ -482,12 +519,6 @@ export default function CrazyEightsGameScreen({
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [gameResult, setGameResult] = useState<GameResult>("draw");
 
-  // Handle spectator leave
-  const handleLeaveSpectator = useCallback(async () => {
-    await leaveSpectatorMode();
-    navigation.goBack();
-  }, [leaveSpectatorMode, navigation]);
-
   // ==========================================================================
   // Online Game Subscription
   // ==========================================================================
@@ -495,31 +526,30 @@ export default function CrazyEightsGameScreen({
   useEffect(() => {
     if (!matchId) return;
 
-    console.log("[CrazyEights] Setting up subscription for match:", matchId);
+    logger.info("[CrazyEights] Setting up subscription for match:", matchId);
 
     const unsubscribe = subscribeToMatch(matchId, (updatedMatch) => {
       if (!updatedMatch) {
-        console.log("[CrazyEights] No match data received");
+        logger.info("[CrazyEights] No match data received");
         return;
       }
 
-      console.log(
+      logger.info(
         "[CrazyEights] Received match update:",
         updatedMatch.id,
         "Turn:",
-        (updatedMatch as any).currentTurn,
+        (updatedMatch as { currentTurn?: string }).currentTurn,
       );
 
       const typedMatch = updatedMatch as CrazyEightsMatch;
       setMatch(typedMatch);
 
-      // Track player names for spectators
       setPlayer1Name(typedMatch.players.player1.displayName);
       setPlayer2Name(typedMatch.players.player2.displayName);
 
       // Update game state
       const state = typedMatch.gameState as CrazyEightsGameState;
-      console.log(
+      logger.info(
         "[CrazyEights] Game state updated, currentTurn:",
         state.currentTurn,
         "hands:",
@@ -565,23 +595,33 @@ export default function CrazyEightsGameScreen({
         setShowGameOverModal(true);
 
         // Phase 7: Check achievements on game completion
-        handleGameCompletion(typedMatch as any);
+        handleGameCompletion(
+          typedMatch as unknown as Parameters<typeof handleGameCompletion>[0],
+        );
       }
     });
 
     return () => {
-      console.log("[CrazyEights] Cleaning up subscription for match:", matchId);
+      logger.info("[CrazyEights] Cleaning up subscription for match:", matchId);
       unsubscribe();
     };
   }, [matchId, currentFirebaseUser]);
 
-  // Handle incoming match from route params
+  // Handle incoming match from route params — smart switch for Colyseus vs Firestore
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "crazy_eights_game",
+    route.params?.matchId,
+  );
+
   useEffect(() => {
-    if (route.params?.matchId) {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    } else if (resolvedMode === "online" && firestoreGameId) {
       setGameMode("online");
-      setMatchId(route.params.matchId);
+      setMatchId(firestoreGameId);
     }
-  }, [route.params?.matchId]);
+  }, [resolvedMode, firestoreGameId]);
 
   // ==========================================================================
   // Local Game Logic
@@ -612,6 +652,7 @@ export default function CrazyEightsGameScreen({
   };
 
   const handleSelectCard = (card: Card) => {
+    if (isSpectator) return;
     if (selectedCard?.id === card.id) {
       // Deselect
       setSelectedCard(null);
@@ -622,8 +663,20 @@ export default function CrazyEightsGameScreen({
   };
 
   const handlePlayCard = async () => {
-    // Block interactions in spectator mode
-    if (isSpectator) {
+    if (isSpectator) return;
+
+    // Colyseus multiplayer mode
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      if (!selectedCard || !mp.isMyTurn || mp.phase !== "playing") return;
+      // Check if it's an 8 (needs suit selection)
+      if (selectedCard.rank === "8") {
+        haptics.trigger("selection");
+        setPendingSuitSelection(true);
+        return;
+      }
+      haptics.trigger("card_play");
+      mp.playCard({ suit: selectedCard.suit, rank: selectedCard.rank });
+      setSelectedCard(null);
       return;
     }
 
@@ -643,9 +696,16 @@ export default function CrazyEightsGameScreen({
   };
 
   const handleSuitSelected = async (suit: CardSuit) => {
+    if (isSpectator) return;
     haptics.trigger("card_play");
     setPendingSuitSelection(false);
     if (selectedCard) {
+      // Colyseus multiplayer mode
+      if (gameMode === "colyseus" && mp.isMultiplayer) {
+        mp.playCard({ suit: selectedCard.suit, rank: selectedCard.rank }, suit);
+        setSelectedCard(null);
+        return;
+      }
       await executePlayCard(selectedCard, suit);
     }
   };
@@ -713,7 +773,7 @@ export default function CrazyEightsGameScreen({
           );
           await endMatch(matchId, result.winner, "normal");
         } catch (error) {
-          console.error("[CrazyEights] Error submitting move:", error);
+          logger.error("[CrazyEights] Error submitting move:", error);
         }
       }
 
@@ -743,7 +803,7 @@ export default function CrazyEightsGameScreen({
     // For online mode, submit the move to Firestore
     if (gameMode === "online" && matchId) {
       try {
-        console.log(
+        logger.info(
           "[CrazyEights] Submitting move, next turn:",
           result.newState!.currentTurn,
         );
@@ -753,17 +813,22 @@ export default function CrazyEightsGameScreen({
           newStateWithData,
           result.newState!.currentTurn,
         );
-        console.log("[CrazyEights] Move submitted successfully");
+        logger.info("[CrazyEights] Move submitted successfully");
       } catch (error) {
-        console.error("[CrazyEights] Error submitting move:", error);
+        logger.error("[CrazyEights] Error submitting move:", error);
         Alert.alert("Error", "Failed to submit move. Please try again.");
       }
     }
   };
 
   const handleDrawCard = async () => {
-    // Block interactions in spectator mode
-    if (isSpectator) {
+    if (isSpectator) return;
+
+    // Colyseus multiplayer mode
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      if (!mp.isMyTurn || mp.phase !== "playing") return;
+      haptics.trigger("card_draw");
+      mp.drawCard();
       return;
     }
 
@@ -820,13 +885,23 @@ export default function CrazyEightsGameScreen({
           result.newState!.currentTurn,
         );
       } catch (error) {
-        console.error("[CrazyEights] Error submitting draw:", error);
+        logger.error("[CrazyEights] Error submitting draw:", error);
         Alert.alert("Error", "Failed to submit move. Please try again.");
       }
     }
   };
 
   const handlePass = async () => {
+    if (isSpectator) return;
+
+    // Colyseus multiplayer mode
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      if (!mp.isMyTurn || mp.phase !== "playing") return;
+      haptics.trigger("turn_change");
+      mp.pass();
+      return;
+    }
+
     if (!gameState) return;
 
     // For online mode, use game state hands; for local, use localState
@@ -887,7 +962,7 @@ export default function CrazyEightsGameScreen({
           result.newState!.currentTurn,
         );
       } catch (error) {
-        console.error("[CrazyEights] Error submitting pass:", error);
+        logger.error("[CrazyEights] Error submitting pass:", error);
         Alert.alert("Error", "Failed to submit move. Please try again.");
       }
     }
@@ -974,7 +1049,7 @@ export default function CrazyEightsGameScreen({
         `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
       );
     } catch (error) {
-      console.error("[CrazyEights] Error sending invite:", error);
+      logger.error("[CrazyEights] Error sending invite:", error);
       Alert.alert("Error", "Failed to send game invite. Please try again.");
     } finally {
       setLoading(false);
@@ -997,7 +1072,7 @@ export default function CrazyEightsGameScreen({
               await resignMatch(matchId, currentFirebaseUser.uid);
               exitGame();
             } catch (error) {
-              console.error("[CrazyEights] Error resigning:", error);
+              logger.error("[CrazyEights] Error resigning:", error);
             }
           },
         },
@@ -1025,6 +1100,9 @@ export default function CrazyEightsGameScreen({
   // ==========================================================================
 
   const isMyTurn = () => {
+    if (gameMode === "colyseus") {
+      return mp.isMyTurn && mp.phase === "playing";
+    }
     if (!gameState) return false;
     if (gameMode === "local") {
       // In local mode, it's always the current turn player's turn
@@ -1038,6 +1116,11 @@ export default function CrazyEightsGameScreen({
   };
 
   const getCurrentHand = (): Card[] => {
+    // Colyseus mode: use the hand from the hook
+    if (gameMode === "colyseus") {
+      return colyseusHand;
+    }
+
     if (!gameState) return [];
 
     // For online mode, get the current user's hand
@@ -1054,6 +1137,11 @@ export default function CrazyEightsGameScreen({
   };
 
   const getMyHand = (): Card[] => {
+    // Colyseus mode: use the hand from the hook
+    if (gameMode === "colyseus") {
+      return colyseusHand;
+    }
+
     if (!gameState) return [];
 
     // For online mode, get the current user's hand
@@ -1070,6 +1158,24 @@ export default function CrazyEightsGameScreen({
   };
 
   const getPlayableCardsInHand = (): Card[] => {
+    // Colyseus mode: build a minimal gameState for playability check
+    if (gameMode === "colyseus") {
+      const hand = colyseusHand;
+      if (!colyseusTopCard) return hand; // If no top card yet, all cards playable
+      const pseudoState: CrazyEightsGameState = {
+        discardPile: [colyseusTopCard],
+        deckSize: mp.deckSize,
+        topCard: colyseusTopCard,
+        currentSuit: (mp.currentSuit || colyseusTopCard.suit) as CardSuit,
+        currentTurn: "",
+        direction: 1,
+        drawCount: mp.drawCount,
+        mustDraw: false,
+        hasDrawnThisTurn: false,
+      };
+      return getPlayableCards(hand, pseudoState);
+    }
+
     if (!gameState) return [];
     const hand = getCurrentHand();
     // For online mode, use hands from gameState
@@ -1102,6 +1208,21 @@ export default function CrazyEightsGameScreen({
   };
 
   const getStatusText = () => {
+    // Colyseus mode status
+    if (gameMode === "colyseus") {
+      if (mp.phase === "finished") {
+        return mp.isWinner
+          ? "You Win! 🎉"
+          : mp.isDraw
+            ? "Draw!"
+            : `${mp.opponentName} Wins!`;
+      }
+      if (mp.phase === "playing") {
+        return mp.isMyTurn ? "Your turn" : `${mp.opponentName}'s turn`;
+      }
+      return "";
+    }
+
     if (winner) {
       if (gameMode === "local") {
         const playerNum = winner.replace("player", "");
@@ -1194,7 +1315,7 @@ export default function CrazyEightsGameScreen({
             </Button>
 
             <Button
-              mode="contained"
+              mode="contained-tonal"
               onPress={handleInviteFriend}
               style={styles.menuButton}
               icon="account-plus"
@@ -1251,8 +1372,27 @@ export default function CrazyEightsGameScreen({
   const currentHand = getCurrentHand();
   const playableCards = getPlayableCardsInHand();
 
+  // Effective top card — Colyseus vs local/online
+  const effectiveTopCard: Card | null =
+    gameMode === "colyseus" ? colyseusTopCard : (gameState?.topCard ?? null);
+
+  // Effective current suit
+  const effectiveCurrentSuit: string =
+    gameMode === "colyseus"
+      ? mp.currentSuit || (colyseusTopCard?.suit ?? "")
+      : (gameState?.currentSuit ?? "");
+
+  // Effective opponent name and hand size for Colyseus
+  const effectiveOpponentName =
+    gameMode === "colyseus" ? mp.opponentName : opponentName;
+  const effectiveOpponentHandSize =
+    gameMode === "colyseus" ? mp.opponentHandSize : opponentHandSize;
+
   // Get deck from localState or gameState
   const getDeckLength = (): number => {
+    if (gameMode === "colyseus") {
+      return mp.deckSize;
+    }
     if (localState && localState.deck) {
       return localState.deck.length;
     }
@@ -1263,12 +1403,13 @@ export default function CrazyEightsGameScreen({
   };
 
   const deckLength = getDeckLength();
-  const canDraw = deckLength > 0 && !isSpectator;
+  const canDraw = deckLength > 0;
   const canPass =
-    gameState &&
-    (deckLength === 0 || gameState.drawCount > 0) &&
-    !hasPlayableCard(currentHand, gameState) &&
-    !isSpectator;
+    gameMode === "colyseus"
+      ? mp.isMyTurn && mp.phase === "playing"
+      : gameState &&
+        (deckLength === 0 || gameState.drawCount > 0) &&
+        !hasPlayableCard(currentHand, gameState);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: FELT_GREEN }]}>
@@ -1289,14 +1430,19 @@ export default function CrazyEightsGameScreen({
           <Shadow dx={0} dy={0} blur={40} color="rgba(0,0,0,0.3)" inner />
         </RoundedRect>
       </Canvas>{" "}
-      {/* Spectator Banner */}
-      <SpectatorBanner
-        isSpectator={isSpectator}
-        spectatorCount={spectatorCount}
-        onLeave={handleLeaveSpectator}
-        playerNames={[player1Name, player2Name]}
-        loading={spectatorLoading}
-      />
+      {/* Spectator UI */}
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
@@ -1318,6 +1464,21 @@ export default function CrazyEightsGameScreen({
             />
           </TouchableOpacity>
         )}
+        {gameMode === "colyseus" &&
+          mp.isMultiplayer &&
+          mp.phase === "playing" &&
+          !isSpectator && (
+            <TouchableOpacity
+              onPress={() => setShowResignConfirm(true)}
+              style={styles.resignButton}
+            >
+              <MaterialCommunityIcons
+                name="flag"
+                size={20}
+                color={theme.colors.error}
+              />
+            </TouchableOpacity>
+          )}
       </View>
       {/* Opponent Area */}
       <View style={styles.opponentArea}>
@@ -1353,11 +1514,13 @@ export default function CrazyEightsGameScreen({
             ))}
           </ScrollView>
         ) : (
-          // Online mode: show single opponent
+          // Online / Colyseus mode: show single opponent
           <>
-            <Text style={styles.opponentName}>{opponentName}</Text>
+            <Text style={styles.opponentName}>{effectiveOpponentName}</Text>
             <View style={styles.opponentHand}>
-              {Array.from({ length: opponentHandSize }).map((_, i) => (
+              {Array.from({
+                length: Math.min(effectiveOpponentHandSize, 7),
+              }).map((_, i) => (
                 <View key={i} style={styles.opponentCard}>
                   <CardComponent
                     card={{ suit: "hearts", rank: "A", id: `back-${i}` }}
@@ -1367,7 +1530,9 @@ export default function CrazyEightsGameScreen({
                 </View>
               ))}
             </View>
-            <Text style={styles.cardCount}>{opponentHandSize} cards</Text>
+            <Text style={styles.cardCount}>
+              {effectiveOpponentHandSize} cards
+            </Text>
           </>
         )}
       </View>
@@ -1396,25 +1561,23 @@ export default function CrazyEightsGameScreen({
 
         {/* Discard Pile */}
         <View style={styles.discardArea}>
-          {gameState?.topCard && (
-            <CardComponent
-              card={gameState.topCard}
-              style={styles.discardCard}
-            />
+          {effectiveTopCard && (
+            <CardComponent card={effectiveTopCard} style={styles.discardCard} />
           )}
           {/* Current suit indicator */}
-          {gameState && gameState.currentSuit !== gameState.topCard?.suit && (
-            <View style={styles.suitIndicator}>
-              <Text
-                style={[
-                  styles.suitIndicatorText,
-                  { color: getSuitColor(gameState.currentSuit) },
-                ]}
-              >
-                {getSuitSymbol(gameState.currentSuit)}
-              </Text>
-            </View>
-          )}
+          {effectiveCurrentSuit &&
+            effectiveCurrentSuit !== effectiveTopCard?.suit && (
+              <View style={styles.suitIndicator}>
+                <Text
+                  style={[
+                    styles.suitIndicatorText,
+                    { color: getSuitColor(effectiveCurrentSuit as CardSuit) },
+                  ]}
+                >
+                  {getSuitSymbol(effectiveCurrentSuit as CardSuit)}
+                </Text>
+              </View>
+            )}
         </View>
       </View>
       {/* Status */}
@@ -1422,47 +1585,51 @@ export default function CrazyEightsGameScreen({
         <Text style={styles.statusText}>{getStatusText()}</Text>
       </View>
       {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        {selectedCard && (
-          <Button
-            mode="contained"
-            onPress={handlePlayCard}
-            style={styles.actionButton}
-            disabled={!isMyTurn()}
-          >
-            Play {selectedCard.rank}
-            {getSuitSymbol(selectedCard.suit)}
-          </Button>
-        )}
-        {!selectedCard && isMyTurn() && canDraw && (
-          <Button
-            mode="outlined"
-            onPress={handleDrawCard}
-            style={styles.actionButton}
-            textColor="#FFFFFF"
-          >
-            Draw Card
-          </Button>
-        )}
-        {!selectedCard && isMyTurn() && canPass && (
-          <Button
-            mode="outlined"
-            onPress={handlePass}
-            style={styles.actionButton}
-            textColor="#FFFFFF"
-          >
-            Pass Turn
-          </Button>
-        )}
-      </View>
+      {!isSpectator && (
+        <View style={styles.actionButtons}>
+          {selectedCard && (
+            <Button
+              mode="contained"
+              onPress={handlePlayCard}
+              style={styles.actionButton}
+              disabled={!isMyTurn()}
+            >
+              Play {selectedCard.rank}
+              {getSuitSymbol(selectedCard.suit)}
+            </Button>
+          )}
+          {!selectedCard && isMyTurn() && canDraw && (
+            <Button
+              mode="outlined"
+              onPress={handleDrawCard}
+              style={styles.actionButton}
+              textColor="#FFFFFF"
+            >
+              Draw Card
+            </Button>
+          )}
+          {!selectedCard && isMyTurn() && canPass && (
+            <Button
+              mode="outlined"
+              onPress={handlePass}
+              style={styles.actionButton}
+              textColor="#FFFFFF"
+            >
+              Pass Turn
+            </Button>
+          )}
+        </View>
+      )}
       {/* Player Hand */}
       <View style={styles.playerArea}>
         <Text style={styles.playerName}>
-          {gameMode === "local"
-            ? gameState?.currentTurn === "player1"
-              ? "Player 1"
-              : "Player 2"
-            : userProfile?.displayName || "You"}
+          {gameMode === "colyseus"
+            ? mp.myName || "You"
+            : gameMode === "local"
+              ? gameState?.currentTurn === "player1"
+                ? "Player 1"
+                : "Player 2"
+              : userProfile?.displayName || "You"}
         </Text>
         <HandComponent
           cards={currentHand}
@@ -1513,6 +1680,94 @@ export default function CrazyEightsGameScreen({
         title="Challenge a Friend"
         currentUserId={currentFirebaseUser?.uid || ""}
       />
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "colyseus" && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            gameName="Crazy Eights"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -1901,3 +2156,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+export default withGameErrorBoundary(CrazyEightsGameScreen, "crazy_eights");

@@ -49,6 +49,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/chat/MediaViewerModal");
 // =============================================================================
 // Types
 // =============================================================================
@@ -253,7 +256,7 @@ export const MediaViewerModal = memo(function MediaViewerModal({
         }
       }
     } catch (error: any) {
-      console.error("Download failed:", error);
+      logger.error("Download failed:", error);
       Alert.alert("Error", "Failed to open image");
     } finally {
       setDownloading(false);

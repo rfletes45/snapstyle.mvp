@@ -15,9 +15,12 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Snap } from "../../types/camera";
-import { getFirestoreInstance } from "../firebase";
+import { Snap } from "@/types/camera";
+import { getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/profile/snapGalleryService");
 /**
  * Picture gallery item for profile display
  */
@@ -57,7 +60,7 @@ export async function getUserPictures(
   offset: number = 0,
 ): Promise<SnapGalleryItem[]> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Fetching pictures for user ${userId} (limit: ${limitCount}, offset: ${offset})`,
     );
 
@@ -94,12 +97,12 @@ export async function getUserPictures(
       }
     });
 
-    console.log(
+    logger.info(
       `[Game Gallery Service] Fetched ${galleryItems.length} gallery items`,
     );
     return galleryItems;
   } catch (error) {
-    console.error("[Game Gallery Service] Failed to get user pictures:", error);
+    logger.error("[Game Gallery Service] Failed to get user pictures:", error);
     return [];
   }
 }
@@ -112,7 +115,7 @@ export async function getFavoriteSnaps(
   limitCount: number = 50,
 ): Promise<SnapGalleryItem[]> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Fetching favorite pictures for user ${userId}`,
     );
 
@@ -148,12 +151,12 @@ export async function getFavoriteSnaps(
       });
     });
 
-    console.log(
+    logger.info(
       `[Game Gallery Service] Fetched ${favoriteItems.length} favorite pictures`,
     );
     return favoriteItems;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Gallery Service] Failed to get favorite pictures:",
       error,
     );
@@ -175,7 +178,7 @@ export async function getSnapStats(userId: string): Promise<{
   mostReactedPicture: PictureGalleryItem | null;
 }> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Getting picture statistics for ${userId}`,
     );
 
@@ -244,7 +247,7 @@ export async function getSnapStats(userId: string): Promise<{
       mostReactedPicture,
     };
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Gallery Service] Failed to get picture statistics:",
       error,
     );
@@ -269,7 +272,7 @@ export async function toggleSnapFavorite(
   userId: string,
 ): Promise<boolean> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Toggling favorite status for picture ${snapId}`,
     );
 
@@ -295,12 +298,12 @@ export async function toggleSnapFavorite(
       isFavorite: newFavoriteStatus,
     });
 
-    console.log(
+    logger.info(
       `[Game Gallery Service] Favorite status updated to ${newFavoriteStatus}`,
     );
     return newFavoriteStatus;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Gallery Service] Failed to toggle picture favorite:",
       error,
     );
@@ -317,7 +320,7 @@ export async function deleteSnapFromGallery(
   userId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Deleting picture ${snapId} from gallery`,
     );
 
@@ -344,9 +347,9 @@ export async function deleteSnapFromGallery(
       isPrivate: true,
     });
 
-    console.log("[Game Gallery Service] Picture archived");
+    logger.info("[Game Gallery Service] Picture archived");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Gallery Service] Failed to delete picture from gallery:",
       error,
     );
@@ -359,7 +362,7 @@ export async function deleteSnapFromGallery(
  */
 export async function getSnapById(snapId: string): Promise<Snap | null> {
   try {
-    console.log(`[Game Gallery Service] Fetching picture ${snapId}`);
+    logger.info(`[Game Gallery Service] Fetching picture ${snapId}`);
 
     const db = getFirestoreInstance();
 
@@ -367,7 +370,7 @@ export async function getSnapById(snapId: string): Promise<Snap | null> {
     const snapDoc = await getDoc(snapRef);
 
     if (!snapDoc.exists()) {
-      console.log("[Game Gallery Service] Picture not found");
+      logger.info("[Game Gallery Service] Picture not found");
       return null;
     }
 
@@ -400,7 +403,7 @@ export async function getSnapById(snapId: string): Promise<Snap | null> {
       uploadProgress: 100,
     } as Snap;
   } catch (error) {
-    console.error("[Game Gallery Service] Failed to get picture by ID:", error);
+    logger.error("[Game Gallery Service] Failed to get picture by ID:", error);
     return null;
   }
 }
@@ -413,7 +416,7 @@ export async function searchSnapsByCaption(
   searchQuery: string,
 ): Promise<SnapGalleryItem[]> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Searching pictures for user ${userId} with query: "${searchQuery}"`,
     );
 
@@ -453,12 +456,12 @@ export async function searchSnapsByCaption(
       }
     });
 
-    console.log(
+    logger.info(
       `[Game Gallery Service] Found ${results.length} pictures matching query`,
     );
     return results;
   } catch (error) {
-    console.error("[Game Gallery Service] Failed to search pictures:", error);
+    logger.error("[Game Gallery Service] Failed to search pictures:", error);
     return [];
   }
 }
@@ -472,7 +475,7 @@ export async function getSnapsInDateRange(
   endDate: Date,
 ): Promise<SnapGalleryItem[]> {
   try {
-    console.log(
+    logger.info(
       `[Game Gallery Service] Getting pictures for ${userId} in date range`,
     );
 
@@ -508,12 +511,12 @@ export async function getSnapsInDateRange(
       });
     });
 
-    console.log(
+    logger.info(
       `[Game Gallery Service] Found ${items.length} pictures in date range`,
     );
     return items;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Gallery Service] Failed to get pictures in date range:",
       error,
     );

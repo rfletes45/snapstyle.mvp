@@ -16,6 +16,7 @@ import {
 } from "@/data/gameAchievements";
 import { getUserAchievements } from "@/services/achievements";
 import { useAuth } from "@/store/AuthContext";
+import type { PlayStackParamList } from "@/types/navigation/root";
 import {
   AchievementCategory,
   GameAchievementDefinition,
@@ -42,9 +43,12 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
-type Props = NativeStackScreenProps<any, "Achievements">;
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/AchievementsScreen");
+type Props = NativeStackScreenProps<PlayStackParamList, "Achievements">;
 
 // =============================================================================
 // Tab & Category Configuration
@@ -70,7 +74,6 @@ const CATEGORY_TO_TAB: Record<AchievementCategory, AchievementTab> = {
 
   // Single player tab
   casual_games: "single_player",
-  flappy_bird: "single_player",
   bounce_blitz: "single_player",
   play_2048: "single_player",
   memory_master: "single_player",
@@ -100,8 +103,7 @@ const CATEGORY_CONFIG: Record<
   general: { title: "General", icon: "gamepad-variant", order: 1 },
   social: { title: "Social", icon: "account-multiple", order: 2 },
   streak: { title: "Streaks", icon: "fire", order: 3 },
-  flappy_bird: { title: "Flappy Bird", icon: "bird", order: 4 },
-  bounce_blitz: { title: "Bounce Blitz", icon: "circle-multiple", order: 5 },
+  bounce_blitz: { title: "Bounce Blitz", icon: "circle-multiple", order: 4 },
   memory_master: { title: "Memory", icon: "cards", order: 6 },
   play_2048: { title: "2048", icon: "numeric", order: 7 },
   snake_master: { title: "Snake", icon: "snake", order: 8 },
@@ -130,12 +132,10 @@ const gameIdToCategoryMap: Record<string, AchievementCategory[]> = {
   play_2048: ["play_2048"],
   snake_master: ["snake_master"],
   word_master: ["word_master"],
-  flappy_bird: ["flappy_bird"],
   brick_breaker: ["brick_breaker"],
   tile_slide: ["tile_slide"],
   reaction_tap: ["casual_games"],
   timed_tap: ["casual_games"],
-  cart_course: ["casual_games"],
   tic_tac_toe: ["tic_tac_toe"],
   checkers: ["checkers"],
   chess: ["chess"],
@@ -187,7 +187,7 @@ function CollapsibleSectionHeader({
     >
       <View style={styles.sectionHeaderLeft}>
         <MaterialCommunityIcons
-          name={section.icon as any}
+          name={section.icon as keyof typeof MaterialCommunityIcons.glyphMap}
           size={20}
           color={theme.colors.primary}
         />
@@ -312,7 +312,7 @@ export default function AchievementsScreen({ navigation, route }: Props) {
   const userId = currentFirebaseUser?.uid;
 
   // Get optional gameId filter from route params
-  const filterGameId = (route.params as any)?.gameId as string | undefined;
+  const filterGameId = route.params?.gameId;
 
   const [userAchievements, setUserAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -331,7 +331,7 @@ export default function AchievementsScreen({ navigation, route }: Props) {
       const achievements = await getUserAchievements(userId);
       setUserAchievements(achievements);
     } catch (err) {
-      console.error("Error loading achievements:", err);
+      logger.error("Error loading achievements:", err);
       setError("Couldn't load achievements");
     }
   }, [userId]);
@@ -366,7 +366,7 @@ export default function AchievementsScreen({ navigation, route }: Props) {
     [userAchievements],
   );
   const earnedMap = useMemo(
-    () => new Map(userAchievements.map((a) => [a.type, a])),
+    () => new Map<string, Achievement>(userAchievements.map((a) => [a.type, a])),
     [userAchievements],
   );
 
@@ -396,7 +396,7 @@ export default function AchievementsScreen({ navigation, route }: Props) {
         const achievements = getNewAchievementsByCategory(category);
         const data = achievements.map((def) => ({
           ...def,
-          earned: earnedMap.get(def.id as any),
+          earned: earnedMap.get(def.id),
         }));
 
         return {
@@ -502,7 +502,7 @@ export default function AchievementsScreen({ navigation, route }: Props) {
                 onPress={() => setActiveTab(tab.id)}
               >
                 <MaterialCommunityIcons
-                  name={tab.icon as any}
+                  name={tab.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                   size={18}
                   color={
                     isActive

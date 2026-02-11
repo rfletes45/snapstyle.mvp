@@ -41,10 +41,10 @@ import {
 import ViewShot, { captureRef } from "react-native-view-shot";
 import DrawingCanvas, {
   type DrawnPath,
-} from "../../components/camera/DrawingCanvas";
-import PollCreator from "../../components/camera/PollCreator";
-import { FILTER_LIBRARY } from "../../services/camera/filterService";
-import { useEditorState, useSnapState } from "../../store/CameraContext";
+} from "@/components/camera/DrawingCanvas";
+import PollCreator from "@/components/camera/PollCreator";
+import { FILTER_LIBRARY } from "@/services/camera/filterService";
+import { useEditorState, useSnapState } from "@/store/CameraContext";
 import type {
   CapturedMedia,
   FilterConfig,
@@ -53,10 +53,13 @@ import type {
   Snap,
   StickerElement,
   TextElement,
-} from "../../types/camera";
-import { generateUUID } from "../../utils/uuid";
+} from "@/types/camera";
+import { generateUUID } from "@/utils/uuid";
 import type { CameraMode } from "./CameraScreen";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/camera/EditorScreen");
 // --- Constants ---------------------------------------------------------------
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const TOOLBAR_H = 52;
@@ -353,10 +356,10 @@ const EditorScreen: React.FC = () => {
           });
           if (composited) {
             finalUri = composited;
-            console.log("[Editor] View composited successfully");
+            logger.info("[Editor] View composited successfully");
           }
         } catch (flattenError) {
-          console.warn(
+          logger.warn(
             "[Editor] ViewShot capture failed, using raw image:",
             flattenError,
           );
@@ -799,6 +802,9 @@ const EditorScreen: React.FC = () => {
             data={ALL_FILTERS}
             renderItem={renderFilterThumb}
             keyExtractor={(f) => f.id}
+            ListEmptyComponent={
+              <Text style={styles.listEmptyText}>No filters available.</Text>
+            }
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterList}
@@ -1013,6 +1019,9 @@ const EditorScreen: React.FC = () => {
             data={EMOJI_STICKERS}
             numColumns={5}
             keyExtractor={(item) => item}
+            ListEmptyComponent={
+              <Text style={styles.listEmptyText}>No stickers available.</Text>
+            }
             contentContainerStyle={styles.stickerGrid}
             renderItem={({ item }) => (
               <TouchableOpacity
@@ -1148,7 +1157,7 @@ const ToolButton: React.FC<ToolButtonProps> = React.memo(
       activeOpacity={0.7}
     >
       <Ionicons
-        name={icon as any}
+        name={icon as keyof typeof Ionicons.glyphMap}
         size={22}
         color={active ? "#007AFF" : "#fff"}
       />
@@ -1260,6 +1269,13 @@ const styles = StyleSheet.create({
     zIndex: 25,
   },
   filterList: { paddingHorizontal: 10 },
+  listEmptyText: {
+    color: "#9A9A9A",
+    fontSize: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    textAlign: "center",
+  },
   filterThumb: {
     width: 72,
     height: 96,

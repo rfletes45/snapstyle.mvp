@@ -66,9 +66,11 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { PROFILE_FEATURES } from "../../../constants/featureFlags";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/shop/ShopScreenV2");
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // Main shop tabs
@@ -178,14 +180,10 @@ export default function ShopScreenV2({ navigation }: any) {
 
   // Initialize IAP on mount
   useEffect(() => {
-    if (PROFILE_FEATURES.COSMETIC_IAP) {
-      initializeIAP().catch(console.error);
-    }
+    initializeIAP().catch(console.error);
 
     return () => {
-      if (PROFILE_FEATURES.COSMETIC_IAP) {
-        disconnectIAP().catch(console.error);
-      }
+      disconnectIAP().catch(console.error);
     };
   }, []);
 
@@ -205,7 +203,7 @@ export default function ShopScreenV2({ navigation }: any) {
       setBundles(bundlesData);
       setError(null);
     } catch (err) {
-      console.error("[ShopScreenV2] Error loading shop data:", err);
+      logger.error("[ShopScreenV2] Error loading shop data:", err);
       setError("Failed to load shop");
     } finally {
       setLoading(false);
@@ -220,7 +218,7 @@ export default function ShopScreenV2({ navigation }: any) {
     const unsubscribe = subscribeToWallet(
       user.uid,
       (updatedWallet) => setWallet(updatedWallet),
-      (err) => console.error("[ShopScreenV2] Wallet subscription error:", err),
+      (err) => logger.error("[ShopScreenV2] Wallet subscription error:", err),
     );
 
     return () => unsubscribe();
@@ -349,7 +347,7 @@ export default function ShopScreenV2({ navigation }: any) {
         }
       }
     } catch (err: any) {
-      console.error("[ShopScreenV2] Purchase error:", err);
+      logger.error("[ShopScreenV2] Purchase error:", err);
       setPurchaseError(err.message || "Purchase failed");
     } finally {
       setPurchasing(false);
@@ -628,7 +626,7 @@ export default function ShopScreenV2({ navigation }: any) {
             onPress={() => setCategory(cat.key)}
           >
             <MaterialCommunityIcons
-              name={cat.icon as any}
+              name={cat.icon as keyof typeof MaterialCommunityIcons.glyphMap}
               size={18}
               color={
                 category === cat.key

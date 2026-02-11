@@ -5,9 +5,23 @@
  * 1. Tap the button as many times as you can
  * 2. You have 10 seconds
  * 3. Higher tap counts are better!
+ *
+ * Supports: Single-player, Colyseus multiplayer
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import {
+  CountdownOverlay,
+  GameOverOverlay,
+  OpponentScoreBar,
+  ReconnectingOverlay,
+  WaitingOverlay,
+} from "@/components/games/MultiplayerOverlay";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -18,18 +32,6 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  Vibration,
-  View,
-} from "react-native";
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 import {
   Canvas,
   Circle,
@@ -39,15 +41,34 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import React, { useEffect, useRef, useState } from "react";
+import Animated, {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import {
-  Button,
-  Dialog,
-  Portal,
-  ProgressBar,
-  Text,
-  useTheme,
-} from "react-native-paper";
-import { useColors } from "../../store/ThemeContext";
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  Vibration,
+  View,
+} from "react-native";
+import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
+import { useColors } from "@/store/ThemeContext";
+
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+const logger = createLogger("screens/games/TimedTapGameScreen");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // =============================================================================
 // Types
@@ -57,6 +78,7 @@ type GameState = "waiting" | "playing" | "finished";
 
 interface TimedTapGameScreenProps {
   navigation: any;
+  route: any;
 }
 
 // =============================================================================
@@ -70,14 +92,40 @@ const UPDATE_INTERVAL = 100; // Update timer every 100ms
 // Component
 // =============================================================================
 
-export default function TimedTapGameScreen({
+function TimedTapGameScreen({
   navigation,
+  route,
 }: TimedTapGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "timed_tap" });
+  void __codexGameCompletion;
+
+  useGameBackHandler({ gameType: "timed_tap", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
   const colors = useColors();
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "timed_tap_game",
+    route?.params?.matchId,
+  );
+  const mp = useMultiplayerGame({
+    gameType: "timed_tap",
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   const [gameState, setGameState] = useState<GameState>("waiting");
   const [tapCount, setTapCount] = useState(0);
@@ -88,10 +136,23 @@ export default function TimedTapGameScreen({
   const [isSending, setIsSending] = useState(false);
   const [isNewBest, setIsNewBest] = useState(false);
 
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "timed_tap",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const buttonColorAnim = useRef(new Animated.Value(0)).current;
+  const tapScale = useSharedValue(1);
+  const buttonColorAnim = useSharedValue(0);
 
   // Load personal best
   useEffect(() => {
@@ -117,6 +178,7 @@ export default function TimedTapGameScreen({
     setTimeRemaining(GAME_DURATION);
     setIsNewBest(false);
     startTimeRef.current = Date.now();
+    spectatorHost.startHosting();
 
     // Start the timer
     timerRef.current = setInterval(() => {
@@ -135,6 +197,8 @@ export default function TimedTapGameScreen({
       clearInterval(timerRef.current);
     }
     setGameState("finished");
+    spectatorHost.endHosting(tapCount);
+    if (mp.isMultiplayer) mp.reportFinished();
 
     // Get final tap count from state via callback
     setTapCount((finalTapCount) => {
@@ -177,34 +241,19 @@ export default function TimedTapGameScreen({
 
     if (gameState === "playing") {
       setTapCount((prev) => prev + 1);
+      if (mp.isMultiplayer) mp.reportScore(tapCount + 1);
 
       // Animate button press
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 0.9,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 50,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      tapScale.value = withSequence(
+        withTiming(0.9, { duration: 50 }),
+        withTiming(1, { duration: 50 }),
+      );
 
       // Flash color
-      Animated.sequence([
-        Animated.timing(buttonColorAnim, {
-          toValue: 1,
-          duration: 50,
-          useNativeDriver: false,
-        }),
-        Animated.timing(buttonColorAnim, {
-          toValue: 0,
-          duration: 100,
-          useNativeDriver: false,
-        }),
-      ]).start();
+      buttonColorAnim.value = withSequence(
+        withTiming(1, { duration: 50 }),
+        withTiming(0, { duration: 100 }),
+      );
 
       // Light haptic feedback
       if (Platform.OS !== "web") {
@@ -219,6 +268,18 @@ export default function TimedTapGameScreen({
       setTimeRemaining(GAME_DURATION);
     }
   };
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (gameState === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({ tapCount, timeRemaining, gameState }),
+        tapCount,
+        undefined,
+        undefined,
+      );
+    }
+  }, [tapCount, timeRemaining]);
 
   const handleShare = () => {
     setShowShareDialog(true);
@@ -256,7 +317,7 @@ export default function TimedTapGameScreen({
         showError("Failed to share score. Try again.");
       }
     } catch (error) {
-      console.error("[TimedTap] Error sharing score:", error);
+      logger.error("[TimedTap] Error sharing score:", error);
       showError("Failed to share score. Try again.");
     } finally {
       setIsSending(false);
@@ -265,10 +326,16 @@ export default function TimedTapGameScreen({
 
   const progress = timeRemaining / GAME_DURATION;
 
-  const buttonBackgroundColor = buttonColorAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [colors.primary, "#FF6B00"],
-  });
+  const tapScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: tapScale.value }],
+  }));
+
+  const tapButtonStyle = useAnimatedStyle(() => ({
+    backgroundColor:
+      gameState === "playing"
+        ? interpolateColor(buttonColorAnim.value, [0, 1], [colors.primary, "#FF6B00"])
+        : theme.colors.primary,
+  }));
 
   const getTapsPerSecond = () => {
     if (tapCount === 0) return "0.0";
@@ -281,7 +348,13 @@ export default function TimedTapGameScreen({
     <View style={styles.container}>
       {/* Skia background gradient */}
       <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-        <RoundedRect x={0} y={0} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} r={0}>
+        <RoundedRect
+          x={0}
+          y={0}
+          width={SCREEN_WIDTH}
+          height={SCREEN_HEIGHT}
+          r={0}
+        >
           <LinearGradient
             start={vec(SCREEN_WIDTH / 2, 0)}
             end={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT)}
@@ -289,11 +362,7 @@ export default function TimedTapGameScreen({
           />
         </RoundedRect>
         {/* Subtle glow behind button area */}
-        <Circle
-          cx={SCREEN_WIDTH / 2}
-          cy={SCREEN_HEIGHT * 0.72}
-          r={140}
-        >
+        <Circle cx={SCREEN_WIDTH / 2} cy={SCREEN_HEIGHT * 0.72} r={140}>
           <RadialGradient
             c={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT * 0.72)}
             r={140}
@@ -304,7 +373,10 @@ export default function TimedTapGameScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (navigation.canGoBack()) navigation.goBack();
+            else navigation.navigate("GamesHub");
+          }}
           style={styles.backButton}
         >
           <MaterialCommunityIcons
@@ -314,7 +386,16 @@ export default function TimedTapGameScreen({
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Speed Tap</Text>
-        <View style={styles.headerSpacer} />
+        {spectatorHost.spectatorRoomId ? (
+          <TouchableOpacity
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            style={styles.backButton}
+          >
+            <MaterialCommunityIcons name="eye" size={24} color={colors.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       {/* Stats Area */}
@@ -332,31 +413,84 @@ export default function TimedTapGameScreen({
                 Personal Best: {personalBest.bestScore} taps
               </Text>
             )}
+            {mp.isAvailable && (
+              <Button
+                mode="outlined"
+                onPress={() => {
+                  mp.startMultiplayer().then(() => mp.sendReady());
+                }}
+                style={{ marginTop: 16, borderColor: colors.primary }}
+                textColor={colors.primary}
+                icon="account-multiple"
+              >
+                Multiplayer
+              </Button>
+            )}
           </>
         )}
 
         {gameState === "playing" && (
           <>
+            {mp.isMultiplayer && mp.phase === "playing" && (
+              <OpponentScoreBar
+                opponentName={mp.opponentName}
+                opponentScore={mp.opponentScore}
+                myScore={tapCount}
+                timeRemaining={mp.timeRemaining}
+                opponentDisconnected={mp.opponentDisconnected}
+                colors={{
+                  primary: colors.primary,
+                  background: "#1a1a1a",
+                  surface: "#222",
+                  text: "#fff",
+                  textSecondary: "rgba(255,255,255,0.6)",
+                  border: "#333",
+                }}
+              />
+            )}
             <View style={styles.timerContainer}>
               <Text style={[styles.timerText, { color: colors.primary }]}>
                 {(timeRemaining / 1000).toFixed(1)}s
               </Text>
               {/* Skia gradient progress bar */}
-              <Canvas style={{ width: SCREEN_WIDTH - 96, height: 12, borderRadius: 6 }}>
-                <RoundedRect x={0} y={0} width={SCREEN_WIDTH - 96} height={12} r={6}>
+              <Canvas
+                style={{
+                  width: SCREEN_WIDTH - 96,
+                  height: 12,
+                  borderRadius: 6,
+                }}
+              >
+                <RoundedRect
+                  x={0}
+                  y={0}
+                  width={SCREEN_WIDTH - 96}
+                  height={12}
+                  r={6}
+                >
                   <LinearGradient
                     start={vec(0, 0)}
                     end={vec(SCREEN_WIDTH - 96, 0)}
                     colors={["#33333380", "#22222280"]}
                   />
                 </RoundedRect>
-                <RoundedRect x={0} y={0} width={(SCREEN_WIDTH - 96) * progress} height={12} r={6}>
+                <RoundedRect
+                  x={0}
+                  y={0}
+                  width={(SCREEN_WIDTH - 96) * progress}
+                  height={12}
+                  r={6}
+                >
                   <LinearGradient
                     start={vec(0, 0)}
                     end={vec((SCREEN_WIDTH - 96) * progress, 0)}
                     colors={[colors.primary, "#FFD700"]}
                   />
-                  <Shadow dx={0} dy={0} blur={6} color={colors.primary + "80"} />
+                  <Shadow
+                    dx={0}
+                    dy={0}
+                    blur={6}
+                    color={colors.primary + "80"}
+                  />
                 </RoundedRect>
               </Canvas>
             </View>
@@ -382,12 +516,24 @@ export default function TimedTapGameScreen({
       {/* Tap Button */}
       <View style={styles.buttonArea}>
         {/* Skia glow ring behind button */}
-        <Canvas style={{ position: "absolute", width: 220, height: 220, alignSelf: "center" }} pointerEvents="none">
+        <Canvas
+          style={{
+            position: "absolute",
+            width: 220,
+            height: 220,
+            alignSelf: "center",
+          }}
+          pointerEvents="none"
+        >
           <Circle cx={110} cy={110} r={108}>
             <RadialGradient
               c={vec(110, 110)}
               r={108}
-              colors={[colors.primary + "60", colors.primary + "20", "#00000000"]}
+              colors={[
+                colors.primary + "60",
+                colors.primary + "20",
+                "#00000000",
+              ]}
             />
           </Circle>
         </Canvas>
@@ -396,23 +542,14 @@ export default function TimedTapGameScreen({
           activeOpacity={1}
           style={styles.tapButtonOuter}
         >
-          {/* Outer Animated.View for scale (uses native driver) */}
-          <Animated.View
-            style={{
-              transform: [{ scale: scaleAnim }],
-            }}
-          >
-            {/* Inner Animated.View for backgroundColor (uses JS driver) */}
+          {/* Outer Animated.View for scale */}
+          <Animated.View style={tapScaleStyle}>
+            {/* Inner Animated.View for backgroundColor */}
             <Animated.View
               style={[
                 styles.tapButton,
-                {
-                  backgroundColor:
-                    gameState === "playing"
-                      ? buttonBackgroundColor
-                      : theme.colors.primary,
-                  shadowColor: colors.primary,
-                },
+                tapButtonStyle,
+                { shadowColor: colors.primary },
               ]}
             >
               <MaterialCommunityIcons
@@ -492,14 +629,103 @@ export default function TimedTapGameScreen({
         </Dialog>
       </Portal>
 
+      {/* Spectator Overlay */}
+      <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+
       {/* Friend Picker Modal */}
       {currentFirebaseUser && (
         <FriendPickerModal
+          key="scorecard-picker"
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
           onSelectFriend={handleSelectFriend}
           currentUserId={currentFirebaseUser.uid}
           title="Share Score With"
+        />
+      )}
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "timed_tap",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
+      />
+
+      {/* Multiplayer Overlays */}
+      {mp.isMultiplayer && mp.phase === "waiting" && (
+        <WaitingOverlay
+          colors={{
+            primary: colors.primary,
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+          onCancel={() => mp.cancelMultiplayer()}
+        />
+      )}
+      {mp.isMultiplayer && mp.phase === "countdown" && (
+        <CountdownOverlay
+          colors={{
+            primary: colors.primary,
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+          countdown={mp.countdown}
+        />
+      )}
+      {mp.isMultiplayer && mp.reconnecting && (
+        <ReconnectingOverlay
+          colors={{
+            primary: colors.primary,
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.phase === "finished" && (
+        <GameOverOverlay
+          isWinner={mp.isWinner}
+          isTie={mp.isTie}
+          winnerName={mp.winnerName}
+          myScore={tapCount}
+          opponentScore={mp.opponentScore}
+          opponentName={mp.opponentName}
+          rematchRequested={mp.rematchRequested}
+          onPlayAgain={startGame}
+          onRematch={mp.requestRematch}
+          onAcceptRematch={mp.acceptRematch}
+          onMenu={() => {
+            mp.cancelMultiplayer();
+            setGameState("waiting");
+          }}
+          colors={{
+            primary: colors.primary,
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
         />
       )}
     </View>
@@ -670,3 +896,5 @@ const styles = StyleSheet.create({
     maxWidth: 200,
   },
 });
+
+export default withGameErrorBoundary(TimedTapGameScreen, "timed_tap");

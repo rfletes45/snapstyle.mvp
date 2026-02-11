@@ -36,6 +36,9 @@ import type {
 } from "@/types/shop";
 import { SHOP_ERROR_MESSAGES, ShopErrorCode } from "@/types/shop";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/usePremiumShop");
 // =============================================================================
 // Types
 // =============================================================================
@@ -110,7 +113,7 @@ export function usePremiumShop(uid: string | undefined): UsePremiumShopReturn {
           setIapReady(ready);
         }
       } catch (err) {
-        console.error("[usePremiumShop] IAP initialization failed:", err);
+        logger.error("[usePremiumShop] IAP initialization failed:", err);
         if (mounted) {
           setIapReady(false);
         }
@@ -145,7 +148,7 @@ export function usePremiumShop(uid: string | undefined): UsePremiumShopReturn {
           setError(null);
         }
       } catch (err: any) {
-        console.error("[usePremiumShop] Error loading catalog:", err);
+        logger.error("[usePremiumShop] Error loading catalog:", err);
         if (mounted) {
           setError(createShopError(ShopErrorCode.SERVER_ERROR, err.message));
         }
@@ -168,7 +171,7 @@ export function usePremiumShop(uid: string | undefined): UsePremiumShopReturn {
         }
       },
       (err: Error) => {
-        console.error("[usePremiumShop] Catalog subscription error:", err);
+        logger.error("[usePremiumShop] Catalog subscription error:", err);
         if (mounted) {
           setError(createShopError(ShopErrorCode.SERVER_ERROR, err.message));
         }
@@ -395,7 +398,7 @@ export function usePremiumShop(uid: string | undefined): UsePremiumShopReturn {
       const data = await getPremiumCatalog();
       setCatalog(data);
     } catch (err: any) {
-      console.error("[usePremiumShop] Error refreshing catalog:", err);
+      logger.error("[usePremiumShop] Error refreshing catalog:", err);
       setError(createShopError(ShopErrorCode.SERVER_ERROR, err.message));
     } finally {
       setCatalogLoading(false);

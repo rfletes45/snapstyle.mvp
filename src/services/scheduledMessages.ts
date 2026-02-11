@@ -27,6 +27,9 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/scheduledMessages");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -75,7 +78,7 @@ export async function scheduleMessage(
 
     // Validate scope-specific requirements
     if (scope === "dm" && !recipientId) {
-      console.error("[scheduledMessages] recipientId required for DM scope.");
+      logger.error("[scheduledMessages] recipientId required for DM scope.");
       return null;
     }
 
@@ -85,14 +88,14 @@ export async function scheduleMessage(
     const delay = scheduledTime - now;
 
     if (delay < MIN_SCHEDULE_DELAY_MS) {
-      console.error(
+      logger.error(
         "[scheduledMessages] Scheduled time too soon. Must be at least 5 minutes in future.",
       );
       return null;
     }
 
     if (delay > MAX_SCHEDULE_DELAY_MS) {
-      console.error(
+      logger.error(
         "[scheduledMessages] Scheduled time too far. Must be within 30 days.",
       );
       return null;
@@ -100,12 +103,12 @@ export async function scheduleMessage(
 
     // Validate content
     if (!content || content.trim().length === 0) {
-      console.error("[scheduledMessages] Content cannot be empty.");
+      logger.error("[scheduledMessages] Content cannot be empty.");
       return null;
     }
 
     if (content.length > 2000) {
-      console.error(
+      logger.error(
         "[scheduledMessages] Content too long. Max 2000 characters.",
       );
       return null;
@@ -135,7 +138,7 @@ export async function scheduleMessage(
       createdAt: Timestamp.now(),
     });
 
-    console.log(
+    logger.info(
       "[scheduledMessages] Created scheduled message:",
       messageId,
       "for",
@@ -144,7 +147,7 @@ export async function scheduleMessage(
 
     return scheduledMessage;
   } catch (error) {
-    console.error("[scheduledMessages] Error scheduling message:", error);
+    logger.error("[scheduledMessages] Error scheduling message:", error);
     return null;
   }
 }
@@ -204,7 +207,7 @@ export async function getScheduledMessages(
       } as ScheduledMessage;
     });
   } catch (error) {
-    console.error(
+    logger.error(
       "[scheduledMessages] Error fetching scheduled messages:",
       error,
     );
@@ -250,7 +253,7 @@ export async function getScheduledMessagesForChat(
       } as ScheduledMessage;
     });
   } catch (error) {
-    console.error(
+    logger.error(
       "[scheduledMessages] Error fetching chat scheduled messages:",
       error,
     );
@@ -272,7 +275,7 @@ export async function cancelScheduledMessage(
   const db = getFirestoreInstance();
 
   try {
-    console.log(
+    logger.info(
       "[scheduledMessages] Attempting to cancel message:",
       messageId,
       "for user:",
@@ -283,12 +286,12 @@ export async function cancelScheduledMessage(
 
     if (!messageDoc.exists()) {
       const error = "Message not found";
-      console.error("[scheduledMessages]", error, messageId);
+      logger.error("[scheduledMessages]", error, messageId);
       throw new Error(error);
     }
 
     const data = messageDoc.data();
-    console.log("[scheduledMessages] Message data:", {
+    logger.info("[scheduledMessages] Message data:", {
       senderId: data.senderId,
       status: data.status,
     });
@@ -296,14 +299,14 @@ export async function cancelScheduledMessage(
     // Verify ownership
     if (data.senderId !== userId) {
       const error = "User doesn't own this message";
-      console.error("[scheduledMessages]", error);
+      logger.error("[scheduledMessages]", error);
       throw new Error(error);
     }
 
     // Can only cancel pending messages
     if (data.status !== "pending") {
       const error = "Can only cancel pending messages";
-      console.error(
+      logger.error(
         "[scheduledMessages]",
         error,
         "Current status:",
@@ -312,18 +315,18 @@ export async function cancelScheduledMessage(
       throw new Error(error);
     }
 
-    console.log("[scheduledMessages] Updating status to cancelled...");
+    logger.info("[scheduledMessages] Updating status to cancelled...");
     await updateDoc(messageRef, {
       status: "cancelled",
     });
 
-    console.log(
+    logger.info(
       "[scheduledMessages] Successfully cancelled message:",
       messageId,
     );
     return true;
   } catch (error) {
-    console.error("[scheduledMessages] Error cancelling message:", error);
+    logger.error("[scheduledMessages] Error cancelling message:", error);
     throw error;
   }
 }
@@ -340,12 +343,12 @@ export async function updateScheduledMessageContent(
 
   try {
     if (!newContent || newContent.trim().length === 0) {
-      console.error("[scheduledMessages] Content cannot be empty");
+      logger.error("[scheduledMessages] Content cannot be empty");
       return false;
     }
 
     if (newContent.length > 2000) {
-      console.error("[scheduledMessages] Content too long");
+      logger.error("[scheduledMessages] Content too long");
       return false;
     }
 
@@ -353,7 +356,7 @@ export async function updateScheduledMessageContent(
     const messageDoc = await getDoc(messageRef);
 
     if (!messageDoc.exists()) {
-      console.error("[scheduledMessages] Message not found:", messageId);
+      logger.error("[scheduledMessages] Message not found:", messageId);
       return false;
     }
 
@@ -361,13 +364,13 @@ export async function updateScheduledMessageContent(
 
     // Verify ownership
     if (data.senderId !== userId) {
-      console.error("[scheduledMessages] User doesn't own this message");
+      logger.error("[scheduledMessages] User doesn't own this message");
       return false;
     }
 
     // Can only update pending messages
     if (data.status !== "pending") {
-      console.error("[scheduledMessages] Can only update pending messages");
+      logger.error("[scheduledMessages] Can only update pending messages");
       return false;
     }
 
@@ -375,10 +378,10 @@ export async function updateScheduledMessageContent(
       content: newContent,
     });
 
-    console.log("[scheduledMessages] Updated message content:", messageId);
+    logger.info("[scheduledMessages] Updated message content:", messageId);
     return true;
   } catch (error) {
-    console.error("[scheduledMessages] Error updating message:", error);
+    logger.error("[scheduledMessages] Error updating message:", error);
     return false;
   }
 }
@@ -400,12 +403,12 @@ export async function updateScheduledMessageTime(
     const delay = scheduledTime - now;
 
     if (delay < MIN_SCHEDULE_DELAY_MS) {
-      console.error("[scheduledMessages] New time too soon");
+      logger.error("[scheduledMessages] New time too soon");
       return false;
     }
 
     if (delay > MAX_SCHEDULE_DELAY_MS) {
-      console.error("[scheduledMessages] New time too far");
+      logger.error("[scheduledMessages] New time too far");
       return false;
     }
 
@@ -413,7 +416,7 @@ export async function updateScheduledMessageTime(
     const messageDoc = await getDoc(messageRef);
 
     if (!messageDoc.exists()) {
-      console.error("[scheduledMessages] Message not found:", messageId);
+      logger.error("[scheduledMessages] Message not found:", messageId);
       return false;
     }
 
@@ -421,13 +424,13 @@ export async function updateScheduledMessageTime(
 
     // Verify ownership
     if (data.senderId !== userId) {
-      console.error("[scheduledMessages] User doesn't own this message");
+      logger.error("[scheduledMessages] User doesn't own this message");
       return false;
     }
 
     // Can only update pending messages
     if (data.status !== "pending") {
-      console.error("[scheduledMessages] Can only update pending messages");
+      logger.error("[scheduledMessages] Can only update pending messages");
       return false;
     }
 
@@ -435,10 +438,10 @@ export async function updateScheduledMessageTime(
       scheduledFor: Timestamp.fromMillis(scheduledTime),
     });
 
-    console.log("[scheduledMessages] Updated message time:", messageId);
+    logger.info("[scheduledMessages] Updated message time:", messageId);
     return true;
   } catch (error) {
-    console.error("[scheduledMessages] Error updating message time:", error);
+    logger.error("[scheduledMessages] Error updating message time:", error);
     return false;
   }
 }
@@ -453,7 +456,7 @@ export async function deleteScheduledMessage(
   const db = getFirestoreInstance();
 
   try {
-    console.log(
+    logger.info(
       "[scheduledMessages] Attempting to delete message:",
       messageId,
       "for user:",
@@ -464,12 +467,12 @@ export async function deleteScheduledMessage(
 
     if (!messageDoc.exists()) {
       const error = "Message not found";
-      console.error("[scheduledMessages]", error, messageId);
+      logger.error("[scheduledMessages]", error, messageId);
       throw new Error(error);
     }
 
     const data = messageDoc.data();
-    console.log("[scheduledMessages] Message data:", {
+    logger.info("[scheduledMessages] Message data:", {
       senderId: data.senderId,
       status: data.status,
     });
@@ -477,17 +480,17 @@ export async function deleteScheduledMessage(
     // Verify ownership
     if (data.senderId !== userId) {
       const error = "User doesn't own this message";
-      console.error("[scheduledMessages]", error);
+      logger.error("[scheduledMessages]", error);
       throw new Error(error);
     }
 
-    console.log("[scheduledMessages] Deleting message...");
+    logger.info("[scheduledMessages] Deleting message...");
     await deleteDoc(messageRef);
 
-    console.log("[scheduledMessages] Successfully deleted message:", messageId);
+    logger.info("[scheduledMessages] Successfully deleted message:", messageId);
     return true;
   } catch (error) {
-    console.error("[scheduledMessages] Error deleting message:", error);
+    logger.error("[scheduledMessages] Error deleting message:", error);
     throw error;
   }
 }
@@ -534,7 +537,7 @@ export function subscribeToScheduledMessages(
       callback(messages);
     },
     (error) => {
-      console.error("[scheduledMessages] Subscription error:", error);
+      logger.error("[scheduledMessages] Subscription error:", error);
       callback([]);
     },
   );

@@ -23,8 +23,8 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
-import { BorderRadius, Spacing } from "../../../constants/theme";
-import { useColors } from "../../store/ThemeContext";
+import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 
 // =============================================================================
 // Types

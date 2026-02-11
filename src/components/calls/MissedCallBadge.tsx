@@ -9,6 +9,9 @@ import { StyleSheet, Text, View } from "react-native";
 import { theme } from "@/constants/theme";
 import { callHistoryService } from "@/services/calls";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/calls/MissedCallBadge");
 interface MissedCallBadgeProps {
   size?: "small" | "medium" | "large";
   style?: object;
@@ -34,7 +37,7 @@ export function MissedCallBadge({
           setIsLoading(false);
         }
       } catch (error) {
-        console.error("Error loading missed call count:", error);
+        logger.error("Error loading missed call count:", error);
         if (mounted) {
           setIsLoading(false);
         }
@@ -95,7 +98,7 @@ export function useMissedCallCount() {
           setIsLoading(false);
         }
       } catch (error) {
-        console.error("Error loading missed call count:", error);
+        logger.error("Error loading missed call count:", error);
         if (mounted) {
           setIsLoading(false);
         }
@@ -118,7 +121,7 @@ export function useMissedCallCount() {
       const missedCount = await callHistoryService.getUnseenMissedCallCount();
       setCount(missedCount);
     } catch (error) {
-      console.error("Error refreshing missed call count:", error);
+      logger.error("Error refreshing missed call count:", error);
     }
   };
 

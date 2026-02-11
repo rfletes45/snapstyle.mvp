@@ -33,6 +33,9 @@ import {
   ReactionSummary,
 } from "@/services/reactions";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/chat/ReactionBar");
 // =============================================================================
 // Types
 // =============================================================================
@@ -269,7 +272,7 @@ export const ReactionBar = memo(function ReactionBar({
           onReactionToggled(emoji, result.action);
         }
       } catch (error) {
-        console.error("[ReactionBar] Toggle failed:", error);
+        logger.error("[ReactionBar] Toggle failed:", error);
       } finally {
         setLoadingEmoji(null);
       }

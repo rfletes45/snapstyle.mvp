@@ -21,6 +21,7 @@ import {
   CommonActions,
   NavigationContainerRef,
 } from "@react-navigation/native";
+import type { RootStackParamList } from "@/types/navigation/root";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import React, { useCallback, useRef } from "react";
 import { StyleSheet, View } from "react-native";
@@ -43,7 +44,7 @@ createCallNotificationChannel();
 function handleError(error: Error, errorInfo: React.ErrorInfo): void {
   console.error("🚨 [App] Uncaught error:", error.message);
   console.error("🚨 [App] Component stack:", errorInfo.componentStack);
-  // TODO: Send to crash reporting service (Sentry, etc.)
+  // NOTE: Send to crash reporting service (Sentry, etc.)
 }
 
 /**
@@ -51,7 +52,7 @@ function handleError(error: Error, errorInfo: React.ErrorInfo): void {
  */
 function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
-  const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
 
   /**
    * Handle navigation from in-app toast notifications

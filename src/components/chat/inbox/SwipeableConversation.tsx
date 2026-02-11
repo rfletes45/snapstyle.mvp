@@ -19,7 +19,7 @@ import { Animated, StyleSheet, View } from "react-native";
 import { RectButton } from "react-native-gesture-handler";
 import Swipeable from "react-native-gesture-handler/Swipeable";
 import { IconButton } from "react-native-paper";
-import { Spacing } from "../../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

@@ -24,6 +24,9 @@ import { checkAndGrantBadgeForAchievement } from "./badges";
 import { getFirestoreInstance } from "./firebase";
 import { StatsGameType } from "./gameStats";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/gameAchievements");
 // Lazy getter to avoid calling getFirestoreInstance at module load time
 const getDb = () => getFirestoreInstance();
 
@@ -402,68 +405,6 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     order: 23,
   },
 
-  // ===== Flappy Bird =====
-  {
-    id: "flappy_first_10",
-    name: "Flappy Fingers",
-    description: "Score 10 in Flappy Bird",
-    icon: "🐦",
-    tier: "bronze",
-    category: "single_player",
-    trigger: "score",
-    gameType: "flappy_bird",
-    threshold: 10,
-    coinReward: 15,
-    xpReward: 30,
-    hidden: false,
-    order: 30,
-  },
-  {
-    id: "flappy_score_25",
-    name: "Pipe Master",
-    description: "Score 25 in Flappy Bird",
-    icon: "🎯",
-    tier: "silver",
-    category: "single_player",
-    trigger: "score",
-    gameType: "flappy_bird",
-    threshold: 25,
-    coinReward: 50,
-    xpReward: 100,
-    hidden: false,
-    order: 31,
-  },
-  {
-    id: "flappy_score_50",
-    name: "Flappy Legend",
-    description: "Score 50 in Flappy Bird",
-    icon: "🏆",
-    tier: "gold",
-    category: "single_player",
-    trigger: "score",
-    gameType: "flappy_bird",
-    threshold: 50,
-    coinReward: 150,
-    xpReward: 300,
-    hidden: false,
-    order: 32,
-  },
-  {
-    id: "flappy_perfect_10",
-    name: "Perfect Flight",
-    description: "Score 10 perfect passes in one game",
-    icon: "✨",
-    tier: "gold",
-    category: "single_player",
-    trigger: "perfect",
-    gameType: "flappy_bird",
-    threshold: 10,
-    coinReward: 100,
-    xpReward: 200,
-    hidden: false,
-    order: 33,
-  },
-
   // ===== Chess =====
   {
     id: "chess_first_win",
@@ -775,7 +716,6 @@ export async function checkAchievement(
         tic_tac_toe_win: "win_count",
         crazy_eights_win: "win_count",
         score_reached: "score",
-        flappy_score: "score",
         bounce_round: "score",
         snake_score: "score",
         "2048_score": "score",
@@ -891,7 +831,7 @@ export async function checkAchievement(
         achievementId,
       );
       if (badge) {
-        console.log(
+        logger.info(
           "[gameAchievements] Badge granted for achievement:",
           achievementId,
           "->",
@@ -900,7 +840,7 @@ export async function checkAchievement(
       }
     } catch (error) {
       // Log but don't fail the achievement unlock if badge grant fails
-      console.error("[gameAchievements] Failed to grant badge:", error);
+      logger.error("[gameAchievements] Failed to grant badge:", error);
     }
   }
 
@@ -1038,7 +978,7 @@ export function subscribeToPlayerAchievements(
       onUpdate(snapshot.data() as PlayerAchievementsDocument);
     },
     (error) => {
-      console.error("[Achievements] Subscription error:", error);
+      logger.error("[Achievements] Subscription error:", error);
       onError?.(error);
     },
   );

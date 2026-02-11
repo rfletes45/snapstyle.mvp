@@ -49,7 +49,7 @@ import { MentionableMember } from "@/services/mentionParser";
 import { LocalAttachment } from "@/services/storage";
 import { AttachmentV2 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useChat, UseChatConfig, UseChatReturn } from "./useChat";
 import {
   useChatComposer,
@@ -391,23 +391,38 @@ export function useUnifiedChatScreen(
   const composer = useChatComposer(composerConfig);
 
   // -------------------------------------------------------------------------
-  // Debug Logging
+  // Debug Logging (throttled to only log on actual state changes)
   // -------------------------------------------------------------------------
 
-  if (debug) {
-    log.debug("Unified screen state", {
-      operation: "state",
-      data: {
-        messageCount: chat.messages.length,
-        loading: chat.loading,
-        composerText: composer.text.length,
-        canSend: composer.canSend,
-        sending: composer.sending,
-        hasReply: !!chat.replyTo,
-        isUploading: composer.isUploading,
-      },
+  const lastDebugRef = useRef("");
+  useEffect(() => {
+    if (!debug) return;
+    const snapshot = JSON.stringify({
+      messageCount: chat.messages.length,
+      loading: chat.loading,
+      composerText: composer.text.length,
+      canSend: composer.canSend,
+      sending: composer.sending,
+      hasReply: !!chat.replyTo,
+      isUploading: composer.isUploading,
     });
-  }
+    if (snapshot !== lastDebugRef.current) {
+      lastDebugRef.current = snapshot;
+      log.debug("Unified screen state", {
+        operation: "state",
+        data: JSON.parse(snapshot),
+      });
+    }
+  }, [
+    debug,
+    chat.messages.length,
+    chat.loading,
+    composer.text.length,
+    composer.canSend,
+    composer.sending,
+    chat.replyTo,
+    composer.isUploading,
+  ]);
 
   // -------------------------------------------------------------------------
   // Return Memoized Result

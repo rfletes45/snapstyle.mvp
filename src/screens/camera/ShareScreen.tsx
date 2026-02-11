@@ -22,11 +22,14 @@ import {
 import {
   useSnapSharing,
   useSnapUpload,
-} from "../../hooks/camera/useCameraHooks";
-import { useAuth } from "../../store/AuthContext";
-import { useSnapState } from "../../store/CameraContext";
-import type { Snap } from "../../types/camera";
+} from "@/hooks/camera/useCameraHooks";
+import { useAuth } from "@/store/AuthContext";
+import { useSnapState } from "@/store/CameraContext";
+import type { Snap } from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/camera/ShareScreen");
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface Friend {
@@ -87,7 +90,7 @@ const ShareScreen: React.FC = () => {
       ];
       setFriends(mockFriends);
     } catch (error) {
-      console.error("[Share Screen] Failed to load friends:", error);
+      logger.error("[Share Screen] Failed to load friends:", error);
     }
   }, []);
 
@@ -110,7 +113,7 @@ const ShareScreen: React.FC = () => {
   const handlePublish = async () => {
     try {
       if (!currentShareSnap) {
-        console.error("No snap to publish");
+        logger.error("No snap to publish");
         return;
       }
 
@@ -152,10 +155,10 @@ const ShareScreen: React.FC = () => {
       startUpload();
       const snapId = await uploadSnap(snap, mediaBlob);
 
-      console.log("[Share Screen] Snap published:", snapId);
+      logger.info("[Share Screen] Snap published:", snapId);
       navigation.navigate("Camera");
     } catch (error) {
-      console.error("[Share Screen] Publish failed:", error);
+      logger.error("[Share Screen] Publish failed:", error);
       uploadError(error instanceof Error ? error.message : "Failed to publish");
     }
   };
@@ -191,6 +194,15 @@ const ShareScreen: React.FC = () => {
             scrollEnabled={false}
             data={filteredFriends}
             keyExtractor={(item) => item.id}
+            ListEmptyComponent={
+              <View style={styles.emptyFriendsState}>
+                <Text style={styles.emptyFriendsText}>
+                  {searchQuery.trim().length > 0
+                    ? "No friends match your search."
+                    : "No friends available yet."}
+                </Text>
+              </View>
+            }
             renderItem={({ item: friend }) => (
               <TouchableOpacity
                 style={styles.friendItem}
@@ -373,6 +385,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
+  },
+  emptyFriendsState: {
+    paddingVertical: 18,
+    alignItems: "center",
+  },
+  emptyFriendsText: {
+    color: "#999",
+    fontSize: 13,
   },
 
   // Friend Item

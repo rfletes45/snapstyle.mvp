@@ -12,6 +12,9 @@ import { AppState, AppStateStatus, Platform } from "react-native";
 import { v4 as uuidv4 } from "uuid";
 import { callKeepService } from "./callKeepService";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/backgroundCallHandler");
 // Type for incoming call notification data
 export interface IncomingCallData {
   type: "incoming_call" | "call_cancelled";
@@ -37,10 +40,10 @@ export interface IncomingCallData {
 export function initializeBackgroundCallHandler(): void {
   // Initialize CallKeep service
   callKeepService.setup().catch((error) => {
-    console.warn("[BackgroundCallHandler] CallKeep setup failed:", error);
+    logger.warn("[BackgroundCallHandler] CallKeep setup failed:", error);
   });
 
-  console.log("[BackgroundCallHandler] Initialized");
+  logger.info("[BackgroundCallHandler] Initialized");
 }
 
 /**
@@ -50,7 +53,7 @@ export function initializeBackgroundCallHandler(): void {
 export async function handleBackgroundMessage(
   data: Record<string, string> | undefined,
 ): Promise<void> {
-  console.log("[BackgroundCallHandler] Background message received:", data);
+  logger.info("[BackgroundCallHandler] Background message received:", data);
 
   const callData = data as IncomingCallData | undefined;
 
@@ -66,7 +69,7 @@ export async function handleBackgroundMessage(
       await handleCallCancelledNotification(callData);
       break;
     default:
-      console.log(
+      logger.info(
         "[BackgroundCallHandler] Unknown message type:",
         callData.type,
       );
@@ -80,7 +83,7 @@ export async function handleBackgroundMessage(
 export async function handleForegroundMessage(
   data: Record<string, string> | undefined,
 ): Promise<void> {
-  console.log("[BackgroundCallHandler] Foreground message received:", data);
+  logger.info("[BackgroundCallHandler] Foreground message received:", data);
 
   const callData = data as IncomingCallData | undefined;
 
@@ -101,7 +104,7 @@ export async function handleForegroundMessage(
 async function handleIncomingCallNotification(
   data: IncomingCallData,
 ): Promise<void> {
-  console.log("[BackgroundCallHandler] Incoming call:", {
+  logger.info("[BackgroundCallHandler] Incoming call:", {
     callId: data.callId,
     caller: data.callerName,
     type: data.callType,
@@ -133,7 +136,7 @@ async function handleIncomingCallNotification(
     hasVideo,
   });
 
-  console.log("[BackgroundCallHandler] Displayed incoming call UI", { uuid });
+  logger.info("[BackgroundCallHandler] Displayed incoming call UI", { uuid });
 }
 
 /**
@@ -142,7 +145,7 @@ async function handleIncomingCallNotification(
 async function handleCallCancelledNotification(
   data: IncomingCallData,
 ): Promise<void> {
-  console.log("[BackgroundCallHandler] Call cancelled:", {
+  logger.info("[BackgroundCallHandler] Call cancelled:", {
     callId: data.callId,
     reason: data.reason,
   });
@@ -232,10 +235,10 @@ export async function registerForVoIPPushes(): Promise<string | null> {
   try {
     // VoIP registration would happen here
     // For Expo/Firebase, the FCM token is typically used for both
-    console.log("[BackgroundCallHandler] VoIP push registration placeholder");
+    logger.info("[BackgroundCallHandler] VoIP push registration placeholder");
     return null;
   } catch (error) {
-    console.error(
+    logger.error(
       "[BackgroundCallHandler] Failed to register for VoIP pushes:",
       error,
     );
@@ -260,7 +263,7 @@ export async function createCallNotificationChannel(): Promise<void> {
   // react-native-push-notification to create the channel
   // For now, this is a placeholder - the Cloud Function sends the channel ID
 
-  console.log(
+  logger.info(
     "[BackgroundCallHandler] Android notification channel placeholder",
   );
 }
@@ -287,7 +290,7 @@ export function initializeAppStateListener(): () => void {
   const subscription = AppState.addEventListener(
     "change",
     (nextAppState: AppStateStatus) => {
-      console.log(
+      logger.info(
         "[BackgroundCallHandler] App state changed:",
         currentAppState,
         "->",

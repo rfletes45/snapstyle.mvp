@@ -7,7 +7,7 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { Text, Button, Icon, useTheme } from "react-native-paper";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface ErrorStateProps {
   title?: string;

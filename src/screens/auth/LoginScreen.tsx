@@ -29,8 +29,11 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/auth/LoginScreen");
 export default function LoginScreen({ navigation }: any) {
   const theme = useTheme();
   const [email, setEmail] = useState("");
@@ -56,14 +59,14 @@ export default function LoginScreen({ navigation }: any) {
 
     setLoading(true);
 
-    console.log("🔵 [LoginScreen] Attempting to log in with", email);
+    logger.info("🔵 [LoginScreen] Attempting to log in with", email);
     const result = await login(email.trim(), password);
 
     if (result.ok) {
-      console.log("✅ [LoginScreen] Login successful");
+      logger.info("✅ [LoginScreen] Login successful");
       // Navigation happens automatically via AuthContext
     } else {
-      console.log("❌ [LoginScreen] Login failed:", result.error.code);
+      logger.info("❌ [LoginScreen] Login failed:", result.error.code);
       setError(result.error.userMessage);
     }
 
@@ -71,13 +74,16 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   const handleGoogleSignIn = () => {
-    // TODO: Integrate @react-native-google-signin/google-signin
+    // NOTE: Integrate @react-native-google-signin/google-signin
     // For now, show a message that it's coming soon
     setError("Google Sign-In is coming soon!");
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <TouchableWithoutFeedback
+      onPress={Platform.OS === "web" ? undefined : Keyboard.dismiss}
+      disabled={Platform.OS === "web"}
+    >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
         behavior={Platform.OS === "ios" ? "padding" : "height"}

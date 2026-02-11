@@ -16,20 +16,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RTCView } from "react-native-webrtc";
-import Avatar from "../../components/Avatar";
-import { CallControls } from "../../components/calls/CallControls";
+import Avatar from "@/components/Avatar";
+import { CallControls } from "@/components/calls/CallControls";
 import {
   CallQualityIndicator,
   NetworkQuality,
-} from "../../components/calls/CallQualityIndicator";
-import { useCallContext } from "../../contexts/CallContext";
+} from "@/components/calls/CallQualityIndicator";
+import { useCallContext } from "@/contexts/CallContext";
 import {
   useCall,
   useLocalMedia,
   useRemoteParticipants,
-} from "../../hooks/calls";
-import { useColors } from "../../store/ThemeContext";
-import { formatDurationSecondsPadded as formatDuration } from "../../utils/time";
+} from "@/hooks/calls";
+import { useColors } from "@/store/ThemeContext";
+import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 

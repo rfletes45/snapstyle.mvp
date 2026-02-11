@@ -40,8 +40,11 @@ import {
   getPreviewImageUrl,
   getRotationTransform,
   useItemPreview,
-} from "../../hooks/useItemPreview";
+} from "@/hooks/useItemPreview";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/shop/ItemPreviewModal");
 // =============================================================================
 // Types
 // =============================================================================
@@ -117,7 +120,7 @@ export function ItemPreviewModal({
         title: item.name,
       });
     } catch (error) {
-      console.error("Error sharing:", error);
+      logger.error("Error sharing:", error);
     }
   }, [item]);
 

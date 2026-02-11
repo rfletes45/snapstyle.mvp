@@ -20,6 +20,9 @@ import type {
   ProfileGameScoresConfig,
 } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGameScores");
 // =============================================================================
 // Types
 // =============================================================================
@@ -115,7 +118,7 @@ export function useGameScores({
         configLoadedRef.current = true;
       }
     } catch (err) {
-      console.error("Failed to load game scores config:", err);
+      logger.error("Failed to load game scores config:", err);
     }
   }, [userId]);
 
@@ -150,7 +153,7 @@ export function useGameScores({
         });
       }
     } catch (err) {
-      console.error("Failed to fetch game scores:", err);
+      logger.error("Failed to fetch game scores:", err);
       setError(
         err instanceof Error ? err : new Error("Failed to fetch scores"),
       );
@@ -183,7 +186,7 @@ export function useGameScores({
         try {
           await persistGameScoresConfig(userId, newConfig);
         } catch (err) {
-          console.error("Failed to persist game scores config:", err);
+          logger.error("Failed to persist game scores config:", err);
           // Still keep the local state update even if Firestore fails
         }
       }
@@ -271,7 +274,7 @@ export function useScoreComparison({
       setOwnerScores(ownerProfileScores);
       setViewerScores(viewerProfileScores);
     } catch (err) {
-      console.error("Failed to fetch comparison scores:", err);
+      logger.error("Failed to fetch comparison scores:", err);
       setError(
         err instanceof Error ? err : new Error("Failed to fetch scores"),
       );

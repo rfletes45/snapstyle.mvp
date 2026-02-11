@@ -5,8 +5,11 @@
  */
 
 import * as ImageManipulator from "expo-image-manipulator";
-import { FilterConfig } from "../../types/camera";
+import { FilterConfig } from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/nativeImageFiltering");
 /**
  * Color matrix type for advanced filtering
  */
@@ -24,7 +27,7 @@ export async function applyFilterToImage(
   intensity: number = 1.0,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Applying filter ${filter.id} at intensity ${intensity}`,
     );
 
@@ -39,7 +42,7 @@ export async function applyFilterToImage(
       const brightnessDelta = filter.brightness * clampedIntensity * 0.5; // -0.5 to 0.5
       // expo-image-manipulator doesn't support brightness natively
       // Would need Skia or Canvas for real implementation
-      console.log(
+      logger.info(
         `[Native Image Filtering] Brightness adjustment: ${brightnessDelta} (placeholder)`,
       );
     }
@@ -47,7 +50,7 @@ export async function applyFilterToImage(
     // Apply saturation and hue shift
     // These require color manipulation which needs Skia or Canvas
     if (filter.saturation !== 0 || filter.hue !== 0) {
-      console.log(
+      logger.info(
         `[Native Image Filtering] Saturation/hue adjustment (placeholder)`,
       );
     }
@@ -57,7 +60,7 @@ export async function applyFilterToImage(
       const blurAmount = Math.round(filter.blur * clampedIntensity * 10);
       if (blurAmount > 0) {
         // expo-image-manipulator doesn't support blur natively
-        console.log(
+        logger.info(
           `[Native Image Filtering] Blur: ${blurAmount} (placeholder)`,
         );
       }
@@ -76,10 +79,10 @@ export async function applyFilterToImage(
       format: ImageManipulator.SaveFormat.JPEG,
     });
 
-    console.log(`[Native Image Filtering] Filter applied successfully`);
+    logger.info(`[Native Image Filtering] Filter applied successfully`);
     return result.uri;
   } catch (error) {
-    console.error("[Native Image Filtering] Failed to apply filter:", error);
+    logger.error("[Native Image Filtering] Failed to apply filter:", error);
     throw error;
   }
 }
@@ -93,7 +96,7 @@ export async function applyMultipleFilters(
   filters: Array<{ filter: FilterConfig; intensity: number }>,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Applying ${filters.length} filters with blending`,
     );
 
@@ -106,7 +109,7 @@ export async function applyMultipleFilters(
 
     return currentUri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to apply multiple filters:",
       error,
     );
@@ -265,7 +268,7 @@ export async function applySepiaEffect(
   intensity: number = 1.0,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Applying sepia effect at intensity ${intensity}`,
     );
 
@@ -283,7 +286,7 @@ export async function applySepiaEffect(
 
     return result.uri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to apply sepia effect:",
       error,
     );
@@ -300,7 +303,7 @@ export async function applyVignetteEffect(
   intensity: number = 1.0,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Applying vignette effect at intensity ${intensity}`,
     );
 
@@ -308,7 +311,7 @@ export async function applyVignetteEffect(
     // For now, return original
     return imageUri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to apply vignette effect:",
       error,
     );
@@ -324,7 +327,7 @@ export async function applyBlurEffect(
   radius: number = 10,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Applying blur effect with radius ${radius}`,
     );
 
@@ -337,7 +340,7 @@ export async function applyBlurEffect(
 
     return result.uri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to apply blur effect:",
       error,
     );
@@ -354,7 +357,7 @@ export async function resizeImage(
   maxHeight: number,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Resizing image to ${maxWidth}x${maxHeight}`,
     );
 
@@ -367,10 +370,10 @@ export async function resizeImage(
       },
     );
 
-    console.log(`[Native Image Filtering] Image resized successfully`);
+    logger.info(`[Native Image Filtering] Image resized successfully`);
     return result.uri;
   } catch (error) {
-    console.error("[Native Image Filtering] Failed to resize image:", error);
+    logger.error("[Native Image Filtering] Failed to resize image:", error);
     throw error;
   }
 }
@@ -383,7 +386,7 @@ export async function compressImage(
   quality: number = 0.85,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Compressing image to quality ${quality}`,
     );
 
@@ -394,10 +397,10 @@ export async function compressImage(
       format: ImageManipulator.SaveFormat.JPEG,
     });
 
-    console.log(`[Native Image Filtering] Image compressed successfully`);
+    logger.info(`[Native Image Filtering] Image compressed successfully`);
     return result.uri;
   } catch (error) {
-    console.error("[Native Image Filtering] Failed to compress image:", error);
+    logger.error("[Native Image Filtering] Failed to compress image:", error);
     throw error;
   }
 }
@@ -410,7 +413,7 @@ export async function rotateImage(
   degrees: number,
 ): Promise<string> {
   try {
-    console.log(`[Native Image Filtering] Rotating image by ${degrees}°`);
+    logger.info(`[Native Image Filtering] Rotating image by ${degrees}°`);
 
     const result = await ImageManipulator.manipulateAsync(
       imageUri,
@@ -421,10 +424,10 @@ export async function rotateImage(
       },
     );
 
-    console.log(`[Native Image Filtering] Image rotated successfully`);
+    logger.info(`[Native Image Filtering] Image rotated successfully`);
     return result.uri;
   } catch (error) {
-    console.error("[Native Image Filtering] Failed to rotate image:", error);
+    logger.error("[Native Image Filtering] Failed to rotate image:", error);
     throw error;
   }
 }
@@ -437,7 +440,7 @@ export async function flipImage(
   direction: "horizontal" | "vertical",
 ): Promise<string> {
   try {
-    console.log(`[Native Image Filtering] Flipping image ${direction}`);
+    logger.info(`[Native Image Filtering] Flipping image ${direction}`);
 
     const actions: ImageManipulator.Action[] = [];
 
@@ -452,10 +455,10 @@ export async function flipImage(
       format: ImageManipulator.SaveFormat.JPEG,
     });
 
-    console.log(`[Native Image Filtering] Image flipped successfully`);
+    logger.info(`[Native Image Filtering] Image flipped successfully`);
     return result.uri;
   } catch (error) {
-    console.error("[Native Image Filtering] Failed to flip image:", error);
+    logger.error("[Native Image Filtering] Failed to flip image:", error);
     throw error;
   }
 }
@@ -471,7 +474,7 @@ export async function cropImage(
   height: number,
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Native Image Filtering] Cropping image to ${width}x${height} at (${originX}, ${originY})`,
     );
 
@@ -493,10 +496,10 @@ export async function cropImage(
       },
     );
 
-    console.log(`[Native Image Filtering] Image cropped successfully`);
+    logger.info(`[Native Image Filtering] Image cropped successfully`);
     return result.uri;
   } catch (error) {
-    console.error("[Native Image Filtering] Failed to crop image:", error);
+    logger.error("[Native Image Filtering] Failed to crop image:", error);
     throw error;
   }
 }
@@ -509,13 +512,13 @@ export async function extractDominantColor(
   imageUri: string,
 ): Promise<{ r: number; g: number; b: number }> {
   try {
-    console.log(`[Native Image Filtering] Extracting dominant color`);
+    logger.info(`[Native Image Filtering] Extracting dominant color`);
 
     // This would require image analysis
     // Return placeholder
     return { r: 128, g: 128, b: 128 };
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to extract dominant color:",
       error,
     );
@@ -528,7 +531,7 @@ export async function extractDominantColor(
  */
 export async function applyInstantFilmLook(imageUri: string): Promise<string> {
   try {
-    console.log(`[Native Image Filtering] Applying instant film look`);
+    logger.info(`[Native Image Filtering] Applying instant film look`);
 
     const result = await ImageManipulator.manipulateAsync(imageUri, [], {
       compress: 1,
@@ -537,7 +540,7 @@ export async function applyInstantFilmLook(imageUri: string): Promise<string> {
 
     return result.uri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to apply instant film look:",
       error,
     );
@@ -550,7 +553,7 @@ export async function applyInstantFilmLook(imageUri: string): Promise<string> {
  */
 export async function applyBlackAndWhite(imageUri: string): Promise<string> {
   try {
-    console.log(`[Native Image Filtering] Applying black and white conversion`);
+    logger.info(`[Native Image Filtering] Applying black and white conversion`);
 
     const result = await ImageManipulator.manipulateAsync(imageUri, [], {
       compress: 1,
@@ -559,7 +562,7 @@ export async function applyBlackAndWhite(imageUri: string): Promise<string> {
 
     return result.uri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Image Filtering] Failed to apply black and white conversion:",
       error,
     );

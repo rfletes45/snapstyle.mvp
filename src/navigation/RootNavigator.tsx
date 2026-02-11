@@ -1,5 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import {
+  BottomTabNavigationOptions,
+  createBottomTabNavigator,
+} from "@react-navigation/bottom-tabs";
 import {
   getFocusedRouteNameFromRoute,
   NavigationContainer,
@@ -12,6 +15,17 @@ import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
 import { navigationRef } from "@/services/navigationRef";
 import { useAppTheme } from "@/store/ThemeContext";
+import type {
+  AppTabsParamList,
+  AuthStackParamList,
+  InboxStackParamList,
+  MainStackParamList,
+  MomentsStackParamList,
+  PlayStackParamList,
+  ProfileSetupStackParamList,
+  ProfileTabStackParamList,
+  RootStackParamList,
+} from "@/types/navigation/root";
 
 // Auth screens
 import ForgotPasswordScreen from "@/screens/auth/ForgotPasswordScreen";
@@ -21,15 +35,14 @@ import SignupScreen from "@/screens/auth/SignupScreen";
 import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 
 // App screens
-import CartCourseScreen from "@/components/games/CartCourse/CartCourseScreen";
 import { withErrorBoundary } from "@/components/withErrorBoundary";
-import { PROFILE_FEATURES } from "@/constants/featureFlags";
 import ChatListScreen from "@/screens/chat/ChatListScreenV2";
 import ChatScreen from "@/screens/chat/ChatScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
 import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
 import AchievementsScreen from "@/screens/games/AchievementsScreen";
+import AirHockeyGameScreen from "@/screens/games/AirHockeyGameScreen";
 import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
 import BrickBreakerGameScreen from "@/screens/games/BrickBreakerGameScreen";
 import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
@@ -48,31 +61,21 @@ import NumberMasterGameScreen from "@/screens/games/NumberMasterGameScreen";
 import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
 import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
 import SnakeMasterGameScreen from "@/screens/games/SnakeMasterGameScreen";
-import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
-import StackPuzzleGameScreen from "@/screens/games/StackPuzzleGameScreen";
-import TargetMasterGameScreen from "@/screens/games/TargetMasterGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import TileSlideGameScreen from "@/screens/games/TileSlideGameScreen";
 import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
 import WordMasterGameScreen from "@/screens/games/WordMasterGameScreen";
 // Phase 3 game screens
 import CrosswordGameScreen from "@/screens/games/CrosswordGameScreen";
-import DrawGameScreen from "@/screens/games/DrawGameScreen";
-import HexGameScreen from "@/screens/games/HexGameScreen";
-import MatchGameScreen from "@/screens/games/MatchGameScreen";
-import NonogramGameScreen from "@/screens/games/NonogramGameScreen";
-import PipesGameScreen from "@/screens/games/PipesGameScreen";
 import PongGameScreen from "@/screens/games/PongGameScreen";
+import PoolGameScreen from "@/screens/games/PoolGameScreen";
 import RaceGameScreen from "@/screens/games/RaceGameScreen";
 import ReversiGameScreen from "@/screens/games/ReversiGameScreen";
-import SliceGameScreen from "@/screens/games/SliceGameScreen";
-import TapTapGameScreen from "@/screens/games/TapTapGameScreen";
+import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
 import WarGameScreen from "@/screens/games/WarGameScreen";
-import WordsGameScreen from "@/screens/games/WordsGameScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import MutualFriendsListScreen from "@/screens/profile/MutualFriendsListScreen";
 import OwnProfileScreen from "@/screens/profile/OwnProfileScreen";
-import ProfileScreen from "@/screens/profile/ProfileScreen";
 import SetStatusScreen from "@/screens/profile/SetStatusScreen";
 import UserProfileScreen from "@/screens/profile/UserProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
@@ -92,7 +95,6 @@ const LocalStorageDebugScreen = __DEV__
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
 
-import { SHOP_FEATURES } from "@/constants/featureFlags";
 import PointsShopScreen from "@/screens/shop/PointsShopScreen";
 import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
 import PurchaseHistoryScreen from "@/screens/shop/PurchaseHistoryScreen";
@@ -117,6 +119,7 @@ import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
 // Camera screens
 import CameraScreen from "@/screens/camera/CameraScreen";
 import CameraShareScreen from "@/screens/camera/ShareScreen";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 
 // Call screens
 import {
@@ -127,8 +130,15 @@ import {
   VideoCallScreen,
 } from "@/screens/calls";
 
-const Stack = createNativeStackNavigator<any>();
-const Tab = createBottomTabNavigator<any>();
+const AuthStack_Nav = createNativeStackNavigator<AuthStackParamList>();
+const InboxStack_Nav = createNativeStackNavigator<InboxStackParamList>();
+const MomentsStack_Nav = createNativeStackNavigator<MomentsStackParamList>();
+const PlayStack_Nav = createNativeStackNavigator<PlayStackParamList>();
+const ProfileStack_Nav = createNativeStackNavigator<ProfileTabStackParamList>();
+const MainStack_Nav = createNativeStackNavigator<MainStackParamList>();
+const ProfileSetupStack_Nav =
+  createNativeStackNavigator<ProfileSetupStackParamList>();
+const Tab = createBottomTabNavigator<AppTabsParamList>();
 
 // Wrap game screens with ErrorBoundary to prevent crashes from bubbling up
 const SafeBounceBlitzGame = withErrorBoundary(BounceBlitzGameScreen);
@@ -144,30 +154,25 @@ const SafeTicTacToeGame = withErrorBoundary(TicTacToeGameScreen);
 const SafeTileSlideGame = withErrorBoundary(TileSlideGameScreen);
 const SafeTimedTapGame = withErrorBoundary(TimedTapGameScreen);
 const SafeWordGame = withErrorBoundary(WordMasterGameScreen);
-const SafeCartCourseGame = withErrorBoundary(CartCourseScreen);
-const SafeStackGame = withErrorBoundary(StackPuzzleGameScreen);
 const SafeFourGame = withErrorBoundary(ConnectFourGameScreen);
 const SafeMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
 const SafeNumberGame = withErrorBoundary(NumberMasterGameScreen);
 const SafeDotsGame = withErrorBoundary(DotMatchGameScreen);
-const SafeAimGame = withErrorBoundary(TargetMasterGameScreen);
 const SafeLightsGame = withErrorBoundary(LightsOutGameScreen);
 const SafeGomokuGame = withErrorBoundary(GomokuMasterGameScreen);
 // Phase 3 safe wrappers
+const SafeAirHockeyGame = withErrorBoundary(AirHockeyGameScreen);
+const SafePoolGame = withErrorBoundary(PoolGameScreen);
 const SafePongGame = withErrorBoundary(PongGameScreen);
 const SafeWarGame = withErrorBoundary(WarGameScreen);
 const SafeReversiGame = withErrorBoundary(ReversiGameScreen);
 const SafeCrosswordGame = withErrorBoundary(CrosswordGameScreen);
-const SafePipesGame = withErrorBoundary(PipesGameScreen);
-const SafeNonogramGame = withErrorBoundary(NonogramGameScreen);
-const SafeTapTapGame = withErrorBoundary(TapTapGameScreen);
-const SafeSliceGame = withErrorBoundary(SliceGameScreen);
 const SafeRaceGame = withErrorBoundary(RaceGameScreen);
-const SafeHexGame = withErrorBoundary(HexGameScreen);
-const SafeDrawGame = withErrorBoundary(DrawGameScreen);
-const SafeMatchGame = withErrorBoundary(MatchGameScreen);
-const SafeWordsGame = withErrorBoundary(WordsGameScreen);
-
+const SafeGamesHub = withErrorBoundary(GamesHubScreen);
+const SafeLeaderboard = withErrorBoundary(LeaderboardScreen);
+const SafeAchievements = withErrorBoundary(AchievementsScreen);
+const SafeGameHistory = withErrorBoundary(GameHistoryScreen);
+const SafeSpectatorView = withErrorBoundary(SpectatorViewScreen);
 /**
  * Routes that should hide the bottom tab bar.
  * NOTE: Most full-screen routes (ChatDetail, GroupChat, etc.) are now at the
@@ -192,30 +197,20 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "CheckersGame",
   "ChessGame",
   "CrazyEightsGame",
-  "CartCourseGame",
-  "StackGame",
   "FourGame",
   "MinesweeperGame",
   "NumberGame",
   "DotsGame",
-  "AimGame",
   "LightsGame",
   "GomokuGame",
   // Phase 3 game screens
+  "AirHockeyGame",
   "PongGame",
   "WarGame",
   "ReversiGame",
   "CrosswordGame",
-  "PipesGame",
-  "NonogramGame",
-  "TapTapGame",
-  "SliceGame",
   "RaceGame",
-  "HexGame",
-  "DrawGame",
-  "MatchGame",
-  "WordsGame",
-  "SpectatorView",
+  "PoolGame",
   "Leaderboard",
   "Achievements",
   "GameHistory",
@@ -226,7 +221,10 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
  * NOTE: With the new architecture where chat screens are at the root level,
  * this is only needed for screens that remain in nested stacks (like StoryViewer).
  */
-function getTabBarStyle(route: any, defaultStyle: any) {
+function getTabBarStyle(
+  route: Parameters<typeof getFocusedRouteNameFromRoute>[0],
+  defaultStyle: BottomTabNavigationOptions["tabBarStyle"],
+): BottomTabNavigationOptions["tabBarStyle"] {
   const routeName = getFocusedRouteNameFromRoute(route);
 
   // If we're on a route that should hide the tab bar, return hidden style
@@ -245,7 +243,7 @@ function AuthStack() {
   const { colors } = useAppTheme();
 
   return (
-    <Stack.Navigator
+    <AuthStack_Nav.Navigator
       screenOptions={{
         headerShown: false,
         contentStyle: {
@@ -254,12 +252,18 @@ function AuthStack() {
         animation: "simple_push",
       }}
     >
-      <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Signup" component={SignupScreen} />
-      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-    </Stack.Navigator>
+      <AuthStack_Nav.Screen name="Welcome" component={WelcomeScreen} />
+      <AuthStack_Nav.Screen name="Login" component={LoginScreen} />
+      <AuthStack_Nav.Screen name="Signup" component={SignupScreen} />
+      <AuthStack_Nav.Screen
+        name="ForgotPassword"
+        component={ForgotPasswordScreen}
+      />
+      <AuthStack_Nav.Screen
+        name="ProfileSetup"
+        component={ProfileSetupScreen}
+      />
+    </AuthStack_Nav.Navigator>
   );
 }
 
@@ -272,7 +276,7 @@ function InboxStack() {
   const { colors } = useAppTheme();
 
   return (
-    <Stack.Navigator
+    <InboxStack_Nav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.headerBackground,
@@ -289,32 +293,32 @@ function InboxStack() {
         animation: "simple_push",
       }}
     >
-      <Stack.Screen
+      <InboxStack_Nav.Screen
         name="ChatList"
         component={ChatListScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <InboxStack_Nav.Screen
         name="ScheduledMessages"
         component={ScheduledMessagesScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <InboxStack_Nav.Screen
         name="GroupInvites"
         component={GroupInvitesScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <InboxStack_Nav.Screen
         name="InboxSettings"
         component={InboxSettingsScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <InboxStack_Nav.Screen
         name="InboxSearch"
         component={InboxSearchScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </InboxStack_Nav.Navigator>
   );
 }
 
@@ -325,7 +329,7 @@ function MomentsStack() {
   const { colors } = useAppTheme();
 
   return (
-    <Stack.Navigator
+    <MomentsStack_Nav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.headerBackground,
@@ -342,12 +346,12 @@ function MomentsStack() {
         animation: "simple_push",
       }}
     >
-      <Stack.Screen
+      <MomentsStack_Nav.Screen
         name="StoriesList"
         component={StoriesScreen}
         options={{ title: "Moments" }}
       />
-      <Stack.Screen
+      <MomentsStack_Nav.Screen
         name="StoryViewer"
         component={StoryViewerScreen}
         options={{
@@ -355,7 +359,7 @@ function MomentsStack() {
           presentation: "modal",
         }}
       />
-    </Stack.Navigator>
+    </MomentsStack_Nav.Navigator>
   );
 }
 
@@ -366,7 +370,7 @@ function PlayStack() {
   const { colors } = useAppTheme();
 
   return (
-    <Stack.Navigator
+    <PlayStack_Nav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.headerBackground,
@@ -383,12 +387,12 @@ function PlayStack() {
         animation: "simple_push",
       }}
     >
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="GamesHub"
-        component={GamesHubScreen}
+        component={SafeGamesHub}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="ReactionTapGame"
         component={SafeReactionTapGame}
         options={{
@@ -396,7 +400,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="TimedTapGame"
         component={SafeTimedTapGame}
         options={{
@@ -404,7 +408,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="BounceBlitzGame"
         component={SafeBounceBlitzGame}
         options={{
@@ -412,7 +416,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="MemoryGame"
         component={SafeMemoryGame}
         options={{
@@ -420,7 +424,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="WordGame"
         component={SafeWordGame}
         options={{
@@ -428,7 +432,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="Play2048Game"
         component={SafePlay2048Game}
         options={{
@@ -437,7 +441,7 @@ function PlayStack() {
           gestureEnabled: false,
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="SnakeGame"
         component={SafeSnakeGame}
         options={{
@@ -447,7 +451,7 @@ function PlayStack() {
         }}
       />
       {/* New Single-Player Games (Phase 1) */}
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="BrickBreakerGame"
         component={SafeBrickBreakerGame}
         options={{
@@ -456,7 +460,7 @@ function PlayStack() {
           gestureEnabled: false,
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="TileSlideGame"
         component={SafeTileSlideGame}
         options={{
@@ -464,7 +468,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="TicTacToeGame"
         component={SafeTicTacToeGame}
         options={{
@@ -472,7 +476,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="CheckersGame"
         component={SafeCheckersGame}
         options={{
@@ -480,7 +484,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="ChessGame"
         component={SafeChessGame}
         options={{
@@ -488,7 +492,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="CrazyEightsGame"
         component={SafeCrazyEightsGame}
         options={{
@@ -496,26 +500,8 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
-        name="CartCourseGame"
-        component={SafeCartCourseGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
       {/* New Phase 2 Games */}
-      <Stack.Screen
-        name="StackGame"
-        component={SafeStackGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="FourGame"
         component={SafeFourGame}
         options={{
@@ -523,7 +509,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="MinesweeperGame"
         component={SafeMinesweeperGame}
         options={{
@@ -531,7 +517,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="NumberGame"
         component={SafeNumberGame}
         options={{
@@ -539,7 +525,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="DotsGame"
         component={SafeDotsGame}
         options={{
@@ -547,16 +533,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
-        name="AimGame"
-        component={SafeAimGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="LightsGame"
         component={SafeLightsGame}
         options={{
@@ -564,7 +541,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="GomokuGame"
         component={SafeGomokuGame}
         options={{
@@ -573,7 +550,25 @@ function PlayStack() {
         }}
       />
       {/* Phase 3 Games */}
-      <Stack.Screen
+      <PlayStack_Nav.Screen
+        name="AirHockeyGame"
+        component={SafeAirHockeyGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <PlayStack_Nav.Screen
+        name="PoolGame"
+        component={SafePoolGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <PlayStack_Nav.Screen
         name="PongGame"
         component={SafePongGame}
         options={{
@@ -582,7 +577,7 @@ function PlayStack() {
           gestureEnabled: false,
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="WarGame"
         component={SafeWarGame}
         options={{
@@ -590,7 +585,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="ReversiGame"
         component={SafeReversiGame}
         options={{
@@ -598,7 +593,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="CrosswordGame"
         component={SafeCrosswordGame}
         options={{
@@ -606,41 +601,7 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
-        name="PipesGame"
-        component={SafePipesGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
-        name="NonogramGame"
-        component={SafeNonogramGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
-        name="TapTapGame"
-        component={SafeTapTapGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
-        name="SliceGame"
-        component={SafeSliceGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="RaceGame"
         component={SafeRaceGame}
         options={{
@@ -648,64 +609,22 @@ function PlayStack() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
-        name="HexGame"
-        component={SafeHexGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
-        name="DrawGame"
-        component={SafeDrawGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen
-        name="MatchGame"
-        component={SafeMatchGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
-        name="WordsGame"
-        component={SafeWordsGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      {/* Spectator View for watching single-player games */}
-      <Stack.Screen
-        name="SpectatorView"
-        component={SpectatorViewScreen}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="Leaderboard"
-        component={LeaderboardScreen}
+        component={SafeLeaderboard}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="Achievements"
-        component={AchievementsScreen}
+        component={SafeAchievements}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <PlayStack_Nav.Screen
         name="GameHistory"
-        component={GameHistoryScreen}
+        component={SafeGameHistory}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </PlayStack_Nav.Navigator>
   );
 }
 
@@ -715,13 +634,11 @@ function PlayStack() {
 function ProfileStack() {
   const { colors } = useAppTheme();
 
-  // Use new OwnProfileScreen when feature flag is enabled
-  const ProfileMainScreen = PROFILE_FEATURES.NEW_PROFILE_LAYOUT
-    ? OwnProfileScreen
-    : ProfileScreen;
+  // Use new OwnProfileScreen (graduated feature flag)
+  const ProfileMainScreen = OwnProfileScreen;
 
   return (
-    <Stack.Navigator
+    <ProfileStack_Nav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.headerBackground,
@@ -738,72 +655,72 @@ function ProfileStack() {
         animation: "simple_push",
       }}
     >
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="ProfileMain"
         component={ProfileMainScreen}
         options={{ headerShown: false }}
       />
       {/* Debug screens only available in development */}
       {__DEV__ && (
-        <Stack.Screen
+        <ProfileStack_Nav.Screen
           name="Debug"
           component={DebugScreen}
           options={{ title: "Debug Info" }}
         />
       )}
       {__DEV__ && (
-        <Stack.Screen
+        <ProfileStack_Nav.Screen
           name="LocalStorageDebug"
           component={LocalStorageDebugScreen}
           options={{ title: "Local Storage Debug" }}
         />
       )}
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="BlockedUsers"
         component={BlockedUsersScreen}
         options={{ title: "Blocked" }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="PrivacySettings"
         component={PrivacySettingsScreen}
         options={{ title: "Privacy Settings" }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="BadgeCollection"
         component={BadgeCollectionScreen}
         options={{ title: "Badges" }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="Settings"
         component={SettingsScreen}
         options={{ title: "Settings" }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="ThemeSettings"
         component={ThemeSettingsScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="Wallet"
         component={WalletScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="Tasks"
         component={TasksScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="Shop"
         component={ShopScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <ProfileStack_Nav.Screen
         name="AdminReports"
         component={AdminReportsQueueScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+    </ProfileStack_Nav.Navigator>
   );
 }
 
@@ -813,6 +730,9 @@ function ProfileStack() {
  */
 function AppTabs() {
   const { colors } = useAppTheme();
+  type MaterialCommunityIconName = React.ComponentProps<
+    typeof MaterialCommunityIcons
+  >["name"];
 
   // Default tab bar style
   const defaultTabBarStyle = {
@@ -845,7 +765,7 @@ function AppTabs() {
         // Improves performance by keeping screens mounted but frozen
         lazy: true,
         tabBarIcon: ({ color, size }) => {
-          let iconName: string = "message-outline";
+          let iconName: MaterialCommunityIconName = "message-outline";
 
           switch (route.name) {
             case "Shop":
@@ -867,7 +787,7 @@ function AppTabs() {
 
           return (
             <MaterialCommunityIcons
-              name={iconName as any}
+              name={iconName}
               size={size}
               color={color}
             />
@@ -877,7 +797,7 @@ function AppTabs() {
     >
       <Tab.Screen
         name="Shop"
-        component={SHOP_FEATURES.SHOP_HUB ? ShopHubScreen : ShopScreen}
+        component={ShopHubScreen}
         options={{ headerShown: false }}
       />
       <Tab.Screen
@@ -926,7 +846,7 @@ function MainStack() {
   const { colors } = useAppTheme();
 
   return (
-    <Stack.Navigator
+    <MainStack_Nav.Navigator
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.headerBackground,
@@ -945,43 +865,43 @@ function MainStack() {
       }}
     >
       {/* Main tabs as the base screen */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="MainTabs"
         component={AppTabs}
         options={{ headerShown: false }}
       />
 
       {/* Full-screen chat screens - slide over tabs */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="ChatDetail"
         component={ChatScreen}
         options={{
           title: "Message",
         }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="GroupChat"
         component={GroupChatScreen}
         options={{
           headerShown: false,
         }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="GroupChatCreate"
         component={GroupChatCreateScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="GroupChatInfo"
         component={GroupChatInfoScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="ChatSettings"
         component={ChatSettingsScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="SnapViewer"
         component={SnapViewerScreen}
         options={{
@@ -991,7 +911,7 @@ function MainStack() {
       />
 
       {/* Camera screens - full-screen immersive experience */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="Camera"
         component={CameraScreen}
         options={{
@@ -1000,7 +920,7 @@ function MainStack() {
         }}
       />
 
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="CameraShare"
         component={CameraShareScreen}
         options={{
@@ -1009,110 +929,124 @@ function MainStack() {
         }}
       />
 
-      {/* Call screens - full-screen overlay during calls */}
-      <Stack.Screen
-        name="AudioCall"
-        component={AudioCallScreen}
-        options={{
-          headerShown: false,
-          presentation: "fullScreenModal",
-          gestureEnabled: false, // Prevent accidental swipe-to-dismiss
-          animation: "fade",
-        }}
-      />
-      <Stack.Screen
-        name="VideoCall"
-        component={VideoCallScreen}
-        options={{
-          headerShown: false,
-          presentation: "fullScreenModal",
-          gestureEnabled: false, // Prevent accidental swipe-to-dismiss
-          animation: "fade",
-        }}
-      />
-      <Stack.Screen
-        name="GroupCall"
-        component={GroupCallScreen}
-        options={{
-          headerShown: false,
-          presentation: "fullScreenModal",
-          gestureEnabled: false, // Prevent accidental swipe-to-dismiss during group calls
-          animation: "fade",
-        }}
-      />
+      {CALL_FEATURES.CALLS_ENABLED && (
+        <>
+          {/* Call screens - full-screen overlay during calls */}
+          <MainStack_Nav.Screen
+            name="AudioCall"
+            component={AudioCallScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              gestureEnabled: false, // Prevent accidental swipe-to-dismiss
+              animation: "fade",
+            }}
+          />
+          <MainStack_Nav.Screen
+            name="VideoCall"
+            component={VideoCallScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              gestureEnabled: false, // Prevent accidental swipe-to-dismiss
+              animation: "fade",
+            }}
+          />
+          <MainStack_Nav.Screen
+            name="GroupCall"
+            component={GroupCallScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              gestureEnabled: false, // Prevent accidental swipe-to-dismiss during group calls
+              animation: "fade",
+            }}
+          />
 
-      {/* Call History - accessible from profile/settings */}
-      <Stack.Screen
-        name="CallHistory"
-        component={CallHistoryScreen}
-        options={{
-          headerShown: false,
-          animation: "slide_from_right",
-        }}
-      />
+          {/* Call History - accessible from profile/settings */}
+          <MainStack_Nav.Screen
+            name="CallHistory"
+            component={CallHistoryScreen}
+            options={{
+              headerShown: false,
+              animation: "slide_from_right",
+            }}
+          />
 
-      {/* Call Settings - accessible from settings */}
-      <Stack.Screen
-        name="CallSettings"
-        component={CallSettingsScreen}
-        options={{
-          headerShown: false,
-          animation: "slide_from_right",
-        }}
-      />
+          {/* Call Settings - accessible from settings */}
+          <MainStack_Nav.Screen
+            name="CallSettings"
+            component={CallSettingsScreen}
+            options={{
+              headerShown: false,
+              animation: "slide_from_right",
+            }}
+          />
+        </>
+      )}
 
       {/* Connections screen - accessible from Inbox header */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="Connections"
         component={FriendsScreen}
         options={{ title: "Connections" }}
       />
 
       {/* User Profile screen - view other users' profiles */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="UserProfile"
         component={UserProfileScreen}
         options={{ headerShown: false }}
       />
 
       {/* Set Status screen - Phase 6 */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="SetStatus"
         component={SetStatusScreen}
         options={{ headerShown: false }}
       />
 
       {/* Mutual Friends List screen - Phase 6 */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="MutualFriendsList"
         component={MutualFriendsListScreen}
         options={{ headerShown: false }}
       />
 
       {/* Shop Overhaul Screens - accessible from Shop tab */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="PointsShop"
         component={PointsShopScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="PremiumShop"
         component={PremiumShopScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="PurchaseHistory"
         component={PurchaseHistoryScreen}
         options={{ headerShown: false }}
       />
 
       {/* Activity Feed */}
-      <Stack.Screen
+      <MainStack_Nav.Screen
         name="ActivityFeed"
         component={ActivityFeedScreen}
         options={{ headerShown: false }}
       />
-    </Stack.Navigator>
+
+      {/* Spectator View — at root level so it's reachable from chat, groups, etc. */}
+      <MainStack_Nav.Screen
+        name="SpectatorView"
+        component={SafeSpectatorView}
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+    </MainStack_Nav.Navigator>
   );
 }
 
@@ -1121,7 +1055,7 @@ function MainStack() {
  */
 interface RootNavigatorProps {
   /** Ref to access navigation from outside NavigationContainer */
-  navigationRef?: React.RefObject<NavigationContainerRef<any> | null>;
+  navigationRef?: React.RefObject<NavigationContainerRef<RootStackParamList> | null>;
 }
 
 /**
@@ -1202,7 +1136,7 @@ export default function RootNavigator({
               <WarningModal />
             </>
           ) : hydrationState === "needs_profile" ? (
-            <Stack.Navigator
+            <ProfileSetupStack_Nav.Navigator
               screenOptions={{
                 headerShown: false,
                 contentStyle: {
@@ -1211,11 +1145,11 @@ export default function RootNavigator({
                 animation: "simple_push",
               }}
             >
-              <Stack.Screen
+              <ProfileSetupStack_Nav.Screen
                 name="ProfileSetup"
                 component={ProfileSetupScreen}
               />
-            </Stack.Navigator>
+            </ProfileSetupStack_Nav.Navigator>
           ) : (
             <AuthStack />
           )}

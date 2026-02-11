@@ -31,8 +31,11 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/wallet/WalletScreen");
 type FilterType = "all" | "earn" | "spend";
 
 export default function WalletScreen({ navigation }: any) {
@@ -62,7 +65,7 @@ export default function WalletScreen({ navigation }: any) {
         setLoading(false);
       },
       (err) => {
-        console.error("[WalletScreen] Wallet subscription error:", err);
+        logger.error("[WalletScreen] Wallet subscription error:", err);
         setError("Failed to load wallet");
         setLoading(false);
       },
@@ -128,7 +131,7 @@ export default function WalletScreen({ navigation }: any) {
         <View
           style={[styles.transactionIcon, { backgroundColor: color + "20" }]}
         >
-          <MaterialCommunityIcons name={icon as any} size={20} color={color} />
+          <MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={20} color={color} />
         </View>
 
         <View style={styles.transactionInfo}>

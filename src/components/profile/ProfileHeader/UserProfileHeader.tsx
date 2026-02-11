@@ -19,7 +19,7 @@ import type {
   ProfileStatus,
 } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
-import { ProfilePictureWithDecoration } from "../ProfilePicture";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 
 // =============================================================================
 // Types

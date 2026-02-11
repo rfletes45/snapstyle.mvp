@@ -16,21 +16,25 @@ import {
   parseFEN,
 } from "@/services/gameValidation/chessValidator";
 import {
-  Bird,
-  FLAPPY_PHYSICS,
-  FlappyGameState,
-  generatePipe,
-  physicsTick,
-} from "@/utils/physics/flappyPhysics";
-import {
-  Ball,
-  createBall,
-  PoolTable,
+  createInitialBalls,
+  createTable,
+  PoolBall,
   simulateShot,
-} from "@/utils/physics/poolPhysics";
+} from "@/services/games/poolEngine";
 
 // Screen width constant for tests
 const SCREEN_WIDTH = 800;
+const PERF_POOL_TABLE = createTable(800, 400);
+
+const createPoolBall = (id: number, x: number, y: number): PoolBall => ({
+  id,
+  x,
+  y,
+  vx: 0,
+  vy: 0,
+  spin: { x: 0, y: 0 },
+  pocketed: false,
+});
 
 // Performance measurement utilities
 const measureExecutionTime = (
@@ -79,118 +83,14 @@ const simulateGameLoop = (
   return { fps, frameTimes };
 };
 
-// Helper to create test Bird
-const createTestBird = (overrides: Partial<Bird> = {}): Bird => ({
-  x: 100,
-  y: 300,
-  velocity: 0,
-  width: FLAPPY_PHYSICS.BIRD_WIDTH,
-  height: FLAPPY_PHYSICS.BIRD_HEIGHT,
-  ...overrides,
-});
-
-// Helper to create test game state
-const createTestGameState = (
-  overrides: Partial<FlappyGameState> = {},
-): FlappyGameState => ({
-  bird: createTestBird(),
-  pipes: [],
-  score: 0,
-  lastPipePassed: -1,
-  isGameOver: false,
-  ...overrides,
-});
-
 describe("Game Performance", () => {
-  describe("Flappy Snap Performance", () => {
-    it("should complete physics tick within frame budget (16ms)", () => {
-      const gameState = createTestGameState({
-        pipes: [
-          generatePipe(400, 0),
-          generatePipe(600, 1),
-          generatePipe(800, 2),
-        ],
-      });
-
-      const result = measureExecutionTime(() => {
-        physicsTick(gameState, 16.67, SCREEN_WIDTH);
-      }, 1000);
-
-      expect(result.average).toBeLessThan(1); // Should be well under 1ms
-      expect(result.max).toBeLessThan(16); // Worst case under frame budget
-    });
-
-    it("should maintain 60fps with typical gameplay scenario", () => {
-      let gameState = createTestGameState();
-
-      // Generate initial pipes
-      for (let i = 0; i < 5; i++) {
-        gameState.pipes.push(generatePipe(400 + i * 200, i));
-      }
-
-      const { fps, frameTimes } = simulateGameLoop(
-        (deltaTime) => {
-          gameState = physicsTick(gameState, deltaTime, SCREEN_WIDTH);
-        },
-        600, // 10 seconds at 60fps
-        60,
-      );
-
-      // Average should support 60fps (frame time < 16.67ms)
-      const avgFrameTime =
-        frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
-      expect(avgFrameTime).toBeLessThan(16.67);
-
-      // 99th percentile should still be under budget
-      const sorted = [...frameTimes].sort((a, b) => a - b);
-      const p99 = sorted[Math.floor(sorted.length * 0.99)];
-      expect(p99).toBeLessThan(16.67);
-    });
-
-    it("should handle rapid pipe generation efficiently", () => {
-      const result = measureExecutionTime(() => {
-        for (let i = 0; i < 100; i++) {
-          generatePipe(400, i, 600);
-        }
-      }, 100);
-
-      expect(result.average).toBeLessThan(5); // 100 pipes in under 5ms
-    });
-  });
-
   describe("Pool Physics Performance", () => {
     it("should complete single frame physics in under 16ms", () => {
-      const balls: Ball[] = [];
-      for (let i = 0; i < 16; i++) {
-        balls.push(
-          createBall(
-            i,
-            100 + (i % 4) * 50,
-            100 + Math.floor(i / 4) * 50,
-            i === 0 ? "cue" : i === 8 ? "eight" : i < 8 ? "solid" : "stripe",
-          ),
-        );
-      }
-
-      const table: PoolTable = {
-        width: 800,
-        height: 400,
-        pockets: [
-          { x: 0, y: 0, radius: 20 },
-          { x: 400, y: 0, radius: 20 },
-          { x: 800, y: 0, radius: 20 },
-          { x: 0, y: 400, radius: 20 },
-          { x: 400, y: 400, radius: 20 },
-          { x: 800, y: 400, radius: 20 },
-        ],
-      };
-
-      // Apply initial shot
-      balls[0].vx = 300;
-      balls[0].vy = 150;
+      const table = createTable(800, 400);
+      const balls = createInitialBalls(table);
 
       const result = measureExecutionTime(() => {
-        simulateShot(balls, { angle: 0, power: 300 }, table, 1000);
+        simulateShot(balls, { angle: 0, power: 0.72, english: { x: 0, y: 0 } }, table);
       }, 100);
 
       expect(result.average).toBeLessThan(16);
@@ -198,33 +98,19 @@ describe("Game Performance", () => {
 
     it("should handle collision-heavy scenarios efficiently", () => {
       // Create balls very close together to force many collisions
-      const balls: Ball[] = [];
-      for (let i = 0; i < 16; i++) {
-        balls.push(
-          createBall(
-            i,
-            300 + (i % 4) * 25,
-            200 + Math.floor(i / 4) * 25,
-            i === 0 ? "cue" : i === 8 ? "eight" : i < 8 ? "solid" : "stripe",
-          ),
-        );
-      }
-
-      const table: PoolTable = {
-        width: 800,
-        height: 400,
-        pockets: [
-          { x: 0, y: 0, radius: 20 },
-          { x: 400, y: 0, radius: 20 },
-          { x: 800, y: 0, radius: 20 },
-          { x: 0, y: 400, radius: 20 },
-          { x: 400, y: 400, radius: 20 },
-          { x: 800, y: 400, radius: 20 },
-        ],
-      };
+      const table = createTable(800, 400);
+      const balls = createInitialBalls(table).map((ball, index) => ({
+        ...ball,
+        x: 300 + (index % 4) * table.ballRadius * 2.1,
+        y: 120 + Math.floor(index / 4) * table.ballRadius * 2.1,
+      }));
 
       const result = measureExecutionTime(() => {
-        simulateShot(balls, { angle: 45, power: 500 }, table, 500);
+        simulateShot(
+          balls,
+          { angle: Math.PI / 4, power: 0.86, english: { x: 0.15, y: -0.2 } },
+          table,
+        );
       }, 50);
 
       // Even with many collisions, should complete reasonably fast
@@ -232,33 +118,39 @@ describe("Game Performance", () => {
     });
 
     it("should scale linearly with ball count", () => {
-      const createBallSet = (count: number): Ball[] => {
-        const balls: Ball[] = [];
+      const table = createTable(800, 400);
+      const createBallSet = (count: number): PoolBall[] => {
+        const balls: PoolBall[] = [];
         for (let i = 0; i < count; i++) {
           balls.push(
-            createBall(
-              i,
-              100 + (i % 8) * 80,
-              100 + Math.floor(i / 8) * 80,
-              "solid",
-            ),
+            {
+              id: i,
+              x: 100 + (i % 8) * 32,
+              y: 80 + Math.floor(i / 8) * 32,
+              vx: 0,
+              vy: 0,
+              spin: { x: 0, y: 0 },
+              pocketed: false,
+            },
           );
         }
         return balls;
       };
 
-      const table = {
-        width: 800,
-        height: 400,
-        pockets: [],
-      };
-
       const time8 = measureExecutionTime(() => {
-        simulateShot(createBallSet(8), { angle: 0, power: 200 }, table, 100);
+        simulateShot(
+          createBallSet(8),
+          { angle: 0, power: 0.5, english: { x: 0, y: 0 } },
+          table,
+        );
       }, 50);
 
       const time16 = measureExecutionTime(() => {
-        simulateShot(createBallSet(16), { angle: 0, power: 200 }, table, 100);
+        simulateShot(
+          createBallSet(16),
+          { angle: 0, power: 0.5, english: { x: 0, y: 0 } },
+          table,
+        );
       }, 50);
 
       // Time should not increase more than 4x for double the balls
@@ -355,57 +247,23 @@ describe("Game Performance", () => {
   });
 
   describe("Memory Efficiency", () => {
-    it("should not leak memory during extended Flappy gameplay", () => {
-      let gameState = createTestGameState();
-
-      // Simulate extended gameplay
-      const initialPipeCount = 5;
-
-      for (let i = 0; i < initialPipeCount; i++) {
-        gameState.pipes.push(generatePipe(400 + i * 200, i));
-      }
-
-      // Run many frames
-      for (let frame = 0; frame < 10000; frame++) {
-        gameState = physicsTick(gameState, 16.67, SCREEN_WIDTH);
-
-        // Periodically add pipes (simulating continuous gameplay)
-        if (frame % 100 === 0) {
-          gameState.pipes.push(
-            generatePipe(1000, gameState.lastPipePassed + 1),
-          );
-        }
-
-        // Clean up off-screen pipes
-        gameState.pipes = gameState.pipes.filter((p) => p.x > -100);
-      }
-
-      // Pipe count should stay bounded
-      expect(gameState.pipes.length).toBeLessThan(20);
-    });
-
     it("should efficiently reuse objects in pool physics", () => {
-      const balls: Ball[] = [];
+      const balls: PoolBall[] = [];
       for (let i = 0; i < 16; i++) {
-        balls.push(
-          createBall(
-            i,
-            100 + i * 30,
-            200,
-            i === 0 ? "cue" : i === 8 ? "eight" : i < 8 ? "solid" : "stripe",
-          ),
-        );
+        balls.push(createPoolBall(i, 100 + i * 30, 200));
       }
-
-      const table: PoolTable = {
-        width: 800,
-        height: 400,
-        pockets: [],
-      };
 
       // Simulate many shots
       for (let shot = 0; shot < 100; shot++) {
-        simulateShot(balls, { angle: shot * 10, power: 200 }, table, 100);
+        simulateShot(
+          balls,
+          {
+            angle: (shot * 10 * Math.PI) / 180,
+            power: 0.6,
+            english: { x: 0, y: 0 },
+          },
+          PERF_POOL_TABLE,
+        );
       }
 
       // All balls should still exist
@@ -414,21 +272,6 @@ describe("Game Performance", () => {
   });
 
   describe("Load Time Simulation", () => {
-    it("should initialize Flappy game state quickly", () => {
-      const result = measureExecutionTime(() => {
-        const gameState = createTestGameState();
-
-        // Generate initial pipes
-        for (let i = 0; i < 5; i++) {
-          gameState.pipes.push(generatePipe(400 + i * 200, i));
-        }
-
-        return gameState;
-      }, 1000);
-
-      expect(result.average).toBeLessThan(1); // Under 1ms
-    });
-
     it("should parse starting chess position quickly", () => {
       const startingFEN =
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -441,32 +284,14 @@ describe("Game Performance", () => {
 
     it("should create pool table state quickly", () => {
       const result = measureExecutionTime(() => {
-        const balls: Ball[] = [];
+        const balls: PoolBall[] = [];
         for (let i = 0; i < 16; i++) {
-          balls.push(
-            createBall(
-              i,
-              100 + i * 30,
-              200,
-              i === 0 ? "cue" : i === 8 ? "eight" : i < 8 ? "solid" : "stripe",
-            ),
-          );
+          balls.push(createPoolBall(i, 100 + i * 30, 200));
         }
 
         return {
           balls,
-          table: {
-            width: 800,
-            height: 400,
-            pockets: [
-              { x: 0, y: 0, radius: 20 },
-              { x: 400, y: 0, radius: 20 },
-              { x: 800, y: 0, radius: 20 },
-              { x: 0, y: 400, radius: 20 },
-              { x: 400, y: 400, radius: 20 },
-              { x: 800, y: 400, radius: 20 },
-            ],
-          },
+          table: PERF_POOL_TABLE,
         };
       }, 1000);
 
@@ -475,43 +300,22 @@ describe("Game Performance", () => {
   });
 
   describe("Stress Tests", () => {
-    it("should handle rapid Flappy input (spam tapping)", () => {
-      let gameState = createTestGameState();
-
-      const result = measureExecutionTime(() => {
-        // Simulate 10 taps per frame (stress test)
-        for (let tap = 0; tap < 10; tap++) {
-          gameState.bird.velocity = FLAPPY_PHYSICS.FLAP_VELOCITY;
-        }
-        gameState = physicsTick(gameState, 16.67, SCREEN_WIDTH);
-      }, 1000);
-
-      expect(result.average).toBeLessThan(1);
-    });
-
     it("should handle simultaneous pool ball movements", () => {
-      const balls: Ball[] = [];
+      const balls: PoolBall[] = [];
       for (let i = 0; i < 16; i++) {
-        const ball = createBall(
-          i,
-          400,
-          200,
-          i === 0 ? "cue" : i === 8 ? "eight" : i < 8 ? "solid" : "stripe",
-        );
+        const ball = createPoolBall(i, 400, 200);
         // All balls moving in different directions
-        ball.vx = Math.cos((i * Math.PI * 2) / 16) * 200;
-        ball.vy = Math.sin((i * Math.PI * 2) / 16) * 200;
+        ball.vx = Math.cos((i * Math.PI * 2) / 16) * 80;
+        ball.vy = Math.sin((i * Math.PI * 2) / 16) * 80;
         balls.push(ball);
       }
 
-      const table: PoolTable = {
-        width: 800,
-        height: 400,
-        pockets: [],
-      };
-
       const result = measureExecutionTime(() => {
-        simulateShot(balls, { angle: 0, power: 0 }, table, 100);
+        simulateShot(
+          balls,
+          { angle: 0, power: 0.01, english: { x: 0, y: 0 } },
+          PERF_POOL_TABLE,
+        );
       }, 100);
 
       expect(result.average).toBeLessThan(20);
@@ -547,44 +351,23 @@ describe("Performance Regression Tests", () => {
   // These tests set baselines that future changes should not exceed
 
   const performanceBaselines = {
-    flappyPhysicsTick: 0.5, // ms
     poolSimulation: 15, // ms
     chessMoveLegal: 1, // ms
     chessCheckmate: 5, // ms
     fenParsing: 0.5, // ms
   };
 
-  it("should not regress Flappy physics performance", () => {
-    const gameState = createTestGameState({
-      pipes: [generatePipe(400, 0)],
-    });
-
-    const result = measureExecutionTime(() => {
-      physicsTick(gameState, 16.67, SCREEN_WIDTH);
-    }, 1000);
-
-    expect(result.average).toBeLessThan(performanceBaselines.flappyPhysicsTick);
-  });
-
   it("should not regress pool simulation performance", () => {
-    const balls: Ball[] = [];
+    const balls: PoolBall[] = [];
     for (let i = 0; i < 16; i++) {
-      balls.push(
-        createBall(
-          i,
-          100 + i * 30,
-          200,
-          i === 0 ? "cue" : i === 8 ? "eight" : i < 8 ? "solid" : "stripe",
-        ),
-      );
+      balls.push(createPoolBall(i, 100 + i * 30, 200));
     }
 
     const result = measureExecutionTime(() => {
       simulateShot(
         balls,
-        { angle: 45, power: 300 },
-        { width: 800, height: 400, pockets: [] },
-        500,
+        { angle: Math.PI / 4, power: 0.7, english: { x: 0.1, y: -0.1 } },
+        PERF_POOL_TABLE,
       );
     }, 50);
 

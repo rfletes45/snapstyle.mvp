@@ -23,21 +23,24 @@ import {
   CallHistoryEntry,
   CallHistoryFilter,
   CallHistoryStats,
-} from "../../types/call";
-import { formatDurationFull } from "../../utils/time";
-import { getAuthInstance, getFirestoreInstance } from "../firebase";
+} from "@/types/call";
+import { formatDurationFull } from "@/utils/time";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/callHistoryService");
 // Lazy getters to avoid accessing Firebase before initialization
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
 
 // Logging
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallHistoryService] ${msg}`, data ?? "");
+  logger.info(`[CallHistoryService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallHistoryService] ${msg}`, error ?? "");
+  logger.error(`[CallHistoryService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallHistoryService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallHistoryService] ${msg}`, data ?? "");
 
 class CallHistoryService {
   private static instance: CallHistoryService;

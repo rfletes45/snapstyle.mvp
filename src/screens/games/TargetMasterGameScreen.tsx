@@ -1,6 +1,8 @@
 /**
  * TargetMasterGameScreen - Target Shooting Accuracy Game
  *
+ * Supports: Single-player, Colyseus multiplayer
+ *
  * How to play:
  * 1. Tap START to begin a 30-second round
  * 2. Colourful circular targets appear at random positions and shrink over 2 seconds
@@ -12,6 +14,18 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import {
+  CountdownOverlay,
+  GameOverOverlay,
+  OpponentScoreBar,
+  ReconnectingOverlay,
+  WaitingOverlay,
+} from "@/components/games/MultiplayerOverlay";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -23,17 +37,6 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from "react-native";
 import {
   Canvas,
   Circle,
@@ -41,8 +44,33 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
+} from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import Animated, {
+  SharedValue,
+  interpolate,
+  makeMutable,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+const logger = createLogger("screens/games/TargetMasterGameScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -57,11 +85,21 @@ interface Target {
   maxRadius: number;
   color: string;
   spawnedAt: number;
-  anim: Animated.Value;
+  anim: SharedValue<number>;
+}
+
+interface FloatingScoreText {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  anim: SharedValue<number>;
 }
 
 interface TargetMasterGameScreenProps {
   navigation: any;
+  route: any;
 }
 
 // =============================================================================
@@ -156,17 +194,162 @@ const TARGET_COLORS = [
   "#FF85A1",
 ];
 
+interface TargetBubbleProps {
+  target: Target;
+  onPress: () => void;
+}
+
+function TargetBubble({ target, onPress }: TargetBubbleProps) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: target.anim.value }],
+    opacity: interpolate(target.anim.value, [0, 0.3, 1], [0.2, 0.8, 1]),
+  }));
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={[
+        styles.targetTouchable,
+        {
+          left: target.x - target.maxRadius,
+          top: target.y - PLAY_AREA_TOP - target.maxRadius,
+          width: target.maxRadius * 2,
+          height: target.maxRadius * 2,
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.target,
+          {
+            width: target.maxRadius * 2,
+            height: target.maxRadius * 2,
+            borderRadius: target.maxRadius,
+          },
+          animatedStyle,
+        ]}
+      >
+        <Canvas
+          style={{
+            width: target.maxRadius * 2,
+            height: target.maxRadius * 2,
+          }}
+        >
+          <Circle cx={target.maxRadius} cy={target.maxRadius} r={target.maxRadius}>
+            <RadialGradient
+              c={vec(target.maxRadius, target.maxRadius)}
+              r={target.maxRadius}
+              colors={[target.color, `${target.color}88`, `${target.color}00`]}
+            />
+          </Circle>
+          <Circle
+            cx={target.maxRadius}
+            cy={target.maxRadius}
+            r={target.maxRadius * 0.85}
+          >
+            <RadialGradient
+              c={vec(target.maxRadius * 0.7, target.maxRadius * 0.6)}
+              r={target.maxRadius * 0.85}
+              colors={["#FFFFFF", target.color, `${target.color}DD`]}
+            />
+            <Shadow dx={0} dy={2} blur={4} color="rgba(0,0,0,0.3)" />
+          </Circle>
+          <Circle
+            cx={target.maxRadius}
+            cy={target.maxRadius}
+            r={target.maxRadius * 0.5}
+          >
+            <RadialGradient
+              c={vec(target.maxRadius * 0.8, target.maxRadius * 0.7)}
+              r={target.maxRadius * 0.5}
+              colors={[
+                "rgba(255,255,255,0.6)",
+                "rgba(255,255,255,0.2)",
+                "rgba(255,255,255,0)",
+              ]}
+            />
+          </Circle>
+          <Circle
+            cx={target.maxRadius}
+            cy={target.maxRadius}
+            r={target.maxRadius * 0.2}
+          >
+            <RadialGradient
+              c={vec(target.maxRadius * 0.9, target.maxRadius * 0.85)}
+              r={target.maxRadius * 0.2}
+              colors={["#FFFFFF", "rgba(255,255,255,0.7)"]}
+            />
+          </Circle>
+        </Canvas>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+function FloatingScoreTextItem({ item }: { item: FloatingScoreText }) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(item.anim.value, [0, 0.3, 1], [1, 1, 0]),
+    transform: [
+      { translateY: interpolate(item.anim.value, [0, 1], [0, -60]) },
+      { scale: interpolate(item.anim.value, [0, 0.15, 1], [0.5, 1.2, 1]) },
+    ],
+  }));
+
+  return (
+    <Animated.Text
+      style={[
+        styles.floatingText,
+        {
+          left: item.x - 30,
+          top: item.y - PLAY_AREA_TOP - 10,
+          color: item.color,
+        },
+        animatedStyle,
+      ]}
+    >
+      {item.text}
+    </Animated.Text>
+  );
+}
+
 // =============================================================================
 // Component
 // =============================================================================
 
-export default function TargetMasterGameScreen({
+function TargetMasterGameScreen({
   navigation,
+  route,
 }: TargetMasterGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "target_master" });
+  void __codexGameCompletion;
+
+  useGameBackHandler({ gameType: "target_master", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "target_master_game",
+    route?.params?.matchId,
+  );
+  const mp = useMultiplayerGame({
+    gameType: "target_master_game",
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   // Game state
   const [gameState, setGameState] = useState<GameState>("idle");
@@ -192,18 +375,16 @@ export default function TargetMasterGameScreen({
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isNewBest, setIsNewBest] = useState(false);
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "target_master",
+  });
 
   // Floating text feedback
-  const [floatingTexts, setFloatingTexts] = useState<
-    {
-      id: number;
-      x: number;
-      y: number;
-      text: string;
-      color: string;
-      anim: Animated.Value;
-    }[]
-  >([]);
+  const [floatingTexts, setFloatingTexts] = useState<FloatingScoreText[]>([]);
 
   // Refs
   const nextTargetId = useRef(0);
@@ -213,6 +394,9 @@ export default function TargetMasterGameScreen({
   const shrinkTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const floatingTextTimersRef = useRef<
+    Map<number, ReturnType<typeof setTimeout>>
+  >(new Map());
   const startTimeRef = useRef(0);
   const scoreRef = useRef(0);
   const comboRef = useRef(0);
@@ -234,12 +418,42 @@ export default function TargetMasterGameScreen({
   // Load personal best
   // ---------------------------------------------------------------------------
   useEffect(() => {
+    spectatorHost.startHosting();
+  }, [spectatorHost.startHosting]);
+
+  useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "target_master" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "target_master").then(
         setPersonalBest,
       );
     }
   }, [currentFirebaseUser]);
+
+  useEffect(() => {
+    if (gameState !== "playing") return;
+    spectatorHost.updateGameState(
+      JSON.stringify({
+        phase: gameState,
+        timeRemaining,
+        combo,
+        targets: targets.map((target) => ({
+          x: target.x,
+          y: target.y,
+          radius: target.radius,
+        })),
+      }),
+      score,
+      1,
+      3,
+    );
+  }, [
+    combo,
+    gameState,
+    score,
+    spectatorHost.updateGameState,
+    targets,
+    timeRemaining,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Cleanup on unmount
@@ -250,6 +464,8 @@ export default function TargetMasterGameScreen({
       if (spawnTimerRef.current) clearTimeout(spawnTimerRef.current);
       shrinkTimersRef.current.forEach((t) => clearTimeout(t));
       shrinkTimersRef.current.clear();
+      floatingTextTimersRef.current.forEach((t) => clearTimeout(t));
+      floatingTextTimersRef.current.clear();
     };
   }, []);
 
@@ -265,15 +481,14 @@ export default function TargetMasterGameScreen({
   const spawnFloatingText = useCallback(
     (x: number, y: number, text: string, color: string) => {
       const id = nextFloatId.current++;
-      const anim = new Animated.Value(0);
+      const anim = makeMutable(0);
       setFloatingTexts((prev) => [...prev, { id, x, y, text, color, anim }]);
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }).start(() => {
+      anim.value = withTiming(1, { duration: 800 });
+      const cleanupTimer = setTimeout(() => {
         setFloatingTexts((prev) => prev.filter((f) => f.id !== id));
-      });
+        floatingTextTimersRef.current.delete(id);
+      }, 820);
+      floatingTextTimersRef.current.set(id, cleanupTimer);
     },
     [],
   );
@@ -309,7 +524,7 @@ export default function TargetMasterGameScreen({
         (SCREEN_HEIGHT - PLAY_AREA_TOP - PLAY_AREA_BOTTOM - 2 * radius);
     const color =
       TARGET_COLORS[Math.floor(Math.random() * TARGET_COLORS.length)];
-    const anim = new Animated.Value(1);
+    const anim = makeMutable(1);
 
     const target: Target = {
       id,
@@ -325,11 +540,7 @@ export default function TargetMasterGameScreen({
     setTargets((prev) => [...prev, target]);
 
     // Shrink animation over TARGET_LIFETIME
-    Animated.timing(anim, {
-      toValue: 0,
-      duration: diff.targetLifetime,
-      useNativeDriver: true,
-    }).start();
+    anim.value = withTiming(0, { duration: diff.targetLifetime });
 
     // Remove target after lifetime (missed)
     const expireTimer = setTimeout(() => {
@@ -367,6 +578,8 @@ export default function TargetMasterGameScreen({
       setTimeRemaining(activeDiff.gameDuration);
       setIsNewBest(false);
       setFloatingTexts([]);
+      floatingTextTimersRef.current.forEach((t) => clearTimeout(t));
+      floatingTextTimersRef.current.clear();
       scoreRef.current = 0;
       comboRef.current = 0;
       hitsRef.current = 0;
@@ -377,6 +590,7 @@ export default function TargetMasterGameScreen({
 
       setGameState("playing");
       startTimeRef.current = Date.now();
+      spectatorHost.startHosting();
 
       // Haptic
       if (Platform.OS !== "web") {
@@ -401,7 +615,7 @@ export default function TargetMasterGameScreen({
           (activeDiff.maxSpawnInterval - activeDiff.minSpawnInterval);
       spawnTimerRef.current = setTimeout(spawnTarget, initialDelay);
     },
-    [spawnTarget],
+    [spawnTarget, spectatorHost.startHosting],
   );
 
   const endGame = useCallback(async () => {
@@ -416,10 +630,15 @@ export default function TargetMasterGameScreen({
     }
     shrinkTimersRef.current.forEach((t) => clearTimeout(t));
     shrinkTimersRef.current.clear();
+    floatingTextTimersRef.current.forEach((t) => clearTimeout(t));
+    floatingTextTimersRef.current.clear();
 
     setTargets([]);
+    setFloatingTexts([]);
     setGameState("result");
     setTimeRemaining(0);
+    spectatorHost.endHosting(scoreRef.current);
+    if (mp.isMultiplayer) mp.reportFinished();
 
     // Haptic
     if (Platform.OS !== "web") {
@@ -442,21 +661,26 @@ export default function TargetMasterGameScreen({
     // Record session
     if (currentFirebaseUser && finalScore > 0) {
       const session = await recordGameSession(currentFirebaseUser.uid, {
-        gameId: "target_master" as any,
+        gameId: "target_master",
         score: finalScore,
         duration: difficultyRef.current.gameDuration,
       });
 
       if (session && newBest) {
         setPersonalBest({
-          gameId: "target_master" as any,
+          gameId: "target_master",
           bestScore: finalScore,
           achievedAt: Date.now(),
         });
         showSuccess("🎉 New Personal Best!");
       }
     }
-  }, [currentFirebaseUser, personalBest, showSuccess]);
+  }, [
+    currentFirebaseUser,
+    personalBest,
+    showSuccess,
+    spectatorHost.endHosting,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Hit / Miss handling
@@ -488,6 +712,7 @@ export default function TargetMasterGameScreen({
         maxComboRef.current = newCombo;
         setMaxCombo(newCombo);
       }
+      if (mp.isMultiplayer) mp.reportCombo(newCombo);
 
       const multiplier = getComboMultiplier(newCombo);
       const points = Math.round(basePoints * multiplier);
@@ -495,6 +720,7 @@ export default function TargetMasterGameScreen({
       // Update score
       scoreRef.current += points;
       setScore(scoreRef.current);
+      if (mp.isMultiplayer) mp.reportScore(scoreRef.current);
 
       // Hits
       hitsRef.current += 1;
@@ -540,6 +766,7 @@ export default function TargetMasterGameScreen({
       // Penalty
       scoreRef.current += MISS_PENALTY;
       setScore(scoreRef.current);
+      if (mp.isMultiplayer) mp.reportScore(scoreRef.current);
 
       // Misses
       missesRef.current += 1;
@@ -596,7 +823,7 @@ export default function TargetMasterGameScreen({
         showError("Failed to share score. Try again.");
       }
     } catch (error) {
-      console.error("[GameAim] Error sharing score:", error);
+      logger.error("[GameAim] Error sharing score:", error);
       showError("Failed to share score. Try again.");
     } finally {
       setIsSending(false);
@@ -630,8 +857,37 @@ export default function TargetMasterGameScreen({
           />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Aim</Text>
-        <View style={styles.headerSpacer} />
+        {spectatorHost.spectatorRoomId ? (
+          <TouchableOpacity
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            style={styles.backButton}
+            accessibilityLabel="Invite spectators"
+          >
+            <MaterialCommunityIcons name="eye" size={22} color={colors.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
+
+      {/* Opponent score bar (multiplayer) */}
+      {mp.isMultiplayer && mp.phase === "playing" && (
+        <OpponentScoreBar
+          opponentName={mp.opponentName}
+          opponentScore={mp.opponentScore}
+          myScore={score}
+          timeRemaining={mp.timeRemaining}
+          opponentDisconnected={mp.opponentDisconnected}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+      )}
 
       {/* Stats bar (visible during play & result) */}
       {gameState !== "idle" && (
@@ -764,113 +1020,35 @@ export default function TargetMasterGameScreen({
                 <MaterialCommunityIcons name="play" size={32} color="#000" />
                 <Text style={styles.startButtonText}>START</Text>
               </TouchableOpacity>
+              {mp.isAvailable && (
+                <Button
+                  mode="outlined"
+                  onPress={() => {
+                    mp.startMultiplayer().then(() => mp.sendReady());
+                  }}
+                  style={{ marginTop: 12, borderColor: colors.primary }}
+                  textColor={colors.primary}
+                  icon="account-multiple"
+                >
+                  Multiplayer
+                </Button>
+              )}
             </View>
           )}
 
           {/* Targets */}
           {gameState === "playing" &&
             targets.map((target) => (
-              <TouchableOpacity
+              <TargetBubble
                 key={target.id}
-                activeOpacity={0.7}
+                target={target}
                 onPress={() => handleTargetHit(target)}
-                style={[
-                  styles.targetTouchable,
-                  {
-                    left: target.x - target.maxRadius,
-                    top: target.y - PLAY_AREA_TOP - target.maxRadius,
-                    width: target.maxRadius * 2,
-                    height: target.maxRadius * 2,
-                  },
-                ]}
-              >
-                <Animated.View
-                  style={[
-                    styles.target,
-                    {
-                      width: target.maxRadius * 2,
-                      height: target.maxRadius * 2,
-                      borderRadius: target.maxRadius,
-                      transform: [{ scale: target.anim }],
-                      opacity: target.anim.interpolate({
-                        inputRange: [0, 0.3, 1],
-                        outputRange: [0.2, 0.8, 1],
-                      }),
-                    },
-                  ]}
-                >
-                  <Canvas style={{ width: target.maxRadius * 2, height: target.maxRadius * 2 }}>
-                    {/* Outer glow */}
-                    <Circle cx={target.maxRadius} cy={target.maxRadius} r={target.maxRadius}>
-                      <RadialGradient
-                        c={vec(target.maxRadius, target.maxRadius)}
-                        r={target.maxRadius}
-                        colors={[target.color, `${target.color}88`, `${target.color}00`]}
-                      />
-                    </Circle>
-                    {/* Main target body */}
-                    <Circle cx={target.maxRadius} cy={target.maxRadius} r={target.maxRadius * 0.85}>
-                      <RadialGradient
-                        c={vec(target.maxRadius * 0.7, target.maxRadius * 0.6)}
-                        r={target.maxRadius * 0.85}
-                        colors={["#FFFFFF", target.color, `${target.color}DD`]}
-                      />
-                      <Shadow dx={0} dy={2} blur={4} color="rgba(0,0,0,0.3)" />
-                    </Circle>
-                    {/* Inner ring */}
-                    <Circle cx={target.maxRadius} cy={target.maxRadius} r={target.maxRadius * 0.5}>
-                      <RadialGradient
-                        c={vec(target.maxRadius * 0.8, target.maxRadius * 0.7)}
-                        r={target.maxRadius * 0.5}
-                        colors={["rgba(255,255,255,0.6)", "rgba(255,255,255,0.2)", "rgba(255,255,255,0)"]}
-                      />
-                    </Circle>
-                    {/* Center dot */}
-                    <Circle cx={target.maxRadius} cy={target.maxRadius} r={target.maxRadius * 0.2}>
-                      <RadialGradient
-                        c={vec(target.maxRadius * 0.9, target.maxRadius * 0.85)}
-                        r={target.maxRadius * 0.2}
-                        colors={["#FFFFFF", "rgba(255,255,255,0.7)"]}
-                      />
-                    </Circle>
-                  </Canvas>
-                </Animated.View>
-              </TouchableOpacity>
+              />
             ))}
 
           {/* Floating score texts */}
           {floatingTexts.map((ft) => (
-            <Animated.Text
-              key={ft.id}
-              style={[
-                styles.floatingText,
-                {
-                  left: ft.x - 30,
-                  top: ft.y - PLAY_AREA_TOP - 10,
-                  color: ft.color,
-                  opacity: ft.anim.interpolate({
-                    inputRange: [0, 0.3, 1],
-                    outputRange: [1, 1, 0],
-                  }),
-                  transform: [
-                    {
-                      translateY: ft.anim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, -60],
-                      }),
-                    },
-                    {
-                      scale: ft.anim.interpolate({
-                        inputRange: [0, 0.15, 1],
-                        outputRange: [0.5, 1.2, 1],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              {ft.text}
-            </Animated.Text>
+            <FloatingScoreTextItem key={ft.id} item={ft} />
           ))}
 
           {/* Result overlay */}
@@ -1024,6 +1202,94 @@ export default function TargetMasterGameScreen({
           onSelectFriend={handleSelectFriend}
           currentUserId={currentFirebaseUser.uid}
           title="Share Score With"
+        />
+      )}
+
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "target_master",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
+      />
+
+      {/* Multiplayer overlays */}
+      {mp.isMultiplayer && mp.phase === "waiting" && (
+        <WaitingOverlay
+          onCancel={mp.cancelMultiplayer}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.phase === "countdown" && (
+        <CountdownOverlay
+          count={mp.countdownValue}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.reconnecting && (
+        <ReconnectingOverlay
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.phase === "finished" && (
+        <GameOverOverlay
+          isWinner={mp.isWinner}
+          isTie={mp.isTie}
+          winnerName={mp.winnerName}
+          myScore={score}
+          opponentScore={mp.opponentScore}
+          opponentName={mp.opponentName}
+          rematchRequested={mp.rematchRequested}
+          onPlayAgain={() => startGame()}
+          onRematch={mp.requestRematch}
+          onAcceptRematch={mp.acceptRematch}
+          onMenu={() => {
+            mp.cancelMultiplayer();
+            setGameState("idle");
+          }}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
         />
       )}
     </View>
@@ -1247,3 +1513,5 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
 });
+
+export default withGameErrorBoundary(TargetMasterGameScreen, "target_master");

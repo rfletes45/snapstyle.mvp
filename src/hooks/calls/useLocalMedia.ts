@@ -3,7 +3,7 @@
  */
 
 import { useMemo } from "react";
-import { useCallContext } from "../../contexts/CallContext";
+import { useCallContext } from "@/contexts/CallContext";
 
 // Use 'any' type for MediaStream to avoid importing react-native-webrtc
 // The actual type is provided by CallContext which handles platform checks

@@ -26,6 +26,9 @@ import { getFirestoreInstance } from "./firebase";
 import { getFriends } from "./friends";
 import { deleteSnapImage, downloadSnapImage } from "./storage";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/stories");
 const STORY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 // In-memory cache for preloaded image URLs
@@ -46,13 +49,13 @@ export async function postStory(
 ): Promise<string> {
   try {
     if (__DEV__)
-      console.log("🔵 [postStory] Starting story post for user:", authorId);
+      logger.info("🔵 [postStory] Starting story post for user:", authorId);
 
     const db = getFirestoreInstance();
 
     // Generate story ID
     const storyId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    if (__DEV__) console.log("🔵 [postStory] Generated story ID:", storyId);
+    if (__DEV__) logger.info("🔵 [postStory] Generated story ID:", storyId);
 
     // Upload image to Storage
     const storagePath = `stories/${authorId}/${storyId}.jpg`;
@@ -63,17 +66,17 @@ export async function postStory(
     );
 
     if (__DEV__)
-      console.log("🔵 [postStory] Uploading image to Storage at:", storagePath);
+      logger.info("🔵 [postStory] Uploading image to Storage at:", storagePath);
 
     let blob: Blob;
 
     // Handle data URLs (web) vs file URIs (native)
     if (imageUri.startsWith("data:")) {
-      if (__DEV__) console.log("🔵 [postStory] Converting data URL to blob");
+      if (__DEV__) logger.info("🔵 [postStory] Converting data URL to blob");
       const response = await fetch(imageUri);
       blob = await response.blob();
     } else {
-      if (__DEV__) console.log("🔵 [postStory] Fetching file URI as blob");
+      if (__DEV__) logger.info("🔵 [postStory] Fetching file URI as blob");
       const response = await fetch(imageUri);
       blob = await response.blob();
     }
@@ -81,7 +84,7 @@ export async function postStory(
     // Upload to Firebase Storage
     const { uploadBytes } = await import("firebase/storage");
     await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
-    if (__DEV__) console.log("✅ [postStory] Image uploaded to Storage");
+    if (__DEV__) logger.info("✅ [postStory] Image uploaded to Storage");
 
     // Get user's friends to set recipientIds
     const friends = await getFriends(authorId);
@@ -92,7 +95,7 @@ export async function postStory(
     // Add self to recipients (user can see their own stories)
     const recipientIds = [authorId, ...friendIds];
     if (__DEV__)
-      console.log(
+      logger.info(
         "🔵 [postStory] Recipient IDs:",
         recipientIds.length,
         "users",
@@ -115,11 +118,11 @@ export async function postStory(
     const storyRef = doc(db, "stories", storyId);
     await setDoc(storyRef, storyData);
     if (__DEV__)
-      console.log("✅ [postStory] Story document created in Firestore");
+      logger.info("✅ [postStory] Story document created in Firestore");
 
     return storyId;
   } catch (error) {
-    console.error("❌ [postStory] Error posting story:", error);
+    logger.error("❌ [postStory] Error posting story:", error);
     throw error;
   }
 }
@@ -138,7 +141,7 @@ export async function getFriendsStories(
 ): Promise<Story[]> {
   try {
     if (__DEV__)
-      console.log("🔵 [getFriendsStories] Fetching stories for user:", userId);
+      logger.info("🔵 [getFriendsStories] Fetching stories for user:", userId);
 
     const db = getFirestoreInstance();
 
@@ -171,10 +174,10 @@ export async function getFriendsStories(
     stories.sort((a, b) => b.createdAt - a.createdAt);
 
     if (__DEV__)
-      console.log("✅ [getFriendsStories] Found", stories.length, "stories");
+      logger.info("✅ [getFriendsStories] Found", stories.length, "stories");
     return stories;
   } catch (error) {
-    console.error("❌ [getFriendsStories] Error:", error);
+    logger.error("❌ [getFriendsStories] Error:", error);
     throw error;
   }
 }
@@ -187,14 +190,14 @@ export async function getFriendsStories(
  */
 export async function getStory(storyId: string): Promise<Story | null> {
   try {
-    if (__DEV__) console.log("🔵 [getStory] Fetching story:", storyId);
+    if (__DEV__) logger.info("🔵 [getStory] Fetching story:", storyId);
 
     const db = getFirestoreInstance();
     const storyRef = doc(db, "stories", storyId);
     const docSnap = await getDoc(storyRef);
 
     if (!docSnap.exists()) {
-      if (__DEV__) console.warn("⚠️  [getStory] Story not found:", storyId);
+      if (__DEV__) logger.warn("⚠️  [getStory] Story not found:", storyId);
       return null;
     }
 
@@ -202,11 +205,11 @@ export async function getStory(storyId: string): Promise<Story | null> {
 
     // Check if expired
     if (data.expiresAt < Date.now()) {
-      if (__DEV__) console.warn("⚠️  [getStory] Story expired:", storyId);
+      if (__DEV__) logger.warn("⚠️  [getStory] Story expired:", storyId);
       return null;
     }
 
-    if (__DEV__) console.log("✅ [getStory] Story loaded successfully");
+    if (__DEV__) logger.info("✅ [getStory] Story loaded successfully");
     return {
       id: docSnap.id,
       authorId: data.authorId,
@@ -217,7 +220,7 @@ export async function getStory(storyId: string): Promise<Story | null> {
       recipientIds: data.recipientIds,
     };
   } catch (error) {
-    console.error("❌ [getStory] Error:", error);
+    logger.error("❌ [getStory] Error:", error);
     throw error;
   }
 }
@@ -238,7 +241,7 @@ export async function markStoryViewed(
 
   try {
     if (__DEV__)
-      console.log("🔵 [markStoryViewed] Marking story as viewed:", {
+      logger.info("🔵 [markStoryViewed] Marking story as viewed:", {
         storyId,
         userId,
       });
@@ -263,9 +266,9 @@ export async function markStoryViewed(
       viewCount: increment(1),
     });
 
-    if (__DEV__) console.log("✅ [markStoryViewed] Story marked as viewed");
+    if (__DEV__) logger.info("✅ [markStoryViewed] Story marked as viewed");
   } catch (error) {
-    console.error("❌ [markStoryViewed] Error:", error);
+    logger.error("❌ [markStoryViewed] Error:", error);
     throw error;
   }
 }
@@ -283,7 +286,7 @@ export async function hasUserViewedStory(
 ): Promise<boolean> {
   try {
     if (__DEV__)
-      console.log("🔵 [hasUserViewedStory] Checking view status:", {
+      logger.info("🔵 [hasUserViewedStory] Checking view status:", {
         storyId,
         userId,
       });
@@ -293,10 +296,10 @@ export async function hasUserViewedStory(
     const docSnap = await getDoc(viewRef);
 
     const viewed = docSnap.exists();
-    if (__DEV__) console.log("✅ [hasUserViewedStory] View status:", viewed);
+    if (__DEV__) logger.info("✅ [hasUserViewedStory] View status:", viewed);
     return viewed;
   } catch (error) {
-    console.error("❌ [hasUserViewedStory] Error:", error);
+    logger.error("❌ [hasUserViewedStory] Error:", error);
     return false;
   }
 }
@@ -310,22 +313,22 @@ export async function hasUserViewedStory(
 export async function getStoryViewCount(storyId: string): Promise<number> {
   try {
     if (__DEV__)
-      console.log("🔵 [getStoryViewCount] Fetching view count for:", storyId);
+      logger.info("🔵 [getStoryViewCount] Fetching view count for:", storyId);
 
     const db = getFirestoreInstance();
     const storyRef = doc(db, "stories", storyId);
     const docSnap = await getDoc(storyRef);
 
     if (!docSnap.exists()) {
-      if (__DEV__) console.warn("⚠️  [getStoryViewCount] Story not found");
+      if (__DEV__) logger.warn("⚠️  [getStoryViewCount] Story not found");
       return 0;
     }
 
     const viewCount = docSnap.data().viewCount || 0;
-    if (__DEV__) console.log("✅ [getStoryViewCount] View count:", viewCount);
+    if (__DEV__) logger.info("✅ [getStoryViewCount] View count:", viewCount);
     return viewCount;
   } catch (error) {
-    console.error("❌ [getStoryViewCount] Error:", error);
+    logger.error("❌ [getStoryViewCount] Error:", error);
     return 0;
   }
 }
@@ -339,7 +342,7 @@ export async function getStoryViewCount(storyId: string): Promise<number> {
 export async function getStoryViewers(storyId: string): Promise<string[]> {
   try {
     if (__DEV__)
-      console.log("🔵 [getStoryViewers] Fetching viewers for:", storyId);
+      logger.info("🔵 [getStoryViewers] Fetching viewers for:", storyId);
 
     const db = getFirestoreInstance();
     const viewsRef = collection(db, "stories", storyId, "views");
@@ -351,10 +354,10 @@ export async function getStoryViewers(storyId: string): Promise<string[]> {
     });
 
     if (__DEV__)
-      console.log("✅ [getStoryViewers] Found", viewers.length, "viewers");
+      logger.info("✅ [getStoryViewers] Found", viewers.length, "viewers");
     return viewers;
   } catch (error) {
-    console.error("❌ [getStoryViewers] Error:", error);
+    logger.error("❌ [getStoryViewers] Error:", error);
     throw error;
   }
 }
@@ -372,20 +375,20 @@ export async function deleteStory(
 ): Promise<void> {
   try {
     if (__DEV__)
-      console.log("🔵 [deleteStory] Deleting story:", { storyId, storagePath });
+      logger.info("🔵 [deleteStory] Deleting story:", { storyId, storagePath });
 
     const db = getFirestoreInstance();
     const storyRef = doc(db, "stories", storyId);
 
     // Delete Storage file
     await deleteSnapImage(storagePath);
-    if (__DEV__) console.log("✅ [deleteStory] Storage file deleted");
+    if (__DEV__) logger.info("✅ [deleteStory] Storage file deleted");
 
     // Delete story document (views subcollection auto-deletes with parent)
     await deleteDoc(storyRef);
-    if (__DEV__) console.log("✅ [deleteStory] Story document deleted");
+    if (__DEV__) logger.info("✅ [deleteStory] Story document deleted");
   } catch (error) {
-    console.error("❌ [deleteStory] Error:", error);
+    logger.error("❌ [deleteStory] Error:", error);
     throw error;
   }
 }
@@ -411,7 +414,7 @@ export async function getBatchViewedStories(
   }
 
   if (__DEV__)
-    console.log(
+    logger.info(
       "🔵 [getBatchViewedStories] Checking",
       storyIds.length,
       "stories for user:",
@@ -440,7 +443,7 @@ export async function getBatchViewedStories(
 
     if (__DEV__) {
       const duration = Date.now() - startTime;
-      console.log(
+      logger.info(
         "✅ [getBatchViewedStories] Checked",
         storyIds.length,
         "stories in",
@@ -453,7 +456,7 @@ export async function getBatchViewedStories(
 
     return viewedSet;
   } catch (error) {
-    console.error("❌ [getBatchViewedStories] Error:", error);
+    logger.error("❌ [getBatchViewedStories] Error:", error);
     return viewedSet;
   }
 }
@@ -472,7 +475,7 @@ export async function preloadStoryImages(
   const toPreload = stories.slice(0, maxToPreload);
 
   if (__DEV__)
-    console.log(
+    logger.info(
       "🔵 [preloadStoryImages] Starting preload for",
       toPreload.length,
       "story images",
@@ -484,12 +487,12 @@ export async function preloadStoryImages(
       // Skip if already cached
       if (preloadedImageCache.has(story.id)) {
         if (__DEV__)
-          console.log("✅ [preloadStoryImages] Already cached:", story.id);
+          logger.info("✅ [preloadStoryImages] Already cached:", story.id);
         return;
       }
 
       if (__DEV__)
-        console.log("🔵 [preloadStoryImages] Starting download:", story.id);
+        logger.info("🔵 [preloadStoryImages] Starting download:", story.id);
 
       // Download image URL from Storage
       const uri = await downloadSnapImage(story.storagePath);
@@ -503,12 +506,12 @@ export async function preloadStoryImages(
           const img = new window.Image();
           img.onload = () => {
             if (__DEV__)
-              console.log("✅ [preloadStoryImages] Preloaded (web):", story.id);
+              logger.info("✅ [preloadStoryImages] Preloaded (web):", story.id);
             resolve();
           };
           img.onerror = () => {
             if (__DEV__)
-              console.warn(
+              logger.warn(
                 "⚠️ [preloadStoryImages] Failed to load image:",
                 story.id,
               );
@@ -518,10 +521,10 @@ export async function preloadStoryImages(
         });
       }
 
-      if (__DEV__) console.log("✅ [preloadStoryImages] Preloaded:", story.id);
+      if (__DEV__) logger.info("✅ [preloadStoryImages] Preloaded:", story.id);
     } catch (error) {
       if (__DEV__)
-        console.warn(
+        logger.warn(
           "⚠️ [preloadStoryImages] Failed to preload:",
           story.id,
           error,
@@ -531,7 +534,7 @@ export async function preloadStoryImages(
 
   // Don't await - let preloading happen in background
   Promise.all(preloadPromises).then(() => {
-    if (__DEV__) console.log("✅ [preloadStoryImages] All preloading complete");
+    if (__DEV__) logger.info("✅ [preloadStoryImages] All preloading complete");
   });
 }
 
@@ -551,7 +554,7 @@ export function getPreloadedImageUrl(storyId: string): string | null {
  */
 export function clearPreloadedImageCache(): void {
   if (__DEV__)
-    console.log(
+    logger.info(
       "🔵 [clearPreloadedImageCache] Clearing",
       preloadedImageCache.size,
       "cached images",
@@ -570,7 +573,7 @@ export function filterExpiredStories(stories: Story[]): Story[] {
   const valid = stories.filter((s) => s.expiresAt > now);
 
   if (__DEV__ && valid.length < stories.length) {
-    console.log(
+    logger.info(
       "🔵 [filterExpiredStories] Filtered out",
       stories.length - valid.length,
       "expired stories",

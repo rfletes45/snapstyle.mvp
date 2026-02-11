@@ -26,7 +26,7 @@ import {
   ViewStyle,
 } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { ModernGameCard } from "./ModernGameCard";
 
 const { spacing, typography } = PLAY_SCREEN_TOKENS;

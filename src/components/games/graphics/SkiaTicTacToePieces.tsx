@@ -11,8 +11,8 @@ import Svg, {
   Circle,
   Defs,
   Line,
-  LinearGradient as SvgLinearGradient,
   Stop,
+  LinearGradient as SvgLinearGradient,
 } from "react-native-svg";
 
 interface PieceProps {

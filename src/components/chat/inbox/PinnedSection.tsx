@@ -23,7 +23,7 @@ import {
   View,
 } from "react-native";
 import { Divider, Text } from "react-native-paper";
-import { Spacing } from "../../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 import { ConversationItem } from "./ConversationItem";
 
 // =============================================================================

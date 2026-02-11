@@ -32,6 +32,9 @@ import {
 } from "react-native";
 import { useTheme } from "react-native-paper";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/chat/LinkPreviewCard");
 // =============================================================================
 // Types
 // =============================================================================
@@ -88,7 +91,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         await Linking.openURL(preview.url);
       }
     } catch (error) {
-      console.error("[LinkPreviewCard] Failed to open URL:", error);
+      logger.error("[LinkPreviewCard] Failed to open URL:", error);
     }
   }, [preview.url, onPress]);
 

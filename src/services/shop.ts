@@ -34,6 +34,9 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { hasItem } from "./cosmetics";
 import { getAppInstance, getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/shop");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -68,7 +71,7 @@ export async function getShopCatalog(): Promise<ShopItem[]> {
 
     return snapshot.docs.map((doc) => convertDocToShopItem(doc.id, doc.data()));
   } catch (error) {
-    console.error("[shop] Error fetching catalog:", error);
+    logger.error("[shop] Error fetching catalog:", error);
     throw error;
   }
 }
@@ -94,7 +97,7 @@ export async function getFeaturedItems(): Promise<ShopItem[]> {
 
     return snapshot.docs.map((doc) => convertDocToShopItem(doc.id, doc.data()));
   } catch (error) {
-    console.error("[shop] Error fetching featured items:", error);
+    logger.error("[shop] Error fetching featured items:", error);
     throw error;
   }
 }
@@ -123,7 +126,7 @@ export async function getShopItemsByCategory(
 
     return snapshot.docs.map((doc) => convertDocToShopItem(doc.id, doc.data()));
   } catch (error) {
-    console.error("[shop] Error fetching items by category:", error);
+    logger.error("[shop] Error fetching items by category:", error);
     throw error;
   }
 }
@@ -146,7 +149,7 @@ async function getShopItem(itemId: string): Promise<ShopItem | null> {
 
     return convertDocToShopItem(itemDoc.id, itemDoc.data());
   } catch (error) {
-    console.error("[shop] Error fetching shop item:", error);
+    logger.error("[shop] Error fetching shop item:", error);
     throw error;
   }
 }
@@ -182,7 +185,7 @@ export async function getLimitedTimeItems(): Promise<ShopItem[]> {
         return true;
       });
   } catch (error) {
-    console.error("[shop] Error fetching limited-time items:", error);
+    logger.error("[shop] Error fetching limited-time items:", error);
     throw error;
   }
 }
@@ -263,7 +266,7 @@ export function subscribeToShopCatalog(
       onUpdate(items);
     },
     (error) => {
-      console.error("[shop] Error in catalog subscription:", error);
+      logger.error("[shop] Error in catalog subscription:", error);
       onError?.(error);
     },
   );
@@ -313,7 +316,7 @@ export async function purchaseWithTokens(
     const result = await callable({ itemId });
     return result.data;
   } catch (error: any) {
-    console.error("[shop] Purchase failed:", error);
+    logger.error("[shop] Purchase failed:", error);
 
     // Extract error message from Firebase callable error
     const message =
@@ -369,7 +372,7 @@ export async function getPurchaseHistory(
       };
     });
   } catch (error) {
-    console.error("[shop] Error fetching purchase history:", error);
+    logger.error("[shop] Error fetching purchase history:", error);
     throw error;
   }
 }

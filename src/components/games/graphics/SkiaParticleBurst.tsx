@@ -8,7 +8,6 @@
 import {
   Canvas,
   Circle,
-  Group,
   RadialGradient,
   vec,
 } from "@shopify/react-native-skia";

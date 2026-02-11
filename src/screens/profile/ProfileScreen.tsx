@@ -27,9 +27,11 @@ import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import type { ProfileAction } from "@/types/profile";
 import { isValidDisplayName } from "@/utils/validators";
-import { PROFILE_FEATURES } from "../../../constants/featureFlags";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/profile/ProfileScreen");
 export default function ProfileScreen({ navigation }: any) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -97,7 +99,7 @@ export default function ProfileScreen({ navigation }: any) {
         setError("Couldn't update profile. Please try again.");
       }
     } catch (err: any) {
-      console.error("Profile update error:", err);
+      logger.error("Profile update error:", err);
       setError(err.message || "Couldn't update profile");
     } finally {
       setLoading(false);
@@ -109,7 +111,7 @@ export default function ProfileScreen({ navigation }: any) {
     try {
       await logout();
     } catch (error: any) {
-      console.error("Sign out error:", error);
+      logger.error("Sign out error:", error);
     }
   }, []);
 
@@ -133,7 +135,7 @@ export default function ProfileScreen({ navigation }: any) {
         label: "Daily Tasks",
         icon: "clipboard-check",
         onPress: () => navigation.navigate("Tasks"),
-        badge: 3, // TODO: Get actual count from tasks service
+        badge: 3, // NOTE: Get actual count from tasks service
       },
       {
         id: "settings",
@@ -173,9 +175,9 @@ export default function ProfileScreen({ navigation }: any) {
   }
 
   // ========================================
-  // NEW PROFILE LAYOUT (feature flag enabled)
+  // NEW PROFILE LAYOUT
   // ========================================
-  if (PROFILE_FEATURES.NEW_PROFILE_LAYOUT && profile) {
+  if (profile) {
     return (
       <ScrollView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -197,27 +199,23 @@ export default function ProfileScreen({ navigation }: any) {
         />
 
         {/* Featured Badges */}
-        {PROFILE_FEATURES.BADGE_SHOWCASE && (
-          <>
-            <BadgeShowcase
-              badges={profile.featuredBadges}
-              onBadgePress={(badge) => {
-                // TODO: Open badge detail modal
-                console.log("Badge pressed:", badge.badgeId);
-              }}
-              onViewAll={() => navigation.navigate("BadgeCollection")}
-            />
-            <Divider style={styles.divider} />
-          </>
-        )}
+        <>
+          <BadgeShowcase
+            badges={profile.featuredBadges}
+            onBadgePress={(badge) => {
+              // NOTE: Open badge detail modal
+              logger.info("Badge pressed:", badge.badgeId);
+            }}
+            onViewAll={() => navigation.navigate("BadgeCollection")}
+          />
+          <Divider style={styles.divider} />
+        </>
 
         {/* Stats Dashboard */}
-        {PROFILE_FEATURES.PROFILE_STATS && (
-          <>
-            <ProfileStats stats={profile.stats} expanded={false} />
-            <Divider style={styles.divider} />
-          </>
-        )}
+        <>
+          <ProfileStats stats={profile.stats} expanded={false} />
+          <Divider style={styles.divider} />
+        </>
 
         {/* Action Buttons */}
         <ProfileActions actions={actions} />

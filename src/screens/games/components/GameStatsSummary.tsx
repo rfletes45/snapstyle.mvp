@@ -32,8 +32,11 @@ import Animated, {
 import { calculateUserStats } from "@/services/gameHistory";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/components/GameStatsSummary");
 // =============================================================================
 // Types
 // =============================================================================
@@ -126,7 +129,7 @@ export function GameStatsSummary({
           totalPlayTime: Math.round(userStats.totalPlayTime / 60), // Convert to minutes
         });
       } catch (error) {
-        console.error("[GameStatsSummary] Error fetching stats:", error);
+        logger.error("[GameStatsSummary] Error fetching stats:", error);
         // Reset to zero on error
         setStats({
           gamesPlayed: 0,

@@ -3,6 +3,8 @@
  *
  * Renders soft glowing highlights for selected cells, valid moves,
  * last moves, and check indicators. Used by Chess, Checkers, etc.
+ *
+ * On web, falls back to a simple semi-transparent View overlay.
  */
 
 import {
@@ -12,7 +14,7 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import React from "react";
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 
 interface SkiaCellHighlightProps {
   /** Cell width */
@@ -59,6 +61,20 @@ export function SkiaCellHighlight({
   type,
 }: SkiaCellHighlightProps) {
   const config = HIGHLIGHT_CONFIGS[type];
+
+  // On web, Skia Canvas is shimmed out — use a plain colored View overlay
+  if (Platform.OS === "web") {
+    return (
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { width, height, backgroundColor: config.center },
+        ]}
+        pointerEvents="none"
+      />
+    );
+  }
+
   const cx = width / 2;
   const cy = height / 2;
   const r = Math.max(width, height) * 0.7;

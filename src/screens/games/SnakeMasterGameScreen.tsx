@@ -17,8 +17,15 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useSnakeMultiplayer } from "@/hooks/useSnakeMultiplayer";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendScorecard } from "@/services/games";
 import {
   calculateBoardDimensions,
@@ -36,28 +43,13 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import {
-  SnakeDirection,
   snake_master_CONFIG,
-  SnakeState,
+  SnakeDirection,
   SnakeMasterStats,
+  SnakeState,
 } from "@/types/singlePlayerGames";
 import { generateId } from "@/utils/ids";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Dimensions,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  View,
-} from "react-native";
-import { Button, Text, useTheme } from "react-native-paper";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-} from "react-native-reanimated";
 import {
   Canvas,
   Circle,
@@ -67,6 +59,23 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  Platform,
+  StyleSheet,
+  View,
+} from "react-native";
+import { Button, Text, useTheme } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+} from "react-native-reanimated";
 
 // =============================================================================
 // Color Helpers
@@ -127,14 +136,35 @@ const SWIPE_THRESHOLD = 20;
 // Main Component
 // =============================================================================
 
-export default function SnakeMasterGameScreen({
+function SnakeMasterGameScreen({
   navigation,
-}: SnakeMasterGameScreenProps) {
+  route,
+}: SnakeMasterGameScreenProps & { route: any }) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "snake_master" });
+  void __codexGameCompletion;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
   const haptics = useGameHaptics();
+
+  // Colyseus multiplayer
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "snake_game",
+    route?.params?.matchId,
+  );
+  const mp = useSnakeMultiplayer({
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+  const [isOnlineMode, setIsOnlineMode] = useState(false);
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setIsOnlineMode(true);
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   // Game state
   const [gameState, setGameState] = useState<SnakeState>(() =>
@@ -147,10 +177,29 @@ export default function SnakeMasterGameScreen({
   const [isPaused, setIsPaused] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
 
+  // Back navigation with confirmation dialog
+  const { handleBack } = useGameBackHandler({
+    gameType: "snake_master",
+    isGameOver: showGameOverModal,
+  });
+
   // Share state
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Spectator hosting — allows friends to watch via SpectatorRoom
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "snake_master",
+  });
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
 
   // Game loop reference
   const gameLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -185,24 +234,29 @@ export default function SnakeMasterGameScreen({
 
       haptics.trigger("move");
       setGameState((prev) => changeDirection(prev, direction));
+
+      // In multiplayer, also send direction to server
+      if (isOnlineMode && mp.phase === "playing") {
+        mp.sendDirection(direction as "up" | "down" | "left" | "right");
+      }
     },
-    [gameState.status, isPaused, haptics],
+    [gameState.status, isPaused, haptics, isOnlineMode, mp],
   );
 
-  // Pan responder for swipe detection
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderRelease: (_, gestureState) => {
-        const { dx, dy } = gestureState;
-        const direction = getDirectionFromSwipe(dx, dy, SWIPE_THRESHOLD);
+  const swipeGesture = useRef(
+    Gesture.Pan()
+      .runOnJS(true)
+      .onEnd((event) => {
+        const direction = getDirectionFromSwipe(
+          event.translationX,
+          event.translationY,
+          SWIPE_THRESHOLD,
+        );
 
         if (direction) {
           handleSwipe(direction);
         }
-      },
-    }),
+      }),
   ).current;
 
   // Game tick
@@ -268,9 +322,33 @@ export default function SnakeMasterGameScreen({
       };
 
       recordSession();
+      spectatorHost.endHosting(gameState.score);
       setShowGameOverModal(true);
     }
-  }, [gameState.status, currentFirebaseUser, highScore]);
+  }, [gameState.status, currentFirebaseUser, highScore, spectatorHost]);
+
+  // Broadcast game state to spectators — on every tick so visual state stays current
+  useEffect(() => {
+    if (gameState.status === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          score: gameState.score,
+          status: gameState.status,
+          snakeLength: gameState.snake.length,
+          foodEaten: gameState.foodEaten,
+          // Visual state for spectator renderer
+          snake: gameState.snake,
+          food: gameState.food,
+          direction: gameState.direction,
+          gridWidth: gameState.gridWidth,
+          gridHeight: gameState.gridHeight,
+        }),
+        gameState.score,
+        undefined,
+        undefined,
+      );
+    }
+  }, [gameState]);
 
   // Start new game
   const startNewGame = useCallback(() => {
@@ -285,7 +363,8 @@ export default function SnakeMasterGameScreen({
     setIsPaused(false);
     setShowShareDialog(false);
     setShowGameOverModal(false);
-  }, [currentFirebaseUser, haptics]);
+    spectatorHost.startHosting();
+  }, [currentFirebaseUser, haptics, spectatorHost]);
 
   // Pause/Resume
   const togglePause = useCallback(() => {
@@ -398,13 +477,7 @@ export default function SnakeMasterGameScreen({
                 end={vec(segSize, segSize)}
                 colors={[lightenHex(color, 30), color, darkenHex(color, 30)]}
               />
-              <Shadow
-                dx={0}
-                dy={1}
-                blur={2}
-                color="rgba(0,0,0,0.2)"
-                inner
-              />
+              <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.2)" inner />
             </RoundedRect>
             {/* Top highlight */}
             <RoundedRect
@@ -494,7 +567,7 @@ export default function SnakeMasterGameScreen({
       <View style={styles.header}>
         <Button
           mode="text"
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           icon="arrow-left"
           textColor="#FFFFFF"
         >
@@ -503,6 +576,17 @@ export default function SnakeMasterGameScreen({
         <Text variant="headlineSmall" style={styles.title}>
           🐍 Snake
         </Text>
+        {spectatorHost.spectatorRoomId && (
+          <Button
+            mode="text"
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            icon="eye"
+            textColor="#FFFFFF"
+            compact
+          >
+            Watch
+          </Button>
+        )}
         <Button
           mode="text"
           onPress={togglePause}
@@ -543,64 +627,65 @@ export default function SnakeMasterGameScreen({
       </View>
 
       {/* Game board — Skia gradient background */}
-      <View
-        style={[
-          styles.board,
-          {
-            width: BOARD_DIMENSIONS.width,
-            height: BOARD_DIMENSIONS.height,
-          },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <Canvas style={StyleSheet.absoluteFill}>
-          <RoundedRect
-            x={0}
-            y={0}
-            width={BOARD_DIMENSIONS.width}
-            height={BOARD_DIMENSIONS.height}
-            r={8}
-          >
-            <LinearGradient
-              start={vec(0, 0)}
-              end={vec(BOARD_DIMENSIONS.width, BOARD_DIMENSIONS.height)}
-              colors={[
-                darkenHex(snake_master_CONFIG.gridColor, 10),
-                snake_master_CONFIG.gridColor,
-                darkenHex(snake_master_CONFIG.gridColor, 15),
-              ]}
-            />
-            <Shadow dx={0} dy={2} blur={4} color="rgba(0,0,0,0.3)" inner />
-          </RoundedRect>
-        </Canvas>
-        {renderGrid()}
-        {renderFood()}
-        {renderSnake()}
+      <GestureDetector gesture={swipeGesture}>
+        <View
+          style={[
+            styles.board,
+            {
+              width: BOARD_DIMENSIONS.width,
+              height: BOARD_DIMENSIONS.height,
+            },
+          ]}
+        >
+          <Canvas style={StyleSheet.absoluteFill}>
+            <RoundedRect
+              x={0}
+              y={0}
+              width={BOARD_DIMENSIONS.width}
+              height={BOARD_DIMENSIONS.height}
+              r={8}
+            >
+              <LinearGradient
+                start={vec(0, 0)}
+                end={vec(BOARD_DIMENSIONS.width, BOARD_DIMENSIONS.height)}
+                colors={[
+                  darkenHex(snake_master_CONFIG.gridColor, 10),
+                  snake_master_CONFIG.gridColor,
+                  darkenHex(snake_master_CONFIG.gridColor, 15),
+                ]}
+              />
+              <Shadow dx={0} dy={2} blur={4} color="rgba(0,0,0,0.3)" inner />
+            </RoundedRect>
+          </Canvas>
+          {renderGrid()}
+          {renderFood()}
+          {renderSnake()}
 
-        {/* Pause overlay */}
-        {isPaused && (
-          <View style={styles.pauseOverlay}>
-            <MaterialCommunityIcons
-              name="pause-circle"
-              size={64}
-              color="#FFFFFF"
-            />
-            <Text style={styles.pauseText}>PAUSED</Text>
-            <Text style={styles.pauseSubtext}>Swipe to continue</Text>
-          </View>
-        )}
+          {/* Pause overlay */}
+          {isPaused && (
+            <View style={styles.pauseOverlay}>
+              <MaterialCommunityIcons
+                name="pause-circle"
+                size={64}
+                color="#FFFFFF"
+              />
+              <Text style={styles.pauseText}>PAUSED</Text>
+              <Text style={styles.pauseSubtext}>Swipe to continue</Text>
+            </View>
+          )}
 
-        {/* Game over overlay */}
-        {gameState.status === "gameOver" && (
-          <View style={styles.gameOverOverlay}>
-            <Text style={styles.gameOverText}>Game Over!</Text>
-            <Text style={styles.gameOverScore}>Score: {gameState.score}</Text>
-            <Text style={styles.gameOverLength}>
-              Length: {gameState.snake.length}
-            </Text>
-          </View>
-        )}
-      </View>
+          {/* Game over overlay */}
+          {gameState.status === "gameOver" && (
+            <View style={styles.gameOverOverlay}>
+              <Text style={styles.gameOverText}>Game Over!</Text>
+              <Text style={styles.gameOverScore}>Score: {gameState.score}</Text>
+              <Text style={styles.gameOverLength}>
+                Length: {gameState.snake.length}
+              </Text>
+            </View>
+          )}
+        </View>
+      </GestureDetector>
 
       {/* Instructions */}
       <View style={styles.footer}>
@@ -615,6 +700,32 @@ export default function SnakeMasterGameScreen({
         </View>
       </View>
 
+      {/* Colyseus multiplayer overlay */}
+      {isOnlineMode && (
+        <ScoreRaceOverlay
+          phase={mp.phase as ScoreRaceOverlayPhase}
+          countdown={mp.countdown}
+          myScore={mp.myScore}
+          opponentScore={mp.opponentScore}
+          opponentName={mp.opponentSnake.displayName || "Opponent"}
+          isWinner={mp.isWinner}
+          isTie={mp.isTie}
+          winnerName={
+            mp.isWinner ? "You" : mp.opponentSnake.displayName || "Opponent"
+          }
+          onReady={() => mp.sendReady()}
+          onRematch={() => mp.sendRematch()}
+          onAcceptRematch={() => mp.acceptRematch()}
+          onLeave={async () => {
+            await mp.leave();
+            setIsOnlineMode(false);
+          }}
+          rematchRequested={mp.rematchRequested}
+          reconnecting={mp.reconnecting}
+          opponentDisconnected={mp.opponentDisconnected}
+        />
+      )}
+
       {/* Game Over Modal */}
       <GameOverModal
         visible={showGameOverModal}
@@ -627,19 +738,47 @@ export default function SnakeMasterGameScreen({
         }}
         onRematch={startNewGame}
         onShare={handleShare}
-        onExit={() => navigation.goBack()}
+        onExit={() => {
+          if (navigation.canGoBack()) navigation.goBack();
+          else navigation.navigate("GamesHub");
+        }}
         showRematch={true}
         showShare={true}
         title={`🐍 Length: ${gameState.maxLength} | 🍎 Food: ${gameState.foodEaten}`}
       />
 
+      {/* Spectator overlay — shows count of watchers */}
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
       {/* Friend Picker Modal */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSelectFriend}
         title="Send Scorecard"
         currentUserId={currentFirebaseUser?.uid || ""}
+      />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "snake_master",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -804,4 +943,4 @@ const styles = StyleSheet.create({
   },
 });
 
-
+export default withGameErrorBoundary(SnakeMasterGameScreen, "snake_master");

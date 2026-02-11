@@ -12,6 +12,7 @@ import { getFriends } from "@/services/friends";
 import { getUserProfile } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
+import type { MainStackParamList } from "@/types/navigation";
 import type { User } from "@/types/models";
 import {
   createSlideDownAnimation,
@@ -20,6 +21,7 @@ import {
 import * as haptics from "@/utils/haptics";
 import { log } from "@/utils/log";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -35,7 +37,7 @@ import {
   IconButton,
   Text,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -77,7 +79,8 @@ export function ProfilePreviewModal({
 }: ProfilePreviewModalProps) {
   const { colors, isDark } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
-  const navigation = useNavigation() as any;
+  const navigation =
+    useNavigation<NativeStackNavigationProp<MainStackParamList>>();
 
   // State
   const [profile, setProfile] = useState<ProfileData | null>(null);

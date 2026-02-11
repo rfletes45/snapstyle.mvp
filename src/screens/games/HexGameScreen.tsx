@@ -11,7 +11,22 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import {
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
 import { sendGameInvite } from "@/services/gameInvites";
+import type { InviteGameType } from "@/services/gameInvites";
 import {
   getPersonalBest,
   PersonalBest,
@@ -23,16 +38,6 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  Dimensions,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import {
   Canvas,
   Circle,
@@ -42,7 +47,22 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -193,7 +213,23 @@ function getAIMove(board: HexBoard): [number, number] | null {
 // Component
 // =============================================================================
 
-export default function HexGameScreen({ navigation }: { navigation: any }) {
+function HexGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route?: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "hex" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "hex", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -208,6 +244,62 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [gameMode, setGameMode] = useState<"ai" | "online">("ai");
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
+
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("hex_game");
+  const isSpectator = route?.params?.spectatorMode === true;
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+
+  // Handle incoming match from route params (invite flow)
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "hex_game",
+    route?.params?.matchId,
+  );
+
+  useEffect(() => {
+    if (resolvedMode && firestoreGameId) {
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    }
+  }, [resolvedMode, firestoreGameId, isSpectator]);
+
+  // Derive Colyseus board for rendering
+  const colyseusBoard: HexBoard | null =
+    mp.isMultiplayer && mp.board.length === BOARD_SIZE * BOARD_SIZE
+      ? {
+          cells: Array.from({ length: BOARD_SIZE }, (_, r) =>
+            Array.from(
+              { length: BOARD_SIZE },
+              (_, c) => mp.board[r * BOARD_SIZE + c] as CellValue,
+            ),
+          ),
+        }
+      : null;
+
+  const effectiveBoard =
+    gameMode === "online" && colyseusBoard ? colyseusBoard : board;
 
   useEffect(() => {
     if (currentFirebaseUser) {
@@ -226,6 +318,14 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
 
   const handleCellTap = useCallback(
     (r: number, c: number) => {
+      // Colyseus multiplayer mode
+      if (gameMode === "online" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+        mp.sendMove({ row: r, col: c });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      }
+
       if (gameState !== "playing" || winner !== 0) return;
       if (board.cells[r][c] !== 0) return;
       if (currentPlayer !== 1) return; // AI's turn
@@ -246,14 +346,14 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
             duration: newMoveCount * 1000,
           });
         }
-        setTimeout(() => setGameState("result"), 600);
+        scheduleTimeout(() => setGameState("result"), 600);
         return;
       }
 
       setCurrentPlayer(2);
 
       // AI move
-      setTimeout(() => {
+      scheduleTimeout(() => {
         const aiMove = getAIMove(newBoard);
         if (aiMove) {
           const [ar, ac] = aiMove;
@@ -264,14 +364,22 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
           if (checkWin(aiBoard, 2)) {
             setWinner(2);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            setTimeout(() => setGameState("result"), 600);
+            scheduleTimeout(() => setGameState("result"), 600);
             return;
           }
         }
         setCurrentPlayer(1);
       }, 400);
     },
-    [board, gameState, winner, currentPlayer, moveCount, currentFirebaseUser],
+    [
+      board,
+      gameState,
+      winner,
+      currentPlayer,
+      moveCount,
+      currentFirebaseUser,
+      scheduleTimeout,
+    ],
   );
 
   const playerColor = (v: CellValue): string => {
@@ -282,6 +390,19 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -329,7 +450,10 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
           )}
           <Button
             mode="contained"
-            onPress={startGame}
+            onPress={() => {
+              setGameMode("ai");
+              startGame();
+            }}
             style={{ backgroundColor: colors.primary, marginTop: 20 }}
             labelStyle={{ color: "#fff" }}
           >
@@ -362,7 +486,7 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
             >
               ▼ BLUE ▼
             </Text>
-            {board.cells.map((row, r) => (
+            {effectiveBoard.cells.map((row, r) => (
               <View
                 key={r}
                 style={[styles.hexRow, { marginLeft: r * (HEX_SIZE * 0.5) }]}
@@ -380,11 +504,25 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
                       },
                     ]}
                     activeOpacity={0.6}
-                    disabled={cell !== 0 || currentPlayer !== 1}
+                    disabled={
+                      cell !== 0 ||
+                      isSpectator ||
+                      (gameMode === "ai" && currentPlayer !== 1) ||
+                      (gameMode === "online" &&
+                        (!mp.isMyTurn || mp.phase !== "playing"))
+                    }
                   >
-                    <Canvas style={{ width: HEX_SIZE - 2, height: HEX_SIZE - 2 }}>
+                    <Canvas
+                      style={{ width: HEX_SIZE - 2, height: HEX_SIZE - 2 }}
+                    >
                       {/* Cell background */}
-                      <RoundedRect x={0} y={0} width={HEX_SIZE - 2} height={HEX_SIZE - 2} r={3}>
+                      <RoundedRect
+                        x={0}
+                        y={0}
+                        width={HEX_SIZE - 2}
+                        height={HEX_SIZE - 2}
+                        r={3}
+                      >
                         <LinearGradient
                           start={vec(0, 0)}
                           end={vec(0, HEX_SIZE - 2)}
@@ -396,7 +534,13 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
                               : [colors.surface, colors.surface, colors.surface]
                           }
                         />
-                        <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.2)" inner />
+                        <Shadow
+                          dx={0}
+                          dy={1}
+                          blur={2}
+                          color="rgba(0,0,0,0.2)"
+                          inner
+                        />
                       </RoundedRect>
                       {/* Stone with 3D effect */}
                       {cell !== 0 && (
@@ -407,7 +551,10 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
                             r={HEX_SIZE * 0.28}
                           >
                             <RadialGradient
-                              c={vec((HEX_SIZE - 2) * 0.4, (HEX_SIZE - 2) * 0.35)}
+                              c={vec(
+                                (HEX_SIZE - 2) * 0.4,
+                                (HEX_SIZE - 2) * 0.35,
+                              )}
                               r={HEX_SIZE * 0.28}
                               colors={
                                 cell === 1
@@ -415,7 +562,12 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
                                   : ["#FFFFFF", "#F5B7B1", "#C0392B"]
                               }
                             />
-                            <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.4)" />
+                            <Shadow
+                              dx={0}
+                              dy={1}
+                              blur={3}
+                              color="rgba(0,0,0,0.4)"
+                            />
                           </Circle>
                         </>
                       )}
@@ -499,7 +651,7 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
                 ? JSON.stringify(profile.avatarConfig)
                 : undefined,
               {
-                gameType: GAME_TYPE as any,
+                gameType: GAME_TYPE as InviteGameType,
                 recipientId: friend.friendUid,
                 recipientName: friend.displayName || "Friend",
               },
@@ -513,6 +665,141 @@ export default function HexGameScreen({ navigation }: { navigation: any }) {
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Challenge a Friend"
       />
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "online" && mp.isMultiplayer && mp.phase === "playing" && (
+        <TurnIndicatorBar
+          isMyTurn={mp.isMyTurn}
+          myName={mp.myName}
+          opponentName={mp.opponentName}
+          currentPlayerIndex={mp.currentPlayerIndex}
+          myPlayerIndex={mp.myPlayerIndex}
+          turnNumber={mp.turnNumber}
+          opponentDisconnected={mp.opponentDisconnected}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+            player1: "#3498db",
+            player2: "#e74c3c",
+          }}
+          player1Label="Blue"
+          player2Label="Red"
+        />
+      )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "online" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+        <GameActionBar
+          onResign={() => setShowResignConfirm(true)}
+          onOfferDraw={() => {}}
+          isMyTurn={mp.isMyTurn}
+          drawPending={false}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "online" && mp.isMultiplayer && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            gameName="Hex"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -558,3 +845,5 @@ const styles = StyleSheet.create({
   edgeLabel: { fontSize: 12, fontWeight: "700", marginVertical: 4 },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(HexGameScreen, "hex");

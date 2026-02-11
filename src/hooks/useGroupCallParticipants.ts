@@ -5,10 +5,13 @@
 
 import { doc, onSnapshot } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { groupCallService } from "../services/calls/groupCallService";
-import { getFirestoreInstance } from "../services/firebase";
-import { Call, GroupCallParticipant, GroupCallRole } from "../types/call";
+import { groupCallService } from "@/services/calls/groupCallService";
+import { getFirestoreInstance } from "@/services/firebase";
+import { Call, GroupCallParticipant, GroupCallRole } from "@/types/call";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGroupCallParticipants");
 // Lazy getter to avoid Firebase initialization issues at module load time
 const getDb = () => getFirestoreInstance();
 
@@ -83,7 +86,7 @@ export function useGroupCallParticipants({
         setIsLoading(false);
       },
       (err) => {
-        console.error("[useGroupCallParticipants] Subscription error:", err);
+        logger.error("[useGroupCallParticipants] Subscription error:", err);
         setError("Failed to subscribe to call updates");
         setIsLoading(false);
       },
@@ -145,7 +148,7 @@ export function useGroupCallParticipants({
           [`participants.${participantId}.isMuted`]: muted,
         });
       } catch (err) {
-        console.error(
+        logger.error(
           "[useGroupCallParticipants] Failed to mute participant:",
           err,
         );
@@ -183,7 +186,7 @@ export function useGroupCallParticipants({
             "participant" as GroupCallRole,
         });
       } catch (err) {
-        console.error(
+        logger.error(
           "[useGroupCallParticipants] Failed to demote participant:",
           err,
         );

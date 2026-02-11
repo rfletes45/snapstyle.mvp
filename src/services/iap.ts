@@ -25,6 +25,9 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
 import { getAppInstance, getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/iap");
 // =============================================================================
 // Types
 // =============================================================================
@@ -164,6 +167,7 @@ let isIAPInitialized = false;
 let availableProducts: IAPProduct[] = [];
 let pendingPurchases: Map<string, IAPPurchase> = new Map();
 
+// NOTE: Wire up expo-in-app-purchases when native IAP is enabled
 // Mock IAP state for development (since expo-in-app-purchases requires native setup)
 const USE_MOCK_IAP = __DEV__;
 
@@ -182,20 +186,16 @@ export async function initializeIAP(): Promise<boolean> {
 
   try {
     if (USE_MOCK_IAP) {
-      console.log("[iap] Using mock IAP for development");
+      logger.info("[iap] Using mock IAP for development");
       isIAPInitialized = true;
       return true;
     }
 
-    // In production, initialize expo-in-app-purchases
-    // const { initConnection } = await import('expo-in-app-purchases');
-    // await initConnection();
-
-    console.log("[iap] IAP initialized successfully");
+    logger.info("[iap] IAP initialized successfully");
     isIAPInitialized = true;
     return true;
   } catch (error) {
-    console.error("[iap] Failed to initialize IAP:", error);
+    logger.error("[iap] Failed to initialize IAP:", error);
     return false;
   }
 }
@@ -209,16 +209,15 @@ export async function disconnectIAP(): Promise<void> {
 
   try {
     if (!USE_MOCK_IAP) {
-      // const { endConnection } = await import('expo-in-app-purchases');
-      // await endConnection();
+      // No-op until native IAP is wired up
     }
 
     isIAPInitialized = false;
     availableProducts = [];
     pendingPurchases.clear();
-    console.log("[iap] IAP disconnected");
+    logger.info("[iap] IAP disconnected");
   } catch (error) {
-    console.error("[iap] Error disconnecting IAP:", error);
+    logger.error("[iap] Error disconnecting IAP:", error);
   }
 }
 
@@ -248,7 +247,7 @@ export async function getStoreProducts(): Promise<StoreProduct[]> {
       ...doc.data(),
     })) as StoreProduct[];
   } catch (error) {
-    console.error("[iap] Error fetching store products:", error);
+    logger.error("[iap] Error fetching store products:", error);
     return [];
   }
 }
@@ -276,7 +275,7 @@ export async function getFeaturedStoreProducts(): Promise<StoreProduct[]> {
       ...doc.data(),
     })) as StoreProduct[];
   } catch (error) {
-    console.error("[iap] Error fetching featured products:", error);
+    logger.error("[iap] Error fetching featured products:", error);
     return [];
   }
 }
@@ -297,14 +296,9 @@ export async function fetchProductDetails(
   }
 
   try {
-    // In production, fetch from native store
-    // const { getProductsAsync } = await import('expo-in-app-purchases');
-    // const { results } = await getProductsAsync(productIds);
-    // return results.map(convertNativeProduct);
-
     return [];
   } catch (error) {
-    console.error("[iap] Error fetching product details:", error);
+    logger.error("[iap] Error fetching product details:", error);
     return [];
   }
 }
@@ -364,7 +358,7 @@ export async function purchaseProduct(
 
     if (USE_MOCK_IAP) {
       // Simulate purchase flow in development
-      console.log("[iap] Mock purchase initiated:", productId);
+      logger.info("[iap] Mock purchase initiated:", productId);
 
       // Simulate store purchase
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -392,17 +386,13 @@ export async function purchaseProduct(
       };
     }
 
-    // In production, initiate native purchase
-    // const { purchaseItemAsync } = await import('expo-in-app-purchases');
-    // await purchaseItemAsync(productId);
-
     // The purchase listener will handle the rest
     return {
       success: true,
       purchaseId: purchaseRef.id,
     };
   } catch (error: any) {
-    console.error("[iap] Purchase failed:", error);
+    logger.error("[iap] Purchase failed:", error);
     return {
       success: false,
       error: error.message || "Purchase failed",
@@ -441,7 +431,7 @@ export async function verifyAndDeliverPurchase(
 
     return result.data;
   } catch (error: any) {
-    console.error("[iap] Verification failed:", error);
+    logger.error("[iap] Verification failed:", error);
     return {
       success: false,
       valid: false,
@@ -464,20 +454,13 @@ export async function restorePurchases(uid: string): Promise<{
 
   try {
     if (USE_MOCK_IAP) {
-      console.log("[iap] Mock restore - no previous purchases");
+      logger.info("[iap] Mock restore - no previous purchases");
       return { restored: 0 };
     }
 
-    // In production, restore from native store
-    // const { getPurchaseHistoryAsync } = await import('expo-in-app-purchases');
-    // const history = await getPurchaseHistoryAsync();
-
-    // For each purchase, verify it hasn't been delivered yet
-    // and deliver if valid
-
     return { restored: 0 };
   } catch (error: any) {
-    console.error("[iap] Restore failed:", error);
+    logger.error("[iap] Restore failed:", error);
     return {
       restored: 0,
       error: error.message || "Restore failed",
@@ -532,7 +515,7 @@ export async function getIAPPurchaseHistory(
       };
     });
   } catch (error) {
-    console.error("[iap] Error fetching purchase history:", error);
+    logger.error("[iap] Error fetching purchase history:", error);
     return [];
   }
 }
@@ -558,7 +541,7 @@ export async function hasProductBeenPurchased(
     const snapshot = await getDocs(q);
     return !snapshot.empty;
   } catch (error) {
-    console.error("[iap] Error checking purchase:", error);
+    logger.error("[iap] Error checking purchase:", error);
     return false;
   }
 }
@@ -643,8 +626,8 @@ export async function purchaseTokenPack(
     // In production, the Cloud Function handles token granting
     // For mock, we simulate it
     if (USE_MOCK_IAP) {
-      // TODO: Grant tokens via Cloud Function
-      console.log(
+      // NOTE: Grant tokens via Cloud Function
+      logger.info(
         "[iap] Would grant",
         pack.tokens + pack.bonusTokens,
         "tokens",

@@ -21,7 +21,7 @@ import {
 } from "@/types/gameFilters";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import { TurnBasedGameType } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -128,7 +128,7 @@ export function GameFilterBar({
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons
-                name={tab.icon as any}
+                name={tab.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                 size={18}
                 color={isSelected ? "#FFFFFF" : theme.colors.onSurfaceVariant}
               />

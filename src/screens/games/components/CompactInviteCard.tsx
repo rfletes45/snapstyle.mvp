@@ -17,8 +17,10 @@
  * @see docs/PLAY_SCREEN_OVERHAUL_PLAN.md - Phase 5
  */
 
+import { ThreeInviteCard } from "@/components/three";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
+import { getCategoryColor } from "@/types/playScreen";
 import { UniversalGameInvite } from "@/types/turnBased";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -38,7 +40,8 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { THREE_JS_FEATURES } from "@/constants/featureFlags";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 const { spacing, borderRadius, shadows, animation } = PLAY_SCREEN_TOKENS;
 
@@ -86,6 +89,14 @@ function CompactInviteCardComponent({
   const metadata = GAME_METADATA[invite.gameType as ExtendedGameType];
   const gameName = metadata?.name || invite.gameType;
   const gameIcon = metadata?.icon || "🎮";
+
+  // Accent color for 3D overlay
+  const accentColor = getCategoryColor(
+    (metadata?.category ?? "quick_play") as Parameters<
+      typeof getCategoryColor
+    >[0],
+    isDark,
+  );
 
   // Get host info (first slot is always the sender)
   const hostName = invite.senderName || "Unknown";
@@ -158,6 +169,16 @@ function CompactInviteCardComponent({
           },
         ]}
       >
+        {/* Three.js 3D animated overlay (behind 2D content) */}
+        {THREE_JS_FEATURES.THREE_JS_ENABLED &&
+          THREE_JS_FEATURES.INVITE_CARD_3D && (
+            <ThreeInviteCard
+              accentColor={accentColor}
+              isActive={canJoin}
+              testID={testID ? `${testID}-three` : undefined}
+            />
+          )}
+
         {/* Decline Button */}
         <Pressable
           onPress={handleDecline}

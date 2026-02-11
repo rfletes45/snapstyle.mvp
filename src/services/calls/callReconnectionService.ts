@@ -7,6 +7,9 @@
 // In production, ensure the package is installed: yarn add @react-native-community/netinfo
 import { AppState, AppStateStatus } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/callReconnectionService");
 // Conditional import for NetInfo - handle case where module isn't installed
 let NetInfo: any;
 try {
@@ -25,13 +28,13 @@ type NetInfoState = { isConnected: boolean | null; type: string };
 
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallReconnection] ${msg}`, data ?? "");
+  logger.info(`[CallReconnection] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallReconnection] ${msg}`, error ?? "");
+  logger.error(`[CallReconnection] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallReconnection] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallReconnection] ${msg}`, data ?? "");
 const logWarn = (msg: string, data?: any) =>
-  console.warn(`[CallReconnection] ${msg}`, data ?? "");
+  logger.warn(`[CallReconnection] ${msg}`, data ?? "");
 
 // Connection states
 export type ConnectionState =

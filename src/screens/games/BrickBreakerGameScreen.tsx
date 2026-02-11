@@ -16,9 +16,16 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { useLiveSpectatorSession } from "@/hooks/useLiveSpectatorSession";
+import { useScoreRace } from "@/hooks/useScoreRace";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendScorecard } from "@/services/games";
 import {
   advanceToNextLevel,
@@ -51,6 +58,15 @@ import { useUser } from "@/store/UserContext";
 import { BrickBreakerState } from "@/types/singlePlayerGames";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { RouteProp, useRoute } from "@react-navigation/native";
+import {
+  Canvas,
+  RadialGradient,
+  RoundedRect,
+  Circle as SkiaCircle,
+  LinearGradient as SkiaLinearGradient,
+  Shadow as SkiaShadow,
+  vec,
+} from "@shopify/react-native-skia";
 import React, {
   useCallback,
   useEffect,
@@ -85,26 +101,20 @@ import Animated, {
   withSequence,
   withTiming,
 } from "react-native-reanimated";
-import {
-  Canvas,
-  Circle as SkiaCircle,
-  LinearGradient as SkiaLinearGradient,
-  RadialGradient,
-  RoundedRect,
-  Shadow as SkiaShadow,
-  vec,
-} from "@shopify/react-native-skia";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+const logger = createLogger("screens/games/BrickBreakerGameScreen");
 // =============================================================================
 // Types
 // =============================================================================
 
-/** Route params for live spectator sessions */
 type BrickBreakerRouteParams = {
   BrickBreakerGame: {
-    liveSessionId?: string;
-    spectatorInviteId?: string;
+    matchId?: string;
     entryPoint?: string;
     conversationId?: string;
     conversationType?: "dm" | "group";
@@ -201,8 +211,12 @@ const Brick = React.memo(
             />
           </RoundedRect>
         </Canvas>
-        {brick.type === "explosive" && <Text style={[styles.brickIcon, { position: "absolute" }]}>💥</Text>}
-        {brick.type === "mystery" && <Text style={[styles.brickIcon, { position: "absolute" }]}>?</Text>}
+        {brick.type === "explosive" && (
+          <Text style={[styles.brickIcon, { position: "absolute" }]}>💥</Text>
+        )}
+        {brick.type === "mystery" && (
+          <Text style={[styles.brickIcon, { position: "absolute" }]}>?</Text>
+        )}
         {brick.type === "gold" && brick.hitsRemaining === 3 && (
           <Text style={[styles.brickIcon, { position: "absolute" }]}>✨</Text>
         )}
@@ -437,9 +451,12 @@ const ActiveEffectsDisplay = React.memo(
 // Main Component
 // =============================================================================
 
-export default function BrickBreakerGameScreen({
+function BrickBreakerGameScreen({
   navigation,
 }: BrickBreakerGameScreenProps): React.ReactElement {
+  const __codexGameCompletion = useGameCompletion({ gameType: "brick_breaker" });
+  void __codexGameCompletion;
+
   const theme = useTheme();
   const haptics = useGameHaptics();
   const { currentFirebaseUser } = useAuth();
@@ -448,21 +465,29 @@ export default function BrickBreakerGameScreen({
   const route =
     useRoute<RouteProp<BrickBreakerRouteParams, "BrickBreakerGame">>();
 
-  // Live spectator session (for spectator invites)
-  const liveSessionId = route.params?.liveSessionId;
-  const {
-    updateState: updateSpectatorState,
-    endSession: endSpectatorSession,
-    spectatorCount,
-    isLive: hasSpectators,
-  } = useLiveSpectatorSession({
-    sessionId: liveSessionId,
-    mode: "host",
-    userId: currentFirebaseUser?.uid,
-    userName:
-      currentFirebaseUser?.displayName ||
-      currentFirebaseUser?.email ||
-      "Player",
+  // Colyseus multiplayer
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "brick_breaker_game",
+    route?.params?.matchId,
+  );
+  const isOnlineAvailable =
+    !!COLYSEUS_FEATURES.COLYSEUS_ENABLED && !!COLYSEUS_FEATURES.PHYSICS_ENABLED;
+  const [isOnlineMode, setIsOnlineMode] = useState(false);
+  const mpRace = useScoreRace({
+    gameType: "brick_breaker",
+    autoJoin: isOnlineMode,
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setIsOnlineMode(true);
+    }
+  }, [resolvedMode, firestoreGameId]);
+
+  // Spectator hosting — allows friends to watch via SpectatorRoom
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
     gameType: "brick_breaker",
   });
 
@@ -472,6 +497,14 @@ export default function BrickBreakerGameScreen({
   const [showLevelCompleteDialog, setShowLevelCompleteDialog] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   const [highScore, setHighScore] = useState(0);
   const [initialBrickCount, setInitialBrickCount] = useState(0);
 
@@ -504,8 +537,11 @@ export default function BrickBreakerGameScreen({
     // Reset paddle position shared value
     paddleX.value = newState.paddle.x;
 
+    // Start spectator hosting
+    spectatorHost.startHosting();
+
     haptics.trigger("impact_medium");
-  }, [currentFirebaseUser?.uid, haptics, paddleX]);
+  }, [currentFirebaseUser?.uid, haptics, paddleX, spectatorHost]);
 
   // ==========================================================================
   // Session Recording
@@ -525,7 +561,7 @@ export default function BrickBreakerGameScreen({
           duration,
         });
       } catch (error) {
-        console.error("[BrickBreaker] Failed to record session:", error);
+        logger.error("[BrickBreaker] Failed to record session:", error);
       }
     },
     [currentFirebaseUser?.uid],
@@ -645,46 +681,43 @@ export default function BrickBreakerGameScreen({
       haptics.gameOverPattern(false);
       setShowGameOverModal(true);
       recordSession(newState);
-      // End spectator session
-      if (liveSessionId) {
-        endSpectatorSession(newState.score, {
-          currentLevel: newState.currentLevel,
-          lives: newState.lives,
-          phase: newState.phase,
-        });
-      }
+      // End spectator hosting
+      spectatorHost.endHosting(newState.score);
     }
 
     setGameState(newState);
     gameStateRef.current = newState;
 
-    // Send state updates to spectators (throttled by hook)
-    if (liveSessionId) {
-      updateSpectatorState({
-        gameState: {
-          score: newState.score,
-          currentLevel: newState.currentLevel,
-          lives: newState.lives,
-          phase: newState.phase,
-          bricksRemaining: getBricksRemaining(newState),
-          activePowerUps: newState.activeEffects.map((e) => e.type),
-        },
-        currentScore: newState.score,
-      });
+    // Push game state to spectators (full visual state for live rendering)
+    spectatorHost.updateGameState(
+      JSON.stringify({
+        score: newState.score,
+        level: newState.currentLevel,
+        lives: newState.lives,
+        phase: newState.phase,
+        bricksDestroyed: newState.bricksDestroyed,
+        // Visual state for spectator renderer
+        paddle: newState.paddle,
+        balls: newState.balls,
+        bricks: newState.bricks,
+        powerUps: newState.powerUps,
+        lasers: newState.lasers,
+      }),
+      newState.score,
+      newState.currentLevel,
+      newState.lives,
+    );
+
+    // Send score to Colyseus in online mode
+    if (isOnlineMode && mpRace.phase === "playing") {
+      mpRace.sendScore(newState.score);
     }
 
     // Continue loop if still playing
     if (newState.phase === "playing") {
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     }
-  }, [
-    processEvents,
-    recordSession,
-    syncPaddlePosition,
-    liveSessionId,
-    updateSpectatorState,
-    endSpectatorSession,
-  ]);
+  }, [processEvents, recordSession, syncPaddlePosition]);
 
   const startGameLoop = useCallback(() => {
     if (gameLoopRef.current) {
@@ -778,48 +811,20 @@ export default function BrickBreakerGameScreen({
     if (newState.phase === "gameOver") {
       setShowGameOverModal(true);
       recordSession(newState);
-      // End spectator session
-      if (liveSessionId) {
-        endSpectatorSession(newState.score, {
-          currentLevel: newState.currentLevel,
-          lives: newState.lives,
-          phase: newState.phase,
-        });
-      }
-    } else {
-      // Send level update to spectators
-      if (liveSessionId) {
-        updateSpectatorState({
-          gameState: {
-            score: newState.score,
-            currentLevel: newState.currentLevel,
-            lives: newState.lives,
-            phase: newState.phase,
-            bricksRemaining: getBricksRemaining(newState),
-          },
-          currentScore: newState.score,
-        });
-      }
     }
 
     haptics.trigger("success");
-  }, [
-    haptics,
-    paddleX,
-    recordSession,
-    liveSessionId,
-    updateSpectatorState,
-    endSpectatorSession,
-  ]);
+  }, [haptics, paddleX, recordSession]);
 
   // ==========================================================================
   // Navigation & Sharing
   // ==========================================================================
 
-  const handleBack = useCallback(() => {
-    stopGameLoop();
-    navigation.goBack();
-  }, [navigation, stopGameLoop]);
+  const { handleBack } = useGameBackHandler({
+    gameType: "brick_breaker",
+    isGameOver: showGameOverModal,
+    onBeforeLeave: stopGameLoop,
+  });
 
   const handlePlayAgain = useCallback(() => {
     setShowGameOverModal(false);
@@ -858,7 +863,7 @@ export default function BrickBreakerGameScreen({
           showError("Failed to share score. Try again.");
         }
       } catch (error) {
-        console.error("[BrickBreaker] Failed to send scorecard:", error);
+        logger.error("[BrickBreaker] Failed to send scorecard:", error);
         showError("Failed to share score. Try again.");
       }
     },
@@ -875,7 +880,8 @@ export default function BrickBreakerGameScreen({
   const handleExitToHub = useCallback(() => {
     stopGameLoop();
     setShowGameOverModal(false);
-    navigation.navigate("GamesHub");
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate("GamesHub");
   }, [navigation, stopGameLoop]);
 
   // ==========================================================================
@@ -1019,13 +1025,25 @@ export default function BrickBreakerGameScreen({
               >
                 {/* Skia background */}
                 <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-                  <RoundedRect x={0} y={0} width={SCALED_WIDTH} height={SCALED_HEIGHT} r={12}>
+                  <RoundedRect
+                    x={0}
+                    y={0}
+                    width={SCALED_WIDTH}
+                    height={SCALED_HEIGHT}
+                    r={12}
+                  >
                     <SkiaLinearGradient
                       start={vec(0, 0)}
                       end={vec(0, SCALED_HEIGHT)}
                       colors={["#1A1A3E", "#16162E", "#0F0F22"]}
                     />
-                    <SkiaShadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
+                    <SkiaShadow
+                      dx={0}
+                      dy={2}
+                      blur={8}
+                      color="rgba(0,0,0,0.5)"
+                      inner
+                    />
                   </RoundedRect>
                 </Canvas>
                 {/* Bricks */}
@@ -1118,7 +1136,18 @@ export default function BrickBreakerGameScreen({
           >
             🧱 Brick Breaker
           </Text>
-          <View style={{ width: 80 }} />
+          {spectatorHost.spectatorRoomId ? (
+            <Button
+              mode="text"
+              onPress={() => setShowSpectatorInvitePicker(true)}
+              icon="eye"
+              textColor={theme.colors.onBackground}
+            >
+              Watch Me
+            </Button>
+          ) : (
+            <View style={{ width: 80 }} />
+          )}
         </View>
 
         {/* Content */}
@@ -1205,13 +1234,63 @@ export default function BrickBreakerGameScreen({
           }
         />
 
+        {/* Colyseus multiplayer overlay */}
+        {isOnlineMode && (
+          <ScoreRaceOverlay
+            phase={mpRace.phase as ScoreRaceOverlayPhase}
+            countdown={mpRace.countdown}
+            myScore={mpRace.myScore}
+            opponentScore={mpRace.opponentScore}
+            opponentName={mpRace.opponentName}
+            isWinner={mpRace.isWinner}
+            isTie={mpRace.isTie}
+            winnerName={mpRace.isWinner ? "You" : mpRace.opponentName}
+            onReady={() => mpRace.sendReady()}
+            onRematch={() => mpRace.sendRematch()}
+            onAcceptRematch={() => mpRace.acceptRematch()}
+            onLeave={async () => {
+              await mpRace.leave();
+              setIsOnlineMode(false);
+            }}
+            rematchRequested={mpRace.rematchRequested}
+            reconnecting={mpRace.reconnecting}
+            opponentDisconnected={mpRace.opponentDisconnected}
+          />
+        )}
+
+        {/* Spectator overlay — shows count of watchers */}
+        {spectatorHost.spectatorCount > 0 && (
+          <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+        )}
+
         {/* Friend Picker Modal */}
         <FriendPickerModal
+          key="scorecard-picker"
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
           onSelectFriend={handleSelectFriend}
           title="Share Score With..."
           currentUserId={currentFirebaseUser?.uid || ""}
+        />
+
+        {/* Spectator Invite Picker (Friends + Groups) */}
+        <SpectatorInviteModal
+          visible={showSpectatorInvitePicker}
+          onDismiss={() => setShowSpectatorInvitePicker(false)}
+          currentUserId={currentFirebaseUser?.uid || ""}
+          inviteData={
+            spectatorHost.spectatorRoomId
+              ? {
+                  roomId: spectatorHost.spectatorRoomId,
+                  gameType: "brick_breaker",
+                  hostName:
+                    profile?.displayName || profile?.username || "Player",
+                }
+              : null
+          }
+          onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+          onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+          onError={showError}
         />
       </SafeAreaView>
     </GestureHandlerRootView>
@@ -1377,3 +1456,5 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
 });
+
+export default withGameErrorBoundary(BrickBreakerGameScreen, "brick_breaker");

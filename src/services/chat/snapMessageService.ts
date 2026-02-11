@@ -21,9 +21,12 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Picture } from "../../types/camera";
-import { getFirestoreInstance } from "../firebase";
+import { Picture } from "@/types/camera";
+import { getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/chat/snapMessageService");
 /**
  * Picture message type in chat
  */
@@ -60,7 +63,7 @@ export async function sendSnapToChat(
   userName: string,
 ): Promise<SnapMessage> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Sending picture ${picture.id} to conversation ${conversationId}`,
     );
 
@@ -112,7 +115,7 @@ export async function sendSnapToChat(
       lastMessageSenderId: userId,
     });
 
-    console.log(
+    logger.info(
       `[Game Chat Service] Picture message created: ${messageDocRef.id}`,
     );
 
@@ -136,7 +139,7 @@ export async function sendSnapToChat(
         : new Date(Date.now() + 24 * 60 * 60 * 1000),
     };
   } catch (error) {
-    console.error("[Game Chat Service] Failed to send picture to chat:", error);
+    logger.error("[Game Chat Service] Failed to send picture to chat:", error);
     throw error;
   }
 }
@@ -151,7 +154,7 @@ export async function recordSnapViewInChat(
   viewerId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Recording picture view for message ${messageId}`,
     );
 
@@ -188,9 +191,9 @@ export async function recordSnapViewInChat(
       viewCount: increment(1),
     });
 
-    console.log("[Game Chat Service] Picture view recorded");
+    logger.info("[Game Chat Service] Picture view recorded");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Chat Service] Failed to record picture view in chat:",
       error,
     );
@@ -206,7 +209,7 @@ export async function markSnapAsViewedInChat(
   conversationId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Marking picture message ${messageId} as viewed`,
     );
 
@@ -224,9 +227,9 @@ export async function markSnapAsViewedInChat(
       viewedAt: new Date(),
     });
 
-    console.log("[Game Chat Service] Picture marked as viewed");
+    logger.info("[Game Chat Service] Picture marked as viewed");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Chat Service] Failed to mark picture as viewed:",
       error,
     );
@@ -244,7 +247,7 @@ export async function recordSnapScreenshot(
   userId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Recording screenshot of picture message ${messageId}`,
     );
 
@@ -273,9 +276,9 @@ export async function recordSnapScreenshot(
       conversationId,
     });
 
-    console.log("[Game Chat Service] Screenshot recorded");
+    logger.info("[Game Chat Service] Screenshot recorded");
   } catch (error) {
-    console.error("[Game Chat Service] Failed to record screenshot:", error);
+    logger.error("[Game Chat Service] Failed to record screenshot:", error);
     throw error;
   }
 }
@@ -288,7 +291,7 @@ export async function getSnapMessagesInConversation(
   maxResults: number = 50,
 ): Promise<SnapMessage[]> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Fetching picture messages from conversation ${conversationId}`,
     );
 
@@ -332,12 +335,12 @@ export async function getSnapMessagesInConversation(
       });
     });
 
-    console.log(
+    logger.info(
       `[Game Chat Service] Fetched ${messages.length} picture messages`,
     );
     return messages;
   } catch (error) {
-    console.error("[Game Chat Service] Failed to get picture messages:", error);
+    logger.error("[Game Chat Service] Failed to get picture messages:", error);
     throw error;
   }
 }
@@ -350,7 +353,7 @@ export async function deleteSnapMessageFromChat(
   messageId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Deleting picture message ${messageId} from chat`,
     );
 
@@ -365,9 +368,9 @@ export async function deleteSnapMessageFromChat(
     );
     await deleteDoc(messageRef);
 
-    console.log("[Game Chat Service] Picture message deleted");
+    logger.info("[Game Chat Service] Picture message deleted");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Chat Service] Failed to delete picture message:",
       error,
     );
@@ -385,7 +388,7 @@ export async function addReactionToSnapMessage(
   userId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Chat Service] Adding reaction ${emoji} to picture message ${messageId}`,
     );
 
@@ -403,9 +406,9 @@ export async function addReactionToSnapMessage(
       [`reactions.${emoji}`]: arrayUnion(userId),
     });
 
-    console.log("[Game Chat Service] Reaction added to picture message");
+    logger.info("[Game Chat Service] Reaction added to picture message");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Chat Service] Failed to add reaction to picture message:",
       error,
     );
@@ -420,7 +423,7 @@ export async function getSnapMetadataForChat(
   snapId: string,
 ): Promise<Partial<SnapMessage> | null> {
   try {
-    console.log(`[Game Chat Service] Fetching picture metadata for ${snapId}`);
+    logger.info(`[Game Chat Service] Fetching picture metadata for ${snapId}`);
 
     const db = getFirestoreInstance();
 
@@ -428,7 +431,7 @@ export async function getSnapMetadataForChat(
     const snapDoc = await getDoc(snapRef);
 
     if (!snapDoc.exists()) {
-      console.warn("[Game Chat Service] Picture not found");
+      logger.warn("[Game Chat Service] Picture not found");
       return null;
     }
 
@@ -443,7 +446,7 @@ export async function getSnapMetadataForChat(
       expiresAt: data.expiresAt?.toDate?.() || new Date(),
     };
   } catch (error) {
-    console.error("[Game Chat Service] Failed to get picture metadata:", error);
+    logger.error("[Game Chat Service] Failed to get picture metadata:", error);
     return null;
   }
 }

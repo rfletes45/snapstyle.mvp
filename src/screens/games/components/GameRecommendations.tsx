@@ -35,8 +35,11 @@ import Animated, {
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA, GameMetadata } from "@/types/games";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/components/GameRecommendations");
 // =============================================================================
 // Types
 // =============================================================================
@@ -229,7 +232,7 @@ export function GameRecommendations({
         // Rule 3: Popular games (trending)
         const popularGames = availableGames.filter(
           (g) =>
-            ["flappy_bird", "play_2048", "word_master"].includes(g.id) &&
+            ["play_2048", "word_master"].includes(g.id) &&
             !newGames.includes(g),
         );
         popularGames.forEach((game) => {
@@ -265,7 +268,7 @@ export function GameRecommendations({
         recs.sort((a, b) => b.priority - a.priority);
         setRecommendations(recs.slice(0, MAX_RECOMMENDATIONS));
       } catch (error) {
-        console.error("[GameRecommendations] Error generating:", error);
+        logger.error("[GameRecommendations] Error generating:", error);
       } finally {
         setLoading(false);
       }
@@ -296,8 +299,8 @@ export function GameRecommendations({
     [],
   );
 
-  // Don't show during initial load or if no recommendations
-  if (loading || recommendations.length === 0) {
+  // Don't show during initial load
+  if (loading) {
     return null;
   }
 
@@ -320,6 +323,13 @@ export function GameRecommendations({
         data={recommendations}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+              No recommendations right now. Check back after more games.
+            </Text>
+          </View>
+        }
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
@@ -355,6 +365,17 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: PLAY_SCREEN_TOKENS.spacing.horizontalPadding,
     gap: 12,
+  },
+  emptyState: {
+    width: CARD_WIDTH * 1.9,
+    minHeight: CARD_HEIGHT,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  emptyStateText: {
+    fontSize: 12,
+    textAlign: "center",
   },
   card: {
     width: CARD_WIDTH,

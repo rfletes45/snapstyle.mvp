@@ -20,6 +20,9 @@ import {
 import { getFirestoreInstance } from "./firebase";
 import { updateProfile } from "./users";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/cosmetics");
 // ============================================================
 // INVENTORY FUNCTIONS
 // ============================================================
@@ -40,7 +43,7 @@ export async function getUserInventory(
       acquiredAt: doc.data().acquiredAt || Date.now(),
     }));
   } catch (error) {
-    console.error("Error getting inventory:", error);
+    logger.error("Error getting inventory:", error);
     return [];
   }
 }
@@ -58,7 +61,7 @@ export async function hasItem(
     const itemDoc = await getDoc(itemRef);
     return itemDoc.exists();
   } catch (error) {
-    console.error("Error checking item:", error);
+    logger.error("Error checking item:", error);
     return false;
   }
 }
@@ -74,14 +77,14 @@ export async function addToInventory(
     // Verify item exists in catalog
     const item = getItemById(itemId);
     if (!item) {
-      console.error("Item not found in catalog:", itemId);
+      logger.error("Item not found in catalog:", itemId);
       return false;
     }
 
     // Check if user already has this item
     const alreadyHas = await hasItem(userId, itemId);
     if (alreadyHas) {
-      console.log("User already has item:", itemId);
+      logger.info("User already has item:", itemId);
       return true;
     }
 
@@ -93,10 +96,10 @@ export async function addToInventory(
       acquiredAt: Date.now(),
     });
 
-    console.log("Added item to inventory:", itemId);
+    logger.info("Added item to inventory:", itemId);
     return true;
   } catch (error) {
-    console.error("Error adding to inventory:", error);
+    logger.error("Error adding to inventory:", error);
     return false;
   }
 }
@@ -117,7 +120,7 @@ export async function grantStarterItems(userId: string): Promise<void> {
     await addToInventory(userId, itemId);
   }
 
-  console.log(
+  logger.info(
     `Granted ${uniqueItemIds.length} starter items to user ${userId}`,
   );
 }
@@ -139,14 +142,14 @@ export async function checkAndGrantMilestoneReward(
   // Check if user already has this item
   const alreadyHas = await hasItem(userId, rewardItemId);
   if (alreadyHas) {
-    console.log("User already has milestone reward:", rewardItemId);
+    logger.info("User already has milestone reward:", rewardItemId);
     return null;
   }
 
   // Grant the reward
   const success = await addToInventory(userId, rewardItemId);
   if (success) {
-    console.log(
+    logger.info(
       `Granted milestone reward ${rewardItemId} for ${streakCount}-day streak`,
     );
     return rewardItemId;
@@ -169,7 +172,7 @@ export async function updateAvatarConfig(
   try {
     return await updateProfile(userId, { avatarConfig });
   } catch (error) {
-    console.error("Error updating avatar config:", error);
+    logger.error("Error updating avatar config:", error);
     return false;
   }
 }
@@ -185,7 +188,7 @@ export async function equipItem(
   // Verify item exists
   const item = getItemById(itemId);
   if (!item) {
-    console.error("Item not found:", itemId);
+    logger.error("Item not found:", itemId);
     return false;
   }
 
@@ -197,7 +200,7 @@ export async function equipItem(
   ) {
     const ownsItem = await hasItem(userId, itemId);
     if (!ownsItem) {
-      console.error("User does not own item:", itemId);
+      logger.error("User does not own item:", itemId);
       return false;
     }
   }

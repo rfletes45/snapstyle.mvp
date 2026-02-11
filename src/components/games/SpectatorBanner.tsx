@@ -1,23 +1,17 @@
 /**
- * SpectatorBanner Component
+ * SpectatorBanner — Full-width banner shown to spectators
  *
- * Displays a banner at the top of game screens when in spectator mode.
- * Shows spectator count and provides a leave button.
+ * Displays "Watching" text, spectator count, and a leave button.
+ * Positioned at the top of the game screen when the user is spectating.
  *
- * @example
- * <SpectatorBanner
- *   isSpectator={isSpectator}
- *   spectatorCount={spectatorCount}
- *   onLeave={leaveSpectatorMode}
- *   playerNames={["Alice", "Bob"]}
- * />
+ * @see docs/SPECTATOR_SYSTEM_PLAN.md §4.2
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import Animated, { SlideInUp, SlideOutUp } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 
@@ -25,17 +19,13 @@ import { BorderRadius, Spacing } from "@/constants/theme";
 // Types
 // =============================================================================
 
-export interface SpectatorBannerProps {
-  /** Whether spectator mode is active */
-  isSpectator: boolean;
-  /** Number of spectators watching (including current user) */
+interface SpectatorBannerProps {
+  /** Number of spectators watching */
   spectatorCount: number;
-  /** Callback when leave button is pressed */
+  /** Called when the user taps "Leave" */
   onLeave: () => void;
-  /** Names of the players in the game */
-  playerNames?: [string, string];
-  /** Whether the leave action is loading */
-  loading?: boolean;
+  /** Optional: show host name (for SP spectating) */
+  hostName?: string;
 }
 
 // =============================================================================
@@ -43,92 +33,81 @@ export interface SpectatorBannerProps {
 // =============================================================================
 
 export function SpectatorBanner({
-  isSpectator,
   spectatorCount,
   onLeave,
-  playerNames,
-  loading = false,
+  hostName,
 }: SpectatorBannerProps) {
   const theme = useTheme();
-
-  if (!isSpectator) {
-    return null;
-  }
-
-  const playersText =
-    playerNames && playerNames.length === 2
-      ? `${playerNames[0]} vs ${playerNames[1]}`
-      : "Game in progress";
+  const insets = useSafeAreaInsets();
 
   return (
-    <Animated.View
-      entering={SlideInUp.duration(300)}
-      exiting={SlideOutUp.duration(200)}
-      style={[styles.container, { backgroundColor: theme.colors.primary }]}
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: theme.colors.primaryContainer,
+          paddingTop: Math.max(insets.top, Spacing.sm),
+        },
+      ]}
     >
       <View style={styles.content}>
-        {/* Eye icon and watching text */}
+        {/* Left: Eye icon + watching text */}
         <View style={styles.leftSection}>
           <MaterialCommunityIcons
-            name="eye-outline"
-            size={20}
-            color={theme.colors.onPrimary}
+            name="eye"
+            size={18}
+            color={theme.colors.onPrimaryContainer}
           />
-          <View style={styles.textContainer}>
-            <Text
-              style={[styles.watchingText, { color: theme.colors.onPrimary }]}
-            >
-              Watching
-            </Text>
-            <Text
-              style={[styles.playersText, { color: theme.colors.onPrimary }]}
-              numberOfLines={1}
-            >
-              {playersText}
-            </Text>
-          </View>
-        </View>
-
-        {/* Spectator count */}
-        <View style={styles.centerSection}>
-          <View
+          <Text
+            variant="labelLarge"
             style={[
-              styles.countBadge,
-              { backgroundColor: "rgba(255,255,255,0.2)" },
+              styles.watchingText,
+              { color: theme.colors.onPrimaryContainer },
             ]}
           >
-            <MaterialCommunityIcons
-              name="account-group-outline"
-              size={14}
-              color={theme.colors.onPrimary}
-            />
-            <Text style={[styles.countText, { color: theme.colors.onPrimary }]}>
-              {spectatorCount}
-            </Text>
-          </View>
+            {hostName ? `Watching ${hostName}` : "Watching"}
+          </Text>
         </View>
 
-        {/* Leave button */}
+        {/* Center: Spectator count */}
+        <View style={styles.centerSection}>
+          <MaterialCommunityIcons
+            name="account-group"
+            size={16}
+            color={theme.colors.onPrimaryContainer}
+            style={styles.countIcon}
+          />
+          <Text
+            variant="labelMedium"
+            style={{ color: theme.colors.onPrimaryContainer }}
+          >
+            {spectatorCount} {spectatorCount === 1 ? "viewer" : "viewers"}
+          </Text>
+        </View>
+
+        {/* Right: Leave button */}
         <TouchableOpacity
+          onPress={onLeave}
           style={[
             styles.leaveButton,
-            { backgroundColor: "rgba(255,255,255,0.2)" },
+            { backgroundColor: theme.colors.errorContainer },
           ]}
-          onPress={onLeave}
-          disabled={loading}
-          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <MaterialCommunityIcons
-            name="exit-to-app"
-            size={16}
-            color={theme.colors.onPrimary}
+            name="close"
+            size={14}
+            color={theme.colors.onErrorContainer}
           />
-          <Text style={[styles.leaveText, { color: theme.colors.onPrimary }]}>
+          <Text
+            variant="labelSmall"
+            style={[styles.leaveText, { color: theme.colors.onErrorContainer }]}
+          >
             Leave
           </Text>
         </TouchableOpacity>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -138,15 +117,10 @@ export function SpectatorBanner({
 
 const styles = StyleSheet.create({
   container: {
+    width: "100%",
+    paddingBottom: Spacing.xs,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderBottomLeftRadius: BorderRadius.md,
-    borderBottomRightRadius: BorderRadius.md,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    zIndex: 100,
   },
   content: {
     flexDirection: "row",
@@ -156,50 +130,27 @@ const styles = StyleSheet.create({
   leftSection: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-    gap: Spacing.sm,
-  },
-  textContainer: {
-    flex: 1,
+    gap: Spacing.xs,
   },
   watchingText: {
-    fontSize: 12,
     fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  playersText: {
-    fontSize: 14,
-    fontWeight: "500",
-    opacity: 0.9,
   },
   centerSection: {
-    paddingHorizontal: Spacing.sm,
-  },
-  countBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
   },
-  countText: {
-    fontSize: 12,
-    fontWeight: "600",
+  countIcon: {
+    marginRight: 4,
   },
   leaveButton: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
     gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.md,
   },
   leaveText: {
-    fontSize: 12,
     fontWeight: "600",
   },
 });
-
-export default SpectatorBanner;

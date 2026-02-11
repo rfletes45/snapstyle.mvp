@@ -48,6 +48,14 @@ import { isUserBlocked } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 import { getUserProfileByUid } from "./friends";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/groups");
+
+interface DateLikeTimestamp {
+  toMillis?: () => number;
+  getTime?: () => number;
+}
 // =============================================================================
 // Constants
 // =============================================================================
@@ -149,12 +157,12 @@ export async function createGroup(
 
   await batch.commit();
 
-  console.log(`✅ [groups] Created group "${input.name}" with ID: ${groupId}`);
+  logger.info(`✅ [groups] Created group "${input.name}" with ID: ${groupId}`);
 
   // Send invites to initial members (non-blocking)
   for (const memberUid of input.memberUids) {
     sendGroupInvite(groupId, input.name, creatorUid, memberUid).catch((error) =>
-      console.error(`Failed to send invite to ${memberUid}:`, error),
+      logger.error(`Failed to send invite to ${memberUid}:`, error),
     );
   }
 
@@ -179,15 +187,15 @@ export async function sendGroupInvite(
 ): Promise<GroupInvite> {
   const db = getFirestoreInstance();
 
-  console.log(
+  logger.info(
     `[sendGroupInvite] Starting invite from ${fromUid} to ${toUid} for group ${groupId}`,
   );
 
   // Check if target is blocked by sender or vice versa
-  console.log(`[sendGroupInvite] Step 1: Checking blocked status...`);
+  logger.info(`[sendGroupInvite] Step 1: Checking blocked status...`);
   const blocked = await isUserBlocked(fromUid, toUid);
   const blockedBy = await isUserBlocked(toUid, fromUid);
-  console.log(
+  logger.info(
     `[sendGroupInvite] Step 1 complete: blocked=${blocked}, blockedBy=${blockedBy}`,
   );
   if (blocked || blockedBy) {
@@ -195,11 +203,11 @@ export async function sendGroupInvite(
   }
 
   // Check if user is already a member
-  console.log(
+  logger.info(
     `[sendGroupInvite] Step 2: Checking if ${toUid} is already a member...`,
   );
   const memberDoc = await getDoc(doc(db, "Groups", groupId, "Members", toUid));
-  console.log(
+  logger.info(
     `[sendGroupInvite] Step 2 complete: exists=${memberDoc.exists()}`,
   );
   if (memberDoc.exists()) {
@@ -207,7 +215,7 @@ export async function sendGroupInvite(
   }
 
   // Check for existing pending invite (that hasn't expired)
-  console.log(
+  logger.info(
     `[sendGroupInvite] Step 3: Checking for existing pending invites...`,
   );
   const now = Date.now();
@@ -230,7 +238,7 @@ export async function sendGroupInvite(
     return expiresAt > now;
   });
 
-  console.log(
+  logger.info(
     `[sendGroupInvite] Step 3 complete: existingInvites=${existingInvites.docs.length}, validPending=${validPendingInvites.length}`,
   );
 
@@ -239,9 +247,9 @@ export async function sendGroupInvite(
   }
 
   // Get sender profile
-  console.log(`[sendGroupInvite] Step 4: Getting sender profile...`);
+  logger.info(`[sendGroupInvite] Step 4: Getting sender profile...`);
   const senderProfile = await getUserProfileByUid(fromUid);
-  console.log(`[sendGroupInvite] Step 4 complete: found=${!!senderProfile}`);
+  logger.info(`[sendGroupInvite] Step 4 complete: found=${!!senderProfile}`);
   if (!senderProfile) {
     throw new Error("Sender profile not found");
   }
@@ -259,14 +267,14 @@ export async function sendGroupInvite(
     expiresAt: now + INVITE_EXPIRY_MS,
   };
 
-  console.log(
+  logger.info(
     `[sendGroupInvite] Step 5: Creating invite document...`,
     inviteData,
   );
   await setDoc(inviteRef, inviteData);
-  console.log(`[sendGroupInvite] Step 5 complete: invite created`);
+  logger.info(`[sendGroupInvite] Step 5 complete: invite created`);
 
-  console.log(`✅ [groups] Sent invite to ${toUid} for group ${groupId}`);
+  logger.info(`✅ [groups] Sent invite to ${toUid} for group ${groupId}`);
 
   return {
     id: inviteRef.id,
@@ -281,7 +289,7 @@ export async function getPendingInvites(uid: string): Promise<GroupInvite[]> {
   const db = getFirestoreInstance();
   const now = Date.now();
 
-  console.log(`[getPendingInvites] Fetching invites for uid: ${uid}`);
+  logger.info(`[getPendingInvites] Fetching invites for uid: ${uid}`);
 
   const invitesQuery = query(
     collection(db, "GroupInvites"),
@@ -291,14 +299,14 @@ export async function getPendingInvites(uid: string): Promise<GroupInvite[]> {
   );
 
   const snapshot = await getDocs(invitesQuery);
-  console.log(
+  logger.info(
     `[getPendingInvites] Raw snapshot count: ${snapshot.docs.length}`,
   );
 
   const invites = snapshot.docs
     .map((doc) => {
       const data = doc.data();
-      console.log(`[getPendingInvites] Doc ${doc.id}:`, data);
+      logger.info(`[getPendingInvites] Doc ${doc.id}:`, data);
       return {
         id: doc.id,
         ...data,
@@ -314,13 +322,13 @@ export async function getPendingInvites(uid: string): Promise<GroupInvite[]> {
     })
     .filter((invite) => {
       const notExpired = invite.expiresAt > now;
-      console.log(
+      logger.info(
         `[getPendingInvites] Invite ${invite.id} expiresAt=${invite.expiresAt}, now=${now}, notExpired=${notExpired}`,
       );
       return notExpired;
     }) as GroupInvite[];
 
-  console.log(`[getPendingInvites] Final invites count: ${invites.length}`);
+  logger.info(`[getPendingInvites] Final invites count: ${invites.length}`);
   return invites;
 }
 
@@ -362,7 +370,7 @@ export function subscribeToPendingInvites(
       onUpdate(invites);
     },
     (error) => {
-      console.error("[groups] Error subscribing to invites:", error);
+      logger.error("[groups] Error subscribing to invites:", error);
     },
   );
 }
@@ -374,85 +382,87 @@ export async function acceptGroupInvite(
   inviteId: string,
   uid: string,
 ): Promise<void> {
-  console.log("🔵 [acceptGroupInvite] Starting...", { inviteId, uid });
+  logger.info("🔵 [acceptGroupInvite] Starting...", { inviteId, uid });
 
   const db = getFirestoreInstance();
 
-  console.log("🔵 [acceptGroupInvite] Step 1: Fetching invite document");
+  logger.info("🔵 [acceptGroupInvite] Step 1: Fetching invite document");
   const inviteRef = doc(db, "GroupInvites", inviteId);
   const inviteDoc = await getDoc(inviteRef);
 
   if (!inviteDoc.exists()) {
-    console.error("❌ [acceptGroupInvite] Invite not found");
+    logger.error("❌ [acceptGroupInvite] Invite not found");
     throw new Error("Invite not found");
   }
 
   const invite = inviteDoc.data() as Omit<GroupInvite, "id">;
-  console.log("🔵 [acceptGroupInvite] Invite data:", invite);
+  logger.info("🔵 [acceptGroupInvite] Invite data:", invite);
 
   if (invite.toUid !== uid) {
-    console.error("❌ [acceptGroupInvite] Invite not for this user");
+    logger.error("❌ [acceptGroupInvite] Invite not for this user");
     throw new Error("This invite is not for you");
   }
 
   if (invite.status !== "pending") {
-    console.error("❌ [acceptGroupInvite] Invite not pending:", invite.status);
+    logger.error("❌ [acceptGroupInvite] Invite not pending:", invite.status);
     throw new Error("Invite is no longer pending");
   }
 
   const expiresAt =
-    (invite.expiresAt as any)?.toMillis?.() ??
-    (invite.expiresAt as any)?.getTime?.() ??
-    (typeof invite.expiresAt === "number" ? invite.expiresAt : 0);
+    typeof invite.expiresAt === "number"
+      ? invite.expiresAt
+      : (invite.expiresAt as DateLikeTimestamp | undefined)?.toMillis?.() ??
+        (invite.expiresAt as DateLikeTimestamp | undefined)?.getTime?.() ??
+        0;
 
   if (Date.now() > expiresAt) {
-    console.error("❌ [acceptGroupInvite] Invite expired");
+    logger.error("❌ [acceptGroupInvite] Invite expired");
     throw new Error("Invite has expired");
   }
 
-  console.log("🔵 [acceptGroupInvite] Step 2: Fetching group document");
+  logger.info("🔵 [acceptGroupInvite] Step 2: Fetching group document");
   const groupRef = doc(db, "Groups", invite.groupId);
   const groupDoc = await getDoc(groupRef);
 
   if (!groupDoc.exists()) {
-    console.error("❌ [acceptGroupInvite] Group not found");
+    logger.error("❌ [acceptGroupInvite] Group not found");
     throw new Error("Group no longer exists");
   }
 
   const group = groupDoc.data() as Omit<Group, "id">;
-  console.log("🔵 [acceptGroupInvite] Group data:", {
+  logger.info("🔵 [acceptGroupInvite] Group data:", {
     groupId: invite.groupId,
     memberCount: group.memberCount,
     memberIds: group.memberIds,
   });
 
   if (group.memberCount >= GROUP_LIMITS.MAX_MEMBERS) {
-    console.error("❌ [acceptGroupInvite] Group is full");
+    logger.error("❌ [acceptGroupInvite] Group is full");
     throw new Error("Group is full");
   }
 
-  console.log("🔵 [acceptGroupInvite] Step 3: Fetching user profile");
+  logger.info("🔵 [acceptGroupInvite] Step 3: Fetching user profile");
   const userProfile = await getUserProfileByUid(uid);
   if (!userProfile) {
-    console.error("❌ [acceptGroupInvite] User profile not found");
+    logger.error("❌ [acceptGroupInvite] User profile not found");
     throw new Error("User profile not found");
   }
-  console.log("🔵 [acceptGroupInvite] User profile:", userProfile.displayName);
+  logger.info("🔵 [acceptGroupInvite] User profile:", userProfile.displayName);
 
   const now = Date.now();
   const batch = writeBatch(db);
 
-  console.log("🔵 [acceptGroupInvite] Step 4: Preparing batch write");
+  logger.info("🔵 [acceptGroupInvite] Step 4: Preparing batch write");
 
   // Update invite status
-  console.log("🔵 [acceptGroupInvite] - Updating invite status");
+  logger.info("🔵 [acceptGroupInvite] - Updating invite status");
   batch.update(inviteRef, {
     status: "accepted",
     respondedAt: now,
   });
 
   // Add user as member
-  console.log("🔵 [acceptGroupInvite] - Adding member document");
+  logger.info("🔵 [acceptGroupInvite] - Adding member document");
   const memberRef = doc(db, "Groups", invite.groupId, "Members", uid);
   const memberData: GroupMember = {
     uid,
@@ -467,7 +477,7 @@ export async function acceptGroupInvite(
   batch.set(memberRef, memberData);
 
   // Update group document
-  console.log("🔵 [acceptGroupInvite] - Updating group document");
+  logger.info("🔵 [acceptGroupInvite] - Updating group document");
   batch.update(groupRef, {
     memberIds: [...group.memberIds, uid],
     memberCount: increment(1),
@@ -475,7 +485,7 @@ export async function acceptGroupInvite(
   });
 
   // Add system message
-  console.log("🔵 [acceptGroupInvite] - Adding system message");
+  logger.info("🔵 [acceptGroupInvite] - Adding system message");
   const systemMessageRef = doc(
     collection(db, "Groups", invite.groupId, "Messages"),
   );
@@ -490,14 +500,14 @@ export async function acceptGroupInvite(
   };
   batch.set(systemMessageRef, systemMessage);
 
-  console.log("🔵 [acceptGroupInvite] Step 5: Committing batch write");
+  logger.info("🔵 [acceptGroupInvite] Step 5: Committing batch write");
   try {
     await batch.commit();
-    console.log(
+    logger.info(
       `✅ [acceptGroupInvite] Success! User ${uid} joined group ${invite.groupId}`,
     );
   } catch (error) {
-    console.error("❌ [acceptGroupInvite] Batch commit failed:", error);
+    logger.error("❌ [acceptGroupInvite] Batch commit failed:", error);
     throw error;
   }
 }
@@ -533,7 +543,7 @@ export async function declineGroupInvite(
     respondedAt: Date.now(),
   });
 
-  console.log(`✅ [groups] User ${uid} declined invite ${inviteId}`);
+  logger.info(`✅ [groups] User ${uid} declined invite ${inviteId}`);
 }
 
 // =============================================================================
@@ -637,7 +647,7 @@ export function subscribeToUserGroups(
       onUpdate(groups);
     },
     (error) => {
-      console.error("[groups] Error subscribing to groups:", error);
+      logger.error("[groups] Error subscribing to groups:", error);
     },
   );
 }
@@ -756,7 +766,7 @@ export function subscribeToGroupMembers(
       onUpdate(members);
     },
     (error) => {
-      console.error("[groups] Error subscribing to members:", error);
+      logger.error("[groups] Error subscribing to members:", error);
     },
   );
 }
@@ -841,7 +851,7 @@ export async function leaveGroup(groupId: string, uid: string): Promise<void> {
 
   await batch.commit();
 
-  console.log(`✅ [groups] User ${uid} left group ${groupId}`);
+  logger.info(`✅ [groups] User ${uid} left group ${groupId}`);
 }
 
 /**
@@ -912,7 +922,7 @@ export async function removeMember(
 
   await batch.commit();
 
-  console.log(`✅ [groups] User ${targetUid} removed from group ${groupId}`);
+  logger.info(`✅ [groups] User ${targetUid} removed from group ${groupId}`);
 }
 
 /**
@@ -980,7 +990,7 @@ export async function changeMemberRole(
 
   await batch.commit();
 
-  console.log(
+  logger.info(
     `✅ [groups] Changed ${targetUid}'s role to ${newRole} in group ${groupId}`,
   );
 }
@@ -1025,7 +1035,7 @@ export async function transferOwnership(
 
   await batch.commit();
 
-  console.log(
+  logger.info(
     `✅ [groups] Transferred ownership from ${currentOwnerUid} to ${newOwnerUid}`,
   );
 }
@@ -1184,11 +1194,11 @@ export function subscribeToGroupMessages(
     (error) => {
       // Permission errors are expected after leaving a group - ignore them silently
       if (error.code === "permission-denied") {
-        console.log(
+        logger.info(
           `[groups] Message subscription ended (user left group ${groupId})`,
         );
       } else {
-        console.error("[groups] Error subscribing to messages:", error);
+        logger.error("[groups] Error subscribing to messages:", error);
       }
     },
   );
@@ -1267,7 +1277,7 @@ export async function updateGroupName(
     updatedAt: Date.now(),
   });
 
-  console.log(`✅ [groups] Updated group ${groupId} name to "${newName}"`);
+  logger.info(`✅ [groups] Updated group ${groupId} name to "${newName}"`);
 }
 
 /**
@@ -1291,7 +1301,7 @@ export async function updateGroupPhoto(
     updatedAt: Date.now(),
   });
 
-  console.log(`✅ [groups] Updated group ${groupId} photo`);
+  logger.info(`✅ [groups] Updated group ${groupId} photo`);
 }
 
 /**
@@ -1301,17 +1311,17 @@ export async function deleteGroup(
   groupId: string,
   ownerUid: string,
 ): Promise<void> {
-  console.log("🗑️ deleteGroup called", { groupId, ownerUid });
+  logger.info("🗑️ deleteGroup called", { groupId, ownerUid });
 
   const db = getFirestoreInstance();
 
   // Verify owner
-  console.log("🗑️ Verifying owner role...");
+  logger.info("🗑️ Verifying owner role...");
   const role = await getUserRole(groupId, ownerUid);
-  console.log("🗑️ User role:", role);
+  logger.info("🗑️ User role:", role);
 
   if (role !== "owner") {
-    console.error("🗑️ Permission denied - user is not owner");
+    logger.error("🗑️ Permission denied - user is not owner");
     throw new Error("Only the group owner can delete the group");
   }
 
@@ -1319,8 +1329,8 @@ export async function deleteGroup(
   // For now, we just mark the group as deleted or remove the main doc
   // Messages and members would need cleanup via scheduled function
 
-  console.log("🗑️ Deleting group document...");
+  logger.info("🗑️ Deleting group document...");
   await deleteDoc(doc(db, "Groups", groupId));
 
-  console.log(`✅ [groups] Deleted group ${groupId}`);
+  logger.info(`✅ [groups] Deleted group ${groupId}`);
 }

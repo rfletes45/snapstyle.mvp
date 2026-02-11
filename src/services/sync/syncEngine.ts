@@ -39,9 +39,13 @@ import {
 } from "@/services/messaging/adapters/groupAdapter";
 import { LocalAttachment, uploadMultipleAttachments } from "@/services/storage";
 import { AttachmentV2, MessageV2 } from "@/types/messaging";
+import type { GroupMessage } from "@/types/models";
 import { toTimestamp } from "@/utils/dates";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/sync/syncEngine");
 // =============================================================================
 // Types
 // =============================================================================
@@ -159,7 +163,7 @@ function cleanupOrphanedMessages(): void {
   );
 
   if (orphaned.length > 0) {
-    console.warn(
+    logger.warn(
       `[SyncEngine] Cleaning up ${orphaned.length} orphaned messages with empty conversation_id`,
     );
     for (const msg of orphaned) {
@@ -196,7 +200,7 @@ export async function syncPendingMessages(): Promise<void> {
       return;
     }
 
-    console.log(
+    logger.info(
       `[SyncEngine] Syncing ${pendingMessages.length} pending messages`,
     );
 
@@ -205,7 +209,7 @@ export async function syncPendingMessages(): Promise<void> {
         await syncSingleMessage(message);
       } catch (error) {
         // Continue with other messages even if one fails
-        console.error(
+        logger.error(
           `[SyncEngine] Failed to sync message ${message.id}:`,
           error,
         );
@@ -220,7 +224,7 @@ export async function syncPendingMessages(): Promise<void> {
       lastSyncAt: Date.now(),
     });
   } catch (error: any) {
-    console.error("[SyncEngine] Sync failed:", error);
+    logger.error("[SyncEngine] Sync failed:", error);
     updateSyncState({
       isSyncing: false,
       error: error.message || "Sync failed",
@@ -269,7 +273,7 @@ async function syncSingleMessage(
         if (localAttachments.length > 0) {
           // Guard: conversation_id must be set for storage paths
           if (!message.conversation_id) {
-            console.error(
+            logger.error(
               "[SyncEngine] Cannot upload attachments: conversation_id is empty for message",
               message.id,
             );
@@ -295,7 +299,7 @@ async function syncSingleMessage(
               : `groups/${message.conversation_id}/messages`;
           }
 
-          console.log(
+          logger.info(
             `[SyncEngine] Uploading ${localAttachments.length} attachments`,
           );
 
@@ -320,7 +324,7 @@ async function syncSingleMessage(
           }
 
           if (uploadResult.failed.length > 0) {
-            console.warn(
+            logger.warn(
               "[SyncEngine] Some attachments failed to upload:",
               uploadResult.failed,
             );
@@ -376,7 +380,7 @@ async function syncSingleMessage(
     };
 
     // Debug logging for sync
-    console.log(`[SyncEngine] Attempting to sync message:`, {
+    logger.info(`[SyncEngine] Attempting to sync message:`, {
       messageId: message.id.substring(0, 8),
       scope: message.scope,
       conversationId: message.conversation_id,
@@ -392,9 +396,9 @@ async function syncSingleMessage(
     // Mark as synced in local database
     markMessageSynced(message.id, serverData.serverReceivedAt);
 
-    console.log(`[SyncEngine] Message synced: ${message.id}`);
+    logger.info(`[SyncEngine] Message synced: ${message.id}`);
   } catch (error: any) {
-    console.error("[SyncEngine] Failed to sync message:", message.id, error);
+    logger.error("[SyncEngine] Failed to sync message:", message.id, error);
 
     // Detect permanent errors that should NOT be retried
     const errorMessage = error.message || "Unknown error";
@@ -409,7 +413,7 @@ async function syncSingleMessage(
       errorMessage.includes("without a conversation ID");
 
     if (isPermanentError) {
-      console.warn(
+      logger.warn(
         `[SyncEngine] Permanent error for message ${message.id}, will not retry:`,
         errorMessage,
       );
@@ -452,10 +456,14 @@ export async function pullMessages(
       : `Groups/${conversationId}/Messages`;
 
   // Query new messages since last sync
+  // Use createdAt for groups (client-side timestamp), serverReceivedAt for DMs
+  // Note: serverReceivedAt uses FieldValue.serverTimestamp() which can be null
+  // on initial local snapshots, so DM pull also uses createdAt to avoid missing messages
+  const orderField = scope === "dm" ? "createdAt" : "createdAt";
   const q = query(
     collection(firestore, collectionPath),
-    where("serverReceivedAt", ">", lastSyncedAt),
-    orderBy("serverReceivedAt", "asc"),
+    where(orderField, ">", lastSyncedAt),
+    orderBy(orderField, "asc"),
     limit(100),
   );
 
@@ -514,12 +522,12 @@ export async function pullMessages(
       );
     }
 
-    console.log(
+    logger.info(
       `[SyncEngine] Pulled ${newCount} new messages for ${conversationId}`,
     );
     return newCount;
   } catch (error: any) {
-    console.error(`[SyncEngine] Pull failed for ${conversationId}:`, error);
+    logger.error(`[SyncEngine] Pull failed for ${conversationId}:`, error);
     throw error;
   }
 }
@@ -536,7 +544,7 @@ export async function fullSyncConversation(
 ): Promise<number> {
   // SQLite is not available on web
   if (Platform.OS === "web") {
-    console.warn(
+    logger.warn(
       "[SyncEngine] fullSyncConversation called on web - SQLite not available",
     );
     return 0;
@@ -552,8 +560,8 @@ export async function fullSyncConversation(
       : `Groups/${conversationId}/Messages`;
 
   // Get most recent messages
-  // Note: Group messages may use 'createdAt' instead of 'serverReceivedAt'
-  const orderField = scope === "dm" ? "serverReceivedAt" : "createdAt";
+  // Use createdAt for both scopes to avoid serverTimestamp sentinel null issues
+  const orderField = "createdAt";
   const q = query(
     collection(firestore, collectionPath),
     orderBy(orderField, "desc"),
@@ -565,7 +573,7 @@ export async function fullSyncConversation(
     let count = 0;
     let maxTimestamp = 0;
 
-    console.log(
+    logger.info(
       "[SyncEngine] fullSyncConversation v2 running for:",
       conversationId,
     );
@@ -583,7 +591,7 @@ export async function fullSyncConversation(
 
       // Debug: log first message conversion to verify timestamps
       if (count === 0) {
-        console.log("[SyncEngine] First message timestamp conversion:", {
+        logger.info("[SyncEngine] First message timestamp conversion:", {
           rawCreatedAt: data.createdAt,
           rawServerReceivedAt: data.serverReceivedAt,
           convertedCreatedAt: createdAtNum,
@@ -606,7 +614,7 @@ export async function fullSyncConversation(
       if (scope === "group" && isLegacyGroupMessage(msgWithId)) {
         // Legacy GroupMessage format - use adapter
         // Note: fromGroupMessage expects createdAt as a number
-        message = fromGroupMessage(msgWithId as any);
+        message = fromGroupMessage(msgWithId as GroupMessage);
         // Ensure serverReceivedAt is a number (adapter may not handle this)
         message.serverReceivedAt = serverReceivedAtNum;
       } else {
@@ -653,12 +661,12 @@ export async function fullSyncConversation(
       );
     }
 
-    console.log(
+    logger.info(
       `[SyncEngine] Full sync pulled ${count} messages for ${conversationId}`,
     );
     return count;
   } catch (error: any) {
-    console.error(
+    logger.error(
       `[SyncEngine] Full sync failed for ${conversationId}:`,
       error,
     );
@@ -682,7 +690,7 @@ export function subscribeToConversation(
 ): () => void {
   // SQLite is not available on web
   if (Platform.OS === "web") {
-    console.warn(
+    logger.warn(
       "[SyncEngine] subscribeToConversation called on web - SQLite not available",
     );
     return () => {}; // Return no-op unsubscribe
@@ -749,7 +757,7 @@ export function subscribeToConversation(
 
           // Check if this is a legacy GroupMessage format
           if (scope === "group" && isLegacyGroupMessage(msgWithId)) {
-            message = fromGroupMessage(msgWithId as any);
+            message = fromGroupMessage(msgWithId as GroupMessage);
             // Ensure serverReceivedAt is a number (adapter may not handle this)
             message.serverReceivedAt = serverReceivedAtNum;
           } else {
@@ -793,7 +801,7 @@ export function subscribeToConversation(
       });
     },
     (error) => {
-      console.error("[SyncEngine] Subscription error:", error);
+      logger.error("[SyncEngine] Subscription error:", error);
     },
   );
 
@@ -850,11 +858,11 @@ let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
  */
 export function startBackgroundSync(intervalMs: number = 30000): void {
   if (syncIntervalId) {
-    console.log("[SyncEngine] Background sync already running");
+    logger.info("[SyncEngine] Background sync already running");
     return;
   }
 
-  console.log(
+  logger.info(
     `[SyncEngine] Starting background sync (interval: ${intervalMs}ms)`,
   );
 
@@ -877,7 +885,7 @@ export function stopBackgroundSync(): void {
   if (syncIntervalId) {
     clearInterval(syncIntervalId);
     syncIntervalId = null;
-    console.log("[SyncEngine] Background sync stopped");
+    logger.info("[SyncEngine] Background sync stopped");
   }
 }
 
@@ -963,4 +971,3 @@ export function getConversationsWithPending(): string[] {
   );
   return results.map((r: { conversation_id: string }) => r.conversation_id);
 }
-

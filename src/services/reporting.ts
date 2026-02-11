@@ -6,6 +6,9 @@ import type { Report, ReportReason } from "@/types/models";
 import { collection, doc, setDoc } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/reporting");
 /**
  * Human-readable report reason labels
  */
@@ -33,7 +36,7 @@ export async function submitReport(
   },
 ): Promise<{ success: boolean; reportId?: string; error?: string }> {
   try {
-    console.log("🔵 [reporting] Submitting report:", {
+    logger.info("🔵 [reporting] Submitting report:", {
       reporterId,
       reportedUserId,
       reason,
@@ -65,10 +68,10 @@ export async function submitReport(
 
     await setDoc(newReportRef, report);
 
-    console.log("✅ [reporting] Report submitted:", newReportRef.id);
+    logger.info("✅ [reporting] Report submitted:", newReportRef.id);
     return { success: true, reportId: newReportRef.id };
   } catch (error: any) {
-    console.error("❌ [reporting] Error submitting report:", error);
+    logger.error("❌ [reporting] Error submitting report:", error);
     return {
       success: false,
       error: error.message || "Failed to submit report",

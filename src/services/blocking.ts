@@ -15,6 +15,9 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/blocking");
 /**
  * Block a user
  * - Adds to blocker's blockedUsers subcollection
@@ -27,7 +30,7 @@ export async function blockUser(
   reason?: string,
 ): Promise<boolean> {
   try {
-    console.log("🔵 [blocking] Blocking user:", userToBlockId);
+    logger.info("🔵 [blocking] Blocking user:", userToBlockId);
 
     const db = getFirestoreInstance();
 
@@ -47,25 +50,25 @@ export async function blockUser(
     };
 
     await setDoc(blockedRef, blockData);
-    console.log("✅ [blocking] Added to blocked list");
+    logger.info("✅ [blocking] Added to blocked list");
 
     // Remove friendship if exists (lazy import to avoid circular dependency)
     try {
       const { removeFriend } = await import("./friends");
       await removeFriend(currentUserId, userToBlockId);
-      console.log("✅ [blocking] Removed friendship");
+      logger.info("✅ [blocking] Removed friendship");
     } catch (e) {
       // Friendship might not exist, that's fine
-      console.log("ℹ️ [blocking] No friendship to remove");
+      logger.info("ℹ️ [blocking] No friendship to remove");
     }
 
     // Cancel any pending friend requests (both directions)
     await cancelPendingRequests(currentUserId, userToBlockId);
 
-    console.log("✅ [blocking] User blocked successfully");
+    logger.info("✅ [blocking] User blocked successfully");
     return true;
   } catch (error) {
-    console.error("❌ [blocking] Error blocking user:", error);
+    logger.error("❌ [blocking] Error blocking user:", error);
     return false;
   }
 }
@@ -78,7 +81,7 @@ export async function unblockUser(
   userToUnblockId: string,
 ): Promise<boolean> {
   try {
-    console.log("🔵 [blocking] Unblocking user:", userToUnblockId);
+    logger.info("🔵 [blocking] Unblocking user:", userToUnblockId);
 
     const db = getFirestoreInstance();
     const blockedRef = doc(
@@ -90,10 +93,10 @@ export async function unblockUser(
     );
 
     await deleteDoc(blockedRef);
-    console.log("✅ [blocking] User unblocked successfully");
+    logger.info("✅ [blocking] User unblocked successfully");
     return true;
   } catch (error) {
-    console.error("❌ [blocking] Error unblocking user:", error);
+    logger.error("❌ [blocking] Error unblocking user:", error);
     return false;
   }
 }
@@ -125,11 +128,11 @@ export async function isUserBlocked(
 
     // For offline errors, throw so the caller can handle appropriately
     if (error?.code === "unavailable" || error?.message?.includes("offline")) {
-      console.error("❌ [blocking] Error checking block status:", error);
+      logger.error("❌ [blocking] Error checking block status:", error);
       throw new Error("Cannot verify block status while offline");
     }
 
-    console.error("❌ [blocking] Error checking block status:", error);
+    logger.error("❌ [blocking] Error checking block status:", error);
     return false;
   }
 }
@@ -153,7 +156,7 @@ export async function isBlockedByUser(
     const blockedDoc = await getDoc(blockedRef);
     return blockedDoc.exists();
   } catch (error) {
-    console.error("❌ [blocking] Error checking if blocked by user:", error);
+    logger.error("❌ [blocking] Error checking if blocked by user:", error);
     return false;
   }
 }
@@ -187,7 +190,7 @@ export async function getBlockedUsers(
       reason: doc.data().reason,
     }));
   } catch (error) {
-    console.error("❌ [blocking] Error getting blocked users:", error);
+    logger.error("❌ [blocking] Error getting blocked users:", error);
     return [];
   }
 }
@@ -215,7 +218,7 @@ export async function getBlockedUsersWithProfiles(
             };
           }
         } catch (e) {
-          console.error("Error fetching user profile:", e);
+          logger.error("Error fetching user profile:", e);
         }
         return blocked;
       }),
@@ -223,7 +226,7 @@ export async function getBlockedUsersWithProfiles(
 
     return usersWithProfiles;
   } catch (error) {
-    console.error(
+    logger.error(
       "❌ [blocking] Error getting blocked users with profiles:",
       error,
     );
@@ -270,12 +273,12 @@ async function cancelPendingRequests(
     ];
 
     await Promise.all(deletePromises);
-    console.log(
+    logger.info(
       "✅ [blocking] Cancelled",
       deletePromises.length,
       "pending requests",
     );
   } catch (error) {
-    console.error("❌ [blocking] Error cancelling requests:", error);
+    logger.error("❌ [blocking] Error cancelling requests:", error);
   }
 }

@@ -28,7 +28,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import type { Promotion } from "../types/shop";
+import type { Promotion } from "@/types/shop";
 import { getAuthInstance, getFirestoreInstance } from "./firebase";
 
 // =============================================================================

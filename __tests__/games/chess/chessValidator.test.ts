@@ -166,7 +166,7 @@ describe("Chess Move Validation", () => {
     it("should not allow pawn to capture forward", () => {
       // Pawn blocked by piece directly ahead
       const blockedPosition =
-        "rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2";
       expect(isLegalMove(blockedPosition, { from: "e4", to: "e5" })).toBe(
         false,
       );
@@ -355,7 +355,7 @@ describe("Chess Move Validation", () => {
     });
 
     it("should detect back rank mate", () => {
-      const backRankMate = "6k1/5ppp/8/8/8/8/8/R3K3 b - - 0 1";
+      const backRankMate = "4R1k1/5ppp/6K1/8/8/8/8/8 b - - 0 1";
       expect(isCheckmate(backRankMate)).toBe(true);
     });
   });
@@ -367,7 +367,7 @@ describe("Chess Move Validation", () => {
   describe("Stalemate Detection", () => {
     it("should detect stalemate when no legal moves", () => {
       // King trapped in corner with no legal moves, not in check
-      const stalemate = "k7/2K5/8/8/8/8/8/8 b - - 0 1";
+      const stalemate = "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1";
       expect(isStalemate(stalemate)).toBe(true);
     });
 

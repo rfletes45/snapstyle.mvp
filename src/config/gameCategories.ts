@@ -143,29 +143,22 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   timed_tap: "TimedTapGame",
   bounce_blitz: "BounceBlitzGame",
   snake_master: "SnakeGame",
-  flappy_bird: "FlappyBirdGame",
   brick_breaker: "BrickBreakerGame",
-  stack_puzzle: "StackGame",
-  target_master: "AimGame",
-  // Phase 3 Action/Quick Play
   pong_game: "PongGame",
-  tap_tap_game: "TapTapGame",
-  slice_game: "SliceGame",
+  slice: "SliceGame",
+  tap_tap: "TapTapGame",
+  target_master: "TargetMasterGame",
   // Puzzle
   play_2048: "Play2048Game",
   memory_master: "MemoryGame",
-  cart_course: "CartCourseGame",
+  match: "MatchGame",
   tile_slide: "TileSlideGame",
   minesweeper_classic: "MinesweeperGame",
   number_master: "NumberGame",
   lights_out: "LightsGame",
-  // Phase 3 Puzzle
-  match_game: "MatchGame",
-  pipes_game: "PipesGame",
-  nonogram_puzzle: "NonogramGame",
   // Daily
   word_master: "WordGame",
-  // Phase 3 Daily
+  words: "WordsGame",
   crossword_puzzle: "CrosswordGame",
   // Multiplayer
   tic_tac_toe: "TicTacToeGame",
@@ -175,14 +168,9 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   connect_four: "FourGame",
   dot_match: "DotsGame",
   gomoku_master: "GomokuGame",
-  // Phase 3 Multiplayer
   reversi_game: "ReversiGame",
-  words_game: "WordsGame",
   war_game: "WarGame",
-  hex_game: "HexGame",
-  draw_game: "DrawGame",
   race_game: "RaceGame",
-  // Coming Soon
   "8ball_pool": "PoolGame",
   air_hockey: "AirHockeyGame",
 };

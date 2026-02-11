@@ -34,6 +34,9 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/badges");
 // Lazy getter for Firestore
 const getDb = () => getFirestoreInstance();
 
@@ -77,7 +80,7 @@ export async function getUserBadges(uid: string): Promise<UserBadge[]> {
       } as UserBadge;
     });
   } catch (error) {
-    console.error("[badges] Error fetching user badges:", error);
+    logger.error("[badges] Error fetching user badges:", error);
     return [];
   }
 }
@@ -108,7 +111,7 @@ export async function getFeaturedBadges(uid: string): Promise<UserBadge[]> {
       } as UserBadge;
     });
   } catch (error) {
-    console.error("[badges] Error fetching featured badges:", error);
+    logger.error("[badges] Error fetching featured badges:", error);
     return [];
   }
 }
@@ -124,7 +127,7 @@ export async function hasBadge(uid: string, badgeId: string): Promise<boolean> {
     const badgeDoc = await getDoc(badgeRef);
     return badgeDoc.exists();
   } catch (error) {
-    console.error("[badges] Error checking badge:", error);
+    logger.error("[badges] Error checking badge:", error);
     return false;
   }
 }
@@ -148,14 +151,14 @@ export async function grantBadge(
     // Verify badge exists in definitions
     const badge = getBadgeById(badgeId);
     if (!badge) {
-      console.error("[badges] Badge not found in definitions:", badgeId);
+      logger.error("[badges] Badge not found in definitions:", badgeId);
       return false;
     }
 
     // Check if already earned
     const alreadyHas = await hasBadge(uid, badgeId);
     if (alreadyHas) {
-      console.log("[badges] User already has badge:", badgeId);
+      logger.info("[badges] User already has badge:", badgeId);
       return false;
     }
 
@@ -168,10 +171,10 @@ export async function grantBadge(
       earnedVia: earnedVia || {},
     });
 
-    console.log("[badges] Granted badge:", badgeId, "to user:", uid);
+    logger.info("[badges] Granted badge:", badgeId, "to user:", uid);
     return true;
   } catch (error) {
-    console.error("[badges] Error granting badge:", error);
+    logger.error("[badges] Error granting badge:", error);
     return false;
   }
 }
@@ -233,7 +236,7 @@ export async function featureBadge(
   const db = getDb();
 
   if (displayOrder < 1 || displayOrder > 5) {
-    console.error("[badges] Invalid display order:", displayOrder);
+    logger.error("[badges] Invalid display order:", displayOrder);
     return false;
   }
 
@@ -243,7 +246,7 @@ export async function featureBadge(
     const badgeDoc = await getDoc(badgeRef);
 
     if (!badgeDoc.exists()) {
-      console.error("[badges] User does not have badge:", badgeId);
+      logger.error("[badges] User does not have badge:", badgeId);
       return false;
     }
 
@@ -260,7 +263,7 @@ export async function featureBadge(
 
     // Check limit (max 5 featured)
     if (featured.length >= 5) {
-      console.error("[badges] Max featured badges reached (5)");
+      logger.error("[badges] Max featured badges reached (5)");
       return false;
     }
 
@@ -272,7 +275,7 @@ export async function featureBadge(
 
     return true;
   } catch (error) {
-    console.error("[badges] Error featuring badge:", error);
+    logger.error("[badges] Error featuring badge:", error);
     return false;
   }
 }
@@ -295,7 +298,7 @@ export async function unfeatureBadge(
 
     return true;
   } catch (error) {
-    console.error("[badges] Error unfeaturing badge:", error);
+    logger.error("[badges] Error unfeaturing badge:", error);
     return false;
   }
 }
@@ -310,7 +313,7 @@ export async function reorderFeaturedBadges(
   const db = getDb();
 
   if (orderedBadgeIds.length > 5) {
-    console.error("[badges] Cannot feature more than 5 badges");
+    logger.error("[badges] Cannot feature more than 5 badges");
     return false;
   }
 
@@ -328,7 +331,7 @@ export async function reorderFeaturedBadges(
     await batch.commit();
     return true;
   } catch (error) {
-    console.error("[badges] Error reordering badges:", error);
+    logger.error("[badges] Error reordering badges:", error);
     return false;
   }
 }
@@ -347,7 +350,7 @@ export function subscribeToBadges(
   onUpdate: (badges: UserBadge[]) => void,
   onError?: (error: Error) => void,
 ): () => void {
-  console.log("[badges.subscribeToBadges] Creating subscription for uid:", uid);
+  logger.info("[badges.subscribeToBadges] Creating subscription for uid:", uid);
   const db = getDb();
   const badgesRef = collection(db, "Users", uid, "Badges");
   const q = query(badgesRef, orderBy("earnedAt", "desc"));
@@ -362,7 +365,7 @@ export function subscribeToBadges(
     return onSnapshot(
       q,
       (snapshot) => {
-        console.log(
+        logger.info(
           "[badges.subscribeToBadges] Snapshot received, docs:",
           snapshot.docs.length,
         );
@@ -381,10 +384,10 @@ export function subscribeToBadges(
         onUpdate(badges);
       },
       (error) => {
-        const errorCode = (error as any).code;
-        console.error("[badges] Subscription error:", error);
-        console.error("[badges] Error code:", errorCode);
-        console.error("[badges] Subscription was for uid:", uid);
+        const errorCode = (error as { code?: string }).code;
+        logger.error("[badges] Subscription error:", error);
+        logger.error("[badges] Error code:", errorCode);
+        logger.error("[badges] Subscription was for uid:", uid);
 
         // Retry on permission-denied (likely auth sync delay)
         if (
@@ -393,18 +396,18 @@ export function subscribeToBadges(
           !isUnsubscribed
         ) {
           retryCount++;
-          console.log(
+          logger.info(
             `[badges] Retrying subscription (attempt ${retryCount}/${maxRetries}) in ${retryDelay}ms...`,
           );
 
           setTimeout(() => {
             if (!isUnsubscribed) {
-              console.log(`[badges] Retry attempt ${retryCount} starting...`);
+              logger.info(`[badges] Retry attempt ${retryCount} starting...`);
               unsubscribe = setupSubscription();
             }
           }, retryDelay * retryCount); // Exponential-ish backoff
         } else if (retryCount >= maxRetries) {
-          console.error("[badges] Max retries reached, giving up");
+          logger.error("[badges] Max retries reached, giving up");
           onError?.(error as Error);
         } else {
           onError?.(error as Error);
@@ -416,7 +419,7 @@ export function subscribeToBadges(
   unsubscribe = setupSubscription();
 
   return () => {
-    console.log("[badges] Unsubscribing from badges for uid:", uid);
+    logger.info("[badges] Unsubscribing from badges for uid:", uid);
     isUnsubscribed = true;
     if (unsubscribe) {
       unsubscribe();

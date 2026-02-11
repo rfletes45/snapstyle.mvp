@@ -10,7 +10,7 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { useTheme } from "react-native-paper";
-import { Spacing } from "../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Props

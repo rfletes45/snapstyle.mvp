@@ -24,6 +24,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DecorationPicker } from "./DecorationPicker";
 import { ProfilePictureWithDecoration } from "./ProfilePictureWithDecoration";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/ProfilePicture/DecorationPickerModal");
 export interface DecorationPickerModalProps {
   /** Whether the modal is visible */
   visible: boolean;
@@ -95,7 +98,7 @@ export function DecorationPickerModal({
       onDecorationChanged?.(previewDecorationId);
       onClose();
     } catch (error) {
-      console.error("Error updating decoration:", error);
+      logger.error("Error updating decoration:", error);
       Alert.alert("Error", "Failed to update decoration. Please try again.");
     } finally {
       setIsLoading(false);

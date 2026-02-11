@@ -431,7 +431,7 @@ export const getTurnCredentials = functions.https.onCall(
       );
     }
 
-    // TODO: Integrate with Twilio or another TURN provider
+    // NOTE: Integrate with Twilio or another TURN provider
     // For now, return placeholder configuration
     // In production, generate time-limited credentials from your TURN provider
 

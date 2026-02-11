@@ -359,7 +359,7 @@ service cloud.firestore {
         // User can create/update their own high scores with validation
         allow create, update: if isAuth() && isOwner(uid) &&
           // gameType must be valid single-player game
-          gameType in ['flappy_bird', 'bounce_blitz', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'] &&
+          gameType in ['bounce_blitz', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'] &&
           // Must have required fields
           request.resource.data.gameType == gameType &&
           request.resource.data.highScore is number &&
@@ -682,6 +682,12 @@ service cloud.firestore {
                          isSender() &&
                          isWithinEditWindow()) ||
                         
+                        // Case 3b: Scorecard (spectator invite) text updates - sender only, no time limit
+                        // Games can last >15 minutes, so scorecard updates bypass the edit window
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
+                         isSender() &&
+                         resource.data.kind == 'scorecard') ||
+                        
                         // Case 4: Legacy - mark as read (V1 compatibility)
                         (request.resource.data.sender == resource.data.sender &&
                          request.resource.data.content == resource.data.content &&
@@ -929,7 +935,7 @@ service cloud.firestore {
                                 request.auth.uid == playerId &&
                                 request.resource.data.playerId == playerId &&
                                 request.resource.data.score >= 0 &&
-                                leaderboardId in ['word_master', 'bounce_blitz', 'tic_tac_toe', 'play_2048', 'snake_master', 'flappy_bird', 'memory_master', 'reaction_tap', 'timed_tap', 'cart_course', 'tile_slide', 'brick_breaker'];
+                                leaderboardId in ['word_master', 'bounce_blitz', 'tic_tac_toe', 'play_2048', 'snake_master', 'memory_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'];
         
         // No deletes from client
         allow delete: if false;
@@ -1298,7 +1304,12 @@ service cloud.firestore {
                         // Case 3: Edit message - sender only, within 15 min
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
                          isMessageSender() &&
-                         isWithinEditWindow())
+                         isWithinEditWindow()) ||
+                        
+                        // Case 3b: Scorecard (spectator invite) text updates - sender only, no time limit
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
+                         isMessageSender() &&
+                         resource.data.kind == 'scorecard')
                       );
         
         // Delete: Not allowed (use deletedForAll or hiddenFor instead)
@@ -1761,51 +1772,6 @@ service cloud.firestore {
       allow delete: if isAuth() && resource.data.hostId == request.auth.uid;
     }
 
-    // =====================================================
-    // LIVE SPECTATOR SESSIONS COLLECTION
-    // Real-time game state for spectators to watch
-    // =====================================================
-    match /LiveSpectatorSessions/{sessionId} {
-      
-      // Helper: Check if user can access this session
-      function canAccessLiveSession() {
-        let data = resource.data;
-        return data.hostId == request.auth.uid ||
-               request.auth.uid in data.get('invitedUserIds', []) ||
-               data.get('spectators', []).size() > 0;
-      }
-
-      // Read: host and invited users can read
-      allow read: if isAuth() && (
-        resource.data.hostId == request.auth.uid ||
-        request.auth.uid in resource.data.get('invitedUserIds', [])
-      );
-
-      // Create: authenticated users can create sessions for themselves
-      allow create: if isAuth() &&
-        request.resource.data.hostId == request.auth.uid &&
-        request.resource.data.status in ['waiting', 'active'];
-
-      // Update: host can update game state, spectators can join/leave
-      allow update: if isAuth() && (
-        // HOST: Can update game state, status, score
-        resource.data.hostId == request.auth.uid ||
-
-        // JOIN AS SPECTATOR
-        (request.auth.uid in resource.data.get('invitedUserIds', []) &&
-         resource.data.status in ['waiting', 'active'] &&
-         request.resource.data.get('spectators', []).size() >
-           resource.data.get('spectators', []).size()) ||
-
-        // LEAVE AS SPECTATOR
-        (request.resource.data.get('spectators', []).size() <
-           resource.data.get('spectators', []).size())
-      );
-
-      // Delete: host can delete
-      allow delete: if isAuth() && resource.data.hostId == request.auth.uid;
-    }
-
     // MATCHMAKING QUEUE COLLECTION
     // Handles automatic matchmaking for games
     match /MatchmakingQueue/{entryId} {
@@ -1936,7 +1902,7 @@ service cloud.firestore {
       // Create: user can record own session
       allow create: if isAuth() &&
                       request.resource.data.playerId == request.auth.uid &&
-                      request.resource.data.gameType in ['flappy_dunk', 'bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'play_2048', 'snake_master', 'word_master'] &&
+                      request.resource.data.gameType in ['bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'play_2048', 'snake_master', 'word_master'] &&
                       request.resource.data.finalScore is number &&
                       request.resource.data.finalScore >= 0 &&
                       request.resource.data.startedAt is number &&
@@ -2032,6 +1998,179 @@ service cloud.firestore {
       
       // Delete: recipient can delete after processing
       allow delete: if isAuth() && resource.data.to == request.auth.uid;
+    }
+
+    // ============================================================
+    // LEGACY + AUXILIARY COLLECTIONS (rules parity with client usage)
+    // ============================================================
+
+    // Legacy conversation model used by snap chat flows.
+    match /Conversations/{conversationId} {
+      function participantList(data) {
+        return data.get('participantIds', data.get('members', data.get('participants', [])));
+      }
+
+      function isConversationParticipant() {
+        return isAuth() && request.auth.uid in participantList(resource.data);
+      }
+
+      function isConversationParticipantInNew() {
+        return isAuth() && request.auth.uid in participantList(request.resource.data);
+      }
+
+      allow read: if isConversationParticipant();
+      allow create: if isConversationParticipantInNew();
+      allow update: if isConversationParticipant();
+      allow delete: if false;
+
+      match /Messages/{messageId} {
+        function parentData() {
+          return get(/databases/$(database)/documents/Conversations/$(conversationId)).data;
+        }
+
+        function canAccessConversationMessages() {
+          return isAuth() &&
+            request.auth.uid in parentData().get('participantIds', parentData().get('members', parentData().get('participants', [])));
+        }
+
+        allow read: if canAccessConversationMessages();
+        allow create: if canAccessConversationMessages() &&
+                        request.resource.data.senderId == request.auth.uid;
+        allow update: if canAccessConversationMessages() &&
+                        resource.data.senderId == request.auth.uid;
+        allow delete: if canAccessConversationMessages() &&
+                        resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Picture-based snap documents.
+    // NOTE: recipientIds is required for recipient-scoped access checks.
+    match /Pictures/{pictureId} {
+      function isPictureOwner() {
+        return isAuth() && resource.data.senderId == request.auth.uid;
+      }
+
+      function isPictureOwnerInNew() {
+        return isAuth() && request.resource.data.senderId == request.auth.uid;
+      }
+
+      function isPictureRecipient() {
+        return isAuth() &&
+          resource.data.recipientIds is list &&
+          request.auth.uid in resource.data.recipientIds;
+      }
+
+      allow read: if isPictureOwner() ||
+                    isPictureRecipient() ||
+                    (isAuth() && resource.data.storyVisible == true);
+      allow create: if isPictureOwnerInNew() &&
+                      request.resource.data.recipientIds is list;
+      allow update: if isPictureOwner() || isPictureRecipient();
+      allow delete: if isPictureOwner();
+
+      match /Views/{viewId} {
+        allow read: if isPictureOwner() || (isAuth() && resource.data.userId == request.auth.uid);
+        allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // Legacy uppercase stories collection used by snapStoryService.
+    match /Stories/{userId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAuth() && isOwner(userId);
+    }
+
+    // In-app notification feed.
+    match /Notifications/{notificationId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow create: if isAuth() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.senderId == request.auth.uid ||
+        (request.resource.data.senderId == 'system' &&
+         request.resource.data.userId == request.auth.uid)
+      );
+      allow update: if isAuth() &&
+                      resource.data.userId == request.auth.uid &&
+                      request.resource.data.userId == resource.data.userId;
+      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
+    }
+
+    // IAP catalog and receipts.
+    match /StoreProducts/{productId} {
+      allow read: if isAuth();
+      allow create, update, delete: if false;
+    }
+
+    match /IAPPurchases/{purchaseId} {
+      allow read: if isAuth() && resource.data.uid == request.auth.uid;
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /BundlePurchases/{purchaseId} {
+      allow read: if isAuth() && resource.data.uid == request.auth.uid;
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Promo code lookups/redeem counters.
+    match /PromoCodes/{codeId} {
+      allow read: if isAuth();
+      allow create, delete: if false;
+      allow update: if isAuth() &&
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['usageCount', 'lastUsedAt']);
+    }
+
+    // Group-call metadata collections.
+    match /GroupChats/{groupId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.get('ownerId', '') ||
+        request.auth.uid in resource.data.get('adminIds', []) ||
+        request.auth.uid in resource.data.get('memberIds', []) ||
+        request.auth.uid in resource.data.get('members', [])
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /GroupCallInvites/{inviteId} {
+      function canAccessInvite() {
+        return isAuth() && (
+          resource.data.inviterId == request.auth.uid ||
+          resource.data.inviteeId == request.auth.uid
+        );
+      }
+
+      allow read: if canAccessInvite();
+      allow create: if isAuth() && request.resource.data.inviterId == request.auth.uid;
+      allow update: if canAccessInvite() &&
+                      request.resource.data.inviterId == resource.data.inviterId &&
+                      request.resource.data.inviteeId == resource.data.inviteeId &&
+                      request.resource.data.callId == resource.data.callId;
+      allow delete: if canAccessInvite();
+    }
+
+    // Call analytics.
+    match /Analytics/{scope}/events/{eventId} {
+      allow read: if isAuth() && (
+        resource.data.userId == request.auth.uid ||
+        request.auth.token.admin == true
+      );
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /CallQualityReports/{callId} {
+      allow read: if isAuth() && (
+        resource.data.userId == request.auth.uid ||
+        request.auth.token.admin == true
+      );
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuth() &&
+                      resource.data.userId == request.auth.uid &&
+                      request.resource.data.userId == resource.data.userId;
+      allow delete: if false;
     }
 
     // ============================================================

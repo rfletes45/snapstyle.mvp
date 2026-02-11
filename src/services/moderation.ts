@@ -28,6 +28,9 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/moderation");
 // =============================================================================
 // BAN CHECKING
 // =============================================================================
@@ -52,7 +55,7 @@ export async function getUserBan(uid: string): Promise<Ban | null> {
       // Check expiration
       if (ban.expiresAt !== null && Date.now() >= ban.expiresAt) {
         // Ban has expired - will be updated by server, but treat as inactive
-        console.log(`[moderation] Ban for ${uid} has expired`);
+        logger.info(`[moderation] Ban for ${uid} has expired`);
         return { ...ban, status: "expired" };
       }
       return ban;
@@ -60,7 +63,7 @@ export async function getUserBan(uid: string): Promise<Ban | null> {
 
     return ban;
   } catch (error: any) {
-    console.error("[moderation] Error fetching ban:", error);
+    logger.error("[moderation] Error fetching ban:", error);
     // If permission denied, user is not banned (or rules need updating)
     if (error.code === "permission-denied") {
       return null;
@@ -106,7 +109,7 @@ export function subscribeToUserBan(
       if (error.code === "permission-denied") {
         onUpdate(null);
       } else {
-        console.error("[moderation] Error subscribing to ban:", error);
+        logger.error("[moderation] Error subscribing to ban:", error);
       }
     },
   );
@@ -142,7 +145,7 @@ export async function getUserWarnings(uid: string): Promise<UserWarning[]> {
     const snapshot = await getDocs(warningsQuery);
     return snapshot.docs.map((doc) => doc.data() as UserWarning);
   } catch (error: any) {
-    console.error("[moderation] Error fetching warnings:", error);
+    logger.error("[moderation] Error fetching warnings:", error);
     if (error.code === "permission-denied") {
       return [];
     }
@@ -166,7 +169,7 @@ export async function getUnreadWarnings(uid: string): Promise<UserWarning[]> {
     const snapshot = await getDocs(warningsQuery);
     return snapshot.docs.map((doc) => doc.data() as UserWarning);
   } catch (error: any) {
-    console.error("[moderation] Error fetching unread warnings:", error);
+    logger.error("[moderation] Error fetching unread warnings:", error);
     if (error.code === "permission-denied") {
       return [];
     }
@@ -200,7 +203,7 @@ export function subscribeToUnreadWarnings(
       if (error.code === "permission-denied") {
         onUpdate([]);
       } else {
-        console.error("[moderation] Error subscribing to warnings:", error);
+        logger.error("[moderation] Error subscribing to warnings:", error);
       }
     },
   );
@@ -217,9 +220,9 @@ export async function markWarningRead(warningId: string): Promise<void> {
       status: "read",
       readAt: Date.now(),
     });
-    console.log("[moderation] Marked warning as read:", warningId);
+    logger.info("[moderation] Marked warning as read:", warningId);
   } catch (error: any) {
-    console.error("[moderation] Error marking warning read:", error);
+    logger.error("[moderation] Error marking warning read:", error);
     throw error;
   }
 }
@@ -235,9 +238,9 @@ export async function acknowledgeWarning(warningId: string): Promise<void> {
       status: "acknowledged",
       acknowledgedAt: Date.now(),
     });
-    console.log("[moderation] Warning acknowledged:", warningId);
+    logger.info("[moderation] Warning acknowledged:", warningId);
   } catch (error: any) {
-    console.error("[moderation] Error acknowledging warning:", error);
+    logger.error("[moderation] Error acknowledging warning:", error);
     throw error;
   }
 }
@@ -260,7 +263,7 @@ export async function getUserStrikes(uid: string): Promise<UserStrike | null> {
 
     return strikeDoc.data() as UserStrike;
   } catch (error: any) {
-    console.error("[moderation] Error fetching strikes:", error);
+    logger.error("[moderation] Error fetching strikes:", error);
     if (error.code === "permission-denied") {
       return null;
     }
@@ -294,10 +297,10 @@ export async function adminSetBan(
     });
 
     const data = result.data as { success: boolean; error?: string };
-    console.log("[moderation] adminSetBan result:", data);
+    logger.info("[moderation] adminSetBan result:", data);
     return data;
   } catch (error: any) {
-    console.error("[moderation] Error setting ban:", error);
+    logger.error("[moderation] Error setting ban:", error);
     return {
       success: false,
       error: error.message || "Failed to set ban",
@@ -318,10 +321,10 @@ export async function adminLiftBan(
 
     const result = await liftBan({ targetUid });
     const data = result.data as { success: boolean; error?: string };
-    console.log("[moderation] adminLiftBan result:", data);
+    logger.info("[moderation] adminLiftBan result:", data);
     return data;
   } catch (error: any) {
-    console.error("[moderation] Error lifting ban:", error);
+    logger.error("[moderation] Error lifting ban:", error);
     return {
       success: false,
       error: error.message || "Failed to lift ban",
@@ -355,10 +358,10 @@ export async function adminApplyWarning(
       warningId?: string;
       error?: string;
     };
-    console.log("[moderation] adminApplyWarning result:", data);
+    logger.info("[moderation] adminApplyWarning result:", data);
     return data;
   } catch (error: any) {
-    console.error("[moderation] Error applying warning:", error);
+    logger.error("[moderation] Error applying warning:", error);
     return {
       success: false,
       error: error.message || "Failed to apply warning",
@@ -392,10 +395,10 @@ export async function adminApplyStrike(
       strikeCount?: number;
       error?: string;
     };
-    console.log("[moderation] adminApplyStrike result:", data);
+    logger.info("[moderation] adminApplyStrike result:", data);
     return data;
   } catch (error: any) {
-    console.error("[moderation] Error applying strike:", error);
+    logger.error("[moderation] Error applying strike:", error);
     return {
       success: false,
       error: error.message || "Failed to apply strike",
@@ -423,10 +426,10 @@ export async function adminResolveReport(
     });
 
     const data = result.data as { success: boolean; error?: string };
-    console.log("[moderation] adminResolveReport result:", data);
+    logger.info("[moderation] adminResolveReport result:", data);
     return data;
   } catch (error: any) {
-    console.error("[moderation] Error resolving report:", error);
+    logger.error("[moderation] Error resolving report:", error);
     return {
       success: false,
       error: error.message || "Failed to resolve report",
@@ -457,7 +460,7 @@ export async function getPendingReports(
     const snapshot = await getDocs(reportsQuery);
     return snapshot.docs.map((doc) => doc.data() as Report);
   } catch (error: any) {
-    console.error("[moderation] Error fetching pending reports:", error);
+    logger.error("[moderation] Error fetching pending reports:", error);
     throw error;
   }
 }
@@ -477,7 +480,7 @@ export async function getReportsForUser(targetUid: string): Promise<Report[]> {
     const snapshot = await getDocs(reportsQuery);
     return snapshot.docs.map((doc) => doc.data() as Report);
   } catch (error: any) {
-    console.error("[moderation] Error fetching user reports:", error);
+    logger.error("[moderation] Error fetching user reports:", error);
     throw error;
   }
 }
@@ -505,7 +508,7 @@ export function subscribeToPendingReports(
       onUpdate(reports);
     },
     (error) => {
-      console.error("[moderation] Error subscribing to reports:", error);
+      logger.error("[moderation] Error subscribing to reports:", error);
     },
   );
 }

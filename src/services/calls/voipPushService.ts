@@ -6,13 +6,16 @@
 import { NativeEventEmitter, Platform } from "react-native";
 import { callKeepService } from "./callKeepService";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/voipPushService");
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[VoIPPush] ${msg}`, data ?? "");
+  logger.info(`[VoIPPush] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[VoIPPush] ${msg}`, error ?? "");
+  logger.error(`[VoIPPush] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[VoIPPush] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[VoIPPush] ${msg}`, data ?? "");
 
 // VoIP push payload from server
 export interface VoIPPushPayload {

@@ -319,27 +319,3 @@ export function canDeleteForMe(
   // Can always delete for self
   return { canDelete: true };
 }
-
-// =============================================================================
-// Edit History (Stub)
-// =============================================================================
-
-/**
- * Get edit history for a message
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @param messageId - Message ID
- *
- * TODO: Implement in H7 (requires storing edit history)
- */
-export async function getEditHistory(
-  scope: "dm" | "group",
-  conversationId: string,
-  messageId: string,
-): Promise<Array<{ text: string; editedAt: number; editedBy: string }>> {
-  log.warn("getEditHistory: Not yet implemented (H7)");
-
-  // TODO: Implement edit history subcollection or field
-  return [];
-}

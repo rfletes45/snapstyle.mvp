@@ -23,10 +23,10 @@ import { ErrorState, LoadingState } from "@/components/ui";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
+import { isDailyGameCompleted } from "@/services/dailyGamePersistence";
 import {
   cancelGameInvite,
   claimInviteSlot,
-  joinAsSpectator,
   subscribeToPlayPageInvites,
   unclaimInviteSlot,
 } from "@/services/gameInvites";
@@ -92,8 +92,15 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { PLAY_SCREEN_FEATURES } from "../../../constants/featureFlags";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import {
+  PLAY_SCREEN_FEATURES,
+  THREE_JS_FEATURES,
+} from "@/constants/featureFlags";
+import { BorderRadius, Spacing } from "@/constants/theme";
+import {
+  ThreeFloatingIcons,
+  ThreeGameBackground,
+} from "@/components/three";
 import {
   ActiveGamesMini,
   ActiveGamesSection,
@@ -108,6 +115,31 @@ import {
   SearchResultsView,
 } from "./components";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/GamesHubScreen");
+
+const SINGLE_PLAYER_GAME_TYPES = new Set<SinglePlayerGameType>([
+  "bounce_blitz",
+  "play_2048",
+  "snake_master",
+  "memory_master",
+  "word_master",
+  "reaction_tap",
+  "timed_tap",
+  "brick_breaker",
+  "tile_slide",
+  "minesweeper_classic",
+  "number_master",
+  "lights_out",
+  "pong_game",
+]);
+
+function isSinglePlayerGameType(
+  gameId: ExtendedGameType,
+): gameId is SinglePlayerGameType {
+  return SINGLE_PLAYER_GAME_TYPES.has(gameId as SinglePlayerGameType);
+}
 // =============================================================================
 // Types
 // =============================================================================
@@ -145,8 +177,11 @@ function GameCard({
     if (gameId === "reaction_tap" || gameId === "timed_tap") {
       return formatScore(gameId, personalBest);
     }
-    // Use single player service for new games
-    return formatSinglePlayerScore(gameId as any, personalBest);
+    // Use single-player formatting when available, fallback to generic formatter.
+    if (isSinglePlayerGameType(gameId)) {
+      return formatSinglePlayerScore(gameId, personalBest);
+    }
+    return formatScore(gameId, personalBest);
   };
 
   return (
@@ -270,7 +305,7 @@ function RecentGameItem({ session }: { session: UnifiedRecentGame }) {
         <Text
           style={[styles.recentGameName, { color: theme.colors.onSurface }]}
         >
-          {metadata?.name || getGameDisplayName(session.gameType as any)}
+          {metadata?.name || getGameDisplayName(session.gameType)}
         </Text>
         <Text
           style={[
@@ -419,6 +454,11 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   const [gameFilters, setGameFilters] =
     useState<GameFilters>(DEFAULT_GAME_FILTERS);
 
+  // Daily game completion tracking
+  const [dailyCompletions, setDailyCompletions] = useState<
+    Record<string, boolean>
+  >({});
+
   // =========================================================================
   // Phase 1 & 2: Search State and Logic
   // =========================================================================
@@ -465,7 +505,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
     // Format personal bests from legacy games service
     personalBests.forEach((pb) => {
-      const score = formatScore(pb.gameId as any, pb.bestScore);
+      const score = formatScore(pb.gameId, pb.bestScore);
       formatted.set(pb.gameId, score);
     });
 
@@ -510,7 +550,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       setRecentSinglePlayerGames(spRecent);
       setActiveGames(active);
     } catch (err) {
-      console.error("[GamesScreen] Error loading data:", err);
+      logger.error("[GamesScreen] Error loading data:", err);
       setError("Couldn't load games");
     } finally {
       setLoading(false);
@@ -529,7 +569,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         setActiveGames(matches);
       },
       (error) => {
-        console.error(
+        logger.error(
           "[GamesScreen] Active matches subscription error:",
           error,
         );
@@ -561,6 +601,12 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       loadData();
+
+      // Check daily game completions
+      const today = new Date().toISOString().split("T")[0];
+      isDailyGameCompleted("word_master", today).then((completed) => {
+        setDailyCompletions((prev) => ({ ...prev, word_master: completed }));
+      });
     });
     return unsubscribe;
   }, [navigation, loadData]);
@@ -606,14 +652,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   const handleSelectActiveGame = (game: AnyMatch) => {
     // Navigate to the appropriate game screen with the match ID
-    const screenMap: Record<string, string> = {
-      tic_tac_toe: "TicTacToeGame",
-      checkers: "CheckersGame",
-      chess: "ChessGame",
-      crazy_eights: "CrazyEightsGame",
-    };
-
-    const screen = screenMap[game.gameType];
+    const screen = GAME_SCREEN_MAP[game.gameType];
     if (screen) {
       navigation.navigate(screen, { matchId: game.id, entryPoint: "play" });
     }
@@ -623,16 +662,12 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     matchId: string,
     gameType: TurnBasedGameType | RealTimeGameType,
   ) => {
-    const screenMap: Record<string, string> = {
-      tic_tac_toe: "TicTacToeGame",
-      checkers: "CheckersGame",
-      chess: "ChessGame",
-      crazy_eights: "CrazyEightsGame",
-    };
-
-    const screen = screenMap[gameType];
+    const screen = GAME_SCREEN_MAP[gameType];
     if (screen) {
-      navigation.navigate(screen, { matchId, entryPoint: "play" });
+      navigation.navigate(screen, {
+        matchId,
+        entryPoint: "play",
+      });
     }
     loadData(); // Refresh the data
   };
@@ -648,7 +683,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         await archiveGame(gameId, currentFirebaseUser.uid);
         loadData(); // Refresh to update the list
       } catch (err) {
-        console.error("[GamesScreen] Failed to archive game:", err);
+        logger.error("[GamesScreen] Failed to archive game:", err);
       }
     },
     [currentFirebaseUser, loadData],
@@ -656,18 +691,18 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   const handleResignGame = useCallback(
     async (gameId: string) => {
-      console.log("[GamesScreen] handleResignGame called with gameId:", gameId);
+      logger.info("[GamesScreen] handleResignGame called with gameId:", gameId);
       if (!currentFirebaseUser) {
-        console.warn("[GamesScreen] No current user, cannot resign");
+        logger.warn("[GamesScreen] No current user, cannot resign");
         return;
       }
       try {
-        console.log("[GamesScreen] Calling resignGame...");
+        logger.info("[GamesScreen] Calling resignGame...");
         await resignGame(gameId, currentFirebaseUser.uid);
-        console.log("[GamesScreen] resignGame succeeded, refreshing data...");
+        logger.info("[GamesScreen] resignGame succeeded, refreshing data...");
         loadData(); // Refresh to update the list
       } catch (err) {
-        console.error("[GamesScreen] Failed to resign game:", err);
+        logger.error("[GamesScreen] Failed to resign game:", err);
       }
     },
     [currentFirebaseUser, loadData],
@@ -720,7 +755,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       );
 
       if (!result.success) {
-        console.error("[GamesScreen] Failed to join invite:", result.error);
+        logger.error("[GamesScreen] Failed to join invite:", result.error);
       }
     },
     [currentFirebaseUser],
@@ -736,46 +771,10 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       );
 
       if (!result.success) {
-        console.error("[GamesScreen] Failed to leave invite:", result.error);
+        logger.error("[GamesScreen] Failed to leave invite:", result.error);
       }
     },
     [currentFirebaseUser],
-  );
-
-  const handleSpectateUniversalInvite = useCallback(
-    async (invite: UniversalGameInvite) => {
-      if (!currentFirebaseUser) return;
-
-      const userName =
-        currentFirebaseUser.displayName || currentFirebaseUser.email || "User";
-
-      const result = await joinAsSpectator(
-        invite.id,
-        currentFirebaseUser.uid,
-        userName,
-        undefined, // avatar
-      );
-
-      if (result.success && result.gameId) {
-        // Navigate to game in spectator mode
-        const screenMap: Record<string, string> = {
-          tic_tac_toe: "TicTacToeGame",
-          checkers: "CheckersGame",
-          chess: "ChessGame",
-          crazy_eights: "CrazyEightsGame",
-        };
-        const screen = screenMap[invite.gameType];
-        if (screen) {
-          navigation.navigate(screen, {
-            matchId: result.gameId,
-            inviteId: invite.id,
-            spectatorMode: true,
-            entryPoint: "play",
-          });
-        }
-      }
-    },
-    [currentFirebaseUser, navigation],
   );
 
   const handleCancelUniversalInvite = useCallback(
@@ -790,15 +789,28 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   const handlePlayUniversalInvite = useCallback(
     (gameId: string, gameType: string) => {
-      const screenMap: Record<string, string> = {
-        tic_tac_toe: "TicTacToeGame",
-        checkers: "CheckersGame",
-        chess: "ChessGame",
-        crazy_eights: "CrazyEightsGame",
-      };
-      const screen = screenMap[gameType];
+      const screen = GAME_SCREEN_MAP[gameType as ExtendedGameType];
       if (screen) {
-        navigation.navigate(screen, { matchId: gameId, entryPoint: "play" });
+        navigation.navigate(screen, {
+          matchId: gameId,
+          entryPoint: "play",
+        });
+      }
+    },
+    [navigation],
+  );
+
+  const handleSpectateUniversalInvite = useCallback(
+    (invite: UniversalGameInvite) => {
+      if (!invite.gameId) return;
+
+      const screen = GAME_SCREEN_MAP[invite.gameType as ExtendedGameType];
+      if (screen) {
+        navigation.navigate(screen, {
+          matchId: invite.gameId,
+          spectatorMode: true,
+          entryPoint: "play",
+        });
       }
     },
     [navigation],
@@ -808,14 +820,12 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   const quickPlayGames: ExtendedGameType[] = [
     "reaction_tap",
     "timed_tap",
-    "flappy_bird",
     "bounce_blitz",
   ];
   const puzzleGames: ExtendedGameType[] = [
     "play_2048",
     "snake_master",
     "memory_master",
-    "cart_course",
   ];
   const dailyGames: ExtendedGameType[] = ["word_master"];
   const multiplayerGames: ExtendedGameType[] = [
@@ -901,6 +911,23 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      {/* Three.js 3D background (behind entire screen) */}
+      {THREE_JS_FEATURES.THREE_JS_ENABLED &&
+        THREE_JS_FEATURES.GAME_BACKGROUND_3D && (
+          <ThreeGameBackground
+            theme="quick_play"
+            shapeCount={8}
+            opacity={0.15}
+            style={styles.threeBackground}
+          />
+        )}
+
+      {/* Three.js floating icons (behind header/categories) */}
+      {THREE_JS_FEATURES.THREE_JS_ENABLED &&
+        THREE_JS_FEATURES.FLOATING_ICONS_3D && (
+          <ThreeFloatingIcons count={9} style={styles.threeFloatingIcons} />
+        )}
+
       {/* Phase 1: New Header with Navigation Shortcuts */}
       {PLAY_SCREEN_FEATURES.NEW_HEADER && (
         <PlayHeader
@@ -1038,9 +1065,9 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                         currentUserId={currentFirebaseUser?.uid || ""}
                         onJoin={() => handleJoinUniversalInvite(invite)}
                         onLeave={() => handleLeaveUniversalInvite(invite)}
-                        onSpectate={() => handleSpectateUniversalInvite(invite)}
                         onCancel={() => handleCancelUniversalInvite(invite)}
                         onPlay={handlePlayUniversalInvite}
+                        onSpectate={() => handleSpectateUniversalInvite(invite)}
                       />
                     ))}
                   </View>
@@ -1160,6 +1187,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                       key={category.id}
                       gameType={gameType}
                       personalBest={highScoresFormatted.get(gameType)}
+                      isCompletedToday={dailyCompletions[gameType] ?? false}
                       onPress={() => navigateToGame(gameType)}
                       onLongPress={() => handleGameLongPress(gameType)}
                       testID={`daily-challenge-${gameType}`}
@@ -1342,6 +1370,26 @@ const styles = StyleSheet.create({
     flex: 1,
     // backgroundColor applied inline via theme
   },
+
+  // Three.js 3D background overlay
+  threeBackground: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+    pointerEvents: "none",
+  },
+
+  // Three.js floating icons overlay (behind header area)
+  threeFloatingIcons: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 260,
+    zIndex: 0,
+    pointerEvents: "none",
+    opacity: 0.25,
+  },
+
   scrollView: {
     flex: 1,
   },

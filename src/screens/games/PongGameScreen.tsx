@@ -10,6 +10,13 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { usePhysicsGame } from "@/hooks/usePhysicsGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -21,6 +28,17 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Canvas,
+  Circle,
+  DashPathEffect,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  Line as SkiaLine,
+  vec,
+} from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
 import React, {
   useCallback,
@@ -29,27 +47,23 @@ import React, {
   useRef,
   useState,
 } from "react";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import {
-  Animated,
   Dimensions,
-  PanResponder,
   Platform,
   StyleSheet,
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Canvas,
-  LinearGradient,
-  RadialGradient,
-  RoundedRect,
-  Shadow,
-  Line as SkiaLine,
-  Circle,
-  vec,
-  DashPathEffect,
-} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 // =============================================================================
 // Constants
@@ -64,7 +78,7 @@ const BALL_R = 10;
 const WIN_SCORE = 7;
 const GAME_TYPE = "pong_game";
 
-type GameState = "menu" | "playing" | "paused" | "result";
+type GameState = "menu" | "playing" | "paused" | "result" | "colyseus";
 
 interface Ball {
   x: number;
@@ -86,19 +100,66 @@ interface PowerUp {
 // Component
 // =============================================================================
 
-export default function PongGameScreen({ navigation }: { navigation: any }) {
+function PongGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "pong" });
+  void __codexGameCompletion;
+
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
 
+  // Colyseus multiplayer hook
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    GAME_TYPE,
+    route?.params?.matchId,
+  );
+  const mp = usePhysicsGame({
+    gameType: GAME_TYPE,
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
   const [gameState, setGameState] = useState<GameState>("menu");
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setGameState("colyseus");
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
   const [playerScore, setPlayerScore] = useState(0);
   const [aiScore, setAiScore] = useState(0);
   const [wins, setWins] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "pong_game",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
     "medium",
   );
@@ -117,17 +178,13 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
   const playerPaddleW = useRef(PADDLE_W);
   const frameId = useRef<number>(0);
   const lastTime = useRef(0);
+  const spectatorFrameCount = useRef(0);
 
-  // Animated values for rendering
-  const ballPos = useRef(
-    new Animated.ValueXY({ x: COURT_W / 2, y: COURT_H / 2 }),
-  ).current;
-  const playerPaddlePos = useRef(
-    new Animated.Value(COURT_W / 2 - PADDLE_W / 2),
-  ).current;
-  const aiPaddlePos = useRef(
-    new Animated.Value(COURT_W / 2 - PADDLE_W / 2),
-  ).current;
+  // Reanimated values for high-frequency render updates
+  const ballX = useSharedValue(COURT_W / 2);
+  const ballY = useSharedValue(COURT_H / 2);
+  const playerPaddleX = useSharedValue(COURT_W / 2 - PADDLE_W / 2);
+  const aiPaddleX = useSharedValue(COURT_W / 2 - PADDLE_W / 2);
 
   const playerScoreRef = useRef(0);
   const aiScoreRef = useRef(0);
@@ -142,6 +199,21 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  const aiPaddleStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: aiPaddleX.value }],
+  }));
+
+  const playerPaddleStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: playerPaddleX.value }],
+  }));
+
+  const ballStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: ballX.value - BALL_R },
+      { translateY: ballY.value - BALL_R },
+    ],
+  }));
 
   // Load personal best
   useEffect(() => {
@@ -162,9 +234,10 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
       r: BALL_R,
       speed,
     };
-    ballPos.setValue({ x: COURT_W / 2, y: COURT_H / 2 });
+    ballX.value = COURT_W / 2;
+    ballY.value = COURT_H / 2;
     playerPaddleW.current = PADDLE_W;
-  }, [ballPos]);
+  }, [ballX, ballY]);
 
   const spawnPowerUp = useCallback(() => {
     if (Math.random() > 0.3) return;
@@ -254,10 +327,15 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       if (aiScoreRef.current >= WIN_SCORE) {
         setGameState("result");
+        spectatorHost.endHosting(playerScoreRef.current);
         return;
       }
       resetBall();
       spawnPowerUp();
+      // Update animated values after reset, then schedule next frame
+      ballX.value = ball.current.x;
+      ballY.value = ball.current.y;
+      frameId.current = requestAnimationFrame(update);
       return;
     }
 
@@ -268,6 +346,7 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (playerScoreRef.current >= WIN_SCORE) {
         setGameState("result");
+        spectatorHost.endHosting(playerScoreRef.current);
         const newWins = wins + 1;
         setWins(newWins);
         if (currentFirebaseUser) {
@@ -281,6 +360,10 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
       }
       resetBall();
       spawnPowerUp();
+      // Update animated values after reset, then schedule next frame
+      ballX.value = ball.current.x;
+      ballY.value = ball.current.y;
+      frameId.current = requestAnimationFrame(update);
       return;
     }
 
@@ -291,8 +374,30 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
     aiX.current = Math.max(0, Math.min(COURT_W - PADDLE_W, aiX.current));
 
     // Update animated values
-    ballPos.setValue({ x: b.x, y: b.y });
-    aiPaddlePos.setValue(aiX.current);
+    ballX.value = b.x;
+    ballY.value = b.y;
+    aiPaddleX.value = aiX.current;
+
+    // Broadcast to spectators every ~4 frames (~15fps) for smooth viewing
+    spectatorFrameCount.current += 1;
+    if (spectatorFrameCount.current % 4 === 0) {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          playerScore: playerScoreRef.current,
+          aiScore: aiScoreRef.current,
+          gameState: "playing",
+          ballX: b.x,
+          ballY: b.y,
+          playerPaddleX: playerX.current,
+          aiPaddleX: aiX.current,
+          courtWidth: COURT_W,
+          courtHeight: COURT_H,
+        }),
+        playerScoreRef.current,
+        undefined,
+        undefined,
+      );
+    }
 
     frameId.current = requestAnimationFrame(update);
   }, [
@@ -301,8 +406,9 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
     currentFirebaseUser,
     resetBall,
     spawnPowerUp,
-    ballPos,
-    aiPaddlePos,
+    aiPaddleX,
+    ballX,
+    ballY,
   ]);
 
   const startGame = useCallback(
@@ -314,13 +420,16 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
       aiScoreRef.current = 0;
       playerX.current = COURT_W / 2 - PADDLE_W / 2;
       aiX.current = COURT_W / 2 - PADDLE_W / 2;
+      playerPaddleX.value = playerX.current;
+      aiPaddleX.value = aiX.current;
       playerPaddleW.current = PADDLE_W;
       powerUp.current = null;
       resetBall();
       setGameState("playing");
+      spectatorHost.startHosting();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     },
-    [resetBall],
+    [aiPaddleX, playerPaddleX, resetBall],
   );
 
   useEffect(() => {
@@ -332,37 +441,50 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
     };
   }, [gameState, update]);
 
-  // Pan responder for player paddle
-  const panResponder = useMemo(
+  const handlePaddleMove = useCallback(
+    (moveX: number) => {
+      const newX = Math.max(
+        0,
+        Math.min(COURT_W - playerPaddleW.current, moveX - 16 - playerPaddleW.current / 2),
+      );
+      playerX.current = newX;
+      playerPaddleX.value = newX;
+      // In multiplayer, send normalised position to server
+      if (gameStateRef.current === "colyseus" || gameState === "colyseus") {
+        mp.sendInput(newX / COURT_W);
+      }
+    },
+    [gameState, mp, playerPaddleX],
+  );
+
+  // Pan gesture for player paddle
+  const paddleGesture = useMemo(
     () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => gameState === "playing",
-        onMoveShouldSetPanResponder: () => gameState === "playing",
-        onPanResponderMove: (_, gs) => {
-          const newX = Math.max(
-            0,
-            Math.min(
-              COURT_W - playerPaddleW.current,
-              gs.moveX - 16 - playerPaddleW.current / 2,
-            ),
-          );
-          playerX.current = newX;
-          playerPaddlePos.setValue(newX);
-        },
-      }),
-    [gameState, playerPaddlePos],
+      Gesture.Pan()
+        .runOnJS(true)
+        .enabled(gameState === "playing" || gameState === "colyseus")
+        .onBegin((event) => {
+          handlePaddleMove(event.absoluteX);
+        })
+        .onUpdate((event) => {
+          handlePaddleMove(event.absoluteX);
+        }),
+    [gameState, handlePaddleMove],
   );
 
   const playerWon = playerScore >= WIN_SCORE;
+
+  // Back navigation with confirmation
+  const { handleBack } = useGameBackHandler({
+    gameType: "pong_game",
+    isGameOver: gameState === "result" || gameState === "menu",
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
           <MaterialCommunityIcons
             name="arrow-left"
             size={24}
@@ -370,7 +492,16 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
           />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>🏓 Pong</Text>
-        <View style={{ width: 40 }} />
+        {spectatorHost.spectatorRoomId ? (
+          <TouchableOpacity
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            style={{ padding: 8 }}
+          >
+            <MaterialCommunityIcons name="eye" size={24} color="#9C27B0" />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       {gameState === "menu" && (
@@ -413,13 +544,10 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
           </View>
 
           {/* Court */}
-          <View
-            style={[
-              styles.court,
-              { borderColor: "rgba(255,255,255,0.15)" },
-            ]}
-            {...panResponder.panHandlers}
-          >
+          <GestureDetector gesture={paddleGesture}>
+            <View
+              style={[styles.court, { borderColor: "rgba(255,255,255,0.15)" }]}
+            >
             {/* Skia court background + center line */}
             <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
               {/* Court gradient */}
@@ -439,7 +567,13 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                   colors={["rgba(231,76,60,0.12)", "rgba(231,76,60,0)"]}
                 />
               </RoundedRect>
-              <RoundedRect x={4} y={COURT_H - 34} width={COURT_W - 8} height={30} r={6}>
+              <RoundedRect
+                x={4}
+                y={COURT_H - 34}
+                width={COURT_W - 8}
+                height={30}
+                r={6}
+              >
                 <LinearGradient
                   start={vec(0, COURT_H - 4)}
                   end={vec(0, COURT_H - 34)}
@@ -457,7 +591,14 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                 <DashPathEffect intervals={[8, 8]} />
               </SkiaLine>
               {/* Center circle */}
-              <Circle cx={COURT_W / 2} cy={COURT_H / 2} r={30} color="rgba(255,255,255,0.06)" style="stroke" strokeWidth={1.5} />
+              <Circle
+                cx={COURT_W / 2}
+                cy={COURT_H / 2}
+                r={30}
+                color="rgba(255,255,255,0.06)"
+                style="stroke"
+                strokeWidth={1.5}
+              />
             </Canvas>
 
             {/* AI paddle — Skia metallic */}
@@ -467,12 +608,18 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                 {
                   width: PADDLE_W,
                   top: 10,
-                  transform: [{ translateX: aiPaddlePos }],
                 },
+                aiPaddleStyle,
               ]}
             >
               <Canvas style={{ width: PADDLE_W, height: PADDLE_H }}>
-                <RoundedRect x={0} y={0} width={PADDLE_W} height={PADDLE_H} r={7}>
+                <RoundedRect
+                  x={0}
+                  y={0}
+                  width={PADDLE_W}
+                  height={PADDLE_H}
+                  r={7}
+                >
                   <LinearGradient
                     start={vec(0, 0)}
                     end={vec(0, PADDLE_H)}
@@ -481,7 +628,13 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                   <Shadow dx={0} dy={2} blur={6} color="rgba(231,76,60,0.5)" />
                 </RoundedRect>
                 {/* Top highlight */}
-                <RoundedRect x={2} y={1} width={PADDLE_W - 4} height={3} r={1.5}>
+                <RoundedRect
+                  x={2}
+                  y={1}
+                  width={PADDLE_W - 4}
+                  height={3}
+                  r={1.5}
+                >
                   <LinearGradient
                     start={vec(0, 1)}
                     end={vec(0, 4)}
@@ -498,34 +651,49 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                 {
                   width: ball.current.r * 2,
                   height: ball.current.r * 2,
-                  transform: [
-                    {
-                      translateX: Animated.subtract(ballPos.x, ball.current.r),
-                    },
-                    {
-                      translateY: Animated.subtract(ballPos.y, ball.current.r),
-                    },
-                  ],
                 },
+                ballStyle,
               ]}
             >
-              <Canvas style={{ width: ball.current.r * 2, height: ball.current.r * 2 }}>
+              <Canvas
+                style={{
+                  width: ball.current.r * 2,
+                  height: ball.current.r * 2,
+                }}
+              >
                 {/* Glow halo */}
-                <Circle cx={ball.current.r} cy={ball.current.r} r={ball.current.r}>
+                <Circle
+                  cx={ball.current.r}
+                  cy={ball.current.r}
+                  r={ball.current.r}
+                >
                   <RadialGradient
                     c={vec(ball.current.r, ball.current.r)}
                     r={ball.current.r}
-                    colors={[colors.primary, `${colors.primary}44`, `${colors.primary}00`]}
+                    colors={[
+                      colors.primary,
+                      `${colors.primary}44`,
+                      `${colors.primary}00`,
+                    ]}
                   />
                 </Circle>
                 {/* Ball body */}
-                <Circle cx={ball.current.r} cy={ball.current.r} r={ball.current.r * 0.75}>
+                <Circle
+                  cx={ball.current.r}
+                  cy={ball.current.r}
+                  r={ball.current.r * 0.75}
+                >
                   <RadialGradient
                     c={vec(ball.current.r * 0.7, ball.current.r * 0.6)}
                     r={ball.current.r * 0.75}
                     colors={["#FFFFFF", colors.primary, `${colors.primary}CC`]}
                   />
-                  <Shadow dx={0} dy={1} blur={4} color={`${colors.primary}88`} />
+                  <Shadow
+                    dx={0}
+                    dy={1}
+                    blur={4}
+                    color={`${colors.primary}88`}
+                  />
                 </Circle>
               </Canvas>
             </Animated.View>
@@ -591,21 +759,40 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                   width: playerPaddleW.current,
                   bottom: 10,
                   position: "absolute",
-                  transform: [{ translateX: playerPaddlePos }],
                 },
+                playerPaddleStyle,
               ]}
             >
-              <Canvas style={{ width: playerPaddleW.current, height: PADDLE_H }}>
-                <RoundedRect x={0} y={0} width={playerPaddleW.current} height={PADDLE_H} r={7}>
+              <Canvas
+                style={{ width: playerPaddleW.current, height: PADDLE_H }}
+              >
+                <RoundedRect
+                  x={0}
+                  y={0}
+                  width={playerPaddleW.current}
+                  height={PADDLE_H}
+                  r={7}
+                >
                   <LinearGradient
                     start={vec(0, 0)}
                     end={vec(0, PADDLE_H)}
                     colors={["#5DADE2", colors.primary, "#2471A3"]}
                   />
-                  <Shadow dx={0} dy={2} blur={6} color={`${colors.primary}88`} />
+                  <Shadow
+                    dx={0}
+                    dy={2}
+                    blur={6}
+                    color={`${colors.primary}88`}
+                  />
                 </RoundedRect>
                 {/* Top highlight */}
-                <RoundedRect x={2} y={1} width={playerPaddleW.current - 4} height={3} r={1.5}>
+                <RoundedRect
+                  x={2}
+                  y={1}
+                  width={playerPaddleW.current - 4}
+                  height={3}
+                  r={1.5}
+                >
                   <LinearGradient
                     start={vec(0, 1)}
                     end={vec(0, 4)}
@@ -614,7 +801,105 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
                 </RoundedRect>
               </Canvas>
             </Animated.View>
+            </View>
+          </GestureDetector>
+        </View>
+      )}
+
+      {/* Colyseus multiplayer court */}
+      {gameState === "colyseus" && mp.phase === "playing" && (
+        <View style={styles.courtContainer}>
+          {/* Score */}
+          <View style={styles.scoreRow}>
+            <Text style={[styles.scoreText, { color: colors.textSecondary }]}>
+              {mp.opponentName}: {mp.opponentScore}
+            </Text>
+            <Text style={[styles.scoreText, { color: colors.primary }]}>
+              You: {mp.myScore}
+            </Text>
           </View>
+
+          {/* Court */}
+          <GestureDetector gesture={paddleGesture}>
+            <View
+              style={[styles.court, { borderColor: "rgba(255,255,255,0.15)" }]}
+            >
+            {/* Court background */}
+            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+              <RoundedRect x={0} y={0} width={COURT_W} height={COURT_H} r={10}>
+                <LinearGradient
+                  start={vec(0, 0)}
+                  end={vec(0, COURT_H)}
+                  colors={["#1A2332", "#0F1923", "#0A1118"]}
+                />
+                <Shadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
+              </RoundedRect>
+              <SkiaLine
+                p1={vec(16, COURT_H / 2)}
+                p2={vec(COURT_W - 16, COURT_H / 2)}
+                color="rgba(255,255,255,0.15)"
+                strokeWidth={2}
+                style="stroke"
+              >
+                <DashPathEffect intervals={[8, 8]} />
+              </SkiaLine>
+              <Circle
+                cx={COURT_W / 2}
+                cy={COURT_H / 2}
+                r={30}
+                color="rgba(255,255,255,0.06)"
+                style="stroke"
+                strokeWidth={1.5}
+              />
+
+              {/* Opponent paddle (top) — scale from server 400x600 → court */}
+              <RoundedRect
+                x={(mp.opponentPaddle.x / mp.fieldWidth) * COURT_W}
+                y={10}
+                width={(mp.opponentPaddle.width / mp.fieldWidth) * COURT_W}
+                height={PADDLE_H}
+                r={7}
+              >
+                <LinearGradient
+                  start={vec(0, 0)}
+                  end={vec(0, PADDLE_H)}
+                  colors={["#FF6B6B", "#E74C3C", "#C0392B"]}
+                />
+                <Shadow dx={0} dy={2} blur={6} color="rgba(231,76,60,0.5)" />
+              </RoundedRect>
+
+              {/* My paddle (bottom) — scale from server */}
+              <RoundedRect
+                x={(mp.myPaddle.x / mp.fieldWidth) * COURT_W}
+                y={COURT_H - PADDLE_H - 10}
+                width={(mp.myPaddle.width / mp.fieldWidth) * COURT_W}
+                height={PADDLE_H}
+                r={7}
+              >
+                <LinearGradient
+                  start={vec(0, 0)}
+                  end={vec(0, PADDLE_H)}
+                  colors={["#5DADE2", colors.primary, "#2471A3"]}
+                />
+                <Shadow dx={0} dy={2} blur={6} color={`${colors.primary}88`} />
+              </RoundedRect>
+
+              {/* Ball — scale from server */}
+              <Circle
+                cx={(mp.ball.x / mp.fieldWidth) * COURT_W}
+                cy={(mp.ball.y / mp.fieldHeight) * COURT_H}
+                r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
+              >
+                <RadialGradient
+                  c={vec(0, 0)}
+                  r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
+                  colors={["#FFFFFF", colors.primary, `${colors.primary}CC`]}
+                />
+                <Shadow dx={0} dy={1} blur={4} color={`${colors.primary}88`} />
+              </Circle>
+            </Canvas>
+            </View>
+          </GestureDetector>
         </View>
       )}
 
@@ -647,8 +932,38 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
         </Dialog>
       </Portal>
 
+      {/* Colyseus multiplayer overlays */}
+      {gameState === "colyseus" && (
+        <ScoreRaceOverlay
+          phase={mp.phase as ScoreRaceOverlayPhase}
+          countdown={mp.countdown}
+          myScore={mp.myScore}
+          opponentScore={mp.opponentScore}
+          opponentName={mp.opponentName}
+          isWinner={mp.isWinner}
+          isTie={mp.isTie}
+          winnerName={mp.isWinner ? mp.myName : mp.opponentName}
+          onReady={() => mp.sendReady()}
+          onRematch={() => mp.sendRematch()}
+          onAcceptRematch={() => mp.acceptRematch()}
+          onLeave={async () => {
+            await mp.leave();
+            setGameState("menu");
+          }}
+          rematchRequested={mp.rematchRequested}
+          reconnecting={mp.reconnecting}
+          opponentDisconnected={mp.opponentDisconnected}
+        />
+      )}
+
+      {/* Spectator overlay — shows count of watchers */}
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
       {/* Friend picker for sharing score */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={async (friend) => {
@@ -669,6 +984,25 @@ export default function PongGameScreen({ navigation }: { navigation: any }) {
         }}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Send Score To"
+      />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "pong_game",
+                hostName: profile?.displayName || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -745,3 +1079,5 @@ const styles = StyleSheet.create({
   powerUpText: { fontSize: 14, position: "absolute" },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(PongGameScreen, "pong");

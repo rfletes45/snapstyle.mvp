@@ -10,6 +10,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("utils/performance/optimization");
 // ============================================================================
 // Types
 // ============================================================================
@@ -490,7 +493,7 @@ export class PerformanceLogger {
   ): number {
     const start = this.markers.get(startMark);
     if (start === undefined) {
-      console.warn(`Performance mark "${startMark}" not found`);
+      logger.warn(`Performance mark "${startMark}" not found`);
       return 0;
     }
 

@@ -18,8 +18,11 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { getFirestoreInstance } from "@/services/firebase";
 import { getUserInventory, addToInventory } from "@/services/cosmetics";
 import { MILESTONE_REWARDS } from "@/data/cosmetics";
-import { Spacing, BorderRadius } from "../../../constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/debug/DebugScreen");
 interface DebugData {
   userId: string;
   username: string;
@@ -109,7 +112,7 @@ export default function DebugScreen({ navigation }: any) {
         friendships,
       });
     } catch (error) {
-      console.error("Error loading debug data:", error);
+      logger.error("Error loading debug data:", error);
     } finally {
       setLoading(false);
     }
@@ -131,7 +134,7 @@ export default function DebugScreen({ navigation }: any) {
             parseInt(milestone) <= streakCount &&
             !debugData.inventory.includes(itemId)
           ) {
-            console.log(`Granting ${itemId} for ${milestone}-day milestone`);
+            logger.info(`Granting ${itemId} for ${milestone}-day milestone`);
             await addToInventory(uid, itemId);
             itemsGranted++;
           }
@@ -141,7 +144,7 @@ export default function DebugScreen({ navigation }: any) {
       alert(`Successfully granted ${itemsGranted} missing cosmetics!`);
       await loadDebugData(); // Reload data
     } catch (error) {
-      console.error("Error fixing cosmetics:", error);
+      logger.error("Error fixing cosmetics:", error);
       alert("Error fixing cosmetics. Check console.");
     } finally {
       setFixing(false);

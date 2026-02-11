@@ -15,7 +15,7 @@ import * as haptics from "@/utils/haptics";
 import React, { memo, useCallback, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Button, Text } from "react-native-paper";
-import { Spacing } from "../../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

@@ -13,7 +13,6 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import React from "react";
-import { StyleSheet } from "react-native";
 
 interface SkiaDiscProps {
   /** Diameter of the disc */
@@ -79,11 +78,7 @@ export function SkiaDisc({
       </Circle>
 
       {/* Specular highlight */}
-      <Circle
-        cx={cx - radius * 0.15}
-        cy={cy - radius * 0.2}
-        r={radius * 0.3}
-      >
+      <Circle cx={cx - radius * 0.15} cy={cy - radius * 0.2} r={radius * 0.3}>
         <RadialGradient
           c={vec(cx - radius * 0.15, cy - radius * 0.25)}
           r={radius * 0.3}

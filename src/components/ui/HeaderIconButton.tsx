@@ -24,7 +24,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 const { spacing, borderRadius, iconSizes, typography, animation, colors } =
   PLAY_SCREEN_TOKENS;
@@ -84,7 +84,7 @@ export function HeaderIconButton({
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <MaterialCommunityIcons
-          name={icon as any}
+          name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
           size={size}
           color={iconColor}
         />

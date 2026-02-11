@@ -36,6 +36,9 @@ import type {
   ActivityEventType,
 } from "@/types/activityFeed";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/activityFeed");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -76,7 +79,7 @@ export async function recordActivity(
 
     return docRef.id;
   } catch (error) {
-    console.error("[ActivityFeed] Error recording activity:", error);
+    logger.error("[ActivityFeed] Error recording activity:", error);
     return null;
   }
 }
@@ -166,7 +169,7 @@ export async function fetchActivityFeed(
             } as ActivityEvent;
           });
         } catch (error) {
-          console.warn(
+          logger.warn(
             `[ActivityFeed] Error fetching activities for ${friendUid}:`,
             error,
           );
@@ -186,7 +189,7 @@ export async function fetchActivityFeed(
 
     return allActivities.slice(0, pageSize);
   } catch (error) {
-    console.error("[ActivityFeed] Error fetching feed:", error);
+    logger.error("[ActivityFeed] Error fetching feed:", error);
     return [];
   }
 }
@@ -226,7 +229,7 @@ export async function fetchUserActivities(
       } as ActivityEvent;
     });
   } catch (error) {
-    console.error("[ActivityFeed] Error fetching user activities:", error);
+    logger.error("[ActivityFeed] Error fetching user activities:", error);
     return [];
   }
 }
@@ -243,7 +246,7 @@ export async function deleteActivity(
     await deleteDoc(doc(db, "Users", userId, "activity", activityId));
     return true;
   } catch (error) {
-    console.error("[ActivityFeed] Error deleting activity:", error);
+    logger.error("[ActivityFeed] Error deleting activity:", error);
     return false;
   }
 }

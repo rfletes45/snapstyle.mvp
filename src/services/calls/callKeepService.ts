@@ -5,17 +5,24 @@
 
 import { Platform } from "react-native";
 import RNCallKeep from "react-native-callkeep";
-import { CallKeepOptions } from "../../types/call";
+import { CallKeepOptions } from "@/types/call";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/callKeepService");
+type RNCallKeepSetupOptions = Parameters<typeof RNCallKeep.setup>[0];
+interface RNCallKeepWithAudioRoutes {
+  getAudioRoutes?: () => Promise<unknown[]>;
+}
 // Simple logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallKeepService] ${msg}`, data ?? "");
+  logger.info(`[CallKeepService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallKeepService] ${msg}`, error ?? "");
+  logger.error(`[CallKeepService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallKeepService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallKeepService] ${msg}`, data ?? "");
 const logWarn = (msg: string, data?: any) =>
-  console.warn(`[CallKeepService] ${msg}`, data ?? "");
+  logger.warn(`[CallKeepService] ${msg}`, data ?? "");
 
 // CallKeep end call reasons
 export const CallEndReason = {
@@ -86,7 +93,8 @@ class CallKeepService {
     };
 
     try {
-      await RNCallKeep.setup(options as any);
+      const setupOptions = options as RNCallKeepSetupOptions;
+      await RNCallKeep.setup(setupOptions);
       this.registerEventListeners();
       this.isSetup = true;
 
@@ -384,12 +392,14 @@ class CallKeepService {
   /**
    * Get available audio routes
    */
-  async getAudioRoutes(): Promise<any[]> {
+  async getAudioRoutes(): Promise<unknown[]> {
     if (!this.isSetup) return [];
 
     try {
-      const routes = await (RNCallKeep as any).getAudioRoutes?.();
-      return routes || [];
+      const routes = await (
+        RNCallKeep as unknown as RNCallKeepWithAudioRoutes
+      ).getAudioRoutes?.();
+      return Array.isArray(routes) ? routes : [];
     } catch (error) {
       logError("Failed to get audio routes", { error });
       return [];

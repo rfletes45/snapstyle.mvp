@@ -28,6 +28,9 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/profileThemes");
 // Lazy getter for Firestore
 const getDb = () => getFirestoreInstance();
 
@@ -87,7 +90,7 @@ export async function getUserOwnedThemes(uid: string): Promise<string[]> {
 
     return ownedThemes;
   } catch (error) {
-    console.error("[profileThemes] Error fetching owned themes:", error);
+    logger.error("[profileThemes] Error fetching owned themes:", error);
     // Return free themes on error
     return PROFILE_THEMES.filter(
       (t) => t.unlock.type === "free" || t.unlock.type === "starter",
@@ -129,14 +132,14 @@ export async function grantTheme(
     // Verify theme exists
     const theme = getThemeById(themeId);
     if (!theme) {
-      console.error("[profileThemes] Theme not found:", themeId);
+      logger.error("[profileThemes] Theme not found:", themeId);
       return false;
     }
 
     // Check if already owned
     const alreadyOwned = await userOwnsTheme(uid, themeId);
     if (alreadyOwned) {
-      console.log("[profileThemes] User already owns theme:", themeId);
+      logger.info("[profileThemes] User already owns theme:", themeId);
       return false;
     }
 
@@ -149,10 +152,10 @@ export async function grantTheme(
       source: source || "granted",
     });
 
-    console.log("[profileThemes] Granted theme:", themeId, "to user:", uid);
+    logger.info("[profileThemes] Granted theme:", themeId, "to user:", uid);
     return true;
   } catch (error) {
-    console.error("[profileThemes] Error granting theme:", error);
+    logger.error("[profileThemes] Error granting theme:", error);
     return false;
   }
 }
@@ -176,7 +179,7 @@ export async function getEquippedTheme(uid: string): Promise<string | null> {
     const data = userDoc.data();
     return data.avatarConfig?.profileTheme || null;
   } catch (error) {
-    console.error("[profileThemes] Error getting equipped theme:", error);
+    logger.error("[profileThemes] Error getting equipped theme:", error);
     return null;
   }
 }
@@ -194,7 +197,7 @@ export async function equipTheme(
     // Verify user owns theme
     const owned = await userOwnsTheme(uid, themeId);
     if (!owned) {
-      console.error("[profileThemes] User does not own theme:", themeId);
+      logger.error("[profileThemes] User does not own theme:", themeId);
       return false;
     }
 
@@ -204,10 +207,10 @@ export async function equipTheme(
       "avatarConfig.profileTheme": themeId,
     });
 
-    console.log("[profileThemes] Equipped theme:", themeId);
+    logger.info("[profileThemes] Equipped theme:", themeId);
     return true;
   } catch (error) {
-    console.error("[profileThemes] Error equipping theme:", error);
+    logger.error("[profileThemes] Error equipping theme:", error);
     return false;
   }
 }
@@ -224,10 +227,10 @@ export async function unequipTheme(uid: string): Promise<boolean> {
       "avatarConfig.profileTheme": "default",
     });
 
-    console.log("[profileThemes] Unequipped theme, set to default");
+    logger.info("[profileThemes] Unequipped theme, set to default");
     return true;
   } catch (error) {
-    console.error("[profileThemes] Error unequipping theme:", error);
+    logger.error("[profileThemes] Error unequipping theme:", error);
     return false;
   }
 }
@@ -274,7 +277,7 @@ export function subscribeToOwnedThemes(
       onUpdate(ownedThemes);
     },
     (error) => {
-      console.error("[profileThemes] Subscription error:", error);
+      logger.error("[profileThemes] Subscription error:", error);
       onError?.(error as Error);
     },
   );

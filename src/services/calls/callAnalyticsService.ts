@@ -17,20 +17,23 @@ import {
   CallQualityReport,
   CallType,
   DetailedCallAnalyticsEvent,
-} from "../../types/call";
-import { getAuthInstance, getFirestoreInstance } from "../firebase";
+} from "@/types/call";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/callAnalyticsService");
 // Lazy getters to avoid accessing Firebase before initialization
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
 
 // Logging
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallAnalyticsService] ${msg}`, data ?? "");
+  logger.info(`[CallAnalyticsService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallAnalyticsService] ${msg}`, error ?? "");
+  logger.error(`[CallAnalyticsService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallAnalyticsService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallAnalyticsService] ${msg}`, data ?? "");
 
 // Thresholds for quality issues
 const QUALITY_THRESHOLDS = {

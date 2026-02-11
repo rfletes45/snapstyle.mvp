@@ -25,6 +25,20 @@ config.resolver.sourceExts = [...(config.resolver.sourceExts || [])];
 // Metro will automatically prefer .web.ts over .ts on web platform
 config.resolver.resolverMainFields = ["react-native", "browser", "main"];
 
+// Set condition names so package.json "exports" maps resolve correctly.
+// Without this, @colyseus/httpie (and similar packages) resolve to their
+// Node.js entry point which imports 'https', 'http', 'url' — unavailable
+// in React Native.  The "browser" condition selects the XHR-based build.
+// NOTE: "default" is used instead of "import" to avoid pulling ESM-only
+// entry points for CJS helpers like @babel/runtime/helpers/* — using
+// "import" causes `_interopRequireDefault is not a function (it is Object)`.
+config.resolver.unstable_conditionNames = [
+  "react-native",
+  "browser",
+  "require",
+  "default",
+];
+
 // Provide shims for native modules on web
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -59,6 +73,22 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     if (moduleName === "@shopify/react-native-skia") {
       return {
         filePath: path.resolve(__dirname, "src/shims/react-native-skia.js"),
+        type: "sourceFile",
+      };
+    }
+
+    // Shim expo-gl on web (Three.js canvas — native only)
+    if (moduleName === "expo-gl") {
+      return {
+        filePath: path.resolve(__dirname, "src/shims/expo-gl.js"),
+        type: "sourceFile",
+      };
+    }
+
+    // Shim expo-three on web (Three.js renderer bridge — native only)
+    if (moduleName === "expo-three") {
+      return {
+        filePath: path.resolve(__dirname, "src/shims/expo-three.js"),
         type: "sourceFile",
       };
     }

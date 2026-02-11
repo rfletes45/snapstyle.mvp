@@ -36,8 +36,11 @@ import {
 } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/stories/StoryViewerScreen");
 interface StoryViewerScreenProps {
   route: any;
   navigation: any;
@@ -152,7 +155,7 @@ export default function StoryViewerScreen({
         setDisplayImage(uri);
       }
     } catch (err: any) {
-      console.error("❌ [StoryViewerScreen] Failed to load story:", err);
+      logger.error("❌ [StoryViewerScreen] Failed to load story:", err);
       setError(err.message || "Failed to load story");
     } finally {
       setLoading(false);
@@ -219,7 +222,7 @@ export default function StoryViewerScreen({
         await markStoryViewed(story.id, currentFirebaseUser.uid);
       }
     } catch (err: any) {
-      console.error("[StoryViewerScreen] Error marking viewed:", err);
+      logger.error("[StoryViewerScreen] Error marking viewed:", err);
     }
   };
 
@@ -230,7 +233,7 @@ export default function StoryViewerScreen({
       const count = await getStoryViewCount(story.id);
       setViewCount(count);
     } catch (err) {
-      console.error("❌ [StoryViewerScreen] Error loading view count:", err);
+      logger.error("❌ [StoryViewerScreen] Error loading view count:", err);
     }
   };
 
@@ -252,7 +255,7 @@ export default function StoryViewerScreen({
       Alert.alert("Success", "Story posted successfully!");
       navigation.goBack();
     } catch (error: any) {
-      console.error("[StoryViewerScreen] Error posting story:", error);
+      logger.error("[StoryViewerScreen] Error posting story:", error);
       Alert.alert("Error", `Failed to post story: ${String(error)}`);
     } finally {
       setPosting(false);
@@ -278,7 +281,7 @@ export default function StoryViewerScreen({
         window.alert("Story deleted");
         navigation.goBack();
       } catch (err: any) {
-        console.error("[StoryViewerScreen] Error deleting story:", err);
+        logger.error("[StoryViewerScreen] Error deleting story:", err);
         window.alert(`Failed to delete story: ${String(err)}`);
       }
     } else {
@@ -297,7 +300,7 @@ export default function StoryViewerScreen({
                 Alert.alert("Success", "Story deleted");
                 navigation.goBack();
               } catch (err: any) {
-                console.error("[StoryViewerScreen] Error deleting story:", err);
+                logger.error("[StoryViewerScreen] Error deleting story:", err);
                 Alert.alert("Error", `Failed to delete story: ${String(err)}`);
               }
             },

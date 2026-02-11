@@ -45,7 +45,7 @@ function ProfileActionsBase({ actions }: ProfileActionsProps) {
               ]}
             >
               <MaterialCommunityIcons
-                name={action.icon as any}
+                name={action.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                 size={22}
                 color={action.color || colors.primary}
               />

@@ -11,7 +11,7 @@ import { MessageKind, ReplyToMetadata } from "@/types/messaging";
 import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { IconButton, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -32,6 +32,10 @@ interface ReplyPreviewBarProps {
 
 /**
  * Get display text for the reply preview based on message kind
+ * NOTE: There are 3 getPreviewText implementations — keep in sync:
+ *   1. firebase-backend/functions/src/messaging.ts (rich, stored in Firestore)
+ *   2. src/components/chat/ReplyBubbleNew.tsx (plain, inline reply)
+ *   3. src/components/chat/ReplyPreviewBar.tsx (this file)
  */
 function getPreviewText(replyTo: ReplyToMetadata): string {
   if (replyTo.textSnippet) {
@@ -39,14 +43,20 @@ function getPreviewText(replyTo: ReplyToMetadata): string {
   }
 
   switch (replyTo.kind) {
+    case "text":
+      return "Message";
     case "media":
-      return "📷 Photo";
+      return "Photo";
     case "voice":
-      return "🎤 Voice message";
+      return "Voice message";
     case "file":
-      return "📎 File";
+      return "File";
     case "system":
       return "System message";
+    case "scorecard":
+      return "Game result";
+    case "game_invite":
+      return "Game invite";
     default:
       return "Message";
   }
@@ -57,6 +67,8 @@ function getPreviewText(replyTo: ReplyToMetadata): string {
  */
 function getKindIcon(kind: MessageKind): string {
   switch (kind) {
+    case "text":
+      return "message-text";
     case "media":
       return "image";
     case "voice":
@@ -65,6 +77,10 @@ function getKindIcon(kind: MessageKind): string {
       return "file";
     case "system":
       return "information";
+    case "scorecard":
+      return "trophy";
+    case "game_invite":
+      return "gamepad-variant";
     default:
       return "message-text";
   }
@@ -221,3 +237,5 @@ const styles = StyleSheet.create({
 });
 
 export default ReplyPreviewBar;
+
+

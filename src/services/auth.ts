@@ -9,6 +9,9 @@ import {
 import { getAuthInstance } from "./firebase";
 import { removePushToken } from "./notifications";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/auth");
 /**
  * Sign up a new user with email and password
  * @param email User's email
@@ -26,7 +29,7 @@ export async function signUp(
       email,
       password,
     );
-    console.log("✅ [auth] User signed up:", credential.user.email);
+    logger.info("✅ [auth] User signed up:", credential.user.email);
     return ok(credential);
   } catch (error) {
     const appError = mapAuthError(error);
@@ -48,7 +51,7 @@ export async function login(
   try {
     const auth = getAuthInstance();
     const credential = await signInWithEmailAndPassword(auth, email, password);
-    console.log("✅ [auth] User logged in:", credential.user.email);
+    logger.info("✅ [auth] User logged in:", credential.user.email);
     return ok(credential);
   } catch (error) {
     const appError = mapAuthError(error);
@@ -73,12 +76,12 @@ export async function logout(): Promise<Result<void>> {
         await removePushToken(user.uid);
       } catch (tokenError) {
         // Non-fatal — proceed with sign-out regardless
-        console.warn("[auth/logout] Failed to remove push token:", tokenError);
+        logger.warn("[auth/logout] Failed to remove push token:", tokenError);
       }
     }
 
     await signOut(auth);
-    console.log("✅ [auth] User logged out");
+    logger.info("✅ [auth] User logged out");
     return ok(undefined);
   } catch (error) {
     const appError = mapAuthError(error);
@@ -105,7 +108,7 @@ export async function resetPassword(email: string): Promise<Result<void>> {
   try {
     const auth = getAuthInstance();
     await sendPasswordResetEmail(auth, email);
-    console.log("✅ [auth] Password reset email sent to:", email);
+    logger.info("✅ [auth] Password reset email sent to:", email);
     return ok(undefined);
   } catch (error) {
     const appError = mapAuthError(error);

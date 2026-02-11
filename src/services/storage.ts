@@ -21,6 +21,9 @@ import {
 } from "firebase/storage";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/storage");
 // =============================================================================
 // Types (H10)
 // =============================================================================
@@ -96,7 +99,7 @@ export async function compressImage(
   try {
     // On web, use canvas-based compression for data URLs
     if (Platform.OS === "web") {
-      console.log("🔵 [compressImage] Using web-based compression");
+      logger.info("🔵 [compressImage] Using web-based compression");
       return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
@@ -128,7 +131,7 @@ export async function compressImage(
 
             // Convert to data URL with compression
             const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
-            console.log("✅ [compressImage] Web compression complete");
+            logger.info("✅ [compressImage] Web compression complete");
             resolve(compressedDataUrl);
           } catch (error) {
             reject(error);
@@ -141,17 +144,17 @@ export async function compressImage(
       });
     } else {
       // On native, use expo-image-manipulator
-      console.log("🔵 [compressImage] Using expo-image-manipulator");
+      logger.info("🔵 [compressImage] Using expo-image-manipulator");
       const result = await ImageManipulator.manipulateAsync(
         imageUri,
         [{ resize: { width: maxSize, height: maxSize } }],
         { compress: quality, format: ImageManipulator.SaveFormat.JPEG },
       );
-      console.log("✅ [compressImage] Native compression complete");
+      logger.info("✅ [compressImage] Native compression complete");
       return result.uri;
     }
   } catch (error) {
-    console.error("❌ [compressImage] Error compressing image:", error);
+    logger.error("❌ [compressImage] Error compressing image:", error);
     throw error;
   }
 }
@@ -192,28 +195,28 @@ export async function uploadSnapImage(
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
-    console.log("🔵 [uploadSnapImage] Uploading picture image");
+    logger.info("🔵 [uploadSnapImage] Uploading picture image");
 
     let blob: Blob;
 
     // Handle data URLs (web platform) vs file URIs (native)
     if (imageUri.startsWith("data:")) {
-      console.log("🔵 [uploadSnapImage] Converting data URL to blob");
+      logger.info("🔵 [uploadSnapImage] Converting data URL to blob");
       blob = dataURLtoBlob(imageUri);
     } else {
-      console.log("🔵 [uploadSnapImage] Fetching file URI as blob");
+      logger.info("🔵 [uploadSnapImage] Fetching file URI as blob");
       const response = await fetch(imageUri);
       blob = await response.blob();
     }
 
-    console.log("🔵 [uploadSnapImage] Uploading blob to Firebase Storage");
+    logger.info("🔵 [uploadSnapImage] Uploading blob to Firebase Storage");
     // Upload to Firebase Storage
     await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
 
-    console.log(`✅ [uploadSnapImage] Uploaded picture to: ${storagePath}`);
+    logger.info(`✅ [uploadSnapImage] Uploaded picture to: ${storagePath}`);
     return storagePath;
   } catch (error) {
-    console.error("❌ [uploadSnapImage] Error uploading picture image:", error);
+    logger.error("❌ [uploadSnapImage] Error uploading picture image:", error);
     throw error;
   }
 }
@@ -233,10 +236,10 @@ export async function downloadSnapImage(storagePath: string): Promise<string> {
     // Get download URL - works on all platforms and handles CORS properly
     const downloadUrl = await getDownloadURL(storageRef);
 
-    console.log(`Got download URL for picture: ${storagePath}`);
+    logger.info(`Got download URL for picture: ${storagePath}`);
     return downloadUrl;
   } catch (error) {
-    console.error("Error downloading picture image:", error);
+    logger.error("Error downloading picture image:", error);
     throw error;
   }
 }
@@ -252,11 +255,11 @@ export async function deleteSnapImage(storagePath: string): Promise<void> {
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
     await deleteObject(storageRef);
-    console.log(`Deleted picture: ${storagePath}`);
+    logger.info(`Deleted picture: ${storagePath}`);
   } catch (error: any) {
     // File may already be deleted; only log if not a 404 error
     if (error.code !== "storage/object-not-found") {
-      console.error("Error deleting picture image:", error);
+      logger.error("Error deleting picture image:", error);
     }
   }
 }
@@ -280,33 +283,33 @@ export async function uploadGroupImage(
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
 
-    console.log("🔵 [uploadGroupImage] Uploading group chat image");
+    logger.info("🔵 [uploadGroupImage] Uploading group chat image");
 
     let blob: Blob;
 
     // Handle data URLs (web platform) vs file URIs (native)
     if (imageUri.startsWith("data:")) {
-      console.log("🔵 [uploadGroupImage] Converting data URL to blob");
+      logger.info("🔵 [uploadGroupImage] Converting data URL to blob");
       blob = dataURLtoBlob(imageUri);
     } else {
-      console.log("🔵 [uploadGroupImage] Fetching file URI as blob");
+      logger.info("🔵 [uploadGroupImage] Fetching file URI as blob");
       const response = await fetch(imageUri);
       blob = await response.blob();
     }
 
-    console.log("🔵 [uploadGroupImage] Uploading blob to Firebase Storage");
+    logger.info("🔵 [uploadGroupImage] Uploading blob to Firebase Storage");
     await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
 
-    console.log(`✅ [uploadGroupImage] Uploaded to: ${storagePath}`);
+    logger.info(`✅ [uploadGroupImage] Uploaded to: ${storagePath}`);
 
     // Get download URL
-    console.log("🔵 [uploadGroupImage] Getting download URL...");
+    logger.info("🔵 [uploadGroupImage] Getting download URL...");
     const downloadUrl = await getDownloadURL(storageRef);
-    console.log(`✅ [uploadGroupImage] Download URL: ${downloadUrl}`);
+    logger.info(`✅ [uploadGroupImage] Download URL: ${downloadUrl}`);
 
     return downloadUrl;
   } catch (error) {
-    console.error("❌ [uploadGroupImage] Error uploading group image:", error);
+    logger.error("❌ [uploadGroupImage] Error uploading group image:", error);
     throw error;
   }
 }
@@ -382,7 +385,7 @@ export async function getFileSize(uri: string): Promise<number> {
       return blob.size;
     }
   } catch (error) {
-    console.warn("[getFileSize] Could not determine file size:", error);
+    logger.warn("[getFileSize] Could not determine file size:", error);
     return 0;
   }
 }
@@ -418,7 +421,7 @@ export async function uploadAttachmentV2(
   const { id, uri, kind, mime, caption, viewOnce } = attachment;
 
   try {
-    console.log(`🔵 [uploadAttachmentV2] Starting upload for ${id}`);
+    logger.info(`🔵 [uploadAttachmentV2] Starting upload for ${id}`);
     onProgress?.(id, 0, "uploading");
 
     const storage = getStorage();
@@ -445,7 +448,7 @@ export async function uploadAttachmentV2(
         width = dims.width;
         height = dims.height;
       } catch (e) {
-        console.warn("[uploadAttachmentV2] Could not get dimensions:", e);
+        logger.warn("[uploadAttachmentV2] Could not get dimensions:", e);
       }
     }
 
@@ -484,7 +487,7 @@ export async function uploadAttachmentV2(
           onProgress?.(id, progress, "uploading");
         },
         (error) => {
-          console.error(`[uploadAttachmentV2] Upload error for ${id}:`, error);
+          logger.error(`[uploadAttachmentV2] Upload error for ${id}:`, error);
           reject(error);
         },
         () => {
@@ -517,7 +520,7 @@ export async function uploadAttachmentV2(
         thumbUrl = await getDownloadURL(thumbRef);
         thumbPath = thumbStoragePath;
       } catch (thumbError) {
-        console.warn(
+        logger.warn(
           "[uploadAttachmentV2] Thumbnail generation failed:",
           thumbError,
         );
@@ -541,10 +544,10 @@ export async function uploadAttachmentV2(
       viewOnce,
     };
 
-    console.log(`✅ [uploadAttachmentV2] Upload complete for ${id}`);
+    logger.info(`✅ [uploadAttachmentV2] Upload complete for ${id}`);
     return { success: true, attachment: result };
   } catch (error: any) {
-    console.error(`❌ [uploadAttachmentV2] Failed for ${id}:`, error);
+    logger.error(`❌ [uploadAttachmentV2] Failed for ${id}:`, error);
     onProgress?.(id, 0, "error", error.message);
     return { success: false, error: error.message };
   }
@@ -564,7 +567,7 @@ export async function uploadMultipleAttachments(
   const successful: AttachmentV2[] = [];
   const failed: { id: string; error: string }[] = [];
 
-  console.log(
+  logger.info(
     `🔵 [uploadMultipleAttachments] Starting upload of ${attachments.length} attachments`,
   );
 
@@ -581,7 +584,7 @@ export async function uploadMultipleAttachments(
     }
   }
 
-  console.log(
+  logger.info(
     `✅ [uploadMultipleAttachments] Complete: ${successful.length} successful, ${failed.length} failed`,
   );
 
@@ -608,10 +611,10 @@ export async function deleteAttachments(
         await deleteObject(thumbRef);
       }
 
-      console.log(`✅ [deleteAttachments] Deleted ${attachment.id}`);
+      logger.info(`✅ [deleteAttachments] Deleted ${attachment.id}`);
     } catch (error: any) {
       if (error.code !== "storage/object-not-found") {
-        console.error(
+        logger.error(
           `❌ [deleteAttachments] Failed to delete ${attachment.id}:`,
           error,
         );
@@ -674,7 +677,7 @@ export async function uploadVoiceMessage(
   const { uri, durationMs, mimeType, extension } = recording;
 
   try {
-    console.log(`🔵 [uploadVoiceMessage] Starting upload for ${messageId}`);
+    logger.info(`🔵 [uploadVoiceMessage] Starting upload for ${messageId}`);
     onProgress?.(0);
 
     const storage = getStorage();
@@ -691,7 +694,7 @@ export async function uploadVoiceMessage(
     }
 
     const sizeBytes = blob.size;
-    console.log(`🔵 [uploadVoiceMessage] Voice file size: ${sizeBytes} bytes`);
+    logger.info(`🔵 [uploadVoiceMessage] Voice file size: ${sizeBytes} bytes`);
 
     // Upload with progress tracking
     const uploadTask = uploadBytesResumable(storageRef, blob, {
@@ -706,7 +709,7 @@ export async function uploadVoiceMessage(
           onProgress?.(progress);
         },
         (error) => {
-          console.error(`[uploadVoiceMessage] Upload error:`, error);
+          logger.error(`[uploadVoiceMessage] Upload error:`, error);
           reject(error);
         },
         () => {
@@ -719,7 +722,7 @@ export async function uploadVoiceMessage(
     const url = await getDownloadURL(storageRef);
 
     onProgress?.(1);
-    console.log(`✅ [uploadVoiceMessage] Upload complete: ${storagePath}`);
+    logger.info(`✅ [uploadVoiceMessage] Upload complete: ${storagePath}`);
 
     return {
       success: true,
@@ -729,7 +732,7 @@ export async function uploadVoiceMessage(
       sizeBytes,
     };
   } catch (error: any) {
-    console.error(`❌ [uploadVoiceMessage] Failed:`, error);
+    logger.error(`❌ [uploadVoiceMessage] Failed:`, error);
     return {
       success: false,
       error: error.message || "Voice upload failed",
@@ -746,10 +749,10 @@ export async function deleteVoiceMessage(storagePath: string): Promise<void> {
     const storage = getStorage();
     const storageRef = ref(storage, storagePath);
     await deleteObject(storageRef);
-    console.log(`✅ [deleteVoiceMessage] Deleted: ${storagePath}`);
+    logger.info(`✅ [deleteVoiceMessage] Deleted: ${storagePath}`);
   } catch (error: any) {
     if (error.code !== "storage/object-not-found") {
-      console.error(`❌ [deleteVoiceMessage] Failed:`, error);
+      logger.error(`❌ [deleteVoiceMessage] Failed:`, error);
     }
   }
 }

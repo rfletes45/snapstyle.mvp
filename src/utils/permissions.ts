@@ -7,6 +7,9 @@
 import { Camera } from "expo-camera";
 import * as Notifications from "expo-notifications";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("utils/permissions");
 /**
  * Permission types for picture features
  */
@@ -32,19 +35,19 @@ export enum PermissionStatus {
  */
 export async function requestCameraPermission(): Promise<boolean> {
   try {
-    console.log("[Permissions] Requesting camera permission");
+    logger.info("[Permissions] Requesting camera permission");
 
     const { status } = await Camera.requestCameraPermissionsAsync();
 
     if (status === "granted") {
-      console.log("[Permissions] Camera permission granted");
+      logger.info("[Permissions] Camera permission granted");
       return true;
     } else {
-      console.warn("[Permissions] Camera permission denied");
+      logger.warn("[Permissions] Camera permission denied");
       return false;
     }
   } catch (error) {
-    console.error("[Permissions] Failed to request camera permission:", error);
+    logger.error("[Permissions] Failed to request camera permission:", error);
     return false;
   }
 }
@@ -55,19 +58,19 @@ export async function requestCameraPermission(): Promise<boolean> {
  */
 export async function requestMicrophonePermission(): Promise<boolean> {
   try {
-    console.log("[Permissions] Requesting microphone permission");
+    logger.info("[Permissions] Requesting microphone permission");
 
     const { status } = await Camera.requestMicrophonePermissionsAsync();
 
     if (status === "granted") {
-      console.log("[Permissions] Microphone permission granted");
+      logger.info("[Permissions] Microphone permission granted");
       return true;
     } else {
-      console.warn("[Permissions] Microphone permission denied");
+      logger.warn("[Permissions] Microphone permission denied");
       return false;
     }
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to request microphone permission:",
       error,
     );
@@ -81,14 +84,14 @@ export async function requestMicrophonePermission(): Promise<boolean> {
  */
 export async function requestPhotoLibraryPermission(): Promise<boolean> {
   try {
-    console.log("[Permissions] Requesting photo library permission");
+    logger.info("[Permissions] Requesting photo library permission");
 
     // expo-media-library is not installed; return true as placeholder
-    // TODO: Install expo-media-library for production
-    console.log("[Permissions] Photo library permission granted (placeholder)");
+    // NOTE: Install expo-media-library for production
+    logger.info("[Permissions] Photo library permission granted (placeholder)");
     return true;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to request photo library permission:",
       error,
     );
@@ -102,7 +105,7 @@ export async function requestPhotoLibraryPermission(): Promise<boolean> {
  */
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
-    console.log("[Permissions] Requesting notification permission");
+    logger.info("[Permissions] Requesting notification permission");
 
     const { status } = await Notifications.requestPermissionsAsync({
       ios: {
@@ -113,14 +116,14 @@ export async function requestNotificationPermission(): Promise<boolean> {
     });
 
     if (status === "granted") {
-      console.log("[Permissions] Notification permission granted");
+      logger.info("[Permissions] Notification permission granted");
       return true;
     } else {
-      console.warn("[Permissions] Notification permission denied");
+      logger.warn("[Permissions] Notification permission denied");
       return false;
     }
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to request notification permission:",
       error,
     );
@@ -138,7 +141,7 @@ export async function requestAllSnapPermissions(): Promise<{
   notifications: boolean;
 }> {
   try {
-    console.log("[Permissions] Requesting all picture permissions");
+    logger.info("[Permissions] Requesting all picture permissions");
 
     const results = await Promise.all([
       requestCameraPermission(),
@@ -154,10 +157,10 @@ export async function requestAllSnapPermissions(): Promise<{
       notifications: results[3],
     };
 
-    console.log("[Permissions] Permission request results:", permissionStatus);
+    logger.info("[Permissions] Permission request results:", permissionStatus);
     return permissionStatus;
   } catch (error) {
-    console.error("[Permissions] Failed to request all permissions:", error);
+    logger.error("[Permissions] Failed to request all permissions:", error);
     return {
       camera: false,
       microphone: false,
@@ -175,7 +178,7 @@ export async function hasCameraPermission(): Promise<boolean> {
     const { status } = await Camera.getCameraPermissionsAsync();
     return status === "granted";
   } catch (error) {
-    console.error("[Permissions] Failed to check camera permission:", error);
+    logger.error("[Permissions] Failed to check camera permission:", error);
     return false;
   }
 }
@@ -188,7 +191,7 @@ export async function hasMicrophonePermission(): Promise<boolean> {
     const { status } = await Camera.getMicrophonePermissionsAsync();
     return status === "granted";
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to check microphone permission:",
       error,
     );
@@ -204,7 +207,7 @@ export async function hasPhotoLibraryPermission(): Promise<boolean> {
     // expo-media-library is not installed; return true as placeholder
     return true;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to check photo library permission:",
       error,
     );
@@ -220,7 +223,7 @@ export async function hasNotificationPermission(): Promise<boolean> {
     const settings = await Notifications.getPermissionsAsync();
     return settings.granted;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to check notification permission:",
       error,
     );
@@ -239,7 +242,7 @@ export async function checkAllSnapPermissions(): Promise<{
   allGranted: boolean;
 }> {
   try {
-    console.log("[Permissions] Checking all picture permissions");
+    logger.info("[Permissions] Checking all picture permissions");
 
     const results = await Promise.all([
       hasCameraPermission(),
@@ -256,10 +259,10 @@ export async function checkAllSnapPermissions(): Promise<{
       allGranted: results.every((permission) => permission),
     };
 
-    console.log("[Permissions] Permission check results:", status);
+    logger.info("[Permissions] Permission check results:", status);
     return status;
   } catch (error) {
-    console.error("[Permissions] Failed to check all permissions:", error);
+    logger.error("[Permissions] Failed to check all permissions:", error);
     return {
       camera: false,
       microphone: false,
@@ -338,31 +341,31 @@ export function isAndroidSpecificPermission(
  */
 export async function initializePermissions(): Promise<void> {
   try {
-    console.log("[Permissions] Initializing permission monitoring");
+    logger.info("[Permissions] Initializing permission monitoring");
 
     // Check permissions on startup
     const permissions = await checkAllSnapPermissions();
 
-    console.log("[Permissions] Initial permission state:", permissions);
+    logger.info("[Permissions] Initial permission state:", permissions);
 
     // Request critical permissions if not already granted
     // Camera is essential for app functionality
     if (!permissions.camera) {
-      console.warn(
+      logger.warn(
         "[Permissions] Camera permission not granted - app functionality limited",
       );
     }
 
     // Notifications are recommended but not critical
     if (!permissions.notifications) {
-      console.log(
+      logger.info(
         "[Permissions] Notification permission not granted - user won't receive alerts",
       );
     }
 
-    console.log("[Permissions] Permission initialization complete");
+    logger.info("[Permissions] Permission initialization complete");
   } catch (error) {
-    console.error("[Permissions] Failed to initialize permissions:", error);
+    logger.error("[Permissions] Failed to initialize permissions:", error);
   }
 }
 
@@ -393,7 +396,7 @@ export async function hasRequiredCapturePermissions(): Promise<boolean> {
     const permissions = await checkAllSnapPermissions();
     return permissions.camera && permissions.microphone;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to check required capture permissions:",
       error,
     );
@@ -406,7 +409,7 @@ export async function hasRequiredCapturePermissions(): Promise<boolean> {
  */
 export async function requestRequiredCapturePermissions(): Promise<boolean> {
   try {
-    console.log(
+    logger.info(
       "[Permissions] Requesting required capture permissions (camera + microphone)",
     );
 
@@ -416,12 +419,12 @@ export async function requestRequiredCapturePermissions(): Promise<boolean> {
     const allGranted = camera && microphone;
 
     if (!allGranted) {
-      console.warn("[Permissions] Not all required permissions were granted");
+      logger.warn("[Permissions] Not all required permissions were granted");
     }
 
     return allGranted;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Permissions] Failed to request required permissions:",
       error,
     );

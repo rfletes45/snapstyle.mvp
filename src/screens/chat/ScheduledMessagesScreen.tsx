@@ -38,6 +38,9 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/chat/ScheduledMessagesScreen");
 type Props = NativeStackScreenProps<any, "ScheduledMessages">;
 
 export default function ScheduledMessagesScreen({ navigation }: Props) {
@@ -63,7 +66,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
       const result = await getScheduledMessages(user.uid, statusFilter);
       setMessages(result);
     } catch (err) {
-      console.error("Error loading scheduled messages:", err);
+      logger.error("Error loading scheduled messages:", err);
       setError("Couldn't load scheduled messages");
     }
   }, [user, filter]);
@@ -103,7 +106,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
   };
 
   const handleCancel = async (messageId: string) => {
-    console.log(
+    logger.info(
       "[ScheduledMessagesScreen] handleCancel called for:",
       messageId,
     );
@@ -121,17 +124,17 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
     }
 
     const performCancel = async () => {
-      console.log("[ScheduledMessagesScreen] User confirmed cancel");
+      logger.info("[ScheduledMessagesScreen] User confirmed cancel");
       try {
         if (!user) {
-          console.error("[ScheduledMessagesScreen] No user found");
+          logger.error("[ScheduledMessagesScreen] No user found");
           return;
         }
-        console.log(
+        logger.info(
           "[ScheduledMessagesScreen] Calling cancelScheduledMessage...",
         );
         await cancelScheduledMessage(messageId, user.uid);
-        console.log("[ScheduledMessagesScreen] Cancel successful");
+        logger.info("[ScheduledMessagesScreen] Cancel successful");
 
         if (isWeb) {
           window.alert("Message has been cancelled");
@@ -141,7 +144,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
 
         loadMessages();
       } catch (error: any) {
-        console.error(
+        logger.error(
           "[ScheduledMessagesScreen] Error cancelling message:",
           error,
         );
@@ -174,7 +177,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
   };
 
   const handleDelete = async (messageId: string) => {
-    console.log(
+    logger.info(
       "[ScheduledMessagesScreen] handleDelete called for:",
       messageId,
     );
@@ -192,17 +195,17 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
     }
 
     const performDelete = async () => {
-      console.log("[ScheduledMessagesScreen] User confirmed delete");
+      logger.info("[ScheduledMessagesScreen] User confirmed delete");
       try {
         if (!user) {
-          console.error("[ScheduledMessagesScreen] No user found");
+          logger.error("[ScheduledMessagesScreen] No user found");
           return;
         }
-        console.log(
+        logger.info(
           "[ScheduledMessagesScreen] Calling deleteScheduledMessage...",
         );
         await deleteScheduledMessage(messageId, user.uid);
-        console.log("[ScheduledMessagesScreen] Delete successful");
+        logger.info("[ScheduledMessagesScreen] Delete successful");
 
         if (isWeb) {
           window.alert("Message has been deleted");
@@ -212,7 +215,7 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
 
         loadMessages();
       } catch (error: any) {
-        console.error(
+        logger.error(
           "[ScheduledMessagesScreen] Error deleting message:",
           error,
         );

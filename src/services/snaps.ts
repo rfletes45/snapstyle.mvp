@@ -10,6 +10,9 @@
 import { deleteDoc, doc, Timestamp, updateDoc } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/snaps");
 /**
  * Mark picture as opened and delete message document (view-once flow)
  * Records opening metadata and immediately deletes the message doc
@@ -29,7 +32,7 @@ export async function markSnapOpened(
     const messageDocRef = doc(db, "Chats", chatId, "Messages", messageId);
 
     // Update with opening metadata
-    console.log(
+    logger.info(
       "🔵 [markSnapOpened] Marking picture as opened:",
       messageId,
       "by:",
@@ -41,12 +44,12 @@ export async function markSnapOpened(
     });
 
     // Immediately delete the message document (view-once)
-    console.log("🔵 [markSnapOpened] Deleting picture message document");
+    logger.info("🔵 [markSnapOpened] Deleting picture message document");
     await deleteDoc(messageDocRef);
 
-    console.log("✅ [markSnapOpened] Picture deleted after viewing");
+    logger.info("✅ [markSnapOpened] Picture deleted after viewing");
   } catch (error: any) {
-    console.error("❌ [markSnapOpened] Error:", error);
+    logger.error("❌ [markSnapOpened] Error:", error);
     throw error;
   }
 }

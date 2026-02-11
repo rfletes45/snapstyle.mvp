@@ -27,22 +27,25 @@ import {
   GroupCallRole,
   GroupCallSettings,
   MAX_GROUP_PARTICIPANTS,
-} from "../../types/call";
-import { getAuthInstance, getFirestoreInstance } from "../firebase";
+} from "@/types/call";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 import { callKeepService } from "./callKeepService";
 import { webRTCService } from "./webRTCService";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/groupCallService");
 // Lazy getters to avoid Firebase initialization issues at module load time
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
 
 // Simple logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[GroupCallService] ${msg}`, data ?? "");
+  logger.info(`[GroupCallService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[GroupCallService] ${msg}`, error ?? "");
+  logger.error(`[GroupCallService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[GroupCallService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[GroupCallService] ${msg}`, data ?? "");
 
 // Default group call settings
 const DEFAULT_GROUP_CALL_SETTINGS: GroupCallSettings = {

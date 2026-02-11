@@ -9,13 +9,12 @@
 import {
   Canvas,
   LinearGradient,
-  RadialGradient,
   RoundedRect,
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 
 interface SkiaGameBoardProps {
   /** Total width of the board in pixels */
@@ -48,6 +47,45 @@ export function SkiaGameBoard({
 }: SkiaGameBoardProps) {
   const totalW = width + borderWidth * 2;
   const totalH = height + borderWidth * 2;
+
+  // On web, Skia Canvas renders nothing visible — use CSS styling instead
+  if (Platform.OS === "web") {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            width: totalW,
+            height: totalH,
+            backgroundColor: gradientColors[gradientColors.length - 1],
+            borderRadius: borderRadius + borderWidth,
+            borderWidth,
+            borderColor,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.4,
+            shadowRadius: innerShadowBlur,
+            elevation: 6,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.content,
+            {
+              top: 0,
+              left: 0,
+              width,
+              height,
+              borderRadius,
+            },
+          ]}
+        >
+          {children}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { width: totalW, height: totalH }]}>

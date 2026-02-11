@@ -15,13 +15,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import {
   ThemeId,
   ThemeMeta,
   useAppTheme,
   useColors,
-} from "../store/ThemeContext";
+} from "@/store/ThemeContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 3) / 2;

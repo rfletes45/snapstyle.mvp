@@ -33,6 +33,9 @@ import {
   UseGameNavigationOptions,
 } from "./useGameNavigation";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGameCompletion");
 // =============================================================================
 // Types
 // =============================================================================
@@ -190,13 +193,13 @@ export function useGameCompletion(
       };
 
       if (!userId) {
-        console.warn("[useGameCompletion] No user ID available");
+        logger.warn("[useGameCompletion] No user ID available");
         return defaultResult;
       }
 
       // Check if already processed
       if (processedMatchesRef.current.has(match.id)) {
-        console.log("[useGameCompletion] Match already processed:", match.id);
+        logger.info("[useGameCompletion] Match already processed:", match.id);
         return lastResult || defaultResult;
       }
 
@@ -212,16 +215,18 @@ export function useGameCompletion(
         const isDraw = !match.winnerId && match.status === "completed";
 
         // Calculate duration - completedAt may be on extended match types
-        const matchAny = match as any;
-        const durationMs =
-          (matchAny.completedAt || Date.now()) - match.createdAt;
+        const completedAt =
+          "completedAt" in match && typeof match.completedAt === "number"
+            ? match.completedAt
+            : Date.now();
+        const durationMs = completedAt - match.createdAt;
 
         // Get user stats (including this game)
         let stats: GameHistoryStats | null = null;
         try {
           stats = await calculateUserStats(userId, match.gameType);
         } catch (error) {
-          console.warn("[useGameCompletion] Failed to calculate stats:", error);
+          logger.warn("[useGameCompletion] Failed to calculate stats:", error);
           // Create minimal stats for achievement checking
           stats = {
             totalGames: 1,
@@ -229,7 +234,7 @@ export function useGameCompletion(
             losses: !isWinner && !isDraw ? 1 : 0,
             draws: isDraw ? 1 : 0,
             winRate: isWinner ? 100 : 0,
-            byGameType: {} as any,
+            byGameType: {},
             currentStreak: {
               type: isWinner ? "win" : isDraw ? "none" : "loss",
               count: 1,
@@ -289,13 +294,13 @@ export function useGameCompletion(
               onAchievementsAwarded(achievementResult.awardedDefinitions);
             }
 
-            console.log(
+            logger.info(
               `[useGameCompletion] Awarded ${achievementResult.awarded.length} achievements:`,
               achievementResult.awarded,
             );
           }
         } catch (error) {
-          console.error("[useGameCompletion] Achievement check failed:", error);
+          logger.error("[useGameCompletion] Achievement check failed:", error);
         }
 
         // Build result
@@ -320,7 +325,7 @@ export function useGameCompletion(
 
         return result;
       } catch (error) {
-        console.error(
+        logger.error(
           "[useGameCompletion] Error processing completion:",
           error,
         );

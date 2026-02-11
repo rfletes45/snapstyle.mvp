@@ -11,8 +11,11 @@ import {
   FaceEffectConfig,
   FaceLandmarks,
   Point,
-} from "../../types/camera";
+} from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/faceDetectionService");
 /**
  * Face Effects Library (16 total effects)
  */
@@ -237,13 +240,13 @@ export const FACE_EFFECTS_LIBRARY: Record<FaceEffect, FaceEffectConfig> = {
  */
 export async function initializeFaceDetection(): Promise<void> {
   try {
-    console.log("[Face Detection Service] Initializing face detection");
+    logger.info("[Face Detection Service] Initializing face detection");
 
     // Delegate to native face detection
     const { initializeFaceDetection } = await import("./nativeFaceDetection");
     await initializeFaceDetection();
   } catch (error) {
-    console.error("[Face Detection Service] Failed to initialize:", error);
+    logger.error("[Face Detection Service] Failed to initialize:", error);
     throw error;
   }
 }
@@ -260,7 +263,7 @@ export async function detectFacesInFrame(
       await import("./nativeFaceDetection");
     return nativeDetect(frameData);
   } catch (error) {
-    console.error("[Face Detection Service] Face detection failed:", error);
+    logger.error("[Face Detection Service] Face detection failed:", error);
     return { faces: [], timestamp: Date.now() };
   }
 }
@@ -533,5 +536,5 @@ export function getSelfieEffects(): FaceEffectConfig[] {
  */
 export function cleanupFaceDetection(): void {
   // Release ML Kit model
-  console.log("[Face Detection Service] Cleaning up resources");
+  logger.info("[Face Detection Service] Cleaning up resources");
 }

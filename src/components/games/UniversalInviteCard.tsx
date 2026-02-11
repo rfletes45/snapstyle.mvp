@@ -12,7 +12,6 @@
  * @file src/components/games/UniversalInviteCard.tsx
  */
 
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
@@ -26,10 +25,13 @@ import {
 
 import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
 import type { UniversalGameInvite } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { PlayerSlots } from "./PlayerSlots";
 import { QueueProgressBar } from "./QueueProgressBar";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/games/UniversalInviteCard");
 // =============================================================================
 // Types
 // =============================================================================
@@ -43,14 +45,14 @@ export interface UniversalInviteCardProps {
   onJoin: () => Promise<void>;
   /** Leave the game queue */
   onLeave: () => Promise<void>;
-  /** Join as spectator */
-  onSpectate: () => Promise<void>;
   /** Start game early (host only) - optional until Phase 3 */
   onStartEarly?: () => Promise<void>;
   /** Cancel the invite (host only) */
   onCancel: () => Promise<void>;
   /** Navigate to active game */
   onPlay?: (gameId: string, gameType: string) => void;
+  /** Spectate an active game (Colyseus-based) */
+  onSpectate?: () => void;
   /** Compact mode */
   compact?: boolean;
 }
@@ -103,10 +105,10 @@ export function UniversalInviteCard({
   currentUserId,
   onJoin,
   onLeave,
-  onSpectate,
   onStartEarly,
   onCancel,
   onPlay,
+  onSpectate,
   compact = false,
 }: UniversalInviteCardProps) {
   const theme = useTheme();
@@ -119,8 +121,6 @@ export function UniversalInviteCard({
   const hasJoined = invite.claimedSlots.some(
     (s) => s.playerId === currentUserId,
   );
-  const isSpectating =
-    invite.spectators?.some((s) => s.userId === currentUserId) ?? false;
   const isFull = invite.claimedSlots.length >= invite.requiredPlayers;
   const slotsRemaining = invite.requiredPlayers - invite.claimedSlots.length;
   const isExpired = Date.now() > invite.expiresAt;
@@ -139,14 +139,6 @@ export function UniversalInviteCard({
     hasJoined &&
     !isHost &&
     ["pending", "filling", "ready"].includes(invite.status);
-  // Spectate requires: not a player, spectating enabled, game is active (has gameId)
-  // Note: "ready" status means players joined but host hasn't started the game yet
-  const canSpectate =
-    !hasJoined &&
-    !isSpectating &&
-    invite.spectatingEnabled &&
-    invite.status === "active" &&
-    !!invite.gameId;
   // Can start early if host and have minimum players, OR can start if game is ready
   const canStartEarly =
     isHost &&
@@ -157,6 +149,12 @@ export function UniversalInviteCard({
   const canCancel =
     isHost && ["pending", "filling", "ready"].includes(invite.status);
   const canPlay = hasJoined && invite.gameId && invite.status === "active";
+  const canSpectate =
+    !hasJoined &&
+    onSpectate &&
+    invite.spectatingEnabled &&
+    invite.gameId &&
+    invite.status === "active";
 
   // Game & status info
   const { name: gameName, icon: gameIcon } = getGameInfo(invite.gameType);
@@ -187,7 +185,7 @@ export function UniversalInviteCard({
     ) {
       // Small delay to ensure game document is ready in Firestore
       const timer = setTimeout(() => {
-        console.log(
+        logger.info(
           `[UniversalInviteCard] Auto-navigating to ${invite.gameType} game: ${invite.gameId}`,
         );
         onPlay(invite.gameId!, invite.gameType);
@@ -206,7 +204,7 @@ export function UniversalInviteCard({
       try {
         await action();
       } catch (error) {
-        console.error(`[UniversalInviteCard] ${actionName} failed:`, error);
+        logger.error(`[UniversalInviteCard] ${actionName} failed:`, error);
       } finally {
         setLoading(null);
       }
@@ -317,20 +315,6 @@ export function UniversalInviteCard({
               </Button>
             )}
 
-            {/* Spectate Button (for non-participants when game is active) */}
-            {canSpectate && (
-              <Button
-                mode="outlined"
-                compact
-                icon="eye"
-                onPress={() => handleAction("spectate", onSpectate)}
-                loading={loading === "spectate"}
-                disabled={loading !== null}
-              >
-                Spectate
-              </Button>
-            )}
-
             {/* Play Button (when game is active) */}
             {canPlay && onPlay && (
               <Button
@@ -339,6 +323,13 @@ export function UniversalInviteCard({
                 onPress={() => onPlay(invite.gameId!, invite.gameType)}
               >
                 Play
+              </Button>
+            )}
+
+            {/* Spectate Button (when game is active, user not playing) */}
+            {canSpectate && (
+              <Button mode="outlined" compact icon="eye" onPress={onSpectate}>
+                Watch
               </Button>
             )}
           </View>
@@ -403,25 +394,6 @@ export function UniversalInviteCard({
           />
         </View>
 
-        {/* Spectators */}
-        {invite.spectators && invite.spectators.length > 0 && (
-          <View style={styles.spectatorsRow}>
-            <MaterialCommunityIcons
-              name="eye"
-              size={16}
-              color={theme.colors.onSurfaceVariant}
-            />
-            <Text
-              style={[
-                styles.spectatorsText,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
-              {invite.spectators.length} watching
-            </Text>
-          </View>
-        )}
-
         <Divider style={styles.divider} />
 
         {/* Actions */}
@@ -450,19 +422,6 @@ export function UniversalInviteCard({
             </Button>
           )}
 
-          {canSpectate && (
-            <Button
-              mode="outlined"
-              icon="eye"
-              onPress={() => handleAction("spectate", onSpectate)}
-              loading={loading === "spectate"}
-              disabled={loading !== null}
-              style={styles.actionButton}
-            >
-              Spectate
-            </Button>
-          )}
-
           {canPlay && onPlay && (
             <Button
               mode="contained"
@@ -485,12 +444,15 @@ export function UniversalInviteCard({
             </Text>
           )}
 
-          {isSpectating && (
-            <Text
-              style={[styles.spectatingText, { color: theme.colors.primary }]}
+          {canSpectate && (
+            <Button
+              mode="outlined"
+              icon="eye"
+              onPress={onSpectate}
+              style={styles.actionButton}
             >
-              👁 You're spectating
-            </Text>
+              Spectate
+            </Button>
           )}
         </View>
 
@@ -635,15 +597,6 @@ const styles = StyleSheet.create({
   slotsSection: {
     marginBottom: Spacing.sm,
   },
-  spectatorsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    marginBottom: Spacing.sm,
-  },
-  spectatorsText: {
-    fontSize: 12,
-  },
   divider: {
     marginVertical: Spacing.sm,
   },
@@ -659,10 +612,6 @@ const styles = StyleSheet.create({
   waitingText: {
     fontSize: 13,
     fontStyle: "italic",
-  },
-  spectatingText: {
-    fontSize: 13,
-    fontWeight: "500",
   },
   hostControls: {
     marginTop: Spacing.xs,

@@ -11,12 +11,10 @@ import {
   RadialGradient,
   RoundedRect,
   Shadow,
-  Text as SkiaText,
-  useFont,
   vec,
 } from "@shopify/react-native-skia";
 import React from "react";
-import { StyleSheet, View, Text, Platform } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 interface Skia2048TileProps {
   /** Tile value (2, 4, 8, 16, ...) */
@@ -85,20 +83,11 @@ export function Skia2048Tile({ value, size }: Skia2048TileProps) {
 
         {/* Glow for high-value tiles */}
         {isHighValue && (
-          <RoundedRect
-            x={0}
-            y={0}
-            width={size}
-            height={size}
-            r={borderRadius}
-          >
+          <RoundedRect x={0} y={0} width={size} height={size} r={borderRadius}>
             <RadialGradient
               c={vec(size / 2, size / 2)}
               r={size * 0.6}
-              colors={[
-                "rgba(237, 197, 63, 0.25)",
-                "rgba(237, 197, 63, 0)",
-              ]}
+              colors={["rgba(237, 197, 63, 0.25)", "rgba(237, 197, 63, 0)"]}
             />
           </RoundedRect>
         )}

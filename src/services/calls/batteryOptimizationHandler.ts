@@ -5,13 +5,16 @@
 
 import { Alert, Linking, Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/batteryOptimizationHandler");
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[BatteryOpt] ${msg}`, data ?? "");
+  logger.info(`[BatteryOpt] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[BatteryOpt] ${msg}`, error ?? "");
+  logger.error(`[BatteryOpt] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[BatteryOpt] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[BatteryOpt] ${msg}`, data ?? "");
 
 // Battery optimization states
 export type BatteryOptimizationState =

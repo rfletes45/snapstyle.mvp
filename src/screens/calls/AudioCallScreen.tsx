@@ -6,12 +6,12 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import React, { JSX, useEffect } from "react";
 import { StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Avatar from "../../components/Avatar";
-import { CallControls } from "../../components/calls/CallControls";
-import { useCallContext } from "../../contexts/CallContext";
-import { useCall } from "../../hooks/calls";
-import { useColors } from "../../store/ThemeContext";
-import { formatDurationSecondsPadded as formatDuration } from "../../utils/time";
+import Avatar from "@/components/Avatar";
+import { CallControls } from "@/components/calls/CallControls";
+import { useCallContext } from "@/contexts/CallContext";
+import { useCall } from "@/hooks/calls";
+import { useColors } from "@/store/ThemeContext";
+import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 
 type AudioCallRouteParams = {
   AudioCall: {

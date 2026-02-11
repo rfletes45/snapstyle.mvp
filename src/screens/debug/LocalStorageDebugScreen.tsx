@@ -74,14 +74,17 @@ import {
 } from "@/services/sync/syncEngine";
 
 // Feature flags
-import { USE_LOCAL_STORAGE } from "../../../constants/featureFlags";
+import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 
 // Theme
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // Auth
 import { useAuth } from "@/store/AuthContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/debug/LocalStorageDebugScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -142,21 +145,21 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
   const loadAllData = useCallback(async () => {
     try {
       // First, verify database is accessible
-      console.log("[Debug] loadAllData: Checking database access...");
+      logger.info("[Debug] loadAllData: Checking database access...");
       try {
         const db = getDatabase();
-        console.log("[Debug] loadAllData: Database accessed successfully");
+        logger.info("[Debug] loadAllData: Database accessed successfully");
       } catch (dbError: any) {
-        console.error("[Debug] loadAllData: Database access failed:", dbError);
+        logger.error("[Debug] loadAllData: Database access failed:", dbError);
         showSnackbar(`Database error: ${dbError.message}`, "error");
         return;
       }
 
       // Database stats
-      console.log("[Debug] loadAllData: Getting database stats...");
+      logger.info("[Debug] loadAllData: Getting database stats...");
       const stats = getDatabaseStats();
       setDbStats(stats);
-      console.log("[Debug] loadAllData: Stats:", stats);
+      logger.info("[Debug] loadAllData: Stats:", stats);
 
       // Sync state
       const sync = getSyncState();
@@ -169,7 +172,7 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
         const size = await getCacheSize();
         setCacheSize(size);
       } catch (e) {
-        console.log("[Debug] Cache not initialized yet");
+        logger.info("[Debug] Cache not initialized yet");
       }
 
       // Recent messages (first conversation or test)
@@ -195,7 +198,7 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
       // Background sync status
       setBackgroundSyncActive(isBackgroundSyncRunning());
     } catch (error: any) {
-      console.error("[Debug] Error loading data:", error);
+      logger.error("[Debug] Error loading data:", error);
       Alert.alert(
         "Data Loading Error",
         `Failed to load debug data:\n\n${error.message}\n\nStack: ${error.stack}`,
@@ -255,20 +258,20 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
   const handleInsertTestMessage = async () => {
     setActionLoading("insert");
     try {
-      console.log("[Debug] Starting test message insert...");
-      console.log("[Debug] User ID:", uid);
+      logger.info("[Debug] Starting test message insert...");
+      logger.info("[Debug] User ID:", uid);
 
       // Ensure test conversation exists first (required for foreign key constraint)
-      console.log("[Debug] Creating/getting test conversation...");
+      logger.info("[Debug] Creating/getting test conversation...");
       let conversation;
       try {
         conversation = getOrCreateDMConversation("test-conversation");
-        console.log(
+        logger.info(
           "[Debug] Conversation result:",
           JSON.stringify(conversation),
         );
       } catch (convError: any) {
-        console.error("[Debug] Failed to create conversation:", convError);
+        logger.error("[Debug] Failed to create conversation:", convError);
         Alert.alert(
           "Conversation Creation Failed",
           `Error: ${convError.message}\n\nStack: ${convError.stack}`,
@@ -277,7 +280,7 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
         throw convError;
       }
 
-      console.log("[Debug] Inserting message...");
+      logger.info("[Debug] Inserting message...");
       let message;
       try {
         // Use skipSync: true so test messages don't try to sync to Firebase
@@ -291,9 +294,9 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
           text: `Test message at ${new Date().toLocaleTimeString()}`,
           skipSync: true, // Local-only test message
         });
-        console.log("[Debug] Message inserted successfully:", message.id);
+        logger.info("[Debug] Message inserted successfully:", message.id);
       } catch (insertError: any) {
-        console.error("[Debug] Failed to insert message:", insertError);
+        logger.error("[Debug] Failed to insert message:", insertError);
         Alert.alert(
           "Message Insert Failed",
           `Error: ${insertError.message}\n\nStack: ${insertError.stack}`,
@@ -308,10 +311,10 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
       );
       await loadAllData();
     } catch (error: any) {
-      console.error("[Debug] Insert failed with error:", error);
-      console.error("[Debug] Error name:", error.name);
-      console.error("[Debug] Error message:", error.message);
-      console.error("[Debug] Error stack:", error.stack);
+      logger.error("[Debug] Insert failed with error:", error);
+      logger.error("[Debug] Error name:", error.name);
+      logger.error("[Debug] Error message:", error.message);
+      logger.error("[Debug] Error stack:", error.stack);
       showSnackbar(`Insert failed: ${error.message}`, "error");
     } finally {
       setActionLoading(null);
@@ -686,19 +689,19 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
             icon="database-check"
             onPress={() => {
               try {
-                console.log("[Debug] Testing database connection...");
+                logger.info("[Debug] Testing database connection...");
                 const db = getDatabase();
                 const result = db.getFirstSync<{ test: number }>(
                   "SELECT 1 as test",
                 );
-                console.log("[Debug] Database test result:", result);
+                logger.info("[Debug] Database test result:", result);
                 Alert.alert(
                   "Database Test",
                   `✅ Database is working!\n\nTest query returned: ${JSON.stringify(result)}`,
                   [{ text: "OK" }],
                 );
               } catch (error: any) {
-                console.error("[Debug] Database test failed:", error);
+                logger.error("[Debug] Database test failed:", error);
                 Alert.alert(
                   "Database Test Failed",
                   `❌ Error: ${error.message}\n\nStack: ${error.stack}`,

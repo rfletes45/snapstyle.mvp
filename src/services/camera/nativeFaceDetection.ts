@@ -16,8 +16,33 @@ import {
   FaceDetectionResult,
   FaceLandmarks,
   Point,
-} from "../../types/camera";
+} from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/nativeFaceDetection");
+
+interface RawDetectedFace {
+  faceID?: number;
+  bounds?: {
+    origin?: { x?: number; y?: number };
+    size?: { width?: number; height?: number };
+  };
+  landmarks?: RawDetectedLandmark[];
+  rollAngle?: number;
+  yawAngle?: number;
+  isLeftEyeOpen?: boolean;
+  isRightEyeOpen?: boolean;
+}
+
+interface RawDetectedLandmark {
+  type?: string;
+  position?: { x?: number; y?: number };
+}
+
+interface RawFaceDetectionResult {
+  faces: RawDetectedFace[];
+}
 // Stub constants matching the old expo-face-detector API
 const FaceDetector = {
   FaceDetectorMode: { fast: 1, accurate: 2 },
@@ -37,8 +62,11 @@ const FaceDetector = {
   setDetectionMode: async (_mode: number) => {},
   setLandmarkDetectionMode: async (_mode: number) => {},
   setClassifications: async (_mode: number) => {},
-  detectFaces: async (_uri: string, _options?: any) => ({
-    faces: [] as any[],
+  detectFaces: async (
+    _uri: string,
+    _options?: unknown,
+  ): Promise<RawFaceDetectionResult> => ({
+    faces: [],
   }),
 };
 
@@ -73,7 +101,7 @@ export async function initializeFaceDetection(
   mode: FaceDetectionMode = FaceDetectionMode.FAST,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Native Face Detection] Initializing face detection (${mode === FaceDetectionMode.FAST ? "FAST" : "ACCURATE"} mode)`,
     );
 
@@ -86,9 +114,9 @@ export async function initializeFaceDetection(
       FaceDetector.FaceDetectorClassifications.all,
     );
 
-    console.log("[Native Face Detection] Face detection initialized");
+    logger.info("[Native Face Detection] Face detection initialized");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Face Detection] Failed to initialize face detection:",
       error,
     );
@@ -104,7 +132,7 @@ export async function detectFacesInImage(
   imageUri: string,
 ): Promise<FaceDetectionResult> {
   try {
-    console.log("[Native Face Detection] Detecting faces in image");
+    logger.info("[Native Face Detection] Detecting faces in image");
 
     // Detect faces using expo-face-detector
     const result = await FaceDetector.detectFaces(imageUri, {
@@ -115,12 +143,14 @@ export async function detectFacesInImage(
 
     // Convert to internal format
     const detectedFaces = result.faces
-      .filter(
-        (face) => face.bounds.size.width > 50 && face.bounds.size.height > 50,
-      ) // Filter small faces
+      .filter((face) => {
+        const width = face.bounds?.size?.width ?? 0;
+        const height = face.bounds?.size?.height ?? 0;
+        return width > 50 && height > 50;
+      }) // Filter small faces
       .map((face, index) => convertToDetectedFace(face, index));
 
-    console.log(
+    logger.info(
       `[Native Face Detection] Detected ${detectedFaces.length} faces`,
     );
 
@@ -129,7 +159,7 @@ export async function detectFacesInImage(
       timestamp: Date.now(),
     };
   } catch (error) {
-    console.error("[Native Face Detection] Face detection failed:", error);
+    logger.error("[Native Face Detection] Face detection failed:", error);
     return {
       faces: [],
       timestamp: Date.now(),
@@ -171,7 +201,7 @@ export async function detectFacesInFrame(
       timestamp: Date.now(),
     };
   } catch (error) {
-    console.error(
+    logger.error(
       "[Native Face Detection] Real-time face detection failed:",
       error,
     );
@@ -185,7 +215,7 @@ export async function detectFacesInFrame(
 /**
  * Convert expo-face-detector face to our format
  */
-function convertToDetectedFace(face: any, index: number): DetectedFace {
+function convertToDetectedFace(face: RawDetectedFace, index: number): DetectedFace {
   const landmarks = extractLandmarks(face);
 
   return {
@@ -210,7 +240,7 @@ function convertToDetectedFace(face: any, index: number): DetectedFace {
 /**
  * Extract facial landmarks from detected face
  */
-function extractLandmarks(face: any): FaceLandmarks {
+function extractLandmarks(face: RawDetectedFace): FaceLandmarks {
   const defaultPoint: Point = { x: 0, y: 0 };
 
   // Initialize with defaults for all required fields
@@ -232,7 +262,7 @@ function extractLandmarks(face: any): FaceLandmarks {
   }
 
   // Map detected landmarks to our format
-  face.landmarks.forEach((landmark: any) => {
+  face.landmarks.forEach((landmark: RawDetectedLandmark) => {
     const point: Point = {
       x: landmark.position?.x ?? 0,
       y: landmark.position?.y ?? 0,
@@ -485,9 +515,9 @@ export async function updateDetectionSettings(
       await FaceDetector.setDetectionMode(settings.mode);
     }
 
-    console.log("[Native Face Detection] Settings updated");
+    logger.info("[Native Face Detection] Settings updated");
   } catch (error) {
-    console.error("[Native Face Detection] Failed to update settings:", error);
+    logger.error("[Native Face Detection] Failed to update settings:", error);
     throw error;
   }
 }

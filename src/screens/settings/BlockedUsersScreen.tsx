@@ -12,6 +12,9 @@ import React, { useCallback, useState } from "react";
 import { Alert, FlatList, StyleSheet, View } from "react-native";
 import { Button, Card, Text, useTheme } from "react-native-paper";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/settings/BlockedUsersScreen");
 interface BlockedUserWithProfile extends BlockedUser {
   username?: string;
   displayName?: string;
@@ -38,7 +41,7 @@ export default function BlockedUsersScreen({ navigation }: any) {
       const users = await getBlockedUsersWithProfiles(uid);
       setBlockedUsers(users);
     } catch (err) {
-      console.error("Error loading blocked users:", err);
+      logger.error("Error loading blocked users:", err);
       setError("Couldn't load blocked users");
     } finally {
       setLoading(false);

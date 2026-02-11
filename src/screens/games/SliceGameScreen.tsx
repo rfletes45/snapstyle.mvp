@@ -7,10 +7,22 @@
  * 3. Slice combos for bonus points
  * 4. Avoid bombs — they end the game!
  *
- * Supports: Single-player quick play, high score
+ * Supports: Single-player quick play, Colyseus multiplayer
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import {
+  CountdownOverlay,
+  GameOverOverlay,
+  OpponentScoreBar,
+  ReconnectingOverlay,
+  WaitingOverlay,
+} from "@/components/games/MultiplayerOverlay";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,26 +34,30 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Dimensions,
-  GestureResponderEvent,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  View,
-} from "react-native";
 import {
   Canvas,
-  Circle as SkiaCircle,
   LinearGradient,
   RadialGradient,
   RoundedRect,
-  Shadow,
+  Circle as SkiaCircle,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 // =============================================================================
 // Constants
@@ -82,11 +98,42 @@ const SHAPE_CONFIGS = [
 // Component
 // =============================================================================
 
-export default function SliceGameScreen({ navigation }: { navigation: any }) {
+function SliceGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "slice" });
+  void __codexGameCompletion;
+
+  useGameBackHandler({ gameType: "slice", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    GAME_TYPE,
+    route?.params?.matchId,
+  );
+  const mp = useMultiplayerGame({
+    gameType: GAME_TYPE,
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   const [gameState, setGameState] = useState<GameState>("menu");
   const [score, setScore] = useState(0);
@@ -95,6 +142,13 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
   const [isSending, setIsSending] = useState(false);
   const [lives, setLives] = useState(3);
   const [combo, setCombo] = useState(0);
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "slice",
+  });
 
   const shapesRef = useRef<FlyingShape[]>([]);
   const scoreRef = useRef(0);
@@ -109,17 +163,42 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
   const startTimeRef = useRef(0);
 
   useEffect(() => {
+    spectatorHost.startHosting();
+  }, [spectatorHost.startHosting]);
+
+  useEffect(() => {
     if (currentFirebaseUser) {
       getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(setPersonalBest);
     }
   }, [currentFirebaseUser]);
+
+  useEffect(() => {
+    if (gameState !== "playing") return;
+    spectatorHost.updateGameState(
+      JSON.stringify({
+        phase: gameState,
+        shapes: shapesRef.current.map((shape) => ({
+          x: shape.x,
+          y: shape.y,
+          isBomb: shape.isBomb,
+          sliced: shape.sliced,
+        })),
+        combo,
+      }),
+      score,
+      1,
+      lives,
+    );
+  }, [combo, gameState, lives, score, spectatorHost.updateGameState]);
 
   const endGame = useCallback(() => {
     if (loopRef.current) cancelAnimationFrame(loopRef.current);
     if (spawnRef.current) clearInterval(spawnRef.current);
     setScore(scoreRef.current);
     setGameState("result");
+    spectatorHost.endHosting(scoreRef.current);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    if (mp.isMultiplayer) mp.reportFinished();
     if (currentFirebaseUser) {
       const duration = Date.now() - startTimeRef.current;
       recordGameSession(currentFirebaseUser.uid, {
@@ -128,7 +207,7 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
         duration,
       });
     }
-  }, [currentFirebaseUser]);
+  }, [currentFirebaseUser, mp, spectatorHost.endHosting]);
 
   const spawnShape = useCallback(() => {
     const isBomb = Math.random() < 0.15;
@@ -163,6 +242,7 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
     setLives(3);
     setCombo(0);
     setGameState("playing");
+    spectatorHost.startHosting();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Spawn timer
@@ -187,6 +267,9 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
       );
       if (fallen.length > 0) {
         livesRef.current -= fallen.length;
+        if (mp.isMultiplayer) {
+          for (let i = 0; i < fallen.length; i++) mp.reportLifeLost();
+        }
         setLives(Math.max(0, livesRef.current));
         comboRef.current = 0;
         setCombo(0);
@@ -206,50 +289,62 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
     };
 
     loopRef.current = requestAnimationFrame(loop);
-  }, [endGame, spawnShape]);
+  }, [endGame, spawnShape, spectatorHost.startHosting]);
 
-  // Slice detection via PanResponder
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt: GestureResponderEvent) => {
-        const { pageX, pageY } = evt.nativeEvent;
-        sliceTrailRef.current = [{ x: pageX, y: pageY }];
-        setSliceTrail([{ x: pageX, y: pageY }]);
-      },
-      onPanResponderMove: (evt: GestureResponderEvent) => {
-        const { pageX, pageY } = evt.nativeEvent;
-        sliceTrailRef.current.push({ x: pageX, y: pageY });
-        if (sliceTrailRef.current.length > 20) sliceTrailRef.current.shift();
-        setSliceTrail([...sliceTrailRef.current]);
+  const handleSliceStart = useCallback((x: number, y: number) => {
+    sliceTrailRef.current = [{ x, y }];
+    setSliceTrail([{ x, y }]);
+  }, []);
 
-        // Check intersections with shapes
-        for (const shape of shapesRef.current) {
-          if (shape.sliced) continue;
-          const dist = Math.hypot(pageX - shape.x, pageY - shape.y);
-          if (dist < shape.size) {
-            shape.sliced = true;
-            if (shape.isBomb) {
-              endGame();
-              return;
-            }
-            comboRef.current++;
-            const comboBonus = comboRef.current > 1 ? comboRef.current : 0;
-            scoreRef.current += 1 + comboBonus;
-            setScore(scoreRef.current);
-            setCombo(comboRef.current);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const handleSliceMove = useCallback(
+    (x: number, y: number) => {
+      sliceTrailRef.current.push({ x, y });
+      if (sliceTrailRef.current.length > 20) sliceTrailRef.current.shift();
+      setSliceTrail([...sliceTrailRef.current]);
+
+      // Check intersections with shapes
+      for (const shape of shapesRef.current) {
+        if (shape.sliced) continue;
+        const dist = Math.hypot(x - shape.x, y - shape.y);
+        if (dist < shape.size) {
+          shape.sliced = true;
+          if (shape.isBomb) {
+            endGame();
+            return;
           }
+          comboRef.current++;
+          if (mp.isMultiplayer) mp.reportCombo(comboRef.current);
+          const comboBonus = comboRef.current > 1 ? comboRef.current : 0;
+          scoreRef.current += 1 + comboBonus;
+          setScore(scoreRef.current);
+          if (mp.isMultiplayer) mp.reportScore(scoreRef.current);
+          setCombo(comboRef.current);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-      },
-      onPanResponderRelease: () => {
-        sliceTrailRef.current = [];
-        setSliceTrail([]);
-        comboRef.current = 0;
-        setCombo(0);
-      },
-    }),
+      }
+    },
+    [endGame, mp],
+  );
+
+  const handleSliceEnd = useCallback(() => {
+    sliceTrailRef.current = [];
+    setSliceTrail([]);
+    comboRef.current = 0;
+    setCombo(0);
+  }, []);
+
+  const sliceGesture = useRef(
+    Gesture.Pan()
+      .runOnJS(true)
+      .onStart((event) => {
+        handleSliceStart(event.absoluteX, event.absoluteY);
+      })
+      .onUpdate((event) => {
+        handleSliceMove(event.absoluteX, event.absoluteY);
+      })
+      .onEnd(() => {
+        handleSliceEnd();
+      }),
   ).current;
 
   useEffect(() => {
@@ -282,6 +377,14 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
               {score}
             </Text>
           </View>
+        ) : spectatorHost.spectatorRoomId ? (
+          <TouchableOpacity
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            style={styles.backBtn}
+            accessibilityLabel="Invite spectators"
+          >
+            <MaterialCommunityIcons name="eye" size={22} color={colors.text} />
+          </TouchableOpacity>
         ) : (
           <View style={{ width: 50 }} />
         )}
@@ -306,14 +409,51 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
           >
             Start Slicing
           </Button>
+          {mp.isAvailable && (
+            <Button
+              mode="outlined"
+              onPress={() => {
+                mp.startMultiplayer().then(() => mp.sendReady());
+              }}
+              style={{ borderColor: colors.primary, marginTop: 12 }}
+              textColor={colors.primary}
+              icon="account-multiple"
+            >
+              Multiplayer
+            </Button>
+          )}
         </View>
       )}
 
       {gameState === "playing" && (
-        <View style={styles.playArea} {...panResponder.panHandlers}>
+        <GestureDetector gesture={sliceGesture}>
+          <View style={styles.playArea}>
+          {mp.isMultiplayer && mp.phase === "playing" && (
+            <OpponentScoreBar
+              opponentName={mp.opponentName}
+              opponentScore={mp.opponentScore}
+              myScore={score}
+              timeRemaining={mp.timeRemaining}
+              opponentDisconnected={mp.opponentDisconnected}
+              colors={{
+                primary: colors.primary,
+                background: colors.background,
+                surface: colors.surface,
+                text: colors.text,
+                textSecondary: colors.textSecondary,
+                border: colors.border,
+              }}
+            />
+          )}
           {/* Skia gradient background */}
           <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-            <RoundedRect x={0} y={0} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} r={0}>
+            <RoundedRect
+              x={0}
+              y={0}
+              width={SCREEN_WIDTH}
+              height={SCREEN_HEIGHT}
+              r={0}
+            >
               <LinearGradient
                 start={vec(SCREEN_WIDTH / 2, 0)}
                 end={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT)}
@@ -353,8 +493,15 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
                 },
               ]}
             >
-              <Canvas style={{ width: shape.size, height: shape.size }} pointerEvents="none">
-                <SkiaCircle cx={shape.size / 2} cy={shape.size / 2} r={shape.size / 2}>
+              <Canvas
+                style={{ width: shape.size, height: shape.size }}
+                pointerEvents="none"
+              >
+                <SkiaCircle
+                  cx={shape.size / 2}
+                  cy={shape.size / 2}
+                  r={shape.size / 2}
+                >
                   <RadialGradient
                     c={vec(shape.size / 2, shape.size / 2)}
                     r={shape.size / 2}
@@ -367,7 +514,7 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
               </Canvas>
               <View style={{ position: "absolute", top: 0, left: 0 }}>
                 <MaterialCommunityIcons
-                  name={shape.icon as any}
+                  name={shape.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                   size={shape.size}
                   color={shape.color}
                 />
@@ -407,13 +554,18 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
                     <RadialGradient
                       c={vec(dotSize / 2, dotSize / 2)}
                       r={dotSize / 2}
-                      colors={["#FFFFFF", colors.primary, colors.primary + "00"]}
+                      colors={[
+                        "#FFFFFF",
+                        colors.primary,
+                        colors.primary + "00",
+                      ]}
                     />
                   </SkiaCircle>
                 </Canvas>
               );
             })}
-        </View>
+          </View>
+        </GestureDetector>
       )}
 
       {/* Result */}
@@ -466,6 +618,90 @@ export default function SliceGameScreen({ navigation }: { navigation: any }) {
         }}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Share Score With"
+      />
+
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "slice",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
+      />
+
+      <WaitingOverlay
+        visible={mp.isMultiplayer && mp.phase === "waiting"}
+        onCancel={mp.cancelMultiplayer}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <CountdownOverlay
+        visible={mp.isMultiplayer && mp.phase === "countdown"}
+        count={mp.countdown}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <ReconnectingOverlay
+        visible={mp.isMultiplayer && mp.phase === "reconnecting"}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <GameOverOverlay
+        visible={mp.isMultiplayer && mp.phase === "gameOver"}
+        isWinner={mp.isWinner}
+        isTie={mp.isTie}
+        winnerName={mp.winnerName}
+        myScore={score}
+        opponentScore={mp.opponentScore}
+        opponentName={mp.opponentName}
+        rematchRequested={mp.rematchRequested}
+        onPlayAgain={startGame}
+        onRematch={mp.requestRematch}
+        onAcceptRematch={mp.acceptRematch}
+        onMenu={() => {
+          mp.cancelMultiplayer();
+          setGameState("menu");
+        }}
+        onShare={() => setShowFriendPicker(true)}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
       />
     </View>
   );
@@ -529,3 +765,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(SliceGameScreen, "slice");

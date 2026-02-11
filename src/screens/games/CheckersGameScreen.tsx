@@ -13,10 +13,17 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import {
   Alert,
-  Animated,
   Dimensions,
   StyleSheet,
   TouchableOpacity,
@@ -27,18 +34,25 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
-import SpectatorBanner from "@/components/games/SpectatorBanner";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import {
-  SkiaCheckersPiece,
-} from "@/components/games/graphics/SkiaCheckersPiece";
-import {
-  SkiaCellHighlight,
-} from "@/components/games/graphics/SkiaCellHighlight";
-import {
-  SkiaGameBoard,
-} from "@/components/games/graphics/SkiaGameBoard";
+  DrawOfferDialog,
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
+import { SkiaCellHighlight } from "@/components/games/graphics/SkiaCellHighlight";
+import { SkiaCheckersPiece } from "@/components/games/graphics/SkiaCheckersPiece";
+import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useSpectatorMode } from "@/hooks/useSpectatorMode";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
@@ -57,8 +71,14 @@ import {
   CheckersPosition,
   createInitialCheckersBoard,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+const logger = createLogger("screens/games/CheckersGameScreen");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -90,13 +110,12 @@ interface CheckersGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
-      /** Whether user is spectating (watching only) */
       spectatorMode?: boolean;
     };
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "waiting";
+type GameMode = "menu" | "local" | "online" | "colyseus" | "waiting";
 
 interface ValidMove {
   to: CheckersPosition;
@@ -266,37 +285,34 @@ interface PieceComponentProps {
 }
 
 function PieceComponent({ piece, isSelected, size }: PieceComponentProps) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   useEffect(() => {
     if (isSelected) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scaleAnim, {
-            toValue: 1.1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scaleAnim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start();
+      scale.value = withRepeat(
+        withSequence(
+          withTiming(1.1, { duration: 300 }),
+          withTiming(1, { duration: 300 }),
+        ),
+        -1,
+        false,
+      );
     } else {
-      scaleAnim.setValue(1);
+      cancelAnimation(scale);
+      scale.value = 1;
     }
-  }, [isSelected]);
+
+    return () => {
+      cancelAnimation(scale);
+    };
+  }, [isSelected, scale]);
 
   return (
-    <Animated.View
-      style={{
-        width: size,
-        height: size,
-        transform: [{ scale: scaleAnim }],
-      }}
-    >
+    <Animated.View style={[{ width: size, height: size }, animatedStyle]}>
       <SkiaCheckersPiece
         size={size}
         color={piece.color === "red" ? "red" : "black"}
@@ -337,17 +353,18 @@ function CellComponent({
 
   return (
     <TouchableOpacity
-      style={[
-        styles.cell,
-        { backgroundColor },
-      ]}
+      style={[styles.cell, { backgroundColor }]}
       onPress={onPress}
       disabled={disabled && !isValidMove && !piece}
       activeOpacity={0.8}
     >
       {/* Skia-powered cell highlights */}
       {isSelected && (
-        <SkiaCellHighlight width={CELL_SIZE} height={CELL_SIZE} type="selected" />
+        <SkiaCellHighlight
+          width={CELL_SIZE}
+          height={CELL_SIZE}
+          type="selected"
+        />
       )}
       {isValidMove && (
         <SkiaCellHighlight
@@ -379,13 +396,18 @@ function CellComponent({
 // Main Component
 // =============================================================================
 
-export default function CheckersGameScreen({
+function CheckersGameScreen({
   navigation,
   route,
 }: CheckersGameScreenProps) {
+  useGameBackHandler({ gameType: "checkers", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
+  const isSpectator = route.params?.spectatorMode === true;
 
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<CheckersMatch | null>(null);
@@ -394,20 +416,6 @@ export default function CheckersGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-
-  // Spectator mode hook
-  const {
-    isSpectator,
-    spectatorCount,
-    leaveSpectatorMode,
-    loading: spectatorLoading,
-  } = useSpectatorMode({
-    matchId,
-    inviteId: route.params?.inviteId,
-    spectatorMode: route.params?.spectatorMode,
-    userId: currentFirebaseUser?.uid,
-    userName: currentFirebaseUser?.displayName || "Spectator",
-  });
 
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
@@ -447,12 +455,49 @@ export default function CheckersGameScreen({
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
 
-  // Handle spectator leave
-  const handleLeaveSpectator = useCallback(async () => {
-    await leaveSpectatorMode();
-    navigation.goBack();
-  }, [leaveSpectatorMode, navigation]);
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("checkers_game");
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+
+  // Derive Colyseus board as 2D CheckersBoard when in multiplayer
+  // Server encoding: 0=empty, 1=red, 2=black, 3=red king, 4=black king
+  const colyseusBoard: CheckersBoard | null =
+    mp.isMultiplayer && mp.board.length === 64
+      ? (Array.from({ length: 8 }, (_, row) =>
+          Array.from({ length: 8 }, (_, col): CheckersPiece | null => {
+            const v = mp.board[row * 8 + col];
+            if (v === 0) return null;
+            if (v === 1) return { color: "red", isKing: false };
+            if (v === 2) return { color: "black", isKing: false };
+            if (v === 3) return { color: "red", isKing: true };
+            if (v === 4) return { color: "black", isKing: true };
+            return null;
+          }),
+        ) as CheckersBoard)
+      : null;
+
+  // Effective board — use Colyseus board when in multiplayer, else local
+  const effectiveBoard: CheckersBoard =
+    gameMode === "colyseus" && colyseusBoard ? colyseusBoard : board;
+
+  // Overlay colors for Colyseus overlays
+  const overlayColors = {
+    primary: theme.colors.primary,
+    background: theme.colors.background,
+    surface: theme.colors.surface,
+    text: theme.colors.onSurface,
+    textSecondary: theme.colors.onSurfaceVariant,
+    border: theme.colors.outline,
+    player1: RED_PIECE,
+    player2: BLACK_PIECE,
+  };
 
   // ==========================================================================
   // Online Game Subscription
@@ -473,7 +518,6 @@ export default function CheckersGameScreen({
       setCurrentTurn(gameState.currentTurn);
       setMustJump(gameState.mustJump);
 
-      // Track player names for spectators
       setPlayer1Name(typedMatch.players.player1.displayName);
       setPlayer2Name(typedMatch.players.player2.displayName);
 
@@ -499,20 +543,46 @@ export default function CheckersGameScreen({
         Vibration.vibrate([0, 100, 50, 100]);
 
         // Phase 7: Check achievements on game completion
-        handleGameCompletion(typedMatch as any);
+        handleGameCompletion(typedMatch as Parameters<typeof handleGameCompletion>[0]);
       }
     });
 
     return () => unsubscribe();
   }, [matchId, currentFirebaseUser]);
 
-  // Handle incoming match from route params
+  // Handle incoming match from route params — smart switch for Colyseus vs Firestore
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "checkers_game",
+    route.params?.matchId,
+  );
+
   useEffect(() => {
-    if (route.params?.matchId) {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    } else if (resolvedMode === "online" && firestoreGameId) {
       setGameMode("online");
-      setMatchId(route.params.matchId);
+      setMatchId(firestoreGameId);
     }
-  }, [route.params?.matchId]);
+  }, [resolvedMode, firestoreGameId]);
+
+  // Fallback: if Colyseus connection fails, switch to Firestore online mode
+  // so the game remains playable with Firestore subscriptions
+  useEffect(() => {
+    if (
+      gameMode === "colyseus" &&
+      mp.error &&
+      !mp.isMultiplayer &&
+      firestoreGameId
+    ) {
+      logger.warn(
+        "[Checkers] Colyseus connection failed, falling back to Firestore mode:",
+        mp.error,
+      );
+      setGameMode("online");
+      setMatchId(firestoreGameId);
+    }
+  }, [gameMode, mp.error, mp.isMultiplayer, firestoreGameId]);
 
   // ==========================================================================
   // Game Logic
@@ -520,12 +590,59 @@ export default function CheckersGameScreen({
 
   const handleCellPress = useCallback(
     async (row: number, col: number) => {
-      // Block interactions in spectator mode
-      if (isSpectator) {
+      if (isSpectator) return;
+      if (winner) return;
+
+      // Colyseus multiplayer mode
+      if (gameMode === "colyseus" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+
+        const clickedPieceColyseus = effectiveBoard[row][col];
+        // playerIndex 0 → red, 1 → black
+        const myColyseusColor: "red" | "black" =
+          mp.myPlayerIndex === 0 ? "red" : "black";
+
+        // Selecting a piece
+        if (
+          clickedPieceColyseus &&
+          clickedPieceColyseus.color === myColyseusColor
+        ) {
+          const mustJumpNow = checkForJumps(effectiveBoard, myColyseusColor);
+          const moves = getValidMoves(
+            effectiveBoard,
+            { row, col },
+            mustJumpNow,
+          );
+          if (moves.length > 0) {
+            setSelectedPiece({ row, col });
+            setValidMoves(moves);
+            Vibration.vibrate(10);
+          }
+          return;
+        }
+
+        // Moving to a valid destination
+        if (selectedPiece) {
+          const move = validMoves.find(
+            (m) => m.to.row === row && m.to.col === col,
+          );
+          if (move) {
+            mp.sendMove({
+              row: selectedPiece.row,
+              col: selectedPiece.col,
+              toRow: row,
+              toCol: col,
+            });
+            Vibration.vibrate(20);
+            setSelectedPiece(null);
+            setValidMoves([]);
+          } else {
+            setSelectedPiece(null);
+            setValidMoves([]);
+          }
+        }
         return;
       }
-
-      if (winner) return;
 
       const clickedPiece = board[row][col];
 
@@ -584,6 +701,8 @@ export default function CheckersGameScreen({
       gameMode,
       myColor,
       multiJumpPiece,
+      effectiveBoard,
+      mp,
     ],
   );
 
@@ -687,7 +806,7 @@ export default function CheckersGameScreen({
       try {
         await submitMove(matchId, moveData, newGameState, nextPlayerId);
       } catch (error) {
-        console.error("[Checkers] Error submitting move:", error);
+        logger.error("[Checkers] Error submitting move:", error);
       }
     } else {
       // Local game - switch turns
@@ -718,7 +837,7 @@ export default function CheckersGameScreen({
       try {
         await endMatch(matchId, winnerId, "normal");
       } catch (error) {
-        console.error("[Checkers] Error ending match:", error);
+        logger.error("[Checkers] Error ending match:", error);
       }
     }
   };
@@ -779,7 +898,7 @@ export default function CheckersGameScreen({
         `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
       );
     } catch (error) {
-      console.error("[Checkers] Error sending invite:", error);
+      logger.error("[Checkers] Error sending invite:", error);
       Alert.alert("Error", "Failed to send game invite. Please try again.");
     } finally {
       setLoading(false);
@@ -802,7 +921,7 @@ export default function CheckersGameScreen({
               await resignMatch(matchId, currentFirebaseUser.uid);
               exitGame();
             } catch (error) {
-              console.error("[Checkers] Error resigning:", error);
+              logger.error("[Checkers] Error resigning:", error);
             }
           },
         },
@@ -838,6 +957,17 @@ export default function CheckersGameScreen({
   };
 
   const getStatusText = () => {
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      if (mp.phase === "waiting" || mp.phase === "connecting")
+        return "Waiting for opponent...";
+      if (mp.phase === "countdown") return "Get Ready!";
+      if (mp.phase === "finished") {
+        if (mp.isDraw) return "Draw!";
+        return mp.isWinner ? "You Win! 🎉" : "You Lose 😔";
+      }
+      return mp.isMyTurn ? "Your Turn" : `${mp.opponentName}'s Turn`;
+    }
+
     if (winner) {
       if (gameMode === "online") {
         return winner === myColor ? "You Win! 🎉" : "You Lose 😔";
@@ -872,7 +1002,7 @@ export default function CheckersGameScreen({
     black: blackCount,
     redKings,
     blackKings,
-  } = countPieces(board);
+  } = countPieces(effectiveBoard);
 
   // ==========================================================================
   // Render
@@ -973,14 +1103,18 @@ export default function CheckersGameScreen({
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
-      {/* Spectator Banner */}
-      <SpectatorBanner
-        isSpectator={isSpectator}
-        spectatorCount={spectatorCount}
-        onLeave={handleLeaveSpectator}
-        playerNames={[player1Name, player2Name]}
-        loading={spectatorLoading}
-      />
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
 
       {/* Header */}
       <View style={styles.header}>
@@ -996,6 +1130,17 @@ export default function CheckersGameScreen({
         </Text>
         {gameMode === "online" && match?.status === "active" && !isSpectator ? (
           <TouchableOpacity onPress={handleResign}>
+            <MaterialCommunityIcons
+              name="flag"
+              size={24}
+              color={theme.colors.error}
+            />
+          </TouchableOpacity>
+        ) : gameMode === "colyseus" &&
+          mp.isMultiplayer &&
+          mp.phase === "playing" &&
+          !isSpectator ? (
+          <TouchableOpacity onPress={() => setShowResignConfirm(true)}>
             <MaterialCommunityIcons
               name="flag"
               size={24}
@@ -1099,11 +1244,13 @@ export default function CheckersGameScreen({
         innerShadowBlur={6}
       >
         <View style={[styles.board, { borderColor: theme.colors.outline }]}>
-          {board.map((row, rowIndex) => {
-            // Flip board for red player so their pieces are at the bottom
-            const shouldFlip = gameMode === "online" && myColor === "red";
+          {effectiveBoard.map((row, rowIndex) => {
+            // Flip board for red player (player index 0) so their pieces are at the bottom
+            const shouldFlip =
+              (gameMode === "online" && myColor === "red") ||
+              (gameMode === "colyseus" && mp.myPlayerIndex === 0);
             const displayRowIndex = shouldFlip ? 7 - rowIndex : rowIndex;
-            const displayRow = board[displayRowIndex];
+            const displayRow = effectiveBoard[displayRowIndex];
 
             return (
               <View key={rowIndex} style={styles.row}>
@@ -1120,7 +1267,7 @@ export default function CheckersGameScreen({
                       key={`${rowIndex}-${colIndex}`}
                       row={actualRow}
                       col={actualCol}
-                      piece={board[actualRow][actualCol]}
+                      piece={effectiveBoard[actualRow][actualCol]}
                       isSelected={
                         selectedPiece?.row === actualRow &&
                         selectedPiece?.col === actualCol
@@ -1129,7 +1276,10 @@ export default function CheckersGameScreen({
                       isJumpMove={isJump}
                       onPress={() => handleCellPress(actualRow, actualCol)}
                       disabled={
-                        !!winner || (gameMode === "online" && !isMyTurn())
+                        !!winner ||
+                        (gameMode === "online" && !isMyTurn()) ||
+                        (gameMode === "colyseus" &&
+                          (!mp.isMyTurn || mp.phase !== "playing"))
                       }
                     />
                   );
@@ -1181,6 +1331,101 @@ export default function CheckersGameScreen({
           </View>
         </Modal>
       </Portal>
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "colyseus" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" && (
+          <TurnIndicatorBar
+            isMyTurn={mp.isMyTurn}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            currentPlayerIndex={mp.currentPlayerIndex}
+            myPlayerIndex={mp.myPlayerIndex}
+            turnNumber={mp.turnNumber}
+            opponentDisconnected={mp.opponentDisconnected}
+            colors={overlayColors}
+            player1Label="Red"
+            player2Label="Black"
+          />
+        )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "colyseus" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+          <GameActionBar
+            onResign={() => setShowResignConfirm(true)}
+            onOfferDraw={mp.offerDraw}
+            isMyTurn={mp.isMyTurn}
+            drawPending={mp.drawPending}
+            colors={overlayColors}
+          />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "colyseus" && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={overlayColors}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            gameName="Checkers"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={overlayColors}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={overlayColors}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={overlayColors}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <DrawOfferDialog
+            visible={mp.drawPending}
+            opponentName={mp.opponentName}
+            isMyOffer={mp.drawOfferedByMe}
+            colors={overlayColors}
+            onAccept={mp.acceptDraw}
+            onDecline={mp.declineDraw}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={overlayColors}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
 
       {/* Local Game Controls */}
       {gameMode === "local" && !winner && (
@@ -1386,3 +1631,5 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
   },
 });
+
+export default withGameErrorBoundary(CheckersGameScreen, "checkers");

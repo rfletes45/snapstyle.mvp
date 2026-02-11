@@ -38,6 +38,7 @@ import {
   getPlayerRank as getSinglePlayerRank,
 } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
+import type { PlayStackParamList } from "@/types/navigation/root";
 import { SinglePlayerGameType } from "@/types/games";
 import {
   GameType,
@@ -68,7 +69,10 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type Props = NativeStackScreenProps<any, "Leaderboard">;
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/LeaderboardScreen");
+type Props = NativeStackScreenProps<PlayStackParamList, "Leaderboard">;
 
 type LeaderboardType = "global" | "friends";
 
@@ -104,12 +108,6 @@ const LEADERBOARD_GAMES: LeaderboardGame[] = [
     category: "legacy",
   },
   // Single-player games (new)
-  {
-    id: "flappy_bird",
-    name: "Flappy",
-    icon: "bird",
-    category: "single-player",
-  },
   {
     id: "bounce_blitz",
     name: "Bounce",
@@ -150,7 +148,14 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
   const theme = useTheme();
 
   // Get initial game from route params or default
-  const initialGame = (route.params as any)?.gameId || "reaction_tap";
+  const routeGameId = route.params?.gameId;
+  const initialGame: ExtendedLeaderboardGameType =
+    routeGameId &&
+    LEADERBOARD_GAMES.some(
+      ({ id }) => id === (routeGameId as ExtendedLeaderboardGameType),
+    )
+      ? (routeGameId as ExtendedLeaderboardGameType)
+      : "reaction_tap";
 
   const [gameId, setGameId] =
     useState<ExtendedLeaderboardGameType>(initialGame);
@@ -291,7 +296,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
         setUserRank(rank);
       }
     } catch (err) {
-      console.error("Error loading leaderboard:", err);
+      logger.error("Error loading leaderboard:", err);
       setError("Couldn't load leaderboard");
     }
   }, [

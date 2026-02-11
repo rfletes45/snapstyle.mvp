@@ -30,6 +30,9 @@ import type {
 } from "@/types/profile";
 import type { PointsShopItem } from "@/types/shop";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("data/shopExclusiveItems");
 // =============================================================================
 // Types
 // =============================================================================
@@ -1581,5 +1584,5 @@ export function getItemStats(): {
 // Log stats in development
 if (__DEV__) {
   const stats = getItemStats();
-  console.log("[shopExclusiveItems] Loaded shop catalog:", stats);
+  logger.info("[shopExclusiveItems] Loaded shop catalog:", stats);
 }

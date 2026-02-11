@@ -23,7 +23,7 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 type ScreenState = "form" | "sent";
 

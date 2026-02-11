@@ -25,6 +25,9 @@ import {
 } from "@/types/achievements";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGameAchievements");
 // =============================================================================
 // Types
 // =============================================================================
@@ -107,7 +110,7 @@ export function useGameAchievements(
         }
       },
       (error: Error) => {
-        console.error("[useGameAchievements] Subscription error:", error);
+        logger.error("[useGameAchievements] Subscription error:", error);
       },
     );
 
@@ -124,7 +127,7 @@ export function useGameAchievements(
       score?: number;
     }): Promise<AchievementCheckResult[]> => {
       if (!userId) {
-        console.warn("[useGameAchievements] No user ID");
+        logger.warn("[useGameAchievements] No user ID");
         return [];
       }
 
@@ -213,7 +216,7 @@ export function useGameAchievements(
 
         return allResults;
       } catch (error) {
-        console.error(
+        logger.error(
           "[useGameAchievements] Error checking achievements:",
           error,
         );
@@ -257,7 +260,7 @@ export function useGameAchievements(
         setProgress(progressData);
       }
     } catch (error) {
-      console.error("[useGameAchievements] Error loading progress:", error);
+      logger.error("[useGameAchievements] Error loading progress:", error);
     } finally {
       if (mountedRef.current) {
         setIsLoadingProgress(false);

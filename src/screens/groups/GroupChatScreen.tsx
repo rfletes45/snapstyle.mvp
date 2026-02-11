@@ -109,6 +109,9 @@ import {
 
 // Duck feature
 import DuckBubble from "@/components/chat/DuckBubble";
+import SpectatorInviteBubble, {
+  parseSpectatorInviteContent,
+} from "@/components/SpectatorInviteBubble";
 import { playQuack } from "@/services/chat/quackService";
 
 // Group Calls (Phase 3) - lazy loaded to avoid native module issues
@@ -126,7 +129,7 @@ const getGroupCallService = () => {
   if (!areNativeCallsAvailable) {
     return null;
   }
-  return require("../../services/calls/groupCallService").groupCallService;
+  return require("@/services/calls/groupCallService").groupCallService;
 };
 
 // Game Picker
@@ -142,8 +145,11 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { Group, GroupMember, ScheduledMessage } from "@/types/models";
-import { DEBUG_CHAT_V2 } from "../../../constants/featureFlags";
+import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/groups/GroupChatScreen");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -340,7 +346,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
         setGroupMembers(enrichedMembers);
       } catch (err: any) {
-        console.error("Error loading group:", err);
+        logger.error("Error loading group:", err);
         setError(err.message || "Failed to load group");
       } finally {
         setGroupLoading(false);
@@ -431,6 +437,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Group Call Handler (Phase 3)
   const handleStartGroupCall = useCallback(
     async (callType: CallType = "video") => {
+      if (!CALL_FEATURES.CALLS_ENABLED) return;
       if (!group || !uid || isStartingCall) return;
 
       // Check if native calls are available
@@ -477,7 +484,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           isOutgoing: true,
         });
       } catch (error: any) {
-        console.error("[GroupChatScreen] Failed to start group call:", error);
+        logger.error("[GroupChatScreen] Failed to start group call:", error);
         Alert.alert(
           "Call Failed",
           error.message || "Failed to start group call. Please try again.",
@@ -612,24 +619,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       options?: {
         inviteId?: string;
         spectatorMode?: boolean;
-        liveSessionId?: string;
       },
     ) => {
-      // For spectators, navigate to SpectatorView screen
-      if (options?.spectatorMode && options?.liveSessionId) {
-        navigation.navigate("MainTabs", {
-          screen: "Play",
-          params: {
-            screen: "SpectatorView",
-            params: {
-              liveSessionId: options.liveSessionId,
-              gameType: gameType,
-            },
-          },
-        });
-        return;
-      }
-
       const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
       if (screen) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -641,8 +632,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               matchId: gameId,
               inviteId: options?.inviteId,
               spectatorMode: options?.spectatorMode,
-              spectatorInviteId: options?.inviteId, // For single-player spectator sessions
-              liveSessionId: options?.liveSessionId, // For live spectator sessions
               entryPoint: "chat",
               conversationId: groupId,
               conversationType: "group" as const,
@@ -650,7 +639,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           },
         });
       } else {
-        console.warn(
+        logger.warn(
           `[GroupChatScreen] No screen mapping for gameType: ${gameType}`,
         );
       }
@@ -669,23 +658,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     try {
       await playQuack();
     } catch (e) {
-      console.warn("❌ [GroupChatScreen] Quack sound error:", e);
+      logger.warn("❌ [GroupChatScreen] Quack sound error:", e);
     }
     try {
       await screen.chat.sendMessage("🦆", {});
     } catch (error) {
-      console.error("❌ [GroupChatScreen] Duck send error:", error);
+      logger.error("❌ [GroupChatScreen] Duck send error:", error);
     }
   }, [uid, groupId, screen.chat, screen.sending]);
 
   // Handle single-player game selection - navigate directly to game
-  // Optionally receives a spectatorInviteId and liveSessionId if the player wants to invite spectators
   const handleSinglePlayerGame = useCallback(
-    (
-      gameType: ExtendedGameType,
-      spectatorInviteId?: string,
-      liveSessionId?: string,
-    ) => {
+    (gameType: ExtendedGameType) => {
       const screenName = GAME_SCREEN_MAP[gameType];
       if (screenName) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -695,9 +679,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             screen: screenName,
             params: {
               entryPoint: "chat",
-              spectatorInviteId, // Pass spectator invite ID
-              liveSessionId, // Pass live session ID for real-time spectator updates
-              conversationId: groupId, // Pass conversation context
+              conversationId: groupId,
               conversationType: "group" as const,
             },
           },
@@ -706,12 +688,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     },
     [navigation, groupId],
   );
-
-  // Handle spectator invite creation
-  const handleSpectatorInviteCreated = useCallback(() => {
-    // Spectator invite created - navigation happens in GamePickerModal
-    // Optionally show a toast or haptic feedback here
-  }, []);
 
   // Compute eligible user IDs from group members
   const groupMemberIds = useMemo(
@@ -753,7 +729,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           Alert.alert("Error", "Failed to schedule message. Please try again.");
         }
       } catch (error) {
-        console.error("[GroupChatScreen] Schedule message error:", error);
+        logger.error("[GroupChatScreen] Schedule message error:", error);
         Alert.alert("Error", "Failed to schedule message.");
       }
     },
@@ -1127,6 +1103,30 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                           durationMs={voiceAttachment.durationMs || 0}
                           isOwn={isOwnMessage}
                         />
+                      ) : item.kind === "scorecard" &&
+                        item.text &&
+                        parseSpectatorInviteContent(item.text) ? (
+                        (() => {
+                          const invite = parseSpectatorInviteContent(
+                            item.text!,
+                          )!;
+                          return (
+                            <SpectatorInviteBubble
+                              invite={invite}
+                              isMine={isOwnMessage}
+                              onPress={
+                                !isOwnMessage && !invite.finished
+                                  ? () =>
+                                      navigation.navigate("SpectatorView", {
+                                        roomId: invite.roomId,
+                                        gameType: invite.gameId,
+                                        hostName: invite.hostName,
+                                      })
+                                  : undefined
+                              }
+                            />
+                          );
+                        })()
                       ) : item.kind === "scorecard" && item.scorecard ? (
                         <View style={styles.scorecardContent}>
                           <MaterialCommunityIcons
@@ -1359,22 +1359,23 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               </Text>
             </View>
           </TouchableOpacity>
-          {/* Group Call Button (Phase 3) */}
-          <TouchableOpacity
-            onPress={handleShowCallOptions}
-            disabled={isStartingCall}
-            style={styles.callButton}
-          >
-            {isStartingCall ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
-            ) : (
-              <Ionicons
-                name="videocam"
-                size={22}
-                color={theme.colors.primary}
-              />
-            )}
-          </TouchableOpacity>
+          {CALL_FEATURES.CALLS_ENABLED && (
+            <TouchableOpacity
+              onPress={handleShowCallOptions}
+              disabled={isStartingCall}
+              style={styles.callButton}
+            >
+              {isStartingCall ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <Ionicons
+                  name="videocam"
+                  size={22}
+                  color={theme.colors.primary}
+                />
+              )}
+            </TouchableOpacity>
+          )}
           <Appbar.Action
             icon="information-outline"
             onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
@@ -1574,7 +1575,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         eligibleUserIds={groupMemberIds}
         onSinglePlayerGame={handleSinglePlayerGame}
         onInviteCreated={() => {}}
-        onSpectatorInviteCreated={handleSpectatorInviteCreated}
         onError={(error) => Alert.alert("Error", error)}
       />
     </>

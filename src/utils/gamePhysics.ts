@@ -2,7 +2,6 @@
  * Game Physics Utilities
  *
  * This file contains physics constants and utilities for all games:
- * - Flappy Bird physics (gravity, jump, terminal velocity)
  * - Ballz physics (trajectory, bouncing, energy loss)
  * - Pool physics (friction, elastic collision)
  * - Collision detection algorithms
@@ -97,125 +96,6 @@ export function vec2DistanceSquared(a: Vector2D, b: Vector2D): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   return dx * dx + dy * dy;
-}
-
-// =============================================================================
-// Flappy Bird Physics
-// =============================================================================
-
-/**
- * Physics constants for Flappy Bird
- *
- * Research notes:
- * - Original Flappy Bird: ~0.4 px/frame gravity, -8 px/frame jump
- * - Converted to per-ms values for frame-independent physics
- * - Terminal velocity prevents unrealistic falling speeds
- *
- * @see docs/06_GAMES_RESEARCH.md Section 2.2
- */
-export const FLAPPY_PHYSICS = {
-  // Movement (pixels per millisecond)
-  gravity: 0.0015, // Gravity acceleration (px/ms²)
-  jumpVelocity: -0.35, // Jump impulse (negative = up)
-  terminalVelocity: 0.5, // Max falling speed
-
-  // Rotation (degrees)
-  maxUpRotation: -30, // Max rotation when ascending
-  maxDownRotation: 90, // Max rotation when diving
-  rotationMultiplier: 150, // Velocity to rotation conversion
-
-  // Hitbox
-  hitboxRadius: 15, // Collision radius (visual ~40px)
-
-  // Pipes
-  pipeWidth: 60, // Pipe width in pixels
-  pipeGap: 160, // Vertical gap between pipes
-  pipeSpacing: 250, // Horizontal distance between pipes
-  baseScrollSpeed: 0.15, // Base horizontal speed (px/ms)
-
-  // Difficulty progression
-  speedIncreasePerScore: 0.001, // Speed increase per point
-  gapDecreasePerScore: 0.5, // Gap decrease per point
-  minGap: 120, // Minimum gap size
-
-  // Bounds
-  groundHeight: 100, // Ground height from bottom
-  ceilingBuffer: 20, // Buffer from top
-} as const;
-
-/**
- * Flappy bird state
- */
-export interface FlappyBirdState {
-  y: number;
-  velocity: number;
-  rotation: number;
-}
-
-/**
- * Update bird physics for one frame
- *
- * @param bird Current bird state
- * @param dt Delta time in milliseconds
- * @returns Updated bird state
- */
-export function updateFlappyBird(
-  bird: FlappyBirdState,
-  dt: number,
-): FlappyBirdState {
-  // Apply gravity
-  let newVelocity = bird.velocity + FLAPPY_PHYSICS.gravity * dt;
-
-  // Clamp to terminal velocity
-  newVelocity = Math.min(newVelocity, FLAPPY_PHYSICS.terminalVelocity);
-
-  // Update position
-  const newY = bird.y + newVelocity * dt;
-
-  // Update rotation based on velocity
-  // Positive velocity (falling) -> positive rotation (nose down)
-  // Negative velocity (rising) -> negative rotation (nose up)
-  const targetRotation = Math.max(
-    FLAPPY_PHYSICS.maxUpRotation,
-    Math.min(
-      FLAPPY_PHYSICS.maxDownRotation,
-      newVelocity * FLAPPY_PHYSICS.rotationMultiplier,
-    ),
-  );
-
-  // Smooth rotation interpolation
-  const rotationLerp = 0.1;
-  const newRotation =
-    bird.rotation + (targetRotation - bird.rotation) * rotationLerp;
-
-  return {
-    y: newY,
-    velocity: newVelocity,
-    rotation: newRotation,
-  };
-}
-
-/**
- * Apply jump to bird
- */
-export function flappyJump(bird: FlappyBirdState): FlappyBirdState {
-  return {
-    ...bird,
-    velocity: FLAPPY_PHYSICS.jumpVelocity,
-  };
-}
-
-/**
- * Calculate pipe gap Y position
- * Returns the Y of the gap center
- */
-export function generatePipeGapY(
-  screenHeight: number,
-  gapSize: number,
-): number {
-  const minY = FLAPPY_PHYSICS.ceilingBuffer + gapSize / 2 + 50;
-  const maxY = screenHeight - FLAPPY_PHYSICS.groundHeight - gapSize / 2 - 50;
-  return minY + Math.random() * (maxY - minY);
 }
 
 // =============================================================================

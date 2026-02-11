@@ -15,7 +15,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
-import { Spacing } from "../../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

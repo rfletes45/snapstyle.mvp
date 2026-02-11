@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MemoryMasterGameScreen - Memory Card Matching Game
  *
  * How to play:
@@ -15,15 +15,38 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Animated,
+  Canvas,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { createLogger } from "@/utils/log";
+import Animated, {
+  SharedValue,
+  interpolate,
+  makeMutable,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
+import {
   Dimensions,
   Platform,
   StyleSheet,
@@ -39,14 +62,6 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import {
-  Canvas,
-  LinearGradient,
-  RadialGradient,
-  RoundedRect,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
 
 // =============================================================================
 // Types
@@ -60,12 +75,14 @@ interface Card {
   emoji: string;
   isFlipped: boolean;
   isMatched: boolean;
-  flipAnim: Animated.Value;
+  flipAnim: SharedValue<number>;
 }
 
 interface MemoryMasterGameScreenProps {
   navigation: any;
 }
+
+const logger = createLogger("screens/games/MemoryMasterGameScreen");
 
 // =============================================================================
 // Constants
@@ -76,38 +93,38 @@ const GAME_WIDTH = Math.min(SCREEN_WIDTH - 32, 380);
 
 // Emojis for card faces
 const CARD_EMOJIS = [
-  "😀",
-  "😎",
-  "🥳",
-  "😍",
-  "🤩",
-  "😇",
-  "🤪",
-  "😺",
-  "🐶",
-  "🐱",
-  "🦊",
-  "🐻",
-  "🐼",
-  "🐨",
-  "🐯",
-  "🦁",
-  "🌟",
-  "⭐",
-  "🔥",
-  "💎",
-  "🎈",
-  "🎁",
-  "🎮",
-  "🎯",
-  "🍎",
-  "🍊",
-  "🍋",
-  "🍇",
-  "🍓",
-  "🍒",
-  "🥝",
-  "🍑",
+  "ðŸ˜€",
+  "ðŸ˜Ž",
+  "ðŸ¥³",
+  "ðŸ˜",
+  "ðŸ¤©",
+  "ðŸ˜‡",
+  "ðŸ¤ª",
+  "ðŸ˜º",
+  "ðŸ¶",
+  "ðŸ±",
+  "ðŸ¦Š",
+  "ðŸ»",
+  "ðŸ¼",
+  "ðŸ¨",
+  "ðŸ¯",
+  "ðŸ¦",
+  "ðŸŒŸ",
+  "â­",
+  "ðŸ”¥",
+  "ðŸ’Ž",
+  "ðŸŽˆ",
+  "ðŸŽ",
+  "ðŸŽ®",
+  "ðŸŽ¯",
+  "ðŸŽ",
+  "ðŸŠ",
+  "ðŸ‹",
+  "ðŸ‡",
+  "ðŸ“",
+  "ðŸ’",
+  "ðŸ¥",
+  "ðŸ‘",
 ];
 
 // Difficulty configurations
@@ -158,17 +175,164 @@ function generateCards(rows: number, cols: number): Card[] {
     emoji,
     isFlipped: false,
     isMatched: false,
-    flipAnim: new Animated.Value(0),
+    flipAnim: makeMutable(0),
   }));
+}
+
+interface MemoryCardViewProps {
+  card: Card;
+  cardSize: number;
+  disabled: boolean;
+  onPress: () => void;
+}
+
+function MemoryCardView({
+  card,
+  cardSize,
+  disabled,
+  onPress,
+}: MemoryCardViewProps) {
+  const backStyle = useAnimatedStyle(() => {
+    const rotateY = interpolate(card.flipAnim.value, [0, 1], [0, 180]);
+    const opacity = interpolate(card.flipAnim.value, [0, 0.5, 1], [1, 0, 0]);
+    return {
+      transform: [{ rotateY: `${rotateY}deg` }],
+      opacity,
+    };
+  }, [card.flipAnim]);
+
+  const frontStyle = useAnimatedStyle(() => {
+    const rotateY = interpolate(card.flipAnim.value, [0, 1], [180, 360]);
+    const opacity = interpolate(card.flipAnim.value, [0, 0.5, 1], [0, 0, 1]);
+    return {
+      transform: [{ rotateY: `${rotateY}deg` }],
+      opacity,
+    };
+  }, [card.flipAnim]);
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      disabled={disabled}
+      style={[
+        styles.cardContainer,
+        {
+          width: cardSize,
+          height: cardSize,
+          marginLeft: 4,
+          marginTop: 4,
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.card,
+          {
+            width: cardSize,
+            height: cardSize,
+          },
+          backStyle,
+        ]}
+      >
+        <Canvas style={StyleSheet.absoluteFill}>
+          <RoundedRect x={0} y={0} width={cardSize} height={cardSize} r={8}>
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(cardSize, cardSize)}
+              colors={["#5C6BC0", "#3F51B5", "#303F9F"]}
+            />
+            <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.2)" inner />
+          </RoundedRect>
+          <RoundedRect
+            x={cardSize * 0.15}
+            y={cardSize * 0.15}
+            width={cardSize * 0.7}
+            height={cardSize * 0.7}
+            r={4}
+          >
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(cardSize * 0.7, cardSize * 0.7)}
+              colors={[
+                "rgba(255,255,255,0.08)",
+                "rgba(255,255,255,0)",
+                "rgba(255,255,255,0.06)",
+              ]}
+            />
+          </RoundedRect>
+          <RoundedRect x={1} y={1} width={cardSize - 2} height={cardSize * 0.3} r={7}>
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(0, cardSize * 0.3)}
+              colors={["rgba(255,255,255,0.18)", "rgba(255,255,255,0)"]}
+            />
+          </RoundedRect>
+        </Canvas>
+        <MaterialCommunityIcons
+          name="help-circle"
+          size={cardSize * 0.5}
+          color="rgba(255, 255, 255, 0.3)"
+        />
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          styles.card,
+          {
+            width: cardSize,
+            height: cardSize,
+          },
+          frontStyle,
+        ]}
+      >
+        <Canvas style={StyleSheet.absoluteFill}>
+          <RoundedRect x={0} y={0} width={cardSize} height={cardSize} r={8}>
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(cardSize, cardSize)}
+              colors={
+                card.isMatched
+                  ? ["#C8E6C9", "#A5D6A7", "#81C784"]
+                  : ["#FFFFFF", "#F8F8F8", "#F0F0F0"]
+              }
+            />
+            <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.1)" inner />
+          </RoundedRect>
+          {card.isMatched && (
+            <RoundedRect x={0} y={0} width={cardSize} height={cardSize} r={8}>
+              <RadialGradient
+                c={vec(cardSize / 2, cardSize / 2)}
+                r={cardSize * 0.6}
+                colors={["rgba(76, 175, 80, 0.2)", "rgba(76, 175, 80, 0)"]}
+              />
+            </RoundedRect>
+          )}
+        </Canvas>
+        <Text style={[styles.cardEmoji, { fontSize: cardSize * 0.5 }]}>
+          {card.emoji}
+        </Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
 }
 
 // =============================================================================
 // Component
 // =============================================================================
 
-export default function MemoryMasterGameScreen({
+function MemoryMasterGameScreen({
   navigation,
 }: MemoryMasterGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "memory_master" });
+  void __codexGameCompletion;
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -189,6 +353,19 @@ export default function MemoryMasterGameScreen({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // Spectator hosting â€” allows friends to watch via SpectatorRoom
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "memory_master",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
 
   // Refs
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -220,6 +397,7 @@ export default function MemoryMasterGameScreen({
     setTimer(0);
     setIsNewBest(false);
     setStatus("playing");
+    spectatorHost.startHosting();
 
     // Start timer
     timerRef.current = setInterval(() => {
@@ -236,13 +414,37 @@ export default function MemoryMasterGameScreen({
     };
   }, []);
 
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (status === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          matchedPairs,
+          totalPairs,
+          attempts,
+          timer,
+          status,
+          // Visual state for spectator renderer
+          grid: cards.map((card) => ({
+            id: card.id,
+            color: card.emoji,
+            selected: card.isFlipped,
+            matched: card.isMatched,
+          })),
+          gridRows: DIFFICULTY_CONFIG[difficulty]?.rows ?? 4,
+          gridCols: DIFFICULTY_CONFIG[difficulty]?.cols ?? 4,
+          comboCount: 0,
+        }),
+        matchedPairs,
+        undefined,
+        undefined,
+      );
+    }
+  }, [matchedPairs, attempts, timer, cards]);
+
   // Flip card animation
   const flipCard = useCallback((card: Card, toFlipped: boolean) => {
-    Animated.timing(card.flipAnim, {
-      toValue: toFlipped ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
+    card.flipAnim.value = withTiming(toFlipped ? 1 : 0, { duration: 200 });
   }, []);
 
   // Handle card tap
@@ -331,6 +533,7 @@ export default function MemoryMasterGameScreen({
       }
 
       setStatus("completed");
+      spectatorHost.endHosting(matchedPairs);
 
       if (Platform.OS !== "web") {
         Vibration.vibrate([0, 50, 50, 50, 50, 100]);
@@ -345,7 +548,7 @@ export default function MemoryMasterGameScreen({
       if (!highScore || finalScore > highScore) {
         setHighScore(finalScore);
         setIsNewBest(true);
-        showSuccess("🎉 New High Score!");
+        showSuccess("ðŸŽ‰ New High Score!");
       }
 
       // Record session
@@ -360,7 +563,9 @@ export default function MemoryMasterGameScreen({
             perfectMatches: totalPairs === attempts ? 1 : 0,
             bestTime: timer,
           },
-        }).catch(console.error);
+        }).catch((err) => {
+          logger.error("[MemoryMaster] Failed to record session", err);
+        });
       }
     }
   }, [
@@ -446,14 +651,17 @@ export default function MemoryMasterGameScreen({
     );
   };
 
+  // Back navigation with confirmation dialog
+  const { handleBack } = useGameBackHandler({
+    gameType: "memory_master",
+    isGameOver: status === "completed" || status === "idle",
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: "#1a1a2e" }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <MaterialCommunityIcons
             name="arrow-left"
             size={24}
@@ -487,6 +695,15 @@ export default function MemoryMasterGameScreen({
             </View>
           </View>
         )}
+
+        {spectatorHost.spectatorRoomId && (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setShowSpectatorInvitePicker(true)}
+          >
+            <MaterialCommunityIcons name="eye" size={24} color="#FFFC00" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Idle Screen */}
@@ -510,7 +727,7 @@ export default function MemoryMasterGameScreen({
               style={styles.segmentedButtons}
             />
             <Text style={styles.difficultyInfo}>
-              {config.rows} × {config.cols} = {config.rows * config.cols} cards
+              {config.rows} Ã— {config.cols} = {config.rows * config.cols} cards
             </Text>
           </View>
 
@@ -539,189 +756,17 @@ export default function MemoryMasterGameScreen({
               },
             ]}
           >
-            {cards.map((card, index) => {
-              const row = Math.floor(index / config.cols);
-              const col = index % config.cols;
-
-              const frontRotate = card.flipAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ["180deg", "360deg"],
-              });
-
-              const backRotate = card.flipAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ["0deg", "180deg"],
-              });
-
-              const frontOpacity = card.flipAnim.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0, 0, 1],
-              });
-
-              const backOpacity = card.flipAnim.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [1, 0, 0],
-              });
-
-              return (
-                <TouchableOpacity
-                  key={card.id}
-                  onPress={() => handleCardTap(index)}
-                  activeOpacity={0.8}
-                  disabled={
-                    card.isFlipped || card.isMatched || status === "completed"
-                  }
-                  style={[
-                    styles.cardContainer,
-                    {
-                      width: cardSize,
-                      height: cardSize,
-                      marginLeft: 4,
-                      marginTop: 4,
-                    },
-                  ]}
-                >
-                  {/* Card Back — Skia gradient pattern */}
-                  <Animated.View
-                    style={[
-                      styles.card,
-                      {
-                        width: cardSize,
-                        height: cardSize,
-                        transform: [{ rotateY: backRotate }],
-                        opacity: backOpacity,
-                      },
-                    ]}
-                  >
-                    <Canvas style={StyleSheet.absoluteFill}>
-                      <RoundedRect
-                        x={0}
-                        y={0}
-                        width={cardSize}
-                        height={cardSize}
-                        r={8}
-                      >
-                        <LinearGradient
-                          start={vec(0, 0)}
-                          end={vec(cardSize, cardSize)}
-                          colors={["#5C6BC0", "#3F51B5", "#303F9F"]}
-                        />
-                        <Shadow
-                          dx={0}
-                          dy={1}
-                          blur={3}
-                          color="rgba(0,0,0,0.2)"
-                          inner
-                        />
-                      </RoundedRect>
-                      {/* Diamond pattern overlay */}
-                      <RoundedRect
-                        x={cardSize * 0.15}
-                        y={cardSize * 0.15}
-                        width={cardSize * 0.7}
-                        height={cardSize * 0.7}
-                        r={4}
-                      >
-                        <LinearGradient
-                          start={vec(0, 0)}
-                          end={vec(cardSize * 0.7, cardSize * 0.7)}
-                          colors={[
-                            "rgba(255,255,255,0.08)",
-                            "rgba(255,255,255,0)",
-                            "rgba(255,255,255,0.06)",
-                          ]}
-                        />
-                      </RoundedRect>
-                      {/* Top highlight */}
-                      <RoundedRect
-                        x={1}
-                        y={1}
-                        width={cardSize - 2}
-                        height={cardSize * 0.3}
-                        r={7}
-                      >
-                        <LinearGradient
-                          start={vec(0, 0)}
-                          end={vec(0, cardSize * 0.3)}
-                          colors={[
-                            "rgba(255,255,255,0.18)",
-                            "rgba(255,255,255,0)",
-                          ]}
-                        />
-                      </RoundedRect>
-                    </Canvas>
-                    <MaterialCommunityIcons
-                      name="help-circle"
-                      size={cardSize * 0.5}
-                      color="rgba(255, 255, 255, 0.3)"
-                    />
-                  </Animated.View>
-
-                  {/* Card Front — Skia enhanced */}
-                  <Animated.View
-                    style={[
-                      styles.card,
-                      {
-                        width: cardSize,
-                        height: cardSize,
-                        transform: [{ rotateY: frontRotate }],
-                        opacity: frontOpacity,
-                      },
-                    ]}
-                  >
-                    <Canvas style={StyleSheet.absoluteFill}>
-                      <RoundedRect
-                        x={0}
-                        y={0}
-                        width={cardSize}
-                        height={cardSize}
-                        r={8}
-                      >
-                        <LinearGradient
-                          start={vec(0, 0)}
-                          end={vec(cardSize, cardSize)}
-                          colors={
-                            card.isMatched
-                              ? ["#C8E6C9", "#A5D6A7", "#81C784"]
-                              : ["#FFFFFF", "#F8F8F8", "#F0F0F0"]
-                          }
-                        />
-                        <Shadow
-                          dx={0}
-                          dy={1}
-                          blur={2}
-                          color="rgba(0,0,0,0.1)"
-                          inner
-                        />
-                      </RoundedRect>
-                      {card.isMatched && (
-                        <RoundedRect
-                          x={0}
-                          y={0}
-                          width={cardSize}
-                          height={cardSize}
-                          r={8}
-                        >
-                          <RadialGradient
-                            c={vec(cardSize / 2, cardSize / 2)}
-                            r={cardSize * 0.6}
-                            colors={[
-                              "rgba(76, 175, 80, 0.2)",
-                              "rgba(76, 175, 80, 0)",
-                            ]}
-                          />
-                        </RoundedRect>
-                      )}
-                    </Canvas>
-                    <Text
-                      style={[styles.cardEmoji, { fontSize: cardSize * 0.5 }]}
-                    >
-                      {card.emoji}
-                    </Text>
-                  </Animated.View>
-                </TouchableOpacity>
-              );
-            })}
+            {cards.map((card, index) => (
+              <MemoryCardView
+                key={card.id}
+                card={card}
+                cardSize={cardSize}
+                disabled={
+                  card.isFlipped || card.isMatched || status === "completed"
+                }
+                onPress={() => handleCardTap(index)}
+              />
+            ))}
           </View>
         </View>
       )}
@@ -730,7 +775,7 @@ export default function MemoryMasterGameScreen({
       {status === "completed" && (
         <View style={styles.completedOverlay}>
           <View style={styles.completedContent}>
-            <Text style={styles.completedTitle}>🎉 Complete!</Text>
+            <Text style={styles.completedTitle}>ðŸŽ‰ Complete!</Text>
 
             {renderStars(getStarRating(totalPairs, attempts))}
 
@@ -816,11 +861,36 @@ export default function MemoryMasterGameScreen({
 
       {/* Friend Picker */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSelectFriend}
         title="Share Score With..."
         currentUserId={currentFirebaseUser?.uid || ""}
+      />
+
+      {/* Spectator overlay â€” shows count of watchers */}
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "memory_master",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -994,3 +1064,5 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 });
+
+export default withGameErrorBoundary(MemoryMasterGameScreen, "memory_master");

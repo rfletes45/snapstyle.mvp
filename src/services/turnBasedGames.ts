@@ -43,24 +43,26 @@ import {
   createInitialFourBoard,
   createInitialGomokuBoard,
   createInitialTicTacToeBoard,
+  DotsGameState,
+  FourGameState,
   GameEndReason,
   GameInvite,
+  GomokuGameState,
   MatchChatMessage,
   MatchmakingQueueEntry,
   MatchStatus,
   RatingUpdate,
   shuffleArray,
-  DotsGameState,
-  FourGameState,
-  GomokuGameState,
-  Spectator,
   TicTacToeGameState,
   TurnBasedGameType,
   TurnBasedMatchConfig,
   TurnBasedPlayer,
-} from "../types/turnBased";
+} from "@/types/turnBased";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/turnBasedGames");
 // =============================================================================
 // Firestore Collections
 // =============================================================================
@@ -70,7 +72,6 @@ const COLLECTIONS = {
   invites: "GameInvites",
   queue: "MatchmakingQueue",
   ratings: "PlayerRatings",
-  spectators: "MatchSpectators",
   chat: "MatchChat",
 } as const;
 
@@ -89,16 +90,14 @@ function toMillis(value: unknown): number {
   if (typeof value === "number") {
     return value;
   }
-  if (
-    value &&
-    typeof value === "object" &&
-    "toMillis" in value &&
-    typeof (value as any).toMillis === "function"
-  ) {
-    return (value as any).toMillis();
+  if (value && typeof value === "object" && "toMillis" in value) {
+    const ts = value as { toMillis(): number };
+    if (typeof ts.toMillis === "function") {
+      return ts.toMillis();
+    }
   }
   // Fallback - try to parse as Date
-  return new Date(value as any).getTime() || Date.now();
+  return new Date(value as string | number).getTime() || Date.now();
 }
 
 /**
@@ -416,7 +415,7 @@ export async function createMatch(
     );
     return docRef.id;
   } catch (error) {
-    console.error("[turnBasedGames] createMatch failed:", error);
+    logger.error("[turnBasedGames] createMatch failed:", error);
     throw error;
   }
 }
@@ -451,7 +450,7 @@ export function subscribeToMatch(
 ): () => void {
   const docRef = doc(getDb(), COLLECTIONS.matches, matchId);
 
-  console.log(
+  logger.info(
     `[TurnBasedGames][${Date.now()}] Subscribing to match: ${matchId}`,
   );
 
@@ -463,7 +462,7 @@ export function subscribeToMatch(
     docRef,
     (snapshot) => {
       const meta = snapshot.metadata;
-      console.log(
+      logger.info(
         `[TurnBasedGames][${Date.now()}] Match update received for ${matchId}:`,
         snapshot.exists() ? "exists" : "not found",
         `| fromCache: ${meta.fromCache}`,
@@ -475,7 +474,7 @@ export function subscribeToMatch(
         return;
       }
       const data = snapshot.data();
-      console.log(`[TurnBasedGames][${Date.now()}] Match data:`, {
+      logger.info(`[TurnBasedGames][${Date.now()}] Match data:`, {
         currentTurn: data.currentTurn,
         turnNumber: data.turnNumber,
         moveHistoryLength: data.moveHistory?.length,
@@ -495,7 +494,7 @@ export function subscribeToMatch(
       // holding an open Firestore connection for a game that will never
       // change again.
       if (TERMINAL_STATUSES.includes(data.status)) {
-        console.log(
+        logger.info(
           `[TurnBasedGames][${Date.now()}] Match ${matchId} reached terminal state "${data.status}" — unsubscribing`,
         );
         // Use queueMicrotask so the unsubscribe happens after onSnapshot returns
@@ -503,7 +502,7 @@ export function subscribeToMatch(
       }
     },
     (error) => {
-      console.error(
+      logger.error(
         `[TurnBasedGames][${Date.now()}] Error subscribing to match ${matchId}:`,
         error,
       );
@@ -525,7 +524,7 @@ export async function submitMove<T extends AnyMove>(
   nextPlayerId: string,
 ): Promise<void> {
   const startTime = Date.now();
-  console.log(
+  logger.info(
     `[TurnBasedGames][${startTime}] Submitting move for match ${matchId}:`,
     {
       move: move,
@@ -535,7 +534,7 @@ export async function submitMove<T extends AnyMove>(
 
   const docRef = doc(getDb(), COLLECTIONS.matches, matchId);
   const match = await getMatch(matchId);
-  console.log(
+  logger.info(
     `[TurnBasedGames][${Date.now()}] Fetched current match state (took ${Date.now() - startTime}ms)`,
   );
 
@@ -561,7 +560,7 @@ export async function submitMove<T extends AnyMove>(
     updatedAt: serverTimestamp(),
   };
 
-  console.log(
+  logger.info(
     `[TurnBasedGames][${Date.now()}] Updating Firestore document with:`,
     {
       currentTurn: updateData.currentTurn,
@@ -573,7 +572,7 @@ export async function submitMove<T extends AnyMove>(
 
   await updateDoc(docRef, updateData);
 
-  console.log(
+  logger.info(
     `[TurnBasedGames][${Date.now()}] Move submitted successfully for match ${matchId} (total time: ${Date.now() - startTime}ms)`,
   );
 }
@@ -975,7 +974,7 @@ export function subscribeToActiveMatches(
       onUpdate(matches);
     },
     (error) => {
-      console.error(
+      logger.error(
         "[turnBasedGames] Active matches subscription error:",
         error,
       );
@@ -1256,77 +1255,6 @@ async function updateRatings(match: AnyMatch, winnerId: string): Promise<void> {
 }
 
 // =============================================================================
-// Spectators
-// =============================================================================
-
-/**
- * Join as a spectator
- */
-export async function joinAsSpectator(
-  matchId: string,
-  userId: string,
-  displayName: string,
-): Promise<string> {
-  const match = await getMatch(matchId);
-  if (!match) {
-    throw new Error("Match not found");
-  }
-
-  if (!match.config.allowSpectators) {
-    throw new Error("Spectators not allowed in this match");
-  }
-
-  const spectator: Omit<Spectator, "id"> = {
-    userId,
-    displayName,
-    joinedAt: Date.now(),
-  };
-
-  const docRef = await addDoc(
-    collection(
-      getDb(),
-      `${COLLECTIONS.matches}/${matchId}/${COLLECTIONS.spectators}`,
-    ),
-    spectator,
-  );
-
-  return docRef.id;
-}
-
-/**
- * Leave as a spectator
- */
-export async function leaveAsSpectator(
-  matchId: string,
-  spectatorId: string,
-): Promise<void> {
-  await deleteDoc(
-    doc(
-      getDb(),
-      `${COLLECTIONS.matches}/${matchId}/${COLLECTIONS.spectators}`,
-      spectatorId,
-    ),
-  );
-}
-
-/**
- * Get spectators for a match
- */
-export async function getSpectators(matchId: string): Promise<Spectator[]> {
-  const q = query(
-    collection(
-      getDb(),
-      `${COLLECTIONS.matches}/${matchId}/${COLLECTIONS.spectators}`,
-    ),
-  );
-
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(
-    (doc) => ({ id: doc.id, ...doc.data() }) as Spectator,
-  );
-}
-
-// =============================================================================
 // Match Chat
 // =============================================================================
 
@@ -1570,15 +1498,9 @@ export const turnBasedGameService = {
   // Ratings
   getPlayerRating,
 
-  // Spectators
-  joinAsSpectator,
-  leaveAsSpectator,
-  getSpectators,
-
   // Chat
   sendMatchChatMessage,
   subscribeToMatchChat,
 };
 
 export default turnBasedGameService;
-

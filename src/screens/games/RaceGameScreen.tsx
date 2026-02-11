@@ -11,6 +11,12 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useRaceMultiplayer } from "@/hooks/useRaceMultiplayer";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,6 +28,13 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Canvas,
+  LinearGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -32,14 +45,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Canvas,
-  LinearGradient,
-  RoundedRect,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -47,7 +58,7 @@ import { Button, Dialog, Portal, Text } from "react-native-paper";
 
 const GAME_TYPE = "race_game";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-type GameState = "menu" | "countdown" | "playing" | "result";
+type GameState = "menu" | "countdown" | "playing" | "result" | "colyseus";
 
 const SENTENCES = [
   "The quick brown fox jumps over the lazy dog",
@@ -71,13 +82,58 @@ const SENTENCES = [
 // Component
 // =============================================================================
 
-export default function RaceGameScreen({ navigation }: { navigation: any }) {
+function RaceGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "race" });
+  void __codexGameCompletion;
+
+  useGameBackHandler({ gameType: "race", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const isSpectator = route?.params?.spectatorMode === true;
+
+  // Colyseus multiplayer
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    GAME_TYPE,
+    route?.params?.matchId,
+  );
+  const mp = useRaceMultiplayer({
+    firestoreGameId: firestoreGameId ?? undefined,
+    spectator: isSpectator,
+  });
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount =
+    spectatorSession.spectatorCount > 0
+      ? spectatorSession.spectatorCount
+      : (mp.rawState as { spectatorCount?: number } | null)?.spectatorCount ??
+        0;
 
   const [gameState, setGameState] = useState<GameState>("menu");
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setGameState("colyseus");
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
   const [sentence, setSentence] = useState("");
   const [typed, setTyped] = useState("");
   const [wpm, setWpm] = useState(0);
@@ -134,7 +190,11 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
 
   const handleTextChange = useCallback(
     (text: string) => {
-      if (gameState !== "playing") return;
+      if (gameState !== "playing" && gameState !== "colyseus") return;
+      if (isSpectator && gameState === "colyseus") return;
+      if (startTimeRef.current === 0) {
+        startTimeRef.current = Date.now();
+      }
       setTyped(text);
 
       totalKeysRef.current = text.length;
@@ -158,9 +218,11 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
       // Calculate WPM
       const ms = Date.now() - startTimeRef.current;
       const minutes = ms / 60000;
+      let currentWpm = 0;
       if (minutes > 0) {
         const words = correctKeysRef.current / 5;
-        setWpm(Math.round(words / minutes));
+        currentWpm = Math.round(words / minutes);
+        setWpm(currentWpm);
       }
 
       // Haptic on each keystroke
@@ -194,11 +256,50 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
           });
         }
 
-        setTimeout(() => setGameState("result"), 500);
+        // In multiplayer, send finished
+        if (gameState === "colyseus") {
+          mp.sendFinished(finalWpm, acc);
+        }
+
+        setTimeout(
+          () => setGameState(gameState === "colyseus" ? "colyseus" : "result"),
+          500,
+        );
+      } else if (gameState === "colyseus") {
+        // Send progress updates in multiplayer
+        mp.sendProgress(prog, currentWpm, acc);
       }
     },
-    [gameState, sentence, currentFirebaseUser],
+    [gameState, sentence, currentFirebaseUser, isSpectator, mp],
   );
+
+  useEffect(() => {
+    if (gameState !== "colyseus") return;
+    if (!mp.sentence) return;
+    if (mp.sentence === sentence) return;
+
+    // New round sentence arrives from server.
+    setSentence(mp.sentence);
+    setTyped("");
+    setWpm(0);
+    setAccuracy(100);
+    setElapsed(0);
+    setProgress(0);
+    totalKeysRef.current = 0;
+    correctKeysRef.current = 0;
+    startTimeRef.current = 0;
+  }, [gameState, mp.sentence, sentence]);
+
+  useEffect(() => {
+    if (gameState !== "colyseus") return;
+    setElapsed(Math.floor(mp.elapsed));
+
+    if (mp.phase === "playing" && !isSpectator) {
+      const focusTimer = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(focusTimer);
+    }
+    return;
+  }, [gameState, mp.elapsed, mp.phase, isSpectator]);
 
   useEffect(() => {
     return () => {
@@ -239,6 +340,18 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={async () => {
+            await mp.leave();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -255,12 +368,14 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
           />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>🏎️ Race</Text>
-        {gameState === "playing" && (
+        {(gameState === "playing" || gameState === "colyseus") && (
           <Text style={[styles.wpmText, { color: colors.primary }]}>
             {wpm} WPM
           </Text>
         )}
-        {gameState !== "playing" && <View style={{ width: 60 }} />}
+        {gameState !== "playing" && gameState !== "colyseus" && (
+          <View style={{ width: 60 }} />
+        )}
       </View>
 
       {gameState === "menu" && (
@@ -298,7 +413,7 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
         </View>
       )}
 
-      {gameState === "playing" && (
+      {(gameState === "playing" || gameState === "colyseus") && (
         <View style={styles.playArea}>
           {/* Stats row */}
           <View style={styles.statsRow}>
@@ -352,7 +467,13 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
             style={[styles.progressBar, { backgroundColor: "transparent" }]}
           >
             <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-              <RoundedRect x={0} y={0} width={SCREEN_WIDTH - 64} height={32} r={16}>
+              <RoundedRect
+                x={0}
+                y={0}
+                width={SCREEN_WIDTH - 64}
+                height={32}
+                r={16}
+              >
                 <LinearGradient
                   start={vec(0, 0)}
                   end={vec(0, 32)}
@@ -370,13 +491,28 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
               ]}
             >
               <Canvas style={StyleSheet.absoluteFill}>
-                <RoundedRect x={0} y={0} width={((SCREEN_WIDTH - 64) * progress)} height={32} r={16}>
+                <RoundedRect
+                  x={0}
+                  y={0}
+                  width={(SCREEN_WIDTH - 64) * progress}
+                  height={32}
+                  r={16}
+                >
                   <LinearGradient
                     start={vec(0, 0)}
                     end={vec((SCREEN_WIDTH - 64) * progress, 0)}
-                    colors={[colors.primary, `${colors.primary}CC`, colors.primary]}
+                    colors={[
+                      colors.primary,
+                      `${colors.primary}CC`,
+                      colors.primary,
+                    ]}
                   />
-                  <Shadow dx={0} dy={0} blur={6} color={`${colors.primary}66`} />
+                  <Shadow
+                    dx={0}
+                    dy={0}
+                    blur={6}
+                    color={`${colors.primary}66`}
+                  />
                 </RoundedRect>
               </Canvas>
             </View>
@@ -398,6 +534,11 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
             ref={inputRef}
             value={typed}
             onChangeText={handleTextChange}
+            editable={
+              !isSpectator &&
+              (gameState === "playing" ||
+                (gameState === "colyseus" && mp.phase === "playing"))
+            }
             style={[
               styles.hiddenInput,
               {
@@ -409,7 +550,13 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
             autoCapitalize="none"
             autoCorrect={false}
             autoComplete="off"
-            placeholder="Start typing here..."
+            placeholder={
+              isSpectator
+                ? "Spectating..."
+                : gameState === "colyseus" && mp.phase !== "playing"
+                  ? "Waiting for round start..."
+                  : "Start typing here..."
+            }
             placeholderTextColor={colors.textSecondary}
           />
         </View>
@@ -453,6 +600,64 @@ export default function RaceGameScreen({ navigation }: { navigation: any }) {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      {/* Colyseus multiplayer overlay */}
+      {gameState === "colyseus" && (
+        <>
+          {/* Opponent progress bar during play */}
+          {mp.phase === "playing" && (
+            <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 12,
+                  marginBottom: 4,
+                }}
+              >
+                {mp.opponentName}: {mp.opponentWpm} WPM (
+                {Math.round(mp.opponentProgress * 100)}%)
+              </Text>
+              <View
+                style={[
+                  styles.progressBar,
+                  { height: 16, backgroundColor: "rgba(155,89,182,0.2)" },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${mp.opponentProgress * 100}%`,
+                      backgroundColor: "#9B59B6",
+                      height: 16,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+          <ScoreRaceOverlay
+            phase={mp.phase as ScoreRaceOverlayPhase}
+            countdown={mp.countdown}
+            myScore={wpm}
+            opponentScore={mp.opponentWpm}
+            opponentName={mp.opponentName}
+            isWinner={mp.isWinner}
+            isTie={mp.isTie}
+            winnerName={mp.isWinner ? mp.myName : mp.opponentName}
+            onReady={() => mp.sendReady()}
+            onRematch={() => mp.sendRematch()}
+            onAcceptRematch={() => mp.acceptRematch()}
+            onLeave={async () => {
+              await mp.leave();
+              setGameState("menu");
+            }}
+            rematchRequested={mp.rematchRequested}
+            reconnecting={mp.reconnecting}
+            opponentDisconnected={mp.opponentDisconnected}
+          />
+        </>
+      )}
 
       <FriendPickerModal
         visible={showFriendPicker}
@@ -550,3 +755,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(RaceGameScreen, "race");

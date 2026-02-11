@@ -25,7 +25,7 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { useColors } from "../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -282,7 +282,7 @@ export default function ScheduleMessageModal({
                   onPress={() => handleQuickOption(option)}
                 >
                   <MaterialCommunityIcons
-                    name={option.icon as any}
+                    name={option.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                     size={24}
                     color={
                       selectedDate &&

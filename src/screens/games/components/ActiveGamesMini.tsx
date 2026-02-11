@@ -43,7 +43,7 @@ import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useAppTheme } from "@/store/ThemeContext";
 import { groupGamesByTurn } from "@/types/gameFilters";
 import { AnyMatch } from "@/types/turnBased";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { MiniGameItem } from "./MiniGameItem";
 
 // =============================================================================

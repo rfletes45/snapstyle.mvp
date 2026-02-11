@@ -7,30 +7,48 @@
 
 ## 📊 Current State Audit
 
-### What You Have (Installed but UNUSED in Games)
+> **Last Updated**: 2025-07-14
 
-| Package                        | Version | Status                                                              |
-| ------------------------------ | ------- | ------------------------------------------------------------------- |
-| `@shopify/react-native-skia`   | 2.2.12  | ✅ Installed, **0 game screens use it**                             |
-| `react-native-svg`             | 15.12.1 | ✅ Installed, **0 game screens use it**                             |
-| `expo-linear-gradient`         | 15.0.8  | ✅ Installed, only used in `FeaturedGameBanner`, **0 game screens** |
-| `react-native-reanimated`      | 4.1.1   | ✅ Used in only 5 of 26+ games                                      |
-| `react-native-gesture-handler` | 2.28.0  | ✅ Used in only 2 games                                             |
-| `expo-haptics`                 | 15.0.8  | ✅ Used in ~5 games                                                 |
-| `expo-audio`                   | 1.1.1   | ✅ Installed, minimal game usage                                    |
-| `react-native-game-engine`     | 1.2.0   | ✅ Installed, minimal usage                                         |
-| `matter-js`                    | 0.20.0  | ✅ Installed (physics engine)                                       |
+### What You Have (Installed & In Use)
 
-### What Games Currently Look Like
+| Package                        | Version | Status                                                       |
+| ------------------------------ | ------- | ------------------------------------------------------------ |
+| `@shopify/react-native-skia`   | 2.2.12  | ✅ **In use** — 10+ Skia graphics components for game boards |
+| `react-native-svg`             | 15.12.1 | ✅ Installed, available for SVG game pieces                  |
+| `expo-linear-gradient`         | 15.0.8  | ✅ Used in `FeaturedGameBanner` and game UI                  |
+| `react-native-reanimated`      | 4.1.1   | ✅ Used across many game screens                             |
+| `react-native-gesture-handler` | 2.28.0  | ✅ Used in gesture-driven games                              |
+| `expo-haptics`                 | 15.0.8  | ✅ Used via `useGameHaptics` hook                            |
+| `expo-audio`                   | 1.1.1   | ✅ Used for game sound effects                               |
+| `react-native-game-engine`     | 1.2.0   | ✅ Used in physics games (Pong, BrickBreaker, etc.)          |
+| `matter-js`                    | 0.20.0  | ✅ Used via `usePhysicsGame` hook                            |
+| `expo-gl`                      | 15.0.7  | ✅ **NEW** — Three.js GLView foundation                      |
+| `expo-three`                   | 8.0.0   | ✅ **NEW** — Three.js ↔ Expo bridge                          |
+| `three`                        | 0.166.1 | ✅ **NEW** — 3D effects (5 components integrated)            |
 
-- **100% plain `<View>` components** with inline `StyleSheet` colors
-- **Shadows:** Basic iOS-only `shadowOffset`/`shadowColor` in ~8 games, `elevation` for Android
-- **Gradients:** NONE in any game screen
-- **Textures/Images:** NONE — all game elements are solid-color rectangles/circles or emoji `<Text>`
-- **Particles:** NONE
-- **SVG graphics:** NONE despite `react-native-svg` being installed
-- **Skia canvas:** NONE despite `@shopify/react-native-skia` being installed
-- **Sound effects:** Minimal
+### Skia Graphics Components (src/components/games/graphics/)
+
+| Component            | Used By                        |
+| -------------------- | ------------------------------ |
+| `SkiaChessPieces`    | Chess game                     |
+| `SkiaCheckersPieces` | Checkers game                  |
+| `SkiaGameBoard`      | Generic grid-based games       |
+| `Skia2048Tiles`      | 2048 game tiles                |
+| `SkiaParticleSystem` | Victory/combo particle effects |
+| `SkiaGoBoard`        | Gomoku game board              |
+
+### Three.js 3D Components (src/components/three/)
+
+| Component             | Integration Point                             |
+| --------------------- | --------------------------------------------- |
+| `ThreeCanvas`         | Foundation GLView wrapper with animation loop |
+| `ThreeHeroBanner`     | FeaturedGameBanner on GamesHub                |
+| `ThreeInviteCard`     | CompactInviteCard game invites                |
+| `ThreeGameTrophy`     | Victory screen overlay                        |
+| `ThreeGameBackground` | Full-screen 3D backgrounds (feature-flagged)  |
+| `ThreeFloatingIcons`  | GamesHub floating game icons                  |
+
+Feature-flagged via `THREE_JS_FEATURES` in `constants/featureFlags.ts`.
 
 ---
 
@@ -38,7 +56,7 @@
 
 These packages are **already in your `node_modules`** — you just need to start using them.
 
-### 1. `@shopify/react-native-skia` (ALREADY INSTALLED)
+### 1. `@shopify/react-native-skia` (✅ INSTALLED & IN USE)
 
 **What it gives you:**
 
@@ -50,17 +68,9 @@ These packages are **already in your `node_modules`** — you just need to start
 - 📐 **Text rendering** — high-quality paragraph text with custom fonts
 - 🖼️ **Image rendering** — GPU-accelerated image compositing with blend modes
 
-**Impact:** ⭐⭐⭐⭐⭐ — This is the **single biggest upgrade**. Every game board, tile, piece, and effect can be rendered with Skia instead of plain Views.
+**Current Usage:** 7+ Skia graphics components in `src/components/games/graphics/` — Chess pieces, Checkers pieces, game boards, 2048 tiles, particle effects, Hex grids, Gomoku boards.
 
-**Example game upgrades:**
-
-- Chess/Checkers: SVG piece rendering, wood-texture board with shader
-- 2048: Smooth tile merge animations with gradient-filled tiles
-- BrickBreaker: Glowing ball, gradient bricks, particle trails
-- SnapDraw: Real canvas-based drawing (replaces the dot-View hack)
-- Pool: Realistic felt texture via shaders, smooth ball rendering
-
-**Bundle size:** Already absorbed (~6MB iOS, ~4MB Android).
+**Remaining Opportunity:** Extend Skia to more games — BrickBreaker ball/brick rendering, card game faces, particle trails.
 
 ### 2. `react-native-svg` (ALREADY INSTALLED)
 
@@ -247,17 +257,50 @@ These packages are **already in your `node_modules`** — you just need to start
 
 ---
 
-## 🥉 TIER 4: Future Consideration
+## ✅ IMPLEMENTED: Three.js 3D Graphics
 
-### 14. `expo-gl` + `three.js` / `@react-three/fiber` — 3D Graphics
+### 14. `expo-gl` + `three` + `expo-three` (✅ INSTALLED & INTEGRATED)
 
-**What it gives you:**
+**Status:** Fully implemented with 5 3D components and feature flags.
 
-- 🎲 **3D game boards** — 3D chess, 3D pool table
-- 🌐 **WebGL rendering** — complex visual effects
-- 🎮 **3D game elements** — dice, pieces with depth/lighting
+**Packages installed:**
 
-**⚠️ Caution:** Heavy bundle size, complex setup, potential performance issues on lower-end devices. Only recommended for future dedicated 3D games, not retrofitting existing 2D games.
+- `expo-gl@15.0.7` — OpenGL ES context via GLView
+- `three@0.166.1` — Three.js 3D engine
+- `expo-three@8.0.0` — Bridge between Three.js and Expo GL
+
+**Components built** (`src/components/three/`):
+
+| Component             | Purpose                                    | Feature Flag             |
+| --------------------- | ------------------------------------------ | ------------------------ |
+| `ThreeCanvas`         | Foundation GLView wrapper + animation loop | —                        |
+| `ThreeHeroBanner`     | Floating 3D game pieces on hero banner     | `HERO_BANNERS`           |
+| `ThreeInviteCard`     | 3D overlay effect on game invite cards     | `INVITE_CARDS`           |
+| `ThreeGameTrophy`     | Animated 3D victory trophy                 | `TROPHIES`               |
+| `ThreeGameBackground` | Full-screen 3D backgrounds                 | `GAME_BACKGROUNDS` (off) |
+| `ThreeFloatingIcons`  | Floating 3D game icons on GamesHub         | `FLOATING_ICONS`         |
+
+**Integration points:**
+
+- `FeaturedGameBanner` → `ThreeHeroBanner`
+- `CompactInviteCard` → `ThreeInviteCard`
+- `GamesHubScreen` → `ThreeFloatingIcons`
+
+**Feature flags** (`constants/featureFlags.ts`):
+
+```typescript
+export const THREE_JS_FEATURES = {
+  INVITE_CARDS: true,
+  HERO_BANNERS: true,
+  GAME_BACKGROUNDS: false, // Performance-gated
+  TROPHIES: true,
+  FLOATING_ICONS: true,
+};
+```
+
+**Web support:** Metro config includes Three.js shims (`metro.config.js`) for web builds.
+
+**Bundle impact:** ~500 kB (three) + ~100 kB (expo-gl native) + ~50 kB (expo-three).
 
 ### 15. `react-native-canvas` — HTML5 Canvas API
 
@@ -337,7 +380,7 @@ npm install react-native-shadow-2
 | Tile flip animations     | `react-native-reanimated`      | 3D card flip for Memory    |
 | Background blur on pause | `expo-blur`                    | Frosted glass pause menu   |
 
-### Action Games (BrickBreaker, Snake, FlappyBird, BounceBlitz)
+### Action Games (BrickBreaker, Snake, BounceBlitz)
 
 | Enhancement         | Package                             | What Changes                    |
 | ------------------- | ----------------------------------- | ------------------------------- |
@@ -358,15 +401,6 @@ npm install react-native-shadow-2
 | Felt table texture | `react-native-skia` shader | Green felt background |
 | Shuffle sound      | `expo-audio`               | Card shuffle sfx      |
 | Win confetti       | `confetti-cannon`          | Celebration on win    |
-
-### Drawing Games (SnapDraw)
-
-| Enhancement                | Package                     | What Changes                             |
-| -------------------------- | --------------------------- | ---------------------------------------- |
-| **Real Skia Canvas**       | `react-native-skia`         | Replace dot-View hack with proper Canvas |
-| Pressure-sensitive strokes | Skia path + gesture-handler | Variable width lines                     |
-| Color picker gradient      | Skia gradients              | Smooth color picker                      |
-| Brush textures             | Skia shaders                | Chalk, watercolor, marker effects        |
 
 ---
 
@@ -399,5 +433,4 @@ npm install react-native-shadow-2
 
 ## 💡 Key Takeaway
 
-> **Your biggest opportunity is using what you already have.**  
-> `@shopify/react-native-skia` and `react-native-svg` are **already installed and paid for in bundle size** but completely unused in any game screen. Using just these two packages would transform every game from flat colored Views into rich, GPU-accelerated, properly rendered game graphics — with zero additional dependencies.
+> **Significant progress has been made.** Skia is now actively used for GPU-rendered game boards (Chess, Checkers, 2048, Gomoku) with Skia graphics components. Three.js provides 3D visual effects on the Play tab with 5 components. The remaining opportunity is extending Skia to more games (BrickBreaker, card games) and adopting Tier 2 packages (Lottie, expo-blur, confetti) for celebration/polish effects.

@@ -195,107 +195,6 @@ export const GENERAL_ACHIEVEMENTS: GameAchievementDefinition[] = [
 ];
 
 // =============================================================================
-// Flappy Bird Achievements
-// =============================================================================
-
-export const flappy_bird_ACHIEVEMENTS: GameAchievementDefinition[] = [
-  {
-    id: "flappy_first",
-    name: "First Flight",
-    description: "Score your first point in Flappy Bird",
-    icon: "🐤",
-    category: "flappy_bird",
-    tier: "bronze",
-    xpReward: TIER_REWARDS.bronze.xp,
-    coinReward: TIER_REWARDS.bronze.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "flappy_score", conditions: { min: 1 } },
-    progressType: "instant",
-  },
-  {
-    id: "flappy_10",
-    name: "Getting Wings",
-    description: "Score 10 points in Flappy Bird",
-    icon: "🐦",
-    category: "flappy_bird",
-    tier: "bronze",
-    xpReward: TIER_REWARDS.bronze.xp,
-    coinReward: TIER_REWARDS.bronze.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "flappy_score", conditions: { min: 10 } },
-    progressType: "threshold",
-    progressTarget: 10,
-  },
-  {
-    id: "flappy_25",
-    name: "Soaring High",
-    description: "Score 25 points in Flappy Bird",
-    icon: "🦅",
-    category: "flappy_bird",
-    tier: "silver",
-    xpReward: TIER_REWARDS.silver.xp,
-    coinReward: TIER_REWARDS.silver.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "flappy_score", conditions: { min: 25 } },
-    progressType: "threshold",
-    progressTarget: 25,
-  },
-  {
-    id: "flappy_50",
-    name: "Sky King",
-    description: "Score 50 points in Flappy Bird",
-    icon: "🦚",
-    category: "flappy_bird",
-    tier: "gold",
-    xpReward: TIER_REWARDS.gold.xp,
-    coinReward: TIER_REWARDS.gold.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "flappy_score", conditions: { min: 50 } },
-    progressType: "threshold",
-    progressTarget: 50,
-    unlocks: { type: "badge", itemId: "flappy_master_badge" },
-  },
-  {
-    id: "flappy_100",
-    name: "Legend of the Skies",
-    description: "Score 100 points in Flappy Bird",
-    icon: "🌟",
-    category: "flappy_bird",
-    tier: "platinum",
-    xpReward: TIER_REWARDS.platinum.xp,
-    coinReward: TIER_REWARDS.platinum.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "flappy_score", conditions: { min: 100 } },
-    progressType: "threshold",
-    progressTarget: 100,
-    unlocks: { type: "avatar_frame", itemId: "flappy_legend_frame" },
-  },
-  {
-    id: "flappy_marathon",
-    name: "Marathon Flapper",
-    description: "Play 50 games of Flappy Bird",
-    icon: "🏃",
-    category: "flappy_bird",
-    tier: "silver",
-    xpReward: TIER_REWARDS.silver.xp,
-    coinReward: TIER_REWARDS.silver.coins,
-    secret: false,
-    repeatable: false,
-    trigger: {
-      type: "game_played",
-      conditions: { gameType: "flappy_bird", count: 50 },
-    },
-    progressType: "count",
-    progressTarget: 50,
-  },
-];
-
-// =============================================================================
 // Bounce Blitz Achievements
 // =============================================================================
 
@@ -2124,7 +2023,6 @@ export const STREAK_ACHIEVEMENTS: GameAchievementDefinition[] = [
  */
 export const ALL_GAME_ACHIEVEMENTS: GameAchievementDefinition[] = [
   ...GENERAL_ACHIEVEMENTS,
-  ...flappy_bird_ACHIEVEMENTS,
   ...BOUNCE_BLITZ_ACHIEVEMENTS,
   ...memory_master_ACHIEVEMENTS,
   ...PLAY_2048_ACHIEVEMENTS,

@@ -17,8 +17,8 @@ import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
 import type { LevelInfo } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
-import { LevelProgress } from "../LevelProgress";
-import { ProfilePictureWithDecoration } from "../ProfilePicture";
+import { LevelProgress } from "@/components/profile/LevelProgress";
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 
 // =============================================================================
 // Types

@@ -193,10 +193,10 @@ function convertToShopItemWithStatus(
     name: item.name,
     description: item.description || "",
     category: "featured", // Default category for shop modal
-    slot: item.slot as any, // Map slot type
+    slot: item.slot as ShopItemWithStatus["slot"], // Map slot type
     priceTokens: item.priceTokens,
     priceUSD: undefined, // Points shop is tokens-only
-    rarity: item.rarity as any, // Map rarity type
+    rarity: item.rarity as ShopItemWithStatus["rarity"], // Map rarity type
     imagePath: item.imagePath,
     featured: item.featured,
     availableFrom: item.availableFrom,

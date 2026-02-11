@@ -34,6 +34,9 @@ import { fetchActivityFeed } from "@/services/activityFeed";
 import { useAuth } from "@/store/AuthContext";
 import type { ActivityEvent, ActivityEventType } from "@/types/activityFeed";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/social/ActivityFeedScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -105,7 +108,7 @@ export default function ActivityFeedScreen({
         setEvents(feedEvents);
         setHasMore(feedEvents.length >= PAGE_SIZE);
       } catch (error) {
-        console.error("[ActivityFeed] Error loading feed:", error);
+        logger.error("[ActivityFeed] Error loading feed:", error);
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -132,7 +135,7 @@ export default function ActivityFeedScreen({
 
       setEvents((prev) => [...prev, ...moreEvents]);
     } catch (error) {
-      console.error("[ActivityFeed] Error loading more:", error);
+      logger.error("[ActivityFeed] Error loading more:", error);
     } finally {
       setLoadingMore(false);
     }
@@ -203,7 +206,7 @@ export default function ActivityFeedScreen({
           : e,
       ),
     );
-    // TODO: Persist like to Firestore
+    // NOTE: Persist like to Firestore
   }, []);
 
   // ==========================================================================

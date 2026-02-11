@@ -27,7 +27,7 @@ import { Text, useTheme } from "react-native-paper";
 
 import { groupGamesByTurn } from "@/types/gameFilters";
 import { AnyMatch } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { ActiveGameCard, CompactActiveGameCard } from "./ActiveGameCard";
 
 // Enable LayoutAnimation for Android
@@ -115,7 +115,7 @@ function GameGroup({
       >
         <View style={styles.groupTitleRow}>
           <MaterialCommunityIcons
-            name={icon as any}
+            name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
             size={20}
             color={iconColor}
           />

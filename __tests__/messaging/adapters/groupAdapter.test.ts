@@ -78,7 +78,7 @@ const createScorecardGroupMessage = (
   content: "Check out my score!",
   createdAt: 1706400000000,
   scorecard: {
-    gameId: "flappy" as any,
+    gameId: "bounce_blitz" as any,
     score: 42,
     playerName: "John Doe",
   },
@@ -341,7 +341,7 @@ describe("fromGroupMessage", () => {
 
       const parsed = JSON.parse(v2.text!);
       expect(parsed.type).toBe("scorecard");
-      expect(parsed.gameId).toBe("flappy");
+      expect(parsed.gameId).toBe("bounce_blitz");
       expect(parsed.score).toBe(42);
       expect(parsed.playerName).toBe("John Doe");
     });

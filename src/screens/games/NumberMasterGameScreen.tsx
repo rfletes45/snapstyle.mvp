@@ -11,6 +11,10 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,6 +26,15 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Canvas,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  Circle as SkiaCircle,
+  vec,
+} from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -31,17 +44,15 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Canvas,
-  Circle as SkiaCircle,
-  LinearGradient,
-  RadialGradient,
-  RoundedRect,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+const logger = createLogger("screens/games/NumberMasterGameScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -269,9 +280,18 @@ function formatTime(ms: number): string {
 // Component
 // =============================================================================
 
-export default function NumberMasterGameScreen({
+function NumberMasterGameScreen({
   navigation,
 }: NumberMasterGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "number_master" });
+  void __codexGameCompletion;
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -296,6 +316,19 @@ export default function NumberMasterGameScreen({
   const [isNewBest, setIsNewBest] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
 
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "number_master",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(0);
   const accumulatedRef = useRef(0); // accumulated time from previous rounds
@@ -305,7 +338,7 @@ export default function NumberMasterGameScreen({
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE as any).then(
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
         setPersonalBest,
       );
     }
@@ -351,6 +384,7 @@ export default function NumberMasterGameScreen({
     setExpression([]);
     setUsedNumberIndices(new Set());
     setGameState("playing");
+    spectatorHost.startHosting();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
@@ -379,6 +413,7 @@ export default function NumberMasterGameScreen({
     setFinalScore(scoreSeconds);
     setElapsed(finalTime);
     setGameState("game_result");
+    spectatorHost.endHosting(scoreSeconds);
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -386,7 +421,7 @@ export default function NumberMasterGameScreen({
     if (currentFirebaseUser) {
       try {
         const session = await recordGameSession(currentFirebaseUser.uid, {
-          gameId: GAME_TYPE as any,
+          gameId: GAME_TYPE,
           score: scoreSeconds,
           duration: Math.round(finalTime),
         });
@@ -394,14 +429,14 @@ export default function NumberMasterGameScreen({
         if (session && newBest) {
           setIsNewBest(true);
           setPersonalBest({
-            gameId: GAME_TYPE as any,
+            gameId: GAME_TYPE,
             bestScore: scoreSeconds,
             achievedAt: Date.now(),
           });
           showSuccess("🎉 New personal best!");
         }
       } catch (error) {
-        console.error("Error recording game session:", error);
+        logger.error("Error recording game session:", error);
       }
     }
   }, [currentFirebaseUser, showSuccess]);
@@ -529,7 +564,7 @@ export default function NumberMasterGameScreen({
           showError("Failed to share score. Try again.");
         }
       } catch (error) {
-        console.error("[GameNumber] Error sharing score:", error);
+        logger.error("[GameNumber] Error sharing score:", error);
         showError("Failed to share score. Try again.");
       } finally {
         setIsSending(false);
@@ -537,6 +572,26 @@ export default function NumberMasterGameScreen({
     },
     [currentFirebaseUser, profile, finalScore, showSuccess, showError],
   );
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (gameState === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          round,
+          elapsed,
+          gameState,
+          // Visual state for spectator renderer
+          targetNumber: roundData?.target ?? 0,
+          expression: expression.map((t) => t.value).join(" "),
+          totalRounds: TOTAL_ROUNDS,
+        }),
+        round,
+        undefined,
+        undefined,
+      );
+    }
+  }, [round, elapsed, gameState, expression]);
 
   // ---------------------------------------------------------------------------
   // Computed values
@@ -549,6 +604,12 @@ export default function NumberMasterGameScreen({
 
   // ---------------------------------------------------------------------------
   // Render
+  // Back navigation with confirmation dialog
+  const { handleBack } = useGameBackHandler({
+    gameType: "number_master",
+    isGameOver: gameState === "game_result" || gameState === "idle",
+  });
+
   // ---------------------------------------------------------------------------
 
   return (
@@ -556,7 +617,7 @@ export default function NumberMasterGameScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           style={styles.backButton}
           accessibilityLabel="Go back"
         >
@@ -568,6 +629,19 @@ export default function NumberMasterGameScreen({
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Number</Text>
         <View style={styles.headerRight}>
+          {spectatorHost.spectatorRoomId && (
+            <TouchableOpacity
+              onPress={() => setShowSpectatorInvitePicker(true)}
+              style={{ marginRight: 8 }}
+              accessibilityLabel="Invite spectators"
+            >
+              <MaterialCommunityIcons
+                name="eye"
+                size={22}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
           {gameState !== "idle" && gameState !== "game_result" && (
             <Text style={[styles.timerText, { color: colors.primary }]}>
               {formatTime(elapsed)}
@@ -594,7 +668,10 @@ export default function NumberMasterGameScreen({
                           ? [colors.primary, colors.primary + "AA"]
                           : isCurrent
                             ? ["#FFE082", "#FFD700", "#FFA000"]
-                            : [colors.textSecondary + "40", colors.textSecondary + "20"]
+                            : [
+                                colors.textSecondary + "40",
+                                colors.textSecondary + "20",
+                              ]
                       }
                     />
                   </SkiaCircle>
@@ -656,20 +733,25 @@ export default function NumberMasterGameScreen({
         {gameState === "playing" && roundData && (
           <View style={styles.playArea}>
             {/* Target with Skia gradient */}
-            <View
-              style={[
-                styles.targetContainer,
-                { overflow: "hidden" },
-              ]}
-            >
+            <View style={[styles.targetContainer, { overflow: "hidden" }]}>
               <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
                 <RoundedRect x={0} y={0} width={400} height={120} r={16}>
                   <LinearGradient
                     start={vec(0, 0)}
                     end={vec(400, 120)}
-                    colors={[colors.primary + "25", colors.primary + "10", colors.primary + "25"]}
+                    colors={[
+                      colors.primary + "25",
+                      colors.primary + "10",
+                      colors.primary + "25",
+                    ]}
                   />
-                  <Shadow dx={0} dy={2} blur={12} color={colors.primary + "30"} inner />
+                  <Shadow
+                    dx={0}
+                    dy={2}
+                    blur={12}
+                    color={colors.primary + "30"}
+                    inner
+                  />
                 </RoundedRect>
               </Canvas>
               <Text
@@ -872,18 +954,34 @@ export default function NumberMasterGameScreen({
                       },
                     ]}
                   >
-                    <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+                    <Canvas
+                      style={StyleSheet.absoluteFill}
+                      pointerEvents="none"
+                    >
                       <RoundedRect x={0} y={0} width={56} height={56} r={12}>
                         <LinearGradient
                           start={vec(0, 0)}
                           end={vec(56, 56)}
                           colors={
                             used
-                              ? [colors.textSecondary + "15", colors.textSecondary + "08"]
-                              : [colors.primary + "28", colors.primary + "10", colors.primary + "20"]
+                              ? [
+                                  colors.textSecondary + "15",
+                                  colors.textSecondary + "08",
+                                ]
+                              : [
+                                  colors.primary + "28",
+                                  colors.primary + "10",
+                                  colors.primary + "20",
+                                ]
                           }
                         />
-                        <Shadow dx={0} dy={1} blur={4} color={used ? "#00000000" : colors.primary + "25"} inner />
+                        <Shadow
+                          dx={0}
+                          dy={1}
+                          blur={4}
+                          color={used ? "#00000000" : colors.primary + "25"}
+                          inner
+                        />
                       </RoundedRect>
                     </Canvas>
                     <Text
@@ -1060,7 +1158,10 @@ export default function NumberMasterGameScreen({
               </Button>
               <Button
                 mode="text"
-                onPress={() => navigation.goBack()}
+                onPress={() => {
+                  if (navigation.canGoBack()) navigation.goBack();
+                  else navigation.navigate("GamesHub");
+                }}
                 style={styles.quitButton}
               >
                 Quit
@@ -1099,6 +1200,7 @@ export default function NumberMasterGameScreen({
       {/* Friend Picker */}
       {currentFirebaseUser && (
         <FriendPickerModal
+          key="scorecard-picker"
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
           onSelectFriend={handleSelectFriend}
@@ -1106,6 +1208,28 @@ export default function NumberMasterGameScreen({
           title="Send Scorecard"
         />
       )}
+
+      {/* Spectator Overlay */}
+      <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "number_master",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
+      />
     </View>
   );
 }
@@ -1395,3 +1519,5 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 });
+
+export default withGameErrorBoundary(NumberMasterGameScreen, "number_master");

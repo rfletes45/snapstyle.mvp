@@ -29,6 +29,9 @@ import type { MoodType } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
 import * as haptics from "@/utils/haptics";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/profile/SetStatusScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -116,7 +119,7 @@ export default function SetStatusScreen({ navigation }: SetStatusScreenProps) {
       haptics.success();
       navigation.goBack();
     } catch (error) {
-      console.error("Failed to save status:", error);
+      logger.error("Failed to save status:", error);
       haptics.error();
     } finally {
       setSaving(false);
@@ -135,7 +138,7 @@ export default function SetStatusScreen({ navigation }: SetStatusScreenProps) {
       haptics.success();
       navigation.goBack();
     } catch (error) {
-      console.error("Failed to clear status:", error);
+      logger.error("Failed to clear status:", error);
       haptics.error();
     } finally {
       setClearing(false);

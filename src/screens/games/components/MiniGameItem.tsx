@@ -29,7 +29,7 @@ import Animated, {
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import { AnyMatch, TurnBasedGameType } from "@/types/turnBased";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 // =============================================================================
 // Types

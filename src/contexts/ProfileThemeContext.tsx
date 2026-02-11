@@ -24,6 +24,9 @@ import React, {
   useState,
 } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("contexts/ProfileThemeContext");
 // =============================================================================
 // Types
 // =============================================================================
@@ -121,7 +124,7 @@ export function ProfileThemeProvider({
         setViewerThemeId(ownerTheme || "default");
       }
     } catch (error) {
-      console.error("[ProfileThemeContext] Error loading themes:", error);
+      logger.error("[ProfileThemeContext] Error loading themes:", error);
       setOwnerThemeId("default");
       setViewerThemeId("default");
     } finally {

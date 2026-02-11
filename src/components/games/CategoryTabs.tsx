@@ -33,7 +33,7 @@ import {
   GAME_BORDER_RADIUS,
   GAME_SPACING,
   getCategoryColor,
-} from "../../../constants/gamesTheme";
+} from "@/constants/gamesTheme";
 
 // =============================================================================
 // Types
@@ -154,7 +154,7 @@ function TabItem({
           activeOpacity={0.8}
         >
           <MaterialCommunityIcons
-            name={tab.icon as any}
+            name={tab.icon as keyof typeof MaterialCommunityIcons.glyphMap}
             size={18}
             color={isSelected ? "#FFFFFF" : theme.colors.onSurfaceVariant}
           />
@@ -227,7 +227,7 @@ function TabItem({
       >
         <View style={styles.defaultTabContent}>
           <MaterialCommunityIcons
-            name={tab.icon as any}
+            name={tab.icon as keyof typeof MaterialCommunityIcons.glyphMap}
             size={20}
             color={isSelected ? accentColor : theme.colors.onSurfaceVariant}
           />

@@ -1,10 +1,12 @@
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/backgroundCallHandler.web");
 /**
  * Background Call Handler - Web Stub
  * This is a no-op stub for web platform.
  */
 
 export function initializeBackgroundCallHandler(): void {
-  console.warn("[backgroundCallHandler] Not available on web");
+  logger.warn("[backgroundCallHandler] Not available on web");
 }
 
 export function initializeAppStateListener(): void {

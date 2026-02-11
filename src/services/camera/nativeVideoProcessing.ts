@@ -10,6 +10,9 @@
 
 import * as FileSystem from "expo-file-system/legacy";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/nativeVideoProcessing");
 // expo-video-thumbnails is not installed; provide a stub
 const VideoThumbnails = {
   getThumbnailAsync: async (
@@ -17,7 +20,7 @@ const VideoThumbnails = {
     options?: { time?: number; quality?: number },
   ) => {
     // Placeholder: return the video URI as the thumbnail
-    console.warn(
+    logger.warn(
       "[VideoThumbnails] expo-video-thumbnails not installed, returning source URI",
     );
     return { uri, width: 200, height: 200 };
@@ -106,7 +109,7 @@ export async function compressVideo(
   options: VideoCompressionOptions = { resolution: "720p" },
 ): Promise<VideoMetadata> {
   try {
-    console.log(
+    logger.info(
       `[Video Processing] Compressing video to ${options.resolution}`,
     );
 
@@ -119,7 +122,7 @@ export async function compressVideo(
     }
 
     const sourceSizeBytes = fileInfo.size || 0;
-    console.log(
+    logger.info(
       `[Video Processing] Source video size: ${sourceSizeBytes} bytes`,
     );
 
@@ -157,14 +160,14 @@ export async function compressVideo(
       videoCoder: "h264",
     };
 
-    console.log(`[Video Processing] Compression complete`);
-    console.log(`  Resolution: ${spec.width}x${spec.height}`);
-    console.log(`  Bitrate: ${(spec.bitrate / 1000000).toFixed(1)} Mbps`);
-    console.log(`  Estimated size: ${(estimatedSize / 1000000).toFixed(2)} MB`);
+    logger.info(`[Video Processing] Compression complete`);
+    logger.info(`  Resolution: ${spec.width}x${spec.height}`);
+    logger.info(`  Bitrate: ${(spec.bitrate / 1000000).toFixed(1)} Mbps`);
+    logger.info(`  Estimated size: ${(estimatedSize / 1000000).toFixed(2)} MB`);
 
     return metadata;
   } catch (error) {
-    console.error("[Video Processing] Video compression failed:", error);
+    logger.error("[Video Processing] Video compression failed:", error);
     throw error;
   }
 }
@@ -179,17 +182,17 @@ export async function generateVideoThumbnail(
   size: number = 200,
 ): Promise<string> {
   try {
-    console.log(`[Video Processing] Generating thumbnail at ${timestampMs}ms`);
+    logger.info(`[Video Processing] Generating thumbnail at ${timestampMs}ms`);
 
     // Use expo-video-thumbnails to extract frame
     const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
       time: timestampMs,
     });
 
-    console.log(`[Video Processing] Thumbnail generated: ${thumbnail.uri}`);
+    logger.info(`[Video Processing] Thumbnail generated: ${thumbnail.uri}`);
     return thumbnail.uri;
   } catch (error) {
-    console.error("[Video Processing] Thumbnail generation failed:", error);
+    logger.error("[Video Processing] Thumbnail generation failed:", error);
     // Return placeholder on error
     return videoUri;
   }
@@ -205,7 +208,7 @@ export async function extractVideoFrames(
   frameSize: number = 100,
 ): Promise<string[]> {
   try {
-    console.log(
+    logger.info(
       `[Video Processing] Extracting ${frameCount} frames from video`,
     );
 
@@ -221,14 +224,14 @@ export async function extractVideoFrames(
         });
         thumbnails.push(thumbnail.uri);
       } catch (err) {
-        console.warn(`[Video Processing] Failed to extract frame ${i}:`, err);
+        logger.warn(`[Video Processing] Failed to extract frame ${i}:`, err);
       }
     }
 
-    console.log(`[Video Processing] Extracted ${thumbnails.length} frames`);
+    logger.info(`[Video Processing] Extracted ${thumbnails.length} frames`);
     return thumbnails;
   } catch (error) {
-    console.error("[Video Processing] Frame extraction failed:", error);
+    logger.error("[Video Processing] Frame extraction failed:", error);
     return [];
   }
 }
@@ -243,7 +246,7 @@ export async function trimVideo(
   endMs: number = 60000, // Default 60 second limit
 ): Promise<string> {
   try {
-    console.log(
+    logger.info(
       `[Video Processing] Trimming video from ${startMs}ms to ${endMs}ms`,
     );
 
@@ -261,10 +264,10 @@ export async function trimVideo(
      * Current implementation returns source URI for placeholder
      */
 
-    console.log(`[Video Processing] Video trimmed`);
+    logger.info(`[Video Processing] Video trimmed`);
     return sourceUri;
   } catch (error) {
-    console.error("[Video Processing] Video trimming failed:", error);
+    logger.error("[Video Processing] Video trimming failed:", error);
     throw error;
   }
 }
@@ -283,7 +286,7 @@ export async function applyFilterToVideo(
   },
 ): Promise<string> {
   try {
-    console.log(`[Video Processing] Applying filter to video`);
+    logger.info(`[Video Processing] Applying filter to video`);
 
     /**
      * PRODUCTION IMPLEMENTATION:
@@ -306,10 +309,10 @@ export async function applyFilterToVideo(
      * Current implementation returns source URI for placeholder
      */
 
-    console.log(`[Video Processing] Filter applied to video`);
+    logger.info(`[Video Processing] Filter applied to video`);
     return videoUri;
   } catch (error) {
-    console.error("[Video Processing] Failed to apply filter to video:", error);
+    logger.error("[Video Processing] Failed to apply filter to video:", error);
     throw error;
   }
 }
@@ -323,7 +326,7 @@ export async function addAudioToVideo(
   audioUri: string,
 ): Promise<string> {
   try {
-    console.log(`[Video Processing] Adding audio to video`);
+    logger.info(`[Video Processing] Adding audio to video`);
 
     /**
      * PRODUCTION IMPLEMENTATION:
@@ -336,10 +339,10 @@ export async function addAudioToVideo(
      * Current implementation returns source URI for placeholder
      */
 
-    console.log(`[Video Processing] Audio added to video`);
+    logger.info(`[Video Processing] Audio added to video`);
     return videoUri;
   } catch (error) {
-    console.error("[Video Processing] Failed to add audio to video:", error);
+    logger.error("[Video Processing] Failed to add audio to video:", error);
     throw error;
   }
 }
@@ -349,7 +352,7 @@ export async function addAudioToVideo(
  */
 export async function extractAudioFromVideo(videoUri: string): Promise<string> {
   try {
-    console.log(`[Video Processing] Extracting audio from video`);
+    logger.info(`[Video Processing] Extracting audio from video`);
 
     /**
      * PRODUCTION IMPLEMENTATION:
@@ -362,10 +365,10 @@ export async function extractAudioFromVideo(videoUri: string): Promise<string> {
      * Current implementation returns source URI for placeholder
      */
 
-    console.log(`[Video Processing] Audio extracted from video`);
+    logger.info(`[Video Processing] Audio extracted from video`);
     return videoUri;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Video Processing] Failed to extract audio from video:",
       error,
     );
@@ -381,7 +384,7 @@ export async function getVideoMetadata(
   videoUri: string,
 ): Promise<Partial<VideoMetadata>> {
   try {
-    console.log(`[Video Processing] Getting video metadata`);
+    logger.info(`[Video Processing] Getting video metadata`);
 
     // Get file size
     const fileInfo = await FileSystem.getInfoAsync(videoUri);
@@ -411,10 +414,10 @@ export async function getVideoMetadata(
       frameRate: 30,
     };
 
-    console.log(`[Video Processing] Metadata retrieved`);
+    logger.info(`[Video Processing] Metadata retrieved`);
     return metadata;
   } catch (error) {
-    console.error("[Video Processing] Failed to get video metadata:", error);
+    logger.error("[Video Processing] Failed to get video metadata:", error);
     throw error;
   }
 }
@@ -427,7 +430,7 @@ export async function convertVideoFormat(
   targetFormat: "mp4" | "mov" | "mkv" | "webm",
 ): Promise<string> {
   try {
-    console.log(`[Video Processing] Converting video to ${targetFormat}`);
+    logger.info(`[Video Processing] Converting video to ${targetFormat}`);
 
     /**
      * PRODUCTION IMPLEMENTATION:
@@ -442,10 +445,10 @@ export async function convertVideoFormat(
      * Current implementation returns source URI for placeholder
      */
 
-    console.log(`[Video Processing] Video converted to ${targetFormat}`);
+    logger.info(`[Video Processing] Video converted to ${targetFormat}`);
     return sourceUri;
   } catch (error) {
-    console.error("[Video Processing] Failed to convert video format:", error);
+    logger.error("[Video Processing] Failed to convert video format:", error);
     throw error;
   }
 }
@@ -463,7 +466,7 @@ export async function validateVideo(
   errors: string[];
 }> {
   try {
-    console.log(`[Video Processing] Validating video`);
+    logger.info(`[Video Processing] Validating video`);
 
     const errors: string[] = [];
 
@@ -490,14 +493,14 @@ export async function validateVideo(
 
     const valid = errors.length === 0;
 
-    console.log(`[Video Processing] Validation ${valid ? "passed" : "failed"}`);
+    logger.info(`[Video Processing] Validation ${valid ? "passed" : "failed"}`);
     if (!valid) {
-      console.log(`  Errors: ${errors.join(", ")}`);
+      logger.info(`  Errors: ${errors.join(", ")}`);
     }
 
     return { valid, errors };
   } catch (error) {
-    console.error("[Video Processing] Failed to validate video:", error);
+    logger.error("[Video Processing] Failed to validate video:", error);
     return {
       valid: false,
       errors: [
@@ -524,14 +527,14 @@ export async function createVideoThumbnailPreview(
 
     const size = sizes[previewSize];
 
-    console.log(
+    logger.info(
       `[Video Processing] Creating ${previewSize} video thumbnail preview`,
     );
 
     const thumbnail = await generateVideoThumbnail(videoUri, 0, size);
     return thumbnail;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Video Processing] Failed to create video thumbnail preview:",
       error,
     );

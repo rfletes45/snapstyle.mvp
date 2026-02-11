@@ -16,6 +16,7 @@
  * @module components/chat/ChatComposer
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { VoiceRecording } from "@/hooks/useVoiceRecorder";
 import { ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useMemo, useRef } from "react";
@@ -34,7 +35,6 @@ import { IconButton, Text, useTheme } from "react-native-paper";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../../constants/theme";
 import DuckIcon from "./DuckIcon";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { VoiceRecordButton } from "./VoiceRecordButton";
@@ -302,7 +302,7 @@ export function ChatComposer({
             textAlignVertical="center"
             editable={!isRecording}
             returnKeyType="send"
-            blurOnSubmit={false}
+            submitBehavior="submit"
             onSubmitEditing={canSend ? handleSend : undefined}
             {...textInputProps}
           />

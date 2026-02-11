@@ -2,7 +2,7 @@
 
 > **Comprehensive plan for implementing voice/video calling in Vibe**
 >
-> **Status:** Planning  
+> **Status:** ⏸️ Infrastructure built, feature-flagged off  
 > **Priority:** High (Vital Feature)  
 > **Estimated Timeline:** 6-8 weeks
 
@@ -2311,8 +2311,7 @@ Phase 3+ (Future)
 │  Supported Games (reuse existing):                             │
 │  • Chess (turn-based via data channel)                         │
 │  • Pool (real-time physics sync)                               │
-│  • Flappy Bird (competitive/co-op)                             │
-│  • Cart Course (competitive racing)                            │
+│  • Bounce Blitz (competitive/co-op)                            │
 │                                                                 │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -2468,4 +2467,3 @@ This plan provides a comprehensive roadmap for implementing real-time video and 
 | Complexity         | Higher      | Lower                  |
 
 The implementation leverages your existing Firebase infrastructure for signaling, follows your local-first architecture patterns, and integrates seamlessly with the existing chat system.
-

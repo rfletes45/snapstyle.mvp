@@ -17,6 +17,9 @@ import { FlatList, StyleSheet, View } from "react-native";
 import { Appbar, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/profile/BadgeCollectionScreen");
 export default function BadgeCollectionScreen({ navigation }: any) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
@@ -101,8 +104,8 @@ export default function BadgeCollectionScreen({ navigation }: any) {
                 mode="compact"
                 locked={!hasBadge(item.id)}
                 onPress={() => {
-                  // TODO: Open badge detail modal
-                  console.log("Badge:", item.id);
+                  // NOTE: Open badge detail modal
+                  logger.info("Badge:", item.id);
                 }}
               />
             </View>

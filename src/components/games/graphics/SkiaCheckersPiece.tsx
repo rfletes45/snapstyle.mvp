@@ -6,24 +6,25 @@
  * - Specular highlight on top
  * - Soft drop shadow
  * - Optional king crown SVG
+ *
+ * On web, falls back to CSS-styled View since Skia Canvas is not available.
  */
 
 import {
   Canvas,
   Circle,
-  Group,
   RadialGradient,
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
 import React from "react";
+import { Platform, StyleSheet, View } from "react-native";
 import Svg, {
   Defs,
-  LinearGradient as SvgLinearGradient,
   Path,
   Stop,
+  LinearGradient as SvgLinearGradient,
 } from "react-native-svg";
-import { StyleSheet, View } from "react-native";
 
 interface SkiaCheckersPieceProps {
   /** Diameter of the piece */
@@ -56,6 +57,19 @@ export function SkiaCheckersPiece({
   isKing = false,
   isSelected = false,
 }: SkiaCheckersPieceProps) {
+  // On web, Skia Canvas is shimmed to a plain View that renders nothing
+  // visible, so use a CSS-based fallback instead.
+  if (Platform.OS === "web") {
+    return (
+      <WebCheckersPiece
+        size={size}
+        color={color}
+        isKing={isKing}
+        isSelected={isSelected}
+      />
+    );
+  }
+
   const colors = color === "red" ? RED_COLORS : BLACK_COLORS;
   const cx = size / 2;
   const cy = size / 2;
@@ -97,7 +111,11 @@ export function SkiaCheckersPiece({
         </Circle>
 
         {/* Specular highlight — top-left */}
-        <Circle cx={cx - radius * 0.15} cy={cy - radius * 0.2} r={highlightRadius}>
+        <Circle
+          cx={cx - radius * 0.15}
+          cy={cy - radius * 0.2}
+          r={highlightRadius}
+        >
           <RadialGradient
             c={vec(cx - radius * 0.15, cy - radius * 0.25)}
             r={highlightRadius}
@@ -107,7 +125,14 @@ export function SkiaCheckersPiece({
 
         {/* Selection glow */}
         {isSelected && (
-          <Circle cx={cx} cy={cy} r={radius + 3} color="transparent" style="stroke" strokeWidth={3}>
+          <Circle
+            cx={cx}
+            cy={cy}
+            r={radius + 3}
+            color="transparent"
+            style="stroke"
+            strokeWidth={3}
+          >
             <RadialGradient
               c={vec(cx, cy)}
               r={radius + 4}
@@ -118,30 +143,171 @@ export function SkiaCheckersPiece({
       </Canvas>
 
       {/* King crown — SVG overlay */}
-      {isKing && (
-        <View style={[styles.crownContainer, { top: cy - size * 0.2, left: cx - size * 0.18 }]}>
-          <Svg width={size * 0.36} height={size * 0.28} viewBox="0 0 36 28">
-            <Defs>
-              <SvgLinearGradient id="crownGold" x1="0%" y1="0%" x2="0%" y2="100%">
-                <Stop offset="0%" stopColor="#FFD700" />
-                <Stop offset="100%" stopColor="#FFA500" />
-              </SvgLinearGradient>
-            </Defs>
-            <Path
-              d="M2 24L6 8L12 16L18 4L24 16L30 8L34 24Z"
-              fill="url(#crownGold)"
-              stroke="#CC8800"
-              strokeWidth={1}
-              strokeLinejoin="round"
-            />
-            {/* Crown jewels */}
-            <Path d="M6 24h24v2H6z" fill="#CC8800" />
-          </Svg>
-        </View>
-      )}
+      {isKing && <KingCrown size={size} cx={cx} cy={cy} />}
     </View>
   );
 }
+
+// =============================================================================
+// King Crown (shared between native & web)
+// =============================================================================
+
+function KingCrown({ size, cx, cy }: { size: number; cx: number; cy: number }) {
+  return (
+    <View
+      style={[
+        styles.crownContainer,
+        { top: cy - size * 0.2, left: cx - size * 0.18 },
+      ]}
+    >
+      <Svg width={size * 0.36} height={size * 0.28} viewBox="0 0 36 28">
+        <Defs>
+          <SvgLinearGradient id="crownGold" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#FFD700" />
+            <Stop offset="100%" stopColor="#FFA500" />
+          </SvgLinearGradient>
+        </Defs>
+        <Path
+          d="M2 24L6 8L12 16L18 4L24 16L30 8L34 24Z"
+          fill="url(#crownGold)"
+          stroke="#CC8800"
+          strokeWidth={1}
+          strokeLinejoin="round"
+        />
+        {/* Crown jewels */}
+        <Path d="M6 24h24v2H6z" fill="#CC8800" />
+      </Svg>
+    </View>
+  );
+}
+
+// =============================================================================
+// Web Fallback — CSS-based checker piece
+// =============================================================================
+
+function WebCheckersPiece({
+  size,
+  color,
+  isKing,
+  isSelected,
+}: SkiaCheckersPieceProps) {
+  const colors = color === "red" ? RED_COLORS : BLACK_COLORS;
+  const radius = size * 0.44;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {/* Selection glow ring */}
+      {isSelected && (
+        <View
+          style={[
+            webStyles.selectionGlow,
+            {
+              width: radius * 2 + 8,
+              height: radius * 2 + 8,
+              borderRadius: radius + 4,
+            },
+          ]}
+        />
+      )}
+      {/* Main disc with gradient-like effect using layered views */}
+      <View
+        style={[
+          webStyles.shadow,
+          {
+            width: radius * 2,
+            height: radius * 2,
+            borderRadius: radius,
+          },
+        ]}
+      />
+      <View
+        style={[
+          webStyles.disc,
+          {
+            width: radius * 2,
+            height: radius * 2,
+            borderRadius: radius,
+            backgroundColor: colors.outer,
+            borderColor: colors.ring,
+          },
+        ]}
+      >
+        {/* Inner lighter circle for 3D effect */}
+        <View
+          style={[
+            webStyles.innerDisc,
+            {
+              width: radius * 1.5,
+              height: radius * 1.5,
+              borderRadius: radius * 0.75,
+              backgroundColor: colors.center,
+            },
+          ]}
+        />
+        {/* Specular highlight */}
+        <View
+          style={[
+            webStyles.highlight,
+            {
+              width: radius * 0.7,
+              height: radius * 0.5,
+              borderRadius: radius * 0.35,
+              top: radius * 0.2,
+              left: radius * 0.35,
+            },
+          ]}
+        />
+      </View>
+      {/* King crown */}
+      {isKing && <KingCrown size={size} cx={cx} cy={cy} />}
+    </View>
+  );
+}
+
+const webStyles = StyleSheet.create({
+  selectionGlow: {
+    position: "absolute",
+    borderWidth: 3,
+    borderColor: "#FFD700",
+    shadowColor: "#FFD700",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+  },
+  shadow: {
+    position: "absolute",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    top: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  disc: {
+    position: "absolute",
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  innerDisc: {
+    position: "absolute",
+  },
+  highlight: {
+    position: "absolute",
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+});
 
 const styles = StyleSheet.create({
   crownContainer: {

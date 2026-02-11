@@ -28,6 +28,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { updateBio } from "@/services/profileService";
 import type { ProfileBio } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/ProfileBio/ProfileBioEditor");
 // =============================================================================
 // Types
 // =============================================================================
@@ -107,7 +110,7 @@ function ProfileBioEditorBase({
       onBioUpdated?.(newBio);
       onClose();
     } catch (err: any) {
-      console.error("Error updating bio:", err);
+      logger.error("Error updating bio:", err);
       setError(err.message || "Failed to update bio");
     } finally {
       setIsLoading(false);

@@ -3,16 +3,19 @@
  * Manages call waiting, call swapping, and busy states
  */
 
-import { Call } from "../../types/call";
+import { Call } from "@/types/call";
 import { callKeepService } from "./callKeepService";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/concurrentCallManager");
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[ConcurrentCalls] ${msg}`, data ?? "");
+  logger.info(`[ConcurrentCalls] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[ConcurrentCalls] ${msg}`, error ?? "");
+  logger.error(`[ConcurrentCalls] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[ConcurrentCalls] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[ConcurrentCalls] ${msg}`, data ?? "");
 
 // Call states for concurrent management
 export type ManagedCallState = "active" | "held" | "incoming" | "outgoing";
@@ -453,6 +456,6 @@ class ConcurrentCallManager {
 
 // Helper for logging warnings
 const logWarn = (msg: string, data?: any) =>
-  console.warn(`[ConcurrentCalls] ${msg}`, data ?? "");
+  logger.warn(`[ConcurrentCalls] ${msg}`, data ?? "");
 
 export const concurrentCallManager = ConcurrentCallManager.getInstance();

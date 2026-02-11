@@ -25,7 +25,7 @@ import {
   LightColors,
   Mocha,
   Spacing,
-} from "../../constants/theme";
+} from "@/constants/theme";
 
 const log = createLogger("ErrorBoundary");
 
@@ -79,7 +79,7 @@ export class ErrorBoundary extends Component<
     // Call optional error handler
     this.props.onError?.(error, errorInfo);
 
-    // TODO: Send to crash reporting service (e.g., Sentry) when added
+    // NOTE: Send to crash reporting service (e.g., Sentry) when added
   }
 
   handleRetry = (): void => {

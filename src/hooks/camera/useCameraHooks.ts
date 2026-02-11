@@ -5,16 +5,19 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as CameraService from "../../services/camera/cameraService";
-import * as SnapService from "../../services/camera/snapService";
-import { useAuth } from "../../store/AuthContext";
+import * as CameraService from "@/services/camera/cameraService";
+import * as SnapService from "@/services/camera/snapService";
+import { useAuth } from "@/store/AuthContext";
 import {
   useCameraState,
   useEditorState,
   useSnapState,
-} from "../../store/CameraContext";
-import type { CameraSettings, CapturedMedia, Snap } from "../../types/camera";
+} from "@/store/CameraContext";
+import type { CameraSettings, CapturedMedia, Snap } from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/camera/useCameraHooks");
 /**
  * ============================================================================
  * CAMERA PERMISSIONS HOOK
@@ -75,11 +78,11 @@ export function useCamera() {
 
   const handleCameraReady = useCallback(() => {
     setCameraReady(true);
-    console.log("[Camera Hook] Camera ready");
+    logger.info("[Camera Hook] Camera ready");
   }, [setCameraReady]);
 
   const handleCameraError = useCallback((error: any) => {
-    console.error("[Camera Hook] Camera error:", error);
+    logger.error("[Camera Hook] Camera error:", error);
     setCameraError(error?.message ?? String(error));
   }, []);
 
@@ -353,7 +356,7 @@ export function useFaceDetection() {
   const startFaceDetection = useCallback(
     (_callback: (detectedFaces: any[]) => void) => {
       // Will use expo-face-detector via nativeFaceDetection service
-      console.log("[FaceDetection] Starting face detection");
+      logger.info("[FaceDetection] Starting face detection");
     },
     [],
   );

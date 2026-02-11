@@ -31,8 +31,11 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/auth/SignupScreen");
 // =============================================================================
 // Password strength utility
 // =============================================================================
@@ -116,14 +119,14 @@ export default function SignupScreen({ navigation }: any) {
 
     setLoading(true);
 
-    console.log("🔵 [SignupScreen] Creating account for", email);
+    logger.info("🔵 [SignupScreen] Creating account for", email);
     const result = await signUp(email.trim(), password);
 
     if (result.ok) {
-      console.log("✅ [SignupScreen] Account created successfully");
+      logger.info("✅ [SignupScreen] Account created successfully");
       navigation.navigate("ProfileSetup");
     } else {
-      console.log("❌ [SignupScreen] Signup failed:", result.error.code);
+      logger.info("❌ [SignupScreen] Signup failed:", result.error.code);
       setError(result.error.userMessage);
     }
 
@@ -131,12 +134,15 @@ export default function SignupScreen({ navigation }: any) {
   };
 
   const handleGoogleSignUp = () => {
-    // TODO: Integrate @react-native-google-signin/google-signin
+    // NOTE: Integrate @react-native-google-signin/google-signin
     setError("Google Sign-Up is coming soon!");
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <TouchableWithoutFeedback
+      onPress={Platform.OS === "web" ? undefined : Keyboard.dismiss}
+      disabled={Platform.OS === "web"}
+    >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
         behavior={Platform.OS === "ios" ? "padding" : "height"}

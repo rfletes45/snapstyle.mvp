@@ -280,23 +280,23 @@ describe("Single Player Games E2E", () => {
     await device.reloadReactNative();
   });
 
-  it("should play Flappy Snap", async () => {
+  it("should play Bounce Blitz", async () => {
     await navigateToGamesHub();
 
     await element(by.id("category-quick-play")).tap();
-    await element(by.id("game-card-flappy-snap")).tap();
+    await element(by.id("game-card-bounce-blitz")).tap();
 
     // Wait for game to load
-    await waitFor(element(by.id("flappy-game-canvas")))
+    await waitFor(element(by.id("bounce-game-canvas")))
       .toBeVisible()
       .withTimeout(3000);
 
     // Tap to start
-    await element(by.id("flappy-game-canvas")).tap();
+    await element(by.id("bounce-game-canvas")).tap();
 
     // Tap a few times to play
     for (let i = 0; i < 5; i++) {
-      await element(by.id("flappy-game-canvas")).tap();
+      await element(by.id("bounce-game-canvas")).tap();
       await new Promise((r) => setTimeout(r, 300));
     }
 
@@ -332,14 +332,14 @@ describe("Single Player Games E2E", () => {
     await element(by.id("category-quick-play")).tap();
 
     // Game card should show personal best
-    await expect(element(by.id("flappy-snap-personal-best"))).toBeVisible();
+    await expect(element(by.id("bounce-blitz-personal-best"))).toBeVisible();
   });
 
   it("should show leaderboard rank", async () => {
     await navigateToGamesHub();
 
     await element(by.id("category-quick-play")).tap();
-    await element(by.id("game-card-flappy-snap")).longPress();
+    await element(by.id("game-card-bounce-blitz")).longPress();
 
     // Should show details including rank
     await expect(element(by.id("leaderboard-rank"))).toBeVisible();

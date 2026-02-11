@@ -40,7 +40,7 @@
 
 import { MessageV2 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { DEBUG_UNIFIED_MESSAGING } from "../../../constants/featureFlags";
+import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 
 // Import existing messageList functions and types
 import {
@@ -57,7 +57,7 @@ import {
   resetPaginationCursor as resetPaginationCursorV2,
   subscribeToDMMessages as subscribeToDMMessagesV2,
   subscribeToGroupMessages as subscribeToGroupMessagesV2,
-} from "../messageList";
+} from "@/services/messageList";
 
 const log = createLogger("messaging:subscribe");
 

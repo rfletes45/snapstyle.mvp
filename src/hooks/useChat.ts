@@ -18,7 +18,7 @@
  *
  * Before (multiple hooks + state):
  * ```typescript
- * const { messages, loading, loadOlder } = useMessagesV2(scope, conversationId, uid);
+ * const { messages, loading, loadOlder } = useUnifiedMessages(scope, conversationId, uid);
  * const { keyboardHeight, keyboardProgress, isKeyboardOpen } = useChatKeyboard();
  * const { isAtBottom, onScroll } = useAtBottom({ threshold: 200 });
  * const autoscroll = useNewMessageAutoscroll({ messageCount, isKeyboardOpen, isAtBottom });
@@ -68,7 +68,7 @@ import {
 import { createLogger } from "@/utils/log";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
-import { USE_LOCAL_STORAGE } from "../../constants/featureFlags";
+import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
 import {
   useChatKeyboard,

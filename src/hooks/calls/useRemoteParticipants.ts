@@ -3,8 +3,8 @@
  */
 
 import { useMemo } from "react";
-import { useCallContext } from "../../contexts/CallContext";
-import { AvatarConfig } from "../../types/models";
+import { useCallContext } from "@/contexts/CallContext";
+import { AvatarConfig } from "@/types/models";
 
 // Use 'any' type for MediaStream to avoid importing react-native-webrtc
 type MediaStreamType = any;

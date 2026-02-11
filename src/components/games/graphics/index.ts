@@ -8,13 +8,13 @@
  * @module components/games/graphics
  */
 
-export { SkiaGameBoard } from "./SkiaGameBoard";
-export { SkiaTicTacToePieces } from "./SkiaTicTacToePieces";
-export { SkiaChessPieces } from "./SkiaChessPieces";
-export { SkiaCheckersPiece } from "./SkiaCheckersPiece";
-export { SkiaDisc } from "./SkiaDisc";
-export { SkiaCellHighlight } from "./SkiaCellHighlight";
-export { SkiaMinesweeperCell } from "./SkiaMinesweeperCell";
 export { Skia2048Tile } from "./Skia2048Tile";
-export { SkiaWinLine } from "./SkiaWinLine";
+export { SkiaCellHighlight } from "./SkiaCellHighlight";
+export { SkiaCheckersPiece } from "./SkiaCheckersPiece";
+export { SkiaChessPieces } from "./SkiaChessPieces";
+export { SkiaDisc } from "./SkiaDisc";
+export { SkiaGameBoard } from "./SkiaGameBoard";
+export { SkiaMinesweeperCell } from "./SkiaMinesweeperCell";
 export { SkiaParticleBurst } from "./SkiaParticleBurst";
+export { SkiaTicTacToePieces } from "./SkiaTicTacToePieces";
+export { SkiaWinLine } from "./SkiaWinLine";

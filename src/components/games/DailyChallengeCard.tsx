@@ -31,7 +31,7 @@ import {
   GAME_BORDER_RADIUS,
   GAME_SHADOWS,
   GAME_SPACING,
-} from "../../../constants/gamesTheme";
+} from "@/constants/gamesTheme";
 
 // =============================================================================
 // Types

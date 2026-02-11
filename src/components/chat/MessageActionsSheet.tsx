@@ -41,9 +41,12 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { QuickReactionBar } from "./ReactionBar";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/chat/MessageActionsSheet");
 // =============================================================================
 // Types
 // =============================================================================
@@ -131,7 +134,7 @@ export function MessageActionsSheet({
           Alert.alert("Error", result.error || "Failed to add reaction");
         }
       } catch (error) {
-        console.error("[MessageActionsSheet] Reaction failed:", error);
+        logger.error("[MessageActionsSheet] Reaction failed:", error);
         Alert.alert("Error", "Failed to add reaction");
       } finally {
         setReactionLoading(false);

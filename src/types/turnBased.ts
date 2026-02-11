@@ -98,11 +98,8 @@ export type TurnBasedGameType =
   | "connect_four"
   | "dot_match"
   | "gomoku_master"
-  // Phase 3
   | "reversi_game"
-  | "words_game"
-  | "war_game"
-  | "hex_game";
+  | "war_game";
 
 /**
  * Match status
@@ -152,8 +149,6 @@ export interface TurnBasedMatchConfig {
   increment?: number;
   /** Whether rated */
   isRated: boolean;
-  /** Allow spectators */
-  allowSpectators: boolean;
   /** Chat enabled */
   chatEnabled: boolean;
 }
@@ -567,10 +562,7 @@ export interface GomokuGameState {
 /**
  * Gomoku match type
  */
-export type GomokuMatch = TurnBasedMatch<
-  GomokuGameState,
-  GomokuMove
->;
+export type GomokuMatch = TurnBasedMatch<GomokuGameState, GomokuMove>;
 
 // =============================================================================
 // Reversi (Othello) Types
@@ -600,37 +592,7 @@ export interface ReversiGameState {
   consecutivePasses: number;
 }
 
-export type ReversiMatch = TurnBasedMatch<
-  ReversiGameState,
-  ReversiMove
->;
-
-// =============================================================================
-// Hex Types
-// =============================================================================
-
-/** Hex cell: 0 = empty, 1 = player 1 (red, connects top-bottom), 2 = player 2 (blue, connects left-right) */
-export type HexCell = 0 | 1 | 2;
-
-/** Hex board (11Ã—11 hex grid) */
-export type HexBoard = HexCell[][];
-
-/** Hex move â€” claim a hex cell */
-export interface HexMove {
-  row: number;
-  col: number;
-  player: 1 | 2;
-  timestamp: number;
-}
-
-/** Hex game state */
-export interface HexGameState {
-  board: HexBoard;
-  currentTurn: 1 | 2;
-  lastMove?: { row: number; col: number };
-}
-
-export type HexMatch = TurnBasedMatch<HexGameState, HexMove>;
+export type ReversiMatch = TurnBasedMatch<ReversiGameState, ReversiMove>;
 
 // =============================================================================
 // War (Card War) Types
@@ -660,65 +622,7 @@ export interface WarGameState {
   roundWinner?: 1 | 2;
 }
 
-export type WarMatch = TurnBasedMatch<
-  WarGameState,
-  WarMove,
-  { deck: Card[] }
->;
-
-// =============================================================================
-// Words (Scrabble-lite) Types
-// =============================================================================
-
-/** Letter tile for Words game */
-export interface LetterTile {
-  letter: string;
-  value: number;
-  id: string;
-}
-
-/** Board cell bonus type */
-export type WordsBonusType =
-  | "none"
-  | "double_letter"
-  | "triple_letter"
-  | "double_word"
-  | "triple_word"
-  | "center";
-
-/** A placed tile on the board */
-export interface PlacedTile {
-  tile: LetterTile;
-  row: number;
-  col: number;
-  placedBy: 1 | 2;
-  turnPlaced: number;
-}
-
-/** Words move â€” place tiles to form a word */
-export interface WordsMove {
-  tiles: { tile: LetterTile; row: number; col: number }[];
-  word: string;
-  score: number;
-  player: 1 | 2;
-  timestamp: number;
-}
-
-/** Words game state (9Ã—9 board) */
-export interface WordsGameState {
-  board: (PlacedTile | null)[][];
-  bonusBoard: WordsBonusType[][];
-  currentTurn: 1 | 2;
-  scores: { player1: number; player2: number };
-  tilesRemaining: number;
-  consecutivePasses: number;
-}
-
-export type WordsMatch = TurnBasedMatch<
-  WordsGameState,
-  WordsMove,
-  { rack: LetterTile[] }
->;
+export type WarMatch = TurnBasedMatch<WarGameState, WarMove, { deck: Card[] }>;
 
 // =============================================================================
 // Game Invite Types
@@ -857,15 +761,6 @@ export interface UniversalGameInvite {
   /** Is spectating enabled? Default true */
   spectatingEnabled: boolean;
 
-  /** Is this invite ONLY for spectating an existing game? */
-  spectatorOnly: boolean;
-
-  /** Users currently spectating */
-  spectators: SpectatorEntry[];
-
-  /** Max spectators allowed (undefined = unlimited) */
-  maxSpectators?: number;
-
   // ============= STATUS =============
   status: UniversalInviteStatus;
 
@@ -953,20 +848,6 @@ export interface RatingUpdate {
   timestamp: number;
 }
 
-// =============================================================================
-// Spectator Types
-// =============================================================================
-
-/**
- * Spectator in a match
- */
-export interface Spectator {
-  id: string;
-  userId: string;
-  displayName: string;
-  joinedAt: number;
-}
-
 /**
  * Chat message in a match
  */
@@ -996,9 +877,7 @@ export type AnyGameState =
   | DotsGameState
   | GomokuGameState
   | ReversiGameState
-  | HexGameState
-  | WarGameState
-  | WordsGameState;
+  | WarGameState;
 
 /**
  * Union type for all moves
@@ -1012,9 +891,7 @@ export type AnyMove =
   | DotsMove
   | GomokuMove
   | ReversiMove
-  | HexMove
-  | WarMove
-  | WordsMove;
+  | WarMove;
 
 /**
  * Union type for all matches
@@ -1028,9 +905,7 @@ export type AnyMatch =
   | DotsMatch
   | GomokuMatch
   | ReversiMatch
-  | HexMatch
-  | WarMatch
-  | WordsMatch;
+  | WarMatch;
 
 // =============================================================================
 // Initial State Factories
@@ -1144,10 +1019,7 @@ export function createInitialDotsBoard(): {
  * Create initial Gomoku board â€” 15Ã—15, all empty
  */
 export function createInitialGomokuBoard(): GomokuBoard {
-  return Array.from(
-    { length: 15 },
-    () => Array(15).fill(0) as GomokuCell[],
-  );
+  return Array.from({ length: 15 }, () => Array(15).fill(0) as GomokuCell[]);
 }
 
 /**
@@ -1164,59 +1036,6 @@ export function createInitialReversiBoard(): ReversiBoard {
   board[4][3] = 1; // black
   board[4][4] = 2; // white
   return board;
-}
-
-/**
- * Create initial Hex board â€” 11Ã—11, all empty
- */
-export function createInitialHexBoard(): HexBoard {
-  return Array.from({ length: 11 }, () => Array(11).fill(0) as HexCell[]);
-}
-
-/**
- * Create initial Words board â€” 9Ã—9 with bonus squares
- */
-export function createInitialWordsBoard(): {
-  board: (PlacedTile | null)[][];
-  bonusBoard: WordsBonusType[][];
-} {
-  const board: (PlacedTile | null)[][] = Array.from({ length: 9 }, () =>
-    Array(9).fill(null),
-  );
-  const bonusBoard: WordsBonusType[][] = Array.from({ length: 9 }, () =>
-    Array(9).fill("none" as WordsBonusType),
-  );
-  // Center
-  bonusBoard[4][4] = "center";
-  // Triple word
-  bonusBoard[0][0] = "triple_word";
-  bonusBoard[0][8] = "triple_word";
-  bonusBoard[8][0] = "triple_word";
-  bonusBoard[8][8] = "triple_word";
-  // Double word
-  bonusBoard[1][1] = "double_word";
-  bonusBoard[1][7] = "double_word";
-  bonusBoard[7][1] = "double_word";
-  bonusBoard[7][7] = "double_word";
-  bonusBoard[2][2] = "double_word";
-  bonusBoard[2][6] = "double_word";
-  bonusBoard[6][2] = "double_word";
-  bonusBoard[6][6] = "double_word";
-  // Triple letter
-  bonusBoard[0][4] = "triple_letter";
-  bonusBoard[4][0] = "triple_letter";
-  bonusBoard[4][8] = "triple_letter";
-  bonusBoard[8][4] = "triple_letter";
-  // Double letter
-  bonusBoard[1][4] = "double_letter";
-  bonusBoard[4][1] = "double_letter";
-  bonusBoard[4][7] = "double_letter";
-  bonusBoard[7][4] = "double_letter";
-  bonusBoard[3][3] = "double_letter";
-  bonusBoard[3][5] = "double_letter";
-  bonusBoard[5][3] = "double_letter";
-  bonusBoard[5][5] = "double_letter";
-  return { board, bonusBoard };
 }
 
 /**
@@ -1307,4 +1126,3 @@ export function getPieceSymbol(type: ChessPieceType): string {
   };
   return symbols[type];
 }
-

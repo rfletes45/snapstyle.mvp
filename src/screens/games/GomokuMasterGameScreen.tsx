@@ -10,6 +10,22 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { SkiaGameBoard } from "@/components/games/graphics";
+import {
+  DrawOfferDialog,
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
@@ -22,8 +38,14 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Canvas,
+  Circle,
+  RadialGradient,
+  vec,
+} from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -34,14 +56,11 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { SkiaGameBoard } from "@/components/games/graphics";
-import {
-  Canvas,
-  Circle,
-  RadialGradient,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -63,7 +82,7 @@ const GAME_TYPE = "gomoku_master";
 
 type CellState = 0 | 1 | 2; // 0 = empty, 1 = black, 2 = white
 type Board = CellState[][];
-type GameMode = "local" | "ai";
+type GameMode = "local" | "ai" | "online";
 type GameState = "menu" | "playing" | "result";
 
 interface Coord {
@@ -250,11 +269,23 @@ function getAIMove(board: Board, aiPlayer: CellState): Coord {
 
 interface GomokuMasterGameScreenProps {
   navigation: any;
+  route?: any;
 }
 
-export default function GomokuMasterGameScreen({
+function GomokuMasterGameScreen({
   navigation,
+  route,
 }: GomokuMasterGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "gomoku" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "gomoku", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -272,11 +303,64 @@ export default function GomokuMasterGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
+
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("gomoku_master_game");
+  const isSpectator = route?.params?.spectatorMode === true;
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+
+  // Handle incoming match from route params (invite flow)
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "gomoku_master_game",
+    route?.params?.matchId,
+  );
+
+  useEffect(() => {
+    if (resolvedMode && firestoreGameId) {
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    }
+  }, [resolvedMode, firestoreGameId, isSpectator]);
+
+  // Derive Colyseus board as 2D array for rendering
+  const colyseusBoard: Board | null =
+    mp.isMultiplayer && mp.board.length === BOARD_ROWS * BOARD_COLS
+      ? Array.from({ length: BOARD_ROWS }, (_, r) =>
+          Array.from(
+            { length: BOARD_COLS },
+            (_, c) => mp.board[r * BOARD_COLS + c] as CellState,
+          ),
+        )
+      : null;
+
+  const effectiveBoard =
+    gameMode === "online" && colyseusBoard ? colyseusBoard : board;
 
   // Load personal best
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE as any).then(
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
         setPersonalBest,
       );
     }
@@ -302,6 +386,14 @@ export default function GomokuMasterGameScreen({
 
   const placeStone = useCallback(
     (row: number, col: number) => {
+      // Colyseus multiplayer mode
+      if (gameMode === "online" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+        mp.sendMove({ row, col });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      }
+
       if (gameState !== "playing" || winner || isDraw) return;
       if (board[row][col] !== 0) return;
       if (gameMode === "ai" && currentPlayer === 2) return; // AI's turn
@@ -326,12 +418,12 @@ export default function GomokuMasterGameScreen({
           if (currentFirebaseUser) {
             const newBest = !personalBest || newWins > personalBest.bestScore;
             recordGameSession(currentFirebaseUser.uid, {
-              gameId: GAME_TYPE as any,
+              gameId: GAME_TYPE,
               score: newWins,
             }).then((session) => {
               if (session && newBest) {
                 setPersonalBest({
-                  gameId: GAME_TYPE as any,
+                  gameId: GAME_TYPE,
                   bestScore: newWins,
                   achievedAt: Date.now(),
                 });
@@ -355,7 +447,7 @@ export default function GomokuMasterGameScreen({
 
       // AI move
       if (gameMode === "ai" && nextPlayer === 2) {
-        setTimeout(() => {
+        scheduleTimeout(() => {
           const aiMove = getAIMove(newBoard, 2);
           const aiBoard = newBoard.map((r) => [...r]);
           aiBoard[aiMove.row][aiMove.col] = 2;
@@ -394,6 +486,7 @@ export default function GomokuMasterGameScreen({
       currentFirebaseUser,
       personalBest,
       showSuccess,
+      scheduleTimeout,
     ],
   );
 
@@ -471,144 +564,156 @@ export default function GomokuMasterGameScreen({
       borderWidth={2}
       innerShadowBlur={6}
     >
-      <View style={{ width: BOARD_PIXEL_SIZE, height: BOARD_PIXEL_SIZE, position: "relative" }}>
-      {/* Grid lines (horizontal) */}
-      {Array.from({ length: BOARD_ROWS }).map((_, r) => (
-        <View
-          key={`h-${r}`}
-          style={[
-            styles.gridLineH,
-            {
-              top: CELL_SIZE * r + CELL_SIZE / 2,
-              left: CELL_SIZE / 2,
-              width: CELL_SIZE * (BOARD_COLS - 1),
-            },
-          ]}
-        />
-      ))}
-      {/* Grid lines (vertical) */}
-      {Array.from({ length: BOARD_COLS }).map((_, c) => (
-        <View
-          key={`v-${c}`}
-          style={[
-            styles.gridLineV,
-            {
-              left: CELL_SIZE * c + CELL_SIZE / 2,
-              top: CELL_SIZE / 2,
-              height: CELL_SIZE * (BOARD_ROWS - 1),
-            },
-          ]}
-        />
-      ))}
-      {/* Star points (traditional Gomoku markers) */}
-      {[
-        [3, 3],
-        [3, 7],
-        [3, 11],
-        [7, 3],
-        [7, 7],
-        [7, 11],
-        [11, 3],
-        [11, 7],
-        [11, 11],
-      ].map(([r, c]) => (
-        <View
-          key={`star-${r}-${c}`}
-          style={[
-            styles.starPoint,
-            {
-              left: CELL_SIZE * c + CELL_SIZE / 2 - 4,
-              top: CELL_SIZE * r + CELL_SIZE / 2 - 4,
-            },
-          ]}
-        />
-      ))}
-      {/* Cells — Skia radial gradient stones */}
-      {board.map((row, r) =>
-        row.map((cell, c) => {
-          const isWinCell = winLineSet.has(`${r},${c}`);
-          const isLast = lastMove?.row === r && lastMove?.col === c;
-          const stoneSize = STONE_RADIUS * 2;
+      <View
+        style={{
+          width: BOARD_PIXEL_SIZE,
+          height: BOARD_PIXEL_SIZE,
+          position: "relative",
+        }}
+      >
+        {/* Grid lines (horizontal) */}
+        {Array.from({ length: BOARD_ROWS }).map((_, r) => (
+          <View
+            key={`h-${r}`}
+            style={[
+              styles.gridLineH,
+              {
+                top: CELL_SIZE * r + CELL_SIZE / 2,
+                left: CELL_SIZE / 2,
+                width: CELL_SIZE * (BOARD_COLS - 1),
+              },
+            ]}
+          />
+        ))}
+        {/* Grid lines (vertical) */}
+        {Array.from({ length: BOARD_COLS }).map((_, c) => (
+          <View
+            key={`v-${c}`}
+            style={[
+              styles.gridLineV,
+              {
+                left: CELL_SIZE * c + CELL_SIZE / 2,
+                top: CELL_SIZE / 2,
+                height: CELL_SIZE * (BOARD_ROWS - 1),
+              },
+            ]}
+          />
+        ))}
+        {/* Star points (traditional Gomoku markers) */}
+        {[
+          [3, 3],
+          [3, 7],
+          [3, 11],
+          [7, 3],
+          [7, 7],
+          [7, 11],
+          [11, 3],
+          [11, 7],
+          [11, 11],
+        ].map(([r, c]) => (
+          <View
+            key={`star-${r}-${c}`}
+            style={[
+              styles.starPoint,
+              {
+                left: CELL_SIZE * c + CELL_SIZE / 2 - 4,
+                top: CELL_SIZE * r + CELL_SIZE / 2 - 4,
+              },
+            ]}
+          />
+        ))}
+        {/* Cells — Skia radial gradient stones */}
+        {effectiveBoard.map((row, r) =>
+          row.map((cell, c) => {
+            const isWinCell = winLineSet.has(`${r},${c}`);
+            const isLast = lastMove?.row === r && lastMove?.col === c;
+            const stoneSize = STONE_RADIUS * 2;
 
-          return (
-            <TouchableOpacity
-              key={`${r}-${c}`}
-              style={[
-                styles.cell,
-                {
-                  left: CELL_SIZE * c,
-                  top: CELL_SIZE * r,
-                  width: CELL_SIZE,
-                  height: CELL_SIZE,
-                },
-              ]}
-              onPress={() => placeStone(r, c)}
-              disabled={gameState !== "playing" || cell !== 0}
-              activeOpacity={0.7}
-              accessibilityLabel={`Row ${r + 1} Column ${c + 1}${cell === 1 ? " Black stone" : cell === 2 ? " White stone" : " Empty"}`}
-            >
-              {cell !== 0 && (
-                <Canvas style={{ width: stoneSize, height: stoneSize }}>
-                  {/* Drop shadow */}
-                  <Circle
-                    cx={stoneSize / 2 + 1}
-                    cy={stoneSize / 2 + 2}
-                    r={STONE_RADIUS - 1}
-                    color="rgba(0,0,0,0.35)"
-                  />
-                  {/* Main stone with radial gradient */}
-                  <Circle
-                    cx={stoneSize / 2}
-                    cy={stoneSize / 2}
-                    r={STONE_RADIUS - 1}
-                  >
-                    <RadialGradient
-                      c={vec(stoneSize * 0.38, stoneSize * 0.33)}
-                      r={STONE_RADIUS * 1.2}
-                      colors={
+            return (
+              <TouchableOpacity
+                key={`${r}-${c}`}
+                style={[
+                  styles.cell,
+                  {
+                    left: CELL_SIZE * c,
+                    top: CELL_SIZE * r,
+                    width: CELL_SIZE,
+                    height: CELL_SIZE,
+                  },
+                ]}
+                onPress={() => placeStone(r, c)}
+                disabled={
+                  gameState !== "playing" ||
+                  isSpectator ||
+                  cell !== 0 ||
+                  (gameMode === "online" &&
+                    (!mp.isMyTurn || mp.phase !== "playing"))
+                }
+                activeOpacity={0.7}
+                accessibilityLabel={`Row ${r + 1} Column ${c + 1}${cell === 1 ? " Black stone" : cell === 2 ? " White stone" : " Empty"}`}
+              >
+                {cell !== 0 && (
+                  <Canvas style={{ width: stoneSize, height: stoneSize }}>
+                    {/* Drop shadow */}
+                    <Circle
+                      cx={stoneSize / 2 + 1}
+                      cy={stoneSize / 2 + 2}
+                      r={STONE_RADIUS - 1}
+                      color="rgba(0,0,0,0.35)"
+                    />
+                    {/* Main stone with radial gradient */}
+                    <Circle
+                      cx={stoneSize / 2}
+                      cy={stoneSize / 2}
+                      r={STONE_RADIUS - 1}
+                    >
+                      <RadialGradient
+                        c={vec(stoneSize * 0.38, stoneSize * 0.33)}
+                        r={STONE_RADIUS * 1.2}
+                        colors={
+                          cell === 1
+                            ? ["#555555", "#1A1A1A", "#000000"]
+                            : ["#FFFFFF", "#F0F0F0", "#D4D4D4"]
+                        }
+                      />
+                    </Circle>
+                    {/* Specular highlight */}
+                    <Circle
+                      cx={stoneSize * 0.36}
+                      cy={stoneSize * 0.3}
+                      r={STONE_RADIUS * 0.22}
+                      color={
                         cell === 1
-                          ? ["#555555", "#1A1A1A", "#000000"]
-                          : ["#FFFFFF", "#F0F0F0", "#D4D4D4"]
+                          ? "rgba(255,255,255,0.2)"
+                          : "rgba(255,255,255,0.55)"
                       }
                     />
-                  </Circle>
-                  {/* Specular highlight */}
-                  <Circle
-                    cx={stoneSize * 0.36}
-                    cy={stoneSize * 0.3}
-                    r={STONE_RADIUS * 0.22}
-                    color={
-                      cell === 1
-                        ? "rgba(255,255,255,0.2)"
-                        : "rgba(255,255,255,0.55)"
-                    }
-                  />
-                  {/* Win glow ring */}
-                  {isWinCell && (
-                    <Circle
-                      cx={stoneSize / 2}
-                      cy={stoneSize / 2}
-                      r={STONE_RADIUS + 1}
-                      color="rgba(34,197,94,0.6)"
-                      style="stroke"
-                      strokeWidth={3}
-                    />
-                  )}
-                  {/* Last move indicator dot */}
-                  {isLast && !winner && (
-                    <Circle
-                      cx={stoneSize / 2}
-                      cy={stoneSize / 2}
-                      r={3}
-                      color="#EF4444"
-                    />
-                  )}
-                </Canvas>
-              )}
-            </TouchableOpacity>
-          );
-        }),
-      )}
+                    {/* Win glow ring */}
+                    {isWinCell && (
+                      <Circle
+                        cx={stoneSize / 2}
+                        cy={stoneSize / 2}
+                        r={STONE_RADIUS + 1}
+                        color="rgba(34,197,94,0.6)"
+                        style="stroke"
+                        strokeWidth={3}
+                      />
+                    )}
+                    {/* Last move indicator dot */}
+                    {isLast && !winner && (
+                      <Circle
+                        cx={stoneSize / 2}
+                        cy={stoneSize / 2}
+                        r={3}
+                        color="#EF4444"
+                      />
+                    )}
+                  </Canvas>
+                )}
+              </TouchableOpacity>
+            );
+          }),
+        )}
       </View>
     </SkiaGameBoard>
   );
@@ -619,6 +724,19 @@ export default function GomokuMasterGameScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -777,6 +895,157 @@ export default function GomokuMasterGameScreen({
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Invite to Gomoku"
       />
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "online" && mp.isMultiplayer && mp.phase === "playing" && (
+        <TurnIndicatorBar
+          isMyTurn={mp.isMyTurn}
+          myName={mp.myName}
+          opponentName={mp.opponentName}
+          currentPlayerIndex={mp.currentPlayerIndex}
+          myPlayerIndex={mp.myPlayerIndex}
+          turnNumber={mp.turnNumber}
+          opponentDisconnected={mp.opponentDisconnected}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+            player1: "#1A1A1A",
+            player2: "#F5F5F5",
+          }}
+          player1Label="Black"
+          player2Label="White"
+        />
+      )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "online" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+        <GameActionBar
+          onResign={() => setShowResignConfirm(true)}
+          onOfferDraw={mp.offerDraw}
+          isMyTurn={mp.isMyTurn}
+          drawPending={mp.drawPending}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "online" && mp.isMultiplayer && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            gameName="Gomoku"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <DrawOfferDialog
+            visible={mp.drawPending}
+            opponentName={mp.opponentName}
+            isMyOffer={mp.drawOfferedByMe}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onAccept={mp.acceptDraw}
+            onDecline={mp.declineDraw}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -900,3 +1169,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 });
+
+export default withGameErrorBoundary(GomokuMasterGameScreen, "gomoku");

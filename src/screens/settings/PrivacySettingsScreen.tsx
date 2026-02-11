@@ -36,6 +36,9 @@ import {
   ProfilePrivacySettings,
 } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/settings/PrivacySettingsScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -353,7 +356,7 @@ const SettingRow = React.memo(function SettingRow({
       >
         <View style={styles.settingHeader}>
           <MaterialCommunityIcons
-            name={setting.icon as any}
+            name={setting.icon as keyof typeof MaterialCommunityIcons.glyphMap}
             size={20}
             color={theme.colors.primary}
           />
@@ -552,7 +555,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
       showSuccess("Privacy settings saved!");
       setHasChanges(false);
     } catch (error) {
-      console.error("Failed to save privacy settings:", error);
+      logger.error("Failed to save privacy settings:", error);
       showError("Failed to save settings. Please try again.");
     } finally {
       setIsSaving(false);
@@ -597,7 +600,7 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
             <List.Section>
               <View style={styles.sectionHeader}>
                 <MaterialCommunityIcons
-                  name={section.icon as any}
+                  name={section.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                   size={20}
                   color={theme.colors.primary}
                 />

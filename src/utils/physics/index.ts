@@ -1,50 +1,16 @@
 /**
- * Physics Utilities Index
+ * Physics utilities compatibility exports.
  *
- * Central export for all game physics modules.
+ * Pool physics moved to `src/services/games/poolEngine.ts`.
  */
 
-// Pool Physics
 export {
-  // Types
-  Ball,
-  CollisionResult,
-  // Constants
-  POOL_PHYSICS,
-  Pocket,
-  PoolTable,
-  Shot,
-  applyFriction,
-  applyShot,
-  areAllBallsStopped,
-  // Collision detection
-  checkBallCollision,
-  checkPocket,
-  checkStop,
-  checkWallCollision,
-  createBall,
-  // Helpers
-  createStandardTable,
-  getBallSpeed,
-  // Collision resolution
-  resolveBallCollision,
-  resolveWallCollision,
+  canPlaceCueBall,
+  createInitialBalls,
+  createTable as createStandardTable,
+  placeCueBall,
   simulateShot,
-  // Simulation
-  simulateTick,
-  // Ball movement
-  updateBallPosition as updatePoolBallPosition,
-} from "./poolPhysics";
-
-// Flappy Physics
-export {
-  // Types
-  Bird,
-  // Constants
-  FLAPPY_PHYSICS,
-  FlappyGameState,
-  Pipe,
-  // Functions
-  generatePipe,
-  physicsTick,
-} from "./flappyPhysics";
+  type PoolBall as Ball,
+  type ShotParams as Shot,
+  type TableConfig as PoolTable,
+} from "@/services/games/poolEngine";

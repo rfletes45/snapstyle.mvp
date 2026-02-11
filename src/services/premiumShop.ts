@@ -41,6 +41,9 @@ import {
 } from "@/types/shop";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/premiumShop");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -83,8 +86,8 @@ interface PremiumProductDoc {
   popular?: boolean;
   sortOrder?: number;
   platforms?: IAPPlatform[];
-  availableFrom?: any;
-  availableTo?: any;
+  availableFrom?: unknown;
+  availableTo?: unknown;
   totalSupply?: number;
   purchaseLimit?: number;
   limitedTime?: boolean;
@@ -97,6 +100,26 @@ interface PremiumProductDoc {
   slot?: string;
   rarity?: "legendary" | "mythic";
   giftMessage?: string;
+}
+
+interface FirestoreTimestampLike {
+  toMillis?: () => number;
+}
+
+function toMillis(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (value && typeof value === "object") {
+    const ts = value as FirestoreTimestampLike;
+    if (typeof ts.toMillis === "function") {
+      return ts.toMillis();
+    }
+  }
+  return undefined;
 }
 
 // =============================================================================
@@ -114,9 +137,8 @@ function isProductAvailable(product: PremiumProductDoc): boolean {
   }
 
   // Check availability window
-  const availableFrom =
-    product.availableFrom?.toMillis?.() || product.availableFrom;
-  const availableTo = product.availableTo?.toMillis?.() || product.availableTo;
+  const availableFrom = toMillis(product.availableFrom);
+  const availableTo = toMillis(product.availableTo);
 
   if (availableFrom && availableFrom > now) {
     return false;
@@ -170,8 +192,8 @@ function mapToTokenPack(doc: PremiumProductDoc): TokenPack {
     featured: doc.featured || false,
     sortOrder: doc.sortOrder || 0,
     discountPercent: undefined,
-    availableFrom: doc.availableFrom?.toMillis?.() || doc.availableFrom,
-    availableTo: doc.availableTo?.toMillis?.() || doc.availableTo,
+    availableFrom: toMillis(doc.availableFrom),
+    availableTo: toMillis(doc.availableTo),
   };
 }
 
@@ -187,8 +209,8 @@ function mapToBundle(doc: PremiumProductDoc): PremiumBundle {
     items: (doc.rewards?.itemIds || []).map((itemId) => ({
       itemId,
       name: itemId, // Will be resolved later
-      slot: "hat" as any, // Will be resolved later
-      rarity: "rare" as any,
+      slot: "hat", // Will be resolved later
+      rarity: "rare",
       imagePath: "",
     })),
     bonusTokens: doc.rewards?.bonusTokens || 0,
@@ -200,8 +222,8 @@ function mapToBundle(doc: PremiumProductDoc): PremiumBundle {
     featured: doc.featured || false,
     sortOrder: doc.sortOrder || 0,
     limitedTime: doc.limitedTime || false,
-    availableFrom: doc.availableFrom?.toMillis?.() || doc.availableFrom,
-    availableTo: doc.availableTo?.toMillis?.() || doc.availableTo,
+    availableFrom: toMillis(doc.availableFrom),
+    availableTo: toMillis(doc.availableTo),
     purchaseLimit: doc.purchaseLimit,
   };
 }
@@ -215,14 +237,14 @@ function mapToExclusive(doc: PremiumProductDoc): PremiumExclusiveItem {
     productId: getPlatformProductId(doc.productId),
     name: doc.name,
     description: doc.description || "",
-    slot: (doc.slot as any) || "hat",
+    slot: (doc.slot as PremiumExclusiveItem["slot"]) || "hat",
     rarity: doc.rarity || "legendary",
     imagePath: doc.imagePath || "",
     basePriceUSD: doc.basePriceUSD,
     premiumExclusive: true,
     limitedEdition: doc.limitedEdition || false,
-    availableFrom: doc.availableFrom?.toMillis?.() || doc.availableFrom,
-    availableTo: doc.availableTo?.toMillis?.() || doc.availableTo,
+    availableFrom: toMillis(doc.availableFrom),
+    availableTo: toMillis(doc.availableTo),
     totalSupply: doc.totalSupply,
     featured: doc.featured || false,
     sortOrder: doc.sortOrder || 0,
@@ -237,7 +259,12 @@ function mapToGiftable(doc: PremiumProductDoc): GiftableItem {
     id: doc.id,
     productId: getPlatformProductId(doc.productId),
     name: doc.name,
-    type: doc.type as any,
+    type:
+      doc.type === "token_pack"
+        ? "tokenPack"
+        : doc.type === "bundle"
+          ? "bundle"
+          : "exclusive",
     basePriceUSD: doc.basePriceUSD,
     giftMessage: doc.giftMessage || `Here's a gift for you!`,
   };
@@ -262,12 +289,12 @@ export async function getPremiumShopCatalog(
     catalogCache.data &&
     now - catalogCache.timestamp < CACHE_DURATION_MS
   ) {
-    console.log("[premiumShop] Returning cached catalog");
+    logger.info("[premiumShop] Returning cached catalog");
     return catalogCache.data;
   }
 
   try {
-    console.log("[premiumShop] Fetching catalog from Firestore");
+    logger.info("[premiumShop] Fetching catalog from Firestore");
 
     const catalogRef = collection(db, COLLECTION_NAME);
     const q = query(catalogRef, orderBy("sortOrder", "asc"));
@@ -342,12 +369,12 @@ export async function getPremiumShopCatalog(
       timestamp: now,
     };
 
-    console.log(
+    logger.info(
       `[premiumShop] Catalog loaded: ${tokenPacks.length} packs, ${bundles.length} bundles, ${exclusives.length} exclusives`,
     );
     return catalog;
   } catch (error) {
-    console.error("[premiumShop] Error fetching catalog:", error);
+    logger.error("[premiumShop] Error fetching catalog:", error);
     throw error;
   }
 }
@@ -410,7 +437,7 @@ export async function getPremiumProduct(
         return null;
     }
   } catch (error) {
-    console.error("[premiumShop] Error fetching product:", error);
+    logger.error("[premiumShop] Error fetching product:", error);
     return null;
   }
 }
@@ -427,7 +454,7 @@ export async function getPremiumProduct(
 export async function purchaseTokenPack(
   packId: string,
 ): Promise<IAPPurchaseResult> {
-  console.log("[premiumShop] Initiating token pack purchase:", packId);
+  logger.info("[premiumShop] Initiating token pack purchase:", packId);
 
   // Get the product details
   const catalog = await getPremiumShopCatalog();
@@ -456,7 +483,7 @@ export async function purchaseTokenPack(
 export async function purchasePremiumBundle(
   bundleId: string,
 ): Promise<IAPPurchaseResult> {
-  console.log("[premiumShop] Initiating bundle purchase:", bundleId);
+  logger.info("[premiumShop] Initiating bundle purchase:", bundleId);
 
   const catalog = await getPremiumShopCatalog();
   const bundle = catalog.bundles.find((b) => b.id === bundleId);
@@ -486,7 +513,7 @@ export async function purchasePremiumBundle(
 export async function purchasePremiumExclusive(
   itemId: string,
 ): Promise<IAPPurchaseResult> {
-  console.log("[premiumShop] Initiating exclusive purchase:", itemId);
+  logger.info("[premiumShop] Initiating exclusive purchase:", itemId);
 
   const catalog = await getPremiumShopCatalog();
   const exclusive = catalog.exclusives.find((e) => e.id === itemId);
@@ -514,7 +541,7 @@ export async function giftItem(
   recipientUid: string,
   message?: string,
 ): Promise<GiftPurchaseResult> {
-  console.log(
+  logger.info(
     "[premiumShop] Initiating gift purchase:",
     itemId,
     "to",
@@ -539,7 +566,7 @@ export async function giftItem(
 
     return result.data;
   } catch (error: any) {
-    console.error("[premiumShop] Gift error:", error);
+    logger.error("[premiumShop] Gift error:", error);
     return {
       success: false,
       error: error.message || "Failed to send gift",
@@ -552,10 +579,10 @@ export async function giftItem(
  * Restore previous purchases
  */
 export async function restorePurchases(): Promise<RestoreResult> {
-  console.log("[premiumShop] Restoring purchases");
+  logger.info("[premiumShop] Restoring purchases");
 
   if (__DEV__) {
-    console.log("[premiumShop] Mock restore in development");
+    logger.info("[premiumShop] Mock restore in development");
     return { success: true, restored: [] };
   }
 
@@ -569,7 +596,7 @@ export async function restorePurchases(): Promise<RestoreResult> {
     const result = await restoreFunction();
     return result.data;
   } catch (error: any) {
-    console.error("[premiumShop] Restore error:", error);
+    logger.error("[premiumShop] Restore error:", error);
     return {
       success: false,
       error: error.message || "Failed to restore purchases",
@@ -592,9 +619,9 @@ async function initiateIAPPurchase(
   productId: string,
   productType: "token_pack" | "bundle" | "exclusive",
 ): Promise<IAPPurchaseResult> {
-  console.log("[premiumShop] IAP purchase:", productId, productType);
+  logger.info("[premiumShop] IAP purchase:", productId, productType);
 
-  // TODO: Phase 3 - Implement real IAP flow
+  // NOTE: Phase 3 - Implement real IAP flow
   // 1. Get product from store
   // 2. Request purchase
   // 3. Get receipt/token
@@ -625,7 +652,7 @@ export async function validateReceipt(
     const result = await validateFunction(request);
     return result.data;
   } catch (error: any) {
-    console.error("[premiumShop] Receipt validation error:", error);
+    logger.error("[premiumShop] Receipt validation error:", error);
     return {
       success: false,
       error: error.message || "Validation failed",
@@ -641,7 +668,7 @@ async function mockPurchase(
   tokens: number,
   items?: string[],
 ): Promise<IAPPurchaseResult> {
-  console.log("[premiumShop] Mock purchase:", productId);
+  logger.info("[premiumShop] Mock purchase:", productId);
 
   // Simulate network delay
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -738,12 +765,12 @@ export function subscribeToPremiumCatalog(
 
         onUpdate(catalog);
       } catch (error) {
-        console.error("[premiumShop] Error processing snapshot:", error);
+        logger.error("[premiumShop] Error processing snapshot:", error);
         onError?.(error as Error);
       }
     },
     (error) => {
-      console.error("[premiumShop] Subscription error:", error);
+      logger.error("[premiumShop] Subscription error:", error);
       onError?.(error);
     },
   );
@@ -763,7 +790,7 @@ export function clearPremiumShopCache(): void {
     data: null,
     timestamp: 0,
   };
-  console.log("[premiumShop] Cache cleared");
+  logger.info("[premiumShop] Cache cleared");
 }
 
 /**
@@ -771,7 +798,7 @@ export function clearPremiumShopCache(): void {
  */
 export function invalidatePremiumShopCache(): void {
   catalogCache.timestamp = 0;
-  console.log("[premiumShop] Cache invalidated");
+  logger.info("[premiumShop] Cache invalidated");
 }
 
 // =============================================================================

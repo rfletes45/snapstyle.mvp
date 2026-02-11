@@ -1,3 +1,5 @@
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/adaptiveBitrateService");
 /**
  * AdaptiveBitrateService - Manages video quality based on network and participant count
  * Implements adaptive bitrate for group calls to maintain quality across varying conditions
@@ -74,9 +76,9 @@ interface AdaptiveBitrateCallbacks {
 
 // Simple logging
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[AdaptiveBitrate] ${msg}`, data ?? "");
+  logger.info(`[AdaptiveBitrate] ${msg}`, data ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[AdaptiveBitrate] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[AdaptiveBitrate] ${msg}`, data ?? "");
 
 class AdaptiveBitrateService {
   private static instance: AdaptiveBitrateService;
@@ -332,9 +334,12 @@ class AdaptiveBitrateService {
       if (sender.track.kind === "video") {
         // Apply video bitrate constraints
         if (params.encodings && params.encodings.length > 0) {
-          params.encodings[0].maxBitrate = config.maxVideoBitrate;
+          const encoding = params.encodings[0] as RTCRtpEncodingParameters & {
+            maxFramerate?: number;
+          };
+          encoding.maxBitrate = config.maxVideoBitrate;
           // Note: maxFramerate may not be supported on all platforms
-          (params.encodings[0] as any).maxFramerate = config.maxFrameRate;
+          encoding.maxFramerate = config.maxFrameRate;
         }
       } else if (sender.track.kind === "audio") {
         // Apply audio bitrate constraints

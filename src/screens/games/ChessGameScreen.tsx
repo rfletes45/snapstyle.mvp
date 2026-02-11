@@ -17,9 +17,16 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import {
   Alert,
-  Animated,
   Dimensions,
   ScrollView,
   StyleSheet,
@@ -31,13 +38,26 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
-import SpectatorBanner from "@/components/games/SpectatorBanner";
-import { SkiaChessPieces } from "@/components/games/graphics/SkiaChessPieces";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import {
+  DrawOfferDialog,
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
 import { SkiaCellHighlight } from "@/components/games/graphics/SkiaCellHighlight";
+import { SkiaChessPieces } from "@/components/games/graphics/SkiaChessPieces";
 import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { useSpectatorMode } from "@/hooks/useSpectatorMode";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   createChessMove,
@@ -68,8 +88,13 @@ import {
   ChessPosition,
   createInitialChessBoard,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+const logger = createLogger("screens/games/ChessGameScreen");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -103,13 +128,12 @@ interface ChessGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
-      /** Whether user is spectating (watching only) */
       spectatorMode?: boolean;
     };
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "waiting";
+type GameMode = "menu" | "local" | "online" | "colyseus" | "waiting";
 
 // =============================================================================
 // Piece Component
@@ -122,32 +146,31 @@ interface PieceComponentProps {
 }
 
 function PieceComponent({ piece, isSelected, size }: PieceComponentProps) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   useEffect(() => {
     if (isSelected) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scaleAnim, {
-            toValue: 1.1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scaleAnim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start();
+      scale.value = withRepeat(
+        withSequence(
+          withTiming(1.1, { duration: 300 }),
+          withTiming(1, { duration: 300 }),
+        ),
+        -1,
+        false,
+      );
     } else {
-      scaleAnim.setValue(1);
+      cancelAnimation(scale);
+      scale.value = 1;
     }
 
     return () => {
-      scaleAnim.stopAnimation();
+      cancelAnimation(scale);
     };
-  }, [isSelected, scaleAnim]);
+  }, [isSelected, scale]);
 
   return (
     <Animated.View
@@ -156,8 +179,8 @@ function PieceComponent({ piece, isSelected, size }: PieceComponentProps) {
         {
           width: size,
           height: size,
-          transform: [{ scale: scaleAnim }],
         },
+        animatedStyle,
       ]}
     >
       <SkiaChessPieces type={piece.type} color={piece.color} size={size} />
@@ -396,14 +419,18 @@ function CapturedPiecesDisplay({ pieces, color }: CapturedPiecesProps) {
 // Main Component
 // =============================================================================
 
-export default function ChessGameScreen({
+function ChessGameScreen({
   navigation,
   route,
 }: ChessGameScreenProps) {
+  useGameBackHandler({ gameType: "chess", isGameOver: false });
+
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
   const haptics = useGameHaptics();
+
+  const isSpectator = route.params?.spectatorMode === true;
 
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<ChessMatch | null>(null);
@@ -412,20 +439,6 @@ export default function ChessGameScreen({
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-
-  // Spectator mode hook
-  const {
-    isSpectator,
-    spectatorCount,
-    leaveSpectatorMode,
-    loading: spectatorLoading,
-  } = useSpectatorMode({
-    matchId,
-    inviteId: route.params?.inviteId,
-    spectatorMode: route.params?.spectatorMode,
-    userId: currentFirebaseUser?.uid,
-    userName: currentFirebaseUser?.displayName || "Spectator",
-  });
 
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
@@ -439,7 +452,7 @@ export default function ChessGameScreen({
     gameType: "chess",
     entryPoint: route.params?.entryPoint,
     onAchievementsAwarded: (achievements) => {
-      console.log(
+      logger.info(
         "[Chess] Achievements awarded:",
         achievements.map((a) => a.name),
       );
@@ -487,12 +500,44 @@ export default function ChessGameScreen({
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
 
-  // Handle spectator leave
-  const handleLeaveSpectator = useCallback(async () => {
-    await leaveSpectatorMode();
-    navigation.goBack();
-  }, [leaveSpectatorMode, navigation]);
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("chess_game");
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+
+  // Derive Colyseus board as 2D ChessBoard when in multiplayer
+  const pieceTypeMap: Record<number, ChessPieceType> = {
+    1: "pawn",
+    2: "knight",
+    3: "bishop",
+    4: "rook",
+    5: "queen",
+    6: "king",
+  };
+
+  const colyseusBoard: ChessBoard | null =
+    mp.isMultiplayer && mp.board.length === 64
+      ? (Array.from({ length: 8 }, (_, row) =>
+          Array.from({ length: 8 }, (_, col): ChessPiece | null => {
+            const v = mp.board[row * 8 + col];
+            if (v === 0) return null;
+            const color: ChessColor = v > 0 ? "white" : "black";
+            const type = pieceTypeMap[Math.abs(v)];
+            if (!type) return null;
+            return { type, color, hasMoved: true };
+          }),
+        ) as ChessBoard)
+      : null;
+
+  // Effective board — use Colyseus board when in multiplayer, else local
+  const effectiveBoard: ChessBoard =
+    gameMode === "colyseus" && colyseusBoard ? colyseusBoard : gameState.board;
 
   // ==========================================================================
   // Online Game Subscription
@@ -501,10 +546,10 @@ export default function ChessGameScreen({
   useEffect(() => {
     if (!matchId) return;
 
-    console.log(`[Chess] Setting up subscription for matchId: ${matchId}`);
+    logger.info(`[Chess] Setting up subscription for matchId: ${matchId}`);
 
     const unsubscribe = subscribeToMatch(matchId, (updatedMatch) => {
-      console.log(
+      logger.info(
         `[Chess] Received match update:`,
         updatedMatch
           ? {
@@ -527,7 +572,6 @@ export default function ChessGameScreen({
       setGameState(state);
       setMoveHistory(typedMatch.moveHistory as ChessMove[]);
 
-      // Track player names for spectators
       setPlayer1Name(typedMatch.players.player1.displayName);
       setPlayer2Name(typedMatch.players.player2.displayName);
 
@@ -564,9 +608,9 @@ export default function ChessGameScreen({
         haptics.gameOverPattern(didWin);
 
         // Phase 7: Check achievements on game completion
-        handleGameCompletion(typedMatch as any).then((result) => {
+        handleGameCompletion(typedMatch as Parameters<typeof handleGameCompletion>[0]).then((result) => {
           if (result.achievementsAwarded.length > 0) {
-            console.log(
+            logger.info(
               "[Chess] Game complete, achievements:",
               result.achievementsAwarded.map((a) => a.name),
             );
@@ -578,13 +622,21 @@ export default function ChessGameScreen({
     return () => unsubscribe();
   }, [matchId, currentFirebaseUser, initialBoard]);
 
-  // Handle incoming match from route params
+  // Handle incoming match from route params — smart switch for Colyseus vs Firestore
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "chess_game",
+    route.params?.matchId,
+  );
+
   useEffect(() => {
-    if (route.params?.matchId) {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    } else if (resolvedMode === "online" && firestoreGameId) {
       setGameMode("online");
-      setMatchId(route.params.matchId);
+      setMatchId(firestoreGameId);
     }
-  }, [route.params?.matchId]);
+  }, [resolvedMode, firestoreGameId]);
 
   // ==========================================================================
   // Game Logic
@@ -592,15 +644,80 @@ export default function ChessGameScreen({
 
   const handleCellPress = useCallback(
     async (actualRow: number, actualCol: number) => {
-      // Block interactions in spectator mode
-      if (isSpectator) {
-        return;
-      }
-
       // actualRow and actualCol are actual board coordinates (0-7, where 0 is white's back rank)
+
+      if (isSpectator) return;
 
       if (gameState.isCheckmate || gameState.isStalemate || gameState.isDraw)
         return;
+
+      // Colyseus multiplayer mode
+      if (gameMode === "colyseus" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+
+        const clickedPieceColyseus = effectiveBoard[actualRow][actualCol];
+
+        // Selecting a piece (my color = playerIndex 0 → white, 1 → black)
+        const myColyseusColor: ChessColor =
+          mp.myPlayerIndex === 0 ? "white" : "black";
+
+        if (
+          clickedPieceColyseus &&
+          clickedPieceColyseus.color === myColyseusColor
+        ) {
+          const moves = getValidMoves(
+            {
+              ...gameState,
+              board: effectiveBoard,
+              currentTurn: myColyseusColor,
+            },
+            { row: actualRow, col: actualCol },
+          );
+          if (moves.length > 0) {
+            setSelectedPiece({ row: actualRow, col: actualCol });
+            setValidMoves(moves);
+            haptics.trigger("selection");
+          }
+          return;
+        }
+
+        // Moving to a valid position
+        if (selectedPiece) {
+          const isValid = validMoves.some(
+            (m) => m.row === actualRow && m.col === actualCol,
+          );
+          if (isValid) {
+            // Check for pawn promotion
+            const srcPiece =
+              effectiveBoard[selectedPiece.row][selectedPiece.col];
+            const isPromotion =
+              srcPiece?.type === "pawn" &&
+              ((myColyseusColor === "white" && actualRow === 0) ||
+                (myColyseusColor === "black" && actualRow === 7));
+
+            if (isPromotion) {
+              setPromotionPending({
+                from: selectedPiece,
+                to: { row: actualRow, col: actualCol },
+              });
+            } else {
+              mp.sendMove({
+                row: selectedPiece.row,
+                col: selectedPiece.col,
+                toRow: actualRow,
+                toCol: actualCol,
+              });
+              haptics.trigger("move");
+              setSelectedPiece(null);
+              setValidMoves([]);
+            }
+          } else {
+            setSelectedPiece(null);
+            setValidMoves([]);
+          }
+        }
+        return;
+      }
 
       const clickedPiece = gameState.board[actualRow][actualCol];
 
@@ -662,6 +779,22 @@ export default function ChessGameScreen({
     if (!promotionPending) return;
 
     haptics.trigger("special_move");
+
+    // Colyseus multiplayer: send move with promotion via Colyseus
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      mp.sendMove({
+        row: promotionPending.from.row,
+        col: promotionPending.from.col,
+        toRow: promotionPending.to.row,
+        toCol: promotionPending.to.col,
+        extra: { promotion: pieceType },
+      });
+      setSelectedPiece(null);
+      setValidMoves([]);
+      setPromotionPending(null);
+      return;
+    }
+
     await executeMove(promotionPending.from, promotionPending.to, pieceType);
     setPromotionPending(null);
   };
@@ -722,7 +855,7 @@ export default function ChessGameScreen({
           ? match.players.player2.userId
           : match.players.player1.userId;
 
-      console.log(`[Chess] Submitting move to Firestore:`, {
+      logger.info(`[Chess] Submitting move to Firestore:`, {
         matchId,
         from: chessMove.from,
         to: chessMove.to,
@@ -731,9 +864,9 @@ export default function ChessGameScreen({
 
       try {
         await submitMove(matchId, chessMove, newState, nextPlayerId);
-        console.log(`[Chess] Move submitted successfully`);
+        logger.info(`[Chess] Move submitted successfully`);
       } catch (error) {
-        console.error("[Chess] Error submitting move:", error);
+        logger.error("[Chess] Error submitting move:", error);
       }
     }
   };
@@ -771,7 +904,7 @@ export default function ChessGameScreen({
         try {
           await endMatch(matchId, winnerId, "checkmate");
         } catch (error) {
-          console.error("[Chess] Error ending match:", error);
+          logger.error("[Chess] Error ending match:", error);
         }
       }
     } else if (finalState.isStalemate) {
@@ -784,7 +917,7 @@ export default function ChessGameScreen({
         try {
           await endMatch(matchId, null, "stalemate");
         } catch (error) {
-          console.error("[Chess] Error ending match:", error);
+          logger.error("[Chess] Error ending match:", error);
         }
       }
     } else if (finalState.isDraw) {
@@ -797,7 +930,7 @@ export default function ChessGameScreen({
         try {
           await endMatch(matchId, null, "draw_agreement");
         } catch (error) {
-          console.error("[Chess] Error ending match (draw):", error);
+          logger.error("[Chess] Error ending match (draw):", error);
         }
       }
     }
@@ -827,6 +960,13 @@ export default function ChessGameScreen({
     setScores({ white: 0, black: 0 });
     setFlipped(false);
   };
+
+  // Flip board for Colyseus when playing as black (player index 1)
+  useEffect(() => {
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      setFlipped(mp.myPlayerIndex === 1);
+    }
+  }, [gameMode, mp.isMultiplayer, mp.myPlayerIndex]);
 
   const handleInviteFriend = () => {
     setShowFriendPicker(true);
@@ -863,7 +1003,7 @@ export default function ChessGameScreen({
         `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
       );
     } catch (error) {
-      console.error("[Chess] Error sending invite:", error);
+      logger.error("[Chess] Error sending invite:", error);
       Alert.alert("Error", "Failed to send game invite. Please try again.");
     } finally {
       setLoading(false);
@@ -886,7 +1026,7 @@ export default function ChessGameScreen({
               await resignMatch(matchId, currentFirebaseUser.uid);
               exitGame();
             } catch (error) {
-              console.error("[Chess] Error resigning:", error);
+              logger.error("[Chess] Error resigning:", error);
             }
           },
         },
@@ -915,6 +1055,7 @@ export default function ChessGameScreen({
 
   const isMyTurn = () => {
     if (gameMode === "local") return true;
+    if (gameMode === "colyseus") return mp.isMyTurn;
     if (gameMode === "online" && myColor) {
       return myColor === gameState.currentTurn;
     }
@@ -922,6 +1063,17 @@ export default function ChessGameScreen({
   };
 
   const getStatusText = () => {
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      if (mp.phase === "waiting" || mp.phase === "connecting")
+        return "Waiting for opponent...";
+      if (mp.phase === "countdown") return "Get Ready!";
+      if (mp.phase === "finished") {
+        if (mp.isDraw) return "Draw!";
+        return mp.isWinner ? "You Win! 🎉" : "You Lose 😔";
+      }
+      return mp.isMyTurn ? "Your Turn" : `${mp.opponentName}'s Turn`;
+    }
+
     if (gameState.isCheckmate) {
       const winner = gameState.currentTurn === "white" ? "Black" : "White";
       if (gameMode === "online") {
@@ -963,7 +1115,7 @@ export default function ChessGameScreen({
       for (let displayCol = 0; displayCol < 8; displayCol++) {
         const actualRow = flipped ? displayRow : 7 - displayRow;
         const actualCol = flipped ? 7 - displayCol : displayCol;
-        const piece = gameState.board[actualRow][actualCol];
+        const piece = effectiveBoard[actualRow][actualCol];
 
         const isSelected =
           selectedPiece?.row === actualRow && selectedPiece?.col === actualCol;
@@ -990,7 +1142,11 @@ export default function ChessGameScreen({
             isLastMove={isLast}
             isCheck={isKingInCheck}
             onPress={() => handleCellPress(actualRow, actualCol)}
-            disabled={!isMyTurn()}
+            disabled={
+              !isMyTurn() ||
+              (gameMode === "colyseus" &&
+                (!mp.isMyTurn || mp.phase !== "playing"))
+            }
             flipped={flipped}
           />,
         );
@@ -1067,14 +1223,19 @@ export default function ChessGameScreen({
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      {/* Spectator Banner */}
-      <SpectatorBanner
-        isSpectator={isSpectator}
-        spectatorCount={spectatorCount}
-        onLeave={handleLeaveSpectator}
-        playerNames={[player1Name, player2Name]}
-        loading={spectatorLoading}
-      />
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
 
       {/* Header */}
       <View style={styles.header}>
@@ -1097,13 +1258,32 @@ export default function ChessGameScreen({
             />
           </TouchableOpacity>
         )}
+        {gameMode === "colyseus" &&
+          mp.isMultiplayer &&
+          mp.phase === "playing" &&
+          !isSpectator && (
+            <TouchableOpacity
+              onPress={() => setShowResignConfirm(true)}
+              style={styles.resignButton}
+            >
+              <MaterialCommunityIcons
+                name="flag"
+                size={20}
+                color={colors.error}
+              />
+            </TouchableOpacity>
+          )}
       </View>
 
       {/* Opponent Info & Captured Pieces */}
       <View style={styles.playerInfo}>
         <View style={styles.playerNameContainer}>
           <Text style={[styles.playerName, { color: colors.textSecondary }]}>
-            {gameMode === "online" ? opponentName : "Black"}
+            {gameMode === "colyseus"
+              ? mp.opponentName || "Opponent"
+              : gameMode === "online"
+                ? opponentName
+                : "Black"}
           </Text>
           {!isMyTurn() && gameMode !== "local" && (
             <View style={styles.turnIndicator} />
@@ -1142,9 +1322,11 @@ export default function ChessGameScreen({
       <View style={styles.playerInfo}>
         <View style={styles.playerNameContainer}>
           <Text style={[styles.playerName, { color: colors.textSecondary }]}>
-            {gameMode === "online"
-              ? userProfile?.displayName || "You"
-              : "White"}
+            {gameMode === "colyseus"
+              ? mp.myName || "You"
+              : gameMode === "online"
+                ? userProfile?.displayName || "You"
+                : "White"}
           </Text>
           {isMyTurn() && gameMode !== "local" && (
             <View style={styles.turnIndicator} />
@@ -1196,6 +1378,159 @@ export default function ChessGameScreen({
               : "Game Over"
         }
       />
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "colyseus" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" && (
+          <TurnIndicatorBar
+            isMyTurn={mp.isMyTurn}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            currentPlayerIndex={mp.currentPlayerIndex}
+            myPlayerIndex={mp.myPlayerIndex}
+            turnNumber={mp.turnNumber}
+            opponentDisconnected={mp.opponentDisconnected}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+              player1: colors.primary,
+              player2: colors.error,
+            }}
+            player1Label="White"
+            player2Label="Black"
+          />
+        )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "colyseus" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+          <GameActionBar
+            onResign={() => setShowResignConfirm(true)}
+            onOfferDraw={mp.offerDraw}
+            isMyTurn={mp.isMyTurn}
+            drawPending={mp.drawPending}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+          />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "colyseus" && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            gameName="Chess"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <DrawOfferDialog
+            visible={mp.drawPending}
+            opponentName={mp.opponentName}
+            isMyOffer={mp.drawOfferedByMe}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onAccept={mp.acceptDraw}
+            onDecline={mp.declineDraw}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
 
       <FriendPickerModal
         visible={showFriendPicker}
@@ -1449,3 +1784,5 @@ const styles = StyleSheet.create({
     width: "100%",
   },
 });
+
+export default withGameErrorBoundary(ChessGameScreen, "chess");

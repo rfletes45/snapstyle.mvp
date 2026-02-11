@@ -20,6 +20,9 @@ import {
 import type { ProfilePicture, UserAvatarDecoration } from "@/types/userProfile";
 import { useCallback, useEffect, useState } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useProfilePicture");
 export interface UseProfilePictureOptions {
   /** User ID to manage profile picture for */
   userId: string;
@@ -78,7 +81,7 @@ export function useProfilePicture({
         setOwnedDecorations(profileData.ownedDecorations || []);
       }
     } catch (err) {
-      console.error("Error fetching profile picture data:", err);
+      logger.error("Error fetching profile picture data:", err);
       setError(err instanceof Error ? err : new Error("Failed to fetch data"));
     } finally {
       setIsLoading(false);
@@ -127,7 +130,7 @@ export function useProfilePicture({
           updatedAt: Date.now(),
         });
       } catch (err) {
-        console.error("Error uploading picture:", err);
+        logger.error("Error uploading picture:", err);
         setError(err instanceof Error ? err : new Error("Failed to upload"));
         throw err;
       } finally {
@@ -152,7 +155,7 @@ export function useProfilePicture({
         updatedAt: Date.now(),
       });
     } catch (err) {
-      console.error("Error removing picture:", err);
+      logger.error("Error removing picture:", err);
       setError(err instanceof Error ? err : new Error("Failed to remove"));
       throw err;
     } finally {
@@ -175,7 +178,7 @@ export function useProfilePicture({
           equippedAt: Date.now(),
         });
       } catch (err) {
-        console.error("Error equipping decoration:", err);
+        logger.error("Error equipping decoration:", err);
         setError(err instanceof Error ? err : new Error("Failed to equip"));
         throw err;
       } finally {
@@ -198,7 +201,7 @@ export function useProfilePicture({
         decorationId: null,
       });
     } catch (err) {
-      console.error("Error unequipping decoration:", err);
+      logger.error("Error unequipping decoration:", err);
       setError(err instanceof Error ? err : new Error("Failed to unequip"));
       throw err;
     } finally {

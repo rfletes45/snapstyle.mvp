@@ -20,6 +20,9 @@ import {
 import type { UserProfileData } from "@/types/userProfile";
 import { useCallback, useEffect, useState } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useFullProfileData");
 export interface UseFullProfileDataOptions {
   /** User ID to fetch profile for */
   userId: string;
@@ -64,7 +67,7 @@ export function useFullProfileData({
       const data = await getFullProfileData(userId);
       setProfile(data);
     } catch (err) {
-      console.error("[useFullProfileData] Error fetching profile:", err);
+      logger.error("[useFullProfileData] Error fetching profile:", err);
       setError(
         err instanceof Error ? err : new Error("Failed to fetch profile"),
       );

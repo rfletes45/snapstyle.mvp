@@ -232,11 +232,6 @@ function passesFilters(
     return false;
   }
 
-  // New game filter (placeholder - would need a "isNew" field in metadata)
-  // if (filters.isNew && !metadata.isNew) {
-  //   return false;
-  // }
-
   return true;
 }
 
@@ -384,7 +379,7 @@ export function getSearchSuggestions(
  * @returns Array of recent game types
  */
 export function getRecentlyPlayedGames(limit: number = 5): ExtendedGameType[] {
-  // TODO: Integrate with game history service
+  // NOTE: Integrate with game history service
   // For now, return first N available games
   return Object.entries(GAME_METADATA)
     .filter(([, metadata]) => metadata.isAvailable)

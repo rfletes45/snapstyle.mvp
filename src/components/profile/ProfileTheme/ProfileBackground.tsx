@@ -110,7 +110,7 @@ function isGradientConfig(
   return (
     typeof color === "object" &&
     "colors" in color &&
-    Array.isArray((color as any).colors)
+    Array.isArray((color as { colors?: unknown }).colors)
   );
 }
 

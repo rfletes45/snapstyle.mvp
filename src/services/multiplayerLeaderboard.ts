@@ -35,6 +35,9 @@ import {
 import { getFirestoreInstance } from "./firebase";
 import { getFriends } from "./friends";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/multiplayerLeaderboard");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -83,7 +86,7 @@ export async function getMultiplayerGlobalLeaderboard(
       entries.push(convertToEntry(data, rank++));
     });
 
-    console.log(
+    logger.info(
       `[multiplayerLeaderboard] Fetched ${entries.length} global entries for ${gameType} (${timeframe})`,
     );
 
@@ -96,7 +99,7 @@ export async function getMultiplayerGlobalLeaderboard(
       totalPlayers: entries.length,
     };
   } catch (error) {
-    console.error(
+    logger.error(
       "[multiplayerLeaderboard] Error fetching global leaderboard:",
       error,
     );
@@ -182,7 +185,7 @@ export async function getMultiplayerFriendsLeaderboard(
     // Find user's entry
     const userEntry = rankedEntries.find((e) => e.userId === userId);
 
-    console.log(
+    logger.info(
       `[multiplayerLeaderboard] Fetched ${rankedEntries.length} friends entries for ${gameType}`,
     );
 
@@ -196,7 +199,7 @@ export async function getMultiplayerFriendsLeaderboard(
       updatedAt: Date.now(),
     };
   } catch (error) {
-    console.error(
+    logger.error(
       "[multiplayerLeaderboard] Error fetching friends leaderboard:",
       error,
     );
@@ -254,7 +257,7 @@ export async function getMultiplayerUserRank(
       globalRank,
     };
   } catch (error) {
-    console.error("[multiplayerLeaderboard] Error getting user rank:", error);
+    logger.error("[multiplayerLeaderboard] Error getting user rank:", error);
     return null;
   }
 }
@@ -299,13 +302,13 @@ export async function getMultiplayerUserStats(
 
     await Promise.all(promises);
 
-    console.log(
+    logger.info(
       `[multiplayerLeaderboard] Fetched stats for ${results.size} game types`,
     );
 
     return results;
   } catch (error) {
-    console.error("[multiplayerLeaderboard] Error getting user stats:", error);
+    logger.error("[multiplayerLeaderboard] Error getting user stats:", error);
     return results;
   }
 }

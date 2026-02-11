@@ -146,8 +146,6 @@ export interface ExtendedGameSession {
   duration?: number;
   // Game-specific metadata
   metadata?: {
-    // Flappy Bird
-    pipesCleared?: number;
     // Bounce Blitz
     blocksDestroyed?: number;
     ballsUsed?: number;

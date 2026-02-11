@@ -30,7 +30,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 const { spacing, borderRadius, shadows, typography, animation } =
   PLAY_SCREEN_TOKENS;

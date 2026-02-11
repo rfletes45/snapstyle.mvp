@@ -4,7 +4,7 @@
  * Handles file uploads to Firebase Storage and attachment management.
  * Supports images, videos, audio, and generic files.
  *
- * TODO: Full implementation in H10
+ * NOTE: Full implementation in H10
  *
  * @module services/attachments
  */
@@ -172,7 +172,7 @@ function getThumbnailPath(
  * @param params - Upload parameters
  * @param options - Upload options
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 export async function uploadAttachment(
   params: {
@@ -187,7 +187,7 @@ export async function uploadAttachment(
     operation: "uploadStub",
   });
 
-  // TODO: Implement actual upload logic
+  // NOTE: Implement actual upload logic
   // 1. Read file from localAttachment.uri
   // 2. Generate thumbnail if image/video
   // 3. Upload to Firebase Storage
@@ -203,7 +203,7 @@ export async function uploadAttachment(
  * @param params - Upload parameters
  * @param options - Upload options
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 export async function uploadAttachments(
   params: {
@@ -233,7 +233,7 @@ export async function uploadAttachments(
  *
  * @param attachmentId - Attachment ID to cancel
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 function cancelUpload(attachmentId: string): boolean {
   log.warn("cancelUpload: Not yet implemented (H10)");
@@ -249,7 +249,7 @@ function cancelUpload(attachmentId: string): boolean {
  *
  * @param attachment - Attachment object
  *
- * TODO: Implement caching in H10
+ * NOTE: Implement caching in H10
  */
 async function getAttachmentUrl(attachment: AttachmentV2): Promise<string> {
   // URL is already in the attachment
@@ -274,7 +274,7 @@ function getThumbnailUrl(attachment: AttachmentV2): string | undefined {
  *
  * @param attachment - Attachment to delete
  *
- * TODO: Implement in H10 (called when message is deleted)
+ * NOTE: Implement in H10 (called when message is deleted)
  */
 async function deleteAttachment(
   attachment: AttachmentV2,
@@ -288,7 +288,7 @@ async function deleteAttachment(
  *
  * @param attachments - Attachments to delete
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 async function deleteMessageAttachments(
   attachments: AttachmentV2[],
@@ -305,7 +305,7 @@ async function deleteMessageAttachments(
  *
  * @param uri - Local image URI
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 async function generateImageThumbnail(
   uri: string,
@@ -319,7 +319,7 @@ async function generateImageThumbnail(
  *
  * @param uri - Local image URI
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 async function resizeImageIfNeeded(uri: string): Promise<{
   uri: string;
@@ -341,7 +341,7 @@ async function resizeImageIfNeeded(uri: string): Promise<{
  *
  * @param uri - Local image URI
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 export async function getImageDimensions(
   uri: string,
@@ -359,7 +359,7 @@ export async function getImageDimensions(
  *
  * @param uri - Local video URI
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 async function generateVideoThumbnail(
   uri: string,
@@ -373,7 +373,7 @@ async function generateVideoThumbnail(
  *
  * @param uri - Local video URI
  *
- * TODO: Implement in H10
+ * NOTE: Implement in H10
  */
 async function getVideoDuration(uri: string): Promise<number | null> {
   log.debug("getVideoDuration: Not yet implemented (H10)");

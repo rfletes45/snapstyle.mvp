@@ -18,6 +18,9 @@ import { Spacing } from "@/constants/theme";
 import { getFriends } from "@/services/friends";
 import { getFullProfileData } from "@/services/profileService";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/FriendsSection/FriendsSection");
 // =============================================================================
 // Types
 // =============================================================================
@@ -146,7 +149,7 @@ export const FriendsSection = memo(function FriendsSection({
           setFriends(friendPreviews);
         }
       } catch (error) {
-        console.error("Error loading friends:", error);
+        logger.error("Error loading friends:", error);
       } finally {
         if (!cancelled) {
           setIsLoading(false);

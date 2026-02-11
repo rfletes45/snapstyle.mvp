@@ -33,6 +33,9 @@ import {
 } from "@/types/shop";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/pointsShop");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -171,12 +174,12 @@ export async function getPointsShopCatalog(
     catalogCache.data &&
     now - catalogCache.timestamp < CACHE_DURATION_MS
   ) {
-    console.log("[pointsShop] Returning cached catalog");
+    logger.info("[pointsShop] Returning cached catalog");
     return catalogCache.data;
   }
 
   try {
-    console.log("[pointsShop] Fetching catalog from Firestore");
+    logger.info("[pointsShop] Fetching catalog from Firestore");
 
     // Fetch all active items
     const catalogRef = collection(db, COLLECTION_NAME);
@@ -249,12 +252,12 @@ export async function getPointsShopCatalog(
       timestamp: now,
     };
 
-    console.log(
+    logger.info(
       `[pointsShop] Catalog loaded: ${snapshot.size} items, ${featured.length} featured`,
     );
     return catalog;
   } catch (error) {
-    console.error("[pointsShop] Error fetching catalog:", error);
+    logger.error("[pointsShop] Error fetching catalog:", error);
     throw error;
   }
 }
@@ -298,7 +301,7 @@ export async function getPointsShopItem(
 
     return mapDocToItem(itemDoc.id, itemDoc.data());
   } catch (error) {
-    console.error("[pointsShop] Error fetching item:", error);
+    logger.error("[pointsShop] Error fetching item:", error);
     return null;
   }
 }
@@ -374,7 +377,7 @@ async function getUserOwnedItems(uid: string): Promise<Set<string>> {
 
     return ownedItems;
   } catch (error) {
-    console.error("[pointsShop] Error fetching inventory:", error);
+    logger.error("[pointsShop] Error fetching inventory:", error);
     return ownedItems;
   }
 }
@@ -395,7 +398,7 @@ async function getUserPurchaseCount(
 
     return snapshot.size;
   } catch (error) {
-    console.error("[pointsShop] Error fetching purchase count:", error);
+    logger.error("[pointsShop] Error fetching purchase count:", error);
     return 0;
   }
 }
@@ -491,7 +494,7 @@ export async function purchaseWithTokens(
   itemId: string,
 ): Promise<PointsPurchaseResult> {
   try {
-    console.log("[pointsShop] Initiating purchase for item:", itemId);
+    logger.info("[pointsShop] Initiating purchase for item:", itemId);
 
     const functions = getFunctionsInstance();
     const purchaseFunction = httpsCallable<
@@ -504,17 +507,17 @@ export async function purchaseWithTokens(
     if (result.data.success) {
       // Invalidate cache to reflect ownership change
       catalogCache.timestamp = 0;
-      console.log(
+      logger.info(
         "[pointsShop] Purchase successful:",
         result.data.transactionId,
       );
     } else {
-      console.warn("[pointsShop] Purchase failed:", result.data.error);
+      logger.warn("[pointsShop] Purchase failed:", result.data.error);
     }
 
     return result.data;
   } catch (error: any) {
-    console.error("[pointsShop] Purchase error:", error);
+    logger.error("[pointsShop] Purchase error:", error);
 
     // Handle Firebase function errors
     if (error.code === "functions/unauthenticated") {
@@ -569,7 +572,7 @@ export function subscribeToPointsCatalog(
     // Map category back to slot(s)
     const slots = getCategorySlots(category);
     if (slots.length === 0) {
-      console.warn("[pointsShop] Unknown category:", category);
+      logger.warn("[pointsShop] Unknown category:", category);
       onUpdate([]);
       return () => {};
     }
@@ -600,12 +603,12 @@ export function subscribeToPointsCatalog(
 
         onUpdate(items);
       } catch (error) {
-        console.error("[pointsShop] Error processing snapshot:", error);
+        logger.error("[pointsShop] Error processing snapshot:", error);
         onError?.(error as Error);
       }
     },
     (error) => {
-      console.error("[pointsShop] Subscription error:", error);
+      logger.error("[pointsShop] Subscription error:", error);
       onError?.(error);
     },
   );
@@ -674,7 +677,7 @@ export function clearPointsShopCache(): void {
     data: null,
     timestamp: 0,
   };
-  console.log("[pointsShop] Cache cleared");
+  logger.info("[pointsShop] Cache cleared");
 }
 
 /**
@@ -682,5 +685,5 @@ export function clearPointsShopCache(): void {
  */
 export function invalidatePointsShopCache(): void {
   catalogCache.timestamp = 0;
-  console.log("[pointsShop] Cache invalidated");
+  logger.info("[pointsShop] Cache invalidated");
 }

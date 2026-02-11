@@ -1,5 +1,7 @@
 # Game Picker & Queue Enhancement Plan
 
+**Status:** ✅ Implemented — Reference documentation
+
 ## Executive Summary
 
 This document provides a **complete implementation blueprint** for adding a Game Picker Modal, enhanced queue visualization, and host controls. This plan **overhauls** the existing dual-invite system (legacy `GameInvite` + new `UniversalGameInvite`) into a single, unified system.
@@ -189,7 +191,6 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   // Action/Quick Play
   reaction_tap: "ReactionTapGame",
   timed_tap: "TimedTapGame",
-  flappy_snap: "FlappySnapGame",
   bounce_blitz: "BounceBlitzGame",
   snap_snake: "SnapSnakeGame",
   // Puzzle
@@ -2266,7 +2267,7 @@ type ServiceResult<T = void> =
 | ----------------- | --------------------------- | ----------------------------- |
 | Picker opens      | Tap game button in chat     | Modal appears with categories |
 | Category switch   | Tap different category tabs | Games list updates            |
-| Single-player     | Select Flappy Snap          | Navigates to game screen      |
+| Single-player     | Select Bounce Blitz         | Navigates to game screen      |
 | Multiplayer DM    | Select Chess                | Invite appears in chat        |
 | Multiplayer Group | Select Crazy Eights         | Invite visible to all members |
 | Join queue        | Tap Join on invite          | Player added to slots         |
@@ -2406,4 +2407,3 @@ type UniversalInviteStatus =
 ---
 
 **END OF IMPLEMENTATION PLAN**
-

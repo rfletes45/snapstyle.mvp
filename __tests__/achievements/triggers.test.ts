@@ -3,7 +3,7 @@
  * Phase 7: Testing Requirements
  *
  * Tests for:
- * - Game achievement triggers (Flappy Snap, etc.)
+ * - Game achievement triggers
  * - Multiplayer achievements
  * - Streak tracking
  * - Achievement deduplication
@@ -56,44 +56,6 @@ interface GrantedAchievement {
 
 // Achievement definitions for testing
 const TEST_ACHIEVEMENTS: TestAchievementDefinition[] = [
-  // Flappy Snap achievements
-  {
-    type: "flappy_first",
-    name: "First Flight",
-    description: "Score 1+ in Flappy Snap",
-    icon: "bird",
-    category: "game",
-    rarity: "common",
-    threshold: 1,
-  },
-  {
-    type: "flappy_25",
-    name: "Rising Star",
-    description: "Score 25+ in Flappy Snap",
-    icon: "star",
-    category: "game",
-    rarity: "rare",
-    threshold: 25,
-  },
-  {
-    type: "flappy_50",
-    name: "Sky Master",
-    description: "Score 50+ in Flappy Snap",
-    icon: "trophy",
-    category: "game",
-    rarity: "epic",
-    threshold: 50,
-  },
-  {
-    type: "flappy_100",
-    name: "Legend of the Skies",
-    description: "Score 100+ in Flappy Snap",
-    icon: "crown",
-    category: "game",
-    rarity: "legendary",
-    threshold: 100,
-  },
-
   // Multiplayer achievements
   {
     type: "mp_first_game",
@@ -246,26 +208,6 @@ async function checkAndGrantAchievements(
     }
   }
 
-  // Check Flappy Snap achievements
-  if (context.gameType === "flappy_snap" && context.score !== undefined) {
-    if (context.score >= 1) {
-      const result = grantAchievement(userId, "flappy_first");
-      if (result) granted.push(result);
-    }
-    if (context.score >= 25) {
-      const result = grantAchievement(userId, "flappy_25");
-      if (result) granted.push(result);
-    }
-    if (context.score >= 50) {
-      const result = grantAchievement(userId, "flappy_50");
-      if (result) granted.push(result);
-    }
-    if (context.score >= 100) {
-      const result = grantAchievement(userId, "flappy_100");
-      if (result) granted.push(result);
-    }
-  }
-
   // Check reaction achievements
   if (
     context.gameType === "reaction_tap" &&
@@ -343,79 +285,6 @@ async function getUserMultiplayerStats(userId: string): Promise<UserStats> {
 describe("Achievement Triggers", () => {
   beforeEach(() => {
     resetTestState();
-  });
-
-  // ===========================================================================
-  // Flappy Snap Achievement Tests
-  // ===========================================================================
-
-  describe("Flappy Snap Achievements", () => {
-    it("should grant First Flight on score >= 1", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "flappy_snap",
-        score: 1,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "flappy_first")).toBe(true);
-    });
-
-    it("should not grant duplicate achievements", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "flappy_snap",
-        score: 10,
-      };
-
-      // First time
-      const first = await checkAndGrantAchievements("user1", context);
-      expect(first.some((a) => a.id === "flappy_first")).toBe(true);
-
-      // Second time
-      const second = await checkAndGrantAchievements("user1", context);
-      expect(second.filter((a) => a.id === "flappy_first")).toHaveLength(0);
-    });
-
-    it("should grant multiple achievements if conditions met", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "flappy_snap",
-        score: 50,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "flappy_first")).toBe(true);
-      expect(granted.some((a) => a.id === "flappy_25")).toBe(true);
-      expect(granted.some((a) => a.id === "flappy_50")).toBe(true);
-      expect(granted.some((a) => a.id === "flappy_100")).toBe(false);
-    });
-
-    it("should grant legendary achievement for score 100+", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "flappy_snap",
-        score: 105,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "flappy_100")).toBe(true);
-    });
-
-    it("should not grant achievement for score 0", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "flappy_snap",
-        score: 0,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.length).toBe(0);
-    });
   });
 
   // ===========================================================================
@@ -650,18 +519,18 @@ describe("Achievement Triggers", () => {
     it("should handle multiple users independently", async () => {
       await checkAndGrantAchievements("user1", {
         userId: "user1",
-        gameType: "flappy_snap",
-        score: 30,
+        gameType: "reaction_tap",
+        reactionTime: 180,
       });
 
       await checkAndGrantAchievements("user2", {
         userId: "user2",
-        gameType: "flappy_snap",
-        score: 10,
+        gameType: "reaction_tap",
+        reactionTime: 250,
       });
 
-      expect(hasAchievement("user1", "flappy_25")).toBe(true);
-      expect(hasAchievement("user2", "flappy_25")).toBe(false);
+      expect(hasAchievement("user1", "reaction_master")).toBe(true);
+      expect(hasAchievement("user2", "reaction_master")).toBe(false);
     });
 
     it("should handle missing optional fields", async () => {
@@ -678,8 +547,8 @@ describe("Achievement Triggers", () => {
     it("should track games played across all game types", async () => {
       await checkAndGrantAchievements("user1", {
         userId: "user1",
-        gameType: "flappy_snap",
-        score: 10,
+        gameType: "reaction_tap",
+        reactionTime: 190,
       });
 
       await checkAndGrantAchievements("user1", {

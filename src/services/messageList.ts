@@ -664,35 +664,3 @@ export async function getMessage(
     return null;
   }
 }
-
-/**
- * Search messages in a conversation
- *
- * Note: Full-text search requires external service (Algolia/Typesense).
- * This is a basic prefix search on text field.
- *
- * @param scope - "dm" or "group"
- * @param conversationId - Chat/Group ID
- * @param searchText - Text to search for
- * @param limitCount - Maximum results
- * @returns Matching messages
- */
-export async function searchMessages(
-  scope: "dm" | "group",
-  conversationId: string,
-  searchText: string,
-  limitCount: number = 20,
-): Promise<MessageV2[]> {
-  // Firestore doesn't support full-text search
-  // This is a placeholder that would need to be replaced with
-  // Algolia, Typesense, or similar search service
-
-  log.warn("searchMessages: Full-text search not implemented", {
-    operation: "search",
-    data: { searchText },
-  });
-
-  // For now, just return empty array
-  // In production, integrate with search service
-  return [];
-}

@@ -25,7 +25,7 @@ import type {
   RecordingState,
   Snap,
   VideoQuality,
-} from "../types/camera";
+} from "@/types/camera";
 
 // ============================================================================
 // STATE INTERFACES

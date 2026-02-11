@@ -43,6 +43,9 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/shop/ShopScreen");
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type CategoryFilter = "all" | "hat" | "glasses" | "background";
@@ -99,7 +102,7 @@ export default function ShopScreen({ navigation }: any) {
       setFeaturedItems(featured);
       setError(null);
     } catch (err) {
-      console.error("[ShopScreen] Error loading shop data:", err);
+      logger.error("[ShopScreen] Error loading shop data:", err);
       setError("Failed to load shop");
     } finally {
       setLoading(false);
@@ -114,7 +117,7 @@ export default function ShopScreen({ navigation }: any) {
     const unsubscribe = subscribeToWallet(
       user.uid,
       (updatedWallet) => setWallet(updatedWallet),
-      (err) => console.error("[ShopScreen] Wallet subscription error:", err),
+      (err) => logger.error("[ShopScreen] Wallet subscription error:", err),
     );
 
     return () => unsubscribe();
@@ -176,7 +179,7 @@ export default function ShopScreen({ navigation }: any) {
         setPurchaseError(result.error || "Purchase failed");
       }
     } catch (err: any) {
-      console.error("[ShopScreen] Purchase error:", err);
+      logger.error("[ShopScreen] Purchase error:", err);
       setPurchaseError(err.message || "Purchase failed");
     } finally {
       setPurchasing(false);
@@ -439,7 +442,7 @@ export default function ShopScreen({ navigation }: any) {
             onPress={() => setCategory(cat.key)}
           >
             <MaterialCommunityIcons
-              name={cat.icon as any}
+              name={cat.icon as keyof typeof MaterialCommunityIcons.glyphMap}
               size={18}
               color={
                 category === cat.key

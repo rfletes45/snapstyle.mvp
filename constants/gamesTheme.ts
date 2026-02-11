@@ -57,38 +57,6 @@ export const GAME_CATEGORY_COLORS = {
 // =============================================================================
 
 export const GAME_PALETTES = {
-  /** Flappy Snap color scheme */
-  flappy: {
-    sky: {
-      light: "#70C5CE",
-      dark: "#5AB5BE",
-    },
-    skyGradient: {
-      light: ["#87CEEB", "#70C5CE"],
-      dark: ["#4A9EAE", "#3A8E9E"],
-    },
-    ground: {
-      light: "#DED895",
-      dark: "#CEC885",
-    },
-    pipe: {
-      light: "#73BF2E",
-      dark: "#63AF1E",
-    },
-    pipeHighlight: {
-      light: "#8ED44A",
-      dark: "#7EC43A",
-    },
-    bird: {
-      light: "#F7DC6F",
-      dark: "#E7CC5F",
-    },
-    birdOutline: {
-      light: "#E0A800",
-      dark: "#D09800",
-    },
-  },
-
   /** Bounce Blitz color scheme */
   bounce: {
     ball: {

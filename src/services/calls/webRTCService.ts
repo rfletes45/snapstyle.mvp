@@ -27,22 +27,25 @@ import {
   DEFAULT_ICE_SERVERS,
   IceConfig,
   SignalingMessage,
-} from "../../types/call";
-import { getAuthInstance, getFirestoreInstance } from "../firebase";
+} from "@/types/call";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/webRTCService");
 // Firebase instances
 const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
 
 // Simple logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[WebRTCService] ${msg}`, data ?? "");
+  logger.info(`[WebRTCService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[WebRTCService] ${msg}`, error ?? "");
+  logger.error(`[WebRTCService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[WebRTCService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[WebRTCService] ${msg}`, data ?? "");
 const logWarn = (msg: string, data?: any) =>
-  console.warn(`[WebRTCService] ${msg}`, data ?? "");
+  logger.warn(`[WebRTCService] ${msg}`, data ?? "");
 
 const LOG_TAG = "WebRTCService";
 
@@ -58,6 +61,13 @@ const VIDEO_CONSTRAINTS = {
   width: { ideal: 1280 },
   height: { ideal: 720 },
   frameRate: { ideal: 30 },
+};
+
+type UserMediaConstraints = Parameters<typeof mediaDevices.getUserMedia>[0];
+type RtcSdpType = RTCSessionDescriptionInit["type"];
+type PeerConnectionWithEvents = RTCPeerConnection & {
+  addEventListener: (eventName: string, listener: (event: unknown) => void) => void;
+  connectionState?: RTCPeerConnectionState;
 };
 
 class WebRTCService {
@@ -149,12 +159,12 @@ class WebRTCService {
 
   private async fetchTurnCredentials(): Promise<void> {
     try {
-      // TODO: Implement Cloud Function call to get TURN credentials
+      // TURN credentials are optional in local/dev; default ICE servers remain the fallback.
       // const response = await httpsCallable(functions, 'getTurnCredentials')();
       // const { username, credential, urls } = response.data;
       // this.iceConfig.iceServers.push({ urls, username, credential });
 
-      logDebug("Using default ICE servers (TURN credentials TODO)");
+      logDebug("Using default ICE servers (TURN credentials unavailable)");
     } catch (error) {
       logWarn("Failed to fetch TURN credentials, using STUN only", {
         error,
@@ -169,8 +179,10 @@ class WebRTCService {
   private async initializeLocalStream(enableVideo: boolean): Promise<void> {
     try {
       const constraints = {
-        audio: AUDIO_CONSTRAINTS as any,
-        video: enableVideo ? (VIDEO_CONSTRAINTS as any) : false,
+        audio: AUDIO_CONSTRAINTS as UserMediaConstraints["audio"],
+        video: enableVideo
+          ? (VIDEO_CONSTRAINTS as UserMediaConstraints["video"])
+          : false,
       };
 
       this.localStream = await mediaDevices.getUserMedia(constraints);
@@ -207,7 +219,8 @@ class WebRTCService {
   private createPeerConnection(remoteUserId: string): RTCPeerConnection {
     logDebug("Creating peer connection", { remoteUserId });
 
-    const pc = new RTCPeerConnection(this.iceConfig as any);
+    const pc = new RTCPeerConnection(this.iceConfig as RTCConfiguration);
+    const pcWithEvents = pc as PeerConnectionWithEvents;
 
     // Add local tracks to connection
     if (this.localStream) {
@@ -217,7 +230,7 @@ class WebRTCService {
     }
 
     // Handle incoming tracks (react-native-webrtc uses addEventListener)
-    (pc as any).addEventListener("track", (event: any) => {
+    pcWithEvents.addEventListener("track", (event: any) => {
       logDebug("Remote track received", {
         remoteUserId,
         kind: event.track?.kind,
@@ -238,7 +251,7 @@ class WebRTCService {
     });
 
     // Handle ICE candidates
-    (pc as any).addEventListener("icecandidate", (event: any) => {
+    pcWithEvents.addEventListener("icecandidate", (event: any) => {
       if (event.candidate) {
         this.sendSignalingMessage({
           type: "ice-candidate",
@@ -249,8 +262,9 @@ class WebRTCService {
     });
 
     // Handle connection state changes
-    (pc as any).addEventListener("connectionstatechange", () => {
-      const connectionState = (pc as any).connectionState;
+    pcWithEvents.addEventListener("connectionstatechange", () => {
+      const connectionState = pcWithEvents.connectionState;
+      if (!connectionState) return;
       logDebug("Connection state changed", {
         remoteUserId,
         state: connectionState,
@@ -270,7 +284,7 @@ class WebRTCService {
     });
 
     // Handle ICE connection state
-    (pc as any).addEventListener("iceconnectionstatechange", () => {
+    pcWithEvents.addEventListener("iceconnectionstatechange", () => {
       logDebug("ICE connection state changed", {
         remoteUserId,
         state: pc.iceConnectionState,
@@ -524,7 +538,10 @@ class WebRTCService {
 
     const sdp = signal.payload as { type: string; sdp: string };
     await pc.setRemoteDescription(
-      new RTCSessionDescription({ type: sdp.type as any, sdp: sdp.sdp || "" }),
+      new RTCSessionDescription({
+        type: sdp.type as RtcSdpType,
+        sdp: sdp.sdp || "",
+      }),
     );
 
     const answer = await pc.createAnswer();
@@ -545,7 +562,10 @@ class WebRTCService {
 
     const sdp = signal.payload as { type: string; sdp: string };
     await pc.setRemoteDescription(
-      new RTCSessionDescription({ type: sdp.type as any, sdp: sdp.sdp || "" }),
+      new RTCSessionDescription({
+        type: sdp.type as RtcSdpType,
+        sdp: sdp.sdp || "",
+      }),
     );
   }
 

@@ -14,9 +14,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useCall } from "../../hooks/calls";
-import { useColors } from "../../store/ThemeContext";
+import { useCall } from "@/hooks/calls";
+import { useColors } from "@/store/ThemeContext";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/calls/CallButton");
 // Platform detection for native calls
 const isWeb = Platform.OS === "web";
 const isExpoGo = Constants.appOwnership === "expo";
@@ -90,7 +94,7 @@ export function CallButton({
         isOutgoing: true,
       });
     } catch (error) {
-      console.error("Failed to start call:", error);
+      logger.error("Failed to start call:", error);
       Alert.alert(
         "Call Failed",
         "Unable to start the call. Please check your connection and try again.",
@@ -153,7 +157,11 @@ export function CallButtonGroup({
   participantName,
   size = 22,
   disabled = false,
-}: CallButtonGroupProps): JSX.Element {
+}: CallButtonGroupProps): JSX.Element | null {
+  if (!CALL_FEATURES.CALLS_ENABLED) {
+    return null;
+  }
+
   return (
     <View style={styles.buttonGroup}>
       <CallButton

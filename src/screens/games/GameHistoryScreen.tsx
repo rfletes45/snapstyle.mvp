@@ -34,7 +34,7 @@ import {
 import { Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { BorderRadius, Spacing } from "@/../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import {
   calculateStatsFromRecords,
   getGameHistory,
@@ -56,6 +56,9 @@ import {
 } from "@/types/singlePlayerGames";
 import { TurnBasedGameType } from "@/types/turnBased";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/GameHistoryScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -93,7 +96,6 @@ const SINGLEPLAYER_GAMES: {
 }[] = [
   { type: "all", label: "All Games", icon: "🎮" },
   { type: "word_master", label: "Word", icon: "📝" },
-  { type: "flappy_bird", label: "Flappy Bird", icon: "🐦" },
   { type: "bounce_blitz", label: "Bounce Blitz", icon: "⚪" },
   { type: "play_2048", label: "2048", icon: "🔢" },
   { type: "snake_master", label: "Snake", icon: "🐍" },
@@ -254,7 +256,7 @@ export function GameHistoryScreen() {
         setHasMore(result.hasMore && newRecords.length > 0);
         setLastId(result.lastId);
       } catch (error) {
-        console.error("[GameHistoryScreen] Failed to load history:", error);
+        logger.error("[GameHistoryScreen] Failed to load history:", error);
       } finally {
         setLoading(false);
         setRefreshing(false);

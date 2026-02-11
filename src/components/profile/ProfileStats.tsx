@@ -36,7 +36,7 @@ const StatItem = memo(function StatItem({
   return (
     <View style={styles.statItem}>
       <MaterialCommunityIcons
-        name={icon as any}
+        name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
         size={24}
         color={color || colors.primary}
       />

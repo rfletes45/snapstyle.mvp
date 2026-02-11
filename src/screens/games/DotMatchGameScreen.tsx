@@ -6,12 +6,24 @@
  * 2. When a player completes the fourth side of a 1x1 box, they claim it and get another turn
  * 3. The player with the most boxes at the end wins!
  *
- * Supports: vs AI (greedy strategy)
+ * Supports: vs AI, Colyseus multiplayer
  *
  * Grid: 5x5 dots → 4x4 boxes
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import {
+  CountdownOverlay,
+  GameOverOverlay,
+  OpponentScoreBar,
+  ReconnectingOverlay,
+  WaitingOverlay,
+} from "@/components/games/MultiplayerOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
@@ -24,16 +36,6 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import {
   Canvas,
   Circle,
@@ -43,7 +45,22 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -317,15 +334,51 @@ function getAIMove(
 // Component
 // =============================================================================
 
-export default function DotMatchGameScreen({
+function DotMatchGameScreen({
   navigation,
+  route,
 }: {
   navigation: any;
+  route: any;
 }) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "dot_match" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "dot_match", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const isSpectator = route?.params?.spectatorMode === true;
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "dot_match_game",
+    route?.params?.matchId,
+  );
+  const mp = useMultiplayerGame({
+    gameType: "dot_match_game",
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount =
+    spectatorSession.spectatorCount > 0
+      ? spectatorSession.spectatorCount
+      : mp.spectatorCount;
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      mp.startMultiplayer({ spectator: isSpectator });
+    }
+  }, [resolvedMode, firestoreGameId, isSpectator]);
 
   const [gameState, setGameState] = useState<GameState>("menu");
   const [gameMode, setGameMode] = useState<GameMode>("ai");
@@ -338,6 +391,23 @@ export default function DotMatchGameScreen({
   const [isSending, setIsSending] = useState(false);
   const [linesDrawn, setLinesDrawn] = useState(0);
 
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
+
   const isGameOver = useMemo(
     () => allBoxesFilled(board) || linesDrawn >= TOTAL_LINES,
     [board, linesDrawn],
@@ -346,7 +416,7 @@ export default function DotMatchGameScreen({
   // Load personal best
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "dot_match" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "dot_match").then(
         setPersonalBest,
       );
     }
@@ -365,6 +435,7 @@ export default function DotMatchGameScreen({
 
   const finishGame = useCallback(
     (pScore: number) => {
+      if (mp.isMultiplayer) mp.reportFinished();
       setGameState("result");
       Haptics.notificationAsync(
         pScore > TOTAL_BOXES / 2
@@ -375,12 +446,12 @@ export default function DotMatchGameScreen({
       if (currentFirebaseUser && pScore > 0) {
         const newBest = !personalBest || pScore > personalBest.bestScore;
         recordGameSession(currentFirebaseUser.uid, {
-          gameId: "dot_match" as any,
+          gameId: "dot_match",
           score: pScore,
         }).then((session) => {
           if (session && newBest) {
             setPersonalBest({
-              gameId: "dot_match" as any,
+              gameId: "dot_match",
               bestScore: pScore,
               achievedAt: Date.now(),
             });
@@ -423,7 +494,7 @@ export default function DotMatchGameScreen({
       if (completed > 0) {
         // AI gets another turn
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        setTimeout(() => {
+        scheduleTimeout(() => {
           doAITurn(newBoard, pScore, newAiScore, newDrawn);
         }, 400);
       } else {
@@ -436,6 +507,7 @@ export default function DotMatchGameScreen({
   const handleLinePress = useCallback(
     (type: "h" | "v", row: number, col: number) => {
       if (gameState !== "playing") return;
+      if (isSpectator && mp.isMultiplayer) return;
       // In AI mode, only player 1 can tap. In local mode, either player can tap.
       if (gameMode === "ai" && currentPlayer !== 1) return;
       if (isLineDrawn(board, type, row, col)) return;
@@ -452,6 +524,7 @@ export default function DotMatchGameScreen({
       if (currentPlayer === 1) {
         newPlayerScore += completed;
         setPlayerScore(newPlayerScore);
+        if (mp.isMultiplayer) mp.reportScore(newPlayerScore);
       } else {
         newAiScore += completed;
         setAiScore(newAiScore);
@@ -481,7 +554,7 @@ export default function DotMatchGameScreen({
       } else {
         // AI mode: switch to AI
         setCurrentPlayer(2);
-        setTimeout(() => {
+        scheduleTimeout(() => {
           doAITurn(newBoard, newPlayerScore, newAiScore, newDrawn);
         }, 500);
       }
@@ -496,6 +569,9 @@ export default function DotMatchGameScreen({
       aiScore,
       finishGame,
       doAITurn,
+      scheduleTimeout,
+      isSpectator,
+      mp.isMultiplayer,
     ],
   );
 
@@ -575,6 +651,18 @@ export default function DotMatchGameScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={async () => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -630,9 +718,42 @@ export default function DotMatchGameScreen({
           >
             Invite a Friend
           </Button>
+          {mp.isAvailable && (
+            <Button
+              mode="outlined"
+              onPress={() => {
+                mp.startMultiplayer({ spectator: isSpectator }).then(() => {
+                  if (!isSpectator) {
+                    mp.sendReady();
+                  }
+                });
+              }}
+              style={styles.menuButton}
+              icon="account-multiple"
+            >
+              🌐 Online Multiplayer
+            </Button>
+          )}
         </View>
       ) : (
         <>
+          {mp.isMultiplayer && mp.phase === "playing" && (
+            <OpponentScoreBar
+              opponentName={mp.opponentName}
+              opponentScore={mp.opponentScore}
+              myScore={playerScore}
+              timeRemaining={mp.timeRemaining}
+              opponentDisconnected={mp.opponentDisconnected}
+              colors={{
+                primary: colors.primary,
+                background: colors.background,
+                surface: colors.surface,
+                text: colors.text,
+                textSecondary: colors.textSecondary,
+                border: colors.border,
+              }}
+            />
+          )}
           {/* Score bar */}
           <View style={styles.scoreBar}>
             <View style={styles.scoreItem}>
@@ -689,16 +810,34 @@ export default function DotMatchGameScreen({
                       ]}
                     >
                       <Canvas style={{ width: boxW, height: boxH }}>
-                        <RoundedRect x={0} y={0} width={boxW} height={boxH} r={4}>
+                        <RoundedRect
+                          x={0}
+                          y={0}
+                          width={boxW}
+                          height={boxH}
+                          r={4}
+                        >
                           <LinearGradient
                             start={vec(0, 0)}
                             end={vec(boxW, boxH)}
-                            colors={[`${ownerColor}55`, `${ownerColor}30`, `${ownerColor}18`]}
+                            colors={[
+                              `${ownerColor}55`,
+                              `${ownerColor}30`,
+                              `${ownerColor}18`,
+                            ]}
                           />
-                          <Shadow dx={0} dy={0} blur={4} color={`${ownerColor}22`} inner />
+                          <Shadow
+                            dx={0}
+                            dy={0}
+                            blur={4}
+                            color={`${ownerColor}22`}
+                            inner
+                          />
                         </RoundedRect>
                       </Canvas>
-                      <Text style={[styles.boxOwnerText, { position: "absolute" }]}>
+                      <Text
+                        style={[styles.boxOwnerText, { position: "absolute" }]}
+                      >
                         {owner === 1 ? "🔵" : "🔴"}
                       </Text>
                     </View>
@@ -721,6 +860,7 @@ export default function DotMatchGameScreen({
                       onPress={() => handleLinePress("h", dotRow, dotCol)}
                       disabled={
                         gameState !== "playing" ||
+                        (isSpectator && mp.isMultiplayer) ||
                         (gameMode === "ai" && currentPlayer !== 1) ||
                         drawn
                       }
@@ -739,8 +879,19 @@ export default function DotMatchGameScreen({
                       accessibilityLabel={`Horizontal line row ${dotRow} col ${dotCol}`}
                     >
                       {drawn ? (
-                        <Canvas style={{ width: CELL_SPACING, height: LINE_THICKNESS }}>
-                          <RoundedRect x={0} y={0} width={CELL_SPACING} height={LINE_THICKNESS} r={LINE_THICKNESS / 2}>
+                        <Canvas
+                          style={{
+                            width: CELL_SPACING,
+                            height: LINE_THICKNESS,
+                          }}
+                        >
+                          <RoundedRect
+                            x={0}
+                            y={0}
+                            width={CELL_SPACING}
+                            height={LINE_THICKNESS}
+                            r={LINE_THICKNESS / 2}
+                          >
                             <LinearGradient
                               start={vec(0, 0)}
                               end={vec(CELL_SPACING, 0)}
@@ -750,7 +901,14 @@ export default function DotMatchGameScreen({
                                 getLineColor(board, "h", dotRow, dotCol),
                               ]}
                             />
-                            <Shadow dx={0} dy={1} blur={3} color={getLineColor(board, "h", dotRow, dotCol) + "66"} />
+                            <Shadow
+                              dx={0}
+                              dy={1}
+                              blur={3}
+                              color={
+                                getLineColor(board, "h", dotRow, dotCol) + "66"
+                              }
+                            />
                           </RoundedRect>
                         </Canvas>
                       ) : (
@@ -784,6 +942,7 @@ export default function DotMatchGameScreen({
                       onPress={() => handleLinePress("v", dotRow, dotCol)}
                       disabled={
                         gameState !== "playing" ||
+                        (isSpectator && mp.isMultiplayer) ||
                         (gameMode === "ai" && currentPlayer !== 1) ||
                         drawn
                       }
@@ -802,8 +961,19 @@ export default function DotMatchGameScreen({
                       accessibilityLabel={`Vertical line row ${dotRow} col ${dotCol}`}
                     >
                       {drawn ? (
-                        <Canvas style={{ width: LINE_THICKNESS, height: CELL_SPACING }}>
-                          <RoundedRect x={0} y={0} width={LINE_THICKNESS} height={CELL_SPACING} r={LINE_THICKNESS / 2}>
+                        <Canvas
+                          style={{
+                            width: LINE_THICKNESS,
+                            height: CELL_SPACING,
+                          }}
+                        >
+                          <RoundedRect
+                            x={0}
+                            y={0}
+                            width={LINE_THICKNESS}
+                            height={CELL_SPACING}
+                            r={LINE_THICKNESS / 2}
+                          >
                             <LinearGradient
                               start={vec(0, 0)}
                               end={vec(0, CELL_SPACING)}
@@ -813,7 +983,14 @@ export default function DotMatchGameScreen({
                                 getLineColor(board, "v", dotRow, dotCol),
                               ]}
                             />
-                            <Shadow dx={1} dy={0} blur={3} color={getLineColor(board, "v", dotRow, dotCol) + "66"} />
+                            <Shadow
+                              dx={1}
+                              dy={0}
+                              blur={3}
+                              color={
+                                getLineColor(board, "v", dotRow, dotCol) + "66"
+                              }
+                            />
                           </RoundedRect>
                         </Canvas>
                       ) : (
@@ -841,19 +1018,25 @@ export default function DotMatchGameScreen({
                   return (
                     <View
                       key={`dot-${dotRow}-${dotCol}`}
-                      style={[
-                        styles.dot,
-                        { left, top },
-                      ]}
+                      style={[styles.dot, { left, top }]}
                     >
                       <Canvas style={{ width: DOT_SIZE, height: DOT_SIZE }}>
                         <Circle cx={r} cy={r} r={r}>
                           <RadialGradient
                             c={vec(r * 0.7, r * 0.6)}
                             r={r}
-                            colors={["#FFFFFF", colors.text, `${colors.text}CC`]}
+                            colors={[
+                              "#FFFFFF",
+                              colors.text,
+                              `${colors.text}CC`,
+                            ]}
                           />
-                          <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.4)" />
+                          <Shadow
+                            dx={0}
+                            dy={1}
+                            blur={3}
+                            color="rgba(0,0,0,0.4)"
+                          />
                         </Circle>
                       </Canvas>
                     </View>
@@ -901,6 +1084,66 @@ export default function DotMatchGameScreen({
         onSelectFriend={handleSelectFriendForInvite}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Invite to game Dots"
+      />
+      <WaitingOverlay
+        visible={mp.phase === "waiting"}
+        onCancel={mp.cancelMultiplayer}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <CountdownOverlay
+        visible={mp.phase === "countdown"}
+        count={mp.countdown}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <ReconnectingOverlay
+        visible={mp.phase === "reconnecting"}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <GameOverOverlay
+        visible={mp.phase === "gameOver"}
+        isWinner={mp.isWinner}
+        isTie={mp.isTie}
+        winnerName={mp.winnerName}
+        myScore={playerScore}
+        opponentScore={mp.opponentScore}
+        opponentName={mp.opponentName}
+        rematchRequested={mp.rematchRequested}
+        onPlayAgain={() => startGame(gameMode)}
+        onRematch={mp.requestRematch}
+        onAcceptRematch={mp.acceptRematch}
+        onMenu={() => {
+          mp.cancelMultiplayer();
+          setGameState("menu");
+        }}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
       />
     </View>
   );
@@ -1064,3 +1307,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+export default withGameErrorBoundary(DotMatchGameScreen, "dot_match");

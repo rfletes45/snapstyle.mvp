@@ -14,9 +14,9 @@ import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Spacing } from "../../../constants/theme";
-import { ThemePicker } from "../../components/ThemePicker";
-import { ThemeId, useColors } from "../../store/ThemeContext";
+import { Spacing } from "@/constants/theme";
+import { ThemePicker } from "@/components/ThemePicker";
+import { ThemeId, useColors } from "@/store/ThemeContext";
 
 export default function ThemeSettingsScreen() {
   const navigation = useNavigation();

@@ -88,9 +88,12 @@ import {
   messageWithProfileToV2,
 } from "@/utils/messageAdapters";
 import * as Haptics from "expo-haptics";
-import { DEBUG_CHAT_V2 } from "../../../constants/featureFlags";
-import { Spacing } from "../../../constants/theme";
+import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
+import { Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/chat/ChatScreen");
 // ==========================================================================
 // Constants
 // ==========================================================================
@@ -352,7 +355,7 @@ export default function ChatScreen({
           setCurrentChatId(resolvedChatId);
           setFriendProfile(profile);
         } catch (error: any) {
-          console.error("❌ [ChatScreen] Init error:", error);
+          logger.error("❌ [ChatScreen] Init error:", error);
           Alert.alert("Error", error.message || "Failed to initialize chat");
           if (error.message?.includes("Cannot chat with this user")) {
             navigation.goBack();
@@ -517,7 +520,7 @@ export default function ChatScreen({
       typing.setTyping(false);
       await screen.composer.send();
     } catch (error) {
-      console.error("❌ [ChatScreen] Send error:", error);
+      logger.error("❌ [ChatScreen] Send error:", error);
     }
   }, [uid, chatId, screen.composer, typing]);
 
@@ -539,7 +542,7 @@ export default function ChatScreen({
           ],
         });
       } catch (error: any) {
-        console.error("❌ [ChatScreen] Voice send error:", error);
+        logger.error("❌ [ChatScreen] Voice send error:", error);
         Alert.alert("Error", error.message || "Failed to send voice message");
       }
     },
@@ -621,24 +624,8 @@ export default function ChatScreen({
       options?: {
         inviteId?: string;
         spectatorMode?: boolean;
-        liveSessionId?: string;
       },
     ) => {
-      // For spectators, navigate to SpectatorView screen
-      if (options?.spectatorMode && options?.liveSessionId) {
-        navigation.navigate("MainTabs", {
-          screen: "Play",
-          params: {
-            screen: "SpectatorView",
-            params: {
-              liveSessionId: options.liveSessionId,
-              gameType: gameType,
-            },
-          },
-        });
-        return;
-      }
-
       const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
       if (screen) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -650,8 +637,6 @@ export default function ChatScreen({
               matchId: gameId,
               inviteId: options?.inviteId,
               spectatorMode: options?.spectatorMode,
-              spectatorInviteId: options?.inviteId, // For single-player spectator sessions
-              liveSessionId: options?.liveSessionId, // For live spectator sessions
               entryPoint: "chat",
               conversationId: chatId,
               conversationType: "dm" as const,
@@ -659,7 +644,7 @@ export default function ChatScreen({
           },
         });
       } else {
-        console.warn(
+        logger.warn(
           `[ChatScreen] No screen mapping for gameType: ${gameType}`,
         );
       }
@@ -679,24 +664,19 @@ export default function ChatScreen({
       // Play quack sound + haptic (fire and forget but still catch errors)
       await playQuack();
     } catch (e) {
-      console.warn("❌ [ChatScreen] Quack sound error:", e);
+      logger.warn("❌ [ChatScreen] Quack sound error:", e);
     }
     try {
       // Send the duck marker as a text message
       await screen.chat.sendMessage("🦆", {});
     } catch (error) {
-      console.error("❌ [ChatScreen] Duck send error:", error);
+      logger.error("❌ [ChatScreen] Duck send error:", error);
     }
   }, [uid, chatId, screen.chat]);
 
   // Handle single-player game selection - navigate directly to game
-  // Optionally receives a spectatorInviteId and liveSessionId if the player wants to invite spectators
   const handleSinglePlayerGame = useCallback(
-    (
-      gameType: ExtendedGameType,
-      spectatorInviteId?: string,
-      liveSessionId?: string,
-    ) => {
+    (gameType: ExtendedGameType) => {
       const screen = GAME_SCREEN_MAP[gameType];
       if (screen) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -706,9 +686,7 @@ export default function ChatScreen({
             screen,
             params: {
               entryPoint: "chat",
-              spectatorInviteId, // Pass spectator invite ID
-              liveSessionId, // Pass live session ID for real-time spectator updates
-              conversationId: chatId, // Pass conversation context
+              conversationId: chatId,
               conversationType: "dm" as const,
             },
           },
@@ -721,13 +699,6 @@ export default function ChatScreen({
   // Handle multiplayer invite creation
   const handleInviteCreated = useCallback(() => {
     // Invite will appear via ChatGameInvites subscription
-    // Optionally show a toast or haptic feedback here
-  }, []);
-
-  // Handle spectator invite creation
-  const handleSpectatorInviteCreated = useCallback(() => {
-    // Spectator invite created - navigation happens in GamePickerModal
-    // Optionally show a toast or haptic feedback here
   }, []);
 
   const handleBlockConfirm = async (reason?: string) => {
@@ -1004,7 +975,6 @@ export default function ChatScreen({
         recipientAvatar={friendProfile?.profilePicture?.url}
         onSinglePlayerGame={handleSinglePlayerGame}
         onInviteCreated={handleInviteCreated}
-        onSpectatorInviteCreated={handleSpectatorInviteCreated}
         onError={(error) => Alert.alert("Error", error)}
       />
     </>

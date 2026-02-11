@@ -16,9 +16,12 @@ import {
 } from "@/services/inboxSettings";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
+import type { AppTabsParamList, InboxStackParamList } from "@/types/navigation";
 import type { InboxSettings } from "@/types/messaging";
 import { log } from "@/utils/log";
 import { useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -34,7 +37,7 @@ import {
   Text,
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Spacing } from "../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -49,7 +52,8 @@ type NotifyLevel = "all" | "mentions" | "none";
 export default function InboxSettingsScreen() {
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
-  const navigation = useNavigation();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<InboxStackParamList>>();
   const insets = useSafeAreaInsets();
   const uid = currentFirebaseUser?.uid ?? "";
 
@@ -133,7 +137,9 @@ export default function InboxSettingsScreen() {
 
   const navigateToBlockedUsers = useCallback(() => {
     // BlockedUsers is in ProfileStack, which is the Profile tab
-    (navigation as any).navigate("Profile", {
+    const tabNavigation =
+      navigation.getParent<BottomTabNavigationProp<AppTabsParamList>>();
+    tabNavigation?.navigate("Profile", {
       screen: "BlockedUsers",
     });
   }, [navigation]);

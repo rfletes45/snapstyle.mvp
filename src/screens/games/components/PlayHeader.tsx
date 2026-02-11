@@ -19,7 +19,7 @@ import { PlayHeaderProps } from "@/types/playScreen";
 import React, { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 const { spacing, typography } = PLAY_SCREEN_TOKENS;
 

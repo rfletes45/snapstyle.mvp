@@ -36,8 +36,11 @@ import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePictur
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType } from "@/types/games";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/games/components/FriendsPlayingNow");
 // =============================================================================
 // Types
 // =============================================================================
@@ -192,7 +195,7 @@ export function FriendsPlayingNow({
 
     const fetchFriendsPlaying = async () => {
       try {
-        // TODO: Implement real in-game presence tracking
+        // NOTE: Implement real in-game presence tracking
         // This requires:
         // 1. Each game screen to call setGamePresence(gameType) on mount
         //    and clearGamePresence() on unmount
@@ -204,7 +207,7 @@ export function FriendsPlayingNow({
         // Don't show mock data - only show real data when we have it
         setFriendsPlaying([]);
       } catch (error) {
-        console.error("[FriendsPlayingNow] Error fetching friends:", error);
+        logger.error("[FriendsPlayingNow] Error fetching friends:", error);
       } finally {
         setLoading(false);
       }

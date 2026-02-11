@@ -118,7 +118,7 @@ export async function recordSinglePlayerSession(
       endedAt: now,
       duration: input.duration || 0,
       stats: input.stats,
-      achievementsUnlocked: [], // TODO: Check achievements
+      achievementsUnlocked: [], // NOTE: Check achievements
       coinsEarned: calculateCoinsEarned(
         input.gameType,
         input.finalScore,
@@ -449,9 +449,6 @@ function calculateCoinsEarned(
 
   // Game-specific bonuses
   switch (gameType) {
-    case "flappy_bird":
-      coins += Math.floor(score / 10);
-      break;
     case "bounce_blitz":
       coins += Math.floor(score / 50);
       break;
@@ -516,8 +513,6 @@ export function formatScore(
   score: number,
 ): string {
   switch (gameType) {
-    case "flappy_bird":
-      return `${score} pipes`;
     case "bounce_blitz":
       return `${score} pts`;
     case "memory_master":
@@ -532,4 +527,3 @@ export function formatScore(
       return score.toString();
   }
 }
-

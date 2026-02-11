@@ -44,10 +44,12 @@ import {
 } from "react-native";
 import { Appbar, Button, Chip, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { PROFILE_FEATURES } from "../../../constants/featureFlags";
 import { ChatBubblePreview } from "./ChatBubblePreview";
 import { ThemePreview } from "./ThemePreview";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/customization/CustomizationModal");
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export interface CustomizationModalProps {
@@ -132,7 +134,7 @@ function CustomizationModalBase({
       await onSave(previewConfig);
       onClose();
     } catch (error) {
-      console.error("[CustomizationModal] Save error:", error);
+      logger.error("[CustomizationModal] Save error:", error);
     } finally {
       setSaving(false);
     }
@@ -292,28 +294,7 @@ function CustomizationModalBase({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsContainer}
         >
-          {TABS.filter((tab) => {
-            // Hide frame tab if feature flag is off
-            if (tab.id === "frame" && !PROFILE_FEATURES.PROFILE_FRAMES) {
-              return false;
-            }
-            // Hide clothing/accessories if extended cosmetics is off
-            if (
-              (tab.id === "clothing" || tab.id === "accessories") &&
-              !PROFILE_FEATURES.EXTENDED_COSMETICS
-            ) {
-              return false;
-            }
-            // Hide theme tab if feature flag is off
-            if (tab.id === "theme" && !PROFILE_FEATURES.PROFILE_THEMES) {
-              return false;
-            }
-            // Hide chat tab if feature flag is off
-            if (tab.id === "chat" && !PROFILE_FEATURES.CHAT_BUBBLES) {
-              return false;
-            }
-            return true;
-          }).map((tab) => (
+          {TABS.map((tab) => (
             <Chip
               key={tab.id}
               selected={activeTab === tab.id}

@@ -26,6 +26,9 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/achievements");
 // =============================================================================
 // Achievement Definitions (Static Data)
 // =============================================================================
@@ -206,12 +209,12 @@ export async function getUserAchievements(
       };
     });
 
-    console.log(
+    logger.info(
       `[achievements] Fetched ${achievements.length} achievements for user ${userId}`,
     );
     return achievements;
   } catch (error) {
-    console.error("[achievements] Error fetching user achievements:", error);
+    logger.error("[achievements] Error fetching user achievements:", error);
     return [];
   }
 }
@@ -236,7 +239,7 @@ export async function hasAchievement(
     const achievementSnap = await getDoc(achievementRef);
     return achievementSnap.exists();
   } catch (error) {
-    console.error("[achievements] Error checking achievement:", error);
+    logger.error("[achievements] Error checking achievement:", error);
     return false;
   }
 }
@@ -289,7 +292,7 @@ export async function grantAchievement(
     // Check if already earned
     const alreadyEarned = await hasAchievement(userId, achievementType);
     if (alreadyEarned) {
-      console.log(
+      logger.info(
         `[achievements] User ${userId} already has ${achievementType}`,
       );
       return false;
@@ -315,10 +318,10 @@ export async function grantAchievement(
       earnedAt: Timestamp.now(),
     });
 
-    console.log(`[achievements] Granted ${achievementType} to user ${userId}`);
+    logger.info(`[achievements] Granted ${achievementType} to user ${userId}`);
     return true;
   } catch (error) {
-    console.error("[achievements] Error granting achievement:", error);
+    logger.error("[achievements] Error granting achievement:", error);
     return false;
   }
 }
@@ -372,7 +375,7 @@ export async function checkGameAchievements(
 
     return granted;
   } catch (error) {
-    console.error("[achievements] Error checking game achievements:", error);
+    logger.error("[achievements] Error checking game achievements:", error);
     return granted;
   }
 }
@@ -405,7 +408,7 @@ export async function checkStreakAchievements(
 
     return granted;
   } catch (error) {
-    console.error("[achievements] Error checking streak achievements:", error);
+    logger.error("[achievements] Error checking streak achievements:", error);
     return granted;
   }
 }

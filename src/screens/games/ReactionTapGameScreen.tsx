@@ -6,9 +6,23 @@
  * 2. Tap as fast as you can when it changes
  * 3. Your reaction time is measured in milliseconds
  * 4. Lower scores are better!
+ *
+ * Supports: Single-player, Colyseus multiplayer
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import {
+  CountdownOverlay,
+  GameOverOverlay,
+  OpponentScoreBar,
+  ReconnectingOverlay,
+  WaitingOverlay,
+} from "@/components/games/MultiplayerOverlay";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   formatScore,
   getPersonalBest,
@@ -21,9 +35,24 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
 import {
-  Animated,
+  Canvas,
+  Circle,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  vec,
+} from "@shopify/react-native-skia";
+import React, { useEffect, useRef, useState } from "react";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import {
   Dimensions,
   Platform,
   StyleSheet,
@@ -31,18 +60,17 @@ import {
   Vibration,
   View,
 } from "react-native";
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-import {
-  Canvas,
-  LinearGradient,
-  RadialGradient,
-  RoundedRect,
-  Shadow,
-  Circle,
-  vec,
-} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+const logger = createLogger("screens/games/ReactionTapGameScreen");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // =============================================================================
 // Types
@@ -52,6 +80,7 @@ type GameState = "waiting" | "ready" | "go" | "tapped" | "too_early" | "result";
 
 interface ReactionTapGameScreenProps {
   navigation: any;
+  route: any;
 }
 
 // =============================================================================
@@ -65,13 +94,39 @@ const MAX_WAIT_TIME = 5000; // Maximum wait before green (5s)
 // Component
 // =============================================================================
 
-export default function ReactionTapGameScreen({
+function ReactionTapGameScreen({
   navigation,
+  route,
 }: ReactionTapGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "reaction_tap" });
+  void __codexGameCompletion;
+
+  useGameBackHandler({ gameType: "reaction_tap", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "reaction_tap",
+    route?.params?.matchId,
+  );
+  const mp = useMultiplayerGame({
+    gameType: "reaction_tap",
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   const [gameState, setGameState] = useState<GameState>("waiting");
   const [reactionTime, setReactionTime] = useState<number | null>(null);
@@ -81,10 +136,23 @@ export default function ReactionTapGameScreen({
   const [isSending, setIsSending] = useState(false);
   const [isNewBest, setIsNewBest] = useState(false);
 
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "reaction_tap",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   const startTimeRef = useRef<number>(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseScale = useSharedValue(1);
 
   // Load personal best
   useEffect(() => {
@@ -109,40 +177,34 @@ export default function ReactionTapGameScreen({
 
   // Pulse animation for waiting state
   useEffect(() => {
-    let animationRef: Animated.CompositeAnimation | null = null;
-
     if (gameState === "ready") {
-      animationRef = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.05,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ]),
+      pulseScale.value = withRepeat(
+        withSequence(
+          withTiming(1.05, { duration: 500 }),
+          withTiming(1, { duration: 500 }),
+        ),
+        -1,
+        false,
       );
-      animationRef.start();
     } else {
-      pulseAnim.setValue(1);
+      cancelAnimation(pulseScale);
+      pulseScale.value = 1;
     }
 
-    // Cleanup: stop animation when component unmounts or gameState changes
     return () => {
-      if (animationRef) {
-        animationRef.stop();
-      }
+      cancelAnimation(pulseScale);
     };
-  }, [gameState, pulseAnim]);
+  }, [gameState, pulseScale]);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+  }));
 
   const startGame = () => {
     setGameState("ready");
     setReactionTime(null);
     setIsNewBest(false);
+    spectatorHost.startHosting();
 
     // Random delay before showing green
     const delay =
@@ -157,6 +219,21 @@ export default function ReactionTapGameScreen({
       }
     }, delay);
   };
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (gameState !== "waiting") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          gameState,
+          reactionTime,
+        }),
+        reactionTime ?? 0,
+        undefined,
+        undefined,
+      );
+    }
+  }, [gameState, reactionTime]);
 
   const handleTap = async () => {
     if (
@@ -187,6 +264,10 @@ export default function ReactionTapGameScreen({
       const reaction = endTime - startTimeRef.current;
       setReactionTime(reaction);
       setGameState("tapped");
+      spectatorHost.endHosting(reaction);
+
+      // Report to multiplayer
+      if (mp.isMultiplayer) mp.reportScore(reaction);
 
       // Check if new personal best
       const newBest = !personalBest || reaction < personalBest.bestScore;
@@ -212,6 +293,8 @@ export default function ReactionTapGameScreen({
           });
           showSuccess("🎉 New Personal Best!");
         }
+
+        if (mp.isMultiplayer) mp.reportFinished();
       }
 
       // Show result after a brief moment
@@ -257,7 +340,7 @@ export default function ReactionTapGameScreen({
         showError("Failed to share score. Try again.");
       }
     } catch (error) {
-      console.error("[ReactionTap] Error sharing score:", error);
+      logger.error("[ReactionTap] Error sharing score:", error);
       showError("Failed to share score. Try again.");
     } finally {
       setIsSending(false);
@@ -367,7 +450,13 @@ export default function ReactionTapGameScreen({
       >
         {/* Skia gradient overlay */}
         <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-          <RoundedRect x={0} y={0} width={SCREEN_WIDTH} height={SCREEN_HEIGHT} r={0}>
+          <RoundedRect
+            x={0}
+            y={0}
+            width={SCREEN_WIDTH}
+            height={SCREEN_HEIGHT}
+            r={0}
+          >
             <LinearGradient
               start={vec(SCREEN_WIDTH / 2, 0)}
               end={vec(SCREEN_WIDTH / 2, SCREEN_HEIGHT)}
@@ -387,12 +476,7 @@ export default function ReactionTapGameScreen({
             />
           </Circle>
         </Canvas>
-        <Animated.View
-          style={[
-            styles.instructionContainer,
-            gameState === "ready" && { transform: [{ scale: pulseAnim }] },
-          ]}
-        >
+        <Animated.View style={[styles.instructionContainer, pulseStyle]}>
           {gameState === "go" && (
             <MaterialCommunityIcons
               name="gesture-tap"
@@ -439,10 +523,32 @@ export default function ReactionTapGameScreen({
         </View>
       )}
 
+      {/* Opponent Score Bar */}
+      {mp.isMultiplayer && mp.opponentName && (
+        <OpponentScoreBar
+          opponentName={mp.opponentName}
+          opponentScore={mp.opponentScore}
+          myScore={mp.myScore}
+          timeRemaining={mp.timeRemaining}
+          opponentDisconnected={mp.opponentDisconnected}
+          colors={{
+            primary: "#4CAF50",
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+        />
+      )}
+
       {/* Back Button */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (navigation.canGoBack()) navigation.goBack();
+            else navigation.navigate("GamesHub");
+          }}
           style={styles.backButton}
         >
           <MaterialCommunityIcons
@@ -452,7 +558,20 @@ export default function ReactionTapGameScreen({
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reaction Time</Text>
-        <View style={styles.headerSpacer} />
+        <View style={styles.headerSpacer}>
+          {spectatorHost.spectatorRoomId && (
+            <TouchableOpacity
+              onPress={() => setShowSpectatorInvitePicker(true)}
+              accessibilityLabel="Invite spectators"
+            >
+              <MaterialCommunityIcons
+                name="eye"
+                size={22}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Share Dialog */}
@@ -477,11 +596,100 @@ export default function ReactionTapGameScreen({
       {/* Friend Picker Modal */}
       {currentFirebaseUser && (
         <FriendPickerModal
+          key="scorecard-picker"
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
           onSelectFriend={handleSelectFriend}
           currentUserId={currentFirebaseUser.uid}
           title="Share Score With"
+        />
+      )}
+
+      {/* Spectator Overlay */}
+      <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "reaction_tap",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
+      />
+
+      {/* Multiplayer Overlays */}
+      {mp.isMultiplayer && mp.phase === "waiting" && (
+        <WaitingOverlay
+          onCancel={() => mp.cancelMultiplayer()}
+          colors={{
+            primary: "#4CAF50",
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.phase === "countdown" && (
+        <CountdownOverlay
+          countdown={mp.countdown}
+          colors={{
+            primary: "#4CAF50",
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.reconnecting && (
+        <ReconnectingOverlay
+          colors={{
+            primary: "#4CAF50",
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
+        />
+      )}
+      {mp.isMultiplayer && mp.phase === "finished" && (
+        <GameOverOverlay
+          isWinner={mp.isWinner}
+          isTie={mp.isTie}
+          winnerName={mp.winnerName}
+          myScore={reactionTime || 0}
+          opponentScore={mp.opponentScore}
+          opponentName={mp.opponentName}
+          rematchRequested={mp.rematchRequested}
+          onPlayAgain={startGame}
+          onRematch={mp.requestRematch}
+          onAcceptRematch={mp.acceptRematch}
+          onMenu={() => {
+            mp.cancelMultiplayer();
+            setGameState("waiting");
+          }}
+          colors={{
+            primary: "#4CAF50",
+            background: "#1a1a1a",
+            surface: "#222",
+            text: "#fff",
+            textSecondary: "rgba(255,255,255,0.6)",
+            border: "#333",
+          }}
         />
       )}
     </View>
@@ -585,4 +793,17 @@ const styles = StyleSheet.create({
     flex: 1,
     maxWidth: 200,
   },
+  multiplayerButtonContainer: {
+    position: "absolute",
+    bottom: 100,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  multiplayerButton: {
+    minWidth: 180,
+    borderRadius: 24,
+  },
 });
+
+export default withGameErrorBoundary(ReactionTapGameScreen, "reaction_tap");

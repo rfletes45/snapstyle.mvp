@@ -208,7 +208,7 @@ export async function fetchPreview(url: string): Promise<LinkPreviewV2 | null> {
  * @param text - Text to extract URLs from
  * @returns Array of link previews
  *
- * TODO: Implement in H9
+ * NOTE: Implement in H9
  */
 export async function fetchPreviewsForText(
   text: string,

@@ -16,22 +16,26 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useSpectator } from "@/hooks/useSpectator";
+import {
+  GuessRow,
+  useWordMasterMultiplayer,
+} from "@/hooks/useWordMasterMultiplayer";
+import {
+  DailyWordMasterState,
+  loadDailyGameState,
+  saveDailyGameState,
+} from "@/services/dailyGamePersistence";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  Vibration,
-  View,
-} from "react-native";
 import {
   Canvas,
   LinearGradient,
@@ -39,24 +43,53 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  Vibration,
+  View,
+} from "react-native";
 import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
+import Animated, {
+  SharedValue,
+  makeMutable,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { createLogger } from "@/utils/log";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-type GameStatus = "playing" | "won" | "lost";
+type GameStatus = "menu" | "playing" | "won" | "lost" | "colyseus";
+
+const isCoopAvailable =
+  !!COLYSEUS_FEATURES.COLYSEUS_ENABLED && !!COLYSEUS_FEATURES.COOP_ENABLED;
 type LetterState = "empty" | "filled" | "correct" | "present" | "absent";
 
 interface LetterGuess {
   letter: string;
   state: LetterState;
-  animValue: Animated.Value;
+  animValue: SharedValue<number>;
 }
 
 interface WordMasterGameScreenProps {
   navigation: any;
 }
+
+const logger = createLogger("screens/games/WordMasterGameScreen");
 
 // =============================================================================
 // Constants
@@ -711,31 +744,67 @@ const KEYBOARD_ROWS = [
 // Component
 // =============================================================================
 
-export default function WordMasterGameScreen({
+function WordMasterGameScreen({
   navigation,
 }: WordMasterGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "word_master" });
+  void __codexGameCompletion;
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
 
+  // Multiplayer hook — always called (Phase 5)
+  const mp = useWordMasterMultiplayer({
+    gameType: "word_master",
+    autoJoin: false,
+  });
+
   // Game state
-  const [status, setStatus] = useState<GameStatus>("playing");
+  const [status, setStatus] = useState<GameStatus>("menu");
   const [targetWord] = useState(getTodaysWord());
+  const todayDateString = getTodaysDateString();
   const [guesses, setGuesses] = useState<LetterGuess[][]>([]);
   const [currentGuess, setCurrentGuess] = useState("");
   const [currentRow, setCurrentRow] = useState(0);
   const [keyStates, setKeyStates] = useState<Record<string, LetterState>>({});
   const [streak, setStreak] = useState(0);
   const [isNewBest, setIsNewBest] = useState(false);
+  const [dailyCompleted, setDailyCompleted] = useState(false);
+  const [restoredState, setRestoredState] =
+    useState<DailyWordMasterState | null>(null);
+  const hasRestoredRef = useRef(false);
 
   // Share state
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
+  // Spectator hosting — allows friends to watch via SpectatorRoom
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "word_master",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   // Animation
-  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const shakeAnim = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeAnim.value }],
+  }));
 
   // Timer ref for win/loss reveal cleanup
   const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -756,7 +825,7 @@ export default function WordMasterGameScreen({
         row.push({
           letter: "",
           state: "empty",
-          animValue: new Animated.Value(0),
+          animValue: makeMutable(0),
         });
       }
       emptyGrid.push(row);
@@ -764,30 +833,134 @@ export default function WordMasterGameScreen({
     setGuesses(emptyGrid);
   }, []);
 
+  // ── Restore saved daily game state ──────────────────────────────────────
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+
+    (async () => {
+      const saved = await loadDailyGameState("word_master", todayDateString);
+      if (!saved) return;
+
+      // If game was already completed, flag it and skip to the result screen
+      if (saved.status === "won" || saved.status === "lost") {
+        setDailyCompleted(true);
+        setRestoredState(saved);
+
+        // Rebuild the grid from saved data
+        const restoredGrid: LetterGuess[][] = saved.guessRows.map((row) =>
+          row.map((cell) => ({
+            letter: cell.letter,
+            state: cell.state as LetterState,
+            animValue: makeMutable(cell.state !== "empty" ? 1 : 0),
+          })),
+        );
+        setGuesses(restoredGrid);
+        setCurrentRow(saved.currentRow);
+        setKeyStates(saved.keyStates as Record<string, LetterState>);
+        setStreak(saved.streak);
+        setStatus(saved.status as GameStatus);
+        return;
+      }
+
+      // In-progress game — restore state and jump straight to playing
+      setRestoredState(saved);
+      const restoredGrid: LetterGuess[][] = saved.guessRows.map((row) =>
+        row.map((cell) => ({
+          letter: cell.letter,
+          state: cell.state as LetterState,
+          animValue: makeMutable(cell.state !== "empty" ? 1 : 0),
+        })),
+      );
+      setGuesses(restoredGrid);
+      setCurrentRow(saved.currentRow);
+      setCurrentGuess(saved.currentGuess || "");
+      setKeyStates(saved.keyStates as Record<string, LetterState>);
+      setStreak(saved.streak);
+      setStatus("playing");
+    })();
+  }, [todayDateString]);
+
+  // ── Auto-save state when leaving (unmount) while playing ────────────────
+  const statusRef = useRef(status);
+  const guessesRef = useRef(guesses);
+  const currentRowRef = useRef(currentRow);
+  const currentGuessRef = useRef(currentGuess);
+  const keyStatesRef = useRef(keyStates);
+  const streakRef = useRef(streak);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+  useEffect(() => {
+    guessesRef.current = guesses;
+  }, [guesses]);
+  useEffect(() => {
+    currentRowRef.current = currentRow;
+  }, [currentRow]);
+  useEffect(() => {
+    currentGuessRef.current = currentGuess;
+  }, [currentGuess]);
+  useEffect(() => {
+    keyStatesRef.current = keyStates;
+  }, [keyStates]);
+  useEffect(() => {
+    streakRef.current = streak;
+  }, [streak]);
+
+  useEffect(() => {
+    return () => {
+      // Save on unmount if the game is in progress
+      if (statusRef.current === "playing") {
+        const state: DailyWordMasterState = {
+          dateString: todayDateString,
+          targetWord,
+          status: "playing",
+          guessRows: guessesRef.current.map((row) =>
+            row.map((cell) => ({ letter: cell.letter, state: cell.state })),
+          ),
+          currentRow: currentRowRef.current,
+          keyStates: keyStatesRef.current as Record<string, string>,
+          currentGuess: currentGuessRef.current,
+          streak: streakRef.current,
+          finalScore: 0,
+        };
+        saveDailyGameState("word_master", state);
+      }
+    };
+  }, [todayDateString, targetWord]);
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (status === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          guesses: guesses.length,
+          maxGuesses: MAX_GUESSES,
+          status,
+          currentRow: guesses.length,
+          // Visual state for spectator renderer
+          guessRows: guesses.map((row) =>
+            row.map((cell) => ({ letter: cell.letter, state: cell.state })),
+          ),
+          wordLength: WORD_LENGTH,
+          currentGuess,
+        }),
+        guesses.length,
+        undefined,
+        MAX_GUESSES - guesses.length,
+      );
+    }
+  }, [guesses.length, status, currentGuess]);
+
   // Shake animation for invalid guess
   const triggerShake = useCallback(() => {
-    Animated.sequence([
-      Animated.timing(shakeAnim, {
-        toValue: 10,
-        duration: 50,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shakeAnim, {
-        toValue: -10,
-        duration: 50,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shakeAnim, {
-        toValue: 10,
-        duration: 50,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shakeAnim, {
-        toValue: 0,
-        duration: 50,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    shakeAnim.value = withSequence(
+      withTiming(10, { duration: 50 }),
+      withTiming(-10, { duration: 50 }),
+      withTiming(10, { duration: 50 }),
+      withTiming(0, { duration: 50 }),
+    );
 
     if (Platform.OS !== "web") {
       Vibration.vibrate(100);
@@ -854,7 +1027,7 @@ export default function WordMasterGameScreen({
       newGuesses[currentRow][i] = {
         letter: upperGuess[i],
         state: states[i],
-        animValue: new Animated.Value(0),
+        animValue: makeMutable(0),
       };
     }
     setGuesses(newGuesses);
@@ -879,12 +1052,10 @@ export default function WordMasterGameScreen({
 
     // Animate reveal
     states.forEach((_, i) => {
-      Animated.timing(newGuesses[currentRow][i].animValue, {
-        toValue: 1,
-        duration: 300,
-        delay: i * 150,
-        useNativeDriver: true,
-      }).start();
+      newGuesses[currentRow][i].animValue.value = withDelay(
+        i * 150,
+        withTiming(1, { duration: 300 }),
+      );
     });
 
     // Check win/loss
@@ -892,6 +1063,8 @@ export default function WordMasterGameScreen({
       revealTimerRef.current = setTimeout(
         () => {
           setStatus("won");
+          setDailyCompleted(true);
+          spectatorHost.endHosting(guesses.length);
           if (Platform.OS !== "web") {
             Vibration.vibrate([0, 50, 50, 50, 50, 100]);
           }
@@ -899,11 +1072,27 @@ export default function WordMasterGameScreen({
           setStreak((s) => s + 1);
           setIsNewBest(true);
 
+          // Persist completed state
+          const finalScore = (MAX_GUESSES - currentRow) * 100 + 500;
+          saveDailyGameState("word_master", {
+            dateString: todayDateString,
+            targetWord,
+            status: "won",
+            guessRows: newGuesses.map((row) =>
+              row.map((cell) => ({ letter: cell.letter, state: cell.state })),
+            ),
+            currentRow: currentRow + 1,
+            keyStates: newKeyStates as Record<string, string>,
+            currentGuess: "",
+            streak: streak + 1,
+            finalScore,
+          });
+
           // Record session
           if (currentFirebaseUser) {
             recordSinglePlayerSession(currentFirebaseUser.uid, {
               gameType: "word_master",
-              finalScore: (MAX_GUESSES - currentRow) * 100 + 500,
+              finalScore,
               stats: {
                 gameType: "word_master",
                 wordGuessed: true,
@@ -911,7 +1100,12 @@ export default function WordMasterGameScreen({
                 hintsUsed: 0,
                 streakDay: streak + 1,
               },
-            }).catch(console.error);
+            }).catch((err) => {
+              logger.error(
+                "[WordMaster] Failed to persist completed daily state",
+                err,
+              );
+            });
           }
         },
         WORD_LENGTH * 150 + 300,
@@ -920,11 +1114,28 @@ export default function WordMasterGameScreen({
       revealTimerRef.current = setTimeout(
         () => {
           setStatus("lost");
+          setDailyCompleted(true);
+          spectatorHost.endHosting(0);
           if (Platform.OS !== "web") {
             Vibration.vibrate([0, 100, 50, 100]);
           }
           showError(`The word was: ${targetWord}`);
           setStreak(0);
+
+          // Persist completed state
+          saveDailyGameState("word_master", {
+            dateString: todayDateString,
+            targetWord,
+            status: "lost",
+            guessRows: newGuesses.map((row) =>
+              row.map((cell) => ({ letter: cell.letter, state: cell.state })),
+            ),
+            currentRow: MAX_GUESSES,
+            keyStates: newKeyStates as Record<string, string>,
+            currentGuess: "",
+            streak: 0,
+            finalScore: 0,
+          });
 
           // Record session
           if (currentFirebaseUser) {
@@ -938,7 +1149,12 @@ export default function WordMasterGameScreen({
                 hintsUsed: 0,
                 streakDay: 0,
               },
-            }).catch(console.error);
+            }).catch((err) => {
+              logger.error(
+                "[WordMaster] Failed to persist completed daily state",
+                err,
+              );
+            });
           }
         },
         WORD_LENGTH * 150 + 300,
@@ -946,6 +1162,21 @@ export default function WordMasterGameScreen({
     } else {
       setCurrentRow((r) => r + 1);
       setCurrentGuess("");
+
+      // Save in-progress state after each guess
+      saveDailyGameState("word_master", {
+        dateString: todayDateString,
+        targetWord,
+        status: "playing",
+        guessRows: newGuesses.map((row) =>
+          row.map((cell) => ({ letter: cell.letter, state: cell.state })),
+        ),
+        currentRow: currentRow + 1,
+        keyStates: newKeyStates as Record<string, string>,
+        currentGuess: "",
+        streak,
+        finalScore: 0,
+      });
     }
   }, [
     currentGuess,
@@ -979,7 +1210,9 @@ export default function WordMasterGameScreen({
   );
 
   // Get cell gradient colors for Skia
-  const getCellGradientColors = (state: LetterState): [string, string, string] => {
+  const getCellGradientColors = (
+    state: LetterState,
+  ): [string, string, string] => {
     switch (state) {
       case "correct":
         return ["#6aaf5e", "#538d4e", "#3d6d3a"];
@@ -1096,14 +1329,17 @@ export default function WordMasterGameScreen({
 
   const cellSize = Math.min((SCREEN_WIDTH - 60) / WORD_LENGTH, 62);
 
+  // Back navigation (daily game — no confirmation needed)
+  const { handleBack } = useGameBackHandler({
+    gameType: "word_master",
+    isGameOver: status === "won" || status === "lost",
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: "#121213" }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <MaterialCommunityIcons
             name="arrow-left"
             size={24}
@@ -1111,148 +1347,726 @@ export default function WordMasterGameScreen({
           />
         </TouchableOpacity>
         <Text style={styles.title}>Word</Text>
-        <View style={styles.streakBadge}>
-          <MaterialCommunityIcons name="fire" size={16} color="#FF9800" />
-          <Text style={styles.streakText}>{streak}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {spectatorHost.spectatorRoomId && (
+            <TouchableOpacity
+              onPress={() => setShowSpectatorInvitePicker(true)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "rgba(83,141,78,0.3)",
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 12,
+              }}
+            >
+              <MaterialCommunityIcons name="eye" size={16} color="#538d4e" />
+              <Text style={{ color: "#538d4e", fontSize: 12, marginLeft: 4 }}>
+                Watch Me
+              </Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.streakBadge}>
+            <MaterialCommunityIcons name="fire" size={16} color="#FF9800" />
+            <Text style={styles.streakText}>{streak}</Text>
+          </View>
         </View>
       </View>
 
-      {/* Game Grid */}
-      <View style={styles.gridContainer}>
-        <Animated.View
-          style={[styles.grid, { transform: [{ translateX: shakeAnim }] }]}
+      {/* ================================================================= */}
+      {/* Menu */}
+      {/* ================================================================= */}
+      {status === "menu" && (
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
         >
-          {guesses.map((row, rowIndex) => (
-            <View key={rowIndex} style={styles.row}>
-              {row.map((cell, cellIndex) => {
-                const letter =
-                  rowIndex === currentRow && cell.letter === ""
-                    ? currentGuess[cellIndex] || ""
-                    : cell.letter;
-                const state =
-                  rowIndex === currentRow && cell.state === "empty" && letter
-                    ? "filled"
-                    : cell.state;
-
-                return (
-                  <View
-                    key={cellIndex}
-                    style={[
-                      styles.cell,
-                      { width: cellSize, height: cellSize },
-                      getCellStyle(state),
-                    ]}
-                  >
-                    {(state === "correct" || state === "present" || state === "absent") && (
-                      <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-                        <RoundedRect x={0} y={0} width={cellSize} height={cellSize} r={4}>
-                          <LinearGradient
-                            start={vec(0, 0)}
-                            end={vec(0, cellSize)}
-                            colors={getCellGradientColors(state)}
-                          />
-                          <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.2)" inner />
-                        </RoundedRect>
-                        {/* Top highlight */}
-                        <RoundedRect x={2} y={1} width={cellSize - 4} height={3} r={1.5}>
-                          <LinearGradient
-                            start={vec(0, 1)}
-                            end={vec(0, 4)}
-                            colors={["rgba(255,255,255,0.25)", "rgba(255,255,255,0)"]}
-                          />
-                        </RoundedRect>
-                      </Canvas>
-                    )}
-                    <Text style={styles.cellText}>{letter}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          ))}
-        </Animated.View>
-      </View>
-
-      {/* Result Message */}
-      {status !== "playing" && (
-        <View style={styles.resultContainer}>
-          <Text style={styles.resultText}>
-            {status === "won"
-              ? `🎉 You got it in ${currentRow + 1}!`
-              : `The word was: ${targetWord}`}
+          <Text
+            style={{
+              fontSize: 32,
+              fontWeight: "800",
+              color: "white",
+              marginBottom: 8,
+            }}
+          >
+            Word
           </Text>
-          <View style={styles.resultButtons}>
+          <Text style={{ color: "#818384", fontSize: 16, marginBottom: 24 }}>
+            Guess the 5-letter word in 6 tries!
+          </Text>
+          {dailyCompleted ? (
+            <View style={{ alignItems: "center" }}>
+              <Text
+                style={{
+                  color: "#538d4e",
+                  fontSize: 18,
+                  fontWeight: "700",
+                  marginBottom: 8,
+                }}
+              >
+                ✅ Today's word completed!
+              </Text>
+              <Text
+                style={{ color: "#818384", fontSize: 14, marginBottom: 16 }}
+              >
+                Come back tomorrow for a new word.
+              </Text>
+            </View>
+          ) : (
             <Button
               mode="contained"
-              icon="share"
-              onPress={handleShare}
+              onPress={() => {
+                setStatus("playing");
+                spectatorHost.startHosting();
+              }}
               buttonColor="#538d4e"
+              style={{ marginBottom: 12 }}
             >
-              Share Result
+              Daily Word
             </Button>
-          </View>
+          )}
         </View>
       )}
 
-      {/* Keyboard */}
-      <View style={styles.keyboard}>
-        {KEYBOARD_ROWS.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.keyboardRow}>
-            {row.map((key) => {
-              const isWide = key === "ENTER" || key === "⌫";
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    styles.key,
-                    isWide && styles.keyWide,
-                    getKeyStyle(key),
-                  ]}
-                  onPress={() => handleKeyPress(key)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.keyText, isWide && styles.keyTextSmall]}>
-                    {key}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-      </View>
-
-      {/* Share Dialog */}
-      <Portal>
-        <Dialog
-          visible={showShareDialog}
-          onDismiss={() => setShowShareDialog(false)}
-          style={{ backgroundColor: theme.colors.surface }}
+      {/* ================================================================= */}
+      {/* COLYSEUS MULTIPLAYER — Phase 5 */}
+      {/* ================================================================= */}
+      {status === "colyseus" && (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ alignItems: "center", paddingVertical: 16 }}
         >
-          <Dialog.Title>Share Your Result</Dialog.Title>
-          <Dialog.Content>
-            <Text
+          {/* --- Waiting / Connecting --- */}
+          {(mp.phase === "connecting" || mp.phase === "waiting") && (
+            <View
               style={{
-                fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
               }}
             >
-              {generateShareText()}
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
-            <Button onPress={shareToChat} mode="contained">
-              Send to Friend
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              <Text style={{ fontSize: 24, fontWeight: "800", color: "white" }}>
+                Word vs Word
+              </Text>
+              <Text style={{ color: "#818384", marginTop: 8 }}>
+                Waiting for opponent…
+              </Text>
+              <Button
+                mode="outlined"
+                onPress={async () => {
+                  await mp.leave();
+                  setStatus("menu");
+                }}
+                style={{ marginTop: 24, borderColor: "#3a3a3c" }}
+                textColor="#818384"
+              >
+                Cancel
+              </Button>
+            </View>
+          )}
 
-      {/* Friend Picker */}
-      <FriendPickerModal
-        visible={showFriendPicker}
-        onDismiss={() => setShowFriendPicker(false)}
-        onSelectFriend={handleSelectFriend}
-        title="Share Result With..."
+          {/* --- Countdown --- */}
+          {mp.phase === "countdown" && (
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
+              }}
+            >
+              <Text
+                style={{ fontSize: 72, fontWeight: "900", color: "#538d4e" }}
+              >
+                {mp.countdown || "GO!"}
+              </Text>
+              <Text style={{ color: "#818384", marginTop: 8 }}>
+                Same word — race to solve it!
+              </Text>
+            </View>
+          )}
+
+          {/* --- Playing --- */}
+          {mp.phase === "playing" && (
+            <View style={{ width: "100%", alignItems: "center" }}>
+              {/* Opponent progress bar */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  paddingHorizontal: 16,
+                  marginBottom: 8,
+                }}
+              >
+                <Text style={{ color: "#818384", fontWeight: "600" }}>
+                  {mp.opponentName}
+                  {mp.opponentFinished ? ` (${mp.opponentStatus})` : ""}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 3 }}>
+                  {mp.opponentGuesses.map((og, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor:
+                          og.status === "won"
+                            ? "#538d4e"
+                            : og.status === "lost"
+                              ? "#e74c3c"
+                              : "#b59f3b",
+                      }}
+                    />
+                  ))}
+                  {Array.from({
+                    length: Math.max(
+                      0,
+                      MAX_GUESSES - mp.opponentGuesses.length,
+                    ),
+                  }).map((_, i) => (
+                    <View
+                      key={`empty-${i}`}
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: "#3a3a3c",
+                      }}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              {/* Invalid guess feedback */}
+              {mp.invalidGuessReason && (
+                <Text
+                  style={{
+                    color: "#e74c3c",
+                    fontWeight: "600",
+                    marginBottom: 4,
+                  }}
+                >
+                  {mp.invalidGuessReason}
+                </Text>
+              )}
+
+              {/* My grid — using mp.myGuesses + currentGuess for online play */}
+              <View style={styles.gridContainer}>
+                <Animated.View style={[styles.grid, shakeStyle]}>
+                  {Array.from({ length: MAX_GUESSES }).map((_, rowIndex) => {
+                    const guess: GuessRow | undefined = mp.myGuesses[rowIndex];
+                    const isCurrentRow =
+                      rowIndex === mp.myGuesses.length &&
+                      mp.myStatus === "playing";
+                    return (
+                      <View key={rowIndex} style={styles.row}>
+                        {Array.from({ length: WORD_LENGTH }).map(
+                          (__, cellIndex) => {
+                            let letter = "";
+                            let state: LetterState = "empty";
+                            if (guess) {
+                              letter = guess.word[cellIndex] || "";
+                              const r = guess.result[cellIndex];
+                              state =
+                                r === "c"
+                                  ? "correct"
+                                  : r === "p"
+                                    ? "present"
+                                    : "absent";
+                            } else if (isCurrentRow) {
+                              letter = currentGuess[cellIndex] || "";
+                              state = letter ? "filled" : "empty";
+                            }
+                            return (
+                              <View
+                                key={cellIndex}
+                                style={[
+                                  styles.cell,
+                                  { width: cellSize, height: cellSize },
+                                  getCellStyle(state),
+                                ]}
+                              >
+                                {(state === "correct" ||
+                                  state === "present" ||
+                                  state === "absent") && (
+                                  <Canvas
+                                    style={StyleSheet.absoluteFill}
+                                    pointerEvents="none"
+                                  >
+                                    <RoundedRect
+                                      x={0}
+                                      y={0}
+                                      width={cellSize}
+                                      height={cellSize}
+                                      r={4}
+                                    >
+                                      <LinearGradient
+                                        start={vec(0, 0)}
+                                        end={vec(0, cellSize)}
+                                        colors={getCellGradientColors(state)}
+                                      />
+                                      <Shadow
+                                        dx={0}
+                                        dy={1}
+                                        blur={2}
+                                        color="rgba(0,0,0,0.2)"
+                                        inner
+                                      />
+                                    </RoundedRect>
+                                  </Canvas>
+                                )}
+                                <Text style={styles.cellText}>
+                                  {letter.toUpperCase()}
+                                </Text>
+                              </View>
+                            );
+                          },
+                        )}
+                      </View>
+                    );
+                  })}
+                </Animated.View>
+              </View>
+
+              {/* Keyboard for multiplayer */}
+              {mp.myStatus === "playing" && (
+                <View style={styles.keyboard}>
+                  {KEYBOARD_ROWS.map((row, rowIndex) => (
+                    <View key={rowIndex} style={styles.keyboardRow}>
+                      {row.map((key) => {
+                        const isWide = key === "ENTER" || key === "⌫";
+                        // Determine key colour from mp guesses
+                        let keyStyle = styles.keyDefault;
+                        for (const g of mp.myGuesses) {
+                          for (let ci = 0; ci < g.word.length; ci++) {
+                            if (g.word[ci].toUpperCase() === key) {
+                              const r = g.result[ci];
+                              if (r === "c") keyStyle = styles.keyCorrect;
+                              else if (
+                                r === "p" &&
+                                keyStyle !== styles.keyCorrect
+                              )
+                                keyStyle = styles.keyPresent;
+                              else if (
+                                !keyStyle ||
+                                keyStyle === styles.keyDefault
+                              )
+                                keyStyle = styles.keyAbsent;
+                            }
+                          }
+                        }
+                        return (
+                          <TouchableOpacity
+                            key={key}
+                            style={[
+                              styles.key,
+                              isWide && styles.keyWide,
+                              keyStyle,
+                            ]}
+                            onPress={() => {
+                              if (key === "ENTER") {
+                                if (currentGuess.length === WORD_LENGTH) {
+                                  mp.sendGuess(currentGuess.toUpperCase());
+                                  setCurrentGuess("");
+                                } else {
+                                  triggerShake();
+                                  showInfo("Not enough letters!");
+                                }
+                              } else if (key === "⌫") {
+                                setCurrentGuess((g) => g.slice(0, -1));
+                              } else if (currentGuess.length < WORD_LENGTH) {
+                                setCurrentGuess((g) => g + key);
+                              }
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.keyText,
+                                isWide && styles.keyTextSmall,
+                              ]}
+                            >
+                              {key}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* My result while waiting for opponent */}
+              {mp.myStatus !== "playing" && (
+                <View style={{ alignItems: "center", paddingVertical: 16 }}>
+                  <Text
+                    style={{
+                      color: mp.myStatus === "won" ? "#538d4e" : "#e74c3c",
+                      fontSize: 20,
+                      fontWeight: "700",
+                    }}
+                  >
+                    {mp.myStatus === "won" ? "🎉 Got it!" : "❌ Out of guesses"}
+                  </Text>
+                  {!mp.opponentFinished && (
+                    <Text style={{ color: "#818384", marginTop: 4 }}>
+                      Waiting for {mp.opponentName} to finish…
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* --- Finished --- */}
+          {mp.phase === "finished" && (
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
+                flex: 1,
+              }}
+            >
+              <Text style={{ fontSize: 48 }}>
+                {mp.isTie ? "🤝" : mp.isWinner ? "🏆" : "😔"}
+              </Text>
+              <Text
+                style={{
+                  color: mp.isTie
+                    ? "white"
+                    : mp.isWinner
+                      ? "#538d4e"
+                      : "#e74c3c",
+                  fontSize: 28,
+                  fontWeight: "800",
+                  marginTop: 8,
+                }}
+              >
+                {mp.isTie
+                  ? "It's a Tie!"
+                  : mp.isWinner
+                    ? "You Win!"
+                    : "You Lose"}
+              </Text>
+
+              {mp.targetWord && (
+                <Text
+                  style={{
+                    color: "#b59f3b",
+                    fontSize: 18,
+                    fontWeight: "600",
+                    marginTop: 8,
+                  }}
+                >
+                  The word was: {mp.targetWord.toUpperCase()}
+                </Text>
+              )}
+
+              {/* Scores */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 32,
+                  marginTop: 16,
+                  alignItems: "center",
+                }}
+              >
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: "#818384" }}>You</Text>
+                  <Text
+                    style={{
+                      color: "#538d4e",
+                      fontSize: 24,
+                      fontWeight: "800",
+                    }}
+                  >
+                    {mp.myScore}
+                  </Text>
+                </View>
+                <Text style={{ color: "#818384", fontSize: 16 }}>vs</Text>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: "#818384" }}>{mp.opponentName}</Text>
+                  <Text
+                    style={{ color: "white", fontSize: 24, fontWeight: "800" }}
+                  >
+                    {mp.opponentScore}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Actions */}
+              <View style={{ gap: 12, marginTop: 24, alignItems: "center" }}>
+                {mp.rematchRequested ? (
+                  <Button
+                    mode="contained"
+                    onPress={() => mp.acceptRematch()}
+                    buttonColor="#27ae60"
+                  >
+                    Accept Rematch
+                  </Button>
+                ) : (
+                  <Button
+                    mode="contained"
+                    onPress={() => mp.sendRematch()}
+                    buttonColor="#538d4e"
+                  >
+                    Rematch
+                  </Button>
+                )}
+                <Button
+                  mode="outlined"
+                  onPress={async () => {
+                    await mp.leave();
+                    setStatus("menu");
+                  }}
+                  style={{ borderColor: "#3a3a3c" }}
+                  textColor="#818384"
+                >
+                  Back to Menu
+                </Button>
+              </View>
+            </View>
+          )}
+
+          {/* --- Error --- */}
+          {mp.phase === "error" && (
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
+                flex: 1,
+              }}
+            >
+              <Text
+                style={{ color: "#e74c3c", fontSize: 18, fontWeight: "700" }}
+              >
+                Connection Error
+              </Text>
+              <Text style={{ color: "#818384", marginTop: 8 }}>
+                {mp.error || "Could not connect to server"}
+              </Text>
+              <Button
+                mode="outlined"
+                onPress={() => setStatus("menu")}
+                style={{ marginTop: 24, borderColor: "#3a3a3c" }}
+                textColor="#818384"
+              >
+                Back to Menu
+              </Button>
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* ================================================================= */}
+      {/* Single Player Mode */}
+      {/* ================================================================= */}
+      {(status === "playing" || status === "won" || status === "lost") && (
+        <>
+          {/* Game Grid */}
+          <View style={styles.gridContainer}>
+            <Animated.View style={[styles.grid, shakeStyle]}>
+              {guesses.map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.row}>
+                  {row.map((cell, cellIndex) => {
+                    const letter =
+                      rowIndex === currentRow && cell.letter === ""
+                        ? currentGuess[cellIndex] || ""
+                        : cell.letter;
+                    const state =
+                      rowIndex === currentRow &&
+                      cell.state === "empty" &&
+                      letter
+                        ? "filled"
+                        : cell.state;
+
+                    return (
+                      <View
+                        key={cellIndex}
+                        style={[
+                          styles.cell,
+                          { width: cellSize, height: cellSize },
+                          getCellStyle(state),
+                        ]}
+                      >
+                        {(state === "correct" ||
+                          state === "present" ||
+                          state === "absent") && (
+                          <Canvas
+                            style={StyleSheet.absoluteFill}
+                            pointerEvents="none"
+                          >
+                            <RoundedRect
+                              x={0}
+                              y={0}
+                              width={cellSize}
+                              height={cellSize}
+                              r={4}
+                            >
+                              <LinearGradient
+                                start={vec(0, 0)}
+                                end={vec(0, cellSize)}
+                                colors={getCellGradientColors(state)}
+                              />
+                              <Shadow
+                                dx={0}
+                                dy={1}
+                                blur={2}
+                                color="rgba(0,0,0,0.2)"
+                                inner
+                              />
+                            </RoundedRect>
+                            {/* Top highlight */}
+                            <RoundedRect
+                              x={2}
+                              y={1}
+                              width={cellSize - 4}
+                              height={3}
+                              r={1.5}
+                            >
+                              <LinearGradient
+                                start={vec(0, 1)}
+                                end={vec(0, 4)}
+                                colors={[
+                                  "rgba(255,255,255,0.25)",
+                                  "rgba(255,255,255,0)",
+                                ]}
+                              />
+                            </RoundedRect>
+                          </Canvas>
+                        )}
+                        <Text style={styles.cellText}>{letter}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </Animated.View>
+          </View>
+
+          {/* Result Message */}
+          {(status === "won" || status === "lost") && (
+            <View style={styles.resultContainer}>
+              <Text style={styles.resultText}>
+                {status === "won"
+                  ? `🎉 You got it in ${currentRow + 1}!`
+                  : `The word was: ${targetWord}`}
+              </Text>
+              <View style={styles.resultButtons}>
+                <Button
+                  mode="contained"
+                  icon="share"
+                  onPress={handleShare}
+                  buttonColor="#538d4e"
+                >
+                  Share Result
+                </Button>
+              </View>
+            </View>
+          )}
+
+          {/* Keyboard */}
+          <View style={styles.keyboard}>
+            {KEYBOARD_ROWS.map((row, rowIndex) => (
+              <View key={rowIndex} style={styles.keyboardRow}>
+                {row.map((key) => {
+                  const isWide = key === "ENTER" || key === "⌫";
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[
+                        styles.key,
+                        isWide && styles.keyWide,
+                        getKeyStyle(key),
+                      ]}
+                      onPress={() => handleKeyPress(key)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[styles.keyText, isWide && styles.keyTextSmall]}
+                      >
+                        {key}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+
+          {/* Share Dialog */}
+          <Portal>
+            <Dialog
+              visible={showShareDialog}
+              onDismiss={() => setShowShareDialog(false)}
+              style={{ backgroundColor: theme.colors.surface }}
+            >
+              <Dialog.Title>Share Your Result</Dialog.Title>
+              <Dialog.Content>
+                <Text
+                  style={{
+                    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                  }}
+                >
+                  {generateShareText()}
+                </Text>
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={() => setShowShareDialog(false)}>
+                  Cancel
+                </Button>
+                <Button onPress={shareToChat} mode="contained">
+                  Send to Friend
+                </Button>
+              </Dialog.Actions>
+            </Dialog>
+          </Portal>
+
+          {/* Spectator overlay — shows count of watchers */}
+          {spectatorHost.spectatorCount > 0 && (
+            <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+          )}
+
+          {/* Friend Picker */}
+          <FriendPickerModal
+            key="scorecard-picker"
+            visible={showFriendPicker}
+            onDismiss={() => setShowFriendPicker(false)}
+            onSelectFriend={handleSelectFriend}
+            title="Share Result With..."
+            currentUserId={currentFirebaseUser?.uid || ""}
+          />
+        </>
+      )}
+
+      {/* Spectator Invite Picker (Friends + Groups) — outside game-state gate
+          so it works from menu / completed / playing screens alike */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
         currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "word_master",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -1401,3 +2215,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 });
+
+export default withGameErrorBoundary(WordMasterGameScreen, "word_master");

@@ -28,7 +28,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { CarouselGameTile } from "./CarouselGameTile";
 
 const { spacing, typography } = PLAY_SCREEN_TOKENS;
@@ -147,6 +147,13 @@ function GameCategoryCarouselComponent({
         data={category.games}
         renderItem={renderGameTile}
         keyExtractor={keyExtractor}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+              No games available in this category yet.
+            </Text>
+          </View>
+        }
         ItemSeparatorComponent={ItemSeparator}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.carouselContent}
@@ -205,6 +212,17 @@ const styles = StyleSheet.create({
   // Carousel
   carouselContent: {
     paddingHorizontal: spacing.horizontalPadding,
+  },
+  emptyState: {
+    width: DEFAULT_TILE_WIDTH * 1.8,
+    minHeight: DEFAULT_TILE_HEIGHT,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  emptyStateText: {
+    fontSize: 12,
+    textAlign: "center",
   },
   tile: {
     // Individual tile styles handled in CarouselGameTile

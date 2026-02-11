@@ -16,8 +16,8 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { GroupCallParticipant } from "../../types/call";
-import Avatar from "../Avatar";
+import { GroupCallParticipant } from "@/types/call";
+import Avatar from "@/components/Avatar";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 

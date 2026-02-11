@@ -31,8 +31,8 @@ import {
 
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import { AnyMatch, TurnBasedGameType } from "@/types/turnBased";
-import { GAME_CATEGORY_COLORS } from "../../../../constants/gamesTheme";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { GAME_CATEGORY_COLORS } from "@/constants/gamesTheme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

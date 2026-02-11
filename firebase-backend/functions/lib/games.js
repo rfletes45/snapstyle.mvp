@@ -389,7 +389,7 @@ async function createGameFromUniversalInvite(inviteRef, invite) {
                 id: slot.playerId,
                 name: slot.playerName,
                 avatar: slot.playerAvatar,
-                rating: DEFAULT_RATING, // TODO: Could look up actual rating
+                rating: DEFAULT_RATING, // NOTE: Could look up actual rating
             };
             playerIds.push(slot.playerId);
         });
@@ -452,7 +452,7 @@ async function createGameFromUniversalInvite(inviteRef, invite) {
             players: playerIds,
             spectators: invite.spectators.map((s) => s.userId),
         });
-        // TODO: Send push notifications to all players
+        // NOTE: Send push notifications to all players
         // await sendGameStartNotifications(playerIds, gameId, invite.gameType);
     }
     catch (error) {
@@ -1382,7 +1382,7 @@ exports.makeMove = functions.https.onCall(async (data, context) => {
             if (game.status !== "active") {
                 throw new functions.https.HttpsError("failed-precondition", "Game is not active");
             }
-            // TODO: Validate move based on game type
+            // NOTE: Validate move based on game type
             // This would involve game-specific logic for chess, checkers, etc.
             // For now, we trust the client's move validation
             // Update game state

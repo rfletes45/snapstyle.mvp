@@ -6,6 +6,9 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("utils/platform");
 /**
  * Check if running on web platform
  */
@@ -58,7 +61,7 @@ export const isCallKeepAvailable = areNativeCallsAvailable;
  * Log platform info for debugging
  */
 export function logPlatformInfo(): void {
-  console.log("[Platform] Info:", {
+  logger.info("[Platform] Info:", {
     os: Platform.OS,
     version: Platform.Version,
     isWeb,

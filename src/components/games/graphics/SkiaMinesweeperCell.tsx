@@ -55,13 +55,7 @@ export function SkiaMinesweeperCell({
               r={1}
               color={isMineExploded ? "#FF4444" : revealedColor}
             >
-              <Shadow
-                dx={0}
-                dy={1}
-                blur={2}
-                color="rgba(0,0,0,0.15)"
-                inner
-              />
+              <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.15)" inner />
             </RoundedRect>
             {/* Thin border */}
             <RoundedRect

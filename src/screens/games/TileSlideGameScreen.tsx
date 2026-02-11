@@ -16,8 +16,13 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendScorecard } from "@/services/games";
 import {
   calculateScore,
@@ -39,6 +44,14 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import { TILE_SLIDE_CONFIG, TileSlideState } from "@/types/singlePlayerGames";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import {
+  Canvas,
+  LinearGradient,
+  RoundedRect,
+  Shadow,
+  vec,
+} from "@shopify/react-native-skia";
 import React, {
   useCallback,
   useEffect,
@@ -70,13 +83,6 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import {
-  Canvas,
-  LinearGradient,
-  RoundedRect,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
 
 // =============================================================================
 // Types
@@ -313,9 +319,11 @@ function SizeSelector({ currentSize, onSelectSize, theme }: SizeSelectorProps) {
 // Main Component
 // =============================================================================
 
-export default function TileSlideGameScreen({
+function TileSlideGameScreen({
   navigation,
 }: TileSlideGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "tile_slide" });
+  void __codexGameCompletion;
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -334,6 +342,19 @@ export default function TileSlideGameScreen({
 
   // Share state
   const [showFriendPicker, setShowFriendPicker] = useState(false);
+
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "tile_slide",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
 
   // Animation values
   const moveCountScale = useSharedValue(1);
@@ -380,8 +401,9 @@ export default function TileSlideGameScreen({
       setHintTileIndex(null);
       startTimeRef.current = Date.now();
       haptics.trigger("selection");
+      spectatorHost.startHosting();
     },
-    [currentFirebaseUser, selectedSize, haptics],
+    [currentFirebaseUser, selectedSize, haptics, spectatorHost],
   );
 
   // Handle tile press
@@ -423,6 +445,7 @@ export default function TileSlideGameScreen({
         };
 
         setGameState(completedState);
+        spectatorHost.endHosting(finalScore);
         haptics.puzzleSolvedPattern();
 
         // Record session
@@ -469,6 +492,24 @@ export default function TileSlideGameScreen({
       setHintTileIndex(null);
     }, 3000);
   }, [gameState, haptics]);
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (gameState && gameState.status === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          moveCount: gameState.moveCount,
+          status: gameState.status,
+          gridSize: gameState.gridSize,
+          // Visual state for spectator renderer
+          tiles: gameState.tiles,
+        }),
+        gameState.moveCount,
+        undefined,
+        undefined,
+      );
+    }
+  }, [gameState?.moveCount, gameState?.status]);
 
   // Handle share
   const handleShare = useCallback(() => {
@@ -517,10 +558,11 @@ export default function TileSlideGameScreen({
     }
   }, [gameState, startGame]);
 
-  // Handle exit
-  const handleExit = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+  // Handle exit — with confirmation when game is in progress
+  const { handleBack: handleExit } = useGameBackHandler({
+    gameType: "tile_slide",
+    isGameOver: showGameOverModal || showWinDialog || !gameState,
+  });
 
   // Move count animated style
   const moveCountAnimatedStyle = useAnimatedStyle(() => ({
@@ -790,7 +832,20 @@ export default function TileSlideGameScreen({
         <Text variant="headlineSmall" style={{ fontWeight: "bold" }}>
           🔢 Tile Slide
         </Text>
-        <View style={{ width: 80 }} />
+        {spectatorHost.spectatorRoomId ? (
+          <Pressable
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            style={{ width: 80, alignItems: "flex-end", paddingRight: 8 }}
+          >
+            <MaterialCommunityIcons
+              name="eye"
+              size={24}
+              color={theme.colors.onBackground}
+            />
+          </Pressable>
+        ) : (
+          <View style={{ width: 80 }} />
+        )}
       </View>
 
       {/* Main Content */}
@@ -865,13 +920,36 @@ export default function TileSlideGameScreen({
         )}`}
       />
 
+      {/* Spectator Overlay */}
+      <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+
       {/* Friend Picker */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSelectFriend}
         title="Share Score With..."
         currentUserId={currentFirebaseUser?.uid || ""}
+      />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "tile_slide",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -975,3 +1053,5 @@ const styles = StyleSheet.create({
     gap: 4,
   },
 });
+
+export default withGameErrorBoundary(TileSlideGameScreen, "tile_slide");

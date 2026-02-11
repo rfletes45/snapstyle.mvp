@@ -16,17 +16,29 @@ import {
   createNavigationContainerRef,
 } from "@react-navigation/native";
 
-export const navigationRef = createNavigationContainerRef<any>();
+import type { RootStackParamList } from "@/types/navigation";
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/navigationRef");
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 /**
  * Navigate to a screen from outside React component tree.
  * Safely checks if navigation is ready before navigating.
  */
-export function navigate(name: string, params?: Record<string, any>) {
+export function navigate<RouteName extends keyof RootStackParamList>(
+  name: RouteName,
+  params?: RootStackParamList[RouteName],
+) {
   if (navigationRef.isReady()) {
-    navigationRef.dispatch(CommonActions.navigate({ name, params }));
+    navigationRef.dispatch(
+      CommonActions.navigate({
+        name: name as string,
+        params,
+      }),
+    );
   } else {
-    console.warn(
+    logger.warn(
       "[navigationRef] Cannot navigate - navigator not ready yet. Target:",
       name,
     );
@@ -36,12 +48,15 @@ export function navigate(name: string, params?: Record<string, any>) {
 /**
  * Reset navigation state from outside React component tree.
  */
-export function resetTo(name: string, params?: Record<string, any>) {
+export function resetTo<RouteName extends keyof RootStackParamList>(
+  name: RouteName,
+  params?: RootStackParamList[RouteName],
+) {
   if (navigationRef.isReady()) {
     navigationRef.dispatch(
       CommonActions.reset({
         index: 0,
-        routes: [{ name, params }],
+        routes: [{ name: name as string, params }],
       }),
     );
   }

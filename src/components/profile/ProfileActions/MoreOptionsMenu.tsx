@@ -84,7 +84,7 @@ function MenuOption({
       style={[styles.menuOption, disabled && styles.menuOptionDisabled]}
     >
       <MaterialCommunityIcons
-        name={icon as any}
+        name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
         size={22}
         color={destructive ? colors.error : colors.text}
       />

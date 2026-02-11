@@ -61,17 +61,6 @@ export const BADGE_DEFINITIONS: Badge[] = [
     hidden: false,
   },
   {
-    id: "flappy_master",
-    name: "Sky King",
-    description: "Score 50 points in Flappy Bird",
-    icon: "🦅",
-    tier: "gold",
-    category: "games",
-    earnedVia: { type: "achievement", achievementId: "flappy_50" },
-    frameColor: "#4ECDC4",
-    hidden: false,
-  },
-  {
     id: "bounce_legend",
     name: "Bounce Legend",
     description: "Reach round 50 in Bounce Blitz",

@@ -14,7 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // Feature highlights shown below the CTA buttons
 const FEATURES = [
@@ -39,7 +39,7 @@ export default function WelcomeScreen({ navigation }: any) {
   const theme = useTheme();
 
   const handleGoogleSignIn = () => {
-    // TODO: Will be implemented when @react-native-google-signin/google-signin is integrated
+    // NOTE: Will be implemented when @react-native-google-signin/google-signin is integrated
     // For now, direct users to the email sign-up flow
     navigation.navigate("Signup");
   };

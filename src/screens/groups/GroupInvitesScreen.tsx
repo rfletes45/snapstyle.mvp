@@ -28,6 +28,9 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/groups/GroupInvitesScreen");
 export default function GroupInvitesScreen({ navigation }: any) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
@@ -73,7 +76,7 @@ export default function GroupInvitesScreen({ navigation }: any) {
         });
       }, 500);
     } catch (error: any) {
-      console.error("Error accepting invite:", error);
+      logger.error("Error accepting invite:", error);
       setSnackbar({
         visible: true,
         message: error.message || "Failed to accept invite",
@@ -96,7 +99,7 @@ export default function GroupInvitesScreen({ navigation }: any) {
         message: "Invite declined",
       });
     } catch (error: any) {
-      console.error("Error declining invite:", error);
+      logger.error("Error declining invite:", error);
       setSnackbar({
         visible: true,
         message: error.message || "Failed to decline invite",

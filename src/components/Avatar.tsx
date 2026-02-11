@@ -5,7 +5,7 @@
 
 import React, { JSX } from "react";
 import { StyleSheet, Text, View, ViewStyle } from "react-native";
-import { AvatarConfig } from "../types/models";
+import { AvatarConfig } from "@/types/models";
 
 interface AvatarProps {
   /** Avatar configuration */

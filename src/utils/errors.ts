@@ -1,3 +1,5 @@
+import { createLogger } from "@/utils/log";
+const logger = createLogger("utils/errors");
 /**
  * Error Handling Utilities
  *
@@ -62,7 +64,7 @@ export class AppError extends Error {
    */
   log(context?: string): void {
     const prefix = context ? `[${context}]` : "";
-    console.error(`${prefix} AppError:`, {
+    logger.error(`${prefix} AppError:`, {
       code: this.code,
       category: this.category,
       message: this.userMessage,
@@ -559,7 +561,7 @@ export async function withRetry<T>(
 
       // Log retry attempt if in dev mode
       if (__DEV__ && context) {
-        console.log(
+        logger.info(
           `🔄 [${context}] Retry attempt ${attempt}/${maxAttempts} after ${Math.round(delay)}ms`,
         );
       }

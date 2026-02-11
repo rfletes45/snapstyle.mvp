@@ -10,7 +10,7 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { Spacing } from "../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 interface TypingIndicatorProps {
   /** Name of the user who is typing */

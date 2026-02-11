@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  colyseus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${COLYSEUS_PORT:-2567}:2567"
+    environment:
+      - NODE_ENV=production
+      - COLYSEUS_PORT=2567
+      - FIREBASE_SERVICE_ACCOUNT_PATH=/app/secrets/serviceAccountKey.json
+      - RECONNECTION_TIMEOUT_QUICKPLAY=${RECONNECTION_TIMEOUT_QUICKPLAY:-15}
+      - RECONNECTION_TIMEOUT_PHYSICS=${RECONNECTION_TIMEOUT_PHYSICS:-30}
+      - RECONNECTION_TIMEOUT_TURNBASED=${RECONNECTION_TIMEOUT_TURNBASED:-300}
+      - RECONNECTION_TIMEOUT_COOP=${RECONNECTION_TIMEOUT_COOP:-60}
+    volumes:
+      - ./secrets:/app/secrets:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2567/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

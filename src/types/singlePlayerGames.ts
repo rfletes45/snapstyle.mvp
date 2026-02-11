@@ -128,60 +128,6 @@ export interface BounceCollectible {
   collected: boolean;
 }
 
-// =============================================================================
-// Flappy Bird
-// =============================================================================
-
-/**
- * A pipe/hoop obstacle in Flappy Bird
- */
-export interface FlappyHoop {
-  id: number;
-  x: number;
-  centerY: number;
-  gapSize: number;
-  passed: boolean;
-  scoredPerfect: boolean;
-  moving?: {
-    direction: "up" | "down";
-    speed: number;
-    minY: number;
-    maxY: number;
-  };
-}
-
-/**
- * Flappy Bird configuration constants
- */
-export const FLAPPY_DUNK_CONFIG = {
-  // World
-  worldWidth: 400,
-
-  // Physics
-  gravity: 0.6,
-  jumpVelocity: -10,
-  terminalVelocity: 12,
-
-  // Ball
-  ballRadius: 15,
-
-  // Hoops/Pipes
-  hoopWidth: 60,
-  baseHoopGap: 160,
-  minHoopGap: 100,
-  hoopSpacing: 200,
-  gapDecrease: 5,
-
-  // Scoring
-  scorePerHoop: 10,
-  perfectDunkBonus: 5,
-  comboMultiplier: 2,
-
-  // Difficulty
-  difficultyIncreaseInterval: 50,
-  speedIncrease: 0.3,
-};
-
 /**
  * Bounce Master constants
  */
@@ -1015,7 +961,6 @@ export interface SinglePlayerGameSession {
  */
 export type SinglePlayerGameStats =
   | BounceBlitzStats
-  | FlappyBirdStats
   | MemoryMasterStats
   | WordMasterStats
   | Play2048Stats
@@ -1023,14 +968,6 @@ export type SinglePlayerGameStats =
   // New game stats (Phase 1)
   | BrickBreakerStats
   | TileSlideStats;
-
-export interface FlappyBirdStats {
-  gameType: "flappy_bird";
-  pipesPassed: number;
-  perfectPasses: number;
-  maxCombo: number;
-  totalJumps: number;
-}
 
 export interface BounceBlitzStats {
   gameType: "bounce_blitz";

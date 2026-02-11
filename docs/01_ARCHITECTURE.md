@@ -6,7 +6,7 @@
 
 ## Overview
 
-Vibe is a React Native + Expo social app with Firebase backend and **local-first storage**. Features include real-time messaging (1:1 and groups), disappearing photos (Shots), 24-hour stories (Moments), friend streaks (Rituals), mini-games, avatar customization, and virtual economy.
+Vibe is a React Native + Expo social app with Firebase backend, Colyseus multiplayer server, and **local-first storage**. Features include real-time messaging (1:1 and groups), disappearing photos (Shots), 24-hour stories (Moments), friend streaks (Rituals), 26+ mini-games with real-time Colyseus multiplayer, Three.js 3D visual effects, avatar customization with decorations, dual profile system, shop with IAP, and virtual economy.
 
 ### Architecture Pattern
 
@@ -27,32 +27,35 @@ snapstyle-mvp/
 ├── App.tsx                    # Root component with providers
 ├── app.config.ts              # Expo configuration
 ├── constants/
-│   ├── theme.ts               # Catppuccin colors, spacing, typography
-│   └── featureFlags.ts        # Feature toggles (USE_LOCAL_STORAGE, etc.)
+│   ├── theme.ts               # Catppuccin colors (30 themes), spacing, typography
+│   ├── gamesTheme.ts          # Game-specific visual tokens
+│   └── featureFlags.ts        # Feature toggles (~130 flags across 7 groups)
 ├── src/
 │   ├── components/            # Reusable UI components
 │   │   ├── chat/              # Chat-specific components (V2)
-│   │   │   ├── inbox/         # Inbox screen components
-│   │   │   │   ├── ConversationContextMenu.tsx  # Long-press menu
-│   │   │   │   ├── ConversationItem.tsx         # Conversation row
-│   │   │   │   ├── DeleteConfirmDialog.tsx      # Delete confirmation
-│   │   │   │   ├── EmptyState.tsx               # Contextual empty states
-│   │   │   │   ├── FriendRequestItem.tsx        # Pending request row
-│   │   │   │   ├── InboxFAB.tsx                 # Multi-action FAB
-│   │   │   │   ├── InboxHeader.tsx              # Header with avatar/search
-│   │   │   │   ├── InboxTabs.tsx                # Filter tabs
-│   │   │   │   ├── MuteOptionsSheet.tsx         # Mute duration picker
-│   │   │   │   ├── PinnedSection.tsx            # Collapsible pinned
-│   │   │   │   ├── ProfilePreviewModal.tsx      # Quick profile view
-│   │   │   │   ├── SwipeableConversation.tsx    # Swipe actions wrapper
-│   │   │   │   └── index.ts                     # Barrel export
-│   │   │   └── ...
+│   │   │   ├── inbox/         # Inbox screen components (14 files)
+│   │   │   └── ...            # Composer, reactions, attachments, etc.
 │   │   ├── games/             # Game-specific components
-│   │   │   └── index.ts       # Barrel export
-│   │   ├── ui/                # Primitives (EmptyState, LoadingState, ErrorState)
-│   │   │   └── index.ts       # Barrel export
-│   │   ├── Avatar.tsx         # User avatar with cosmetics
-│   │   └── ...
+│   │   │   ├── graphics/      # Skia graphics (chess, checkers, 2048, etc.)
+│   │   │   └── ...            # Overlays, modals, invites, spectator
+│   │   ├── profile/           # Profile system (20+ sub-modules)
+│   │   ├── shop/              # Shop components (10 files)
+│   │   ├── three/             # Three.js 3D visual effects
+│   │   │   ├── ThreeCanvas.tsx         # Foundation GLView wrapper
+│   │   │   ├── geometries.ts           # Reusable 3D geometry helpers
+│   │   │   ├── ThreeGameBackground.tsx # Full-screen 3D backgrounds
+│   │   │   ├── ThreeHeroBanner.tsx     # 3D hero banner (floating pieces)
+│   │   │   ├── ThreeInviteCard.tsx     # 3D invite card overlay
+│   │   │   ├── ThreeGameTrophy.tsx     # 3D victory trophy
+│   │   │   ├── ThreeFloatingIcons.tsx  # Floating 3D game icons
+│   │   │   └── index.ts               # Barrel export
+│   │   ├── calls/             # Video/audio call components
+│   │   ├── camera/            # Camera overlay components
+│   │   ├── customization/     # Theme & chat bubble customization
+│   │   ├── animations/        # Badge/level-up animations
+│   │   ├── badges/            # Badge display components
+│   │   ├── ui/                # Primitives (EmptyState, LoadingState, etc.)
+│   │   └── ...                # Avatar, ErrorBoundary, Modals
 │   ├── data/
 │   │   ├── cosmetics.ts       # Static cosmetic item definitions
 │   │   ├── gameAchievements.ts # Achievement definitions
@@ -62,7 +65,6 @@ snapstyle-mvp/
 │   │   ├── useUnifiedMessages.ts # Message subscription + outbox integration
 │   │   ├── useChatComposer.ts # Composer state management
 │   │   ├── useUnifiedChatScreen.ts # Combined hook for chat screens
-│   │   ├── useMessagesV2.ts   # V2 message subscription (legacy)
 │   │   ├── useOutboxProcessor.ts # Offline message queue
 │   │   ├── useAttachmentPicker.ts # Multi-attachment selection
 │   │   ├── useVoiceRecorder.ts # Voice message recording
@@ -78,25 +80,26 @@ snapstyle-mvp/
 │   │   └── index.ts           # Barrel export
 │   ├── navigation/
 │   │   └── RootNavigator.tsx  # All navigation stacks
-│   ├── screens/               # Screen components by feature
-│   │   ├── admin/             # Admin moderation screens
-│   │   ├── auth/              # Login, signup, profile setup
-│   │   ├── chat/              # DM chat screens
-│   │   │   ├── ChatListScreenV2.tsx     # Main inbox screen
-│   │   │   ├── InboxSearchScreen.tsx    # Full search with filters
-│   │   │   ├── InboxSettingsScreen.tsx  # Inbox settings
-│   │   │   └── ...
+│   ├── screens/               # Screen components by feature (~70 screens)
+│   │   ├── admin/             # Admin moderation, banned user screen
+│   │   ├── auth/              # Login, signup, forgot password, profile setup
+│   │   ├── chat/              # DM/Inbox: ChatList, Chat, Settings, Search, Snaps
+│   │   ├── camera/            # Camera, Editor, Share screens
+│   │   ├── calls/             # Audio, Video, Group call screens + history
 │   │   ├── friends/           # Connections management
-│   │   ├── games/             # Mini-games and leaderboards
-│   │   │   ├── GamesHubScreen.tsx       # Main games hub
-│   │   │   └── ...
-│   │   ├── groups/            # Group chat screens
-│   │   ├── profile/           # User profile
-│   │   ├── settings/          # App settings
-│   │   ├── shop/              # Cosmetics shop
-│   │   ├── stories/           # Moments (stories)
-│   │   ├── tasks/             # Daily tasks
-│   │   └── wallet/            # Token wallet
+│   │   ├── games/             # 26+ game screens + 20 Play screen components
+│   │   │   ├── GamesHubScreen.tsx       # Main games hub (Play tab)
+│   │   │   ├── components/              # Play screen components
+│   │   │   └── [40 game screens]        # Individual game screens
+│   │   ├── groups/            # Group chat screens (create, info, chat, invites)
+│   │   ├── profile/           # OwnProfile, UserProfile, Badges, Status, Mutual
+│   │   ├── settings/          # Settings, Privacy, Blocked, Theme
+│   │   ├── shop/              # ShopHub, PointsShop, PremiumShop, History
+│   │   ├── social/            # Activity feed
+│   │   ├── stories/           # Moments (stories) + viewer
+│   │   ├── tasks/             # Daily/monthly tasks
+│   │   ├── wallet/            # Token wallet
+│   │   └── debug/             # Debug + local storage debug
 │   ├── services/              # Firebase/backend operations
 │   │   ├── messaging/         # **Unified messaging module**
 │   │   │   ├── adapters/      # Message type adapters
@@ -149,7 +152,7 @@ snapstyle-mvp/
 | ---------- | -------------------------- | -------------------------------------- |
 | Components | PascalCase                 | `GameCard.tsx`                         |
 | Screens    | PascalCase + Screen suffix | `ChatScreen.tsx`, `GamesHubScreen.tsx` |
-| Hooks      | camelCase + use prefix     | `useGameLoop.ts`                       |
+| Hooks      | camelCase + use prefix     | `useChat.ts`                           |
 | Services   | camelCase                  | `auth.ts`, `gameInvites.ts`            |
 | Types      | PascalCase (exported)      | `GameState`, `UserProfile`             |
 | Constants  | SCREAMING_SNAKE_CASE       | `MAX_RETRY_COUNT`                      |
@@ -164,47 +167,46 @@ snapstyle-mvp/
 RootNavigator
 ├── AuthStack (unauthenticated)
 │   ├── Welcome
-│   ├── Login
-│   ├── Signup
+│   ├── Login / Signup / ForgotPassword
 │   └── ProfileSetup
 │
-└── AppTabs (authenticated)
-    ├── InboxStack (Chat tab)
-    │   ├── ChatList
-    │   ├── ChatDetail (DM)
-    │   ├── ChatSettings
-    │   ├── SnapViewer
-    │   ├── Groups screens...
-    │   └── ScheduledMessages
+└── AppTabs (authenticated — 5 tabs)
+    ├── ShopStack (Shop tab)
+    │   ├── ShopHub
+    │   ├── PointsShop / PremiumShop
+    │   └── PurchaseHistory
     │
-    ├── MomentsStack (Stories tab)
+    ├── PlayStack (Play tab — 26+ game screens)
+    │   ├── GamesHubScreen
+    │   ├── [26 game screens]           # All games: Chess, Snake, 2048, etc.
+    │   ├── Leaderboard / Achievements
+    │   ├── GameHistory / SpectatorView
+    │   └── ...
+    │
+    ├── InboxStack (Inbox tab)
+    │   ├── ChatListV2 (main inbox)
+    │   ├── ScheduledMessages / GroupInvites
+    │   ├── InboxSettings / InboxSearch
+    │   └── Chat / GroupChat (overlay)
+    │
+    ├── MomentsStack (Moments tab)
     │   ├── Stories
     │   └── StoryViewer
     │
-    ├── PlayStack (Games tab)
-    │   ├── GamesHubScreen          # Main games hub
-    │   ├── ReactionTapGame
-    │   ├── TimedTapGame
-    │   ├── FlappySnapGame
-    │   ├── BounceBlitzGame
-    │   ├── MemorySnapGame
-    │   ├── WordSnapGame
-    │   ├── Snap2048Game
-    │   ├── SnapSnakeGame
-    │   ├── TicTacToeGame
-    │   ├── CheckersGame
-    │   ├── ChessGame
-    │   ├── CrazyEightsGame
-    │   ├── Leaderboard
-    │   └── Achievements
-    │
-    └── ProfileStack
-        ├── Profile
-        ├── Settings
-        ├── Shop
-        ├── Wallet
-        ├── Tasks
-        └── Admin screens...
+    └── ProfileStack (Profile tab)
+        ├── OwnProfile / UserProfile
+        ├── Settings / Privacy / ThemeSettings
+        ├── BadgeCollection / Wallet / Tasks
+        ├── Debug / LocalStorageDebug
+        └── AdminReports
+
+    Root-Level Overlays (slide over tabs):
+    ├── Camera (fullScreenModal)
+    ├── AudioCall / VideoCall / GroupCall
+    ├── ChatSettings / GroupChatInfo
+    ├── SetStatus / MutualFriendsList
+    ├── ActivityFeed
+    └── FriendsScreen
 ```
 
 ---
@@ -246,27 +248,31 @@ RootNavigator
 ┌─────────────────────────────────────────────────────────────────┐
 │                         PRESENTATION                             │
 │  Screens → Components → Navigation                               │
+│  Three.js 3D layers (ThreeCanvas → GLView → expo-three)          │
+│  Skia 2D graphics (@shopify/react-native-skia)                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼ useAuth, useUser, useAppTheme
 ┌─────────────────────────────────────────────────────────────────┐
 │                          STATE (Context)                         │
-│  AuthContext │ UserContext │ ThemeContext │ SnackbarContext     │
+│  AuthContext │ UserContext │ ThemeContext │ SnackbarContext       │
+│  InAppNotificationsContext │ ProfileThemeColorsContext            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                        SERVICES (src/services/)                  │
-│  auth.ts │ users.ts │ database/ │ sync/ │ mediaCache.ts │ ...   │
+│  auth │ users │ database/ │ sync/ │ games │ colyseus │ ...       │
 └─────────────────────────────────────────────────────────────────┘
                               │
-               ┌──────────────┴──────────────┐
-               ▼                              ▼
-┌─────────────────────────────┐  ┌─────────────────────────────────┐
-│    LOCAL STORAGE            │  │    FIREBASE BACKEND             │
-│  SQLite (expo-sqlite)       │  │  Firestore │ Storage │ Auth    │
-│  File System (expo-file)    │  │  Cloud Functions                │
-└─────────────────────────────┘  └─────────────────────────────────┘
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐
+│  LOCAL STORAGE   │  │  FIREBASE       │  │  COLYSEUS SERVER    │
+│  SQLite          │  │  Firestore      │  │  31 game rooms      │
+│  File System     │  │  Storage / Auth │  │  WebSocket (ws://)  │
+│  AsyncStorage    │  │  Cloud Functions│  │  Docker / nginx     │
+└─────────────────┘  └─────────────────┘  └─────────────────────┘
 ```
 
 ---
@@ -373,6 +379,14 @@ The messaging module provides a unified API for both DM and group chats:
 | `notifications.ts`  | Push tokens        | `registerPushToken`                                 |
 | `storage.ts`        | File uploads       | `uploadImage`, `uploadVoiceMessage`                 |
 | `inboxSettings.ts`  | Inbox preferences  | `getInboxSettings`, `updateInboxSettings`           |
+| `colyseus/`         | Real-time games    | `joinRoom`, `leaveRoom`, `sendAction`               |
+| `leaderboards.ts`   | Leaderboards       | `getLeaderboard`, `submitScore`, rankings           |
+| `achievements.ts`   | Achievements       | `getAchievements`, `checkAchievement`               |
+| `badges.ts`         | Badge system       | `getBadges`, `awardBadge`, `checkEligibility`       |
+| `profileService.ts` | Dual profiles      | `updateOwnProfile`, `getPublicProfile`              |
+| `camera/`           | Camera system      | `capturePhoto`, `editPhoto`, `sharePhoto`           |
+| `callService.ts`    | Video/audio calls  | `startCall`, `endCall`, `toggleAudio/Video`         |
+| `decorations.ts`    | Avatar decorations | `getDecorations`, `equipDecoration`                 |
 
 ---
 
@@ -438,3 +452,88 @@ Read/unread tracking uses watermarks instead of per-message flags:
 | Games    | **Play**        |
 | Chat     | **Inbox**       |
 
+---
+
+## Colyseus Real-Time Multiplayer (colyseus-server/)
+
+The app uses **Colyseus v0.17** for real-time game multiplayer, deployed via Docker + nginx.
+
+### Room Architecture (25 rooms)
+
+| Category               | Room Types                                                                 | Count |
+| ---------------------- | -------------------------------------------------------------------------- | ----- |
+| Base patterns          | `CardGameRoom`, `ScoreRaceRoom`, `TurnBasedRoom`, `PhysicsRoom`            | 4     |
+| Score-race (quickplay) | TimedTap, Reaction, DotMatch                                               | 3     |
+| Turn-based             | TicTacToe, Chess, Checkers, CrazyEights, ConnectFour, Gomoku, Reversi, War | 8     |
+| Physics                | Pong, AirHockey, BrickBreaker, BounceBlitz, Pool, Race, Snake              | 7     |
+| Cooperative            | WordMaster, Crossword                                                      | 2     |
+| Spectator              | SpectatorRoom                                                              | 1     |
+
+### Client SDK Integration
+
+- **SDK**: `colyseus.js@0.17.31` (client) ↔ `@colyseus/core@0.17.35` (server)
+- **Hooks**: `useColyseusRoom`, `useQuickplayRoom`, `useTurnBasedRoom`, `usePhysicsRoom`
+- **State sync**: Automatic state patching via Colyseus `@type()` decorators
+- **Reconnection**: Token-based reconnection with 30s timeout
+
+---
+
+## Three.js 3D Integration (src/components/three/)
+
+Three.js provides GPU-accelerated 3D visuals via `expo-gl` + `expo-three`.
+
+### Components
+
+| Component             | Purpose                                         |
+| --------------------- | ----------------------------------------------- |
+| `ThreeCanvas`         | Foundation `GLView` wrapper with animation loop |
+| `geometries.ts`       | Reusable 3D geometry helper functions           |
+| `ThreeGameBackground` | Full-screen 3D backgrounds for game screens     |
+| `ThreeHeroBanner`     | 3D hero banner with floating game pieces        |
+| `ThreeInviteCard`     | 3D overlay for game invite cards                |
+| `ThreeGameTrophy`     | Animated 3D victory trophy                      |
+| `ThreeFloatingIcons`  | Floating 3D game icons for GamesHub             |
+
+### Feature Flags (THREE_JS_FEATURES)
+
+```typescript
+export const THREE_JS_FEATURES = {
+  INVITE_CARDS: true, // 3D invite card overlays
+  HERO_BANNERS: true, // 3D hero banners
+  GAME_BACKGROUNDS: false, // Full-screen 3D backgrounds (performance-gated)
+  TROPHIES: true, // 3D victory trophies
+  FLOATING_ICONS: true, // 3D floating icons on GamesHub
+};
+```
+
+---
+
+## Skia 2D Graphics (src/components/games/graphics/)
+
+`@shopify/react-native-skia` provides GPU-accelerated 2D rendering for game boards.
+
+### Components
+
+- `SkiaChessPieces` — Vector chess piece rendering
+- `SkiaCheckersPieces` — Checkers piece rendering
+- `SkiaGameBoard` — Generic game board grid
+- `Skia2048Tiles` — Animated 2048 tile rendering
+- `SkiaParticleSystem` — Particle effects for game events
+- Additional Skia helpers for Go boards, etc.
+
+---
+
+## Cloud Functions (firebase-backend/functions/)
+
+8 modules deployed via Firebase Cloud Functions:
+
+| Module          | Purpose                                |
+| --------------- | -------------------------------------- |
+| `economy.ts`    | Token wallet transactions, rewards     |
+| `games.ts`      | Score submission, matchmaking          |
+| `messaging.ts`  | Push notifications, message processing |
+| `moderation.ts` | Report handling, auto-ban              |
+| `onboarding.ts` | New user setup, welcome flow           |
+| `scheduled.ts`  | Cron: streak checks, cleanup           |
+| `social.ts`     | Friend requests, activity feed         |
+| `shop.ts`       | Purchase validation, IAP receipts      |

@@ -55,22 +55,22 @@ import {
   type PinchGestureHandlerGestureEvent,
 } from "react-native-gesture-handler";
 import ViewShot, { captureRef } from "react-native-view-shot";
-import CameraFilterOverlay from "../../components/camera/CameraFilterOverlay";
+import CameraFilterOverlay from "@/components/camera/CameraFilterOverlay";
 import DrawingCanvas, {
   type DrawnPath,
-} from "../../components/camera/DrawingCanvas";
-import PollCreator from "../../components/camera/PollCreator";
+} from "@/components/camera/DrawingCanvas";
+import PollCreator from "@/components/camera/PollCreator";
 import {
   useCamera,
   useCameraPermissions,
   usePhotoCapture,
-} from "../../hooks/camera/useCameraHooks";
-import { FILTER_LIBRARY } from "../../services/camera/filterService";
+} from "@/hooks/camera/useCameraHooks";
+import { FILTER_LIBRARY } from "@/services/camera/filterService";
 import {
   useCameraState,
   useEditorState,
   useSnapState,
-} from "../../store/CameraContext";
+} from "@/store/CameraContext";
 import type {
   CapturedMedia,
   FilterConfig,
@@ -79,9 +79,12 @@ import type {
   Snap,
   StickerElement,
   TextElement,
-} from "../../types/camera";
-import { generateUUID } from "../../utils/uuid";
+} from "@/types/camera";
+import { generateUUID } from "@/utils/uuid";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/camera/CameraScreen");
 // =============================================================================
 // TYPES & CONSTANTS
 // =============================================================================
@@ -299,7 +302,7 @@ const ToolButton: React.FC<ToolButtonProps> = React.memo(
       activeOpacity={0.7}
     >
       <Ionicons
-        name={icon as any}
+        name={icon as keyof typeof Ionicons.glyphMap}
         size={22}
         color={active ? "#007AFF" : "#fff"}
       />
@@ -473,7 +476,7 @@ const CameraScreen: React.FC = () => {
       setCapturedMedia(media);
       // isBusy stays true - will reset when user discards
     } catch (error) {
-      console.error("[Camera] Capture failed:", error);
+      logger.error("[Camera] Capture failed:", error);
       setIsBusy(false);
     }
   }, [
@@ -748,10 +751,10 @@ const CameraScreen: React.FC = () => {
           });
           if (composited) {
             finalUri = composited;
-            console.log("[Camera] Editor view composited successfully");
+            logger.info("[Camera] Editor view composited successfully");
           }
         } catch (flattenError) {
-          console.warn(
+          logger.warn(
             "[Camera] ViewShot capture failed, using raw image:",
             flattenError,
           );
@@ -1372,6 +1375,9 @@ const CameraScreen: React.FC = () => {
             data={ALL_FILTERS}
             renderItem={renderFilterThumb}
             keyExtractor={(f) => f.id}
+            ListEmptyComponent={
+              <Text style={styles.listEmptyText}>No filters available.</Text>
+            }
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterList}
@@ -1475,6 +1481,9 @@ const CameraScreen: React.FC = () => {
             data={ALL_FILTERS}
             renderItem={renderFilterItem}
             keyExtractor={filterKeyExtractor}
+            ListEmptyComponent={
+              <Text style={styles.listEmptyText}>No filters available.</Text>
+            }
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterCarouselContent}
@@ -1642,6 +1651,9 @@ const CameraScreen: React.FC = () => {
             data={EMOJI_STICKERS}
             numColumns={5}
             keyExtractor={(item) => item}
+            ListEmptyComponent={
+              <Text style={styles.listEmptyText}>No stickers available.</Text>
+            }
             contentContainerStyle={styles.stickerGrid}
             renderItem={({ item }) => (
               <TouchableOpacity
@@ -1959,6 +1971,13 @@ const styles = StyleSheet.create({
     zIndex: 25,
   },
   filterList: { paddingHorizontal: 10 },
+  listEmptyText: {
+    color: "#9A9A9A",
+    fontSize: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    textAlign: "center",
+  },
   filterThumb: {
     width: 72,
     height: 96,

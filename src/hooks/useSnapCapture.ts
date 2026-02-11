@@ -17,6 +17,9 @@ import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useSnapCapture");
 const DEBUG_CAPTURE = false;
 
 interface UseSnapCaptureConfig {
@@ -78,7 +81,7 @@ export function useSnapCapture(
   useEffect(() => {
     if (routeParams?.capturedImageUri) {
       if (debug) {
-        console.log(
+        logger.info(
           "🔵 [useSnapCapture] Received captured image from Camera:",
           routeParams.capturedImageUri,
         );
@@ -92,14 +95,14 @@ export function useSnapCapture(
     useCallback(async (): Promise<boolean> => {
       try {
         if (debug) {
-          console.log(
+          logger.info(
             "🔵 [useSnapCapture] Requesting media library permissions...",
           );
         }
         const { granted } =
           await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (debug) {
-          console.log("✅ [useSnapCapture] Media permission result:", granted);
+          logger.info("✅ [useSnapCapture] Media permission result:", granted);
         }
 
         if (!granted) {
@@ -111,7 +114,7 @@ export function useSnapCapture(
         }
         return true;
       } catch (error) {
-        console.error("❌ [useSnapCapture] Media permission error:", error);
+        logger.error("❌ [useSnapCapture] Media permission error:", error);
         return true; // On web, permissions don't apply - continue anyway
       }
     }, [debug]);
@@ -120,11 +123,11 @@ export function useSnapCapture(
   const requestCameraPermission = useCallback(async (): Promise<boolean> => {
     try {
       if (debug) {
-        console.log("🔵 [useSnapCapture] Requesting camera permissions...");
+        logger.info("🔵 [useSnapCapture] Requesting camera permissions...");
       }
       const { granted } = await ImagePicker.requestCameraPermissionsAsync();
       if (debug) {
-        console.log("✅ [useSnapCapture] Camera permission result:", granted);
+        logger.info("✅ [useSnapCapture] Camera permission result:", granted);
       }
 
       if (!granted) {
@@ -136,7 +139,7 @@ export function useSnapCapture(
       }
       return true;
     } catch (error) {
-      console.error("❌ [useSnapCapture] Camera permission error:", error);
+      logger.error("❌ [useSnapCapture] Camera permission error:", error);
       return true; // On web, permissions don't apply - continue anyway
     }
   }, [debug]);
@@ -145,11 +148,11 @@ export function useSnapCapture(
   const handleSnapUpload = useCallback(
     async (imageUri: string): Promise<void> => {
       if (debug) {
-        console.log("🔵 [useSnapCapture] Starting upload with URI:", imageUri);
+        logger.info("🔵 [useSnapCapture] Starting upload with URI:", imageUri);
       }
 
       if (!uid || !chatId) {
-        console.error("❌ [useSnapCapture] Missing uid or chatId:", {
+        logger.error("❌ [useSnapCapture] Missing uid or chatId:", {
           uid,
           chatId,
         });
@@ -162,11 +165,11 @@ export function useSnapCapture(
 
         // Compress image
         if (debug) {
-          console.log("🔵 [useSnapCapture] Starting compression...");
+          logger.info("🔵 [useSnapCapture] Starting compression...");
         }
         const compressedUri = await compressImage(imageUri);
         if (debug) {
-          console.log(
+          logger.info(
             "✅ [useSnapCapture] Compression complete:",
             compressedUri,
           );
@@ -175,7 +178,7 @@ export function useSnapCapture(
         // Upload to Storage and get storagePath
         const messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         if (debug) {
-          console.log(
+          logger.info(
             "🔵 [useSnapCapture] Uploading to Storage with messageId:",
             messageId,
           );
@@ -186,7 +189,7 @@ export function useSnapCapture(
           compressedUri,
         );
         if (debug) {
-          console.log(
+          logger.info(
             "✅ [useSnapCapture] Upload complete, storagePath:",
             storagePath,
           );
@@ -194,7 +197,7 @@ export function useSnapCapture(
 
         // Send as image message using V2
         if (debug) {
-          console.log("🔵 [useSnapCapture] Sending message via V2...");
+          logger.info("🔵 [useSnapCapture] Sending message via V2...");
         }
         const { sendPromise } = await sendMessageWithOutbox({
           conversationId: chatId,
@@ -203,7 +206,7 @@ export function useSnapCapture(
           text: storagePath, // Storage path as content
         });
         if (debug) {
-          console.log(
+          logger.info(
             "✅ [useSnapCapture] Message enqueued, waiting for send...",
           );
         }
@@ -214,7 +217,7 @@ export function useSnapCapture(
           throw new Error(sendResult.error || "Failed to send picture");
         }
         if (debug) {
-          console.log("✅ [useSnapCapture] Message sent successfully");
+          logger.info("✅ [useSnapCapture] Message sent successfully");
         }
 
         // Update streak (separate from V2 message sending)
@@ -222,7 +225,7 @@ export function useSnapCapture(
           uid,
           friendUid,
         );
-        console.log("✅ [useSnapCapture] Streak updated:", {
+        logger.info("✅ [useSnapCapture] Streak updated:", {
           newCount,
           milestoneReached,
         });
@@ -239,7 +242,7 @@ export function useSnapCapture(
 
         onUploadComplete?.();
       } catch (error) {
-        console.error("❌ [useSnapCapture] Error:", error);
+        logger.error("❌ [useSnapCapture] Error:", error);
         Alert.alert("Error", `Failed to send picture: ${String(error)}`);
       } finally {
         setUploadingSnap(false);
@@ -251,30 +254,30 @@ export function useSnapCapture(
   // Capture photo from camera — navigates to built-in CameraScreen
   const handleCapturePhoto = useCallback(async (): Promise<void> => {
     if (debug) {
-      console.log("🔵 [useSnapCapture] Starting camera capture");
+      logger.info("🔵 [useSnapCapture] Starting camera capture");
     }
 
     try {
       if (debug) {
-        console.log("🔵 [useSnapCapture] Platform:", Platform.OS);
+        logger.info("🔵 [useSnapCapture] Platform:", Platform.OS);
       }
 
       // On web, use webcam or file picker
       if (Platform.OS === "web") {
         if (debug) {
-          console.log("🔵 [useSnapCapture] Using web-specific capture");
+          logger.info("🔵 [useSnapCapture] Using web-specific capture");
         }
         const imageUri = await captureImageFromWebcam();
         if (imageUri) {
           if (debug) {
-            console.log("✅ [useSnapCapture] Image captured, uploading...");
+            logger.info("✅ [useSnapCapture] Image captured, uploading...");
           }
           await handleSnapUpload(imageUri);
         }
       } else {
         // On native platforms, navigate to the built-in CameraScreen
         if (debug) {
-          console.log(
+          logger.info(
             "🔵 [useSnapCapture] Navigating to Camera screen (chat mode)",
           );
         }
@@ -285,7 +288,7 @@ export function useSnapCapture(
         });
       }
     } catch (error) {
-      console.error("❌ [useSnapCapture] Camera error:", error);
+      logger.error("❌ [useSnapCapture] Camera error:", error);
       Alert.alert("Error", `Failed to capture photo: ${String(error)}`);
     }
   }, [debug, handleSnapUpload, navigation, friendUid, chatId]);
@@ -293,19 +296,19 @@ export function useSnapCapture(
   // Select photo from gallery
   const handleSelectPhoto = useCallback(async (): Promise<void> => {
     if (debug) {
-      console.log("🔵 [useSnapCapture] Starting gallery selection");
+      logger.info("🔵 [useSnapCapture] Starting gallery selection");
     }
     const hasPermission = await requestMediaLibraryPermission();
     if (!hasPermission) {
       if (debug) {
-        console.warn("⚠️  [useSnapCapture] Permission denied");
+        logger.warn("⚠️  [useSnapCapture] Permission denied");
       }
       return;
     }
 
     try {
       if (debug) {
-        console.log("🔵 [useSnapCapture] Platform:", Platform.OS);
+        logger.info("🔵 [useSnapCapture] Platform:", Platform.OS);
       }
 
       let imageUri: string | null = null;
@@ -313,13 +316,13 @@ export function useSnapCapture(
       // On web, use file picker
       if (Platform.OS === "web") {
         if (debug) {
-          console.log("🔵 [useSnapCapture] Using web file picker");
+          logger.info("🔵 [useSnapCapture] Using web file picker");
         }
         imageUri = await pickImageFromWeb();
       } else {
         // On native platforms, use expo-image-picker
         if (debug) {
-          console.log("🔵 [useSnapCapture] Launching image library...");
+          logger.info("🔵 [useSnapCapture] Launching image library...");
         }
         const result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ["images"],
@@ -329,7 +332,7 @@ export function useSnapCapture(
         });
 
         if (debug) {
-          console.log("✅ [useSnapCapture] Library result:", {
+          logger.info("✅ [useSnapCapture] Library result:", {
             canceled: result.canceled,
             assetsCount: result.assets?.length || 0,
           });
@@ -342,14 +345,14 @@ export function useSnapCapture(
 
       if (imageUri) {
         if (debug) {
-          console.log("✅ [useSnapCapture] Image selected, uploading...");
+          logger.info("✅ [useSnapCapture] Image selected, uploading...");
         }
         await handleSnapUpload(imageUri);
       } else if (debug) {
-        console.log("ℹ️  [useSnapCapture] User cancelled selection");
+        logger.info("ℹ️  [useSnapCapture] User cancelled selection");
       }
     } catch (error) {
-      console.error("❌ [useSnapCapture] Gallery error:", error);
+      logger.error("❌ [useSnapCapture] Gallery error:", error);
       Alert.alert("Error", `Failed to select photo: ${String(error)}`);
     }
   }, [debug, requestMediaLibraryPermission, handleSnapUpload]);
@@ -357,7 +360,7 @@ export function useSnapCapture(
   // Show photo options menu
   const showPhotoMenu = useCallback((): void => {
     if (debug) {
-      console.log(
+      logger.info(
         "🔵 [useSnapCapture] Opening photo menu, platform:",
         Platform.OS,
       );
@@ -367,7 +370,7 @@ export function useSnapCapture(
       // On web, Alert doesn't work reliably with multiple buttons
       // Use browser's confirm() for a simple choice
       if (debug) {
-        console.log("🔵 [useSnapCapture] Using web-specific menu");
+        logger.info("🔵 [useSnapCapture] Using web-specific menu");
       }
 
       const useCamera = window.confirm(
@@ -375,7 +378,7 @@ export function useSnapCapture(
       );
 
       if (debug) {
-        console.log(
+        logger.info(
           "🔵 [useSnapCapture] User choice:",
           useCamera ? "camera" : "gallery",
         );
@@ -383,16 +386,16 @@ export function useSnapCapture(
 
       if (useCamera) {
         handleCapturePhoto().catch((error) => {
-          console.error("❌ [useSnapCapture] Camera error:", error);
+          logger.error("❌ [useSnapCapture] Camera error:", error);
         });
       } else {
         handleSelectPhoto().catch((error) => {
-          console.error("❌ [useSnapCapture] Gallery error:", error);
+          logger.error("❌ [useSnapCapture] Gallery error:", error);
         });
       }
     } else if (Platform.OS === "ios") {
       if (debug) {
-        console.log("🔵 [useSnapCapture] Using ActionSheetIOS");
+        logger.info("🔵 [useSnapCapture] Using ActionSheetIOS");
       }
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -401,7 +404,7 @@ export function useSnapCapture(
         },
         (buttonIndex) => {
           if (debug) {
-            console.log("🔵 [useSnapCapture] Selected option:", buttonIndex);
+            logger.info("🔵 [useSnapCapture] Selected option:", buttonIndex);
           }
           if (buttonIndex === 1) {
             handleCapturePhoto();
@@ -413,19 +416,19 @@ export function useSnapCapture(
     } else {
       // Android: show alert dialog
       if (debug) {
-        console.log("🔵 [useSnapCapture] Using Alert dialog");
+        logger.info("🔵 [useSnapCapture] Using Alert dialog");
       }
       Alert.alert("Send Picture", "Choose an option", [
         {
           text: "Cancel",
           onPress: () => {
-            if (debug) console.log("🔵 [useSnapCapture] Cancel pressed");
+            if (debug) logger.info("🔵 [useSnapCapture] Cancel pressed");
           },
         },
         {
           text: "Take Photo",
           onPress: () => {
-            if (debug) console.log("🔵 [useSnapCapture] Take Photo pressed");
+            if (debug) logger.info("🔵 [useSnapCapture] Take Photo pressed");
             handleCapturePhoto();
           },
         },
@@ -433,7 +436,7 @@ export function useSnapCapture(
           text: "Choose from Gallery",
           onPress: () => {
             if (debug)
-              console.log("🔵 [useSnapCapture] Choose from Gallery pressed");
+              logger.info("🔵 [useSnapCapture] Choose from Gallery pressed");
             handleSelectPhoto();
           },
         },

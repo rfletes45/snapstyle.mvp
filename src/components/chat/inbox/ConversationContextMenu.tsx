@@ -27,7 +27,7 @@ import {
   View,
 } from "react-native";
 import { Divider, Text } from "react-native-paper";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -226,7 +226,7 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
                     accessibilityLabel={item.label}
                   >
                     <MaterialCommunityIcons
-                      name={item.icon as any}
+                      name={item.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                       size={20}
                       color={item.destructive ? colors.error : colors.text}
                       style={styles.menuIcon}

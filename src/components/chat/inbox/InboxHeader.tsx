@@ -23,7 +23,7 @@ import React, { useCallback } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Appbar, IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Spacing } from "../../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

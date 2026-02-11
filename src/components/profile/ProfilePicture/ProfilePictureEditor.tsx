@@ -29,6 +29,9 @@ import { useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProfilePictureWithDecoration } from "./ProfilePictureWithDecoration";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/ProfilePicture/ProfilePictureEditor");
 export interface ProfilePictureEditorProps {
   /** Whether the modal is visible */
   visible: boolean;
@@ -126,7 +129,7 @@ export function ProfilePictureEditor({
         await uploadPhoto(result.assets[0].uri);
       }
     } catch (error) {
-      console.error("Error taking photo:", error);
+      logger.error("Error taking photo:", error);
       Alert.alert("Error", "Failed to take photo. Please try again.");
     }
   }, [userId]);
@@ -148,7 +151,7 @@ export function ProfilePictureEditor({
         await uploadPhoto(result.assets[0].uri);
       }
     } catch (error) {
-      console.error("Error selecting photo:", error);
+      logger.error("Error selecting photo:", error);
       Alert.alert("Error", "Failed to select photo. Please try again.");
     }
   }, [userId]);
@@ -163,7 +166,7 @@ export function ProfilePictureEditor({
       onPictureUpdated?.(url, thumbnailUrl);
       onClose();
     } catch (error) {
-      console.error("Error uploading photo:", error);
+      logger.error("Error uploading photo:", error);
       Alert.alert("Upload Failed", "Failed to upload photo. Please try again.");
     } finally {
       setIsLoading(false);
@@ -190,7 +193,7 @@ export function ProfilePictureEditor({
               onPictureRemoved?.();
               onClose();
             } catch (error) {
-              console.error("Error removing photo:", error);
+              logger.error("Error removing photo:", error);
               Alert.alert("Error", "Failed to remove photo. Please try again.");
             } finally {
               setIsLoading(false);

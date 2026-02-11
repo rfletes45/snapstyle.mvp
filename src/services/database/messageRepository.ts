@@ -22,6 +22,9 @@ import {
 import * as Crypto from "expo-crypto";
 import { getDatabase } from "./index";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/database/messageRepository");
 // =============================================================================
 // Types
 // =============================================================================
@@ -191,7 +194,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
       const serverReceivedAt = message.serverReceivedAt || createdAt;
 
       if (!id) {
-        console.warn("[MessageRepository] Skipping message with empty id");
+        logger.warn("[MessageRepository] Skipping message with empty id");
         return;
       }
 
@@ -235,11 +238,11 @@ export function upsertMessageFromServer(message: MessageV2): void {
       }
     }
   } catch (error: any) {
-    console.error(
+    logger.error(
       "[MessageRepository] Error upserting message:",
       error.message,
     );
-    console.error(
+    logger.error(
       "[MessageRepository] Message data:",
       JSON.stringify(
         {

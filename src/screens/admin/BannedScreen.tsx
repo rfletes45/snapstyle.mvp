@@ -12,8 +12,11 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/admin/BannedScreen");
 interface BannedScreenProps {
   ban: Ban;
 }
@@ -27,10 +30,10 @@ export default function BannedScreen({ ban }: BannedScreenProps) {
     try {
       const result = await logout();
       if (!result.ok) {
-        console.error("Error signing out:", result);
+        logger.error("Error signing out:", result);
       }
     } catch (error) {
-      console.error("Error signing out:", error);
+      logger.error("Error signing out:", error);
     }
   };
 

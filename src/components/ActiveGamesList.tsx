@@ -15,7 +15,7 @@ import { Card, Text, useTheme } from "react-native-paper";
 
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import { AnyMatch, TurnBasedGameType } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

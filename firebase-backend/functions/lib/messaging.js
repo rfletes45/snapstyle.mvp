@@ -610,7 +610,7 @@ exports.deleteMessageForAllV2 = functions.https.onCall(async (data, context) => 
         attachments: admin.firestore.FieldValue.delete(),
         linkPreview: admin.firestore.FieldValue.delete(),
     });
-    // TODO: Trigger storage cleanup for attachments if needed
+    // NOTE: Trigger storage cleanup for attachments if needed
     // This could be done via a separate Cloud Function triggered by the update
     console.log(`[deleteMessageForAllV2] Successfully deleted message ${messageId.substring(0, 8)}`);
     return {

@@ -28,7 +28,7 @@ import {
   ViewStyle,
 } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { CompactInviteCard } from "./CompactInviteCard";
 
 const { spacing, borderRadius, shadows } = PLAY_SCREEN_TOKENS;

@@ -15,11 +15,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCallContext } from "../../contexts/CallContext";
-import { ringtoneService } from "../../services/calls/ringtoneService";
-import { useColors } from "../../store/ThemeContext";
-import Avatar from "../Avatar";
+import { useCallContext } from "@/contexts/CallContext";
+import { ringtoneService } from "@/services/calls/ringtoneService";
+import { useColors } from "@/store/ThemeContext";
+import Avatar from "@/components/Avatar";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/calls/IncomingCallOverlay");
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface IncomingCallOverlayProps {
@@ -51,7 +54,7 @@ export function IncomingCallOverlay({
     if (isVisible && incomingCall) {
       // Start ringtone
       ringtoneService.playIncomingRingtone().catch((error) => {
-        console.warn("Failed to play ringtone:", error);
+        logger.warn("Failed to play ringtone:", error);
       });
 
       // Slide in and fade in
@@ -107,7 +110,7 @@ export function IncomingCallOverlay({
         await ringtoneService.stopRingtone();
         await answerCall(incomingCall.id);
       } catch (error) {
-        console.error("Failed to answer call:", error);
+        logger.error("Failed to answer call:", error);
       }
     }
   };
@@ -120,7 +123,7 @@ export function IncomingCallOverlay({
         await ringtoneService.stopRingtone();
         await declineCall(incomingCall.id);
       } catch (error) {
-        console.error("Failed to decline call:", error);
+        logger.error("Failed to decline call:", error);
       }
     }
   };

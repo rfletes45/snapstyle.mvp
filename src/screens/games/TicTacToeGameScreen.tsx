@@ -13,10 +13,18 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import {
   Alert,
-  Animated,
   Dimensions,
   StyleSheet,
   TouchableOpacity,
@@ -27,21 +35,26 @@ import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import FriendPickerModal from "@/components/FriendPickerModal";
-import SpectatorBanner from "@/components/games/SpectatorBanner";
+import { SkiaCellHighlight } from "@/components/games/graphics/SkiaCellHighlight";
+import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
+import { SkiaTicTacToePieces } from "@/components/games/graphics/SkiaTicTacToePieces";
+import { SkiaWinLine } from "@/components/games/graphics/SkiaWinLine";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import {
-  SkiaTicTacToePieces,
-} from "@/components/games/graphics/SkiaTicTacToePieces";
-import {
-  SkiaCellHighlight,
-} from "@/components/games/graphics/SkiaCellHighlight";
-import {
-  SkiaWinLine,
-} from "@/components/games/graphics/SkiaWinLine";
-import {
-  SkiaGameBoard,
-} from "@/components/games/graphics/SkiaGameBoard";
+  DrawOfferDialog,
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useSpectatorMode } from "@/hooks/useSpectatorMode";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   endMatch,
@@ -60,8 +73,14 @@ import {
   TicTacToeMove,
   TicTacToePosition,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+const logger = createLogger("screens/games/TicTacToeGameScreen");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -130,13 +149,12 @@ interface TicTacToeGameScreenProps {
       inviteId?: string;
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
-      /** Whether user is spectating (watching only) */
       spectatorMode?: boolean;
     };
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "invite" | "waiting";
+type GameMode = "menu" | "local" | "online" | "colyseus" | "invite" | "waiting";
 
 // =============================================================================
 // Helper Functions
@@ -185,48 +203,53 @@ function Cell({
   row,
   col,
 }: CellProps) {
-  const theme = useTheme();
-  const scaleAnim = useRef(new Animated.Value(0)).current;
-  const bounceAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(0);
+  const bounce = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { scale: bounce.value }],
+  }));
 
   useEffect(() => {
     if (value) {
       // Entrance animation
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.2,
-          duration: 150,
-          useNativeDriver: true,
+      scale.value = withSequence(
+        withTiming(1.2, { duration: 150 }),
+        withSpring(1, {
+          damping: 12,
+          stiffness: 220,
         }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          friction: 4,
-          tension: 100,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      );
+    } else {
+      cancelAnimation(scale);
+      scale.value = 0;
     }
-  }, [value]);
+
+    return () => {
+      cancelAnimation(scale);
+    };
+  }, [value, scale]);
 
   useEffect(() => {
     if (isWinningCell) {
       // Winning cell pulse
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(bounceAnim, {
-            toValue: 1.1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(bounceAnim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start();
+      bounce.value = withRepeat(
+        withSequence(
+          withTiming(1.1, { duration: 300 }),
+          withTiming(1, { duration: 300 }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      cancelAnimation(bounce);
+      bounce.value = 1;
     }
-  }, [isWinningCell]);
+
+    return () => {
+      cancelAnimation(bounce);
+    };
+  }, [isWinningCell, bounce]);
 
   const borderStyle = {
     borderRightWidth: col < 2 ? LINE_THICKNESS : 0,
@@ -250,14 +273,7 @@ function Cell({
         />
       )}
       {value && (
-        <Animated.View
-          style={[
-            styles.cellContent,
-            {
-              transform: [{ scale: scaleAnim }, { scale: bounceAnim }],
-            },
-          ]}
-        >
+        <Animated.View style={[styles.cellContent, animatedStyle]}>
           <SkiaTicTacToePieces value={value} size={CELL_SIZE * 0.7} />
         </Animated.View>
       )}
@@ -269,10 +285,14 @@ function Cell({
 // Main Component
 // =============================================================================
 
-export default function TicTacToeGameScreen({
+function TicTacToeGameScreen({
   navigation,
   route,
 }: TicTacToeGameScreenProps) {
+  useGameBackHandler({ gameType: "tic_tac_toe", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile: userProfile } = useUser();
@@ -280,24 +300,12 @@ export default function TicTacToeGameScreen({
   // Online game state (declared early for navigation hook)
   const [match, setMatch] = useState<TicTacToeMatch | null>(null);
 
+  const isSpectator = route.params?.spectatorMode === true;
+
   // Online game state
   const [matchId, setMatchId] = useState<string | null>(
     route.params?.matchId || null,
   );
-
-  // Spectator mode hook
-  const {
-    isSpectator,
-    spectatorCount,
-    leaveSpectatorMode,
-    loading: spectatorLoading,
-  } = useSpectatorMode({
-    matchId,
-    inviteId: route.params?.inviteId,
-    spectatorMode: route.params?.spectatorMode,
-    userId: currentFirebaseUser?.uid,
-    userName: currentFirebaseUser?.displayName || "Spectator",
-  });
 
   // Game completion hook - integrates navigation (Phase 6) and achievements (Phase 7)
   const {
@@ -333,15 +341,42 @@ export default function TicTacToeGameScreen({
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
 
-  // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("tic_tac_toe_game");
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
 
-  // Handle spectator leave
-  const handleLeaveSpectator = useCallback(async () => {
-    await leaveSpectatorMode();
-    navigation.goBack();
-  }, [leaveSpectatorMode, navigation]);
+  // Derive Colyseus board as 2D array for rendering
+  const colyseusBoard: TicTacToeBoard | null =
+    mp.isMultiplayer && mp.board.length === 9
+      ? [
+          [
+            mp.board[0] === 0 ? null : mp.board[0] === 1 ? "X" : "O",
+            mp.board[1] === 0 ? null : mp.board[1] === 1 ? "X" : "O",
+            mp.board[2] === 0 ? null : mp.board[2] === 1 ? "X" : "O",
+          ],
+          [
+            mp.board[3] === 0 ? null : mp.board[3] === 1 ? "X" : "O",
+            mp.board[4] === 0 ? null : mp.board[4] === 1 ? "X" : "O",
+            mp.board[5] === 0 ? null : mp.board[5] === 1 ? "X" : "O",
+          ],
+          [
+            mp.board[6] === 0 ? null : mp.board[6] === 1 ? "X" : "O",
+            mp.board[7] === 0 ? null : mp.board[7] === 1 ? "X" : "O",
+            mp.board[8] === 0 ? null : mp.board[8] === 1 ? "X" : "O",
+          ],
+        ]
+      : null;
+
+  // Effective board — use Colyseus board when in multiplayer, else local
+  const effectiveBoard =
+    gameMode === "colyseus" && colyseusBoard ? colyseusBoard : board;
 
   // ==========================================================================
   // Online Game Subscription
@@ -362,7 +397,6 @@ export default function TicTacToeGameScreen({
       setBoard(gameState.board);
       setCurrentTurn(gameState.currentTurn);
 
-      // Track player names for spectators
       setPlayer1Name(typedMatch.players.player1.displayName);
       setPlayer2Name(typedMatch.players.player2.displayName);
 
@@ -388,20 +422,28 @@ export default function TicTacToeGameScreen({
         );
 
         // Phase 7: Check achievements on game completion
-        handleGameCompletion(typedMatch as any);
+        handleGameCompletion(typedMatch as Parameters<typeof handleGameCompletion>[0]);
       }
     });
 
     return () => unsubscribe();
   }, [matchId, currentFirebaseUser]);
 
-  // Handle incoming match from route params
+  // Handle incoming match from route params — smart switch for Colyseus vs Firestore
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "tic_tac_toe_game",
+    route.params?.matchId,
+  );
+
   useEffect(() => {
-    if (route.params?.matchId) {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    } else if (resolvedMode === "online" && firestoreGameId) {
       setGameMode("online");
-      setMatchId(route.params.matchId);
+      setMatchId(firestoreGameId);
     }
-  }, [route.params?.matchId]);
+  }, [resolvedMode, firestoreGameId]);
 
   // ==========================================================================
   // Game Logic
@@ -409,16 +451,22 @@ export default function TicTacToeGameScreen({
 
   const handleCellPress = useCallback(
     async (row: number, col: number) => {
-      // Block interactions in spectator mode
-      if (isSpectator) {
-        return;
-      }
+      // Block spectator input
+      if (isSpectator) return;
 
       if (winner || isDraw || board[row][col]) {
         return;
       }
 
-      // Online mode
+      // Colyseus multiplayer mode
+      if (gameMode === "colyseus" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+        mp.sendMove({ row, col });
+        Vibration.vibrate(10);
+        return;
+      }
+
+      // Legacy Firestore online mode
       if (gameMode === "online" && match && matchId && currentFirebaseUser) {
         // Check if it's my turn
         if (match.currentTurn !== currentFirebaseUser.uid) {
@@ -465,7 +513,7 @@ export default function TicTacToeGameScreen({
             await endMatch(matchId, winnerId, "normal");
           }
         } catch (error) {
-          console.error("[TicTacToe] Error submitting move:", error);
+          logger.error("[TicTacToe] Error submitting move:", error);
         }
         return;
       }
@@ -573,7 +621,7 @@ export default function TicTacToeGameScreen({
         `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
       );
     } catch (error) {
-      console.error("[TicTacToe] Error sending invite:", error);
+      logger.error("[TicTacToe] Error sending invite:", error);
       Alert.alert("Error", "Failed to send game invite. Please try again.");
     } finally {
       setLoading(false);
@@ -596,7 +644,7 @@ export default function TicTacToeGameScreen({
               await resignMatch(matchId, currentFirebaseUser.uid);
               exitGame();
             } catch (error) {
-              console.error("[TicTacToe] Error resigning:", error);
+              logger.error("[TicTacToe] Error resigning:", error);
             }
           },
         },
@@ -626,6 +674,7 @@ export default function TicTacToeGameScreen({
 
   const isMyTurn = () => {
     if (gameMode === "local") return true;
+    if (gameMode === "colyseus") return mp.isMyTurn;
     if (gameMode === "online" && match && currentFirebaseUser) {
       return match.currentTurn === currentFirebaseUser.uid;
     }
@@ -633,6 +682,15 @@ export default function TicTacToeGameScreen({
   };
 
   const getStatusText = () => {
+    if (gameMode === "colyseus" && mp.isMultiplayer) {
+      if (mp.phase === "waiting") return "Waiting...";
+      if (mp.phase === "countdown") return "Get Ready!";
+      if (mp.phase === "finished") {
+        if (mp.isDraw) return "It's a Draw!";
+        return mp.isWinner ? "You Win! 🎉" : "You Lose 😔";
+      }
+      return mp.isMyTurn ? "Your Turn" : `${mp.opponentName}'s Turn`;
+    }
     if (winner) {
       if (gameMode === "online") {
         const winnerIsMe =
@@ -730,14 +788,19 @@ export default function TicTacToeGameScreen({
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
-      {/* Spectator Banner */}
-      <SpectatorBanner
-        isSpectator={isSpectator}
-        spectatorCount={spectatorCount}
-        onLeave={handleLeaveSpectator}
-        playerNames={[player1Name, player2Name]}
-        loading={spectatorLoading}
-      />
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
 
       {/* Header */}
       <View style={styles.header}>
@@ -850,7 +913,7 @@ export default function TicTacToeGameScreen({
         innerShadowBlur={10}
       >
         <View style={styles.board}>
-          {board.map((row, rowIndex) => (
+          {effectiveBoard.map((row, rowIndex) => (
             <View key={rowIndex} style={styles.row}>
               {row.map((cell, colIndex) => (
                 <Cell
@@ -858,7 +921,11 @@ export default function TicTacToeGameScreen({
                   value={cell}
                   onPress={() => handleCellPress(rowIndex, colIndex)}
                   disabled={
-                    !!winner || isDraw || (gameMode === "online" && !isMyTurn())
+                    !!winner ||
+                    isDraw ||
+                    (gameMode === "online" && !isMyTurn()) ||
+                    (gameMode === "colyseus" &&
+                      (!mp.isMyTurn || mp.phase !== "playing"))
                   }
                   isWinningCell={isWinningCell(rowIndex, colIndex)}
                   row={rowIndex}
@@ -947,6 +1014,159 @@ export default function TicTacToeGameScreen({
             End Game
           </Button>
         </View>
+      )}
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "colyseus" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" && (
+          <TurnIndicatorBar
+            isMyTurn={mp.isMyTurn}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            currentPlayerIndex={mp.currentPlayerIndex}
+            myPlayerIndex={mp.myPlayerIndex}
+            turnNumber={mp.turnNumber}
+            opponentDisconnected={mp.opponentDisconnected}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+              player1: theme.colors.primary,
+              player2: theme.colors.error,
+            }}
+            player1Label="X"
+            player2Label="O"
+          />
+        )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "colyseus" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+          <GameActionBar
+            onResign={() => setShowResignConfirm(true)}
+            onOfferDraw={mp.offerDraw}
+            isMyTurn={mp.isMyTurn}
+            drawPending={mp.drawPending}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+          />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "colyseus" && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            gameName="Tic-Tac-Toe"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameMode("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <DrawOfferDialog
+            visible={mp.drawPending}
+            opponentName={mp.opponentName}
+            isMyOffer={mp.drawOfferedByMe}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onAccept={mp.acceptDraw}
+            onDecline={mp.declineDraw}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: theme.colors.primary,
+              background: theme.colors.background,
+              surface: theme.colors.surface,
+              text: theme.colors.onBackground,
+              textSecondary: theme.colors.onSurfaceVariant,
+              border: theme.colors.outlineVariant,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
       )}
     </SafeAreaView>
   );
@@ -1078,3 +1298,5 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
   },
 });
+
+export default withGameErrorBoundary(TicTacToeGameScreen, "tic_tac_toe");

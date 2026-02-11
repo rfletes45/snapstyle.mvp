@@ -11,8 +11,11 @@ import {
   CameraSettings,
   CapturedMedia,
   PermissionStatus,
-} from "../../types/camera";
+} from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/cameraService");
 /**
  * ============================================================================
  * PERMISSION MANAGEMENT
@@ -28,7 +31,7 @@ export async function requestCameraPermission(): Promise<boolean> {
     // Using expo-camera for cross-platform support
     return true; // Placeholder
   } catch (error) {
-    console.error(
+    logger.error(
       "[Camera Service] Failed to request camera permission:",
       error,
     );
@@ -44,7 +47,7 @@ export async function requestMicrophonePermission(): Promise<boolean> {
     // Platform-specific implementation
     return true; // Placeholder
   } catch (error) {
-    console.error(
+    logger.error(
       "[Camera Service] Failed to request microphone permission:",
       error,
     );
@@ -60,7 +63,7 @@ export async function getCameraPermissionStatus(): Promise<PermissionStatus> {
     // Check if permission is granted, denied, or undetermined
     return "granted"; // Placeholder
   } catch (error) {
-    console.error("[Camera Service] Failed to check camera permission:", error);
+    logger.error("[Camera Service] Failed to check camera permission:", error);
     return "undetermined";
   }
 }
@@ -126,7 +129,7 @@ export async function capturePhoto(
     });
 
     const captureTime = Date.now() - startTime;
-    console.log(`[Camera Service] Photo captured in ${captureTime}ms`);
+    logger.info(`[Camera Service] Photo captured in ${captureTime}ms`);
 
     // Read file to get metadata
     const fileInfo = await FileSystem.getInfoAsync(photo.uri);
@@ -146,7 +149,7 @@ export async function capturePhoto(
 
     return media;
   } catch (error) {
-    console.error("[Camera Service] Photo capture failed:", error);
+    logger.error("[Camera Service] Photo capture failed:", error);
     throw error;
   }
 }
@@ -180,7 +183,7 @@ export async function startVideoRecording(
     // Start recording
     // await cameraRef.recordAsync(recordingOptions);
   } catch (error) {
-    console.error("[Camera Service] Failed to start recording:", error);
+    logger.error("[Camera Service] Failed to start recording:", error);
     throw error;
   }
 }
@@ -213,7 +216,7 @@ export async function stopVideoRecording(
 
     return media;
   } catch (error) {
-    console.error("[Camera Service] Failed to stop recording:", error);
+    logger.error("[Camera Service] Failed to stop recording:", error);
     throw error;
   }
 }
@@ -232,7 +235,7 @@ export async function pauseVideoRecording(
     // Pause recording
     // await cameraRef.pauseRecording();
   } catch (error) {
-    console.error("[Camera Service] Failed to pause recording:", error);
+    logger.error("[Camera Service] Failed to pause recording:", error);
     throw error;
   }
 }
@@ -251,7 +254,7 @@ export async function resumeVideoRecording(
     // Resume recording
     // await cameraRef.resumeRecording();
   } catch (error) {
-    console.error("[Camera Service] Failed to resume recording:", error);
+    logger.error("[Camera Service] Failed to resume recording:", error);
     throw error;
   }
 }
@@ -271,7 +274,7 @@ export async function compressImage(
   targetQuality: number = 0.75, // 0.5 to 1.0
 ): Promise<{ uri: string; width: number; height: number; size: number }> {
   try {
-    console.log(`[Camera Service] Compressing image from ${sourceUri}`);
+    logger.info(`[Camera Service] Compressing image from ${sourceUri}`);
 
     // Get original image dimensions
     const result = await ImageManipulator.manipulateAsync(sourceUri, [], {
@@ -289,7 +292,7 @@ export async function compressImage(
       size: fileInfo.exists ? (fileInfo.size ?? 0) : 0,
     };
   } catch (error) {
-    console.error("[Camera Service] Image compression failed:", error);
+    logger.error("[Camera Service] Image compression failed:", error);
     throw error;
   }
 }
@@ -328,7 +331,7 @@ export async function compressImageToSize(
       size: fileInfo.exists ? (fileInfo.size ?? 0) : 0,
     };
   } catch (error) {
-    console.error("[Camera Service] Image resize compression failed:", error);
+    logger.error("[Camera Service] Image resize compression failed:", error);
     throw error;
   }
 }
@@ -348,7 +351,7 @@ export async function compressVideo(
   targetResolution: "auto" | "720p" | "1080p" | "4k" = "1080p",
 ): Promise<{ uri: string; duration: number; size: number; bitrate: number }> {
   try {
-    console.log(`[Camera Service] Compressing video to ${targetResolution}`);
+    logger.info(`[Camera Service] Compressing video to ${targetResolution}`);
 
     // Delegate to native video processing service
     const { compressVideo: nativeCompress } =
@@ -364,7 +367,7 @@ export async function compressVideo(
       bitrate: metadata.bitrate,
     };
   } catch (error) {
-    console.error("[Camera Service] Video compression failed:", error);
+    logger.error("[Camera Service] Video compression failed:", error);
     throw error;
   }
 }
@@ -395,7 +398,7 @@ export async function generateThumbnail(
       return generateVideoThumbnail(mediaUri, 0, size);
     }
   } catch (error) {
-    console.error("[Camera Service] Thumbnail generation failed:", error);
+    logger.error("[Camera Service] Thumbnail generation failed:", error);
     return mediaUri;
   }
 }
@@ -412,9 +415,9 @@ export async function generateThumbnail(
 export async function deleteMediaFile(uri: string): Promise<void> {
   try {
     await FileSystem.deleteAsync(uri, { idempotent: true });
-    console.log(`[Camera Service] Deleted media file: ${uri}`);
+    logger.info(`[Camera Service] Deleted media file: ${uri}`);
   } catch (error) {
-    console.error("[Camera Service] Failed to delete media file:", error);
+    logger.error("[Camera Service] Failed to delete media file:", error);
   }
 }
 
@@ -449,7 +452,7 @@ export async function saveMediaToLibrary(
 
     return destinationUri;
   } catch (error) {
-    console.error("[Camera Service] Failed to save media to library:", error);
+    logger.error("[Camera Service] Failed to save media to library:", error);
     throw error;
   }
 }
@@ -463,7 +466,7 @@ export async function getAvailableStorageSpace(): Promise<number> {
     // Return available bytes
     return 0;
   } catch (error) {
-    console.error("[Camera Service] Failed to get storage info:", error);
+    logger.error("[Camera Service] Failed to get storage info:", error);
     return 0;
   }
 }

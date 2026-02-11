@@ -6,6 +6,9 @@ import { getFirestore, Firestore } from "firebase/firestore";
 import { getStorage, FirebaseStorage } from "firebase/storage";
 import { getFunctions, Functions } from "firebase/functions";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/firebase");
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
@@ -24,7 +27,7 @@ export function initializeFirebase(config: any) {
     storage = getStorage(app);
     functions = getFunctions(app);
   } catch (error) {
-    console.warn(
+    logger.warn(
       "Firebase initialization warning (this is OK if using placeholder config):",
       error,
     );

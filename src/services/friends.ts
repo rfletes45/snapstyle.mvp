@@ -15,6 +15,9 @@ import { isUserBlocked } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 import { getUserProfile } from "./users";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/friends");
 /**
  * Send a friend request by searching for user by username
  * @param fromUid User ID sending request
@@ -103,7 +106,7 @@ export async function sendFriendRequest(
 
     return true;
   } catch (error) {
-    console.error("Error sending friend request:", error);
+    logger.error("Error sending friend request:", error);
     throw error;
   }
 }
@@ -179,7 +182,7 @@ export async function getPendingRequests(
 
     return requests;
   } catch (error) {
-    console.error("Error getting pending requests:", error);
+    logger.error("Error getting pending requests:", error);
     return [];
   }
 }
@@ -231,7 +234,7 @@ export async function acceptFriendRequest(requestId: string): Promise<boolean> {
     await batch.commit();
     return true;
   } catch (error) {
-    console.error("Error accepting friend request:", error);
+    logger.error("Error accepting friend request:", error);
     throw error;
   }
 }
@@ -267,7 +270,7 @@ export async function declineFriendRequest(
 
     return true;
   } catch (error) {
-    console.error("Error declining friend request:", error);
+    logger.error("Error declining friend request:", error);
     throw error;
   }
 }
@@ -285,7 +288,7 @@ export async function cancelFriendRequest(requestId: string): Promise<boolean> {
     await deleteDoc(requestDocRef);
     return true;
   } catch (error) {
-    console.error("Error canceling friend request:", error);
+    logger.error("Error canceling friend request:", error);
     throw error;
   }
 }
@@ -330,7 +333,7 @@ export async function getFriends(uid: string): Promise<Friend[]> {
 
     return friends;
   } catch (error) {
-    console.error("Error getting friends:", error);
+    logger.error("Error getting friends:", error);
     return [];
   }
 }
@@ -371,7 +374,7 @@ export async function getFriendDetails(
       friendProfile,
     };
   } catch (error) {
-    console.error("Error getting friend details:", error);
+    logger.error("Error getting friend details:", error);
     return null;
   }
 }
@@ -409,7 +412,7 @@ export async function removeFriend(
 
     return true;
   } catch (error) {
-    console.error("Error removing friend:", error);
+    logger.error("Error removing friend:", error);
     throw error;
   }
 }
@@ -451,7 +454,7 @@ async function toggleBlockFriend(
 
     return true;
   } catch (error) {
-    console.error("Error toggling block:", error);
+    logger.error("Error toggling block:", error);
     throw error;
   }
 }
@@ -482,7 +485,7 @@ async function getFriendshipId(
 
     return null;
   } catch (error) {
-    console.error("Error finding friendship ID:", error);
+    logger.error("Error finding friendship ID:", error);
     return null;
   }
 }
@@ -547,7 +550,7 @@ async function updateStreak(
 
     return true;
   } catch (error) {
-    console.error("Error updating streak:", error);
+    logger.error("Error updating streak:", error);
     throw error;
   }
 }
@@ -568,7 +571,7 @@ async function getUsernameByUid(uid: string): Promise<string | undefined> {
     }
     return undefined;
   } catch (error) {
-    console.error("Error getting username:", error);
+    logger.error("Error getting username:", error);
     return undefined;
   }
 }
@@ -597,7 +600,7 @@ export async function getUserProfileByUid(uid: string) {
     }
     return undefined;
   } catch (error) {
-    console.error("Error getting user profile:", error);
+    logger.error("Error getting user profile:", error);
     return undefined;
   }
 }

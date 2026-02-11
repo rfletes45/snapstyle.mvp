@@ -10,8 +10,8 @@ import { Animated } from "react-native";
 import Svg, {
   Defs,
   Line,
-  LinearGradient as SvgLinearGradient,
   Stop,
+  LinearGradient as SvgLinearGradient,
 } from "react-native-svg";
 
 const AnimatedLine = Animated.createAnimatedComponent(Line);

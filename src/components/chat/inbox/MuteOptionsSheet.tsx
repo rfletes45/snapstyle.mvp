@@ -25,7 +25,7 @@ import {
 } from "react-native";
 import { Button, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -167,7 +167,7 @@ export const MuteOptionsSheet = memo(function MuteOptionsSheet({
                     activeOpacity={0.7}
                   >
                     <MaterialCommunityIcons
-                      name={option.icon as any}
+                      name={option.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                       size={24}
                       color={colors.primary}
                       style={styles.optionIcon}

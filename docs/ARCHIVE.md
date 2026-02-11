@@ -397,7 +397,7 @@ src/hooks/useConversation.ts        (V1 hook)
 ### Migration Path
 
 - All chat functionality now uses V2 system
-- Message subscription via `useMessagesV2.ts`
+- Message subscription via `useUnifiedMessages.ts`
 - Outbox pattern for reliable sending
 - Server timestamp ordering
 - Watermark-based read state
@@ -787,4 +787,3 @@ These patterns were removed and should not be reintroduced:
 - CHAT*V2_AUDIT*\*.md — Consolidated to V2 docs
 - WEB_PHOTO_CAPTURE_FIX.md — Issue resolved
 - TESTING_PHASE_0.md — Old test plan
-

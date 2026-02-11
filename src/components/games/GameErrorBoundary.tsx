@@ -15,6 +15,9 @@ import {
   View,
 } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/games/GameErrorBoundary");
 // ============================================================================
 // Types
 // ============================================================================
@@ -76,13 +79,13 @@ export class GameErrorBoundary extends Component<
     }
 
     // Log for debugging
-    console.error(`[GameErrorBoundary] Error in ${gameType || "game"}:`, error);
-    console.error(
+    logger.error(`[GameErrorBoundary] Error in ${gameType || "game"}:`, error);
+    logger.error(
       "[GameErrorBoundary] Component stack:",
       errorInfo.componentStack,
     );
 
-    // TODO: Send to error reporting service (Sentry, Crashlytics, etc.)
+    // NOTE: Send to error reporting service (Sentry, Crashlytics, etc.)
     this.reportError(error, errorInfo);
   }
 
@@ -105,7 +108,7 @@ export class GameErrorBoundary extends Component<
 
     // In production, this would send to an error tracking service
     if (__DEV__) {
-      console.log(
+      logger.info(
         "[GameErrorBoundary] Error report:",
         JSON.stringify(report, null, 2),
       );

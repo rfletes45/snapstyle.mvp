@@ -18,6 +18,9 @@ import { addToInventory, hasItem } from "./cosmetics";
 import { MILESTONE_REWARDS } from "@/data/cosmetics";
 import { todayKey } from "@/utils/dates";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/streakCosmetics");
 /**
  * Update streak after sending a message
  * This is called client-side as a fallback
@@ -27,7 +30,7 @@ export async function updateStreakAfterMessage(
   recipientId: string,
 ): Promise<{ newCount: number; milestoneReached: number | null }> {
   try {
-    console.log("🔵 [updateStreakAfterMessage] Starting streak update", {
+    logger.info("🔵 [updateStreakAfterMessage] Starting streak update", {
       senderId,
       recipientId,
     });
@@ -46,11 +49,11 @@ export async function updateStreakAfterMessage(
     });
 
     if (!friendDoc) {
-      console.log("❌ [updateStreakAfterMessage] Friendship not found");
+      logger.info("❌ [updateStreakAfterMessage] Friendship not found");
       return { newCount: 0, milestoneReached: null };
     }
 
-    console.log(
+    logger.info(
       "✅ [updateStreakAfterMessage] Found friendship:",
       friendDoc.id,
     );
@@ -70,7 +73,7 @@ export async function updateStreakAfterMessage(
     const streakUpdatedDay = data.streakUpdatedDay || "";
     let streakCount = data.streakCount || 0;
 
-    console.log("🔵 [updateStreakAfterMessage] Current state:", {
+    logger.info("🔵 [updateStreakAfterMessage] Current state:", {
       today,
       isUser1,
       currentLastSent,
@@ -81,7 +84,7 @@ export async function updateStreakAfterMessage(
 
     // If user already sent today, no update needed
     if (currentLastSent === today) {
-      console.log("⏭️ [updateStreakAfterMessage] User already sent today");
+      logger.info("⏭️ [updateStreakAfterMessage] User already sent today");
       return { newCount: streakCount, milestoneReached: null };
     }
 
@@ -94,7 +97,7 @@ export async function updateStreakAfterMessage(
     // Check if this completes today's streak requirement
     const otherSentToday = otherLastSent === today;
 
-    console.log("🔵 [updateStreakAfterMessage] Checking streak conditions:", {
+    logger.info("🔵 [updateStreakAfterMessage] Checking streak conditions:", {
       otherSentToday,
       streakUpdatedDayNotToday: streakUpdatedDay !== today,
     });
@@ -104,7 +107,7 @@ export async function updateStreakAfterMessage(
       if (!streakUpdatedDay) {
         // First streak ever
         streakCount = 1;
-        console.log("🆕 [updateStreakAfterMessage] First streak:", streakCount);
+        logger.info("🆕 [updateStreakAfterMessage] First streak:", streakCount);
       } else {
         // Check if streak continues from yesterday
         const lastUpdate = new Date(streakUpdatedDay);
@@ -113,7 +116,7 @@ export async function updateStreakAfterMessage(
           (todayDate.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24),
         );
 
-        console.log(
+        logger.info(
           "🔵 [updateStreakAfterMessage] Days since last update:",
           daysDiff,
         );
@@ -121,14 +124,14 @@ export async function updateStreakAfterMessage(
         if (daysDiff <= 1) {
           // Streak continues
           streakCount += 1;
-          console.log(
+          logger.info(
             "🔥 [updateStreakAfterMessage] Streak continues:",
             streakCount,
           );
         } else {
           // Streak broken
           streakCount = 1;
-          console.log(
+          logger.info(
             "💔➡️🆕 [updateStreakAfterMessage] Streak broken, restarting:",
             streakCount,
           );
@@ -142,7 +145,7 @@ export async function updateStreakAfterMessage(
       const milestones = [3, 7, 14, 30, 50, 100, 365];
       if (milestones.includes(streakCount)) {
         milestoneReached = streakCount;
-        console.log(
+        logger.info(
           "🎉 [updateStreakAfterMessage] MILESTONE REACHED!",
           streakCount,
           "days",
@@ -157,17 +160,17 @@ export async function updateStreakAfterMessage(
       );
 
       if (daysDiff > 1 && streakCount > 0) {
-        console.log("💔 [updateStreakAfterMessage] Streak broken");
+        logger.info("💔 [updateStreakAfterMessage] Streak broken");
         updates.streakCount = 0;
         streakCount = 0;
       } else {
-        console.log("⏳ [updateStreakAfterMessage] Waiting for other user");
+        logger.info("⏳ [updateStreakAfterMessage] Waiting for other user");
       }
     }
 
-    console.log("🔵 [updateStreakAfterMessage] Applying updates:", updates);
+    logger.info("🔵 [updateStreakAfterMessage] Applying updates:", updates);
     await updateDoc(friendDoc.ref, updates);
-    console.log("✅ [updateStreakAfterMessage] Streak updated");
+    logger.info("✅ [updateStreakAfterMessage] Streak updated");
 
     // Grant cosmetics if milestone reached (only to sender - other user will get it when they send)
     if (milestoneReached) {
@@ -176,7 +179,7 @@ export async function updateStreakAfterMessage(
 
     return { newCount: streakCount, milestoneReached };
   } catch (error) {
-    console.error("❌ [updateStreakAfterMessage] Error:", error);
+    logger.error("❌ [updateStreakAfterMessage] Error:", error);
     return { newCount: 0, milestoneReached: null };
   }
 }
@@ -189,14 +192,14 @@ async function grantMilestoneCosmetics(
   userId: string,
   milestone: number,
 ): Promise<void> {
-  console.log(
+  logger.info(
     "🎁 [grantMilestoneCosmetics] Granting rewards for milestone:",
     milestone,
   );
 
   const itemId = MILESTONE_REWARDS[milestone];
   if (!itemId) {
-    console.log("No cosmetic reward for milestone", milestone);
+    logger.info("No cosmetic reward for milestone", milestone);
     return;
   }
 
@@ -204,18 +207,18 @@ async function grantMilestoneCosmetics(
     // Check if user already has the item
     const alreadyHas = await hasItem(userId, itemId);
     if (alreadyHas) {
-      console.log(`User ${userId} already has ${itemId}`);
+      logger.info(`User ${userId} already has ${itemId}`);
       return;
     }
 
     // Grant the item
     const success = await addToInventory(userId, itemId);
     if (success) {
-      console.log(
+      logger.info(
         `🎁 Granted ${itemId} to user ${userId} for ${milestone}-day streak`,
       );
     }
   } catch (error) {
-    console.error(`Error granting ${itemId} to ${userId}:`, error);
+    logger.error(`Error granting ${itemId} to ${userId}:`, error);
   }
 }

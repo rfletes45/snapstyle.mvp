@@ -36,6 +36,9 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/groups/GroupChatCreateScreen");
 interface FriendWithProfile extends Friend {
   profile?: User;
 }
@@ -103,7 +106,7 @@ export default function GroupChatCreateScreen({ navigation }: any) {
         setFriends(selectableFriends);
         setFilteredFriends(selectableFriends);
       } catch (error) {
-        console.error("Error loading friends:", error);
+        logger.error("Error loading friends:", error);
         Alert.alert("Error", "Failed to load friends");
       } finally {
         setLoading(false);
@@ -181,7 +184,7 @@ export default function GroupChatCreateScreen({ navigation }: any) {
         });
       }, 500);
     } catch (error: any) {
-      console.error("Error creating group:", error);
+      logger.error("Error creating group:", error);
       Alert.alert("Error", error.message || "Failed to create group");
       setCreating(false);
     }

@@ -10,9 +10,12 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { Latte } from "../../constants/theme";
+import { Latte } from "@/constants/theme";
 import { getFirestoreInstance } from "./firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/users");
 /**
  * Check if a username is available (not reserved)
  * @param username Username to check
@@ -32,7 +35,7 @@ export async function checkUsernameAvailable(
     const snapshot = await getDocs(q);
     return snapshot.empty; // true if no documents found (available)
   } catch (error) {
-    console.error("Error checking username availability:", error);
+    logger.error("Error checking username availability:", error);
     return false; // Assume unavailable if error occurs
   }
 }
@@ -79,7 +82,7 @@ async function reserveUsername(
     await batch.commit();
     return true;
   } catch (error) {
-    console.error("Error reserving username:", error);
+    logger.error("Error reserving username:", error);
     return false;
   }
 }
@@ -100,7 +103,7 @@ export async function getUserProfile(uid: string): Promise<User | null> {
     }
     return null;
   } catch (error) {
-    console.error("Error fetching user profile:", error);
+    logger.error("Error fetching user profile:", error);
     return null;
   }
 }
@@ -141,7 +144,7 @@ async function createUserProfile(
     await setDoc(userDocRef, user);
     return user;
   } catch (error) {
-    console.error("Error creating user profile:", error);
+    logger.error("Error creating user profile:", error);
     throw error;
   }
 }
@@ -166,7 +169,7 @@ export async function updateProfile(
     });
     return true;
   } catch (error) {
-    console.error("Error updating user profile:", error);
+    logger.error("Error updating user profile:", error);
     return false;
   }
 }
@@ -209,13 +212,13 @@ export async function setupNewUser(
       const { grantStarterItems } = await import("./cosmetics");
       await grantStarterItems(uid);
     } catch (cosmeticError) {
-      console.warn("Failed to grant starter items:", cosmeticError);
+      logger.warn("Failed to grant starter items:", cosmeticError);
       // Don't fail user creation if cosmetics fail
     }
 
     return user;
   } catch (error) {
-    console.error("Error setting up new user:", error);
+    logger.error("Error setting up new user:", error);
     throw error;
   }
 }

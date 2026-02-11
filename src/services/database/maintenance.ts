@@ -15,9 +15,12 @@ import {
   makeDirectoryAsync,
   writeAsStringAsync,
 } from "expo-file-system/legacy";
-import { MEDIA_PATHS } from "../mediaCache";
+import { MEDIA_PATHS } from "@/services/mediaCache";
 import { getDatabase } from "./index";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/database/maintenance");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -118,8 +121,8 @@ export async function exportDatabaseForDebug(): Promise<string> {
     encoding: EncodingType.UTF8,
   });
 
-  console.log(`[Maintenance] Database exported to: ${filePath}`);
-  console.log(
+  logger.info(`[Maintenance] Database exported to: ${filePath}`);
+  logger.info(
     `[Maintenance] Stats: ${exportData.stats.conversationCount} conversations, ${exportData.stats.messageCount} messages`,
   );
 
@@ -185,7 +188,7 @@ export function getDatabaseStats(): Record<string, number> {
 export async function resetLocalData(
   clearMediaCache: boolean = true,
 ): Promise<MaintenanceStats> {
-  console.log("[Maintenance] Starting local data reset...");
+  logger.info("[Maintenance] Starting local data reset...");
 
   const stats: MaintenanceStats = {
     databaseCleared: false,
@@ -197,9 +200,9 @@ export async function resetLocalData(
     // First, export database for safety (in case user wants to recover)
     try {
       stats.exportDirectory = await exportDatabaseForDebug();
-      console.log("[Maintenance] Safety export created");
+      logger.info("[Maintenance] Safety export created");
     } catch (exportError) {
-      console.warn(
+      logger.warn(
         "[Maintenance] Could not create safety export:",
         exportError,
       );
@@ -220,19 +223,19 @@ export async function resetLocalData(
     );
 
     stats.databaseCleared = true;
-    console.log("[Maintenance] Database tables cleared");
+    logger.info("[Maintenance] Database tables cleared");
 
     // Clear media cache if requested
     if (clearMediaCache) {
       await clearMediaCacheDirectory();
       stats.mediaCacheCleared = true;
-      console.log("[Maintenance] Media cache cleared");
+      logger.info("[Maintenance] Media cache cleared");
     }
 
-    console.log("[Maintenance] Local data reset complete");
+    logger.info("[Maintenance] Local data reset complete");
     return stats;
   } catch (error) {
-    console.error("[Maintenance] Error during reset:", error);
+    logger.error("[Maintenance] Error during reset:", error);
     throw error;
   }
 }
@@ -245,16 +248,16 @@ export async function clearMediaCacheDirectory(): Promise<void> {
     const mediaInfo = await getInfoAsync(MEDIA_PATHS.root);
     if (mediaInfo.exists) {
       await deleteAsync(MEDIA_PATHS.root, { idempotent: true });
-      console.log("[Maintenance] Deleted media directory");
+      logger.info("[Maintenance] Deleted media directory");
     }
 
     const tempInfo = await getInfoAsync(MEDIA_PATHS.temp);
     if (tempInfo.exists) {
       await deleteAsync(MEDIA_PATHS.temp, { idempotent: true });
-      console.log("[Maintenance] Deleted temp directory");
+      logger.info("[Maintenance] Deleted temp directory");
     }
   } catch (error) {
-    console.error("[Maintenance] Error clearing media cache:", error);
+    logger.error("[Maintenance] Error clearing media cache:", error);
     throw error;
   }
 }
@@ -270,7 +273,7 @@ export function clearPendingMessages(): number {
     "DELETE FROM messages WHERE sync_status IN ('pending', 'failed')",
   );
 
-  console.log(
+  logger.info(
     `[Maintenance] Cleared ${result.changes} pending/failed messages`,
   );
   return result.changes;
@@ -287,7 +290,7 @@ export function resetStuckSyncingMessages(): number {
     "UPDATE messages SET sync_status = 'pending' WHERE sync_status = 'syncing'",
   );
 
-  console.log(`[Maintenance] Reset ${result.changes} stuck syncing messages`);
+  logger.info(`[Maintenance] Reset ${result.changes} stuck syncing messages`);
   return result.changes;
 }
 
@@ -331,7 +334,7 @@ export function pruneOldMessages(daysOld: number = 90): number {
     [cutoffTimestamp],
   );
 
-  console.log(
+  logger.info(
     `[Maintenance] Pruned ${result.changes} messages older than ${daysOld} days`,
   );
   return result.changes;
@@ -343,7 +346,7 @@ export function pruneOldMessages(daysOld: number = 90): number {
 export function vacuumDatabase(): void {
   const db = getDatabase();
   db.runSync("VACUUM");
-  console.log("[Maintenance] Database vacuumed");
+  logger.info("[Maintenance] Database vacuumed");
 }
 
 /**
@@ -357,7 +360,7 @@ export async function runFullMaintenance(
 ): Promise<Record<string, unknown>> {
   const { pruneOlderThanDays = 90, clearOrphanedMedia = false } = options;
 
-  console.log("[Maintenance] Starting full maintenance...");
+  logger.info("[Maintenance] Starting full maintenance...");
 
   const beforeStats = getDatabaseStats();
   const prunedMessages = pruneOldMessages(pruneOlderThanDays);
@@ -376,7 +379,7 @@ export async function runFullMaintenance(
     orphanedMediaCleared: clearOrphanedMedia,
   };
 
-  console.log("[Maintenance] Full maintenance complete:", report);
+  logger.info("[Maintenance] Full maintenance complete:", report);
   return report;
 }
 
@@ -396,7 +399,7 @@ export async function clearOrphanedMediaFiles(): Promise<number> {
 
   // This would require listing all files in media directories
   // and deleting any not in validPaths - simplified implementation
-  console.log(
+  logger.info(
     `[Maintenance] Found ${validPaths.size} valid media paths, orphan cleanup not yet implemented`,
   );
 

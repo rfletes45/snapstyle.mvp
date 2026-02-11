@@ -43,7 +43,6 @@ import {
   ProfilePictureEditor,
 } from "@/components/profile/ProfilePicture";
 import { LoadingState } from "@/components/ui";
-import { PROFILE_FEATURES } from "@/constants/featureFlags";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { ProfileThemeColorsProvider } from "@/contexts/ProfileThemeColorsContext";
 import { getThemeById, PROFILE_THEMES } from "@/data/profileThemes";
@@ -58,6 +57,9 @@ import { useUser } from "@/store/UserContext";
 import type { ProfileAction, ProfileTheme } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/profile/OwnProfileScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -172,7 +174,7 @@ export default function OwnProfileScreen({
 
       setOwnedThemes(owned);
     } catch (error) {
-      console.error("Error loading theme data:", error);
+      logger.error("Error loading theme data:", error);
     } finally {
       setThemeLoading(false);
     }
@@ -207,7 +209,7 @@ export default function OwnProfileScreen({
           try {
             await logout();
           } catch (error: any) {
-            console.error("Sign out error:", error);
+            logger.error("Sign out error:", error);
           }
         },
       },
@@ -374,25 +376,23 @@ export default function OwnProfileScreen({
           <Divider style={styles.divider} />
 
           {/* Game Scores Display */}
-          {PROFILE_FEATURES.GAME_SCORES && (
-            <>
-              <GameScoresDisplay
-                scores={gameScores}
-                enabled={gameScoresConfig.enabled}
-                isOwnProfile={true}
-                onEditPress={() => setGameScoresEditorVisible(true)}
-                onGamePress={(gameId) => {
-                  // Navigate to game
-                  navigation.navigate("Games", { gameId });
-                }}
-                testID="own-profile-game-scores"
-              />
-              <Divider style={styles.divider} />
-            </>
-          )}
+          <>
+            <GameScoresDisplay
+              scores={gameScores}
+              enabled={gameScoresConfig.enabled}
+              isOwnProfile={true}
+              onEditPress={() => setGameScoresEditorVisible(true)}
+              onGamePress={(gameId) => {
+                // Navigate to game
+                navigation.navigate("Games", { gameId });
+              }}
+              testID="own-profile-game-scores"
+            />
+            <Divider style={styles.divider} />
+          </>
 
           {/* Featured Badges */}
-          {PROFILE_FEATURES.BADGE_SHOWCASE && profile?.featuredBadges && (
+          {profile?.featuredBadges && (
             <>
               <BadgeShowcase
                 badges={profile.featuredBadges}
@@ -423,7 +423,7 @@ export default function OwnProfileScreen({
           )}
 
           {/* Stats Dashboard */}
-          {PROFILE_FEATURES.PROFILE_STATS && profile?.stats && (
+          {profile?.stats && (
             <>
               <ProfileStats stats={profile.stats} expanded={false} />
               <Divider style={styles.divider} />

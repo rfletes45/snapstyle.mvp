@@ -46,8 +46,11 @@ import {
   PurchaseRecord,
   PurchaseStats,
   searchPurchases,
-} from "../../services/purchaseHistory";
+} from "@/services/purchaseHistory";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/shop/PurchaseHistoryScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -137,7 +140,7 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
         setHasMore(result.hasMore);
         setError(null);
       } catch (err) {
-        console.error("Error loading purchases:", err);
+        logger.error("Error loading purchases:", err);
         setError("Failed to load purchase history");
       } finally {
         setLoading(false);
@@ -153,7 +156,7 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
       const purchaseStats = await getPurchaseStats();
       setStats(purchaseStats);
     } catch (err) {
-      console.error("Error loading stats:", err);
+      logger.error("Error loading stats:", err);
     }
   }, []);
 
@@ -212,7 +215,7 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
         onPress={() => setActiveFilter(option.key)}
       >
         <Ionicons
-          name={option.icon as any}
+          name={option.icon as keyof typeof Ionicons.glyphMap}
           size={16}
           color={isActive ? "#fff" : colors.text}
         />
@@ -250,7 +253,7 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
             />
           ) : (
             <Ionicons
-              name={getPurchaseTypeIcon(item.type) as any}
+              name={getPurchaseTypeIcon(item.type) as keyof typeof Ionicons.glyphMap}
               size={28}
               color={typeColor}
             />

@@ -5,13 +5,16 @@
 
 import { NativeEventEmitter, Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/audioSessionService");
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[AudioSessionService] ${msg}`, data ?? "");
+  logger.info(`[AudioSessionService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[AudioSessionService] ${msg}`, error ?? "");
+  logger.error(`[AudioSessionService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[AudioSessionService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[AudioSessionService] ${msg}`, data ?? "");
 
 // Audio route types
 export type AudioRoute =
@@ -208,8 +211,8 @@ class AudioSessionService {
         },
       ];
 
-      // TODO: Add bluetooth detection
-      // TODO: Add wired headset detection
+      // NOTE: Add bluetooth detection
+      // NOTE: Add wired headset detection
 
       this.notifyDeviceChange(this.availableDevices);
       return this.availableDevices;

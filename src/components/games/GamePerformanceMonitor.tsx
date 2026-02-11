@@ -14,6 +14,9 @@ import {
 import React, { memo, useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/games/GamePerformanceMonitor");
 // ============================================================================
 // Types
 // ============================================================================
@@ -115,7 +118,7 @@ export const GamePerformanceMonitor: React.FC<GamePerformanceMonitorProps> =
     const { metrics, recordFrame, getReport, reset } = usePerformanceMonitor({
       enabled: true,
       onPerformanceDrop: (m) => {
-        console.warn("[Performance] FPS dropped:", m.fps);
+        logger.warn("[Performance] FPS dropped:", m.fps);
       },
     });
 
@@ -157,7 +160,7 @@ export const GamePerformanceMonitor: React.FC<GamePerformanceMonitorProps> =
       if (report && onReport) {
         onReport(report);
       }
-      console.log("[Performance Report]", JSON.stringify(report, null, 2));
+      logger.info("[Performance Report]", JSON.stringify(report, null, 2));
     }, [getReport, gameType, onReport]);
 
     const positionStyles = getPositionStyles(position);

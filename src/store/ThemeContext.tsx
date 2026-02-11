@@ -30,8 +30,11 @@ import {
   ThemeColors,
   ThemeId,
   ThemeMeta,
-} from "../../constants/theme";
+} from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("store/ThemeContext");
 // Storage key for persisted theme
 const THEME_STORAGE_KEY = "@vibe_theme_id";
 
@@ -142,7 +145,7 @@ export function ThemeProvider({
           }
         }
       } catch (error) {
-        console.warn("Failed to load theme preference:", error);
+        logger.warn("Failed to load theme preference:", error);
       } finally {
         setIsLoading(false);
       }
@@ -157,7 +160,7 @@ export function ThemeProvider({
         THEME_STORAGE_KEY,
         JSON.stringify({ themeId, useSystemTheme }),
       ).catch((error) =>
-        console.warn("Failed to save theme preference:", error),
+        logger.warn("Failed to save theme preference:", error),
       );
     }
   }, [themeId, useSystemTheme, isLoading, isAuthenticated]);

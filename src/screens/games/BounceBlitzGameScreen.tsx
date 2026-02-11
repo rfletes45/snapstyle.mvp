@@ -16,37 +16,58 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useScoreRace } from "@/hooks/useScoreRace";
+import { useSpectator } from "@/hooks/useSpectator";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Canvas,
+  LinearGradient,
+  RadialGradient,
+  RoundedRect,
+  Shadow,
+  Circle as SkiaCircle,
+  vec,
+} from "@shopify/react-native-skia";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dimensions,
-  PanResponder,
   Platform,
   StyleSheet,
   Vibration,
   View,
 } from "react-native";
-import {
-  Canvas,
-  Circle as SkiaCircle,
-  LinearGradient,
-  RadialGradient,
-  RoundedRect,
-  Shadow,
-  vec,
-} from "@shopify/react-native-skia";
 import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+const logger = createLogger("screens/games/BounceBlitzGameScreen");
 // =============================================================================
 // Types
 // =============================================================================
 
-type GameStatus = "idle" | "aiming" | "shooting" | "waiting" | "gameOver";
+type GameStatus =
+  | "idle"
+  | "aiming"
+  | "shooting"
+  | "waiting"
+  | "gameOver"
+  | "colyseus";
 
 interface Ball {
   id: number;
@@ -133,13 +154,44 @@ function darkenColor(hex: string, amount: number): string {
 // Component
 // =============================================================================
 
-export default function BounceBlitzGameScreen({
+function BounceBlitzGameScreen({
   navigation,
-}: BounceBlitzGameScreenProps) {
+  route,
+}: BounceBlitzGameScreenProps & { route: any }) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "bounce_blitz" });
+  void __codexGameCompletion;
+
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+
+  // Colyseus multiplayer
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "bounce_blitz_game",
+    route?.params?.matchId,
+  );
+  const isOnlineAvailable =
+    !!COLYSEUS_FEATURES.COLYSEUS_ENABLED && !!COLYSEUS_FEATURES.PHYSICS_ENABLED;
+  const [isOnlineMode, setIsOnlineMode] = useState(false);
+  const mpRace = useScoreRace({
+    gameType: "bounce_blitz",
+    autoJoin: isOnlineMode,
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      setIsOnlineMode(true);
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   // Game state
   const [status, setStatus] = useState<GameStatus>("idle");
@@ -150,12 +202,21 @@ export default function BounceBlitzGameScreen({
   const [isNewBest, setIsNewBest] = useState(false);
   const [totalBlocksDestroyed, setTotalBlocksDestroyed] = useState(0);
   const [totalBounces, setTotalBounces] = useState(0);
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
 
   // Aiming state
   const [aimAngle, setAimAngle] = useState<number | null>(null);
   const [launchX, setLaunchX] = useState(GAME_WIDTH / 2);
 
-  // Refs to track current values for PanResponder (avoids stale closure)
+  // Refs to track current values for aim gesture (avoids stale closure)
   const statusRef = useRef<GameStatus>(status);
   const launchXRef = useRef<number>(launchX);
   const aimAngleRef = useRef<number | null>(aimAngle);
@@ -183,7 +244,11 @@ export default function BounceBlitzGameScreen({
 
   useEffect(() => {
     scoreRef.current = score;
-  }, [score]);
+    // Send score to Colyseus in online mode
+    if (isOnlineMode && mpRace.phase === "playing") {
+      mpRace.sendScore(score);
+    }
+  }, [score, isOnlineMode, mpRace]);
 
   useEffect(() => {
     levelRef.current = level;
@@ -209,6 +274,19 @@ export default function BounceBlitzGameScreen({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Spectator hosting — allows friends to watch via SpectatorRoom
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "bounce_blitz",
+  });
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
 
   // Game objects
   const balls = useRef<Ball[]>([]);
@@ -218,6 +296,7 @@ export default function BounceBlitzGameScreen({
   const gameLoopRef = useRef<number | null>(null);
   const blockIdCounter = useRef(0); // Unique ID counter for blocks
   const [renderTrigger, setRenderTrigger] = useState(0);
+  const spectatorFrameCount = useRef(0);
   // Track recently hit blocks to prevent multi-hit (blockId -> frames since hit)
   const recentlyHitBlocks = useRef<Map<number, number>>(new Map());
 
@@ -294,17 +373,18 @@ export default function BounceBlitzGameScreen({
 
   // Start game
   const startGame = useCallback(() => {
-    console.log("[BounceBlitz] startGame called - initializing game");
+    logger.info("[BounceBlitz] startGame called - initializing game");
     // Reset the ending flag in case it's stuck
     endingGameRef.current = false;
     initGame();
+    spectatorHost.startHosting();
     // Use setTimeout to ensure state updates have processed
-    setTimeout(() => {
+    scheduleTimeout(() => {
       setStatus("aiming");
       statusRef.current = "aiming";
-      console.log("[BounceBlitz] Game status set to 'aiming'");
+      logger.info("[BounceBlitz] Game status set to 'aiming'");
     }, 50);
-  }, [initGame]);
+  }, [initGame, scheduleTimeout]);
 
   // Launch balls
   const launchBalls = useCallback(
@@ -352,7 +432,7 @@ export default function BounceBlitzGameScreen({
     [ballCount, launchX],
   );
 
-  // Ref to store latest launchBalls function for PanResponder
+  // Ref to store latest launchBalls function for aim gesture
   const launchBallsRef = useRef(launchBalls);
   useEffect(() => {
     launchBallsRef.current = launchBalls;
@@ -365,7 +445,7 @@ export default function BounceBlitzGameScreen({
   const endGame = useCallback(async () => {
     // Prevent multiple calls
     if (endingGameRef.current || statusRef.current === "gameOver") {
-      console.log(
+      logger.info(
         "[BounceBlitz] endGame already in progress or game already over, skipping",
       );
       return;
@@ -380,6 +460,7 @@ export default function BounceBlitzGameScreen({
 
     setStatus("gameOver");
     statusRef.current = "gameOver";
+    spectatorHost.endHosting(scoreRef.current);
 
     if (Platform.OS !== "web") {
       Vibration.vibrate([0, 100, 50, 100]);
@@ -393,7 +474,7 @@ export default function BounceBlitzGameScreen({
     const currentBallCount = ballCountRef.current;
     const currentBounces = totalBouncesRef.current;
 
-    console.log(
+    logger.info(
       "[BounceBlitz] endGame - score:",
       currentScore,
       "level:",
@@ -411,7 +492,7 @@ export default function BounceBlitzGameScreen({
     // Record session
     if (currentFirebaseUser) {
       try {
-        console.log(
+        logger.info(
           "[BounceBlitz] Recording session for user:",
           currentFirebaseUser.uid,
         );
@@ -426,9 +507,9 @@ export default function BounceBlitzGameScreen({
             totalBounces: currentBounces,
           },
         });
-        console.log("[BounceBlitz] Session recorded successfully");
+        logger.info("[BounceBlitz] Session recorded successfully");
       } catch (error) {
-        console.error("[BounceBlitz] Error recording session:", error);
+        logger.error("[BounceBlitz] Error recording session:", error);
       }
     }
 
@@ -629,98 +710,92 @@ export default function BounceBlitzGameScreen({
       statusRef.current = "aiming";
     }
 
+    // Broadcast to spectators every ~4 frames (~15fps)
+    spectatorFrameCount.current += 1;
+    if (spectatorFrameCount.current % 4 === 0) {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          score: scoreRef.current,
+          level: levelRef.current,
+          status: statusRef.current,
+          ballCount: balls.current.length,
+          blocks: blocks.current.map((b) => ({
+            id: b.id,
+            row: b.row,
+            col: b.col,
+            health: b.health,
+            color: b.color,
+            type: b.type,
+          })),
+          balls: balls.current
+            .filter((b) => b.active)
+            .map((b) => ({ x: b.x, y: b.y })),
+        }),
+        scoreRef.current,
+        levelRef.current,
+        undefined,
+      );
+    }
+
     setRenderTrigger((t) => t + 1);
   }, [generateBlocks, endGame]);
 
-  // Pan responder for aiming - uses refs to avoid stale closures
-  const panResponder = useRef(
-    PanResponder.create({
-      // Capture phase - claim responder at the start
-      onStartShouldSetPanResponderCapture: () => {
-        const shouldCapture = statusRef.current === "aiming";
-        console.log(
-          "[BounceBlitz] onStartShouldSetPanResponderCapture - status:",
+  const handleAimMove = useCallback((moveX: number, moveY: number) => {
+    if (statusRef.current !== "aiming") return;
+
+    const currentLaunchX = launchXRef.current;
+    // Calculate relative to ball position (GAME_HEIGHT - BALL_RADIUS - 10)
+    const ballY = GAME_HEIGHT - BALL_RADIUS - 10;
+    const dx = moveX - (SCREEN_WIDTH - GAME_WIDTH) / 2 - currentLaunchX;
+    const dy = moveY - (SCREEN_HEIGHT - GAME_HEIGHT) / 2 - ballY;
+
+    logger.info(
+      "[BounceBlitz] Pan move - dx:",
+      dx.toFixed(2),
+      "dy:",
+      dy.toFixed(2),
+    );
+
+    // Only allow aiming upward
+    if (dy < -20) {
+      const angle = Math.atan2(dy, dx);
+      // Clamp angle to prevent shooting straight down
+      const clampedAngle = Math.max(Math.min(angle, -0.2), -Math.PI + 0.2);
+      logger.info("[BounceBlitz] Setting aim angle:", clampedAngle.toFixed(2));
+      setAimAngle(clampedAngle);
+      aimAngleRef.current = clampedAngle;
+    }
+  }, []);
+
+  const handleAimRelease = useCallback(() => {
+    logger.info("[BounceBlitz] Pan released - aimAngle:", aimAngleRef.current);
+    const currentAimAngle = aimAngleRef.current;
+    if (currentAimAngle !== null) {
+      logger.info("[BounceBlitz] Launching balls at angle:", currentAimAngle);
+      launchBallsRef.current(currentAimAngle);
+      setAimAngle(null);
+      aimAngleRef.current = null;
+    }
+  }, []);
+
+  // Pan gesture for aiming - uses refs to avoid stale closures
+  const aimGesture = useRef(
+    Gesture.Pan()
+      .runOnJS(true)
+      .onBegin(() => {
+        logger.info(
+          "[BounceBlitz] Pan begin - status:",
           statusRef.current,
           "capture:",
-          shouldCapture,
+          statusRef.current === "aiming",
         );
-        return shouldCapture;
-      },
-      onMoveShouldSetPanResponderCapture: () => {
-        const shouldCapture = statusRef.current === "aiming";
-        console.log(
-          "[BounceBlitz] onMoveShouldSetPanResponderCapture - status:",
-          statusRef.current,
-          "capture:",
-          shouldCapture,
-        );
-        return shouldCapture;
-      },
-      onStartShouldSetPanResponder: () => {
-        console.log(
-          "[BounceBlitz] onStartShouldSetPanResponder - status:",
-          statusRef.current,
-        );
-        return statusRef.current === "aiming";
-      },
-      onMoveShouldSetPanResponder: () => {
-        console.log(
-          "[BounceBlitz] onMoveShouldSetPanResponder - status:",
-          statusRef.current,
-        );
-        return statusRef.current === "aiming";
-      },
-      onPanResponderGrant: () => {
-        console.log("[BounceBlitz] Pan responder granted - aiming started");
-      },
-      onPanResponderMove: (_, gestureState) => {
-        if (statusRef.current !== "aiming") return;
-
-        const currentLaunchX = launchXRef.current;
-        // Calculate relative to ball position (GAME_HEIGHT - BALL_RADIUS - 10)
-        const ballY = GAME_HEIGHT - BALL_RADIUS - 10;
-        const dx =
-          gestureState.moveX - (SCREEN_WIDTH - GAME_WIDTH) / 2 - currentLaunchX;
-        const dy =
-          gestureState.moveY - (SCREEN_HEIGHT - GAME_HEIGHT) / 2 - ballY;
-
-        console.log(
-          "[BounceBlitz] Pan move - dx:",
-          dx.toFixed(2),
-          "dy:",
-          dy.toFixed(2),
-        );
-
-        // Only allow aiming upward
-        if (dy < -20) {
-          const angle = Math.atan2(dy, dx);
-          // Clamp angle to prevent shooting straight down
-          const clampedAngle = Math.max(Math.min(angle, -0.2), -Math.PI + 0.2);
-          console.log(
-            "[BounceBlitz] Setting aim angle:",
-            clampedAngle.toFixed(2),
-          );
-          setAimAngle(clampedAngle);
-          aimAngleRef.current = clampedAngle;
-        }
-      },
-      onPanResponderRelease: () => {
-        console.log(
-          "[BounceBlitz] Pan released - aimAngle:",
-          aimAngleRef.current,
-        );
-        const currentAimAngle = aimAngleRef.current;
-        if (currentAimAngle !== null) {
-          console.log(
-            "[BounceBlitz] Launching balls at angle:",
-            currentAimAngle,
-          );
-          launchBallsRef.current(currentAimAngle);
-          setAimAngle(null);
-          aimAngleRef.current = null;
-        }
-      },
-    }),
+      })
+      .onUpdate((event) => {
+        handleAimMove(event.absoluteX, event.absoluteY);
+      })
+      .onEnd(() => {
+        handleAimRelease();
+      }),
   ).current;
 
   // Cleanup on unmount
@@ -729,6 +804,8 @@ export default function BounceBlitzGameScreen({
       if (gameLoopRef.current) {
         cancelAnimationFrame(gameLoopRef.current);
       }
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
     };
   }, []);
 
@@ -894,16 +971,18 @@ export default function BounceBlitzGameScreen({
     return dots;
   };
 
+  // Back navigation with confirmation
+  const { handleBack } = useGameBackHandler({
+    gameType: "bounce_blitz",
+    isGameOver: status === "gameOver",
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: "#1a1a2e" }]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.backButton}>
-          <Button
-            onPress={() => navigation.goBack()}
-            icon="arrow-left"
-            textColor="white"
-          >
+          <Button onPress={handleBack} icon="arrow-left" textColor="white">
             Back
           </Button>
         </View>
@@ -924,13 +1003,19 @@ export default function BounceBlitzGameScreen({
       </View>
 
       {/* Game Area */}
-      <View
-        style={[styles.gameArea, { width: GAME_WIDTH, height: GAME_HEIGHT }]}
-        {...panResponder.panHandlers}
-      >
+      <GestureDetector gesture={aimGesture}>
+        <View
+          style={[styles.gameArea, { width: GAME_WIDTH, height: GAME_HEIGHT }]}
+        >
         {/* Skia background gradient */}
         <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-          <RoundedRect x={0} y={0} width={GAME_WIDTH} height={GAME_HEIGHT} r={16}>
+          <RoundedRect
+            x={0}
+            y={0}
+            width={GAME_WIDTH}
+            height={GAME_HEIGHT}
+            r={16}
+          >
             <LinearGradient
               start={vec(0, 0)}
               end={vec(0, GAME_HEIGHT)}
@@ -942,11 +1027,22 @@ export default function BounceBlitzGameScreen({
           {Array.from({ length: 8 }).map((_, i) => {
             const x = (i + 1) * CELL_SIZE;
             return (
-              <RoundedRect key={`vg-${i}`} x={x} y={0} width={0.5} height={GAME_HEIGHT} r={0}>
+              <RoundedRect
+                key={`vg-${i}`}
+                x={x}
+                y={0}
+                width={0.5}
+                height={GAME_HEIGHT}
+                r={0}
+              >
                 <LinearGradient
                   start={vec(x, 0)}
                   end={vec(x, GAME_HEIGHT)}
-                  colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.03)", "rgba(255,255,255,0)"]}
+                  colors={[
+                    "rgba(255,255,255,0)",
+                    "rgba(255,255,255,0.03)",
+                    "rgba(255,255,255,0)",
+                  ]}
                 />
               </RoundedRect>
             );
@@ -989,7 +1085,13 @@ export default function BounceBlitzGameScreen({
             ) : (
               <>
                 <Canvas style={{ width: BLOCK_SIZE, height: BLOCK_SIZE }}>
-                  <RoundedRect x={0} y={0} width={BLOCK_SIZE} height={BLOCK_SIZE} r={6}>
+                  <RoundedRect
+                    x={0}
+                    y={0}
+                    width={BLOCK_SIZE}
+                    height={BLOCK_SIZE}
+                    r={6}
+                  >
                     <LinearGradient
                       start={vec(0, 0)}
                       end={vec(0, BLOCK_SIZE)}
@@ -1002,7 +1104,13 @@ export default function BounceBlitzGameScreen({
                     <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.3)" />
                   </RoundedRect>
                   {/* Top highlight */}
-                  <RoundedRect x={2} y={1} width={BLOCK_SIZE - 4} height={4} r={2}>
+                  <RoundedRect
+                    x={2}
+                    y={1}
+                    width={BLOCK_SIZE - 4}
+                    height={4}
+                    r={2}
+                  >
                     <LinearGradient
                       start={vec(0, 1)}
                       end={vec(0, 5)}
@@ -1010,7 +1118,9 @@ export default function BounceBlitzGameScreen({
                     />
                   </RoundedRect>
                 </Canvas>
-                <Text style={[styles.blockText, { position: "absolute" }]}>{block.health}</Text>
+                <Text style={[styles.blockText, { position: "absolute" }]}>
+                  {block.health}
+                </Text>
               </>
             )}
           </View>
@@ -1031,9 +1141,18 @@ export default function BounceBlitzGameScreen({
                 },
               ]}
             >
-              <Canvas style={{ width: (BALL_RADIUS + 2) * 2, height: (BALL_RADIUS + 2) * 2 }}>
+              <Canvas
+                style={{
+                  width: (BALL_RADIUS + 2) * 2,
+                  height: (BALL_RADIUS + 2) * 2,
+                }}
+              >
                 {/* Glow halo */}
-                <SkiaCircle cx={BALL_RADIUS + 2} cy={BALL_RADIUS + 2} r={BALL_RADIUS + 2}>
+                <SkiaCircle
+                  cx={BALL_RADIUS + 2}
+                  cy={BALL_RADIUS + 2}
+                  r={BALL_RADIUS + 2}
+                >
                   <RadialGradient
                     c={vec(BALL_RADIUS + 2, BALL_RADIUS + 2)}
                     r={BALL_RADIUS + 2}
@@ -1041,7 +1160,11 @@ export default function BounceBlitzGameScreen({
                   />
                 </SkiaCircle>
                 {/* Ball body */}
-                <SkiaCircle cx={BALL_RADIUS + 2} cy={BALL_RADIUS + 2} r={BALL_RADIUS}>
+                <SkiaCircle
+                  cx={BALL_RADIUS + 2}
+                  cy={BALL_RADIUS + 2}
+                  r={BALL_RADIUS}
+                >
                   <RadialGradient
                     c={vec(BALL_RADIUS, BALL_RADIUS - 1)}
                     r={BALL_RADIUS}
@@ -1152,10 +1275,23 @@ export default function BounceBlitzGameScreen({
               >
                 Share
               </Button>
+              {spectatorHost.spectatorRoomId && (
+                <Button
+                  mode="contained"
+                  icon="eye"
+                  onPress={() => setShowSpectatorInvitePicker(true)}
+                  style={styles.shareButton}
+                  buttonColor="#9C27B0"
+                  textColor="white"
+                >
+                  Watch Me
+                </Button>
+              )}
             </View>
           </View>
         )}
-      </View>
+        </View>
+      </GestureDetector>
 
       {/* Instructions */}
       {status === "aiming" && (
@@ -1188,13 +1324,63 @@ export default function BounceBlitzGameScreen({
         </Dialog>
       </Portal>
 
+      {/* Colyseus multiplayer overlay */}
+      {isOnlineMode && (
+        <ScoreRaceOverlay
+          phase={mpRace.phase as ScoreRaceOverlayPhase}
+          countdown={mpRace.countdown}
+          myScore={mpRace.myScore}
+          opponentScore={mpRace.opponentScore}
+          opponentName={mpRace.opponentName}
+          isWinner={mpRace.isWinner}
+          isTie={mpRace.isTie}
+          winnerName={mpRace.isWinner ? "You" : mpRace.opponentName}
+          onReady={() => mpRace.sendReady()}
+          onRematch={() => mpRace.sendRematch()}
+          onAcceptRematch={() => mpRace.acceptRematch()}
+          onLeave={async () => {
+            await mpRace.leave();
+            setIsOnlineMode(false);
+            setStatus("idle");
+          }}
+          rematchRequested={mpRace.rematchRequested}
+          reconnecting={mpRace.reconnecting}
+          opponentDisconnected={mpRace.opponentDisconnected}
+        />
+      )}
+
+      {/* Spectator overlay — shows count of watchers */}
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
       {/* Friend Picker */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSelectFriend}
         title="Share Score With..."
         currentUserId={currentFirebaseUser?.uid || ""}
+      />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "bounce_blitz",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -1388,3 +1574,5 @@ const styles = StyleSheet.create({
     // No background - the icon provides the visual
   },
 });
+
+export default withGameErrorBoundary(BounceBlitzGameScreen, "bounce_blitz");

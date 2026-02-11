@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { JSX } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useColors } from "../../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
 interface CallControlsProps {
   /** Is microphone muted */

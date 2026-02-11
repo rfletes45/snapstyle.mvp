@@ -46,10 +46,7 @@ import {
   ProfileActionsBar,
 } from "@/components/profile/ProfileActions/index";
 import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
-import {
-  PROFILE_FEATURES,
-  PROFILE_V2_FEATURES,
-} from "@/constants/featureFlags";
+import { PROFILE_V2_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
 import {
   ProfileThemeProvider,
@@ -94,6 +91,9 @@ import type {
   UserProfileData,
 } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/profile/UserProfileScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -241,7 +241,7 @@ function UserProfileScreenContent({
         incrementProfileViews(userId);
       }
     } catch (err: any) {
-      console.error("Error loading profile:", err);
+      logger.error("Error loading profile:", err);
       setError(err.message || "Failed to load profile");
     } finally {
       setLoading(false);
@@ -604,7 +604,7 @@ function UserProfileScreenContent({
       });
     } catch (err: any) {
       if (err.name !== "AbortError") {
-        console.error("Share error:", err);
+        logger.error("Share error:", err);
       }
     }
   }, [userId]);
@@ -790,8 +790,7 @@ function UserProfileScreenContent({
         <Divider style={styles.divider} />
 
         {/* Game Scores Display */}
-        {PROFILE_FEATURES.GAME_SCORES &&
-          profile.gameScores?.enabled !== false &&
+        {profile.gameScores?.enabled !== false &&
           profile.privacy.showGameScores !== "nobody" && (
             <>
               {relationship?.type === "friend" ? (

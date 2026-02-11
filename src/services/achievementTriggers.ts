@@ -33,6 +33,9 @@ import {
 } from "./gameAchievements";
 import { StatsGameType } from "./gameStats";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/achievementTriggers");
 // =============================================================================
 // Types
 // =============================================================================
@@ -207,7 +210,7 @@ export async function checkGameAchievements(
       }
     }
 
-    console.log(
+    logger.info(
       `[achievementTriggers] Checked ${allResults.length} achievements for user ${userId}, awarded ${awarded.length}`,
     );
 
@@ -219,7 +222,7 @@ export async function checkGameAchievements(
       totalCoinsEarned,
     };
   } catch (error) {
-    console.error("[achievementTriggers] Error checking achievements:", error);
+    logger.error("[achievementTriggers] Error checking achievements:", error);
     return {
       awarded: [],
       checkResults: allResults,
@@ -614,9 +617,7 @@ function gameTypeToStatsType(gameType: TurnBasedGameType): StatsGameType {
     dot_match: "dot_match",
     gomoku_master: "gomoku_master",
     reversi_game: "reversi_game" as StatsGameType,
-    words_game: "words_game" as StatsGameType,
     war_game: "war_game" as StatsGameType,
-    hex_game: "hex_game" as StatsGameType,
   };
 
   return typeMap[gameType] || gameType;
@@ -691,4 +692,3 @@ export const achievementTriggers = {
 };
 
 export default achievementTriggers;
-

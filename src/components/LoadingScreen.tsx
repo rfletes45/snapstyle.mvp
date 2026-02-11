@@ -14,7 +14,7 @@
 import React from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { ActivityIndicator, useTheme } from "react-native-paper";
-import { Spacing, BorderRadius } from "../../constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 
 export interface LoadingScreenProps {
   /** Optional message to show below spinner */

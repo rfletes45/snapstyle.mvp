@@ -36,7 +36,7 @@ import {
   FontSizes,
   FontWeights,
   Spacing,
-} from "../../constants/theme";
+} from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TOAST_HEIGHT = 72;

@@ -26,6 +26,9 @@ import { purchaseProduct } from "@/services/iap";
 import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/bundles");
 // =============================================================================
 // Types
 // =============================================================================
@@ -190,7 +193,7 @@ export async function getBundlesWithStatus(
               (userStreak || 0) >= (bundle.unlockRequirement.value as number);
             break;
           case "level":
-            // TODO: Check user level
+            // NOTE: Check user level
             meetsRequirements = false;
             break;
         }
@@ -236,7 +239,7 @@ export async function purchaseBundleWithTokens(
     const result = await callable({ bundleId });
     return result.data;
   } catch (error: any) {
-    console.error("[bundles] Token purchase failed:", error);
+    logger.error("[bundles] Token purchase failed:", error);
 
     return {
       success: false,
@@ -288,7 +291,7 @@ export async function purchaseBundleWithIAP(
       purchaseId: iapResult.purchaseId,
     };
   } catch (error: any) {
-    console.error("[bundles] IAP purchase failed:", error);
+    logger.error("[bundles] IAP purchase failed:", error);
     return {
       success: false,
       error: error.message || "Purchase failed",
@@ -343,7 +346,7 @@ export async function grantBundleItems(
         failedItems.push(item.cosmeticId);
       }
     } catch (error) {
-      console.error(
+      logger.error(
         `[bundles] Failed to grant item ${item.cosmeticId}:`,
         error,
       );
@@ -402,7 +405,7 @@ export async function getBundlePurchaseHistory(
       };
     });
   } catch (error) {
-    console.error("[bundles] Error fetching purchase history:", error);
+    logger.error("[bundles] Error fetching purchase history:", error);
     return [];
   }
 }
@@ -428,7 +431,7 @@ export async function hasPurchasedBundle(
     const snapshot = await getDocs(q);
     return !snapshot.empty;
   } catch (error) {
-    console.error("[bundles] Error checking bundle purchase:", error);
+    logger.error("[bundles] Error checking bundle purchase:", error);
     return false;
   }
 }

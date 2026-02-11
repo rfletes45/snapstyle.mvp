@@ -6,6 +6,9 @@
 
 import * as Haptics from "expo-haptics";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/chat/quackService");
 let Audio: any;
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -42,7 +45,7 @@ async function ensureAudioConfigured(): Promise<void> {
     });
     audioConfigured = true;
   } catch (err) {
-    console.warn("[Quack] Failed to configure audio mode:", err);
+    logger.warn("[Quack] Failed to configure audio mode:", err);
   }
 }
 
@@ -57,7 +60,7 @@ export async function playQuack(): Promise<void> {
   );
 
   if (!Audio?.Sound) {
-    console.warn("[Quack] expo-av Audio not available");
+    logger.warn("[Quack] expo-av Audio not available");
     return;
   }
 
@@ -66,21 +69,21 @@ export async function playQuack(): Promise<void> {
     await ensureAudioConfigured();
 
     if (!cachedQuackSound) {
-      console.log("[Quack] Loading quack.mp3…");
+      logger.info("[Quack] Loading quack.mp3…");
       const { sound } = await Audio.Sound.createAsync(QUACK_ASSET, {
         shouldPlay: false,
         volume: 1.0,
       });
       cachedQuackSound = sound;
-      console.log("[Quack] Sound loaded successfully");
+      logger.info("[Quack] Sound loaded successfully");
     }
 
     // Rewind to start and play
     await cachedQuackSound.setPositionAsync(0);
     await cachedQuackSound.playAsync();
-    console.log("[Quack] Playing quack!");
+    logger.info("[Quack] Playing quack!");
   } catch (err) {
-    console.warn("[Quack] Playback failed:", err);
+    logger.warn("[Quack] Playback failed:", err);
     // Reset cached sound in case it got into a bad state
     cachedQuackSound = null;
   }

@@ -19,7 +19,7 @@ import React, {
 import { StyleSheet, Text, View } from "react-native";
 import { Portal, Snackbar } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Latte, Mocha, Spacing } from "../../constants/theme";
+import { BorderRadius, Latte, Mocha, Spacing } from "@/constants/theme";
 import { useAppTheme } from "./ThemeContext";
 
 // =============================================================================

@@ -29,6 +29,9 @@ import type {
   ProfileGameScoresConfig,
 } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/ProfileGameScores/GameScoresEditor");
 // =============================================================================
 // Types
 // =============================================================================
@@ -343,7 +346,7 @@ export const GameScoresEditor = memo(function GameScoresEditor({
       await onSave(newConfig);
       onDismiss();
     } catch (error) {
-      console.error("Failed to save game scores config:", error);
+      logger.error("Failed to save game scores config:", error);
     } finally {
       setIsLoading(false);
     }

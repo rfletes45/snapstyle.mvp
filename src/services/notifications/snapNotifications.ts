@@ -19,8 +19,11 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { getFirestoreInstance } from "../firebase";
+import { getFirestoreInstance } from "@/services/firebase";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/notifications/snapNotifications");
 /**
  * Picture notification types
  */
@@ -63,7 +66,7 @@ export async function notifySnapReceived(
   senderImage: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Notifying ${recipientId} of picture from ${senderName}`,
     );
 
@@ -102,9 +105,9 @@ export async function notifySnapReceived(
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Picture received notification sent");
+    logger.info("[Game Notifications] Picture received notification sent");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Notifications] Failed to notify picture received:",
       error,
     );
@@ -122,7 +125,7 @@ export async function notifySnapViewed(
   viewerImage: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Notifying ${senderId} that picture was viewed by ${viewerName}`,
     );
 
@@ -160,9 +163,9 @@ export async function notifySnapViewed(
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Picture viewed notification sent");
+    logger.info("[Game Notifications] Picture viewed notification sent");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Notifications] Failed to notify picture viewed:",
       error,
     );
@@ -181,7 +184,7 @@ export async function notifySnapScreenshotted(
   screenshotterImage: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] ALERT: Picture screenshot by ${screenshotterName}`,
     );
 
@@ -225,9 +228,9 @@ export async function notifySnapScreenshotted(
       },
     );
 
-    console.log("[Game Notifications] Screenshot alert notification sent");
+    logger.info("[Game Notifications] Screenshot alert notification sent");
   } catch (error) {
-    console.error("[Game Notifications] Failed to notify screenshot:", error);
+    logger.error("[Game Notifications] Failed to notify screenshot:", error);
   }
 }
 
@@ -243,7 +246,7 @@ export async function notifySnapReaction(
   emoji: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Notifying ${senderId} of reaction from ${reactorName}`,
     );
 
@@ -282,9 +285,9 @@ export async function notifySnapReaction(
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Reaction notification sent");
+    logger.info("[Game Notifications] Reaction notification sent");
   } catch (error) {
-    console.error("[Game Notifications] Failed to notify reaction:", error);
+    logger.error("[Game Notifications] Failed to notify reaction:", error);
   }
 }
 
@@ -300,7 +303,7 @@ export async function notifySnapReply(
   replyPreview: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Notifying ${senderId} of reply from ${replierName}`,
     );
 
@@ -338,9 +341,9 @@ export async function notifySnapReply(
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Reply notification sent");
+    logger.info("[Game Notifications] Reply notification sent");
   } catch (error) {
-    console.error("[Game Notifications] Failed to notify reply:", error);
+    logger.error("[Game Notifications] Failed to notify reply:", error);
   }
 }
 
@@ -353,7 +356,7 @@ export async function notifySnapExpiringSoon(
   minutesLeft: number,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Notifying ${senderId} that picture expires in ${minutesLeft} minutes`,
     );
 
@@ -370,7 +373,7 @@ export async function notifySnapExpiringSoon(
     const existing = await getDocs(existingQuery);
 
     if (!existing.empty) {
-      console.log("[Game Notifications] Already notified about expiry");
+      logger.info("[Game Notifications] Already notified about expiry");
       return;
     }
 
@@ -405,9 +408,9 @@ export async function notifySnapExpiringSoon(
       notificationData.data,
     );
 
-    console.log("[Game Notifications] Expiring soon notification sent");
+    logger.info("[Game Notifications] Expiring soon notification sent");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Notifications] Failed to notify expiring soon:",
       error,
     );
@@ -422,7 +425,7 @@ export async function getUserNotifications(
   limitCount: number = 50,
 ): Promise<SnapNotification[]> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Fetching notifications for user ${userId}`,
     );
 
@@ -460,12 +463,12 @@ export async function getUserNotifications(
       });
     });
 
-    console.log(
+    logger.info(
       `[Game Notifications] Fetched ${notifications.length} notifications`,
     );
     return notifications;
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Notifications] Failed to get user notifications:",
       error,
     );
@@ -480,7 +483,7 @@ export async function markNotificationAsRead(
   notificationId: string,
 ): Promise<void> {
   try {
-    console.log(
+    logger.info(
       `[Game Notifications] Marking notification ${notificationId} as read`,
     );
 
@@ -492,9 +495,9 @@ export async function markNotificationAsRead(
       readAt: new Date(),
     });
 
-    console.log("[Game Notifications] Notification marked as read");
+    logger.info("[Game Notifications] Notification marked as read");
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Notifications] Failed to mark notification as read:",
       error,
     );
@@ -508,16 +511,16 @@ export async function deleteNotification(
   notificationId: string,
 ): Promise<void> {
   try {
-    console.log(`[Game Notifications] Deleting notification ${notificationId}`);
+    logger.info(`[Game Notifications] Deleting notification ${notificationId}`);
 
     const db = getFirestoreInstance();
 
     const notificationRef = doc(db, "Notifications", notificationId);
     await deleteDoc(notificationRef);
 
-    console.log("[Game Notifications] Notification deleted");
+    logger.info("[Game Notifications] Notification deleted");
   } catch (error) {
-    console.error("[Game Notifications] Failed to delete notification:", error);
+    logger.error("[Game Notifications] Failed to delete notification:", error);
   }
 }
 
@@ -550,7 +553,7 @@ async function sendPushNotification(
     const pushTokens: string[] = userDoc.data()?.pushTokens || [];
 
     if (pushTokens.length === 0) {
-      console.log("[Game Notifications] No push tokens available for user");
+      logger.info("[Game Notifications] No push tokens available for user");
       return;
     }
 
@@ -568,17 +571,17 @@ async function sendPushNotification(
           trigger: null,
         });
       } catch (err) {
-        console.warn(
+        logger.warn(
           `[Game Notifications] Failed to send push to token: ${err}`,
         );
       }
     }
 
-    console.log(
+    logger.info(
       `[Game Notifications] Push notifications sent to ${pushTokens.length} devices`,
     );
   } catch (error) {
-    console.error(
+    logger.error(
       "[Game Notifications] Failed to send push notification:",
       error,
     );
@@ -604,7 +607,7 @@ export async function getUnreadNotificationCount(
 
     return snapshot.size;
   } catch (error) {
-    console.error("[Game Notifications] Failed to get unread count:", error);
+    logger.error("[Game Notifications] Failed to get unread count:", error);
     return 0;
   }
 }

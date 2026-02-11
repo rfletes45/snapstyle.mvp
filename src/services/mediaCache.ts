@@ -26,6 +26,9 @@ import { Platform } from "react-native";
 import { getDatabase } from "./database";
 import { updateAttachmentLocalUri } from "./database/messageRepository";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/mediaCache");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -90,9 +93,9 @@ export async function initializeMediaCache(): Promise<void> {
     }
 
     initialized = true;
-    console.log("[MediaCache] Directories initialized");
+    logger.info("[MediaCache] Directories initialized");
   } catch (error) {
-    console.error("[MediaCache] Failed to initialize:", error);
+    logger.error("[MediaCache] Failed to initialize:", error);
     throw error;
   }
 }
@@ -165,7 +168,7 @@ async function downloadAttachment(
     // Update database with local path
     updateAttachmentLocalUri(attachmentId, result.uri);
 
-    console.log(`[MediaCache] Downloaded attachment ${attachmentId}`);
+    logger.info(`[MediaCache] Downloaded attachment ${attachmentId}`);
     return result.uri;
   } catch (error) {
     // Mark as failed
@@ -173,7 +176,7 @@ async function downloadAttachment(
       "failed",
       attachmentId,
     ]);
-    console.error(`[MediaCache] Download failed for ${attachmentId}:`, error);
+    logger.error(`[MediaCache] Download failed for ${attachmentId}:`, error);
     throw error;
   }
 }
@@ -209,10 +212,10 @@ async function downloadThumbnail(
       attachmentId,
     ]);
 
-    console.log(`[MediaCache] Downloaded thumbnail for ${attachmentId}`);
+    logger.info(`[MediaCache] Downloaded thumbnail for ${attachmentId}`);
     return result.uri;
   } catch (error) {
-    console.error(
+    logger.error(
       `[MediaCache] Thumbnail download failed for ${attachmentId}:`,
       error,
     );
@@ -333,7 +336,7 @@ async function stageFileForUpload(
     throw new Error(`Unsupported URI scheme: ${sourceUri.slice(0, 30)}`);
   }
 
-  console.log(`[MediaCache] Staged file for upload: ${attachmentId}`);
+  logger.info(`[MediaCache] Staged file for upload: ${attachmentId}`);
   return stagedPath;
 }
 
@@ -354,7 +357,7 @@ async function moveToMediaCache(
   // Update database
   updateAttachmentLocalUri(attachmentId, permanentPath);
 
-  console.log(`[MediaCache] Moved to permanent cache: ${attachmentId}`);
+  logger.info(`[MediaCache] Moved to permanent cache: ${attachmentId}`);
   return permanentPath;
 }
 
@@ -408,7 +411,7 @@ async function cleanupStagedFiles(
     }
 
     if (deletedCount > 0) {
-      console.log(`[MediaCache] Cleaned up ${deletedCount} staged files`);
+      logger.info(`[MediaCache] Cleaned up ${deletedCount} staged files`);
     }
   } catch {
     // Directory might not exist
@@ -484,7 +487,7 @@ function formatCacheSize(bytes: number): string {
  * Clear all cached media
  */
 export async function clearMediaCache(): Promise<void> {
-  console.log("[MediaCache] Clearing all cached media...");
+  logger.info("[MediaCache] Clearing all cached media...");
 
   for (const dir of Object.values(SUBDIRECTORIES)) {
     try {
@@ -507,7 +510,7 @@ export async function clearMediaCache(): Promise<void> {
   initialized = false;
   await initializeMediaCache();
 
-  console.log("[MediaCache] Cache cleared and reinitialized");
+  logger.info("[MediaCache] Cache cleared and reinitialized");
 }
 
 /**
@@ -540,7 +543,7 @@ async function deleteAttachmentCache(attachmentId: string): Promise<void> {
     [attachmentId],
   );
 
-  console.log(`[MediaCache] Deleted cache for attachment ${attachmentId}`);
+  logger.info(`[MediaCache] Deleted cache for attachment ${attachmentId}`);
 }
 
 /**
@@ -586,7 +589,7 @@ async function deleteConversationCache(
     [conversationId],
   );
 
-  console.log(
+  logger.info(
     `[MediaCache] Deleted ${deletedCount} cached files for conversation ${conversationId}`,
   );
   return deletedCount;
@@ -655,7 +658,7 @@ async function pruneCache(maxSizeBytes: number): Promise<number> {
     );
   }
 
-  console.log(`[MediaCache] Pruned ${formatCacheSize(freedBytes)} from cache`);
+  logger.info(`[MediaCache] Pruned ${formatCacheSize(freedBytes)} from cache`);
   return freedBytes;
 }
 

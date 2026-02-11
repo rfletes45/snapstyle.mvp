@@ -26,8 +26,11 @@ import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import DuckBubble from "@/components/chat/DuckBubble";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import ScorecardBubble from "@/components/ScorecardBubble";
+import SpectatorInviteBubble, {
+  parseSpectatorInviteContent,
+} from "@/components/SpectatorInviteBubble";
 import type { ReplyToMetadata } from "@/types/messaging";
-import { Spacing } from "../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 // Parse scorecard content helper
 function parseScorecardContent(content: string) {
@@ -148,6 +151,17 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           storagePath: message.content,
         });
       }
+      // Handle spectator invite taps
+      if (message.type === "scorecard") {
+        const spectatorInvite = parseSpectatorInviteContent(message.content);
+        if (spectatorInvite && !isSentByMe && !spectatorInvite.finished) {
+          navigation.navigate("SpectatorView", {
+            roomId: spectatorInvite.roomId,
+            gameType: spectatorInvite.gameId,
+            hostName: spectatorInvite.hostName,
+          });
+        }
+      }
     }, [message, isSentByMe, chatId, navigation, onRetry]);
 
     // Render message status indicator
@@ -254,6 +268,27 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       }
 
       if (message.type === "scorecard") {
+        // Check if this is a spectator invite (subtype of scorecard)
+        const spectatorInvite = parseSpectatorInviteContent(message.content);
+        if (spectatorInvite) {
+          return (
+            <SpectatorInviteBubble
+              invite={spectatorInvite}
+              isMine={isSentByMe}
+              onPress={
+                !isSentByMe && !spectatorInvite.finished
+                  ? () =>
+                      navigation.navigate("SpectatorView", {
+                        roomId: spectatorInvite.roomId,
+                        gameType: spectatorInvite.gameId,
+                        hostName: spectatorInvite.hostName,
+                      })
+                  : undefined
+              }
+            />
+          );
+        }
+
         const scorecard = parseScorecardContent(message.content);
         if (scorecard) {
           return <ScorecardBubble scorecard={scorecard} isMine={isSentByMe} />;

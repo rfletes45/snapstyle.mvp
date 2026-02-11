@@ -14,7 +14,7 @@ import {
   Text,
   TextInput,
 } from "react-native-paper";
-import { useColors } from "../store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 
 interface ReportUserModalProps {
   visible: boolean;

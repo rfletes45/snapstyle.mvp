@@ -11,6 +11,10 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,17 +26,6 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
 import {
   Canvas,
   LinearGradient,
@@ -41,7 +34,29 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
+import {
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Button, Dialog, Portal, Text } from "react-native-paper";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+const logger = createLogger("screens/games/LightsOutGameScreen");
 // =============================================================================
 // Types & Constants
 // =============================================================================
@@ -178,25 +193,26 @@ interface LightCellProps {
 }
 
 function LightCell({ isOn, onPress, disabled }: LightCellProps) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.88,
-      useNativeDriver: true,
-      speed: 50,
-      bounciness: 4,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(0.88, {
+      damping: 12,
+      stiffness: 320,
+      mass: 0.5,
+    });
+  }, [scale]);
 
   const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      speed: 30,
-      bounciness: 6,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(1, {
+      damping: 12,
+      stiffness: 260,
+      mass: 0.5,
+    });
+  }, [scale]);
 
   const r = 12;
   const sz = CELL_SIZE;
@@ -211,9 +227,7 @@ function LightCell({ isOn, onPress, disabled }: LightCellProps) {
       accessibilityLabel={isOn ? "Light on" : "Light off"}
       accessibilityRole="button"
     >
-      <Animated.View
-        style={[styles.cell, { transform: [{ scale: scaleAnim }] }]}
-      >
+      <Animated.View style={[styles.cell, animatedStyle]}>
         <Canvas style={StyleSheet.absoluteFill}>
           {/* Cell background with gradient */}
           <RoundedRect x={0} y={0} width={sz} height={sz} r={r}>
@@ -274,11 +288,20 @@ function LightCell({ isOn, onPress, disabled }: LightCellProps) {
 // Component
 // =============================================================================
 
-export default function LightsOutGameScreen({
+function LightsOutGameScreen({
   navigation,
 }: {
   navigation: any;
 }) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "lights_out" });
+  void __codexGameCompletion;
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -299,12 +322,25 @@ export default function LightsOutGameScreen({
   const [isNewBest, setIsNewBest] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
 
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "lights_out",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Load personal best
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE as any).then(
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
         setPersonalBest,
       );
     }
@@ -327,6 +363,7 @@ export default function LightsOutGameScreen({
 
   const startGame = useCallback(() => {
     startLevel(1);
+    spectatorHost.startHosting();
   }, [startLevel]);
 
   const handleCellPress = useCallback(
@@ -346,12 +383,13 @@ export default function LightsOutGameScreen({
         setWon(true);
         setFinalScore(nextMoves);
         setPhase("result");
+        spectatorHost.endHosting(nextMoves);
 
         // Record score
         if (currentFirebaseUser) {
           const newBest = !personalBest || nextMoves < personalBest.bestScore;
           recordGameSession(currentFirebaseUser.uid, {
-            gameId: GAME_TYPE as any,
+            gameId: GAME_TYPE,
             score: nextMoves,
             duration: 0,
           })
@@ -359,7 +397,7 @@ export default function LightsOutGameScreen({
               if (session && newBest) {
                 setIsNewBest(true);
                 setPersonalBest({
-                  gameId: GAME_TYPE as any,
+                  gameId: GAME_TYPE,
                   bestScore: nextMoves,
                   achievedAt: Date.now(),
                 });
@@ -367,7 +405,7 @@ export default function LightsOutGameScreen({
               }
             })
             .catch((error) => {
-              console.error("Error recording game session:", error);
+              logger.error("Error recording game session:", error);
             });
         }
       }
@@ -423,7 +461,7 @@ export default function LightsOutGameScreen({
           showError("Failed to share score. Try again.");
         }
       } catch (error) {
-        console.error("[GameLights] Error sharing score:", error);
+        logger.error("[GameLights] Error sharing score:", error);
         showError("Failed to share score. Try again.");
       } finally {
         setIsSending(false);
@@ -431,6 +469,24 @@ export default function LightsOutGameScreen({
     },
     [currentFirebaseUser, profile, finalScore, showSuccess, showError],
   );
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    if (phase === "playing") {
+      spectatorHost.updateGameState(
+        JSON.stringify({
+          level,
+          moves,
+          phase,
+          // Visual state for spectator renderer
+          grid,
+        }),
+        moves,
+        level,
+        undefined,
+      );
+    }
+  }, [moves, level, phase, grid]);
 
   // ---------------------------------------------------------------------------
   // Computed
@@ -441,12 +497,18 @@ export default function LightsOutGameScreen({
   // Render
   // ---------------------------------------------------------------------------
 
+  // Back navigation with confirmation dialog
+  const { handleBack } = useGameBackHandler({
+    gameType: "lights_out",
+    isGameOver: phase === "result" || phase === "menu",
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           style={styles.backButton}
           accessibilityLabel="Go back"
         >
@@ -458,6 +520,19 @@ export default function LightsOutGameScreen({
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Lights</Text>
         <View style={styles.headerRight}>
+          {spectatorHost.spectatorRoomId && (
+            <TouchableOpacity
+              onPress={() => setShowSpectatorInvitePicker(true)}
+              style={{ marginRight: 8 }}
+              accessibilityLabel="Invite spectators"
+            >
+              <MaterialCommunityIcons
+                name="eye"
+                size={22}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
           {phase === "playing" && (
             <>
               <View style={styles.headerStat}>
@@ -642,11 +717,34 @@ export default function LightsOutGameScreen({
 
       {/* Friend Picker */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSendScorecard}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Send Scorecard"
+      />
+
+      {/* Spectator Overlay */}
+      <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "lights_out",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -813,3 +911,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+export default withGameErrorBoundary(LightsOutGameScreen, "lights_out");

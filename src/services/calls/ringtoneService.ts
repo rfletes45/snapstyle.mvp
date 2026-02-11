@@ -6,6 +6,9 @@
 // Note: expo-av is optional - handles case where it's not installed
 import { Platform, Vibration } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/calls/ringtoneService");
 // Conditional import for expo-av
 let Audio: any;
 try {
@@ -22,11 +25,11 @@ try {
 
 // Logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[RingtoneService] ${msg}`, data ?? "");
+  logger.info(`[RingtoneService] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[RingtoneService] ${msg}`, error ?? "");
+  logger.error(`[RingtoneService] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[RingtoneService] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[RingtoneService] ${msg}`, data ?? "");
 
 // Vibration patterns (in milliseconds)
 const VIBRATION_PATTERNS = {

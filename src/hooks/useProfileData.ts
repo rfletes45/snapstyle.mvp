@@ -29,6 +29,9 @@ import type {
 import { calculateLevelFromXp, normalizeAvatarConfig } from "@/types/profile";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useProfileData");
 // =============================================================================
 // Types
 // =============================================================================
@@ -116,7 +119,7 @@ export function useProfileData(
           setCachedLevel(cachedLevelData);
         }
       } catch (err) {
-        console.warn("[useProfileData] Failed to load cached data:", err);
+        logger.warn("[useProfileData] Failed to load cached data:", err);
       }
     };
 
@@ -145,7 +148,9 @@ export function useProfileData(
     };
 
     // Update cache asynchronously
-    setCached(uid, "stats", stats).catch(console.warn);
+    setCached(uid, "stats", stats).catch((err) => {
+      logger.warn("[useProfileData] Failed to cache stats:", err);
+    });
 
     return stats;
   }, [baseProfile, uid, badgeStats, cachedStats]);
@@ -162,7 +167,9 @@ export function useProfileData(
     const level = calculateLevelFromXp(totalXp);
 
     // Update cache asynchronously
-    setCached(uid, "level", level).catch(console.warn);
+    setCached(uid, "level", level).catch((err) => {
+      logger.warn("[useProfileData] Failed to cache level:", err);
+    });
 
     return level;
   }, [uid, cachedLevel]);
@@ -273,7 +280,9 @@ export function useProfileData(
 
   useEffect(() => {
     if (forceRefresh && uid && !cacheOnly) {
-      refresh().catch(console.warn);
+      refresh().catch((err) => {
+        logger.warn("[useProfileData] Forced refresh failed:", err);
+      });
     }
   }, [forceRefresh, uid, cacheOnly, refresh]);
 
@@ -285,7 +294,7 @@ export function useProfileData(
     if (computedLevel && previousLevelRef.current !== null) {
       if (computedLevel.current > previousLevelRef.current) {
         // Level up detected - could trigger animation via event
-        console.log(
+        logger.info(
           `[useProfileData] Level up: ${previousLevelRef.current} → ${computedLevel.current}`,
         );
       }

@@ -82,6 +82,7 @@ export function useNewMessageAutoscroll(
   const prevMessageCountRef = useRef(messageCount);
   const flatListRef = useRef<FlatList<any> | null>(null);
   const wasAtBottomRef = useRef(isAtBottom);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set FlatList ref for scrolling
   const setFlatListRef = useCallback((ref: FlatList<any> | null) => {
@@ -227,13 +228,23 @@ export function useNewMessageAutoscroll(
 
       if (result.shouldScroll && flatListRef.current) {
         // Small delay to let the new message render
-        setTimeout(() => {
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = setTimeout(() => {
           flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
         }, 50);
       }
     } else {
       prevMessageCountRef.current = messageCount;
     }
+
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+    };
   }, [messageCount, onNewMessages]);
 
   return {

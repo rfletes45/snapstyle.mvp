@@ -30,12 +30,28 @@ import {
 import { getFirestoreInstance } from "./firebase";
 import { getFriends } from "./friends";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/leaderboards");
 // =============================================================================
 // Constants
 // =============================================================================
 
 const MAX_LEADERBOARD_ENTRIES = 100;
 const MAX_FRIENDS_LEADERBOARD = 50;
+
+function toMillis(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value && typeof value === "object") {
+    const withToMillis = value as { toMillis?: () => number };
+    if (typeof withToMillis.toMillis === "function") {
+      return withToMillis.toMillis();
+    }
+  }
+  return undefined;
+}
 
 // =============================================================================
 // Types
@@ -100,7 +116,7 @@ export async function getWeeklyLeaderboard(
         Date.now(),
     }));
 
-    console.log(
+    logger.info(
       `[leaderboards] Fetched ${entries.length} entries for ${gameId} week ${week}`,
     );
 
@@ -110,7 +126,7 @@ export async function getWeeklyLeaderboard(
       gameId,
     };
   } catch (error) {
-    console.error("[leaderboards] Error fetching weekly leaderboard:", error);
+    logger.error("[leaderboards] Error fetching weekly leaderboard:", error);
     return {
       entries: [],
       weekKey: week,
@@ -189,7 +205,7 @@ export async function getFriendsLeaderboard(
     // Find user's entry and rank
     const userEntry = rankedEntries.find((e) => e.uid === userId);
 
-    console.log(
+    logger.info(
       `[leaderboards] Fetched ${rankedEntries.length} friends entries for ${gameId}`,
     );
 
@@ -201,7 +217,7 @@ export async function getFriendsLeaderboard(
       userEntry,
     };
   } catch (error) {
-    console.error("[leaderboards] Error fetching friends leaderboard:", error);
+    logger.error("[leaderboards] Error fetching friends leaderboard:", error);
     return {
       entries: [],
       weekKey: week,
@@ -255,13 +271,15 @@ export async function getUserRank(
         ...userEntry,
         rank,
         updatedAt:
-          (userEntry as any).updatedAt?.toMillis?.() ||
-          userEntry.updatedAt ||
+          toMillis(userEntry.updatedAt) ||
+          (typeof userEntry.updatedAt === "number"
+            ? userEntry.updatedAt
+            : undefined) ||
           Date.now(),
       },
     };
   } catch (error) {
-    console.error("[leaderboards] Error getting user rank:", error);
+    logger.error("[leaderboards] Error getting user rank:", error);
     return null;
   }
 }
@@ -299,7 +317,7 @@ export async function updateLeaderboardEntry(
           : score > existingScore; // Higher is better
 
       if (!isBetter) {
-        console.log("[leaderboards] Score not better than existing, skipping");
+        logger.info("[leaderboards] Score not better than existing, skipping");
         return false;
       }
     }
@@ -317,12 +335,12 @@ export async function updateLeaderboardEntry(
       updatedAt: Timestamp.now(),
     });
 
-    console.log(
+    logger.info(
       `[leaderboards] Updated entry for ${userId} in ${gameId}: ${score}`,
     );
     return true;
   } catch (error) {
-    console.error("[leaderboards] Error updating leaderboard entry:", error);
+    logger.error("[leaderboards] Error updating leaderboard entry:", error);
     return false;
   }
 }

@@ -13,8 +13,9 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  AccessibilityInfo,
   Dimensions,
   Modal,
   StyleSheet,
@@ -38,6 +39,7 @@ import {
   AchievementNotification,
   GameAchievementDefinition,
 } from "@/types/achievements";
+import { SkiaParticleBurst } from "@/components/games/graphics/SkiaParticleBurst";
 import { formatDurationSeconds as formatTime } from "@/utils/time";
 import {
   ACHIEVEMENT_TIER_COLORS,
@@ -47,7 +49,9 @@ import {
   GAME_SPACING,
   GAME_STATUS_COLORS,
   GAME_TYPOGRAPHY,
-} from "../../../constants/gamesTheme";
+} from "@/constants/gamesTheme";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // =============================================================================
 // Types
@@ -325,6 +329,7 @@ export function GameOverModal({
   const isDarkMode = colorScheme === "dark";
 
   const resultConfig = getResultConfig(result, isDarkMode);
+  const [burstActive, setBurstActive] = useState(false);
 
   // Haptic feedback on show
   useEffect(() => {
@@ -338,6 +343,38 @@ export function GameOverModal({
       }
     }
   }, [visible, result]);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    const resultAnnouncement =
+      result === "win"
+        ? "You won."
+        : result === "loss"
+          ? "You lost."
+          : "It's a draw.";
+    const scoreAnnouncement =
+      stats.score !== undefined ? ` Final score ${stats.score}.` : "";
+
+    AccessibilityInfo.announceForAccessibility(
+      `Game over. ${resultAnnouncement}${scoreAnnouncement}`,
+    );
+  }, [visible, result, stats.score]);
+
+  useEffect(() => {
+    if (!visible) {
+      setBurstActive(false);
+      return;
+    }
+
+    if (result === "win" || stats.isNewBest) {
+      setBurstActive(true);
+      const timer = setTimeout(() => setBurstActive(false), 900);
+      return () => clearTimeout(timer);
+    }
+
+    return;
+  }, [visible, result, stats.isNewBest]);
 
   // Animation values
   const titleScale = useSharedValue(0);
@@ -375,6 +412,22 @@ export function GameOverModal({
         <View style={styles.overlay}>
           {/* Confetti for wins */}
           {resultConfig.confetti && <Confetti />}
+          {(result === "win" || stats.isNewBest) && (
+            <SkiaParticleBurst
+              x={SCREEN_WIDTH / 2}
+              y={SCREEN_HEIGHT / 2 - 110}
+              radius={stats.isNewBest ? 84 : 62}
+              count={stats.isNewBest ? 28 : 20}
+              size={220}
+              duration={760}
+              colors={
+                stats.isNewBest
+                  ? ["#FFD700", "#FFF4B0", "#FFFFFF", "#F59E0B"]
+                  : ["#FFD700", "#FFFFFF", "#60A5FA", "#34D399"]
+              }
+              active={burstActive}
+            />
+          )}
 
           <Animated.View
             entering={SlideInDown.springify().damping(15)}
@@ -553,7 +606,13 @@ export function GameOverModal({
               </View>
 
               {/* Exit Button */}
-              <TouchableOpacity style={styles.exitButton} onPress={onExit}>
+              <TouchableOpacity
+                style={styles.exitButton}
+                onPress={onExit}
+                accessibilityRole="button"
+                accessibilityLabel="Back to games hub"
+                accessibilityHint="Closes game results and returns to the games hub"
+              >
                 <MaterialCommunityIcons
                   name="home"
                   size={20}

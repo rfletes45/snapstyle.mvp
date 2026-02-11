@@ -8,8 +8,11 @@
  */
 
 import * as FileSystem from "expo-file-system/legacy";
-import { DrawingElement, DrawingPath, Point } from "../../types/camera";
+import { DrawingElement, DrawingPath, Point } from "@/types/camera";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/camera/nativeDrawing");
 /**
  * Brush style for drawing
  */
@@ -42,7 +45,7 @@ export async function renderDrawingOnImage(
   canvasHeight: number = 1920,
 ): Promise<string> {
   try {
-    console.log(`[Drawing Canvas] Rendering ${paths.length} paths on image`);
+    logger.info(`[Drawing Canvas] Rendering ${paths.length} paths on image`);
 
     // Create SVG representation of drawing
     const svgContent = createDrawingSVG(paths, canvasWidth, canvasHeight);
@@ -80,7 +83,7 @@ export async function renderDrawingOnImage(
      */
 
     // For now, return base image with notation that drawing was applied
-    console.log(
+    logger.info(
       "[Drawing Canvas] Drawing composited on image (placeholder implementation)",
     );
 
@@ -88,12 +91,12 @@ export async function renderDrawingOnImage(
     try {
       await FileSystem.deleteAsync(svgUri, { idempotent: true });
     } catch (err) {
-      console.warn("[Drawing Canvas] Failed to clean up temporary SVG:", err);
+      logger.warn("[Drawing Canvas] Failed to clean up temporary SVG:", err);
     }
 
     return baseImageUri;
   } catch (error) {
-    console.error("[Drawing Canvas] Failed to render drawing on image:", error);
+    logger.error("[Drawing Canvas] Failed to render drawing on image:", error);
     throw error;
   }
 }
@@ -368,7 +371,7 @@ export async function exportDrawingAsImage(
   canvasHeight: number = 1920,
 ): Promise<string> {
   try {
-    console.log("[Drawing Canvas] Exporting drawing as image");
+    logger.info("[Drawing Canvas] Exporting drawing as image");
 
     // Render drawing on image
     const resultUri = await renderDrawingOnImage(
@@ -380,7 +383,7 @@ export async function exportDrawingAsImage(
 
     return resultUri;
   } catch (error) {
-    console.error("[Drawing Canvas] Failed to export drawing as image:", error);
+    logger.error("[Drawing Canvas] Failed to export drawing as image:", error);
     throw error;
   }
 }

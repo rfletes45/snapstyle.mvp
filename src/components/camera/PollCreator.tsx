@@ -16,8 +16,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import type { PollElement, PollOption, PollType } from "../../types/camera";
-import { generateUUID } from "../../utils/uuid";
+import type { PollElement, PollOption, PollType } from "@/types/camera";
+import { generateUUID } from "@/utils/uuid";
 
 interface Props {
   visible: boolean;
@@ -151,7 +151,7 @@ const PollCreator: React.FC<Props> = ({ visible, onClose, onCreatePoll }) => {
                   onPress={() => setPollType(pt.type)}
                 >
                   <Ionicons
-                    name={pt.icon as any}
+                    name={pt.icon as keyof typeof Ionicons.glyphMap}
                     size={18}
                     color={pollType === pt.type ? "#fff" : "#aaa"}
                   />

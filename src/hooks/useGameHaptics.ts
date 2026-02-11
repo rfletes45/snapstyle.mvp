@@ -10,6 +10,9 @@
 import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGameHaptics");
 // =============================================================================
 // Types
 // =============================================================================
@@ -129,7 +132,7 @@ export function useGameHaptics() {
       }
     } catch (error) {
       // Silently fail if haptics not supported
-      console.debug("Haptics not available:", error);
+      logger.debug("Haptics not available:", error);
     }
   };
 
@@ -146,7 +149,7 @@ export function useGameHaptics() {
       await new Promise((resolve) => setTimeout(resolve, 100));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      console.debug("Haptics celebration failed:", error);
+      logger.debug("Haptics celebration failed:", error);
     }
   };
 
@@ -165,7 +168,7 @@ export function useGameHaptics() {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch (error) {
-      console.debug("Haptics game over failed:", error);
+      logger.debug("Haptics game over failed:", error);
     }
   };
 
@@ -180,7 +183,7 @@ export function useGameHaptics() {
       await new Promise((resolve) => setTimeout(resolve, 80));
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      console.debug("Haptics double tap failed:", error);
+      logger.debug("Haptics double tap failed:", error);
     }
   };
 
@@ -202,7 +205,7 @@ export function useGameHaptics() {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     } catch (error) {
-      console.debug("Haptics escalating failed:", error);
+      logger.debug("Haptics escalating failed:", error);
     }
   };
 
@@ -234,7 +237,7 @@ export function useGameHaptics() {
         );
       }
     } catch (error) {
-      console.debug("Haptics combo pattern failed:", error);
+      logger.debug("Haptics combo pattern failed:", error);
     }
   };
 
@@ -255,7 +258,7 @@ export function useGameHaptics() {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error) {
-      console.debug("Haptics brick cascade failed:", error);
+      logger.debug("Haptics brick cascade failed:", error);
     }
   };
 
@@ -275,7 +278,7 @@ export function useGameHaptics() {
       await new Promise((resolve) => setTimeout(resolve, 100));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      console.debug("Haptics puzzle solved failed:", error);
+      logger.debug("Haptics puzzle solved failed:", error);
     }
   };
 
@@ -295,7 +298,7 @@ export function useGameHaptics() {
       await new Promise((resolve) => setTimeout(resolve, 150));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      console.debug("Haptics level complete failed:", error);
+      logger.debug("Haptics level complete failed:", error);
     }
   };
 

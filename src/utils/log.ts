@@ -185,6 +185,125 @@ class Logger {
     this.source = source;
   }
 
+  private isLogContext(value: unknown): value is LogContext {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
+
+    const record = value as Record<string, unknown>;
+    return (
+      "source" in record ||
+      "userId" in record ||
+      "operation" in record ||
+      "data" in record
+    );
+  }
+
+  private toMessage(value: unknown): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (value instanceof Error) {
+      return value.message;
+    }
+    if (value === undefined) {
+      return "undefined";
+    }
+    if (value === null) {
+      return "null";
+    }
+    try {
+      return JSON.stringify(sanitize(value));
+    } catch {
+      return String(value);
+    }
+  }
+
+  private parseStandardArgs(args: unknown[]): {
+    message: string;
+    context?: LogContext;
+  } {
+    if (args.length === 0) {
+      return { message: "" };
+    }
+
+    const [first, ...rest] = args;
+    const message = this.toMessage(first);
+
+    if (rest.length === 0) {
+      return { message };
+    }
+
+    if (rest.length === 1 && this.isLogContext(rest[0])) {
+      return { message, context: rest[0] };
+    }
+
+    const last = rest[rest.length - 1];
+    if (this.isLogContext(last)) {
+      const trailingArgs = rest.slice(0, -1);
+      if (trailingArgs.length === 0) {
+        return { message, context: last };
+      }
+      return {
+        message,
+        context: {
+          ...last,
+          data: {
+            ...(last.data ?? {}),
+            args: trailingArgs,
+          },
+        },
+      };
+    }
+
+    return {
+      message,
+      context: {
+        data: {
+          args: rest,
+        },
+      },
+    };
+  }
+
+  private parseErrorArgs(args: unknown[]): {
+    message: string;
+    error?: unknown;
+    context?: LogContext;
+  } {
+    if (args.length === 0) {
+      return { message: "Unknown error" };
+    }
+
+    const [first, ...restArgs] = args;
+    const message = this.toMessage(first);
+    const rest = [...restArgs];
+
+    let context: LogContext | undefined;
+    if (rest.length > 0 && this.isLogContext(rest[rest.length - 1])) {
+      context = rest.pop() as LogContext;
+    }
+
+    let error: unknown;
+    if (rest.length > 0) {
+      error = rest[0];
+    } else if (first instanceof Error) {
+      error = first;
+    }
+
+    if (rest.length > 1) {
+      context = {
+        ...(context ?? {}),
+        data: {
+          ...(context?.data ?? {}),
+          args: rest.slice(1),
+        },
+      };
+    }
+
+    return { message, error, context };
+  }
+
   /**
    * Check if a log level should be output
    */
@@ -250,28 +369,40 @@ class Logger {
   /**
    * Debug level log (dev only)
    */
-  debug(message: string, context?: LogContext): void {
+  debug(message: string, context?: LogContext): void;
+  debug(...args: unknown[]): void;
+  debug(...args: unknown[]): void {
+    const { message, context } = this.parseStandardArgs(args);
     this.log("debug", message, context);
   }
 
   /**
    * Info level log
    */
-  info(message: string, context?: LogContext): void {
+  info(message: string, context?: LogContext): void;
+  info(...args: unknown[]): void;
+  info(...args: unknown[]): void {
+    const { message, context } = this.parseStandardArgs(args);
     this.log("info", message, context);
   }
 
   /**
    * Warning level log
    */
-  warn(message: string, context?: LogContext): void {
+  warn(message: string, context?: LogContext): void;
+  warn(...args: unknown[]): void;
+  warn(...args: unknown[]): void {
+    const { message, context } = this.parseStandardArgs(args);
     this.log("warn", message, context);
   }
 
   /**
    * Error level log
    */
-  error(message: string, error?: unknown, context?: LogContext): void {
+  error(message: string, error?: unknown, context?: LogContext): void;
+  error(...args: unknown[]): void;
+  error(...args: unknown[]): void {
+    const { message, error, context } = this.parseErrorArgs(args);
     this.log("error", message, context, error);
   }
 

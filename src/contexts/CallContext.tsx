@@ -24,8 +24,11 @@ import {
   CallEvent,
   CallState,
   StartCallParams,
-} from "../types/call";
+} from "@/types/call";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("contexts/CallContext");
 // Platform detection
 const isWeb = Platform.OS === "web";
 const isExpoGo = Constants.appOwnership === "expo";
@@ -48,31 +51,31 @@ if (areNativeCallsAvailable) {
     const webrtc = require("react-native-webrtc");
     MediaStream = webrtc.MediaStream;
 
-    const callServices = require("../services/calls/callService");
+    const callServices = require("@/services/calls/callService");
     callService = callServices.callService;
 
-    const webRTCServices = require("../services/calls/webRTCService");
+    const webRTCServices = require("@/services/calls/webRTCService");
     webRTCService = webRTCServices.webRTCService;
 
-    const audioServices = require("../services/calls/audioSessionService");
+    const audioServices = require("@/services/calls/audioSessionService");
     audioSessionService = audioServices.audioSessionService;
 
-    const voipServices = require("../services/calls/voipPushService");
+    const voipServices = require("@/services/calls/voipPushService");
     voipPushService = voipServices.voipPushService;
 
-    const batteryServices = require("../services/calls/batteryOptimizationHandler");
+    const batteryServices = require("@/services/calls/batteryOptimizationHandler");
     batteryOptimizationHandler = batteryServices.batteryOptimizationHandler;
 
-    const reconnectionServices = require("../services/calls/callReconnectionService");
+    const reconnectionServices = require("@/services/calls/callReconnectionService");
     callReconnectionService = reconnectionServices.callReconnectionService;
 
-    const concurrentServices = require("../services/calls/concurrentCallManager");
+    const concurrentServices = require("@/services/calls/concurrentCallManager");
     concurrentCallManager = concurrentServices.concurrentCallManager;
 
-    const foregroundServices = require("../services/calls/foregroundServiceManager");
+    const foregroundServices = require("@/services/calls/foregroundServiceManager");
     foregroundServiceManager = foregroundServices.foregroundServiceManager;
   } catch (error) {
-    console.warn(
+    logger.warn(
       "[CallContext] Failed to load native call modules:",
       (error as Error).message,
     );
@@ -81,11 +84,11 @@ if (areNativeCallsAvailable) {
 
 // Simple logging helpers
 const logInfo = (msg: string, data?: any) =>
-  console.log(`[CallContext] ${msg}`, data ?? "");
+  logger.info(`[CallContext] ${msg}`, data ?? "");
 const logError = (msg: string, error?: any) =>
-  console.error(`[CallContext] ${msg}`, error ?? "");
+  logger.error(`[CallContext] ${msg}`, error ?? "");
 const logDebug = (msg: string, data?: any) =>
-  __DEV__ && console.log(`[CallContext] ${msg}`, data ?? "");
+  __DEV__ && logger.info(`[CallContext] ${msg}`, data ?? "");
 
 // ============================================================================
 // Context Types

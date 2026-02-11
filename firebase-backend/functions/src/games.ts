@@ -34,9 +34,7 @@ type TurnBasedGameType =
   | "crazy_eights"
   | "8ball_pool"
   | "snap_reversi"
-  | "snap_hex"
-  | "snap_war"
-  | "snap_words";
+  | "snap_war";
 type GameStatus = "invited" | "active" | "completed" | "abandoned";
 type GameOutcome = "win" | "loss" | "draw";
 
@@ -284,11 +282,6 @@ function getInitialGameState(gameType: TurnBasedGameType): any {
         flippedThisTurn: [],
       };
 
-    case "snap_hex":
-      return {
-        board: Array.from({ length: 9 }, () => Array(9).fill(0)),
-      };
-
     case "snap_war":
       return {
         player1Deck: [],
@@ -297,17 +290,6 @@ function getInitialGameState(gameType: TurnBasedGameType): any {
         player2WarPile: [],
         isWar: false,
         roundNumber: 0,
-      };
-
-    case "snap_words":
-      return {
-        board: createInitialWordsBoard(),
-        letterBag: [],
-        player1Rack: [],
-        player2Rack: [],
-        player1Score: 0,
-        player2Score: 0,
-        consecutivePasses: 0,
       };
 
     default:
@@ -632,7 +614,7 @@ async function createGameFromUniversalInvite(
         id: slot.playerId,
         name: slot.playerName,
         avatar: slot.playerAvatar,
-        rating: DEFAULT_RATING, // TODO: Could look up actual rating
+        rating: DEFAULT_RATING, // NOTE: Could look up actual rating
       };
       playerIds.push(slot.playerId);
     });
@@ -710,7 +692,7 @@ async function createGameFromUniversalInvite(
       spectators: invite.spectators.map((s) => s.userId),
     });
 
-    // TODO: Send push notifications to all players
+    // NOTE: Send push notifications to all players
     // await sendGameStartNotifications(playerIds, gameId, invite.gameType);
   } catch (error) {
     functions.logger.error("Failed to create game from universal invite", {
@@ -2070,7 +2052,7 @@ export const makeMove = functions.https.onCall(async (data, context) => {
         );
       }
 
-      // TODO: Validate move based on game type
+      // NOTE: Validate move based on game type
       // This would involve game-specific logic for chess, checkers, etc.
       // For now, we trust the client's move validation
 

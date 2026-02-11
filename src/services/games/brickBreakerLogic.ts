@@ -703,7 +703,7 @@ export function updateBallPhysics(state: BrickBreakerState): {
         // Decrease sticky uses
         newState = decreaseStickyUses(newState);
       } else {
-        newBall.vy = -Math.abs(newBall.vy);
+        newBall.vy = paddleCollision.newVy;
         newBall.vx = paddleCollision.newVx;
         newBall.y = CONFIG.paddleY - newBall.radius - 2;
       }
@@ -852,7 +852,7 @@ export interface GameEvent {
 export function checkPaddleCollision(
   ball: BrickBallState,
   paddle: BrickPaddleState,
-): { hit: boolean; newVx: number } {
+): { hit: boolean; newVx: number; newVy: number } {
   const paddleTop = CONFIG.paddleY;
   const paddleBottom = CONFIG.paddleY + CONFIG.paddleHeight;
   const paddleLeft = paddle.x;
@@ -873,12 +873,14 @@ export function checkPaddleCollision(
     // Max angle is 60 degrees
     const maxAngle = Math.PI / 3;
     const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-    const newVx = normalizedHitPos * speed * Math.sin(maxAngle);
+    const bounceAngle = normalizedHitPos * maxAngle;
+    const newVx = speed * Math.sin(bounceAngle);
+    const newVy = -speed * Math.cos(bounceAngle);
 
-    return { hit: true, newVx };
+    return { hit: true, newVx, newVy };
   }
 
-  return { hit: false, newVx: ball.vx };
+  return { hit: false, newVx: ball.vx, newVy: ball.vy };
 }
 
 /**

@@ -7,7 +7,7 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { ActivityIndicator, Text, useTheme } from "react-native-paper";
-import { Spacing } from "../../../constants/theme";
+import { Spacing } from "@/constants/theme";
 
 interface LoadingStateProps {
   message?: string;

@@ -21,7 +21,7 @@ import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import Animated, { FadeIn } from "react-native-reanimated";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -44,15 +44,21 @@ interface ReplyBubbleProps {
 
 /**
  * Get display text for the reply preview based on message kind
+ * NOTE: There are 3 getPreviewText implementations — keep in sync:
+ *   1. firebase-backend/functions/src/messaging.ts (rich, stored in Firestore)
+ *   2. src/components/chat/ReplyBubbleNew.tsx (this file)
+ *   3. src/components/chat/ReplyPreviewBar.tsx (plain, reply compose bar)
  */
 function getPreviewText(replyTo: ReplyToMetadata): string {
   if (replyTo.textSnippet) {
     // Truncate to 60 chars for cleaner display
     const text = replyTo.textSnippet;
-    return text.length > 60 ? text.substring(0, 60) + "…" : text;
+    return text.length > 60 ? text.substring(0, 60) + "�" : text;
   }
 
   switch (replyTo.kind) {
+    case "text":
+      return "Message";
     case "media":
       return "Photo";
     case "voice":
@@ -61,6 +67,10 @@ function getPreviewText(replyTo: ReplyToMetadata): string {
       return "File";
     case "system":
       return "System message";
+    case "scorecard":
+      return "Game result";
+    case "game_invite":
+      return "Game invite";
     default:
       return "Message";
   }
@@ -81,6 +91,10 @@ function getKindIcon(
       return "document-outline";
     case "system":
       return "information-circle-outline";
+    case "scorecard":
+      return "trophy-outline";
+    case "game_invite":
+      return "game-controller-outline";
     default:
       return "chatbubble-outline";
   }
@@ -419,3 +433,5 @@ const styles = StyleSheet.create({
 });
 
 export default ReplyBubble;
+
+

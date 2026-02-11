@@ -333,7 +333,7 @@ export function toGroupMessage(msg: MessageV2): GroupMessage {
     scorecard: "scorecard",
     system: "system",
     file: "text", // No file type in legacy format
-    game_invite: "system", // Game invites display as system messages in legacy format
+    game_invite: "scorecard", // Game invites map to scorecard in legacy format
   };
 
   const groupMessage: GroupMessage = {

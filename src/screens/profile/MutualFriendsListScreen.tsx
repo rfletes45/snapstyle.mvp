@@ -29,6 +29,9 @@ import { getMutualFriends } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import type { MutualFriendInfo } from "@/types/userProfile";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/profile/MutualFriendsListScreen");
 // =============================================================================
 // Types
 // =============================================================================
@@ -144,7 +147,7 @@ export default function MutualFriendsListScreen({
         setFriends(mutualFriends);
         setFilteredFriends(mutualFriends);
       } catch (err) {
-        console.error("Error loading mutual friends:", err);
+        logger.error("Error loading mutual friends:", err);
         setError("Failed to load mutual friends");
       } finally {
         setLoading(false);

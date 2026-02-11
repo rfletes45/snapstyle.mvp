@@ -4,8 +4,8 @@
  */
 
 import { useCallback, useMemo } from "react";
-import { useCallContext } from "../../contexts/CallContext";
-import { CallType, StartCallParams } from "../../types/call";
+import { useCallContext } from "@/contexts/CallContext";
+import { CallType, StartCallParams } from "@/types/call";
 
 export interface UseCallReturn {
   // State

@@ -29,6 +29,9 @@ import {
   RingtoneOption,
 } from "@/types/call";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/calls/CallSettingsScreen");
 // Option picker types
 type PickerOption<T> = { label: string; value: T; icon?: string };
 
@@ -83,7 +86,7 @@ export function CallSettingsScreen() {
         const loaded = await callSettingsService.getSettings();
         setSettings(loaded);
       } catch (error) {
-        console.error("Error loading settings:", error);
+        logger.error("Error loading settings:", error);
       } finally {
         setIsLoading(false);
       }
@@ -155,7 +158,7 @@ export function CallSettingsScreen() {
     <View style={styles.settingRow}>
       {icon && (
         <View style={styles.settingIcon}>
-          <Ionicons name={icon as any} size={22} color={theme.colors.primary} />
+          <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={22} color={theme.colors.primary} />
         </View>
       )}
       <View style={styles.settingContent}>
@@ -205,7 +208,7 @@ export function CallSettingsScreen() {
         {icon && (
           <View style={styles.settingIcon}>
             <Ionicons
-              name={icon as any}
+              name={icon as keyof typeof Ionicons.glyphMap}
               size={22}
               color={theme.colors.primary}
             />

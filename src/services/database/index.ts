@@ -10,6 +10,9 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { Platform } from "react-native";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("services/database/index");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -191,7 +194,7 @@ function initializeSchema(database: SQLiteDatabase): void {
       PRAGMA user_version = ${DATABASE_VERSION};
     `);
 
-    console.log(`[Database] Schema initialized to version ${DATABASE_VERSION}`);
+    logger.info(`[Database] Schema initialized to version ${DATABASE_VERSION}`);
   }
 }
 

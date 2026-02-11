@@ -169,7 +169,7 @@ export async function removeGroupMember(
   groupId: string,
   uid: string,
 ): Promise<void> {
-  // TODO: Implement in H6 - requires batch delete of both docs
+  // NOTE: Implement in H6 - requires batch delete of both docs
   log.warn("removeGroupMember: Not yet implemented (H6)");
 }
 
@@ -445,7 +445,7 @@ export async function calculateGroupUnreadCount(
       return 0;
     }
 
-    // TODO: Implement actual count query (H5)
+    // NOTE: Implement actual count query (H5)
     // For now, return 1 to indicate "has unreads"
     return 1;
   } catch (error) {

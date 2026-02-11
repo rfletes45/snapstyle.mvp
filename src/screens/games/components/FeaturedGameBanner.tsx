@@ -17,6 +17,7 @@
  * @see docs/PLAY_SCREEN_OVERHAUL_PLAN.md - Phase 4
  */
 
+import { ThreeHeroBanner } from "@/components/three";
 import { useAppTheme } from "@/store/ThemeContext";
 import { GAME_METADATA, GameCategory } from "@/types/games";
 import { FeaturedGame, getCategoryColor } from "@/types/playScreen";
@@ -30,7 +31,8 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "../../../../constants/gamesTheme";
+import { THREE_JS_FEATURES } from "@/constants/featureFlags";
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 
 const { spacing, borderRadius, shadows, typography, animation } =
   PLAY_SCREEN_TOKENS;
@@ -112,6 +114,18 @@ function FeaturedGameBannerComponent({
           end={{ x: 1, y: 1 }}
           style={styles.gradient}
         >
+          {/* Three.js 3D hero banner (behind 2D content) */}
+          {THREE_JS_FEATURES.THREE_JS_ENABLED &&
+            THREE_JS_FEATURES.HERO_BANNER_3D && (
+              <ThreeHeroBanner
+                primaryColor={gradientStart}
+                secondaryColor={gradientEnd}
+                pieceCount={5}
+                style={styles.threeBanner}
+                testID={testID ? `${testID}-three` : undefined}
+              />
+            )}
+
           {/* NEW Badge */}
           {isNew && (
             <View style={styles.newBadge}>
@@ -300,6 +314,13 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+
+  // Three.js 3D banner overlay
+  threeBanner: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: borderRadius.cardLarge,
+    opacity: 0.6,
   },
 });
 

@@ -35,6 +35,9 @@ import {
   useTheme,
 } from "react-native-paper";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/settings/SettingsScreen");
 const NOTIFICATION_SETTINGS_KEY = "@vibe/notification_settings";
 
 // =============================================================================
@@ -173,7 +176,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         showError("Failed to update display name");
       }
     } catch (err: any) {
-      console.error("Display name update error:", err);
+      logger.error("Display name update error:", err);
       showError(err.message || "Failed to update display name");
     } finally {
       setSavingName(false);
@@ -191,7 +194,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           try {
             await logout();
           } catch (error: any) {
-            console.error("Sign out error:", error);
+            logger.error("Sign out error:", error);
             showError("Failed to sign out");
           }
         },
@@ -216,7 +219,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       await deleteUser(currentFirebaseUser);
       showSuccess("Account deleted");
     } catch (error: any) {
-      console.error("Delete account error:", error);
+      logger.error("Delete account error:", error);
       if (error.code === "auth/requires-recent-login") {
         showError(
           "Please sign out and sign in again before deleting your account",

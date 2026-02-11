@@ -57,6 +57,9 @@ import {
 import { ErrorState, LoadingState } from "@/components/ui";
 import { acceptGroupInvite, declineGroupInvite } from "@/services/groups";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/chat/ChatListScreenV2");
 // Theme
 
 // =============================================================================
@@ -191,16 +194,16 @@ export default function ChatListScreen() {
 
       const loadInvites = async () => {
         try {
-          console.log("[ChatListScreen] Loading group invites for uid:", uid);
+          logger.info("[ChatListScreen] Loading group invites for uid:", uid);
           const invites = await getPendingInvites(uid);
-          console.log(
+          logger.info(
             "[ChatListScreen] Loaded group invites:",
             invites.length,
             invites,
           );
           setPendingInvites(invites);
         } catch (e) {
-          console.error("[ChatListScreen] Error loading group invites:", e);
+          logger.error("[ChatListScreen] Error loading group invites:", e);
           log.warn("Could not fetch group invites", {
             data: { error: e instanceof Error ? e.message : String(e) },
           });

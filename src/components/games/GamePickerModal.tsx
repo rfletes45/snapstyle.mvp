@@ -27,26 +27,16 @@ import {
   getAllCategoriesWithGames,
   PickerCategory,
 } from "@/config/gameCategories";
-import {
-  sendUniversalInvite,
-  SpectatorInvite,
-  startSpectatorInvite,
-} from "@/services/gameInvites";
-import {
-  createLiveSession,
-  startLiveSession,
-} from "@/services/liveSpectatorSession";
+import { sendUniversalInvite } from "@/services/gameInvites";
 import { getFullProfileData } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
-import {
-  ExtendedGameType,
-  GameMetadata,
-  SinglePlayerGameType,
-} from "@/types/games";
-import { UniversalGameInvite } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
-import { SpectatorInviteModal } from "./SpectatorInviteModal";
+import { ExtendedGameType, GameMetadata } from "@/types/games";
+import type { SendUniversalInviteParams, UniversalGameInvite } from "@/types/turnBased";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/games/GamePickerModal");
 // =============================================================================
 // Types
 // =============================================================================
@@ -71,15 +61,9 @@ export interface GamePickerModalProps {
   /** For Group: array of all member user IDs */
   eligibleUserIds?: string[];
   /** Called when a single-player game is selected (navigate to game) */
-  onSinglePlayerGame: (
-    gameType: ExtendedGameType,
-    spectatorInviteId?: string,
-    liveSessionId?: string,
-  ) => void;
+  onSinglePlayerGame: (gameType: ExtendedGameType) => void;
   /** Called when a multiplayer invite is created */
   onInviteCreated?: (invite: UniversalGameInvite) => void;
-  /** Called when a spectator invite is created */
-  onSpectatorInviteCreated?: (invite: SpectatorInvite) => void;
   /** Called on any error */
   onError?: (error: string) => void;
 }
@@ -257,7 +241,6 @@ export function GamePickerModal({
   eligibleUserIds,
   onSinglePlayerGame,
   onInviteCreated,
-  onSpectatorInviteCreated,
   onError,
 }: GamePickerModalProps) {
   const theme = useTheme();
@@ -270,10 +253,6 @@ export function GamePickerModal({
   const [selectedCategory, setSelectedCategory] =
     useState<PickerCategory>("multiplayer");
   const [loadingGame, setLoadingGame] = useState<ExtendedGameType | null>(null);
-  // Spectator invite modal state
-  const [spectatorInviteGame, setSpectatorInviteGame] =
-    useState<SinglePlayerGameType | null>(null);
-  const [spectatorModalVisible, setSpectatorModalVisible] = useState(false);
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<
     string | undefined
   >(undefined);
@@ -292,7 +271,7 @@ export function GamePickerModal({
         }
       })
       .catch((err) => {
-        console.warn("[GamePickerModal] Failed to fetch profile picture:", err);
+        logger.warn("[GamePickerModal] Failed to fetch profile picture:", err);
       });
 
     return () => {
@@ -317,70 +296,6 @@ export function GamePickerModal({
   );
 
   // -------------------------------------------------------------------------
-  // Spectator Invite Handlers
-  // -------------------------------------------------------------------------
-  const handleSpectatorInviteCreated = useCallback(
-    async (invite: SpectatorInvite) => {
-      // Immediately create a live session and start the invite
-      let sessionId: string | undefined;
-      try {
-        const result = await createLiveSession({
-          gameType: invite.gameType as SinglePlayerGameType,
-          hostId: invite.hostId,
-          hostName: invite.hostName,
-          hostAvatar: invite.hostAvatar,
-          invitedUserIds: invite.eligibleUserIds,
-          conversationId: invite.conversationId,
-          conversationType: invite.context === "group" ? "group" : "dm",
-          maxSpectators: invite.maxSpectators,
-        });
-
-        if (result.success && result.sessionId) {
-          sessionId = result.sessionId;
-          // Mark the spectator invite as active with the live session ID
-          await startSpectatorInvite(invite.id, result.sessionId);
-          // Also start the live session immediately so spectators see "active" status
-          await startLiveSession(result.sessionId);
-        }
-      } catch (error) {
-        console.error(
-          "[GamePickerModal] Failed to create live session:",
-          error,
-        );
-        // Continue anyway - host can still play, spectators just won't work
-      }
-
-      // Notify parent
-      onSpectatorInviteCreated?.(invite);
-      // Close modals and navigate to game with invite ID AND live session ID
-      setSpectatorModalVisible(false);
-      if (spectatorInviteGame) {
-        onSinglePlayerGame(spectatorInviteGame, invite.id, sessionId);
-      }
-      onDismiss();
-    },
-    [
-      onSpectatorInviteCreated,
-      onSinglePlayerGame,
-      spectatorInviteGame,
-      onDismiss,
-    ],
-  );
-
-  const handlePlayAlone = useCallback(() => {
-    setSpectatorModalVisible(false);
-    if (spectatorInviteGame) {
-      onSinglePlayerGame(spectatorInviteGame);
-    }
-    onDismiss();
-  }, [spectatorInviteGame, onSinglePlayerGame, onDismiss]);
-
-  const handleSpectatorModalDismiss = useCallback(() => {
-    setSpectatorModalVisible(false);
-    setSpectatorInviteGame(null);
-  }, []);
-
-  // -------------------------------------------------------------------------
   // Handlers
   // -------------------------------------------------------------------------
   const handleGamePress = useCallback(
@@ -396,10 +311,11 @@ export function GamePickerModal({
         currentFirebaseUser.email ||
         "Player";
 
-      // Single-player: show spectator invite modal
+      // Single-player: navigate directly to the game
+      // (SP spectating is handled automatically via useSpectator hook in the game screen)
       if (!game.isMultiplayer) {
-        setSpectatorInviteGame(game.id as SinglePlayerGameType);
-        setSpectatorModalVisible(true);
+        onSinglePlayerGame(game.id);
+        onDismiss();
         return;
       }
 
@@ -419,13 +335,13 @@ export function GamePickerModal({
           throw new Error("Invalid context configuration");
         }
 
-        const invite = await sendUniversalInvite({
-          senderId: uid,
-          senderName: userName,
-          senderAvatar: currentUserAvatarUrl,
-          gameType: game.id as any,
-          context,
-          conversationId,
+          const invite = await sendUniversalInvite({
+            senderId: uid,
+            senderName: userName,
+            senderAvatar: currentUserAvatarUrl,
+            gameType: game.id as SendUniversalInviteParams["gameType"],
+            context,
+            conversationId,
           conversationName,
           recipientId: context === "dm" ? recipientId : undefined,
           recipientName: context === "dm" ? recipientName : undefined,
@@ -444,7 +360,7 @@ export function GamePickerModal({
         onInviteCreated?.(invite);
         onDismiss();
       } catch (error: any) {
-        console.error("[GamePickerModal] Error creating invite:", error);
+        logger.error("[GamePickerModal] Error creating invite:", error);
         onError?.(error.message || "Failed to create game invite");
       } finally {
         setLoadingGame(null);
@@ -482,7 +398,7 @@ export function GamePickerModal({
   );
 
   // Hide the game picker when spectator modal is visible (only one modal at a time on mobile)
-  const gamePickerVisible = visible && !spectatorModalVisible;
+  const gamePickerVisible = visible;
 
   return (
     <>
@@ -562,25 +478,6 @@ export function GamePickerModal({
           </View>
         </View>
       </Modal>
-
-      {/* Spectator Invite Modal - MUST be sibling to main Modal, not nested inside */}
-      {spectatorInviteGame && (
-        <SpectatorInviteModal
-          visible={spectatorModalVisible}
-          onDismiss={handleSpectatorModalDismiss}
-          gameType={spectatorInviteGame}
-          context={context}
-          conversationId={conversationId}
-          conversationName={conversationName}
-          recipientId={recipientId}
-          recipientName={recipientName}
-          recipientAvatar={recipientAvatar}
-          eligibleUserIds={eligibleUserIds}
-          onInviteCreated={handleSpectatorInviteCreated}
-          onPlayAlone={handlePlayAlone}
-          onError={onError}
-        />
-      )}
     </>
   );
 }

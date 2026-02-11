@@ -13,7 +13,7 @@
 
 import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
-import type { FilterConfig } from "../../types/camera";
+import type { FilterConfig } from "@/types/camera";
 
 interface Props {
   filter: FilterConfig | null;

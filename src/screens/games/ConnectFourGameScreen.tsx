@@ -10,12 +10,23 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { SkiaDisc } from "@/components/games/graphics/SkiaDisc";
+import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
 import {
-  SkiaDisc,
-} from "@/components/games/graphics/SkiaDisc";
-import {
-  SkiaGameBoard,
-} from "@/components/games/graphics/SkiaGameBoard";
+  DrawOfferDialog,
+  GameActionBar,
+  ResignConfirmDialog,
+  TurnBasedCountdownOverlay,
+  TurnBasedGameOverOverlay,
+  TurnBasedReconnectingOverlay,
+  TurnBasedWaitingOverlay,
+  TurnIndicatorBar,
+} from "@/components/games/TurnBasedOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useSpectator } from "@/hooks/useSpectator";
+import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
 import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
@@ -39,6 +50,11 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -54,7 +70,7 @@ const CELL_SIZE = Math.floor(
 
 type CellState = 0 | 1 | 2; // 0 = empty, 1 = player 1 (red), 2 = player 2 (yellow)/AI
 type Board = CellState[][];
-type GameMode = "local" | "ai";
+type GameMode = "local" | "ai" | "online";
 type GameState = "menu" | "playing" | "result";
 
 const EMPTY_BOARD = (): Board =>
@@ -269,11 +285,23 @@ function getAIMove(board: Board): number {
 
 interface ConnectFourGameScreenProps {
   navigation: any;
+  route?: any;
 }
 
-export default function ConnectFourGameScreen({
+function ConnectFourGameScreen({
   navigation,
+  route,
 }: ConnectFourGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "connect_four" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "connect_four", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -291,6 +319,60 @@ export default function ConnectFourGameScreen({
   const [isSending, setIsSending] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
 
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
+
+  // Colyseus multiplayer hook
+  const mp = useTurnBasedGame("connect_four_game");
+  const isSpectator = route?.params?.spectatorMode === true;
+  const spectatorSession = useSpectator({
+    mode: "multiplayer-spectator",
+    room: mp.room,
+    state: mp.rawState,
+  });
+  const spectatorCount = spectatorSession.spectatorCount || mp.spectatorCount;
+  const [showResignConfirm, setShowResignConfirm] = useState(false);
+
+  // Handle incoming match from route params (invite flow)
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    "connect_four_game",
+    route?.params?.matchId,
+  );
+
+  useEffect(() => {
+    if (resolvedMode && firestoreGameId) {
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
+    }
+  }, [resolvedMode, firestoreGameId, isSpectator]);
+
+  // Derive Colyseus board as 2D array for rendering
+  const colyseusBoard: Board | null =
+    mp.isMultiplayer && mp.board.length === ROWS * COLS
+      ? Array.from({ length: ROWS }, (_, r) =>
+          Array.from(
+            { length: COLS },
+            (_, c) => mp.board[r * COLS + c] as CellState,
+          ),
+        )
+      : null;
+
+  const effectiveBoard =
+    gameMode === "online" && colyseusBoard ? colyseusBoard : board;
+
   // Refs to avoid stale closures in callbacks
   const boardRef = useRef<Board>(EMPTY_BOARD());
   const currentPlayerRef = useRef<CellState>(1);
@@ -302,7 +384,7 @@ export default function ConnectFourGameScreen({
 
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, "connect_four" as any).then(
+      getPersonalBest(currentFirebaseUser.uid, "connect_four").then(
         setPersonalBest,
       );
     }
@@ -328,7 +410,7 @@ export default function ConnectFourGameScreen({
 
   const doAIMove = useCallback((currentBoard: Board) => {
     setAiThinking(true);
-    setTimeout(() => {
+    scheduleTimeout(() => {
       const aiCol = getAIMove(currentBoard);
       const aiBoard = dropPiece(currentBoard, aiCol, 2);
       if (!aiBoard) {
@@ -363,10 +445,18 @@ export default function ConnectFourGameScreen({
       currentPlayerRef.current = 1;
       setAiThinking(false);
     }, 400);
-  }, []);
+  }, [scheduleTimeout]);
 
   const handleColumnPress = useCallback(
     (col: number) => {
+      // Colyseus multiplayer mode
+      if (gameMode === "online" && mp.isMultiplayer) {
+        if (!mp.isMyTurn || mp.phase !== "playing") return;
+        mp.sendMove({ row: 0, col });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      }
+
       if (
         gameStateRef.current !== "playing" ||
         winnerRef.current ||
@@ -397,13 +487,13 @@ export default function ConnectFourGameScreen({
           setWins(newWins);
           if (currentFirebaseUser) {
             recordGameSession(currentFirebaseUser.uid, {
-              gameId: "connect_four" as any,
+              gameId: "connect_four",
               score: newWins,
             }).then(() => {
               const newBest = !personalBest || newWins > personalBest.bestScore;
               if (newBest) {
                 setPersonalBest({
-                  gameId: "connect_four" as any,
+                  gameId: "connect_four",
                   bestScore: newWins,
                   achievedAt: Date.now(),
                 });
@@ -503,6 +593,19 @@ export default function ConnectFourGameScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isSpectator && (
+        <SpectatorBanner
+          spectatorCount={spectatorCount}
+          onLeave={() => {
+            mp.cancelMultiplayer();
+            navigation.goBack();
+          }}
+        />
+      )}
+      {!isSpectator && mp.isMultiplayer && spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorCount} />
+      )}
+
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -603,7 +706,10 @@ export default function ConnectFourGameScreen({
                       gameState !== "playing" ||
                       aiThinking ||
                       !!winner ||
-                      isDraw
+                      isDraw ||
+                      isSpectator ||
+                      (gameMode === "online" &&
+                        (!mp.isMyTurn || mp.phase !== "playing"))
                     }
                     activeOpacity={0.7}
                     accessibilityLabel={`Drop in column ${col + 1}`}
@@ -611,7 +717,7 @@ export default function ConnectFourGameScreen({
                 ))}
               </View>
               {/* Visual board cells — Skia glossy discs */}
-              {board.map((row, r) => (
+              {effectiveBoard.map((row, r) => (
                 <View key={r} style={styles.row}>
                   {row.map((cell, c) => (
                     <View
@@ -623,11 +729,7 @@ export default function ConnectFourGameScreen({
                     >
                       <SkiaDisc
                         size={CELL_SIZE - 4}
-                        color={
-                          cell === 0
-                            ? null
-                            : PLAYER_COLORS[cell as 1 | 2]
-                        }
+                        color={cell === 0 ? null : PLAYER_COLORS[cell as 1 | 2]}
                         emptyColor={colors.background}
                       />
                     </View>
@@ -681,6 +783,157 @@ export default function ConnectFourGameScreen({
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Invite to game Four"
       />
+
+      {/* Colyseus Multiplayer — Turn Indicator Bar */}
+      {gameMode === "online" && mp.isMultiplayer && mp.phase === "playing" && (
+        <TurnIndicatorBar
+          isMyTurn={mp.isMyTurn}
+          myName={mp.myName}
+          opponentName={mp.opponentName}
+          currentPlayerIndex={mp.currentPlayerIndex}
+          myPlayerIndex={mp.myPlayerIndex}
+          turnNumber={mp.turnNumber}
+          opponentDisconnected={mp.opponentDisconnected}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+            player1: "#EF4444",
+            player2: "#EAB308",
+          }}
+          player1Label="Red"
+          player2Label="Yellow"
+        />
+      )}
+
+      {/* Colyseus Multiplayer — Game Action Bar */}
+      {gameMode === "online" &&
+        mp.isMultiplayer &&
+        mp.phase === "playing" &&
+        !isSpectator && (
+        <GameActionBar
+          onResign={() => setShowResignConfirm(true)}
+          onOfferDraw={mp.offerDraw}
+          isMyTurn={mp.isMyTurn}
+          drawPending={mp.drawPending}
+          colors={{
+            primary: colors.primary,
+            background: colors.background,
+            surface: colors.surface,
+            text: colors.text,
+            textSecondary: colors.textSecondary,
+            border: colors.border,
+          }}
+        />
+        )}
+
+      {/* Colyseus Multiplayer Overlays */}
+      {gameMode === "online" && mp.isMultiplayer && (
+        <>
+          <TurnBasedWaitingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onCancel={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            gameName="Connect Four"
+            visible={mp.phase === "waiting" || mp.phase === "connecting"}
+          />
+
+          <TurnBasedCountdownOverlay
+            countdown={mp.countdown}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "countdown"}
+          />
+
+          <TurnBasedReconnectingOverlay
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            visible={mp.phase === "reconnecting"}
+          />
+
+          <TurnBasedGameOverOverlay
+            isWinner={mp.isWinner}
+            isDraw={mp.isDraw}
+            winnerName={mp.winnerName}
+            winReason={mp.winReason}
+            myName={mp.myName}
+            opponentName={mp.opponentName}
+            rematchRequested={mp.rematchRequested}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onRematch={mp.requestRematch}
+            onAcceptRematch={mp.acceptRematch}
+            onMenu={() => {
+              mp.cancelMultiplayer();
+              setGameState("menu");
+            }}
+            visible={mp.phase === "finished"}
+          />
+
+          <DrawOfferDialog
+            visible={mp.drawPending}
+            opponentName={mp.opponentName}
+            isMyOffer={mp.drawOfferedByMe}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onAccept={mp.acceptDraw}
+            onDecline={mp.declineDraw}
+          />
+
+          <ResignConfirmDialog
+            visible={showResignConfirm}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+            onConfirm={() => {
+              setShowResignConfirm(false);
+              mp.resign();
+            }}
+            onCancel={() => setShowResignConfirm(false)}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -747,3 +1000,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 4 },
   cell: { justifyContent: "center", alignItems: "center", padding: 2 },
 });
+
+export default withGameErrorBoundary(ConnectFourGameScreen, "connect_four");

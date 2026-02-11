@@ -10,6 +10,9 @@ import React, {
 } from "react";
 import { useAuth } from "./AuthContext";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("store/UserContext");
 export interface UserContextType {
   profile: AppUser | null;
   loading: boolean;
@@ -48,7 +51,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
       }
     } catch (err: any) {
-      console.error("[UserContext] Error fetching profile:", err);
+      logger.error("[UserContext] Error fetching profile:", err);
       setError(err.message);
     } finally {
       setLoading(false);

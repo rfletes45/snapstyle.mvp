@@ -11,6 +11,11 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { SkiaMinesweeperCell } from "@/components/games/graphics";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -45,8 +50,14 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { SkiaMinesweeperCell } from "@/components/games/graphics";
 
+
+import { createLogger } from "@/utils/log";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+const logger = createLogger("screens/games/MinesweeperGameScreen");
 // =============================================================================
 // Types & Constants
 // =============================================================================
@@ -58,7 +69,7 @@ interface Difficulty {
   rows: number;
   cols: number;
   mines: number;
-  icon: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
 }
 
 interface Cell {
@@ -254,9 +265,18 @@ interface MinesweeperGameScreenProps {
   navigation: any;
 }
 
-export default function MinesweeperGameScreen({
+function MinesweeperGameScreen({
   navigation,
 }: MinesweeperGameScreenProps) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "minesweeper" });
+  void __codexGameCompletion;
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -278,6 +298,19 @@ export default function MinesweeperGameScreen({
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
+  // Spectator hosting
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "minesweeper_classic",
+  });
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  // Auto-start spectator hosting so invites can be sent before game starts
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, []);
+
   // Timer ref
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(0);
@@ -288,7 +321,7 @@ export default function MinesweeperGameScreen({
 
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE as any).then(
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
         setPersonalBest,
       );
     }
@@ -347,11 +380,13 @@ export default function MinesweeperGameScreen({
     setLost(false);
     setIsNewBest(false);
     setPhase("playing");
+    spectatorHost.startHosting();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
   const handleWin = useCallback(async () => {
     setWon(true);
+    spectatorHost.endHosting(elapsedSeconds);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -362,7 +397,7 @@ export default function MinesweeperGameScreen({
     if (currentFirebaseUser?.uid) {
       try {
         await recordGameSession(currentFirebaseUser.uid, {
-          gameId: GAME_TYPE as any,
+          gameId: GAME_TYPE,
           score: elapsedSeconds,
           duration: elapsedSeconds,
         });
@@ -370,14 +405,14 @@ export default function MinesweeperGameScreen({
         if (!personalBest || elapsedSeconds < personalBest.bestScore) {
           setIsNewBest(true);
           setPersonalBest({
-            gameId: GAME_TYPE as any,
+            gameId: GAME_TYPE,
             bestScore: elapsedSeconds,
             achievedAt: Date.now(),
           });
           showSuccess("🎉 New personal best!");
         }
       } catch (error) {
-        console.error("[minesweeper_classic] Error recording session:", error);
+        logger.error("[minesweeper_classic] Error recording session:", error);
       }
     }
 
@@ -386,6 +421,7 @@ export default function MinesweeperGameScreen({
 
   const handleLoss = useCallback(() => {
     setLost(true);
+    spectatorHost.endHosting(0);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -514,13 +550,37 @@ export default function MinesweeperGameScreen({
     },
     [currentFirebaseUser, profile, elapsedSeconds, showSuccess, showError],
   );
-
   // ==========================================================================
   // Computed
   // ==========================================================================
 
   const flagCount = useMemo(() => countFlags(board), [board]);
   const remainingMines = difficulty.mines - flagCount;
+
+  // Broadcast game state to spectators
+  useEffect(() => {
+    spectatorHost.updateGameState(
+      JSON.stringify({
+        flagCount,
+        elapsedSeconds,
+        phase,
+        won,
+        lost,
+        // Visual state for spectator renderer (hide mine positions to prevent cheating)
+        grid: board.map((row) =>
+          row.map((cell) => ({
+            revealed: cell.isRevealed,
+            flagged: cell.isFlagged,
+            mine: cell.isRevealed && cell.isMine,
+            adjacentMines: cell.isRevealed ? cell.adjacentMines : 0,
+          })),
+        ),
+      }),
+      elapsedSeconds,
+      undefined,
+      undefined,
+    );
+  }, [flagCount, elapsedSeconds, phase, board]);
 
   // ==========================================================================
   // Pinch-to-zoom for medium/hard boards
@@ -715,6 +775,12 @@ export default function MinesweeperGameScreen({
     [colors, cellSize, handleCellPress, handleCellLongPress],
   );
 
+  // Back navigation with confirmation dialog
+  const { handleBack } = useGameBackHandler({
+    gameType: "minesweeper_classic",
+    isGameOver: phase === "result" || phase === "menu",
+  });
+
   // ==========================================================================
   // Menu Screen
   // ==========================================================================
@@ -725,7 +791,7 @@ export default function MinesweeperGameScreen({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             style={styles.backButton}
             accessibilityLabel="Go back"
           >
@@ -772,7 +838,7 @@ export default function MinesweeperGameScreen({
                 accessibilityLabel={`Start ${diff.label} game`}
               >
                 <MaterialCommunityIcons
-                  name={diff.icon as any}
+                  name={diff.icon}
                   size={32}
                   color={colors.primary}
                 />
@@ -817,9 +883,7 @@ export default function MinesweeperGameScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() =>
-            phase === "result" ? goToMenu() : navigation.goBack()
-          }
+          onPress={() => (phase === "result" ? goToMenu() : handleBack())}
           style={styles.backButton}
           accessibilityLabel="Go back"
         >
@@ -831,6 +895,19 @@ export default function MinesweeperGameScreen({
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Minesweeper</Text>
         <View style={styles.headerRight}>
+          {spectatorHost.spectatorRoomId && (
+            <TouchableOpacity
+              onPress={() => setShowSpectatorInvitePicker(true)}
+              style={{ marginRight: 8 }}
+              accessibilityLabel="Invite spectators"
+            >
+              <MaterialCommunityIcons
+                name="eye"
+                size={22}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          )}
           {/* Mine counter */}
           <View style={styles.headerStat}>
             <Text style={styles.headerStatEmoji}>💣</Text>
@@ -1018,11 +1095,34 @@ export default function MinesweeperGameScreen({
 
       {/* Friend Picker */}
       <FriendPickerModal
+        key="scorecard-picker"
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
         onSelectFriend={handleSendScorecard}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Send Scorecard"
+      />
+
+      {/* Spectator Overlay */}
+      <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+
+      {/* Spectator Invite Picker (Friends + Groups) */}
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "minesweeper_classic",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
       />
     </View>
   );
@@ -1197,3 +1297,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+export default withGameErrorBoundary(MinesweeperGameScreen, "minesweeper");

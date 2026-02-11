@@ -27,7 +27,7 @@
  */
 
 import { createLogger } from "@/utils/log";
-import { DEBUG_UNIFIED_MESSAGING } from "../../../constants/featureFlags";
+import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 
 // Import DM member functions
 import {
@@ -38,7 +38,7 @@ import {
   setReadReceipts as setDMReadReceipts,
   updateReadWatermark as updateDMReadWatermark,
   updateTypingIndicator as updateDMTypingIndicator,
-} from "../chatMembers";
+} from "@/services/chatMembers";
 
 // Import Group member functions
 import {
@@ -48,7 +48,7 @@ import {
   setGroupReadReceipts,
   updateGroupReadWatermark,
   updateGroupTypingIndicator,
-} from "../groupMembers";
+} from "@/services/groupMembers";
 
 const log = createLogger("messaging:memberState");
 

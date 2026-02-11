@@ -47,14 +47,14 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { DEBUG_UNIFIED_MESSAGING } from "../../../constants/featureFlags";
+import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 
 // Import existing send functions
 import {
   processPendingMessages as processPendingMessagesV2,
   retryFailedMessage as retryFailedMessageV2,
   sendMessageWithOutbox as sendMessageWithOutboxV2,
-} from "../chatV2";
+} from "@/services/chatV2";
 
 // Import outbox functions
 import {
@@ -62,7 +62,7 @@ import {
   getClientId,
   getFailedItems,
   getPendingItems,
-} from "../outbox";
+} from "@/services/outbox";
 
 const log = createLogger("messaging:send");
 

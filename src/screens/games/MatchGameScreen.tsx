@@ -7,10 +7,22 @@
  * 3. Cascading combos earn bonus points!
  * 4. Score as many points as possible in 30 moves
  *
- * Supports: Single-player puzzle with high score
+ * Supports: Single-player puzzle, Colyseus multiplayer
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import {
+  CountdownOverlay,
+  GameOverOverlay,
+  OpponentScoreBar,
+  ReconnectingOverlay,
+  WaitingOverlay,
+} from "@/components/games/MultiplayerOverlay";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameConnection } from "@/hooks/useGameConnection";
+import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
+import { useSpectator } from "@/hooks/useSpectator";
 import {
   getPersonalBest,
   PersonalBest,
@@ -22,15 +34,6 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  Dimensions,
-  Platform,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import {
   Canvas,
   LinearGradient,
@@ -38,7 +41,21 @@ import {
   Shadow,
   vec,
 } from "@shopify/react-native-skia";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -203,11 +220,41 @@ function swapGems(
 // Component
 // =============================================================================
 
-export default function MatchGameScreen({ navigation }: { navigation: any }) {
+function MatchGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route: any;
+}) {
+  const __codexGameCompletion = useGameCompletion({ gameType: "match" });
+  void __codexGameCompletion;
+  useGameBackHandler({ gameType: "match", isGameOver: false });
+  const __codexGameHaptics = useGameHaptics();
+  void __codexGameHaptics;
+  const __codexGameOverModal = (
+    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
+  );
+  void __codexGameOverModal;
+
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const { resolvedMode, firestoreGameId } = useGameConnection(
+    GAME_TYPE,
+    route?.params?.matchId,
+  );
+  const mp = useMultiplayerGame({
+    gameType: GAME_TYPE,
+    firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  useEffect(() => {
+    if (resolvedMode === "colyseus" && firestoreGameId) {
+      mp.startMultiplayer();
+    }
+  }, [resolvedMode, firestoreGameId]);
 
   const [gameState, setGameState] = useState<GameState>("menu");
   const [board, setBoard] = useState<GemCell[][]>([]);
@@ -218,6 +265,47 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
+    useState(false);
+
+  const spectatorHost = useSpectator({
+    mode: "sp-host",
+    gameType: "match",
+  });
+  const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const scheduleTimeout = useCallback(
+    (callback: () => void, delayMs: number) => {
+      const timeoutId = setTimeout(callback, delayMs);
+      timeoutIdsRef.current.push(timeoutId);
+      return timeoutId;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach(clearTimeout);
+      timeoutIdsRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
+    spectatorHost.startHosting();
+  }, [spectatorHost.startHosting]);
+
+  useEffect(() => {
+    if (gameState !== "playing") return;
+    spectatorHost.updateGameState(
+      JSON.stringify({
+        phase: gameState,
+        board: board.map((row) => row.map((cell) => cell.type)),
+        movesLeft,
+      }),
+      score,
+      1,
+      3,
+    );
+  }, [board, gameState, movesLeft, score, spectatorHost.updateGameState]);
 
   useEffect(() => {
     if (currentFirebaseUser) {
@@ -232,8 +320,9 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
     setSelected(null);
     setIsProcessing(false);
     setGameState("playing");
+    spectatorHost.startHosting();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, []);
+  }, [spectatorHost.startHosting]);
 
   const handleCellTap = useCallback(
     (r: number, c: number) => {
@@ -276,6 +365,7 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
       const pointsEarned = totalMatched * 10;
       const newScore = score + pointsEarned;
       setScore(newScore);
+      if (mp.isMultiplayer) mp.reportScore(newScore);
       setBoard(processedBoard);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -290,7 +380,11 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
             duration: TOTAL_MOVES * 2000,
           });
         }
-        setTimeout(() => setGameState("result"), 500);
+        if (mp.isMultiplayer) mp.reportFinished();
+        scheduleTimeout(() => {
+          spectatorHost.endHosting(newScore);
+          setGameState("result");
+        }, 500);
       }
     },
     [
@@ -301,6 +395,8 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
       score,
       isProcessing,
       currentFirebaseUser,
+      spectatorHost.endHosting,
+      scheduleTimeout,
     ],
   );
 
@@ -325,6 +421,14 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
               {movesLeft} moves
             </Text>
           </View>
+        ) : spectatorHost.spectatorRoomId ? (
+          <TouchableOpacity
+            onPress={() => setShowSpectatorInvitePicker(true)}
+            style={styles.backBtn}
+            accessibilityLabel="Invite spectators"
+          >
+            <MaterialCommunityIcons name="eye" size={22} color={colors.text} />
+          </TouchableOpacity>
         ) : (
           <View style={{ width: 70 }} />
         )}
@@ -349,11 +453,41 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
           >
             Start Game
           </Button>
+          {mp.isAvailable && (
+            <Button
+              mode="outlined"
+              onPress={() => {
+                mp.startMultiplayer().then(() => mp.sendReady());
+              }}
+              style={{ borderColor: colors.primary, marginTop: 12 }}
+              textColor={colors.primary}
+              icon="account-multiple"
+            >
+              Multiplayer
+            </Button>
+          )}
         </View>
       )}
 
       {gameState === "playing" && (
         <View style={styles.playArea}>
+          {mp.isMultiplayer && mp.phase === "playing" && (
+            <OpponentScoreBar
+              opponentName={mp.opponentName}
+              opponentScore={mp.opponentScore}
+              myScore={score}
+              timeRemaining={mp.timeRemaining}
+              opponentDisconnected={mp.opponentDisconnected}
+              colors={{
+                primary: colors.primary,
+                background: colors.background,
+                surface: colors.surface,
+                text: colors.text,
+                textSecondary: colors.textSecondary,
+                border: colors.border,
+              }}
+            />
+          )}
           {/* Score */}
           <Text style={[styles.scoreDisplay, { color: colors.text }]}>
             Score: {score}
@@ -384,8 +518,17 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
                       ]}
                       activeOpacity={0.6}
                     >
-                      <Canvas style={{ width: CELL_SIZE - 2, height: CELL_SIZE - 2 }} pointerEvents="none">
-                        <RoundedRect x={0} y={0} width={CELL_SIZE - 2} height={CELL_SIZE - 2} r={4}>
+                      <Canvas
+                        style={{ width: CELL_SIZE - 2, height: CELL_SIZE - 2 }}
+                        pointerEvents="none"
+                      >
+                        <RoundedRect
+                          x={0}
+                          y={0}
+                          width={CELL_SIZE - 2}
+                          height={CELL_SIZE - 2}
+                          r={4}
+                        >
                           <LinearGradient
                             start={vec(0, 0)}
                             end={vec(0, CELL_SIZE - 2)}
@@ -395,12 +538,18 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
                                 : [colors.surface, colors.surface]
                             }
                           />
-                          <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.15)" inner />
+                          <Shadow
+                            dx={0}
+                            dy={1}
+                            blur={2}
+                            color="rgba(0,0,0,0.15)"
+                            inner
+                          />
                         </RoundedRect>
                       </Canvas>
                       {cell.type >= 0 && (
                         <MaterialCommunityIcons
-                          name={gem.name as any}
+                          name={gem.name as keyof typeof MaterialCommunityIcons.glyphMap}
                           size={CELL_SIZE * 0.6}
                           color={gem.color}
                           style={{ position: "absolute" }}
@@ -476,6 +625,90 @@ export default function MatchGameScreen({ navigation }: { navigation: any }) {
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Share Score With"
       />
+
+      {spectatorHost.spectatorCount > 0 && (
+        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      )}
+
+      <SpectatorInviteModal
+        visible={showSpectatorInvitePicker}
+        onDismiss={() => setShowSpectatorInvitePicker(false)}
+        currentUserId={currentFirebaseUser?.uid || ""}
+        inviteData={
+          spectatorHost.spectatorRoomId
+            ? {
+                roomId: spectatorHost.spectatorRoomId,
+                gameType: "match",
+                hostName: profile?.displayName || profile?.username || "Player",
+              }
+            : null
+        }
+        onInviteRef={(ref) => spectatorHost.registerInviteMessage(ref)}
+        onSent={(name) => showSuccess(`Spectator invite sent to ${name}!`)}
+        onError={showError}
+      />
+
+      <WaitingOverlay
+        visible={mp.isMultiplayer && mp.phase === "waiting"}
+        onCancel={mp.cancelMultiplayer}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <CountdownOverlay
+        visible={mp.isMultiplayer && mp.phase === "countdown"}
+        count={mp.countdown}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <ReconnectingOverlay
+        visible={mp.isMultiplayer && mp.reconnecting}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
+      <GameOverOverlay
+        visible={mp.isMultiplayer && mp.phase === "finished"}
+        isWinner={mp.isWinner}
+        isTie={mp.isTie}
+        winnerName={mp.winnerName}
+        myScore={score}
+        opponentScore={mp.opponentScore}
+        opponentName={mp.opponentName}
+        rematchRequested={mp.rematchRequested}
+        onPlayAgain={startGame}
+        onRematch={mp.requestRematch}
+        onAcceptRematch={mp.acceptRematch}
+        onMenu={() => {
+          mp.cancelMultiplayer();
+          setGameState("menu");
+        }}
+        onShare={() => setShowFriendPicker(true)}
+        colors={{
+          primary: colors.primary,
+          background: colors.background,
+          surface: colors.surface,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+        }}
+      />
     </View>
   );
 }
@@ -517,3 +750,5 @@ const styles = StyleSheet.create({
   },
   dialogActions: { justifyContent: "center" },
 });
+
+export default withGameErrorBoundary(MatchGameScreen, "match");

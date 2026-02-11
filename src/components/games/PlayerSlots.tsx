@@ -16,7 +16,7 @@ import Animated, { FadeIn, Layout } from "react-native-reanimated";
 
 import { ProfilePicture } from "@/components/profile/ProfilePicture";
 import type { PlayerSlot } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types

@@ -34,8 +34,11 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "../../../constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("screens/tasks/TasksScreen");
 export default function TasksScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
@@ -102,9 +105,9 @@ export default function TasksScreen({ navigation }: any) {
       const functions = getFunctions(app);
       const recordLogin = httpsCallable(functions, "recordDailyLogin");
       await recordLogin({});
-      console.log("[TasksScreen] Daily login recorded");
+      logger.info("[TasksScreen] Daily login recorded");
     } catch (error) {
-      console.error("[TasksScreen] Error recording daily login:", error);
+      logger.error("[TasksScreen] Error recording daily login:", error);
     }
   };
 
@@ -137,7 +140,7 @@ export default function TasksScreen({ navigation }: any) {
         });
       }
     } catch (error: any) {
-      console.error("[TasksScreen] Claim error:", error);
+      logger.error("[TasksScreen] Claim error:", error);
       setSnackbar({
         visible: true,
         message: error.message || "Failed to claim reward",
@@ -189,7 +192,7 @@ export default function TasksScreen({ navigation }: any) {
               ]}
             >
               <MaterialCommunityIcons
-                name={task.icon as any}
+                name={task.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                 size={24}
                 color={
                   task.claimed

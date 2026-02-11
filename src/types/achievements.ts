@@ -34,7 +34,6 @@ export type AchievementCategory =
 
   // Single-player games
   | "casual_games" // General single-player
-  | "flappy_bird" // Flappy Bird specific
   | "bounce_blitz" // Bounce Blitz specific
   | "play_2048" // 2048 specific
   | "memory_master" // Memory game specific
@@ -80,7 +79,6 @@ export type AchievementTriggerType =
   | "game_streak" // Consecutive days playing
 
   // Score-based triggers
-  | "flappy_score" // Flappy Bird score
   | "bounce_round" // Bounce Blitz round reached
   | "bounce_blocks_hit" // Blocks hit in single shot
   | "bounce_row_clear" // Rows cleared
@@ -379,7 +377,6 @@ export function getCategoryDisplayName(category: AchievementCategory): string {
     daily: "Daily Challenges",
     seasonal: "Seasonal",
     casual_games: "Casual Games",
-    flappy_bird: "Flappy Bird",
     bounce_blitz: "Bounce Blitz",
     play_2048: "Play 2048",
     memory_master: "Memory",

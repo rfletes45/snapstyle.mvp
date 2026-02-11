@@ -14,7 +14,7 @@ import {
   RealTimeGameType,
   SinglePlayerGameType,
   TurnBasedGameType,
-} from "../types/games";
+} from "@/types/games";
 
 // =============================================================================
 // Types

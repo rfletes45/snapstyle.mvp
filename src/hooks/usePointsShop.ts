@@ -32,6 +32,9 @@ import type {
 } from "@/types/shop";
 import { SHOP_ERROR_MESSAGES, ShopErrorCode } from "@/types/shop";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/usePointsShop");
 // =============================================================================
 // Types
 // =============================================================================
@@ -167,7 +170,7 @@ export function usePointsShop(uid: string | undefined): UsePointsShopReturn {
         const catalogData = await getPointsShopCatalog(uid, forceRefresh);
         setCatalog(catalogData);
       } catch (err: any) {
-        console.error("[usePointsShop] Error loading catalog:", err);
+        logger.error("[usePointsShop] Error loading catalog:", err);
         setError(
           createShopError(
             ShopErrorCode.SERVER_ERROR,
@@ -247,7 +250,7 @@ export function usePointsShop(uid: string | undefined): UsePointsShopReturn {
 
         return result;
       } catch (err: any) {
-        console.error("[usePointsShop] Purchase error:", err);
+        logger.error("[usePointsShop] Purchase error:", err);
         const shopError = createShopError(
           ShopErrorCode.SERVER_ERROR,
           err.message || "Purchase failed",

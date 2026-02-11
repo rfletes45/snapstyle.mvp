@@ -46,6 +46,20 @@ const IS_WEB = Platform.OS === "web";
 export const USE_LOCAL_STORAGE = !IS_WEB;
 
 // =============================================================================
+// Daily Games
+// =============================================================================
+
+/**
+ * List of game types that are considered "daily" challenges.
+ *
+ * Daily games:
+ * - Save progress when the user leaves mid-game
+ * - Prevent replay after a win or loss until the word/puzzle resets
+ * - Skip the "leave game?" confirmation dialog
+ */
+export const DAILY_GAMES: string[] = ["word_master"];
+
+// =============================================================================
 // Debug Features
 // =============================================================================
 
@@ -55,17 +69,6 @@ export const USE_LOCAL_STORAGE = !IS_WEB;
 export const DEBUG_CHAT_V2 = __DEV__;
 
 /**
- * Show V2 badge in chat header (for testing)
- */
-export const SHOW_V2_BADGE = __DEV__;
-
-/**
- * Log keyboard/composer/autoscroll events to console
- * Enables detailed logging for keyboard behavior debugging
- */
-export const DEBUG_CHAT_KEYBOARD = __DEV__;
-
-/**
  * Debug logging for unified messaging
  *
  * Logs adapter conversions, subscription events, outbox operations.
@@ -73,82 +76,6 @@ export const DEBUG_CHAT_KEYBOARD = __DEV__;
  * @default __DEV__
  */
 export const DEBUG_UNIFIED_MESSAGING = __DEV__;
-
-// =============================================================================
-// Profile Overhaul Feature Flags
-// =============================================================================
-
-/**
- * Profile overhaul feature flags
- *
- * @graduated All phases complete — every flag is permanently `true`.
- * Conditional checks can be safely inlined (remove the `if` and keep
- * the body). Left as flags only for quick rollback during hotfixes.
- *
- * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md
- */
-export const PROFILE_FEATURES = {
-  /** Phase 1: Extended avatar config with new slots */
-  EXTENDED_AVATAR_CONFIG: true,
-
-  /** Phase 2: Badge system - display earned badges */
-  BADGE_SYSTEM: true,
-
-  /** Phase 2: Badge showcase on profile */
-  BADGE_SHOWCASE: true,
-
-  /** Phase 3: New profile layout with stats */
-  NEW_PROFILE_LAYOUT: true,
-
-  /** Phase 3: Profile statistics dashboard */
-  PROFILE_STATS: true,
-
-  /** Phase 3: XP-based level system */
-  LEVEL_SYSTEM: true,
-
-  /** Phase 4: Extended cosmetics (clothing, accessories) */
-  EXTENDED_COSMETICS: true,
-
-  /** Phase 4: Profile frames around avatars */
-  PROFILE_FRAMES: true,
-
-  /** Phase 5: Profile theme customization */
-  PROFILE_THEMES: true,
-
-  /** Phase 5: Custom chat bubble styles */
-  CHAT_BUBBLES: true,
-
-  /** Phase 5: Game scores display on profile */
-  GAME_SCORES: true,
-
-  /** Phase 5: Privacy settings */
-  PRIVACY_SETTINGS: true,
-
-  /** Phase 6: In-app purchases for cosmetics */
-  COSMETIC_IAP: true,
-
-  // =========================================================================
-  // Phase 7: Polish & Performance
-  // =========================================================================
-
-  /** Phase 7: Profile data caching */
-  PROFILE_CACHING: true,
-
-  /** Phase 7: Loading skeleton animations */
-  LOADING_SKELETONS: true,
-
-  /** Phase 7: Badge earn celebration animation */
-  BADGE_EARN_ANIMATION: true,
-
-  /** Phase 7: Level up celebration animation */
-  LEVEL_UP_ANIMATION: true,
-
-  /** Phase 7: Optimized list rendering (FlashList) */
-  OPTIMIZED_LISTS: true,
-
-  /** Phase 7: Debug animation timing */
-  DEBUG_ANIMATIONS: __DEV__,
-} as const;
 
 // =============================================================================
 // New Profile System Feature Flags (Profile V2)
@@ -213,21 +140,9 @@ export const PROFILE_V2_FEATURES = {
   /** Enable theme inheritance (view in their theme) */
   THEME_INHERITANCE: true,
 
-  /** Enable custom background upload (premium) */
-  CUSTOM_BACKGROUNDS: false,
-
   // =========================================================================
   // Phase 5: Game Scores & Polish
   // =========================================================================
-
-  /** Enable game scores display on profile */
-  GAME_SCORES_DISPLAY: false,
-
-  /** Enable score comparison with viewer */
-  SCORE_COMPARISON: false,
-
-  /** Enable profile animations and transitions */
-  PROFILE_ANIMATIONS: false,
 
   // =========================================================================
   // Phase 6: Advanced Features
@@ -254,132 +169,6 @@ export const PROFILE_V2_FEATURES = {
 
   /** Navigate to UserProfileScreen from DM context menu */
   DM_PROFILE_NAVIGATION: true,
-
-  /** Show profile view counter */
-  PROFILE_VIEW_COUNTER: false,
-
-  // =========================================================================
-  // Debug Flags
-  // =========================================================================
-
-  /** Log profile system events */
-  DEBUG_PROFILE: __DEV__,
-
-  /** Show feature flag badges in UI */
-  SHOW_FEATURE_BADGES: __DEV__,
-} as const;
-
-// =============================================================================
-// Shop Overhaul Feature Flags
-// =============================================================================
-
-/**
- * Shop overhaul feature flags
- *
- * @graduated All phases complete — every flag is permanently `true`.
- * Conditional checks can be safely inlined. Left as flags only
- * for quick rollback during hotfixes.
- *
- * @see docs/SHOP_OVERHAUL_PLAN.md
- */
-export const SHOP_FEATURES = {
-  // =========================================================================
-  // Phase 1: Foundation
-  // =========================================================================
-
-  /** Phase 1: Enable new shop hub navigation */
-  SHOP_HUB: true,
-
-  /** Phase 1: Points shop catalog (token-based purchases) */
-  POINTS_SHOP: true,
-
-  /** Phase 1: Premium shop catalog (IAP purchases) */
-  PREMIUM_SHOP: true,
-
-  // =========================================================================
-  // Phase 2: Points Shop
-  // =========================================================================
-
-  /** Phase 2: Points shop item categories (hats, glasses, etc.) */
-  POINTS_SHOP_CATEGORIES: true,
-
-  /** Phase 2: Points shop search functionality */
-  POINTS_SHOP_SEARCH: true,
-
-  /** Phase 2: Points shop filtering */
-  POINTS_SHOP_FILTERS: true,
-
-  /** Phase 2: New item badges in shop */
-  NEW_ITEM_BADGES: true,
-
-  /** Phase 2: Featured items carousel */
-  FEATURED_ITEMS: true,
-
-  /** Phase 2: Purchase confirmation modal */
-  PURCHASE_CONFIRMATION: true,
-
-  // =========================================================================
-  // Phase 3: Premium Shop
-  // =========================================================================
-
-  /** Phase 3: In-App Purchase integration (requires native setup) */
-  IAP_ENABLED: true,
-
-  /** Phase 3: Mock IAP for development testing */
-  MOCK_IAP: __DEV__,
-
-  /** Phase 3: Token pack purchases */
-  TOKEN_PACKS: true,
-
-  /** Phase 3: Premium bundles */
-  PREMIUM_BUNDLES: true,
-
-  /** Phase 3: Premium-exclusive items */
-  PREMIUM_EXCLUSIVES: true,
-
-  /** Phase 3: Gifting items to friends */
-  GIFTING: true,
-
-  /** Phase 3: Purchase receipt validation */
-  RECEIPT_VALIDATION: true,
-
-  // =========================================================================
-  // Phase 4: Enhancement & Polish
-  // =========================================================================
-
-  /** Phase 4: Wishlist functionality */
-  WISHLIST: true,
-
-  /** Phase 4: Daily deals rotation */
-  DAILY_DEALS: true,
-
-  /** Phase 4: Limited-time promotions */
-  PROMOTIONS: true,
-
-  /** Phase 4: Purchase history screen */
-  PURCHASE_HISTORY: true,
-
-  /** Phase 4: Shop item preview/try-on */
-  ITEM_PREVIEW: true,
-
-  /** Phase 4: Shop analytics tracking */
-  SHOP_ANALYTICS: true,
-
-  /** Phase 4: Purchase celebration animations */
-  PURCHASE_ANIMATIONS: true,
-
-  /** Phase 4: Push notifications for deals */
-  DEAL_NOTIFICATIONS: true,
-
-  // =========================================================================
-  // Debug Flags
-  // =========================================================================
-
-  /** Debug: Log shop events to console */
-  DEBUG_SHOP: __DEV__,
-
-  /** Debug: Show IAP test interface */
-  DEBUG_IAP: __DEV__,
 } as const;
 
 // =============================================================================
@@ -410,15 +199,6 @@ export const PLAY_SCREEN_FEATURES = {
   /** Phase 2: Enable search functionality */
   SEARCH_LOGIC: true,
 
-  /** Phase 2: Enable filter chips */
-  FILTER_CHIPS: true,
-
-  /** Phase 2: Enable modern game cards */
-  MODERN_CARDS: true,
-
-  /** Phase 2: Enable carousel tiles */
-  CAROUSEL_TILES: true,
-
   // =========================================================================
   // Phase 3: Game Card Redesign
   // =========================================================================
@@ -442,9 +222,6 @@ export const PLAY_SCREEN_FEATURES = {
   /** Phase 4: Enable category carousels */
   CATEGORY_CAROUSELS: true,
 
-  /** Phase 4: Enable featured games banner */
-  FEATURED_BANNER: true,
-
   // =========================================================================
   // Phase 5: Game Invites Section
   // =========================================================================
@@ -461,26 +238,6 @@ export const PLAY_SCREEN_FEATURES = {
 
   /** Phase 6: Remove recent games section */
   REMOVE_RECENT_GAMES: true,
-
-  // =========================================================================
-  // Phase 7: Additional Features
-  // =========================================================================
-
-  /** Phase 7: Enable weekly game stats summary card */
-  GAME_STATS_SUMMARY: true,
-
-  /** Phase 7: Enable friends playing now section */
-  FRIENDS_PLAYING_NOW: true,
-
-  /** Phase 7: Enable game recommendations carousel */
-  GAME_RECOMMENDATIONS: true,
-
-  // =========================================================================
-  // Debug Flags
-  // =========================================================================
-
-  /** Debug: Log play screen events to console */
-  DEBUG_PLAY_SCREEN: __DEV__,
 } as const;
 
 // =============================================================================
@@ -696,4 +453,146 @@ export const CALL_FEATURES = {
 
   /** Debug: Show call state overlay */
   DEBUG_CALL_STATE_OVERLAY: __DEV__,
+} as const;
+
+// =============================================================================
+// Three.js 3D Visual Enhancement Features
+// =============================================================================
+
+/**
+ * Three.js visual enhancement feature flags
+ *
+ * Controls progressive rollout of 3D visual effects across the play system.
+ * All 3D components are overlaid behind existing 2D UI as position: absolute
+ * layers. On web platform, all 3D components render null (expo-gl only).
+ *
+ * Packages: expo-gl, three, expo-three
+ *
+ * @see src/components/three/
+ */
+export const THREE_JS_FEATURES = {
+  // =========================================================================
+  // Master Switch
+  // =========================================================================
+
+  /** Global enable/disable for all Three.js visual effects. Disabled on web. */
+  THREE_JS_ENABLED: !IS_WEB,
+
+  // =========================================================================
+  // Play Screen 3D Enhancements
+  // =========================================================================
+
+  /** 3D animated hero banner behind FeaturedGameBanner (floating game pieces) */
+  HERO_BANNER_3D: true,
+
+  /** 3D animated background for the GamesHubScreen (floating shapes, fog) */
+  GAME_BACKGROUND_3D: true,
+
+  /** Floating 3D game icons behind the Play header/categories */
+  FLOATING_ICONS_3D: true,
+
+  // =========================================================================
+  // Game Invite 3D Enhancements
+  // =========================================================================
+
+  /** 3D animated overlay on CompactInviteCard (spinning gem, glow ring) */
+  INVITE_CARD_3D: true,
+
+  // =========================================================================
+  // Victory / Game Over 3D Effects
+  // =========================================================================
+
+  /** 3D animated trophy on victory/game-over screens */
+  VICTORY_TROPHY_3D: true,
+
+  // =========================================================================
+  // Debug Flags
+  // =========================================================================
+
+  /** Debug: Log Three.js lifecycle events */
+  DEBUG_THREE_JS: __DEV__,
+} as const;
+
+// =============================================================================
+// Colyseus Multiplayer Features
+// =============================================================================
+
+/**
+ * Feature flags for Colyseus real-time multiplayer system.
+ *
+ * Controls progressive rollout of multiplayer across game tiers:
+ *   Phase 1: Quick-Play (score-race pattern)
+ *   Phase 2: Turn-Based (chess, checkers, connect-4)
+ *   Phase 3: Complex Turn-Based (Battleship, etc.)
+ *   Phase 4: Physics-Based (pool, cart course)
+ *   Phase 5: Co-op (cooperative games)
+ */
+export const COLYSEUS_FEATURES = {
+  // =========================================================================
+  // Master Switch
+  // =========================================================================
+
+  /** Global enable/disable for all Colyseus multiplayer features */
+  COLYSEUS_ENABLED: true,
+
+  // =========================================================================
+  // Tier Rollout Flags
+  // =========================================================================
+
+  /** Quick-play games: ReactionTap, TimedTap, DotMatch */
+  QUICKPLAY_ENABLED: true,
+
+  /** Turn-based games: TicTacToe, ConnectFour, Gomoku, Reversi (Phase 2 â€” LIVE) */
+  TURNBASED_ENABLED: true,
+
+  /** Complex turn-based games: Chess, Checkers, CrazyEights, War */
+  COMPLEX_TURNBASED_ENABLED: true,
+
+  /** Physics-based games: Pong, AirHockey, BounceBlitz, BrickBreaker, Snake, Race */
+  PHYSICS_ENABLED: true,
+
+  /** Cooperative games: WordMaster, Crossword */
+  COOP_ENABLED: true,
+
+  // =========================================================================
+  // Feature Sub-Flags
+  // =========================================================================
+
+  /** Enable matchmaking queue (vs direct invites only) â€” disabled: friends-only */
+  MATCHMAKING_ENABLED: false,
+
+  /** Enable ELO-based ranked matches â€” disabled: friends-only */
+  RANKED_ENABLED: false,
+
+  /** Enable rematch flow after game over */
+  REMATCH_ENABLED: true,
+
+  /** Enable reconnection handling on network drop */
+  RECONNECTION_ENABLED: true,
+
+  /** Show opponent score overlay during gameplay */
+  OPPONENT_SCORE_OVERLAY: true,
+
+  // =========================================================================
+  // Server Configuration
+  // =========================================================================
+
+  /** Use production Colyseus server (vs local dev) */
+  USE_PRODUCTION_SERVER: false,
+
+  // =========================================================================
+  // Debug Flags
+  // =========================================================================
+
+  /** Debug: Log Colyseus state changes to console */
+  DEBUG_STATE_SYNC: __DEV__,
+
+  /** Debug: Log Colyseus messages to console */
+  DEBUG_MESSAGES: __DEV__,
+
+  /** Debug: Show latency overlay */
+  DEBUG_LATENCY_OVERLAY: false,
+
+  /** Debug: Simulate network lag (ms) â€” 0 = disabled */
+  DEBUG_SIMULATED_LAG: 0,
 } as const;

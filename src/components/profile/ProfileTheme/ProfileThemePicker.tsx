@@ -30,6 +30,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemePreview } from "./ThemePreview";
 
+
+import { createLogger } from "@/utils/log";
+const logger = createLogger("components/profile/ProfileTheme/ProfileThemePicker");
 // =============================================================================
 // Types
 // =============================================================================
@@ -163,7 +166,7 @@ export const ProfileThemePicker = memo(function ProfileThemePicker({
       const owned = await getUserOwnedThemes(userId);
       setOwnedThemeIds(owned);
     } catch (error) {
-      console.error("[ProfileThemePicker] Error loading themes:", error);
+      logger.error("[ProfileThemePicker] Error loading themes:", error);
     } finally {
       setIsLoading(false);
     }
@@ -204,7 +207,7 @@ export const ProfileThemePicker = memo(function ProfileThemePicker({
         onThemeSelected?.(theme.id);
       } else {
         // Could show purchase modal here
-        console.log("[ProfileThemePicker] Theme not owned:", theme.id);
+        logger.info("[ProfileThemePicker] Theme not owned:", theme.id);
       }
     },
     [ownedThemeIds, onThemeSelected],
@@ -231,10 +234,10 @@ export const ProfileThemePicker = memo(function ProfileThemePicker({
 
         onClose();
       } else {
-        console.error("[ProfileThemePicker] Failed to equip theme");
+        logger.error("[ProfileThemePicker] Failed to equip theme");
       }
     } catch (error) {
-      console.error("[ProfileThemePicker] Error equipping theme:", error);
+      logger.error("[ProfileThemePicker] Error equipping theme:", error);
     } finally {
       setIsSaving(false);
     }

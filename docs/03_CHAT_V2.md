@@ -440,7 +440,7 @@ Instead of per-message `read: boolean` flags:
 // src/services/chatMembers.ts
 updateReadWatermark(chatId, uid, timestamp): Promise<void>
 
-// Called automatically by useMessagesV2 when messages are viewed
+// Called automatically by useReadReceipts when messages are viewed
 ```
 
 ### Respecting Privacy
@@ -1328,4 +1328,3 @@ The inbox screen (`ChatListScreenV2`) is the **default screen** when the app ope
   confirmBeforeDelete: boolean;
 }
 ```
-

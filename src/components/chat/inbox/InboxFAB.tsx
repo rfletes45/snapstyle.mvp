@@ -12,8 +12,10 @@
  */
 
 import { useAppTheme } from "@/store/ThemeContext";
+import type { MainStackParamList } from "@/types/navigation";
 import * as haptics from "@/utils/haptics";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { memo, useCallback, useState } from "react";
 import { StyleSheet } from "react-native";
 import { FAB, Portal } from "react-native-paper";
@@ -44,7 +46,7 @@ export const InboxFAB = memo(function InboxFAB({
   customActions,
 }: InboxFABProps) {
   const { colors, isDark } = useAppTheme();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
   const [open, setOpen] = useState(false);
 
   const onStateChange = useCallback(({ open }: { open: boolean }) => {
@@ -57,19 +59,19 @@ export const InboxFAB = memo(function InboxFAB({
   const handleNewMessage = useCallback(() => {
     haptics.buttonPress();
     // Navigate to Connections tab where users can start a new conversation
-    (navigation as any).navigate("Connections");
+    navigation.navigate("Connections");
   }, [navigation]);
 
   const handleNewGroup = useCallback(() => {
     haptics.buttonPress();
     // Navigate to group creation screen - this is within InboxStack
-    (navigation as any).navigate("GroupChatCreate");
+    navigation.navigate("GroupChatCreate");
   }, [navigation]);
 
   const handleAddFriend = useCallback(() => {
     haptics.buttonPress();
     // Navigate to Connections tab for finding friends
-    (navigation as any).navigate("Connections");
+    navigation.navigate("Connections");
   }, [navigation]);
 
   // Default actions
