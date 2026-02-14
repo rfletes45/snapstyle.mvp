@@ -3,12 +3,7 @@
  * Manages 25+ filters with real-time application and blending
  */
 
-import {
-  AppliedFilter,
-  FilterCategory,
-  FilterConfig,
-} from "@/types/camera";
-
+import { AppliedFilter, FilterCategory, FilterConfig } from "@/types/camera";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/filterService");
@@ -304,6 +299,210 @@ export const FILTER_LIBRARY: FilterConfig[] = [
     saturation: 0.7,
     hue: 25,
   },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ADVANCED FILTERS (Phase 4) — using vignette, grain, fade, temperature,
+  // split-tone, sharpen for cinema-grade looks
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // CINEMATIC
+  {
+    id: "cinema_teal_orange",
+    name: "Teal & Orange",
+    category: "artistic",
+    description: "Hollywood blockbuster teal-and-orange colour grade",
+    brightness: -0.05,
+    contrast: 1.25,
+    saturation: 1.15,
+    hue: 0,
+    vignette: 0.5,
+    temperature: 0.35,
+    splitTone: {
+      shadowColor: "#1A535C",
+      highlightColor: "#FF6B35",
+      balance: 0.1,
+    },
+  },
+  {
+    id: "cinema_noir",
+    name: "Film Noir",
+    category: "bw",
+    description: "Classic high-contrast black-and-white with heavy vignette",
+    brightness: -0.1,
+    contrast: 1.6,
+    saturation: 0,
+    hue: 0,
+    vignette: 0.75,
+    grain: 0.25,
+    fade: 0.05,
+  },
+  {
+    id: "cinema_bleach",
+    name: "Bleach Bypass",
+    category: "artistic",
+    description: "Desaturated silver look from skipping the bleach step",
+    brightness: 0.05,
+    contrast: 1.4,
+    saturation: 0.4,
+    hue: 0,
+    vignette: 0.3,
+    fade: 0.1,
+    temperature: -0.15,
+  },
+
+  // ANALOG FILM
+  {
+    id: "film_portra",
+    name: "Portra 400",
+    category: "warm",
+    description: "Warm skin tones, lifted shadows — iconic portrait film",
+    brightness: 0.1,
+    contrast: 0.95,
+    saturation: 0.9,
+    hue: 10,
+    fade: 0.15,
+    temperature: 0.2,
+    grain: 0.15,
+    vignette: 0.15,
+  },
+  {
+    id: "film_velvia",
+    name: "Velvia 50",
+    category: "vibrant",
+    description: "Hyper-saturated colours — landscape photographer's choice",
+    brightness: -0.05,
+    contrast: 1.3,
+    saturation: 1.6,
+    hue: 0,
+    vignette: 0.2,
+    temperature: 0.1,
+    grain: 0.05,
+  },
+  {
+    id: "film_tri_x",
+    name: "Tri-X 400",
+    category: "bw",
+    description: "Classic photojournalism B&W with rich grain",
+    brightness: 0.05,
+    contrast: 1.35,
+    saturation: 0,
+    hue: 0,
+    grain: 0.4,
+    vignette: 0.2,
+    fade: 0.08,
+  },
+  {
+    id: "film_ektar",
+    name: "Ektar 100",
+    category: "vibrant",
+    description: "Ultra-vivid with deep blues and rich reds",
+    brightness: 0,
+    contrast: 1.2,
+    saturation: 1.45,
+    hue: 0,
+    temperature: -0.1,
+    vignette: 0.15,
+    grain: 0.08,
+  },
+
+  // MOOD
+  {
+    id: "mood_golden",
+    name: "Golden Hour",
+    category: "warm",
+    description: "Warm golden light with gentle fade",
+    brightness: 0.15,
+    contrast: 1.05,
+    saturation: 1.1,
+    hue: 20,
+    temperature: 0.45,
+    fade: 0.1,
+    vignette: 0.2,
+    splitTone: {
+      shadowColor: "#8B4513",
+      highlightColor: "#FFD700",
+      balance: 0.3,
+    },
+  },
+  {
+    id: "mood_arctic",
+    name: "Arctic",
+    category: "cool",
+    description: "Icy blue tones with high clarity",
+    brightness: 0.08,
+    contrast: 1.15,
+    saturation: 0.85,
+    hue: 200,
+    temperature: -0.5,
+    vignette: 0.1,
+    sharpen: 0.3,
+    splitTone: {
+      shadowColor: "#0D1B2A",
+      highlightColor: "#A8DADC",
+      balance: -0.2,
+    },
+  },
+  {
+    id: "mood_haze",
+    name: "Summer Haze",
+    category: "soft",
+    description: "Dreamy washed-out summer afternoon",
+    brightness: 0.2,
+    contrast: 0.85,
+    saturation: 0.75,
+    hue: 15,
+    fade: 0.25,
+    temperature: 0.2,
+    grain: 0.1,
+    vignette: 0.1,
+  },
+  {
+    id: "mood_midnight",
+    name: "Midnight",
+    category: "cool",
+    description: "Deep blues and purples — late night atmosphere",
+    brightness: -0.15,
+    contrast: 1.2,
+    saturation: 0.9,
+    hue: 240,
+    temperature: -0.35,
+    vignette: 0.55,
+    grain: 0.12,
+    splitTone: {
+      shadowColor: "#1B0A3C",
+      highlightColor: "#4A90D9",
+      balance: -0.3,
+    },
+  },
+
+  // EDITORIAL
+  {
+    id: "editorial_clean",
+    name: "Clean Edit",
+    category: "soft",
+    description: "Magazine-clean with subtle sharpening and lifted blacks",
+    brightness: 0.05,
+    contrast: 1.1,
+    saturation: 1.05,
+    hue: 0,
+    fade: 0.08,
+    sharpen: 0.4,
+    vignette: 0.1,
+  },
+  {
+    id: "editorial_moody",
+    name: "Moody Edit",
+    category: "artistic",
+    description: "Dark editorial with crushed blacks and cool tones",
+    brightness: -0.12,
+    contrast: 1.3,
+    saturation: 0.8,
+    hue: 0,
+    temperature: -0.2,
+    vignette: 0.4,
+    fade: 0.05,
+    grain: 0.08,
+  },
 ];
 
 /**
@@ -517,12 +716,15 @@ export async function loadFilterPresets(
  * Get popular filters (trending)
  */
 export function getPopularFilters(): FilterConfig[] {
-  // Return most-used filters
+  // Return most-used filters — now includes cinema-grade options
   return [
     getFilterById("warm_golden_hour"),
+    getFilterById("cinema_teal_orange"),
+    getFilterById("film_portra"),
     getFilterById("cool_blue"),
     getFilterById("vintage_film"),
     getFilterById("bw_classic"),
+    getFilterById("mood_golden"),
     getFilterById("vibrant_vivid"),
   ].filter((f) => f !== undefined) as FilterConfig[];
 }
@@ -534,11 +736,17 @@ export function getFiltersByMood(
   mood: "happy" | "sad" | "energetic" | "calm" | "dark",
 ): FilterConfig[] {
   const moodMap: Record<string, string[]> = {
-    happy: ["vibrant_vivid", "warm_golden_hour", "neon_glow"],
-    sad: ["bw_moody", "cool_night", "soft_dreamy"],
-    energetic: ["vibrant_neon", "retro_80s", "cool_cyberpunk"],
-    calm: ["soft_pastel", "warm_sepia", "vintage_polaroid"],
-    dark: ["bw_high_contrast", "cool_night", "artistic_sketch"],
+    happy: ["vibrant_vivid", "warm_golden_hour", "neon_glow", "mood_golden"],
+    sad: ["bw_moody", "cool_night", "soft_dreamy", "cinema_noir"],
+    energetic: ["vibrant_neon", "retro_80s", "cool_cyberpunk", "film_velvia"],
+    calm: ["soft_pastel", "warm_sepia", "vintage_polaroid", "mood_haze"],
+    dark: [
+      "bw_high_contrast",
+      "cool_night",
+      "artistic_sketch",
+      "mood_midnight",
+      "editorial_moody",
+    ],
   };
 
   return (moodMap[mood] || [])
@@ -725,9 +933,11 @@ export function generateColorMatrix(
 
 /**
  * Build a color matrix from a FilterConfig (convenience wrapper).
+ * Incorporates brightness, contrast, saturation, hue, sepia, invert,
+ * and the new fade (lifted blacks) effect.
  */
 export function filterConfigToColorMatrix(filter: FilterConfig): number[] {
-  return generateColorMatrix(
+  let m = generateColorMatrix(
     filter.brightness,
     filter.contrast,
     filter.saturation,
@@ -735,6 +945,36 @@ export function filterConfigToColorMatrix(filter: FilterConfig): number[] {
     filter.sepia ?? 0,
     filter.invert ?? 0,
   );
+
+  // Fade / lift blacks: add to the RGB translate columns
+  const fade = filter.fade ?? 0;
+  if (fade > 0) {
+    const lift = fade * 0.15; // subtle — 0.15 max lift at fade=1
+    m = multiply(m, [
+      1 - fade * 0.1,
+      0,
+      0,
+      0,
+      lift,
+      0,
+      1 - fade * 0.1,
+      0,
+      0,
+      lift,
+      0,
+      0,
+      1 - fade * 0.1,
+      0,
+      lift,
+      0,
+      0,
+      0,
+      1,
+      0,
+    ]);
+  }
+
+  return m;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

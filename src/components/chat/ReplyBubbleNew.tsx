@@ -15,13 +15,14 @@
  * @module components/chat/ReplyBubble
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { ReplyToMetadata } from "@/types/messaging";
+import { getKindIconIonicons, getPreviewText } from "@/utils/messagePreview";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import Animated, { FadeIn } from "react-native-reanimated";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -36,68 +37,6 @@ interface ReplyBubbleProps {
   onPress?: () => void;
   /** Whether the replied message is from current user */
   isReplyToMe?: boolean;
-}
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * Get display text for the reply preview based on message kind
- * NOTE: There are 3 getPreviewText implementations â€” keep in sync:
- *   1. firebase-backend/functions/src/messaging.ts (rich, stored in Firestore)
- *   2. src/components/chat/ReplyBubbleNew.tsx (this file)
- *   3. src/components/chat/ReplyPreviewBar.tsx (plain, reply compose bar)
- */
-function getPreviewText(replyTo: ReplyToMetadata): string {
-  if (replyTo.textSnippet) {
-    // Truncate to 60 chars for cleaner display
-    const text = replyTo.textSnippet;
-    return text.length > 60 ? text.substring(0, 60) + "…" : text;
-  }
-
-  switch (replyTo.kind) {
-    case "text":
-      return "Message";
-    case "media":
-      return "Photo";
-    case "voice":
-      return "Voice message";
-    case "file":
-      return "File";
-    case "system":
-      return "System message";
-    case "scorecard":
-      return "Game result";
-    case "game_invite":
-      return "Game invite";
-    default:
-      return "Message";
-  }
-}
-
-/**
- * Get icon name for the message kind
- */
-function getKindIcon(
-  kind: ReplyToMetadata["kind"],
-): keyof typeof Ionicons.glyphMap {
-  switch (kind) {
-    case "media":
-      return "image-outline";
-    case "voice":
-      return "mic-outline";
-    case "file":
-      return "document-outline";
-    case "system":
-      return "information-circle-outline";
-    case "scorecard":
-      return "trophy-outline";
-    case "game_invite":
-      return "game-controller-outline";
-    default:
-      return "chatbubble-outline";
-  }
 }
 
 // =============================================================================
@@ -172,7 +111,7 @@ export function ReplyBubble({
 }: ReplyBubbleProps) {
   const theme = useTheme();
 
-  const previewText = getPreviewText(replyTo);
+  const previewText = getPreviewText(replyTo, 60);
   const senderLabel = isReplyToMe ? "You" : replyTo.senderName || "User";
   const showMediaIcon = replyTo.kind !== "text" && !replyTo.textSnippet;
 
@@ -248,7 +187,11 @@ export function ReplyBubble({
           <View style={styles.previewRow}>
             {showMediaIcon && (
               <Ionicons
-                name={getKindIcon(replyTo.kind)}
+                name={
+                  getKindIconIonicons(
+                    replyTo.kind,
+                  ) as keyof typeof Ionicons.glyphMap
+                }
                 size={14}
                 color={previewColor}
                 style={styles.mediaIcon}
@@ -433,5 +376,3 @@ const styles = StyleSheet.create({
 });
 
 export default ReplyBubble;
-
-

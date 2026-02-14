@@ -28,22 +28,18 @@ All games are defined in `src/types/games.ts` via the `GAME_METADATA` constant (
 ```typescript
 // src/types/games.ts
 
-type SinglePlayerGameType = // 13 games
+type SinglePlayerGameType = // 8 games
   | "bounce_blitz"
   | "play_2048"
-  | "snake_master"
-  | "memory_master"
   | "word_master"
   | "reaction_tap"
   | "timed_tap"
   | "brick_breaker"
-  | "tile_slide"
   | "minesweeper_classic"
-  | "number_master"
   | "lights_out"
   | "pong_game";
 
-type TurnBasedGameType = // 9 games
+type TurnBasedGameType = // 8 games
   | "chess"
   | "checkers"
   | "crazy_eights"
@@ -51,13 +47,11 @@ type TurnBasedGameType = // 9 games
   | "connect_four"
   | "dot_match"
   | "gomoku_master"
-  | "reversi_game"
-  | "war_game";
+  | "reversi_game";
 
-type RealTimeGameType = // 4 games (2 coming soon)
+type RealTimeGameType = // 3 games (2 coming soon)
   | "8ball_pool"
   | "air_hockey" // coming soon
-  | "race_game"
   | "crossword_puzzle";
 
 type ExtendedGameType =
@@ -92,25 +86,21 @@ interface GameMetadata {
 
 ## Complete Game List
 
-### Single-Player Games (13)
+### Single-Player Games (8)
 
 | Game          | Type Key              | Category   | Description                      |
 | ------------- | --------------------- | ---------- | -------------------------------- |
 | Reaction Tap  | `reaction_tap`        | quick_play | Tap when screen turns green      |
 | Timed Tap     | `timed_tap`           | quick_play | Tap count in 10 seconds          |
 | Bounce Blitz  | `bounce_blitz`        | quick_play | Ballz-style ball bouncing        |
-| Snake Master  | `snake_master`        | quick_play | Classic snake game               |
 | Brick Breaker | `brick_breaker`       | quick_play | Classic Breakout/Arkanoid        |
 | Pong          | `pong_game`           | quick_play | Pong with AI opponent            |
 | Play 2048     | `play_2048`           | puzzle     | 2048 tile merging                |
-| Memory Master | `memory_master`       | puzzle     | Memory card matching             |
-| Tile Slide    | `tile_slide`          | puzzle     | 15-puzzle sliding tiles          |
 | Minesweeper   | `minesweeper_classic` | puzzle     | Classic Minesweeper              |
-| Number Master | `number_master`       | puzzle     | Mental math speed                |
 | Lights Out    | `lights_out`          | puzzle     | Lights Out puzzle                |
 | Word Master   | `word_master`         | daily      | Daily word puzzle (Wordle-style) |
 
-### Turn-Based Multiplayer Games (9)
+### Turn-Based Multiplayer Games (8)
 
 | Game         | Type Key        | Description                          |
 | ------------ | --------------- | ------------------------------------ |
@@ -121,14 +111,12 @@ interface GameMetadata {
 | Connect Four | `connect_four`  | Classic 4-in-a-row                   |
 | Gomoku       | `gomoku_master` | Five in a Row on 15×15 grid          |
 | Reversi      | `reversi_game`  | Othello / Reversi                    |
-| War          | `war_game`      | Card War                             |
 | Dot Match    | `dot_match`     | Dots and Boxes                       |
 
-### Real-Time Multiplayer Games (4)
+### Real-Time Multiplayer Games (3)
 
 | Game        | Type Key           | Status         | Description          |
 | ----------- | ------------------ | -------------- | -------------------- |
-| Race        | `race_game`        | ✅ Available   | Typing race          |
 | Crossword   | `crossword_puzzle` | ✅ Available   | Daily mini crossword |
 | 8-Ball Pool | `8ball_pool`       | 🔜 Coming Soon | Pool with physics    |
 | Air Hockey  | `air_hockey`       | 🔜 Coming Soon | Real-time air hockey |
@@ -213,7 +201,7 @@ src/screens/games/
 | `useMultiplayerGame`  | Multiplayer state (invites, turns, spectator) | Turn-based + real-time games     |
 | `useTurnBasedGame`    | Turn-based game state + move submission       | Chess, Checkers, TicTacToe, etc. |
 | `usePhysicsGame`      | Matter.js physics world management            | Pong, BrickBreaker, BounceBlitz  |
-| `useCardGame`         | Card game state (hand, deck, discard)         | CrazyEights, War                 |
+| `useCardGame`         | Card game state (hand, deck, discard)         | CrazyEights                      |
 
 ---
 
@@ -228,7 +216,7 @@ The Colyseus server runs as a separate Node.js process, deployed via Docker + ng
 - **Transport**: WebSocket with JSON patches
 - **Reconnection**: Token-based, 30-second timeout
 
-### Room Architecture (25 rooms)
+### Room Architecture (22 rooms)
 
 ```
 colyseus-server/src/rooms/
@@ -241,23 +229,20 @@ colyseus-server/src/rooms/
 │   ├── DotMatchRoom.ts
 │   ├── ReactionRoom.ts
 │   └── TimedTapRoom.ts
-├── turnbased/                  # 8 turn-based rooms
+├── turnbased/                  # 7 turn-based rooms
 │   ├── TicTacToeRoom.ts
 │   ├── ChessRoom.ts
 │   ├── CheckersRoom.ts
 │   ├── CrazyEightsRoom.ts
 │   ├── ConnectFourRoom.ts
 │   ├── GomokuRoom.ts
-│   ├── ReversiRoom.ts
-│   └── WarRoom.ts
-├── physics/                    # 7 physics rooms
+│   └── ReversiRoom.ts
+├── physics/                    # 5 physics rooms
 │   ├── AirHockeyRoom.ts
 │   ├── BounceBlitzRoom.ts
 │   ├── BrickBreakerRoom.ts
 │   ├── PongRoom.ts
-│   ├── PoolRoom.ts
-│   ├── RaceRoom.ts
-│   └── SnakeRoom.ts
+│   └── PoolRoom.ts
 ├── spectator/                  # 1 spectator room
 │   └── SpectatorRoom.ts
 └── coop/                       # 2 cooperative rooms
@@ -406,7 +391,6 @@ Helper functions: `isScoreSuspicious()`, `getScoreLimit()`.
 ```
 __tests__/games/
 ├── brickBreakerLogic.test.ts
-├── tileSlideLogic.test.ts
 ├── [other game logic tests]
 
 colyseus-server/tests/

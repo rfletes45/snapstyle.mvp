@@ -115,6 +115,18 @@ const LEADERBOARD_GAMES: LeaderboardGame[] = [
     category: "single-player",
   },
   {
+    id: "clicker_mine",
+    name: "Clicker Mine",
+    icon: "pickaxe",
+    category: "single-player",
+  },
+  {
+    id: "helix_drop",
+    name: "Helix Drop",
+    icon: "blur-radial",
+    category: "single-player",
+  },
+  {
     id: "memory_master",
     name: "Memory",
     icon: "cards",

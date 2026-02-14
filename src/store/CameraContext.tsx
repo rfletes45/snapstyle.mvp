@@ -5,13 +5,6 @@
  * to match the project's React Context + Hooks architecture.
  */
 
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useReducer,
-} from "react";
 import type {
   AppliedFilter,
   CameraFacing,
@@ -26,6 +19,13 @@ import type {
   Snap,
   VideoQuality,
 } from "@/types/camera";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useReducer,
+} from "react";
 
 // ============================================================================
 // STATE INTERFACES
@@ -392,6 +392,10 @@ function cameraReducer(
         editor: {
           ...state.editor,
           overlayElements: [...state.editor.overlayElements, action.payload],
+          undoStack: [
+            ...state.editor.undoStack,
+            { type: "add_element", payload: action.payload },
+          ],
           redoStack: [],
         },
       };
@@ -404,6 +408,10 @@ function cameraReducer(
         editor: {
           ...state.editor,
           overlayElements: elements,
+          undoStack: [
+            ...state.editor.undoStack,
+            { type: "modify_element", payload: action.payload },
+          ],
           redoStack: [],
         },
       };
@@ -416,6 +424,10 @@ function cameraReducer(
           overlayElements: state.editor.overlayElements.filter(
             (el: OverlayElement) => el.id !== action.payload,
           ),
+          undoStack: [
+            ...state.editor.undoStack,
+            { type: "remove_element", payload: action.payload },
+          ],
           redoStack: [],
         },
       };
@@ -433,6 +445,10 @@ function cameraReducer(
         editor: {
           ...state.editor,
           appliedFilters: [...filtered, action.payload],
+          undoStack: [
+            ...state.editor.undoStack,
+            { type: "apply_filter", payload: action.payload },
+          ],
           redoStack: [],
         },
       };
@@ -445,18 +461,30 @@ function cameraReducer(
           appliedFilters: state.editor.appliedFilters.filter(
             (f: AppliedFilter) => f.filterId !== action.payload,
           ),
+          undoStack: [
+            ...state.editor.undoStack,
+            { type: "remove_filter", payload: action.payload },
+          ],
           redoStack: [],
         },
       };
-    case "CLEAR_ALL_FILTERS":
+    case "CLEAR_ALL_FILTERS": {
+      // Record a remove_filter action for each active filter so undo can restore them
+      const clearFilterActions: EditorAction[] =
+        state.editor.appliedFilters.map((f: AppliedFilter) => ({
+          type: "remove_filter" as const,
+          payload: f.filterId,
+        }));
       return {
         ...state,
         editor: {
           ...state.editor,
           appliedFilters: [],
+          undoStack: [...state.editor.undoStack, ...clearFilterActions],
           redoStack: [],
         },
       };
+    }
     case "SET_EDITOR_ZOOM":
       return {
         ...state,
@@ -870,6 +898,8 @@ export function useCameraState() {
     setAudioEnabled,
     selectFilter,
     selectFaceEffect,
+    /** Whether AR face-effect mode is active (a face effect is selected) */
+    arModeActive: camera.selectedFaceEffect != null,
     setPermissionGranted,
     setCameraReady,
     setCameraError,

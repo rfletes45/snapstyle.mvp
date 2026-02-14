@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "holeId": "T2-5",
+  "tier": 2,
+  "bounds": {
+    "width": 14,
+    "height": 8
+  },
+  "start": {
+    "x": 2,
+    "z": 4
+  },
+  "cup": {
+    "x": 12,
+    "z": 4
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [],
+  "heightFields": [
+    {
+      "type": "dome",
+      "center": {
+        "x": 6.0,
+        "z": 5.5
+      },
+      "radius": 1.2,
+      "height": 0.25
+    },
+    {
+      "type": "dome",
+      "center": {
+        "x": 8.0,
+        "z": 2.5
+      },
+      "radius": 1.2,
+      "height": 0.25
+    }
+  ],
+  "obstacles": [],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1205
+  }
+}

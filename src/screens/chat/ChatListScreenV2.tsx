@@ -57,7 +57,6 @@ import {
 import { ErrorState, LoadingState } from "@/components/ui";
 import { acceptGroupInvite, declineGroupInvite } from "@/services/groups";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatListScreenV2");
 // Theme
@@ -609,18 +608,6 @@ export default function ChatListScreen() {
     ],
   );
 
-  const renderFriendRequestItem = useCallback(
-    ({ item }: { item: FriendRequestWithUser }) => (
-      <FriendRequestItem
-        request={item}
-        onAccept={() => handleAcceptRequest(item.id)}
-        onDecline={() => handleDeclineRequest(item.id)}
-        onPress={() => handleRequestPress(item)}
-      />
-    ),
-    [handleAcceptRequest, handleDeclineRequest, handleRequestPress],
-  );
-
   const ListHeaderComponent = useCallback(() => {
     if (pinnedConversations.length === 0) return null;
 
@@ -737,6 +724,7 @@ export default function ChatListScreen() {
                       styles.sectionHeader,
                       { backgroundColor: colors.background },
                     ]}
+                    accessibilityRole="header"
                   >
                     <Text
                       style={[
@@ -770,7 +758,7 @@ export default function ChatListScreen() {
                 />
               );
             }}
-            keyExtractor={(item, index) => {
+            keyExtractor={(item) => {
               if (item.type === "header") {
                 return `header-${item.title}`;
               }

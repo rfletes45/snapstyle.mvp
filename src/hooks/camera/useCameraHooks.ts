@@ -4,7 +4,6 @@
  * Uses CameraContext (React Context + useReducer) — NOT Redux.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import * as CameraService from "@/services/camera/cameraService";
 import * as SnapService from "@/services/camera/snapService";
 import { useAuth } from "@/store/AuthContext";
@@ -14,7 +13,7 @@ import {
   useSnapState,
 } from "@/store/CameraContext";
 import type { CameraSettings, CapturedMedia, Snap } from "@/types/camera";
-
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/camera/useCameraHooks");
@@ -25,25 +24,59 @@ const logger = createLogger("hooks/camera/useCameraHooks");
  */
 
 /**
- * Manage camera and microphone permissions
+ * Manage camera and microphone permissions.
+ * Checks status first and only prompts if undetermined.
+ * Reports "denied" clearly so the UI can offer an "Open Settings" button.
  */
 export function useCameraPermissions() {
   const { isPermissionGranted, setPermissionGranted } = useCameraState();
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
 
   useEffect(() => {
     checkAndRequestPermissions();
   }, []);
 
   const checkAndRequestPermissions = async () => {
+    if (isChecking) return;
+    setIsChecking(true);
     try {
+      setPermissionError(null);
+
+      // First check current status without prompting
+      const cameraStatus = await CameraService.getCameraPermissionStatus();
+      const micStatus = await CameraService.getMicrophonePermissionStatus();
+
+      // If both already granted, skip prompting
+      if (cameraStatus === "granted" && micStatus === "granted") {
+        setPermissionGranted(true);
+        return;
+      }
+
+      // If either was denied (hard deny), show appropriate message
+      if (cameraStatus === "denied" || micStatus === "denied") {
+        const deniedParts: string[] = [];
+        if (cameraStatus === "denied") deniedParts.push("camera");
+        if (micStatus === "denied") deniedParts.push("microphone");
+        setPermissionError(
+          `${deniedParts.join(" and ")} access was denied. Please enable it in Settings.`,
+        );
+        return;
+      }
+
+      // Otherwise request
       const cameraGranted = await CameraService.requestCameraPermission();
       const micGranted = await CameraService.requestMicrophonePermission();
 
       if (cameraGranted && micGranted) {
         setPermissionGranted(true);
       } else {
-        setPermissionError("Camera and microphone permissions required");
+        const deniedParts: string[] = [];
+        if (!cameraGranted) deniedParts.push("Camera");
+        if (!micGranted) deniedParts.push("Microphone");
+        setPermissionError(
+          `${deniedParts.join(" and ")} permission denied. Please enable in Settings.`,
+        );
       }
     } catch (error) {
       const errorMessage =
@@ -51,12 +84,15 @@ export function useCameraPermissions() {
           ? error.message
           : "Failed to request permissions";
       setPermissionError(errorMessage);
+    } finally {
+      setIsChecking(false);
     }
   };
 
   return {
     isPermissionGranted,
     permissionError,
+    isChecking,
     requestPermissions: checkAndRequestPermissions,
   };
 }
@@ -78,19 +114,25 @@ export function useCamera() {
 
   const handleCameraReady = useCallback(() => {
     setCameraReady(true);
+    setCameraError(null); // Clear any previous mount error
     logger.info("[Camera Hook] Camera ready");
   }, [setCameraReady]);
 
   const handleCameraError = useCallback((error: any) => {
     logger.error("[Camera Hook] Camera error:", error);
-    setCameraError(error?.message ?? String(error));
+    const message =
+      error?.message ?? (typeof error === "string" ? error : "Camera error");
+    setCameraError(message);
   }, []);
+
+  const clearError = useCallback(() => setCameraError(null), []);
 
   return {
     cameraRef,
     cameraReady,
     cameraMaxZoom,
     cameraError,
+    clearError,
     settings,
     onCameraReady: handleCameraReady,
     onCameraError: handleCameraError,
@@ -117,30 +159,56 @@ export function useRecording(cameraRef: React.RefObject<any>) {
   const [recordingError, setRecordingError] = useState<string | null>(null);
 
   const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Tracks elapsed ms independently to avoid stale-closure reads. */
+  const elapsedRef = useRef(0);
 
-  // Update timer every 100ms
+  // Sync the ref when recording starts / stops externally
+  useEffect(() => {
+    if (!recordingState.isRecording) {
+      elapsedRef.current = 0;
+    }
+  }, [recordingState.isRecording]);
+
+  // Update timer every 100ms using the ref so the closure is never stale
   useEffect(() => {
     if (recordingState.isRecording && !recordingState.isPaused) {
       timerInterval.current = setInterval(() => {
-        setRecordingDuration(recordingState.duration + 100);
+        elapsedRef.current += 100;
+        setRecordingDuration(elapsedRef.current);
       }, 100);
     } else {
       if (timerInterval.current) {
         clearInterval(timerInterval.current);
+        timerInterval.current = null;
       }
     }
 
     return () => {
       if (timerInterval.current) {
         clearInterval(timerInterval.current);
+        timerInterval.current = null;
       }
     };
   }, [
     recordingState.isRecording,
     recordingState.isPaused,
-    recordingState.duration,
     setRecordingDuration,
   ]);
+
+  // Cleanup: stop recording on unmount so the camera doesn't hang
+  useEffect(() => {
+    return () => {
+      if (cameraRef.current && recordingState.isRecording) {
+        try {
+          (cameraRef.current as any).stopRecording?.();
+        } catch {
+          // Best-effort cleanup
+        }
+        dispatchStop();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startRecordingVideo = useCallback(async () => {
     try {
@@ -388,16 +456,13 @@ export function useSnapDrafts() {
   const { currentFirebaseUser } = useAuth();
   const [drafts, setDrafts] = useState<any[]>([]);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    if (currentFirebaseUser?.uid) {
-      loadDrafts();
-    }
-  }, [currentFirebaseUser?.uid]);
-
-  const loadDrafts = async () => {
+  const loadDrafts = useCallback(async () => {
     try {
       if (!currentFirebaseUser?.uid) return;
+      setIsLoading(true);
+      setDraftError(null);
       const userDrafts = await SnapService.getUserDrafts(
         currentFirebaseUser.uid,
       );
@@ -406,8 +471,16 @@ export function useSnapDrafts() {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to load drafts";
       setDraftError(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [currentFirebaseUser?.uid]);
+
+  useEffect(() => {
+    if (currentFirebaseUser?.uid) {
+      loadDrafts();
+    }
+  }, [currentFirebaseUser?.uid, loadDrafts]);
 
   const saveDraft = async (snap: Partial<Snap>) => {
     try {
@@ -442,6 +515,7 @@ export function useSnapDrafts() {
   return {
     drafts,
     draftError,
+    isLoading,
     saveDraft,
     deleteDraft,
     refreshDrafts: loadDrafts,

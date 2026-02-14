@@ -16,6 +16,8 @@
 
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -23,6 +25,7 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   startAfter,
   Timestamp,
@@ -35,7 +38,6 @@ import type {
   ActivityEventData,
   ActivityEventType,
 } from "@/types/activityFeed";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/activityFeed");
@@ -248,6 +250,53 @@ export async function deleteActivity(
   } catch (error) {
     logger.error("[ActivityFeed] Error deleting activity:", error);
     return false;
+  }
+}
+
+// =============================================================================
+// Like / Unlike Activity
+// =============================================================================
+
+/**
+ * Toggle like on an activity event.
+ * Uses a transaction to atomically update likeCount and likes array.
+ */
+export async function likeActivity(
+  activityId: string,
+  userId: string,
+): Promise<void> {
+  const db = getFirestoreInstance();
+  // Activity events are stored in the user's activityFeed subcollection
+  // We need to find the activity across all users, so we use a fan-out approach
+  // For MVP, we store likes on the viewer's feed copy
+  const feedRef = doc(db, "Users", userId, "activityFeed", activityId);
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const feedDoc = await transaction.get(feedRef);
+      if (!feedDoc.exists()) {
+        // Activity may have been deleted; no-op
+        return;
+      }
+      const data = feedDoc.data();
+      const likes: string[] = data?.likes || [];
+      const isLiked = likes.includes(userId);
+
+      if (isLiked) {
+        transaction.update(feedRef, {
+          likes: arrayRemove(userId),
+          likeCount: Math.max((data?.likeCount || 1) - 1, 0),
+        });
+      } else {
+        transaction.update(feedRef, {
+          likes: arrayUnion(userId),
+          likeCount: (data?.likeCount || 0) + 1,
+        });
+      }
+    });
+  } catch (error) {
+    logger.error("[ActivityFeed] Error toggling like:", error);
+    throw error;
   }
 }
 

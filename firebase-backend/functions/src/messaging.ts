@@ -237,6 +237,11 @@ interface SendMessageV2Input {
     };
   };
   mentionUids?: string[];
+  mentionSpans?: Array<{
+    uid: string;
+    start: number;
+    end: number;
+  }>;
   attachments?: Array<{
     id: string;
     kind: string;
@@ -300,6 +305,7 @@ export const sendMessageV2 = functions.https.onCall(
       text,
       replyTo,
       mentionUids,
+      mentionSpans,
       attachments,
       clientId,
       messageId,
@@ -503,6 +509,10 @@ export const sendMessageV2 = functions.https.onCall(
       messageData.mentionUids = mentionUids;
     }
 
+    if (mentionSpans && mentionSpans.length > 0) {
+      messageData.mentionSpans = mentionSpans;
+    }
+
     if (attachments && attachments.length > 0) {
       messageData.attachments = attachments;
     }
@@ -531,14 +541,24 @@ export const sendMessageV2 = functions.https.onCall(
         : db.collection("Groups").doc(conversationId);
 
     try {
-      await conversationRef.update({
+      const conversationUpdate: Record<string, unknown> = {
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
         lastMessageId: messageId,
-        lastMessageText: previewText, // Match field name used by ChatListScreen
+        lastMessageText: previewText,
         lastMessageKind: kind,
         lastMessageSenderId: senderId,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Store mention UIDs on conversation doc for in-app notification routing
+      if (mentionUids && mentionUids.length > 0) {
+        conversationUpdate.lastMentionUids = mentionUids;
+      } else {
+        conversationUpdate.lastMentionUids =
+          admin.firestore.FieldValue.delete();
+      }
+
+      await conversationRef.update(conversationUpdate);
     } catch (updateError) {
       // Log but don't fail - preview is not critical
       console.warn(

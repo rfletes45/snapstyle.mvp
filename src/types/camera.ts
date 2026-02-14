@@ -101,6 +101,26 @@ export interface FilterConfig {
 
   // Advanced
   colorMatrix?: number[][]; // 4x5 color matrix for custom transformations
+
+  // ─── Advanced Skia effects (Phase 4) ───────────────────────────────────
+  /** Vignette: 0–1 strength of dark-edge vignette effect */
+  vignette?: number;
+  /** Film grain: 0–1 intensity of noise overlay */
+  grain?: number;
+  /** Split-tone: separate colours for shadows and highlights */
+  splitTone?: {
+    shadowColor: string; // hex colour for shadows  (e.g. "#2B1055")
+    highlightColor: string; // hex colour for highlights (e.g. "#FFD700")
+    balance: number; // -1 (all shadow) to +1 (all highlight), 0 = balanced
+  };
+  /** Fade / lift blacks: 0–1 lifts the black point (washed-out film look) */
+  fade?: number;
+  /** Temperature shift: -1 (cool/blue) to +1 (warm/orange) */
+  temperature?: number;
+  /** Tint shift: -1 (green) to +1 (magenta) */
+  tint?: number;
+  /** Sharpen: 0–1 strength of unsharp mask */
+  sharpen?: number;
 }
 
 export interface AppliedFilter {

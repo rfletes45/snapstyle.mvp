@@ -98,8 +98,7 @@ export type TurnBasedGameType =
   | "connect_four"
   | "dot_match"
   | "gomoku_master"
-  | "reversi_game"
-  | "war_game";
+  | "reversi_game";
 
 /**
  * Match status
@@ -457,12 +456,12 @@ export type CrazyEightsMatch = TurnBasedMatch<
 export type FourCell = 0 | 1 | 2;
 
 /**
- * Four board (6 rows Ã— 7 columns)
+ * Four board (6 rows Ãƒâ€” 7 columns)
  */
 export type FourBoard = FourCell[][];
 
 /**
- * Four move â€” drop a disc into a column
+ * Four move Ã¢â‚¬â€ drop a disc into a column
  */
 export interface FourMove {
   column: number; // 0-6
@@ -494,7 +493,7 @@ export type FourMatch = TurnBasedMatch<FourGameState, FourMove>;
 export type DotsOwner = 0 | 1 | 2;
 
 /**
- * Dots move â€” draw a horizontal or vertical line
+ * Dots move Ã¢â‚¬â€ draw a horizontal or vertical line
  */
 export interface DotsMove {
   type: "h" | "v"; // horizontal or vertical line
@@ -506,16 +505,16 @@ export interface DotsMove {
 }
 
 /**
- * Dots game state (5Ã—5 dots â†’ 4Ã—4 boxes)
+ * Dots game state (5Ãƒâ€”5 dots Ã¢â€ â€™ 4Ãƒâ€”4 boxes)
  *
  * hLines[row][col]: horizontal line from dot(row,col) to dot(row,col+1)
  * vLines[row][col]: vertical line from dot(row,col) to dot(row+1,col)
  * boxes[row][col]: owner of box at position (row,col)
  */
 export interface DotsGameState {
-  hLines: boolean[][]; // [5][4] â€” 5 rows of horizontal lines, 4 per row
-  vLines: boolean[][]; // [4][5] â€” 4 rows of vertical lines, 5 per row
-  boxes: DotsOwner[][]; // [4][4] â€” 4Ã—4 box grid
+  hLines: boolean[][]; // [5][4] Ã¢â‚¬â€ 5 rows of horizontal lines, 4 per row
+  vLines: boolean[][]; // [4][5] Ã¢â‚¬â€ 4 rows of vertical lines, 5 per row
+  boxes: DotsOwner[][]; // [4][4] Ã¢â‚¬â€ 4Ãƒâ€”4 box grid
   currentTurn: 1 | 2;
   scores: { player1: number; player2: number };
   linesDrawn: number;
@@ -536,12 +535,12 @@ export type DotsMatch = TurnBasedMatch<DotsGameState, DotsMove>;
 export type GomokuCell = 0 | 1 | 2;
 
 /**
- * Gomoku board (15Ã—15)
+ * Gomoku board (15Ãƒâ€”15)
  */
 export type GomokuBoard = GomokuCell[][];
 
 /**
- * Gomoku move â€” place a stone on an intersection
+ * Gomoku move Ã¢â‚¬â€ place a stone on an intersection
  */
 export interface GomokuMove {
   row: number; // 0-14
@@ -571,10 +570,10 @@ export type GomokuMatch = TurnBasedMatch<GomokuGameState, GomokuMove>;
 /** Reversi cell: 0 = empty, 1 = black, 2 = white */
 export type ReversiCell = 0 | 1 | 2;
 
-/** Reversi board (8Ã—8) */
+/** Reversi board (8Ãƒâ€”8) */
 export type ReversiBoard = ReversiCell[][];
 
-/** Reversi move â€” place a disc to outflank opponent */
+/** Reversi move Ã¢â‚¬â€ place a disc to outflank opponent */
 export interface ReversiMove {
   row: number;
   col: number;
@@ -593,36 +592,6 @@ export interface ReversiGameState {
 }
 
 export type ReversiMatch = TurnBasedMatch<ReversiGameState, ReversiMove>;
-
-// =============================================================================
-// War (Card War) Types
-// =============================================================================
-
-/** War move â€” flip a card */
-export interface WarMove {
-  type: "flip" | "war_flip";
-  card: Card;
-  timestamp: number;
-}
-
-/** War game state */
-export interface WarGameState {
-  /** Cards remaining per player (face-down) */
-  player1Deck: number;
-  player2Deck: number;
-  /** Cards on table this round */
-  tableCards: { player1: Card[]; player2: Card[] };
-  /** Is a war in progress? */
-  warActive: boolean;
-  /** Number of wars in current round */
-  warCount: number;
-  currentTurn: 1 | 2;
-  /** Both flip simultaneously, but we model as sequential */
-  waitingForFlip: 1 | 2 | "both";
-  roundWinner?: 1 | 2;
-}
-
-export type WarMatch = TurnBasedMatch<WarGameState, WarMove, { deck: Card[] }>;
 
 // =============================================================================
 // Game Invite Types
@@ -661,7 +630,11 @@ export interface GameInvite {
 /**
  * Real-time game types (for invites)
  */
-export type RealTimeGameType = "8ball_pool" | "air_hockey";
+export type RealTimeGameType =
+  | "8ball_pool"
+  | "air_hockey"
+  | "golf_duels"
+  | "tropical_fishing";
 
 // =============================================================================
 // Universal Game Invite Types (NEW)
@@ -876,8 +849,7 @@ export type AnyGameState =
   | FourGameState
   | DotsGameState
   | GomokuGameState
-  | ReversiGameState
-  | WarGameState;
+  | ReversiGameState;
 
 /**
  * Union type for all moves
@@ -890,8 +862,7 @@ export type AnyMove =
   | FourMove
   | DotsMove
   | GomokuMove
-  | ReversiMove
-  | WarMove;
+  | ReversiMove;
 
 /**
  * Union type for all matches
@@ -904,8 +875,7 @@ export type AnyMatch =
   | FourMatch
   | DotsMatch
   | GomokuMatch
-  | ReversiMatch
-  | WarMatch;
+  | ReversiMatch;
 
 // =============================================================================
 // Initial State Factories
@@ -994,14 +964,14 @@ export function createInitialTicTacToeBoard(): TicTacToeBoard {
 }
 
 /**
- * Create initial Four (Connect Four) board â€” 6 rows Ã— 7 columns, all empty
+ * Create initial Four (Connect Four) board Ã¢â‚¬â€ 6 rows Ãƒâ€” 7 columns, all empty
  */
 export function createInitialFourBoard(): FourBoard {
   return Array.from({ length: 6 }, () => Array(7).fill(0) as FourCell[]);
 }
 
 /**
- * Create initial Dots (Dots & Boxes) board state â€” 5Ã—5 dots
+ * Create initial Dots (Dots & Boxes) board state Ã¢â‚¬â€ 5Ãƒâ€”5 dots
  */
 export function createInitialDotsBoard(): {
   hLines: boolean[][];
@@ -1016,14 +986,14 @@ export function createInitialDotsBoard(): {
 }
 
 /**
- * Create initial Gomoku board â€” 15Ã—15, all empty
+ * Create initial Gomoku board Ã¢â‚¬â€ 15Ãƒâ€”15, all empty
  */
 export function createInitialGomokuBoard(): GomokuBoard {
   return Array.from({ length: 15 }, () => Array(15).fill(0) as GomokuCell[]);
 }
 
 /**
- * Create initial Reversi (Othello) board â€” 8Ã—8 with 4 center pieces
+ * Create initial Reversi (Othello) board Ã¢â‚¬â€ 8Ãƒâ€”8 with 4 center pieces
  */
 export function createInitialReversiBoard(): ReversiBoard {
   const board: ReversiBoard = Array.from(

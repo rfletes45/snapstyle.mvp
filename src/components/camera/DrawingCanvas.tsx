@@ -3,6 +3,12 @@
  * Finger-drawing overlay for the photo editor using SVG paths.
  * Uses react-native-gesture-handler for smooth touch tracking and
  * react-native-svg for rendering paths.
+ *
+ * Features:
+ * - Smooth SVG path rendering with live stroke preview
+ * - Configurable brush colour and width
+ * - Eraser mode (draws in transparent / destination-out)
+ * - Externally-managed paths for undo support
  */
 
 import React, { useCallback, useRef, useState } from "react";
@@ -20,6 +26,15 @@ export interface DrawnPath {
   d: string;
   color: string;
   strokeWidth: number;
+  /** Unique stable key for React list rendering */
+  key: string;
+}
+
+/** Generate a short unique key for each path */
+let _pathCounter = 0;
+function nextPathKey(): string {
+  _pathCounter += 1;
+  return `dp_${_pathCounter}_${Date.now()}`;
 }
 
 interface Props {
@@ -33,6 +48,8 @@ interface Props {
   onPathsChange?: (paths: DrawnPath[]) => void;
   /** Externally-managed paths (for undo/redo) */
   paths?: DrawnPath[];
+  /** When true, draws in the background colour (eraser) */
+  eraser?: boolean;
 }
 
 const DrawingCanvas: React.FC<Props> = ({
@@ -41,9 +58,12 @@ const DrawingCanvas: React.FC<Props> = ({
   enabled,
   onPathsChange,
   paths: externalPaths,
+  eraser = false,
 }) => {
   const [internalPaths, setInternalPaths] = useState<DrawnPath[]>([]);
   const currentPathPoints = useRef<string>("");
+  /** Live preview of the in-progress stroke (rendered separately for perf) */
+  const [activePath, setActivePath] = useState<string | null>(null);
 
   const paths = externalPaths ?? internalPaths;
 
@@ -62,9 +82,13 @@ const DrawingCanvas: React.FC<Props> = ({
       if (!enabled) return;
       const { x, y } = event.nativeEvent;
       currentPathPoints.current += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+      // Update live preview
+      setActivePath(currentPathPoints.current);
     },
     [enabled],
   );
+
+  const brushColor = eraser ? "#000000" : color;
 
   const onHandlerStateChange = useCallback(
     (event: PanGestureHandlerGestureEvent) => {
@@ -74,6 +98,7 @@ const DrawingCanvas: React.FC<Props> = ({
       if (state === GestureState.BEGAN) {
         // Start a new path
         currentPathPoints.current = `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+        setActivePath(currentPathPoints.current);
       } else if (
         state === GestureState.END ||
         state === GestureState.CANCELLED
@@ -82,15 +107,17 @@ const DrawingCanvas: React.FC<Props> = ({
         if (currentPathPoints.current) {
           const newPath: DrawnPath = {
             d: currentPathPoints.current,
-            color,
+            color: brushColor,
             strokeWidth,
+            key: nextPathKey(),
           };
           updatePaths([...paths, newPath]);
           currentPathPoints.current = "";
+          setActivePath(null);
         }
       }
     },
-    [enabled, color, strokeWidth, paths, updatePaths],
+    [enabled, brushColor, strokeWidth, paths, updatePaths],
   );
 
   return (
@@ -107,9 +134,10 @@ const DrawingCanvas: React.FC<Props> = ({
           pointerEvents={enabled ? "auto" : "none"}
         >
           <Svg style={StyleSheet.absoluteFill}>
-            {paths.map((p, i) => (
+            {/* Committed paths */}
+            {paths.map((p) => (
               <Path
-                key={`path-${i}`}
+                key={p.key}
                 d={p.d}
                 stroke={p.color}
                 strokeWidth={p.strokeWidth}
@@ -118,6 +146,18 @@ const DrawingCanvas: React.FC<Props> = ({
                 strokeLinejoin="round"
               />
             ))}
+            {/* Live in-progress stroke */}
+            {activePath && (
+              <Path
+                d={activePath}
+                stroke={brushColor}
+                strokeWidth={strokeWidth}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.8}
+              />
+            )}
           </Svg>
         </View>
       </PanGestureHandler>

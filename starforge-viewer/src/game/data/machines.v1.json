@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "starforge.machines.v1",
+  "machines": {
+    "CUTTER": {
+      "unlock": { "requiresFluxMicro": 0 },
+      "buyCost": { "fluxMicro": 50 },
+      "costGrowth": 1.15,
+      "tierMult": { "1": 1, "2": 2.5, "3": 6 },
+      "behavior": {
+        "type": "CONVERTER",
+        "in": "flux",
+        "out": "alloy",
+        "inPerSecMicro": 5,
+        "outPerIn": 0.4
+      }
+    },
+    "SIGNAL": {
+      "unlock": { "requiresFluxMicro": 200 },
+      "buyCost": { "fluxMicro": 150, "alloyMicro": 30 },
+      "costGrowth": 1.18,
+      "tierMult": { "1": 1, "2": 2, "3": 5 },
+      "behavior": {
+        "type": "PRODUCER",
+        "resource": "signal",
+        "perSecMicro": 2
+      }
+    },
+    "HOPPER": {
+      "unlock": { "requiresFluxMicro": 500 },
+      "buyCost": { "fluxMicro": 300, "alloyMicro": 80 },
+      "costGrowth": 1.2,
+      "tierMult": { "1": 1, "2": 2, "3": 4 },
+      "behavior": {
+        "type": "BUFFER",
+        "capAddMicro": { "flux": 5000, "alloy": 2000, "signal": 1000 },
+        "overflowLossMult": 0.25
+      }
+    },
+    "DRONES_MAG": {
+      "unlock": { "requiresFluxMicro": 1000 },
+      "buyCost": { "fluxMicro": 800, "alloyMicro": 200, "signalMicro": 50 },
+      "costGrowth": 1.25,
+      "tierMult": { "1": 1, "2": 1.8, "3": 3.5 },
+      "behavior": {
+        "type": "BOOSTER",
+        "clickMult": 1.5,
+        "globalProdMult": 1.1
+      }
+    },
+    "ASSEMBLER": {
+      "unlock": { "requiresFluxMicro": 3000 },
+      "buyCost": { "fluxMicro": 2000, "alloyMicro": 500, "signalMicro": 100 },
+      "costGrowth": 1.2,
+      "tierMult": { "1": 1, "2": 2, "3": 4 },
+      "behavior": {
+        "type": "BOOSTER",
+        "clickMult": 1.0,
+        "globalProdMult": 1.0
+      }
+    },
+    "CRANE": {
+      "unlock": { "requiresFluxMicro": 5000 },
+      "buyCost": { "fluxMicro": 4000, "alloyMicro": 1000, "signalMicro": 200 },
+      "costGrowth": 1.22,
+      "tierMult": { "1": 1, "2": 2, "3": 4 },
+      "behavior": {
+        "type": "BUFFER",
+        "capAddMicro": { "flux": 10000, "alloy": 5000, "signal": 3000 },
+        "overflowLossMult": 0.1
+      }
+    },
+    "NANOFORGE": {
+      "unlock": { "requiresFluxMicro": 15000 },
+      "buyCost": { "fluxMicro": 10000, "alloyMicro": 3000, "signalMicro": 500 },
+      "costGrowth": 1.3,
+      "tierMult": { "1": 1, "2": 2.5, "3": 6 },
+      "behavior": {
+        "type": "CONVERTER",
+        "in": "alloy",
+        "out": "flux",
+        "inPerSecMicro": 8,
+        "outPerIn": 3.0
+      }
+    },
+    "PRINTER": {
+      "unlock": { "requiresFluxMicro": 25000 },
+      "buyCost": {
+        "fluxMicro": 18000,
+        "alloyMicro": 5000,
+        "signalMicro": 1000
+      },
+      "costGrowth": 1.25,
+      "tierMult": { "1": 1, "2": 2, "3": 5 },
+      "behavior": {
+        "type": "PRODUCER",
+        "resource": "alloy",
+        "perSecMicro": 10
+      }
+    },
+    "SCANNER": {
+      "unlock": { "requiresFluxMicro": 8000 },
+      "buyCost": { "fluxMicro": 6000, "alloyMicro": 1500, "signalMicro": 500 },
+      "costGrowth": 1.2,
+      "tierMult": { "1": 1, "2": 2, "3": 4 },
+      "behavior": {
+        "type": "DISCOVERY",
+        "revealChanceAdd": 0.05
+      }
+    },
+    "BATTERY": {
+      "unlock": { "requiresFluxMicro": 2000 },
+      "buyCost": { "fluxMicro": 1200, "alloyMicro": 300 },
+      "costGrowth": 1.18,
+      "tierMult": { "1": 1, "2": 2, "3": 4 },
+      "behavior": {
+        "type": "BUFFER",
+        "capAddMicro": { "flux": 8000, "alloy": 3000, "signal": 1500 },
+        "overflowLossMult": 0.15
+      }
+    },
+    "LAB": {
+      "unlock": { "requiresFluxMicro": 4000 },
+      "buyCost": { "fluxMicro": 3000, "alloyMicro": 800, "signalMicro": 200 },
+      "costGrowth": 1.22,
+      "tierMult": { "1": 1, "2": 2, "3": 5 },
+      "behavior": {
+        "type": "BOOSTER",
+        "clickMult": 1.0,
+        "globalProdMult": 1.15
+      }
+    },
+    "DYSON": {
+      "unlock": { "requiresFluxMicro": 100000 },
+      "buyCost": {
+        "fluxMicro": 80000,
+        "alloyMicro": 20000,
+        "signalMicro": 10000
+      },
+      "costGrowth": 1.5,
+      "tierMult": { "1": 1, "2": 3, "3": 10 },
+      "behavior": {
+        "type": "COSMIC",
+        "special": "DYSON"
+      }
+    }
+  }
+}

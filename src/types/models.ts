@@ -102,12 +102,7 @@ export type GameType = "reaction_tap" | "timed_tap";
 
 // Extended game types
 // @see src/types/games.ts for full type definitions and metadata
-export type SinglePlayerGameType =
-  | "bounce_blitz"
-  | "play_2048"
-  | "snake_master"
-  | "memory_master"
-  | "word_master";
+export type SinglePlayerGameType = "bounce_blitz" | "play_2048" | "word_master";
 
 export type TurnBasedGameType =
   | "chess"
@@ -115,7 +110,7 @@ export type TurnBasedGameType =
   | "crazy_eights"
   | "tic_tac_toe";
 
-export type RealTimeGameType = "8ball_pool" | "air_hockey";
+export type RealTimeGameType = "8ball_pool" | "air_hockey" | "tropical_fishing";
 
 // All available game types
 export type ExtendedGameType =
@@ -149,12 +144,6 @@ export interface ExtendedGameSession {
     // Bounce Blitz
     blocksDestroyed?: number;
     ballsUsed?: number;
-    // Snake
-    applesEaten?: number;
-    maxLength?: number;
-    // Memory Master
-    movesUsed?: number;
-    perfectMatches?: number;
     // Word Master
     wordsFound?: number;
     longestWord?: string;

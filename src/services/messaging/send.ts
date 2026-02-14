@@ -39,6 +39,7 @@
  * ```
  */
 
+import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 import {
   AttachmentV2,
   LocalAttachment,
@@ -47,7 +48,6 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 
 // Import existing send functions
 import {
@@ -108,6 +108,11 @@ export interface SendMessageParams {
    * User IDs mentioned in the message
    */
   mentionUids?: string[];
+
+  /**
+   * Mention spans for highlighting
+   */
+  mentionSpans?: MentionSpan[];
 
   /**
    * Local attachments to upload
@@ -214,6 +219,7 @@ export async function sendMessage(
     text: params.text,
     replyTo: params.replyTo,
     mentionUids: params.mentionUids,
+    mentionSpans: params.mentionSpans,
   });
 }
 

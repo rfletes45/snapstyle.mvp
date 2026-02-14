@@ -7,11 +7,12 @@
  * @module components/chat/ReplyPreviewBar
  */
 
-import { MessageKind, ReplyToMetadata } from "@/types/messaging";
+import { BorderRadius, Spacing } from "@/constants/theme";
+import { ReplyToMetadata } from "@/types/messaging";
+import { getKindIconMCI, getPreviewText } from "@/utils/messagePreview";
 import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { IconButton, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -24,66 +25,6 @@ interface ReplyPreviewBarProps {
   onCancel: () => void;
   /** Whether the replied message was sent by current user */
   isOwnMessage?: boolean;
-}
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * Get display text for the reply preview based on message kind
- * NOTE: There are 3 getPreviewText implementations — keep in sync:
- *   1. firebase-backend/functions/src/messaging.ts (rich, stored in Firestore)
- *   2. src/components/chat/ReplyBubbleNew.tsx (plain, inline reply)
- *   3. src/components/chat/ReplyPreviewBar.tsx (this file)
- */
-function getPreviewText(replyTo: ReplyToMetadata): string {
-  if (replyTo.textSnippet) {
-    return replyTo.textSnippet;
-  }
-
-  switch (replyTo.kind) {
-    case "text":
-      return "Message";
-    case "media":
-      return "Photo";
-    case "voice":
-      return "Voice message";
-    case "file":
-      return "File";
-    case "system":
-      return "System message";
-    case "scorecard":
-      return "Game result";
-    case "game_invite":
-      return "Game invite";
-    default:
-      return "Message";
-  }
-}
-
-/**
- * Get icon for the reply kind
- */
-function getKindIcon(kind: MessageKind): string {
-  switch (kind) {
-    case "text":
-      return "message-text";
-    case "media":
-      return "image";
-    case "voice":
-      return "microphone";
-    case "file":
-      return "file";
-    case "system":
-      return "information";
-    case "scorecard":
-      return "trophy";
-    case "game_invite":
-      return "gamepad-variant";
-    default:
-      return "message-text";
-  }
 }
 
 // =============================================================================
@@ -133,7 +74,7 @@ export function ReplyPreviewBar({
               ]}
             >
               <IconButton
-                icon={getKindIcon(replyTo.kind)}
+                icon={getKindIconMCI(replyTo.kind)}
                 size={16}
                 iconColor={theme.colors.onSurfaceDisabled}
               />
@@ -237,5 +178,3 @@ const styles = StyleSheet.create({
 });
 
 export default ReplyPreviewBar;
-
-

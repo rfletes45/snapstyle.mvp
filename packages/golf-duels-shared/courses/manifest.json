@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "generatedAt": "2026-02-13T06:38:24.913788Z",
+  "count": 30,
+  "holes": [
+    {
+      "holeId": "T1-1",
+      "tier": 1,
+      "file": "T1-1.json"
+    },
+    {
+      "holeId": "T1-2",
+      "tier": 1,
+      "file": "T1-2.json"
+    },
+    {
+      "holeId": "T1-3",
+      "tier": 1,
+      "file": "T1-3.json"
+    },
+    {
+      "holeId": "T1-4",
+      "tier": 1,
+      "file": "T1-4.json"
+    },
+    {
+      "holeId": "T1-5",
+      "tier": 1,
+      "file": "T1-5.json"
+    },
+    {
+      "holeId": "T2-1",
+      "tier": 2,
+      "file": "T2-1.json"
+    },
+    {
+      "holeId": "T2-2",
+      "tier": 2,
+      "file": "T2-2.json"
+    },
+    {
+      "holeId": "T2-3",
+      "tier": 2,
+      "file": "T2-3.json"
+    },
+    {
+      "holeId": "T2-4",
+      "tier": 2,
+      "file": "T2-4.json"
+    },
+    {
+      "holeId": "T2-5",
+      "tier": 2,
+      "file": "T2-5.json"
+    },
+    {
+      "holeId": "T3-1",
+      "tier": 3,
+      "file": "T3-1.json"
+    },
+    {
+      "holeId": "T3-2",
+      "tier": 3,
+      "file": "T3-2.json"
+    },
+    {
+      "holeId": "T3-3",
+      "tier": 3,
+      "file": "T3-3.json"
+    },
+    {
+      "holeId": "T3-4",
+      "tier": 3,
+      "file": "T3-4.json"
+    },
+    {
+      "holeId": "T3-5",
+      "tier": 3,
+      "file": "T3-5.json"
+    },
+    {
+      "holeId": "T4-1",
+      "tier": 4,
+      "file": "T4-1.json"
+    },
+    {
+      "holeId": "T4-2",
+      "tier": 4,
+      "file": "T4-2.json"
+    },
+    {
+      "holeId": "T4-3",
+      "tier": 4,
+      "file": "T4-3.json"
+    },
+    {
+      "holeId": "T4-4",
+      "tier": 4,
+      "file": "T4-4.json"
+    },
+    {
+      "holeId": "T4-5",
+      "tier": 4,
+      "file": "T4-5.json"
+    },
+    {
+      "holeId": "T5-1",
+      "tier": 5,
+      "file": "T5-1.json"
+    },
+    {
+      "holeId": "T5-2",
+      "tier": 5,
+      "file": "T5-2.json"
+    },
+    {
+      "holeId": "T5-3",
+      "tier": 5,
+      "file": "T5-3.json"
+    },
+    {
+      "holeId": "T5-4",
+      "tier": 5,
+      "file": "T5-4.json"
+    },
+    {
+      "holeId": "T5-5",
+      "tier": 5,
+      "file": "T5-5.json"
+    },
+    {
+      "holeId": "T6-1",
+      "tier": 6,
+      "file": "T6-1.json"
+    },
+    {
+      "holeId": "T6-2",
+      "tier": 6,
+      "file": "T6-2.json"
+    },
+    {
+      "holeId": "T6-3",
+      "tier": 6,
+      "file": "T6-3.json"
+    },
+    {
+      "holeId": "T6-4",
+      "tier": 6,
+      "file": "T6-4.json"
+    },
+    {
+      "holeId": "T6-5",
+      "tier": 6,
+      "file": "T6-5.json"
+    }
+  ]
+}

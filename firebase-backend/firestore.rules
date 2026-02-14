@@ -359,7 +359,7 @@ service cloud.firestore {
         // User can create/update their own high scores with validation
         allow create, update: if isAuth() && isOwner(uid) &&
           // gameType must be valid single-player game
-          gameType in ['bounce_blitz', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'] &&
+          gameType in ['bounce_blitz', 'clicker_mine', 'helix_drop', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'] &&
           // Must have required fields
           request.resource.data.gameType == gameType &&
           request.resource.data.highScore is number &&
@@ -935,7 +935,7 @@ service cloud.firestore {
                                 request.auth.uid == playerId &&
                                 request.resource.data.playerId == playerId &&
                                 request.resource.data.score >= 0 &&
-                                leaderboardId in ['word_master', 'bounce_blitz', 'tic_tac_toe', 'play_2048', 'snake_master', 'memory_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'];
+                                leaderboardId in ['word_master', 'bounce_blitz', 'clicker_mine', 'helix_drop', 'tic_tac_toe', 'play_2048', 'snake_master', 'memory_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'];
         
         // No deletes from client
         allow delete: if false;
@@ -1902,7 +1902,7 @@ service cloud.firestore {
       // Create: user can record own session
       allow create: if isAuth() &&
                       request.resource.data.playerId == request.auth.uid &&
-                      request.resource.data.gameType in ['bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'play_2048', 'snake_master', 'word_master'] &&
+                      request.resource.data.gameType in ['bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'clicker_mine', 'helix_drop', 'play_2048', 'snake_master', 'word_master'] &&
                       request.resource.data.finalScore is number &&
                       request.resource.data.finalScore >= 0 &&
                       request.resource.data.startedAt is number &&
@@ -2170,6 +2170,41 @@ service cloud.firestore {
       allow update: if isAuth() &&
                       resource.data.userId == request.auth.uid &&
                       request.resource.data.userId == resource.data.userId;
+      allow delete: if false;
+    }
+
+    // ============================================================
+    // GOLF DUELS MATCHES COLLECTION (Segment 4)
+    // Stores detailed match records for Golf Duels games.
+    // Written exclusively by the Colyseus server via Admin SDK.
+    // Players can read matches they participated in.
+    // ============================================================
+    match /GolfDuelsMatches/{matchId} {
+      // Read: participants can read their own match records
+      allow read: if isAuth() &&
+        (resource.data.p1Uid == request.auth.uid ||
+         resource.data.p2Uid == request.auth.uid);
+
+      // Write: server-only via Admin SDK
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ============================================================
+    // REALTIME GAME SESSIONS COLLECTION
+    // Stores completed real-time (Colyseus) game records.
+    // Written by the Colyseus server via Admin SDK.
+    // Players can read sessions they participated in.
+    // ============================================================
+    match /RealtimeGameSessions/{sessionId} {
+      // Read: participants can read their own game sessions
+      allow read: if isAuth() &&
+        request.auth.uid in resource.data.playerUids;
+
+      // Write: server-only via Admin SDK
+      allow create: if false;
+      allow update: if false;
       allow delete: if false;
     }
 

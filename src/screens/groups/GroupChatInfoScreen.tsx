@@ -25,6 +25,7 @@ import {
   updateGroupPhoto,
 } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
+import { useColors } from "@/store/ThemeContext";
 import { Group, GROUP_LIMITS, GroupMember, GroupRole } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -52,8 +53,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "@/store/ThemeContext";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatInfoScreen");
@@ -403,7 +402,10 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
       member.role !== "owner";
 
     return (
-      <View key={member.uid} style={styles.memberItem}>
+      <View
+        key={member.uid}
+        style={[styles.memberItem, { borderBottomColor: colors.border }]}
+      >
         <View style={styles.memberLeft}>
           <ProfilePictureWithDecoration
             pictureUrl={member.profilePictureUrl}
@@ -413,12 +415,23 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           />
           <View style={styles.memberInfo}>
             <View style={styles.memberNameRow}>
-              <Text style={styles.memberName}>
+              <Text style={[styles.memberName, { color: colors.text }]}>
                 {member.displayName}
-                {isCurrentUser && <Text style={styles.youLabel}> (You)</Text>}
+                {isCurrentUser && (
+                  <Text
+                    style={[styles.youLabel, { color: colors.textSecondary }]}
+                  >
+                    {" "}
+                    (You)
+                  </Text>
+                )}
               </Text>
             </View>
-            <Text style={styles.memberUsername}>@{member.username}</Text>
+            <Text
+              style={[styles.memberUsername, { color: colors.textSecondary }]}
+            >
+              @{member.username}
+            </Text>
           </View>
         </View>
 
@@ -427,14 +440,20 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <View
               style={[
                 styles.roleBadge,
+                { backgroundColor: colors.surfaceVariant },
                 member.role === "owner" && [
                   styles.ownerBadge,
                   { backgroundColor: colors.primary },
                 ],
-                member.role === "admin" && styles.adminBadge,
+                member.role === "admin" && [
+                  styles.adminBadge,
+                  { backgroundColor: colors.success },
+                ],
               ]}
             >
-              <Text style={styles.roleBadgeText}>
+              <Text
+                style={[styles.roleBadgeText, { color: colors.background }]}
+              >
                 {member.role === "owner" ? "Owner" : "Admin"}
               </Text>
             </View>
@@ -448,7 +467,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 <IconButton
                   icon="dots-vertical"
                   size={20}
-                  iconColor="#888"
+                  iconColor={colors.textSecondary}
                   onPress={() => setMenuVisible(member.uid)}
                 />
               }
@@ -476,7 +495,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 title="Remove"
                 leadingIcon="account-remove"
                 onPress={() => handleRemoveMember(member)}
-                titleStyle={{ color: "#F44336" }}
+                titleStyle={{ color: colors.error }}
               />
             </Menu>
           )}
@@ -487,8 +506,11 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["bottom"]}>
-        <Appbar.Header style={styles.header}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={["bottom"]}
+      >
+        <Appbar.Header style={{ backgroundColor: colors.background }}>
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title="Group Info" />
         </Appbar.Header>
@@ -499,8 +521,11 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
   if (error || !group) {
     return (
-      <SafeAreaView style={styles.container} edges={["bottom"]}>
-        <Appbar.Header style={styles.header}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={["bottom"]}
+      >
+        <Appbar.Header style={{ backgroundColor: colors.background }}>
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title="Group Info" />
         </Appbar.Header>
@@ -514,8 +539,11 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <Appbar.Header style={styles.header}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["bottom"]}
+    >
+      <Appbar.Header style={{ backgroundColor: colors.background }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Group Info" />
         {(userRole === "owner" || userRole === "admin") && (
@@ -528,7 +556,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Group Header */}
-        <View style={styles.groupHeader}>
+        <View
+          style={[styles.groupHeader, { borderBottomColor: colors.border }]}
+        >
           <TouchableOpacity
             onPress={handleChangePhoto}
             disabled={
@@ -578,16 +608,20 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.groupName}>{group.name}</Text>
-          <Text style={styles.memberCount}>
+          <Text style={[styles.groupName, { color: colors.text }]}>
+            {group.name}
+          </Text>
+          <Text style={[styles.memberCount, { color: colors.textSecondary }]}>
             {group.memberCount} {group.memberCount === 1 ? "member" : "members"}
           </Text>
         </View>
 
         {/* Members Section */}
-        <View style={styles.section}>
+        <View style={[styles.section, { borderBottomColor: colors.border }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Members</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Members
+            </Text>
             {(userRole === "owner" || userRole === "admin") &&
               members.length < GROUP_LIMITS.MAX_MEMBERS && (
                 <TouchableOpacity
@@ -615,8 +649,10 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         </View>
 
         {/* Actions Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Actions</Text>
+        <View style={[styles.section, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Actions
+          </Text>
 
           {/* Chat Settings - H13 */}
           <TouchableOpacity
@@ -634,7 +670,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               size={24}
               color={theme.colors.primary}
             />
-            <Text style={styles.actionButtonText}>
+            <Text style={[styles.actionButtonText, { color: colors.text }]}>
               Notifications & Settings
             </Text>
           </TouchableOpacity>
@@ -648,9 +684,13 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               <MaterialCommunityIcons
                 name="exit-run"
                 size={24}
-                color="#F44336"
+                color={colors.error}
               />
-              <Text style={styles.actionButtonTextDanger}>Leave Group</Text>
+              <Text
+                style={[styles.actionButtonTextDanger, { color: colors.error }]}
+              >
+                Leave Group
+              </Text>
             </TouchableOpacity>
           )}
 
@@ -669,8 +709,16 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
               }}
               disabled={actionLoading}
             >
-              <MaterialCommunityIcons name="delete" size={24} color="#F44336" />
-              <Text style={styles.actionButtonTextDanger}>Delete Group</Text>
+              <MaterialCommunityIcons
+                name="delete"
+                size={24}
+                color={colors.error}
+              />
+              <Text
+                style={[styles.actionButtonTextDanger, { color: colors.error }]}
+              >
+                Delete Group
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -681,15 +729,20 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         <Modal
           visible={editNameVisible}
           onDismiss={() => setEditNameVisible(false)}
-          contentContainerStyle={styles.modalContent}
+          contentContainerStyle={[
+            styles.modalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
-          <Text style={styles.modalTitle}>Edit Group Name</Text>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            Edit Group Name
+          </Text>
           <TextInput
             mode="outlined"
             value={newGroupName}
             onChangeText={setNewGroupName}
             maxLength={GROUP_LIMITS.MAX_NAME_LENGTH}
-            style={styles.modalInput}
+            style={[styles.modalInput, { backgroundColor: colors.background }]}
             outlineColor={theme.colors.outline}
             activeOutlineColor={theme.colors.primary}
             textColor={theme.colors.onSurface}
@@ -698,7 +751,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Button
               mode="text"
               onPress={() => setEditNameVisible(false)}
-              textColor={theme.colors.onSurfaceDisabled}
+              textColor={colors.textSecondary}
             >
               Cancel
             </Button>
@@ -717,22 +770,42 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         <Modal
           visible={inviteModalVisible}
           onDismiss={() => setInviteModalVisible(false)}
-          contentContainerStyle={styles.inviteModalContent}
+          contentContainerStyle={[
+            styles.inviteModalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
-          <Text style={styles.inviteModalTitle}>Invite Friends</Text>
+          <Text style={[styles.inviteModalTitle, { color: colors.text }]}>
+            Invite Friends
+          </Text>
           {inviteLoading ? (
             <View style={styles.inviteLoadingContainer}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.inviteLoadingText}>Loading friends...</Text>
+              <Text
+                style={[
+                  styles.inviteLoadingText,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Loading friends...
+              </Text>
             </View>
           ) : invitableFriends.length === 0 ? (
-            <Text style={styles.noFriendsText}>
+            <Text
+              style={[styles.noFriendsText, { color: colors.textSecondary }]}
+            >
               No friends available to invite
             </Text>
           ) : (
             <View style={styles.inviteFriendsContainer}>
               {invitableFriends.map((item) => (
-                <View key={item.uid} style={styles.inviteFriendItem}>
+                <View
+                  key={item.uid}
+                  style={[
+                    styles.inviteFriendItem,
+                    { borderBottomColor: colors.border },
+                  ]}
+                >
                   <View style={styles.inviteFriendLeft}>
                     <ProfilePictureWithDecoration
                       pictureUrl={item.profilePictureUrl}
@@ -740,7 +813,10 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                       decorationId={item.decorationId}
                       size={40}
                     />
-                    <Text style={styles.inviteFriendName} numberOfLines={1}>
+                    <Text
+                      style={[styles.inviteFriendName, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
                       {item.displayName}
                     </Text>
                   </View>
@@ -748,7 +824,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                     mode="contained"
                     onPress={() => handleInviteFriend(item)}
                     buttonColor={theme.colors.primary}
-                    textColor="#FFF"
+                    textColor={colors.textOnPrimary}
                     style={styles.inviteButton}
                     labelStyle={{ fontWeight: "600", fontSize: 14 }}
                     compact
@@ -762,7 +838,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
           <Button
             mode="text"
             onPress={() => setInviteModalVisible(false)}
-            textColor="#666"
+            textColor={colors.textSecondary}
             style={styles.closeButton}
             labelStyle={{ fontSize: 15 }}
           >
@@ -774,10 +850,15 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         <Modal
           visible={leaveConfirmVisible}
           onDismiss={() => setLeaveConfirmVisible(false)}
-          contentContainerStyle={styles.modalContent}
+          contentContainerStyle={[
+            styles.modalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
-          <Text style={styles.modalTitle}>Leave Group</Text>
-          <Text style={styles.modalMessage}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            Leave Group
+          </Text>
+          <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
             Are you sure you want to leave this group? You will need a new
             invite to rejoin.
           </Text>
@@ -785,7 +866,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Button
               mode="text"
               onPress={() => setLeaveConfirmVisible(false)}
-              textColor="#888"
+              textColor={colors.textSecondary}
               disabled={actionLoading}
             >
               Cancel
@@ -793,8 +874,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Button
               mode="contained"
               onPress={confirmLeaveGroup}
-              buttonColor="#F44336"
-              textColor="#FFF"
+              buttonColor={colors.error}
+              textColor={colors.textOnPrimary}
               loading={actionLoading}
               disabled={actionLoading}
             >
@@ -810,10 +891,15 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             setRemoveConfirmVisible(false);
             setMemberToRemove(null);
           }}
-          contentContainerStyle={styles.modalContent}
+          contentContainerStyle={[
+            styles.modalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
-          <Text style={styles.modalTitle}>Remove Member</Text>
-          <Text style={styles.modalMessage}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            Remove Member
+          </Text>
+          <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
             {memberToRemove
               ? `Remove ${memberToRemove.displayName} from the group?`
               : "Remove this member from the group?"}
@@ -825,7 +911,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 setRemoveConfirmVisible(false);
                 setMemberToRemove(null);
               }}
-              textColor="#888"
+              textColor={colors.textSecondary}
               disabled={actionLoading}
             >
               Cancel
@@ -833,8 +919,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Button
               mode="contained"
               onPress={confirmRemoveMember}
-              buttonColor="#F44336"
-              textColor="#FFF"
+              buttonColor={colors.error}
+              textColor={colors.textOnPrimary}
               loading={actionLoading}
               disabled={actionLoading}
             >
@@ -847,10 +933,15 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         <Modal
           visible={deleteConfirmVisible}
           onDismiss={() => setDeleteConfirmVisible(false)}
-          contentContainerStyle={styles.modalContent}
+          contentContainerStyle={[
+            styles.modalContent,
+            { backgroundColor: colors.surface },
+          ]}
         >
-          <Text style={styles.modalTitle}>Delete Group</Text>
-          <Text style={styles.modalMessage}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            Delete Group
+          </Text>
+          <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
             Are you sure you want to delete this group? This cannot be undone.
             All messages and members will be removed.
           </Text>
@@ -858,7 +949,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Button
               mode="text"
               onPress={() => setDeleteConfirmVisible(false)}
-              textColor="#888"
+              textColor={colors.textSecondary}
               disabled={actionLoading}
             >
               Cancel
@@ -866,8 +957,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             <Button
               mode="contained"
               onPress={confirmDeleteGroup}
-              buttonColor="#F44336"
-              textColor="#FFF"
+              buttonColor={colors.error}
+              textColor={colors.textOnPrimary}
               loading={actionLoading}
               disabled={actionLoading}
             >
@@ -881,9 +972,9 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
         visible={snackbar.visible}
         onDismiss={() => setSnackbar({ visible: false, message: "" })}
         duration={2000}
-        style={styles.snackbar}
+        style={[styles.snackbar, { backgroundColor: colors.surfaceVariant }]}
       >
-        <Text style={{ color: "#FFF" }}>{snackbar.message}</Text>
+        <Text style={{ color: colors.text }}>{snackbar.message}</Text>
       </Snackbar>
     </SafeAreaView>
   );
@@ -892,11 +983,8 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
   },
-  header: {
-    backgroundColor: "#000",
-  },
+  header: {},
   content: {
     flex: 1,
   },
@@ -904,7 +992,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
   },
   groupAvatarContainer: {
     position: "relative",
@@ -914,7 +1001,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "#1A1A1A",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -934,20 +1020,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   groupName: {
-    color: "#FFF",
     fontSize: 24,
     fontWeight: "bold",
     marginBottom: 4,
     textAlign: "center",
   },
   memberCount: {
-    color: "#888",
     fontSize: 14,
   },
   section: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
   },
   sectionHeader: {
     flexDirection: "row",
@@ -956,7 +1039,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    color: "#FFF",
     fontSize: 18,
     fontWeight: "600",
   },
@@ -975,7 +1057,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#1A1A1A",
   },
   memberLeft: {
     flexDirection: "row",
@@ -991,16 +1072,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   memberName: {
-    color: "#FFF",
     fontSize: 16,
     fontWeight: "500",
   },
   youLabel: {
-    color: "#888",
     fontWeight: "normal",
   },
   memberUsername: {
-    color: "#888",
     fontSize: 13,
     marginTop: 2,
   },
@@ -1013,20 +1091,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: "#333",
   },
   ownerBadge: {},
-  adminBadge: {
-    backgroundColor: "#4CAF50",
-  },
+  adminBadge: {},
   roleBadgeText: {
-    color: "#000",
     fontSize: 12,
     fontWeight: "600",
   },
-  menuContent: {
-    backgroundColor: "#1A1A1A",
-  },
+  menuContent: {},
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1035,36 +1107,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   actionButtonText: {
-    color: "#FFF",
     fontSize: 16,
     fontWeight: "500",
   },
   actionButtonTextDanger: {
-    color: "#F44336",
     fontSize: 16,
     fontWeight: "500",
   },
   modalContent: {
-    backgroundColor: "#1A1A1A",
     margin: 24,
     padding: 24,
     borderRadius: 16,
   },
   modalTitle: {
-    color: "#FFF",
     fontSize: 18,
     fontWeight: "600",
     marginBottom: 16,
   },
   inviteModalTitle: {
-    color: "#FFF",
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 20,
   },
   modalInput: {
-    backgroundColor: "#000",
     marginBottom: 16,
   },
   modalActions: {
@@ -1074,7 +1140,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   inviteModalContent: {
-    backgroundColor: "#1A1A1A",
     marginHorizontal: 20,
     marginVertical: 60,
     paddingHorizontal: 20,
@@ -1089,7 +1154,6 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
   },
   inviteLoadingText: {
-    color: "#888",
     marginTop: 16,
     fontSize: 15,
   },
@@ -1107,7 +1171,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.1)",
   },
   inviteFriendLeft: {
     flexDirection: "row",
@@ -1116,7 +1179,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   inviteFriendName: {
-    color: "#FFF",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -1125,7 +1187,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   noFriendsText: {
-    color: "#888",
     textAlign: "center",
     marginVertical: 32,
     fontSize: 15,
@@ -1134,11 +1195,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignSelf: "center",
   },
-  snackbar: {
-    backgroundColor: "#333",
-  },
+  snackbar: {},
   modalMessage: {
-    color: "#CCC",
     fontSize: 15,
     lineHeight: 22,
     marginVertical: 16,

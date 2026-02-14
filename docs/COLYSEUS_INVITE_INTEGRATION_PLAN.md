@@ -1,8 +1,8 @@
-# Colyseus × Game Invite Integration Plan
+# Colyseus Ã— Game Invite Integration Plan
 
-**Status:** ✅ Implemented — Reference documentation
+**Status:** âœ… Implemented â€” Reference documentation
 
-> **Goal:** Wire the existing game invite system to activate Colyseus for multiplayer games that benefit from real-time state sync — physics, quick-play, and cooperative games. Turn-based games stay on Firestore-only unless the Colyseus feature flags are toggled on.
+> **Goal:** Wire the existing game invite system to activate Colyseus for multiplayer games that benefit from real-time state sync â€” physics, quick-play, and cooperative games. Turn-based games stay on Firestore-only unless the Colyseus feature flags are toggled on.
 
 ---
 
@@ -22,30 +22,30 @@
 
 ### What works
 
-- ✅ 27 Colyseus rooms registered with `filterBy(["firestoreGameId"])`
-- ✅ All game hooks (`useTurnBasedGame`, `usePhysicsGame`, `useMultiplayerGame`, etc.) have `startMultiplayer(roomId?)` and/or `restoreGame(firestoreGameId)`
-- ✅ All game screens have a `"colyseus"` game mode branch with full rendering/overlays
-- ✅ ColyseusService singleton with `joinOrCreate`, `joinById`, `restoreGame` methods
-- ✅ Universal invite system creates Firestore matches via `createMatch()` → returns `gameId`
-- ✅ `UniversalInviteCard` auto-navigates all players when invite status → `"active"`
-- ✅ Feature flags all enabled (`COLYSEUS_ENABLED`, `PHYSICS_ENABLED`, etc.)
+- âœ… 27 Colyseus rooms registered with `filterBy(["firestoreGameId"])`
+- âœ… All game hooks (`useTurnBasedGame`, `usePhysicsGame`, `useMultiplayerGame`, etc.) have `startMultiplayer(roomId?)` and/or `restoreGame(firestoreGameId)`
+- âœ… All game screens have a `"colyseus"` game mode branch with full rendering/overlays
+- âœ… ColyseusService singleton with `joinOrCreate`, `joinById`, `restoreGame` methods
+- âœ… Universal invite system creates Firestore matches via `createMatch()` â†’ returns `gameId`
+- âœ… `UniversalInviteCard` auto-navigates all players when invite status â†’ `"active"`
+- âœ… Feature flags all enabled (`COLYSEUS_ENABLED`, `PHYSICS_ENABLED`, etc.)
 
 ### What's broken (the single gap)
 
-- ❌ **No game screen transitions to `"colyseus"` mode from invite params**
+- âŒ **No game screen transitions to `"colyseus"` mode from invite params**
 - Every game screen receives `{ matchId, entryPoint: "play" }` from the invite
-- Every game screen reads `matchId` → sets `gameMode = "online"` → subscribes to Firestore
+- Every game screen reads `matchId` â†’ sets `gameMode = "online"` â†’ subscribes to Firestore
 - The `"colyseus"` mode exists but is **never activated**
 
 ### The fix in one sentence
 
-> When a game screen opens with a `matchId` from an invite, it should check if the game type is Colyseus-eligible and — if so — set `gameMode = "colyseus"` instead of `"online"`, then call `startMultiplayer()` with the `firestoreGameId`.
+> When a game screen opens with a `matchId` from an invite, it should check if the game type is Colyseus-eligible and â€” if so â€” set `gameMode = "colyseus"` instead of `"online"`, then call `startMultiplayer()` with the `firestoreGameId`.
 
 ---
 
 ## 2. Game Categorization
 
-### 🔴 Tier 1 — REQUIRE Colyseus (Physics/Real-Time) — 6 games
+### ðŸ”´ Tier 1 â€” REQUIRE Colyseus (Physics/Real-Time) â€” 6 games
 
 Server-authoritative physics at 60fps. **Cannot work** with Firestore polling.
 
@@ -55,10 +55,8 @@ Server-authoritative physics at 60fps. **Cannot work** with Firestore polling.
 | Air Hockey    | `AirHockeyGameScreen`    | `usePhysicsGame`      | `air_hockey`    |
 | Bounce Blitz  | `BounceBlitzGameScreen`  | `usePhysicsGame`      | `bounce_blitz`  |
 | Brick Breaker | `BrickBreakerGameScreen` | `useMultiplayerGame`  | `brick_breaker` |
-| Snake         | `SnakeGameScreen`        | `useSnakeMultiplayer` | `snake`         |
-| Race          | `RaceGameScreen`         | `usePhysicsGame`      | `race`          |
 
-### 🟡 Tier 2 — Strongly Benefit (Quick-Play Score Race) — 3 games
+### ðŸŸ¡ Tier 2 â€” Strongly Benefit (Quick-Play Score Race) â€” 3 games
 
 Simultaneous play, real-time score sync. Firestore would work but degrade the experience.
 
@@ -68,7 +66,7 @@ Simultaneous play, real-time score sync. Firestore would work but degrade the ex
 | Timed Tap    | `TimedTapGameScreen`    | `useMultiplayerGame` | `timed_tap`    |
 | Dot Match    | `DotMatchGameScreen`    | `useMultiplayerGame` | `dot_match`    |
 
-### 🟢 Tier 3 — Optional (Turn-Based) — 8 games
+### ðŸŸ¢ Tier 3 â€” Optional (Turn-Based) â€” 8 games
 
 Firestore `onSnapshot` is fine. Colyseus adds anti-cheat and private-hand management for card games.
 
@@ -81,9 +79,8 @@ Firestore `onSnapshot` is fine. Colyseus adds anti-cheat and private-hand manage
 | Chess        | `ChessGameScreen`       | `useTurnBasedGame` | `chess`        |
 | Checkers     | `CheckersGameScreen`    | `useTurnBasedGame` | `checkers`     |
 | Crazy Eights | `CrazyEightsGameScreen` | `useCardGame`      | `crazy_eights` |
-| War          | `WarGameScreen`         | `useCardGame`      | `war`          |
 
-### 🔵 Tier 4 — Benefit (Cooperative) — 2 games
+### ðŸ”µ Tier 4 â€” Benefit (Cooperative) â€” 2 games
 
 Real-time collaboration.
 
@@ -96,29 +93,29 @@ Real-time collaboration.
 
 ## 3. Architecture Decision
 
-### Option A: "Smart Switch" (Recommended ✅)
+### Option A: "Smart Switch" (Recommended âœ…)
 
 The game screen decides its mode based on the game type + feature flags:
 
 ```
 Game opens with matchId from invite
-  → Is this game Colyseus-eligible? (check COLYSEUS_ROOM_NAMES + feature flags)
-    → YES: gameMode = "colyseus", call startMultiplayer() with firestoreGameId
-    → NO:  gameMode = "online", subscribe to Firestore (existing behavior)
+  â†’ Is this game Colyseus-eligible? (check COLYSEUS_ROOM_NAMES + feature flags)
+    â†’ YES: gameMode = "colyseus", call startMultiplayer() with firestoreGameId
+    â†’ NO:  gameMode = "online", subscribe to Firestore (existing behavior)
 ```
 
 **Why this approach:**
 
-1. **Zero invite system changes** — `startGameEarly`, `createMatch`, `UniversalInviteCard` all stay exactly as-is
-2. **`firestoreGameId` is the bridge** — both players call `joinOrCreate` with the same `firestoreGameId`, `filterBy` ensures they land in the same room
-3. **Graceful fallback** — if Colyseus server is unreachable, games fall back to Firestore-only
-4. **Per-tier feature flags** — each category can be toggled independently
+1. **Zero invite system changes** â€” `startGameEarly`, `createMatch`, `UniversalInviteCard` all stay exactly as-is
+2. **`firestoreGameId` is the bridge** â€” both players call `joinOrCreate` with the same `firestoreGameId`, `filterBy` ensures they land in the same room
+3. **Graceful fallback** â€” if Colyseus server is unreachable, games fall back to Firestore-only
+4. **Per-tier feature flags** â€” each category can be toggled independently
 
 ### Why NOT change the invite system
 
 - The invite system creates a Firestore match doc that serves as a **persistent record** of the game regardless of transport
-- Both legacy and universal invites produce a `matchId` (Firestore doc ID) — this is the perfect `firestoreGameId` to pass to Colyseus
-- No need for a pre-created `colyseusRoomId` — the `filterBy` pattern handles player matching
+- Both legacy and universal invites produce a `matchId` (Firestore doc ID) â€” this is the perfect `firestoreGameId` to pass to Colyseus
+- No need for a pre-created `colyseusRoomId` â€” the `filterBy` pattern handles player matching
 
 ---
 
@@ -167,7 +164,7 @@ This also requires a `getGameCategory()` helper that maps game types to their ti
 
 **File:** `src/hooks/useGameConnection.ts`
 
-This is the **key new abstraction** — a hook that every game screen calls instead of directly checking `matchId`:
+This is the **key new abstraction** â€” a hook that every game screen calls instead of directly checking `matchId`:
 
 ```typescript
 /**
@@ -189,7 +186,7 @@ This is the **key new abstraction** — a hook that every game screen calls inst
  */
 export function useGameConnection(gameType: string, matchId?: string) {
   const resolvedMode = useMemo(() => {
-    if (!matchId) return null; // No invite → stay in menu
+    if (!matchId) return null; // No invite â†’ stay in menu
     if (shouldUseColyseus(gameType)) return "colyseus";
     return "online"; // Firestore fallback
   }, [gameType, matchId]);
@@ -245,7 +242,7 @@ Currently accepts `{ gameType, autoJoin, roomId }`. Change:
 
 - Add `firestoreGameId` to options
 - Pass it through to `useColyseus({ gameType, firestoreGameId, autoJoin: false })`
-- `startMultiplayer()` no longer needs a roomId param — it just triggers the join
+- `startMultiplayer()` no longer needs a roomId param â€” it just triggers the join
 
 #### Quick-Play / Multiplayer Games (`useMultiplayerGame`)
 
@@ -258,59 +255,59 @@ Currently dynamically imports ColyseusService. Change:
 
 Already has `restoreGame(firestoreGameId)` which calls `colyseusService.restoreGame()`. This path works correctly. The game screen just needs to call it.
 
-#### Snake / Card / Words / Coop Games
+#### Card / Coop Games
 
-Same pattern — accept `firestoreGameId`, pass to service.
+Same pattern â€” accept `firestoreGameId`, pass to service.
 
 ### 4.5 Flow Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│ INVITE FLOW (unchanged)                                              │
-│                                                                      │
-│ Host: sendUniversalInvite() → invite doc (status: pending)           │
-│ Guest: claimInviteSlot()    → invite doc (status: filling → ready)   │
-│ Host: startGameEarly()      → createMatch() → gameId (Firestore ID) │
-│                                                → invite.status: active│
-│                                                                      │
-│ UniversalInviteCard: detects status → "active"                       │
-│   → onPlay(gameId, gameType) after 300ms                             │
-│   → handlePlayUniversalInvite(gameId, gameType)                      │
-│   → navigation.navigate(screen, { matchId: gameId })                 │
-└───────────────────────────┬──────────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ GAME SCREEN (modified)                                               │
-│                                                                      │
-│ const { resolvedMode, firestoreGameId } =                            │
-│   useGameConnection(GAME_TYPE, route.params?.matchId);               │
-│                                                                      │
-│ if (resolvedMode === "colyseus") {                                   │
-│   setGameMode("colyseus")                                            │
-│   mp.startMultiplayer()  ──────────────────────────┐                 │
-│                                                    │                 │
-│ } else if (resolvedMode === "online") {            │                 │
-│   setGameMode("online")                            │                 │
-│   subscribeToMatch(firestoreGameId)  // existing   │                 │
-│ }                                                  │                 │
-└────────────────────────────────────────────────────┼─────────────────┘
-                                                     │
-                            ┌────────────────────────┘
-                            ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ COLYSEUS PATH                                                        │
-│                                                                      │
-│ Hook.startMultiplayer()                                               │
-│   → colyseusService.joinOrCreate(gameType, { firestoreGameId })      │
-│   → client.joinOrCreate("pong", { firestoreGameId, token })          │
-│                                                                      │
-│ Server: filterBy(["firestoreGameId"])                                 │
-│   → Player 1 calls joinOrCreate → room created                      │
-│   → Player 2 calls joinOrCreate → matched to same room              │
-│   → onCreate: loadGameState(firestoreGameId) → restoreFromSaved()   │
-│   → Both connected, game begins                                     │
-└──────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ INVITE FLOW (unchanged)                                              â”‚
+â”‚                                                                      â”‚
+â”‚ Host: sendUniversalInvite() â†’ invite doc (status: pending)           â”‚
+â”‚ Guest: claimInviteSlot()    â†’ invite doc (status: filling â†’ ready)   â”‚
+â”‚ Host: startGameEarly()      â†’ createMatch() â†’ gameId (Firestore ID) â”‚
+â”‚                                                â†’ invite.status: activeâ”‚
+â”‚                                                                      â”‚
+â”‚ UniversalInviteCard: detects status â†’ "active"                       â”‚
+â”‚   â†’ onPlay(gameId, gameType) after 300ms                             â”‚
+â”‚   â†’ handlePlayUniversalInvite(gameId, gameType)                      â”‚
+â”‚   â†’ navigation.navigate(screen, { matchId: gameId })                 â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â”‚
+                            â–¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ GAME SCREEN (modified)                                               â”‚
+â”‚                                                                      â”‚
+â”‚ const { resolvedMode, firestoreGameId } =                            â”‚
+â”‚   useGameConnection(GAME_TYPE, route.params?.matchId);               â”‚
+â”‚                                                                      â”‚
+â”‚ if (resolvedMode === "colyseus") {                                   â”‚
+â”‚   setGameMode("colyseus")                                            â”‚
+â”‚   mp.startMultiplayer()  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”                 â”‚
+â”‚                                                    â”‚                 â”‚
+â”‚ } else if (resolvedMode === "online") {            â”‚                 â”‚
+â”‚   setGameMode("online")                            â”‚                 â”‚
+â”‚   subscribeToMatch(firestoreGameId)  // existing   â”‚                 â”‚
+â”‚ }                                                  â”‚                 â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                                     â”‚
+                            â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â–¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ COLYSEUS PATH                                                        â”‚
+â”‚                                                                      â”‚
+â”‚ Hook.startMultiplayer()                                               â”‚
+â”‚   â†’ colyseusService.joinOrCreate(gameType, { firestoreGameId })      â”‚
+â”‚   â†’ client.joinOrCreate("pong", { firestoreGameId, token })          â”‚
+â”‚                                                                      â”‚
+â”‚ Server: filterBy(["firestoreGameId"])                                 â”‚
+â”‚   â†’ Player 1 calls joinOrCreate â†’ room created                      â”‚
+â”‚   â†’ Player 2 calls joinOrCreate â†’ matched to same room              â”‚
+â”‚   â†’ onCreate: loadGameState(firestoreGameId) â†’ restoreFromSaved()   â”‚
+â”‚   â†’ Both connected, game begins                                     â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
@@ -324,7 +321,7 @@ Same pattern — accept `firestoreGameId`, pass to service.
 | File                             | Change                                                              |
 | -------------------------------- | ------------------------------------------------------------------- |
 | `src/config/colyseus.ts`         | Add `GAME_CATEGORY_MAP`, `getGameCategory()`, `shouldUseColyseus()` |
-| `src/hooks/useGameConnection.ts` | New file — `useGameConnection(gameType, matchId?)` hook             |
+| `src/hooks/useGameConnection.ts` | New file â€” `useGameConnection(gameType, matchId?)` hook             |
 
 ### Phase 2: Hook Wiring (6 hooks)
 
@@ -334,22 +331,19 @@ Same pattern — accept `firestoreGameId`, pass to service.
 | ---------------------------------- | --------------------------------------------------------------------------------------------- |
 | `src/hooks/usePhysicsGame.ts`      | Accept `firestoreGameId` option, pass to `useColyseus`                                        |
 | `src/hooks/useMultiplayerGame.ts`  | Accept `firestoreGameId`, use in `joinRoom()`                                                 |
-| `src/hooks/useSnakeMultiplayer.ts` | Accept `firestoreGameId`, pass to `useColyseus`                                               |
-| `src/hooks/useTurnBasedGame.ts`    | Already has `restoreGame()` — just ensure `startMultiplayer()` also accepts `firestoreGameId` |
+| `src/hooks/useTurnBasedGame.ts`    | Already has `restoreGame()` â€” just ensure `startMultiplayer()` also accepts `firestoreGameId` |
 | `src/hooks/useCardGame.ts`         | Accept `firestoreGameId`, use in join call                                                    |
 
 ### Phase 3: Physics Game Screens (6 screens)
 
-**Wire `useGameConnection` into physics games — these benefit most.**
+**Wire `useGameConnection` into physics games â€” these benefit most.**
 
 | Screen                       | Key Changes                                                       |
 | ---------------------------- | ----------------------------------------------------------------- |
-| `PongGameScreen.tsx`         | Add `useGameConnection`, replace matchId→online with smart switch |
+| `PongGameScreen.tsx`         | Add `useGameConnection`, replace matchIdâ†’online with smart switch |
 | `AirHockeyGameScreen.tsx`    | Same pattern                                                      |
 | `BounceBlitzGameScreen.tsx`  | Same pattern                                                      |
 | `BrickBreakerGameScreen.tsx` | Same pattern                                                      |
-| `SnakeGameScreen.tsx`        | Same pattern                                                      |
-| `RaceGameScreen.tsx`         | Same pattern                                                      |
 
 ### Phase 4: Quick-Play Game Screens (3 screens)
 
@@ -363,7 +357,7 @@ Same pattern — accept `firestoreGameId`, pass to service.
 
 ### Phase 5: Turn-Based + Card + Coop Game Screens (10 screens)
 
-**Wire remaining games. These can use the same pattern — `shouldUseColyseus` + feature flags control whether Colyseus or Firestore is used.**
+**Wire remaining games. These can use the same pattern â€” `shouldUseColyseus` + feature flags control whether Colyseus or Firestore is used.**
 
 | Screen                      | Key Changes                           |
 | --------------------------- | ------------------------------------- |
@@ -374,7 +368,6 @@ Same pattern — accept `firestoreGameId`, pass to service.
 | `GomokuGameScreen.tsx`      | Same                                  |
 | `ReversiGameScreen.tsx`     | Same                                  |
 | `CrazyEightsGameScreen.tsx` | Same                                  |
-| `WarGameScreen.tsx`         | Same                                  |
 | `WordMasterGameScreen.tsx`  | Same                                  |
 | `CrosswordGameScreen.tsx`   | Same                                  |
 
@@ -385,7 +378,7 @@ Same pattern — accept `firestoreGameId`, pass to service.
 | File                             | Change                                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | `src/hooks/useGameConnection.ts` | Add `colyseusAvailable` check via latency ping                                          |
-| All game screens                 | On Colyseus connection error → fall back to `"online"` (Firestore) mode with user toast |
+| All game screens                 | On Colyseus connection error â†’ fall back to `"online"` (Firestore) mode with user toast |
 | `src/components/InAppToast.tsx`  | Toast message: "Real-time server unavailable, using standard connection"                |
 
 ### Phase 7: Testing
@@ -393,7 +386,7 @@ Same pattern — accept `firestoreGameId`, pass to service.
 | Test File                                       | Coverage                                            |
 | ----------------------------------------------- | --------------------------------------------------- |
 | `__tests__/hooks/useGameConnection.test.ts`     | Smart switch logic, feature flag gating             |
-| `__tests__/integration/colyseusInvites.test.ts` | End-to-end: invite → auto-nav → Colyseus connection |
+| `__tests__/integration/colyseusInvites.test.ts` | End-to-end: invite â†’ auto-nav â†’ Colyseus connection |
 | Update existing game tests                      | Verify Colyseus mode activation                     |
 
 ---
@@ -404,7 +397,7 @@ Same pattern — accept `firestoreGameId`, pass to service.
 
 | File                                        | Purpose                                              |
 | ------------------------------------------- | ---------------------------------------------------- |
-| `src/hooks/useGameConnection.ts`            | Smart switch hook: matchId + gameType → resolvedMode |
+| `src/hooks/useGameConnection.ts`            | Smart switch hook: matchId + gameType â†’ resolvedMode |
 | `__tests__/hooks/useGameConnection.test.ts` | Tests for the smart switch                           |
 
 ### Modified Files (30)
@@ -414,14 +407,13 @@ Same pattern — accept `firestoreGameId`, pass to service.
 | `src/config/colyseus.ts`           | Add helpers                                | Low        |
 | `src/hooks/usePhysicsGame.ts`      | Accept firestoreGameId                     | Low        |
 | `src/hooks/useMultiplayerGame.ts`  | Accept firestoreGameId                     | Low        |
-| `src/hooks/useSnakeMultiplayer.ts` | Accept firestoreGameId                     | Low        |
 | `src/hooks/useTurnBasedGame.ts`    | Ensure firestoreGameId in startMultiplayer | Low        |
 | `src/hooks/useCardGame.ts`         | Accept firestoreGameId                     | Low        |
-| 6× Physics game screens            | useGameConnection integration              | Medium     |
-| 3× Quick-play game screens         | useGameConnection integration              | Medium     |
-| 6× Turn-based game screens         | useGameConnection integration              | Medium     |
-| 2× Card game screens               | useGameConnection integration              | Medium     |
-| 2× Coop game screens               | useGameConnection integration              | Medium     |
+| 6Ã— Physics game screens            | useGameConnection integration              | Medium     |
+| 3Ã— Quick-play game screens         | useGameConnection integration              | Medium     |
+| 6Ã— Turn-based game screens         | useGameConnection integration              | Medium     |
+| 2Ã— Card game screens               | useGameConnection integration              | Medium     |
+| 2Ã— Coop game screens               | useGameConnection integration              | Medium     |
 
 ### Unchanged Files (0 invite system changes!)
 
@@ -444,15 +436,15 @@ Same pattern — accept `firestoreGameId`, pass to service.
 **Impact:** Game won't start if server is down.
 **Mitigation:** `useGameConnection` pings server health before recommending Colyseus mode. On failure, falls back to Firestore `"online"` mode. User sees a brief toast. Turn-based and quick-play games degrade gracefully; physics games show "Multiplayer unavailable" since they can't function without real-time sync.
 
-### Risk 2: Race Condition — Player 2 Arrives Before Room Exists
+### Risk 2: Race Condition â€” Player 2 Arrives Before Room Exists
 
-**Impact:** `joinOrCreate` with `firestoreGameId` — if Player 2 calls this before Player 1's room is created, a second room could be created.
-**Mitigation:** `filterBy(["firestoreGameId"])` prevents this — Colyseus will create the room on the first call and match the second call to the same room, as long as both pass the same `firestoreGameId`. This is exactly what `filterBy` is designed for.
+**Impact:** `joinOrCreate` with `firestoreGameId` â€” if Player 2 calls this before Player 1's room is created, a second room could be created.
+**Mitigation:** `filterBy(["firestoreGameId"])` prevents this â€” Colyseus will create the room on the first call and match the second call to the same room, as long as both pass the same `firestoreGameId`. This is exactly what `filterBy` is designed for.
 
 ### Risk 3: Stale Firestore Subscription + Colyseus
 
 **Impact:** If a game screen subscribes to both Firestore AND Colyseus, state could conflict.
-**Mitigation:** The smart switch is **exclusive** — `"colyseus"` mode does NOT subscribe to Firestore. Only one transport is active at a time.
+**Mitigation:** The smart switch is **exclusive** â€” `"colyseus"` mode does NOT subscribe to Firestore. Only one transport is active at a time.
 
 ### Risk 4: Room Auto-Dispose Before Player 2 Joins
 
@@ -462,12 +454,12 @@ Same pattern — accept `firestoreGameId`, pass to service.
 ### Risk 5: `createMatch` Game State vs Colyseus Game State
 
 **Impact:** `startGameEarly()` calls `createMatch()` which generates initial game state in Firestore. When the Colyseus room starts, `TurnBasedRoom.onCreate` calls `loadGameState(firestoreGameId)` and restores from it. These must be compatible.
-**Mitigation:** This already works by design — the room's `restoreFromSaved()` reads the Firestore game state format. No changes needed.
+**Mitigation:** This already works by design â€” the room's `restoreFromSaved()` reads the Firestore game state format. No changes needed.
 
 ---
 
 ## Summary
 
-The integration is **minimal in scope but wide in surface area**: one new helper function, one new hook, and a 3-line change in each of ~27 game screens. The invite system, server rooms, and ColyseusService all remain unchanged. The `firestoreGameId` created by `createMatch()` is the bridge — both players pass it to `joinOrCreate`, and `filterBy` ensures they land in the same room.
+The integration is **minimal in scope but wide in surface area**: one new helper function, one new hook, and a 3-line change in each of ~27 game screens. The invite system, server rooms, and ColyseusService all remain unchanged. The `firestoreGameId` created by `createMatch()` is the bridge â€” both players pass it to `joinOrCreate`, and `filterBy` ensures they land in the same room.
 
 **Estimated effort:** ~2-3 hours of implementation, ~1 hour of testing.

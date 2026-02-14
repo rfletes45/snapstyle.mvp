@@ -23,7 +23,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { IconButton, Menu, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -50,6 +57,7 @@ import {
 import { CameraLongPressButton } from "@/components/chat/CameraLongPressButton";
 import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
+import { NetworkBanner } from "@/components/chat/NetworkBanner";
 import { ScrollReturnButton } from "@/components/chat/ScrollReturnButton";
 import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
 
@@ -80,6 +88,8 @@ import { ExtendedGameType } from "@/types/games";
 import { CallButtonGroup } from "@/components/calls";
 
 // Types & Utils
+import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
+import { Spacing } from "@/constants/theme";
 import { playQuack } from "@/services/chat/quackService";
 import type { ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
@@ -88,12 +98,19 @@ import {
   messageWithProfileToV2,
 } from "@/utils/messageAdapters";
 import * as Haptics from "expo-haptics";
-import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
-import { Spacing } from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatScreen");
+
+/** Trigger haptic feedback with Android-safe fallback */
+function triggerHaptic(style: Haptics.ImpactFeedbackStyle) {
+  if (Platform.OS === "android") {
+    // Android may not support all impact styles; use selectionAsync as fallback
+    Haptics.selectionAsync().catch(() => {});
+  } else {
+    Haptics.impactAsync(style).catch(() => {});
+  }
+}
 // ==========================================================================
 // Constants
 // ==========================================================================
@@ -102,6 +119,9 @@ const DEBUG_CHAT = DEBUG_CHAT_V2;
 
 /** Messages within this window from the same sender are visually grouped */
 const MESSAGE_GROUP_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+/** Stable no-op callback to avoid re-renders from inline arrow functions */
+const NOOP = () => {};
 
 // ==========================================================================
 // Types
@@ -182,6 +202,15 @@ export default function ChatScreen({
     null,
   );
 
+  // Cleanup highlight timeout on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // ==========================================================================
   // Unified Hooks (UNI-04, UNI-05)
   // ==========================================================================
@@ -235,7 +264,7 @@ export default function ChatScreen({
   // Voice recorder
   const voiceRecorder = useVoiceRecorder({
     maxDuration: 60,
-    onRecordingComplete: () => {},
+    onRecordingComplete: NOOP,
   });
 
   // ==========================================================================
@@ -339,7 +368,9 @@ export default function ChatScreen({
             // Background refresh - don't block
             getUserProfileByUid(friendUid)
               .then(setFriendProfile)
-              .catch(console.warn);
+              .catch((e) =>
+                logger.warn("Background profile refresh failed:", e),
+              );
             return;
           }
 
@@ -373,7 +404,7 @@ export default function ChatScreen({
     if (!uid || !chatId) return;
     getScheduledMessagesForChat(uid, chatId)
       .then(setScheduledMessages)
-      .catch(console.error);
+      .catch((e) => logger.error("Failed to load scheduled messages:", e));
   }, [uid, chatId]);
 
   // Update header
@@ -398,8 +429,8 @@ export default function ChatScreen({
 
     navigation.setOptions({
       headerTitle: () => (
-        <View style={{ alignItems: "center" }}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={styles.headerTitleContainer}>
+          <View style={styles.headerTitleRow}>
             {presence.shouldShowOnlineIndicator && (
               <PresenceIndicator
                 online={presence.isOnline}
@@ -408,25 +439,25 @@ export default function ChatScreen({
               />
             )}
             <Text
-              style={{
-                fontSize: 17,
-                fontWeight: "600",
-                color: theme.colors.onSurface,
-              }}
+              style={[
+                styles.headerTitleText,
+                { color: theme.colors.onSurface },
+              ]}
             >
               {friendProfile.username}
             </Text>
           </View>
           {subtitle && (
             <Text
-              style={{
-                fontSize: 12,
-                color:
-                  typing.isOtherUserTyping && typing.typingIndicatorsEnabled
-                    ? theme.colors.primary
-                    : theme.colors.onSurfaceVariant,
-                marginTop: 2,
-              }}
+              style={[
+                styles.headerSubtitleText,
+                {
+                  color:
+                    typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+                      ? theme.colors.primary
+                      : theme.colors.onSurfaceVariant,
+                },
+              ]}
             >
               {subtitle}
             </Text>
@@ -434,7 +465,7 @@ export default function ChatScreen({
         </View>
       ),
       headerRight: () => (
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={styles.headerRightRow}>
           {/* Call buttons */}
           <CallButtonGroup
             participantId={friendUid}
@@ -515,7 +546,7 @@ export default function ChatScreen({
   const handleSendMessage = useCallback(async () => {
     if (!uid || !chatId || !screen.composer.text.trim()) return;
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
       // Clear typing indicator when sending
       typing.setTyping(false);
       await screen.composer.send();
@@ -561,7 +592,7 @@ export default function ChatScreen({
   }, [screen.chat]);
 
   const handleMessageLongPress = useCallback((message: MessageWithProfile) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedMessage(message);
     setActionsSheetVisible(true);
   }, []);
@@ -644,9 +675,7 @@ export default function ChatScreen({
           },
         });
       } else {
-        logger.warn(
-          `[ChatScreen] No screen mapping for gameType: ${gameType}`,
-        );
+        logger.warn(`[ChatScreen] No screen mapping for gameType: ${gameType}`);
       }
     },
     [navigation, chatId],
@@ -866,17 +895,12 @@ export default function ChatScreen({
               ) : null
             }
             ListEmptyComponent={
-              <View
-                style={{
-                  transform: [{ scaleY: -1 }],
-                  flexGrow: 1,
-                  justifyContent: "center",
-                }}
-              >
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyEmoji}>👋</Text>
                 <EmptyState
-                  icon="chat-outline"
-                  title="No messages yet"
-                  subtitle="Send a message or picture to start the conversation!"
+                  icon="message-text-outline"
+                  title={`Say hi to ${friendProfile?.username || "your friend"}!`}
+                  subtitle="Send a message, snap a photo, or challenge them to a game 🎮"
                 />
               </View>
             }
@@ -886,6 +910,9 @@ export default function ChatScreen({
             }}
           />
         )}
+
+        {/* Network Status Banner */}
+        <NetworkBanner />
 
         {/* Typing Indicator */}
         <TypingIndicator
@@ -920,7 +947,7 @@ export default function ChatScreen({
             voiceRecorder.isAvailable && !screen.composer.text.trim() ? (
               <VoiceRecordButton
                 onRecordingComplete={handleVoiceRecordingComplete}
-                onRecordingCancelled={() => {}}
+                onRecordingCancelled={NOOP}
                 disabled={screen.sending}
                 size={32}
                 maxDuration={60000}
@@ -960,8 +987,8 @@ export default function ChatScreen({
         currentUid={uid || ""}
         onClose={() => setActionsSheetVisible(false)}
         onReply={handleReply}
-        onEdited={() => {}}
-        onDeleted={() => {}}
+        onEdited={NOOP}
+        onDeleted={NOOP}
       />
 
       <GamePickerModal
@@ -988,6 +1015,36 @@ export default function ChatScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerTitleContainer: {
+    alignItems: "center",
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerTitleText: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  headerSubtitleText: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  headerRightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  emptyStateContainer: {
+    transform: [{ scaleY: -1 }],
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 8,
+    transform: [{ scaleY: -1 }],
   },
   loadMoreContainer: {
     alignItems: "center",

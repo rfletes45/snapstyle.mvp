@@ -2,6 +2,7 @@ import BlockUserModal from "@/components/BlockUserModal";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ReportUserModal from "@/components/ReportUserModal";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { blockUser } from "@/services/blocking";
 import { getFirestoreInstance } from "@/services/firebase";
 import {
@@ -18,13 +19,7 @@ import { submitReport } from "@/services/reporting";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useUser } from "@/store/UserContext";
-import {
-  AvatarConfig,
-  Friend,
-  FriendRequest,
-  ReportReason,
-} from "@/types/models";
-import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
+import { AvatarConfig, Friend, FriendRequest, ReportReason } from "@/types/models";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   collection,
@@ -33,8 +28,8 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import React, { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Modal, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import {
   Button,
   Card,
@@ -45,8 +40,6 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/friends/FriendsScreen");
@@ -340,13 +333,13 @@ export default function FriendsScreen({ navigation }: any) {
     };
   }, [uid]);
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
-  };
+  }, [loadData]);
 
-  const handleAddFriend = async () => {
+  const handleAddFriend = useCallback(async () => {
     if (!uid || !addFriendUsername.trim()) {
       Alert.alert("Error", "Please enter a username");
       return;
@@ -367,9 +360,9 @@ export default function FriendsScreen({ navigation }: any) {
     } finally {
       setAddFriendLoading(false);
     }
-  };
+  }, [uid, addFriendUsername, loadData]);
 
-  const handleAcceptRequest = async (requestId: string) => {
+  const handleAcceptRequest = useCallback(async (requestId: string) => {
     try {
       await acceptFriendRequest(requestId);
       Alert.alert("Success", "Connection request accepted!");
@@ -377,9 +370,9 @@ export default function FriendsScreen({ navigation }: any) {
     } catch {
       Alert.alert("Error", "Failed to accept request");
     }
-  };
+  }, [loadData]);
 
-  const handleDeclineRequest = async (requestId: string) => {
+  const handleDeclineRequest = useCallback(async (requestId: string) => {
     try {
       await declineFriendRequest(requestId);
       Alert.alert("Success", "Connection request declined");
@@ -387,9 +380,9 @@ export default function FriendsScreen({ navigation }: any) {
     } catch {
       Alert.alert("Error", "Failed to decline request");
     }
-  };
+  }, [loadData]);
 
-  const handleCancelRequest = async (requestId: string) => {
+  const handleCancelRequest = useCallback(async (requestId: string) => {
     try {
       await cancelFriendRequest(requestId);
       Alert.alert("Success", "Connection request canceled");
@@ -397,9 +390,9 @@ export default function FriendsScreen({ navigation }: any) {
     } catch {
       Alert.alert("Error", "Failed to cancel request");
     }
-  };
+  }, [loadData]);
 
-  const handleRemoveFriend = async (friendUid: string) => {
+  const handleRemoveFriend = useCallback(async (friendUid: string) => {
     if (!uid) return;
 
     // Confirm removal using Alert (works on both native and web)
@@ -423,28 +416,28 @@ export default function FriendsScreen({ navigation }: any) {
         },
       ],
     );
-  };
+  }, [uid, loadData]);
 
   // Block/Report handlers
-  const handleOpenMenu = (userId: string) => {
+  const handleOpenMenu = useCallback((userId: string) => {
     setMenuVisible(userId);
-  };
+  }, []);
 
-  const handleCloseMenu = () => {
+  const handleCloseMenu = useCallback(() => {
     setMenuVisible(null);
-  };
+  }, []);
 
-  const handleBlockPress = (userId: string, username: string) => {
+  const handleBlockPress = useCallback((userId: string, username: string) => {
     handleCloseMenu();
     setSelectedUser({ uid: userId, username });
     setBlockModalVisible(true);
-  };
+  }, []);
 
-  const handleReportPress = (userId: string, username: string) => {
+  const handleReportPress = useCallback((userId: string, username: string) => {
     handleCloseMenu();
     setSelectedUser({ uid: userId, username });
     setReportModalVisible(true);
-  };
+  }, []);
 
   const handleBlockConfirm = async (reason?: string) => {
     if (!uid || !selectedUser) return;
@@ -504,6 +497,43 @@ export default function FriendsScreen({ navigation }: any) {
   const receivedRequests = pendingRequests.filter((r) => r.to === uid);
   const sentRequests = pendingRequests.filter((r) => r.from === uid);
 
+  // Filter friends and requests by search query
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  const filteredFriends = useMemo(() => {
+    if (!normalizedQuery) return friends;
+    return friends.filter((f) => {
+      const name = f.otherUserProfile?.username?.toLowerCase() || "";
+      const display = f.otherUserProfile?.displayName?.toLowerCase() || "";
+      return (
+        name.includes(normalizedQuery) || display.includes(normalizedQuery)
+      );
+    });
+  }, [friends, normalizedQuery]);
+
+  const filteredReceivedRequests = useMemo(() => {
+    if (!normalizedQuery) return receivedRequests;
+    return receivedRequests.filter((r) => {
+      const name = r.otherUserProfile?.username?.toLowerCase() || "";
+      const display = r.otherUserProfile?.displayName?.toLowerCase() || "";
+      return (
+        name.includes(normalizedQuery) || display.includes(normalizedQuery)
+      );
+    });
+  }, [receivedRequests, normalizedQuery]);
+
+  const filteredSentRequests = useMemo(() => {
+    if (!normalizedQuery) return sentRequests;
+    return sentRequests.filter((r) => {
+      const name = (
+        r.otherUserUsername ||
+        r.otherUserProfile?.username ||
+        ""
+      ).toLowerCase();
+      return name.includes(normalizedQuery);
+    });
+  }, [sentRequests, normalizedQuery]);
+
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -542,14 +572,14 @@ export default function FriendsScreen({ navigation }: any) {
       />
 
       {/* Main Content */}
-      <FlatList
-        data={[]}
-        renderItem={() => null}
-        {...LIST_PERFORMANCE_PROPS}
-        ListEmptyComponent={
-          <View>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        <View>
             {/* Received Requests Section */}
-            {receivedRequests.length > 0 && (
+            {filteredReceivedRequests.length > 0 && (
               <View style={styles.section}>
                 <Text
                   variant="titleMedium"
@@ -558,9 +588,9 @@ export default function FriendsScreen({ navigation }: any) {
                     { color: theme.colors.onSurface },
                   ]}
                 >
-                  Connection Requests ({receivedRequests.length})
+                  Connection Requests ({filteredReceivedRequests.length})
                 </Text>
-                {receivedRequests.map((request) => (
+                {filteredReceivedRequests.map((request) => (
                   <Card
                     key={request.id}
                     style={[
@@ -627,7 +657,7 @@ export default function FriendsScreen({ navigation }: any) {
             )}
 
             {/* Connections List Section */}
-            {friends.length > 0 ? (
+            {filteredFriends.length > 0 ? (
               <View style={styles.section}>
                 <Text
                   variant="titleMedium"
@@ -636,9 +666,9 @@ export default function FriendsScreen({ navigation }: any) {
                     { color: theme.colors.onSurface },
                   ]}
                 >
-                  Connections ({friends.length})
+                  Connections ({filteredFriends.length})
                 </Text>
-                {friends.map((friend) => {
+                {filteredFriends.map((friend) => {
                   const friendUid = friend.users.find((u) => u !== uid);
                   const streakCount = friend.streakCount || 0;
 
@@ -782,7 +812,7 @@ export default function FriendsScreen({ navigation }: any) {
             )}
 
             {/* Sent Requests Section */}
-            {sentRequests.length > 0 && (
+            {filteredSentRequests.length > 0 && (
               <View style={styles.section}>
                 <Text
                   variant="titleMedium"
@@ -791,9 +821,9 @@ export default function FriendsScreen({ navigation }: any) {
                     { color: theme.colors.onSurface },
                   ]}
                 >
-                  Sent Requests ({sentRequests.length})
+                  Sent Requests ({filteredSentRequests.length})
                 </Text>
-                {sentRequests.map((request) => (
+                {filteredSentRequests.map((request) => (
                   <Card
                     key={request.id}
                     style={[
@@ -813,11 +843,7 @@ export default function FriendsScreen({ navigation }: any) {
                         />
                         <View style={styles.sentRequestInfo}>
                           <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                            }}
+                            style={styles.sentRequestRow}
                           >
                             <Text
                               variant="bodySmall"
@@ -828,7 +854,7 @@ export default function FriendsScreen({ navigation }: any) {
                             >
                               {request.otherUserUsername || "Loading..."}
                             </Text>
-                            <Text style={{ fontSize: 18 }}>⏳</Text>
+                            <Text style={styles.pendingEmoji}>⏳</Text>
                           </View>
                           <Text
                             variant="labelSmall"
@@ -855,14 +881,12 @@ export default function FriendsScreen({ navigation }: any) {
             )}
           </View>
         }
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-      />
+      </ScrollView>
 
       {/* Add Connection Modal */}
       <Modal
         visible={addFriendModalVisible}
-        onDismiss={() => setAddFriendModalVisible(false)}
+        onRequestClose={() => setAddFriendModalVisible(false)}
         transparent
         animationType="fade"
       >
@@ -1110,6 +1134,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+
+  sentRequestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  pendingEmoji: {
+    fontSize: 18,
   },
 
   sentRequestInfo: {

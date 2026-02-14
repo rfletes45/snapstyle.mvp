@@ -43,7 +43,7 @@ export async function uploadPicture(
   onProgress?: (progress: number) => void,
 ): Promise<string> {
   try {
-    logger.info("[Game Service] Starting picture upload");
+    logger.info("[Snap Service] Starting picture upload");
 
     // 1. Upload media to Firebase Storage
     const mediaUrl = await uploadMediaFile(
@@ -60,7 +60,7 @@ export async function uploadPicture(
     const pictureDocRef = await createSnapDocument(picture, userId);
 
     logger.info(
-      `[Game Service] Picture uploaded successfully: ${pictureDocRef}`,
+      `[Snap Service] Picture uploaded successfully: ${pictureDocRef}`,
     );
 
     // 4. Update recipients' view lists
@@ -68,7 +68,7 @@ export async function uploadPicture(
 
     return pictureDocRef;
   } catch (error) {
-    logger.error("[Game Service] Picture upload failed:", error);
+    logger.error("[Snap Service] Picture upload failed:", error);
     throw error;
   }
 }
@@ -101,7 +101,7 @@ async function uploadMediaFile(
           onProgress?.(progress);
         },
         (error) => {
-          logger.error("[Game Service] Media upload failed:", error);
+          logger.error("[Snap Service] Media upload failed:", error);
           reject(error);
         },
         async () => {
@@ -111,7 +111,7 @@ async function uploadMediaFile(
       );
     });
   } catch (error) {
-    logger.error("[Game Service] Failed to upload media file:", error);
+    logger.error("[Snap Service] Failed to upload media file:", error);
     throw error;
   }
 }
@@ -136,7 +136,7 @@ async function createSnapDocument(
 
     return docRef.id;
   } catch (error) {
-    logger.error("[Game Service] Failed to create picture document:", error);
+    logger.error("[Snap Service] Failed to create picture document:", error);
     throw error;
   }
 }
@@ -165,7 +165,7 @@ async function updateRecipientsViewLists(
     await Promise.all(promises);
   } catch (error) {
     logger.error(
-      "[Game Service] Failed to update recipients view lists:",
+      "[Snap Service] Failed to update recipients view lists:",
       error,
     );
     // Don't throw - picture is still uploaded
@@ -217,7 +217,7 @@ export async function viewPicture(
       screenshotTaken,
     });
   } catch (error) {
-    logger.error("[Game Service] Failed to record picture view:", error);
+    logger.error("[Snap Service] Failed to record picture view:", error);
   }
 }
 
@@ -235,9 +235,9 @@ export async function deletePicture(
 
     // Delete storage files
     // Would delete media, thumbnails, etc.
-    logger.info(`[Game Service] Deleted picture: ${snapId}`);
+    logger.info(`[Snap Service] Deleted picture: ${snapId}`);
   } catch (error) {
-    logger.error("[Game Service] Failed to delete picture:", error);
+    logger.error("[Snap Service] Failed to delete picture:", error);
     throw error;
   }
 }
@@ -274,7 +274,7 @@ export async function addReaction(
       reactions: updatedReactions,
     });
   } catch (error) {
-    logger.error("[Game Service] Failed to add reaction:", error);
+    logger.error("[Snap Service] Failed to add reaction:", error);
     throw error;
   }
 }
@@ -299,7 +299,7 @@ export async function replyToPicture(
       replies: [...snapData.replies, reply],
     });
   } catch (error) {
-    logger.error("[Game Service] Failed to reply to picture:", error);
+    logger.error("[Snap Service] Failed to reply to picture:", error);
     throw error;
   }
 }
@@ -317,7 +317,7 @@ export async function getPictureReceipts(snapId: string): Promise<SnapView[]> {
     const snapData = snap.data() as Snap;
     return snapData.viewedBy;
   } catch (error) {
-    logger.error("[Game Service] Failed to get picture receipts:", error);
+    logger.error("[Snap Service] Failed to get picture receipts:", error);
     return [];
   }
 }
@@ -340,9 +340,9 @@ export async function shareToStory(
       storyExpiresAt: picture.storyExpiresAt,
     });
 
-    logger.info("[Game Service] Picture shared to story");
+    logger.info("[Snap Service] Picture shared to story");
   } catch (error) {
-    logger.error("[Game Service] Failed to share to story:", error);
+    logger.error("[Snap Service] Failed to share to story:", error);
     throw error;
   }
 }
@@ -398,10 +398,10 @@ export async function createDraft(
     );
     const docRef = await addDoc(draftRef, draft);
 
-    logger.info(`[Game Service] Created draft: ${docRef.id}`);
+    logger.info(`[Snap Service] Created draft: ${docRef.id}`);
     return docRef.id;
   } catch (error) {
-    logger.error("[Game Service] Failed to create draft:", error);
+    logger.error("[Snap Service] Failed to create draft:", error);
     throw error;
   }
 }
@@ -426,7 +426,7 @@ export async function loadDraft(
 
     return draftSnapshot.data() as SnapDraft;
   } catch (error) {
-    logger.error("[Game Service] Failed to load draft:", error);
+    logger.error("[Snap Service] Failed to load draft:", error);
     throw error;
   }
 }
@@ -445,9 +445,9 @@ export async function deleteDraft(
     );
     await deleteDoc(draftRef);
 
-    logger.info(`[Game Service] Deleted draft: ${draftId}`);
+    logger.info(`[Snap Service] Deleted draft: ${draftId}`);
   } catch (error) {
-    logger.error("[Game Service] Failed to delete draft:", error);
+    logger.error("[Snap Service] Failed to delete draft:", error);
     throw error;
   }
 }
@@ -466,7 +466,7 @@ export async function getUserDrafts(userId: string): Promise<SnapDraft[]> {
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => doc.data() as SnapDraft);
   } catch (error) {
-    logger.error("[Game Service] Failed to get user drafts:", error);
+    logger.error("[Snap Service] Failed to get user drafts:", error);
     return [];
   }
 }
@@ -494,7 +494,7 @@ export async function getUserPictures(
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
   } catch (error) {
-    logger.error("[Game Service] Failed to get user pictures:", error);
+    logger.error("[Snap Service] Failed to get user pictures:", error);
     return [];
   }
 }
@@ -522,7 +522,7 @@ export async function getReceivedPictures(
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
   } catch (error) {
-    logger.error("[Game Service] Failed to get received pictures:", error);
+    logger.error("[Snap Service] Failed to get received pictures:", error);
     return [];
   }
 }
@@ -544,7 +544,7 @@ export async function getVisibleStorySnaps(userId: string): Promise<Snap[]> {
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => doc.data() as Snap);
   } catch (error) {
-    logger.error("[Game Service] Failed to get story pictures:", error);
+    logger.error("[Snap Service] Failed to get story pictures:", error);
     return [];
   }
 }
@@ -568,10 +568,10 @@ export async function recordSnapAnalytics(
     // - view, reply, reaction, screenshot, etc.
 
     logger.info(
-      `[Game Service] Recorded event "${event}" for picture ${snapId}`,
+      `[Snap Service] Recorded event "${event}" for picture ${snapId}`,
     );
   } catch (error) {
-    logger.error("[Game Service] Failed to record analytics:", error);
+    logger.error("[Snap Service] Failed to record analytics:", error);
   }
 }
 
@@ -600,7 +600,7 @@ export async function getSnapStatistics(snapId: string): Promise<{
         .length,
     };
   } catch (error) {
-    logger.error("[Game Service] Failed to get statistics:", error);
+    logger.error("[Snap Service] Failed to get statistics:", error);
     return {
       viewCount: 0,
       reactionCount: 0,

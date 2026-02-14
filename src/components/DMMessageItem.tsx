@@ -24,13 +24,16 @@ import Animated, {
 
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import DuckBubble from "@/components/chat/DuckBubble";
+import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import ScorecardBubble from "@/components/ScorecardBubble";
 import SpectatorInviteBubble, {
   parseSpectatorInviteContent,
 } from "@/components/SpectatorInviteBubble";
-import type { ReplyToMetadata } from "@/types/messaging";
 import { Spacing } from "@/constants/theme";
+import { useLinkPreviews } from "@/hooks/useLinkPreviews";
+import { extractUrls, hasUrls } from "@/services/linkPreview";
+import type { ReplyToMetadata } from "@/types/messaging";
 
 // Parse scorecard content helper
 function parseScorecardContent(content: string) {
@@ -104,6 +107,17 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const isSentByMe = message.sender === currentUid;
 
+    // Link preview support for text messages
+    const messagesForPreview = React.useMemo(
+      () =>
+        message.type === "text" && hasUrls(message.content)
+          ? [{ id: message.id, content: message.content, type: message.type }]
+          : [],
+      [message.id, message.content, message.type],
+    );
+    const { linkPreviews, loadingPreviews } =
+      useLinkPreviews(messagesForPreview);
+
     // Highlight animation
     const highlightOpacity = useSharedValue(0);
 
@@ -159,6 +173,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             roomId: spectatorInvite.roomId,
             gameType: spectatorInvite.gameId,
             hostName: spectatorInvite.hostName,
+            inviteMode: spectatorInvite.inviteMode,
+            boostSessionEndsAt: spectatorInvite.boostSessionEndsAt,
           });
         }
       }
@@ -282,6 +298,8 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                         roomId: spectatorInvite.roomId,
                         gameType: spectatorInvite.gameId,
                         hostName: spectatorInvite.hostName,
+                        inviteMode: spectatorInvite.inviteMode,
+                        boostSessionEndsAt: spectatorInvite.boostSessionEndsAt,
                       })
                   : undefined
               }
@@ -301,16 +319,30 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       }
 
       return (
-        <Text
-          style={[
-            styles.messageText,
-            isSentByMe
-              ? { color: theme.colors.onPrimary }
-              : { color: theme.colors.onSurface },
-          ]}
-        >
-          {message.content}
-        </Text>
+        <>
+          <Text
+            style={[
+              styles.messageText,
+              isSentByMe
+                ? { color: theme.colors.onPrimary }
+                : { color: theme.colors.onSurface },
+            ]}
+          >
+            {message.content}
+          </Text>
+          {hasUrls(message.content) && (
+            <LinkPreviewCard
+              preview={
+                linkPreviews.get(message.id) || {
+                  url: extractUrls(message.content)[0] || "",
+                  fetchedAt: Date.now(),
+                }
+              }
+              isOwn={isSentByMe}
+              loading={loadingPreviews.has(message.id)}
+            />
+          )}
+        </>
       );
     };
 

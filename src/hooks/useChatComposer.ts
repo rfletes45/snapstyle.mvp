@@ -70,6 +70,7 @@
  */
 
 import {
+  extractMentionsExact,
   InsertMentionResult,
   MentionableMember,
 } from "@/services/mentionParser";
@@ -449,9 +450,15 @@ export function useChatComposer(
       // Update mention autocomplete
       if (enableMentions) {
         mentionsHook.onTextChange(newText, cursorPosition);
+        // Re-extract mention UIDs to keep state in sync when text is edited
+        const { mentionUids: freshUids } = extractMentionsExact(
+          newText,
+          mentionableMembers,
+        );
+        setMentionUids(freshUids);
       }
     },
-    [enableMentions, mentionsHook, cursorPosition],
+    [enableMentions, mentionsHook, cursorPosition, mentionableMembers],
   );
 
   const onTextChange = useCallback(
@@ -464,9 +471,15 @@ export function useChatComposer(
       // Update mention autocomplete
       if (enableMentions) {
         mentionsHook.onTextChange(newText, newCursorPosition ?? cursorPosition);
+        // Re-extract mention UIDs to keep state in sync when text is edited
+        const { mentionUids: freshUids } = extractMentionsExact(
+          newText,
+          mentionableMembers,
+        );
+        setMentionUids(freshUids);
       }
     },
-    [enableMentions, mentionsHook, cursorPosition],
+    [enableMentions, mentionsHook, cursorPosition, mentionableMembers],
   );
 
   const clearText = useCallback(() => {

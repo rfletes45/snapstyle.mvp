@@ -1,12 +1,23 @@
 /**
- * NATIVE IMAGE FILTERING SERVICE
- * High-performance image filtering using native libraries
- * Supports 25+ filters with real-time application
+ * NATIVE IMAGE FILTERING SERVICE (LEGACY)
+ *
+ * ⚠️  SUPERSEDED by Skia-based rendering in SkiaFilteredImage.tsx
+ *
+ * This module used expo-image-manipulator for filter application, but
+ * ImageManipulator only supports resize/crop/rotate/flip — it CANNOT do
+ * colour grading (brightness, contrast, saturation, hue, blur).
+ *
+ * All filter rendering is now handled by @shopify/react-native-skia via:
+ *   - SkiaFilteredImage (editor)     → ColorMatrix + Blur + Vignette + Grain
+ *   - CameraFilterOverlay (live)     → Skia Canvas + Fill + BlendColor
+ *   - filterService.filterConfigToColorMatrix() → Skia-compatible 20-element array
+ *
+ * This file is kept for backward compatibility with any code still
+ * calling applyFilterToImage(), but it returns the original image unchanged.
  */
 
-import * as ImageManipulator from "expo-image-manipulator";
 import { FilterConfig } from "@/types/camera";
-
+import * as ImageManipulator from "expo-image-manipulator";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/nativeImageFiltering");

@@ -8,19 +8,19 @@
 import { markSnapOpened } from "@/services/snaps";
 import { deleteSnapImage, downloadSnapImage } from "@/services/storage";
 import { useAuth } from "@/store/AuthContext";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
   Platform,
   Pressable,
+  StyleSheet,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/SnapViewerScreen");
@@ -43,7 +43,7 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   useEffect(() => {
     const loadSnap = async () => {
       try {
-        logger.info("🔵 [GameViewerScreen] Loading snap:", {
+        logger.info("🔵 [SnapViewerScreen] Loading snap:", {
           storagePath,
           messageId,
           chatId,
@@ -52,10 +52,10 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
         setError(null);
 
         const uri = await downloadSnapImage(storagePath);
-        logger.info("✅ [GameViewerScreen] Snap loaded successfully");
+        logger.info("✅ [SnapViewerScreen] Snap loaded successfully");
         setImageUri(uri);
       } catch (err: any) {
-        logger.error("❌ [GameViewerScreen] Failed to load snap:", err);
+        logger.error("❌ [SnapViewerScreen] Failed to load snap:", err);
         setError(err.message || "Failed to load picture");
       } finally {
         setLoading(false);
@@ -66,29 +66,29 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   }, [storagePath, messageId, chatId]);
 
   // Handle snap dismissal (view-once: mark opened + delete message + delete storage file)
-  const handleDismiss = async () => {
+  const handleDismiss = useCallback(async () => {
     if (!currentFirebaseUser) {
-      logger.error("❌ [GameViewerScreen] No user logged in");
+      logger.error("❌ [SnapViewerScreen] No user logged in");
       return;
     }
 
     try {
       logger.info(
-        "🔵 [GameViewerScreen] Dismissing snap and marking as opened",
+        "🔵 [SnapViewerScreen] Dismissing snap and marking as opened",
       );
 
       // Mark snap as opened in Firestore (records metadata)
       await markSnapOpened(chatId, messageId, currentFirebaseUser.uid);
-      logger.info("✅ [GameViewerScreen] Snap marked as opened");
+      logger.info("✅ [SnapViewerScreen] Snap marked as opened");
 
       // Delete snap from Storage
       await deleteSnapImage(storagePath);
-      logger.info("✅ [GameViewerScreen] Snap deleted from storage");
+      logger.info("✅ [SnapViewerScreen] Snap deleted from storage");
 
       // Navigate back to chat
       navigation.goBack();
     } catch (err: any) {
-      logger.error("❌ [GameViewerScreen] Error marking snap opened:", err);
+      logger.error("❌ [SnapViewerScreen] Error marking snap opened:", err);
       Alert.alert(
         "Error",
         "Failed to save picture view. The picture may still be visible to the sender.",
@@ -96,87 +96,61 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
       // Still navigate back even on error (Cloud Function cleanup will handle fallback)
       navigation.goBack();
     }
-  };
+  }, [currentFirebaseUser, chatId, messageId, storagePath, navigation]);
 
   // Screen layout: fullscreen image with black background
 
+  const containerStyle = [
+    styles.container,
+    { paddingTop: insets.top, paddingBottom: insets.bottom },
+  ];
+
   if (error) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "#000",
-          justifyContent: "center",
-          alignItems: "center",
-          paddingTop: insets.top,
-          paddingBottom: insets.bottom,
-        }}
-      >
-        <Text style={{ color: "#FFF", fontSize: 16, textAlign: "center" }}>
-          {error}
-        </Text>
+      <View style={containerStyle}>
+        <Text style={styles.errorText}>{error}</Text>
       </View>
     );
   }
 
   if (loading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "#000",
-          justifyContent: "center",
-          alignItems: "center",
-          paddingTop: insets.top,
-          paddingBottom: insets.bottom,
-        }}
-      >
+      <View style={containerStyle}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: "#000",
-        justifyContent: "center",
-        alignItems: "center",
-        paddingTop: insets.top,
-        paddingBottom: insets.bottom,
-      }}
-    >
+    <View style={containerStyle}>
       {Platform.OS === "web" ? (
         <Pressable
           onPress={handleDismiss}
-          style={{ width: "100%", height: "100%" }}
+          style={styles.pressableContainer}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss snap"
         >
           {imageUri && (
             <Image
               source={{ uri: imageUri }}
-              style={{
-                width: "100%",
-                height: "100%",
-                resizeMode: "contain",
-              }}
+              style={styles.snapImage}
+              accessibilityLabel="Snap photo"
             />
           )}
         </Pressable>
       ) : (
         <TouchableOpacity
           onPress={handleDismiss}
-          style={{ width: "100%", height: "100%" }}
+          style={styles.pressableContainer}
           activeOpacity={1}
+          accessibilityRole="button"
+          accessibilityLabel="Tap to dismiss snap"
         >
           {imageUri && (
             <Image
               source={{ uri: imageUri }}
-              style={{
-                width: "100%",
-                height: "100%",
-                resizeMode: "contain",
-              }}
+              style={styles.snapImage}
+              accessibilityLabel="Snap photo"
             />
           )}
         </TouchableOpacity>
@@ -184,3 +158,26 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorText: {
+    color: "#FFF",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  pressableContainer: {
+    width: "100%",
+    height: "100%",
+  },
+  snapImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "contain",
+  },
+});

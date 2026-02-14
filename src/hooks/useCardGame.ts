@@ -9,7 +9,7 @@
  *   - Syncs shared state (top card, hand sizes, phase, etc.)
  *   - Exposes actions: playCard, drawCard, pass, resign, etc.
  *
- * Used by: CrazyEightsGameScreen, WarGameScreen
+ * Used by: CrazyEightsGameScreen
  *
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §8
  */
@@ -17,7 +17,6 @@
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useCardGame");
@@ -55,7 +54,7 @@ export interface CardGameState {
   /** My private hand (sent via targeted message) */
   hand: CardInfo[];
 
-  /** Whether it's my turn (not used for War — both flip simultaneously) */
+  /** Whether it's my turn */
   isMyTurn: boolean;
 
   /** My player index (0 or 1) */
@@ -102,32 +101,6 @@ export interface CardGameState {
 
   /** Number of cards drawn this turn */
   drawCount: number;
-
-  // ── War-specific fields ──
-
-  /** Player 1's revealed card (War) */
-  player1Card: CardInfo | null;
-
-  /** Player 2's revealed card (War) */
-  player2Card: CardInfo | null;
-
-  /** Whether a War (tie) is in progress */
-  isWar: boolean;
-
-  /** War pile size */
-  warPileSize: number;
-
-  /** Player 1 deck size (War) */
-  p1DeckSize: number;
-
-  /** Player 2 deck size (War) */
-  p2DeckSize: number;
-
-  /** Round result: "player1" | "player2" | "war" | "" */
-  roundResult: string;
-
-  /** The card I just flipped (War, sent via targeted message) */
-  myFlippedCard: CardInfo | null;
 
   // ── Game over ──
 
@@ -194,9 +167,6 @@ export interface CardGameActions {
   /** Pass turn (Crazy Eights) */
   pass: () => void;
 
-  /** Flip card (War) */
-  flipCard: () => void;
-
   /** Send any game action */
   sendAction: (type: string, payload?: any) => void;
 
@@ -241,16 +211,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
   const [deckSize, setDeckSize] = useState(0);
   const [discardSize, setDiscardSize] = useState(0);
   const [drawCount, setDrawCount] = useState(0);
-
-  // War-specific
-  const [player1Card, setPlayer1Card] = useState<CardInfo | null>(null);
-  const [player2Card, setPlayer2Card] = useState<CardInfo | null>(null);
-  const [isWar, setIsWar] = useState(false);
-  const [warPileSize, setWarPileSize] = useState(0);
-  const [p1DeckSize, setP1DeckSize] = useState(0);
-  const [p2DeckSize, setP2DeckSize] = useState(0);
-  const [roundResult, setRoundResult] = useState("");
-  const [myFlippedCard, setMyFlippedCard] = useState<CardInfo | null>(null);
 
   // Game over
   const [isWinner, setIsWinner] = useState<boolean | null>(null);
@@ -298,29 +258,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     setDeckSize(state.deckSize ?? 0);
     setDiscardSize(state.discardSize ?? 0);
     setDrawCount(state.drawCount ?? 0);
-
-    // War state
-    if (state.player1Card?.faceUp) {
-      setPlayer1Card({
-        suit: state.player1Card.suit,
-        rank: state.player1Card.rank,
-      });
-    } else {
-      setPlayer1Card(null);
-    }
-    if (state.player2Card?.faceUp) {
-      setPlayer2Card({
-        suit: state.player2Card.suit,
-        rank: state.player2Card.rank,
-      });
-    } else {
-      setPlayer2Card(null);
-    }
-    setIsWar(state.isWar ?? false);
-    setWarPileSize(state.warPileSize ?? 0);
-    setP1DeckSize(state.p1DeckSize ?? 0);
-    setP2DeckSize(state.p2DeckSize ?? 0);
-    setRoundResult(state.roundResult ?? "");
 
     // Players (using cardPlayers map)
     if (state.cardPlayers) {
@@ -462,27 +399,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
             }
           });
 
-          // ── War: my flipped card ──
-          room?.onMessage("your_flip", (data: any) => {
-            if (!mountedRef.current) return;
-            if (data?.card) {
-              setMyFlippedCard({
-                suit: data.card.suit,
-                rank: data.card.rank,
-              });
-            }
-          });
-
-          // ── War: ready / flip prompts ──
-          room?.onMessage("war_ready", () => {
-            if (!mountedRef.current) return;
-            setMyFlippedCard(null);
-          });
-          room?.onMessage("war_flip", () => {
-            if (!mountedRef.current) return;
-            setMyFlippedCard(null);
-          });
-
           // ── Rematch ──
           room?.onMessage("rematch_request", () => {
             if (mountedRef.current) setRematchRequested(true);
@@ -554,7 +470,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     setPhase("idle");
     setError(null);
     setHand([]);
-    setMyFlippedCard(null);
     setRematchRequested(false);
     setOpponentDisconnected(false);
     setRawState(null);
@@ -581,10 +496,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     roomRef.current?.send?.("game_action", { type: "pass" });
   }, []);
 
-  const flipCard = useCallback(() => {
-    roomRef.current?.send?.("game_action", { type: "flip" });
-  }, []);
-
   const sendAction = useCallback((type: string, payload?: any) => {
     roomRef.current?.send?.("game_action", { type, ...payload });
   }, []);
@@ -606,7 +517,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     setWinnerName("");
     setWinReason("");
     setHand([]);
-    setMyFlippedCard(null);
   }, []);
 
   // ─── Cleanup ──────────────────────────────────────────────────────
@@ -645,14 +555,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     deckSize,
     discardSize,
     drawCount,
-    player1Card,
-    player2Card,
-    isWar,
-    warPileSize,
-    p1DeckSize,
-    p2DeckSize,
-    roundResult,
-    myFlippedCard,
     isWinner,
     isDraw,
     winnerName,
@@ -673,7 +575,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     playCard,
     drawCard,
     pass,
-    flipCard,
     sendAction,
     resign,
     requestRematch,

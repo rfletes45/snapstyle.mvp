@@ -426,6 +426,9 @@ export interface OutboxItem {
   /** Mentioned user IDs */
   mentionUids?: string[];
 
+  /** Mention spans for highlighting */
+  mentionSpans?: MentionSpan[];
+
   /** Local attachments pending upload */
   localAttachments?: LocalAttachment[];
 

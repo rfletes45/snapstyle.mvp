@@ -119,7 +119,7 @@ snapstyle-mvp/
 │   │   │   ├── index.ts       # Public API
 │   │   │   └── syncEngine.ts  # Firestore sync state machine
 │   │   ├── mediaCache.ts      # **Local media caching (NEW)**
-│   │   ├── games/             # Game logic (chess, snake, 2048, etc.)
+│   │   ├── games/             # Game logic (chess, 2048, etc.)
 │   │   ├── gameValidation/    # Move validators
 │   │   ├── inboxSettings.ts   # Inbox settings service
 │   │   ├── chatV2.ts          # DM operations (uses unified)
@@ -176,9 +176,9 @@ RootNavigator
     │   ├── PointsShop / PremiumShop
     │   └── PurchaseHistory
     │
-    ├── PlayStack (Play tab — 26+ game screens)
+    ├── PlayStack (Play tab — 19+ game screens)
     │   ├── GamesHubScreen
-    │   ├── [26 game screens]           # All games: Chess, Snake, 2048, etc.
+    │   ├── [19 game screens]           # All games: Chess, 2048, etc.
     │   ├── Leaderboard / Achievements
     │   ├── GameHistory / SpectatorView
     │   └── ...
@@ -458,16 +458,16 @@ Read/unread tracking uses watermarks instead of per-message flags:
 
 The app uses **Colyseus v0.17** for real-time game multiplayer, deployed via Docker + nginx.
 
-### Room Architecture (25 rooms)
+### Room Architecture (22 rooms)
 
-| Category               | Room Types                                                                 | Count |
-| ---------------------- | -------------------------------------------------------------------------- | ----- |
-| Base patterns          | `CardGameRoom`, `ScoreRaceRoom`, `TurnBasedRoom`, `PhysicsRoom`            | 4     |
-| Score-race (quickplay) | TimedTap, Reaction, DotMatch                                               | 3     |
-| Turn-based             | TicTacToe, Chess, Checkers, CrazyEights, ConnectFour, Gomoku, Reversi, War | 8     |
-| Physics                | Pong, AirHockey, BrickBreaker, BounceBlitz, Pool, Race, Snake              | 7     |
-| Cooperative            | WordMaster, Crossword                                                      | 2     |
-| Spectator              | SpectatorRoom                                                              | 1     |
+| Category               | Room Types                                                            | Count |
+| ---------------------- | --------------------------------------------------------------------- | ----- |
+| Base patterns          | `CardGameRoom`, `ScoreRaceRoom`, `TurnBasedRoom`, `PhysicsRoom`       | 4     |
+| Score-race (quickplay) | TimedTap, Reaction, DotMatch                                          | 3     |
+| Turn-based             | TicTacToe, Chess, Checkers, CrazyEights, ConnectFour, Gomoku, Reversi | 7     |
+| Physics                | Pong, AirHockey, BrickBreaker, BounceBlitz, Pool                      | 5     |
+| Cooperative            | WordMaster, Crossword                                                 | 2     |
+| Spectator              | SpectatorRoom                                                         | 1     |
 
 ### Client SDK Integration
 

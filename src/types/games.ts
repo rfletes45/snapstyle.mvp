@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Games Type Definitions
  *
  * This file contains all type definitions for the games expansion including:
@@ -21,20 +21,11 @@
 export type SinglePlayerGameType =
   | "bounce_blitz" // Ballz-style
   | "play_2048" // 2048 puzzle
-  | "snake_master" // Classic snake
-  | "memory_master" // Memory matching
   | "word_master" // Daily word puzzle (Wordle-style)
-  | "match" // Match-3 puzzle
-  | "slice" // Fruit slicing arcade
-  | "tap_tap" // Rhythm tap game
-  | "target_master" // Accuracy target shooting
-  | "words" // Word board puzzle
   | "reaction_tap" // Existing - tap when green
   | "timed_tap" // Existing - tap count in 10s
   | "brick_breaker" // Classic Breakout/Arkanoid
-  | "tile_slide" // Classic 15-puzzle sliding tiles
   | "minesweeper_classic" // Classic Minesweeper
-  | "number_master" // Mental math speed game
   | "lights_out" // Lights Out puzzle
   | "pong_game"; // Pong with AI
 
@@ -49,8 +40,7 @@ export type TurnBasedGameType =
   | "connect_four" // Connect Four
   | "dot_match" // Dots and Boxes
   | "gomoku_master" // Five in a Row (Gomoku)
-  | "reversi_game" // Othello / Reversi
-  | "war_game"; // Card War
+  | "reversi_game"; // Othello / Reversi
 
 /**
  * Real-time multiplayer games (simulated turn-based for pool)
@@ -58,8 +48,10 @@ export type TurnBasedGameType =
 export type RealTimeGameType =
   | "8ball_pool"
   | "air_hockey"
-  | "race_game" // Typing race
-  | "crossword_puzzle"; // Daily mini crossword
+  | "crossword_puzzle" // Daily mini crossword
+  | "golf_duels" // Multiplayer mini-golf
+  | "tropical_fishing" // Tropical island fishing
+  | "starforge_game"; // Starforge incremental
 
 /**
  * All game types combined
@@ -146,20 +138,6 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasAchievements: true,
     isAvailable: true,
   },
-  snake_master: {
-    id: "snake_master",
-    name: "Snake",
-    shortName: "Snake",
-    description: "Eat food and grow without hitting walls!",
-    icon: "🐍",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-  },
 
   // Single-player: Puzzle
   play_2048: {
@@ -175,96 +153,6 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasLeaderboard: true,
     hasAchievements: true,
     isAvailable: true,
-  },
-  memory_master: {
-    id: "memory_master",
-    name: "Memory",
-    shortName: "Memory",
-    description: "Match pairs of cards!",
-    icon: "🃏",
-    category: "puzzle",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  match: {
-    id: "match",
-    name: "Match",
-    shortName: "Match",
-    description: "Swap gems to make matches and trigger combos!",
-    icon: "💎",
-    category: "puzzle",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  slice: {
-    id: "slice",
-    name: "Slice",
-    shortName: "Slice",
-    description: "Slice flying targets quickly and avoid bombs!",
-    icon: "🍉",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  tap_tap: {
-    id: "tap_tap",
-    name: "Tap Tap",
-    shortName: "Tap Tap",
-    description: "Tap the falling lanes before they pass by!",
-    icon: "🎹",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  target_master: {
-    id: "target_master",
-    name: "Target Master",
-    shortName: "Target",
-    description: "Hit shrinking targets for accuracy combos!",
-    icon: "🎯",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  words: {
-    id: "words",
-    name: "Words",
-    shortName: "Words",
-    description: "Build words on the board and maximize bonus squares!",
-    icon: "📝",
-    category: "daily",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
   },
   // Single-player: Daily
   word_master: {
@@ -299,43 +187,12 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  tile_slide: {
-    id: "tile_slide",
-    name: "Tile Slide",
-    shortName: "Slide",
-    description: "Slide tiles to solve the puzzle!",
-    icon: "🔢",
-    category: "puzzle",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-
   minesweeper_classic: {
     id: "minesweeper_classic",
     name: "Minesweeper",
     shortName: "Mines",
     description: "Find all mines without detonating them!",
     icon: "💣",
-    category: "puzzle",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  number_master: {
-    id: "number_master",
-    name: "Number",
-    shortName: "Number",
-    description: "Solve math puzzles against the clock!",
-    icon: "🔢",
     category: "puzzle",
     minPlayers: 1,
     maxPlayers: 1,
@@ -496,36 +353,6 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  war_game: {
-    id: "war_game",
-    name: "War",
-    shortName: "War",
-    description: "Flip cards — higher wins! War on ties!",
-    icon: "⚔️",
-    category: "multiplayer",
-    minPlayers: 2,
-    maxPlayers: 2,
-    isMultiplayer: true,
-    hasLeaderboard: false,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
-  race_game: {
-    id: "race_game",
-    name: "Race",
-    shortName: "Race",
-    description: "Type the sentence fastest to win!",
-    icon: "🏎️",
-    category: "multiplayer",
-    minPlayers: 2,
-    maxPlayers: 2,
-    isMultiplayer: true,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
   crossword_puzzle: {
     id: "crossword_puzzle",
     name: "Crossword",
@@ -570,6 +397,52 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasLeaderboard: true,
     hasAchievements: true,
     isAvailable: true,
+  },
+  tropical_fishing: {
+    id: "tropical_fishing",
+    name: "Tropical Fishing",
+    shortName: "Fishing",
+    description: "Explore islands, catch rare fish, and party up with friends.",
+    icon: "🎣",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 10,
+    isMultiplayer: true,
+    hasLeaderboard: false,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+  },
+  starforge_game: {
+    id: "starforge_game",
+    name: "Starforge",
+    shortName: "Starforge",
+    description:
+      "Build machines, harvest wrecks, and forge your star empire. Tap to earn Flux!",
+    icon: "🌟",
+    category: "multiplayer",
+    minPlayers: 1,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: false,
+    hasAchievements: false,
+    isAvailable: true,
+    isNew: true,
+  },
+  golf_duels: {
+    id: "golf_duels",
+    name: "Golf Duels",
+    shortName: "Golf",
+    description: "1v1 mini-golf — aim, shoot, and sink it in fewer strokes!",
+    icon: "⛳",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
   },
 };
 
@@ -616,42 +489,6 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "higher",
   },
-  snake_master: {
-    minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher",
-  },
-  memory_master: {
-    minScore: 1,
-    maxScore: 9999,
-    maxDuration: 300000, // 5 minutes max
-    scoreDirection: "lower", // Lower time is better (in seconds)
-  },
-  match: {
-    minScore: 0,
-    maxScore: 999999,
-    scoreDirection: "higher",
-  },
-  slice: {
-    minScore: 0,
-    maxScore: 999999,
-    scoreDirection: "higher",
-  },
-  tap_tap: {
-    minScore: 0,
-    maxScore: 999999,
-    scoreDirection: "higher",
-  },
-  target_master: {
-    minScore: -9999,
-    maxScore: 999999,
-    scoreDirection: "higher",
-  },
-  words: {
-    minScore: 0,
-    maxScore: 999999,
-    scoreDirection: "higher",
-  },
   word_master: {
     minScore: 1,
     maxScore: 6,
@@ -662,17 +499,7 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999,
     scoreDirection: "higher",
   },
-  tile_slide: {
-    minScore: 0,
-    maxScore: 999999,
-    scoreDirection: "lower", // Fewer moves is better
-  },
   minesweeper_classic: {
-    minScore: 1,
-    maxScore: 9999,
-    scoreDirection: "lower", // Fewer seconds is better
-  },
-  number_master: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
@@ -729,6 +556,11 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 9999,
     scoreDirection: "higher",
   },
+  tropical_fishing: {
+    minScore: 0,
+    maxScore: 999999,
+    scoreDirection: "higher",
+  },
 
   pong_game: {
     minScore: 0,
@@ -742,20 +574,20 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  war_game: {
-    minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher", // Wins
-  },
-  race_game: {
-    minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher", // Wins
-  },
   crossword_puzzle: {
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
+  },
+  starforge_game: {
+    minScore: 0,
+    maxScore: 999999999,
+    scoreDirection: "higher", // Total flux earned
+  },
+  golf_duels: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
   },
 };
 
@@ -811,22 +643,11 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return `${score} taps`;
     case "bounce_blitz":
     case "play_2048":
-    case "snake_master":
     case "brick_breaker":
-    case "match":
-    case "slice":
-    case "tap_tap":
-    case "target_master":
-    case "words":
       return score.toLocaleString();
-    case "memory_master":
-      return `${score}s`;
     case "word_master":
       return score === 1 ? "1 guess" : `${score} guesses`;
-    case "tile_slide":
-      return score === 1 ? "1 move" : `${score} moves`;
     case "minesweeper_classic":
-    case "number_master":
       return `${score}s`;
     case "lights_out":
       return score === 1 ? "1 move" : `${score} moves`;
@@ -834,6 +655,10 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return `${score} boxes`;
     case "crossword_puzzle":
       return `${score}s`;
+    case "tropical_fishing":
+      return `${score} fish`;
+    case "starforge_game":
+      return `${(score / 1000).toFixed(1)} flux`;
     case "pong_game":
       return `${score} wins`;
     // Multiplayer games
@@ -846,8 +671,7 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     case "connect_four":
     case "gomoku_master":
     case "reversi_game":
-    case "war_game":
-    case "race_game":
+    case "golf_duels":
       return `${score} wins`;
     default:
       return score.toString();

@@ -1,0 +1,57 @@
+﻿{
+  "schemaVersion": "starforge.tierUnlocks.v2",
+  "machines": [
+    {
+      "code": "CUTTER",
+      "tiers": {
+        "2": {
+          "unlockUpgradeId": "UPG_UNLOCK_T2_CUTTER",
+          "cost": { "fluxMicro": 25000, "alloyMicro": 0, "signalMicro": 0 }
+        },
+        "3": {
+          "unlockUpgradeId": "UPG_UNLOCK_T3_CUTTER",
+          "cost": { "fluxMicro": 90000, "alloyMicro": 6000, "signalMicro": 0 }
+        }
+      }
+    },
+    {
+      "code": "HOPPER",
+      "tiers": {
+        "2": {
+          "unlockUpgradeId": "UPG_UNLOCK_T2_HOPPER",
+          "cost": { "fluxMicro": 18000, "alloyMicro": 0, "signalMicro": 0 }
+        },
+        "3": {
+          "unlockUpgradeId": "UPG_UNLOCK_T3_HOPPER",
+          "cost": { "fluxMicro": 65000, "alloyMicro": 4000, "signalMicro": 0 }
+        }
+      }
+    },
+    {
+      "code": "SIGNAL",
+      "tiers": {
+        "2": {
+          "unlockUpgradeId": "UPG_UNLOCK_T2_SIGNAL",
+          "cost": { "fluxMicro": 40000, "alloyMicro": 0, "signalMicro": 2000 }
+        },
+        "3": {
+          "unlockUpgradeId": "UPG_UNLOCK_T3_SIGNAL",
+          "cost": { "fluxMicro": 120000, "alloyMicro": 0, "signalMicro": 9000 }
+        }
+      }
+    },
+    {
+      "code": "NANOFORGE",
+      "tiers": {
+        "2": {
+          "unlockUpgradeId": "UPG_UNLOCK_T2_NANOFORGE",
+          "cost": { "fluxMicro": 55000, "alloyMicro": 0, "signalMicro": 3500 }
+        },
+        "3": {
+          "unlockUpgradeId": "UPG_UNLOCK_T3_NANOFORGE",
+          "cost": { "fluxMicro": 160000, "alloyMicro": 0, "signalMicro": 11000 }
+        }
+      }
+    }
+  ]
+}

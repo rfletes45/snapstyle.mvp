@@ -1,0 +1,244 @@
+{
+  "schemaVersion": "starforge.machines.v2",
+  "machines": [
+    {
+      "code": "CUTTER",
+      "title": "Cutter",
+      "desc": "Cuts docked wrecks. Increases cut damage per tap and slightly increases wreck payout.",
+      "branchId": null,
+      "maxCount": 999999,
+      "converter": false,
+      "behaviorType": "CUTTER",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_A",
+      "fixedSlotIdSecondary": "SLOT_A2",
+      "footprint": { "w": 1, "h": 2 },
+      "cost": { "baseFluxMicro": 500, "growth": 1.18 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 0 }] },
+      "tier": {
+        "maxTier": 3,
+        "tierMult": { "1": 1.0, "2": 1.35, "3": 1.85 }
+      },
+      "params": {
+        "damageScalePerExtra": 0.18,
+        "yieldScalePerExtra": 0.04
+      }
+    },
+    {
+      "code": "HOPPER",
+      "title": "Hopper",
+      "desc": "Increases Flux storage capacity so large wreck payouts aren't wasted.",
+      "branchId": null,
+      "maxCount": 999999,
+      "converter": false,
+      "behaviorType": "HOPPER",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_C",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 1200, "growth": 1.17 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 2 }] },
+      "tier": {
+        "maxTier": 3,
+        "tierMult": { "1": 1.0, "2": 1.4, "3": 2.0 }
+      },
+      "params": {
+        "fluxCapMicroPerUnit": 5000
+      }
+    },
+
+    {
+      "code": "DRONES_MAG",
+      "title": "Drone Stand",
+      "desc": "Automatically pulls the closest wreck to the Cutter every 10 seconds if the dock is empty.",
+      "branchId": "LOGISTICS",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "DRONE_FETCH",
+      "slotPreference": "utility",
+      "fixedSlotId": "UTILITY_1",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 12000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 10 }] },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "baseCooldownSec": 10
+      }
+    },
+    {
+      "code": "CRANE",
+      "title": "Crane",
+      "desc": "Speeds up wreck transit to the dock and increases max wrecks alive by 1.",
+      "branchId": "LOGISTICS",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "CRANE",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_B",
+      "fixedSlotIdSecondary": "SLOT_B2",
+      "footprint": { "w": 1, "h": 2 },
+      "cost": { "baseFluxMicro": 18000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }] },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "transitTicksMult": 0.7,
+        "maxAliveWrecksAdd": 1
+      }
+    },
+    {
+      "code": "BATTERY",
+      "title": "Battery",
+      "desc": "Improves automation efficiency. Reduces drone cooldown slightly per battery.",
+      "branchId": "LOGISTICS",
+      "maxCount": 999999,
+      "converter": false,
+      "behaviorType": "BATTERY",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_D",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 3500, "growth": 1.15 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }] },
+      "tier": { "maxTier": 3, "tierMult": { "1": 1.0, "2": 1.25, "3": 1.6 } },
+      "params": {
+        "droneCooldownMultPerUnit": 0.97
+      }
+    },
+
+    {
+      "code": "SCANNER",
+      "title": "Scanner",
+      "desc": "Improves rare wreck detection and increases weakpoint effectiveness.",
+      "branchId": "ANALYSIS",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "SCANNER",
+      "slotPreference": "utility",
+      "fixedSlotId": "UTILITY_2",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 15000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_CUT_TAPS", "gte": 40 }] },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "rarityWeightMult": { "rare": 1.15, "epic": 1.1, "ancient": 1.05 },
+        "weakpointMultAdd": 0.5
+      }
+    },
+    {
+      "code": "LAB",
+      "title": "Lab",
+      "desc": "Unlocks advanced upgrades and improves overall salvage yield.",
+      "branchId": "ANALYSIS",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "LAB",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_E",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 22000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "SCANNER", "gte": 1 }] },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "yieldMult": 1.1
+      }
+    },
+    {
+      "code": "SIGNAL",
+      "title": "Signal Relay",
+      "desc": "Generates Signal while a wreck is docked, enabling late-game upgrades and contracts.",
+      "branchId": "ANALYSIS",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "SIGNAL",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_F",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 16000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "LAB", "gte": 1 }] },
+      "tier": { "maxTier": 3, "tierMult": { "1": 1.0, "2": 1.5, "3": 2.2 } },
+      "params": {
+        "signalPerSecMicroBase": 45
+      }
+    },
+
+    {
+      "code": "ASSEMBLER",
+      "title": "Assembler",
+      "desc": "Reduces the Flux cost of upgrades at purchase time.",
+      "branchId": "FABRICATION",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "ASSEMBLER",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_G",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 30000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 25 }] },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "upgradeCostMult": 0.92
+      }
+    },
+    {
+      "code": "NANOFORGE",
+      "title": "Nanoforge",
+      "desc": "Converts Alloy into Flux automatically while enabled.",
+      "branchId": "FABRICATION",
+      "maxCount": 1,
+      "converter": true,
+      "behaviorType": "CONVERTER_ALLOY_TO_FLUX",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_C",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 26000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "ASSEMBLER", "gte": 1 }] },
+      "tier": { "maxTier": 3, "tierMult": { "1": 1.0, "2": 1.45, "3": 2.1 } },
+      "params": {
+        "alloyToFluxRatePerSecMicroBase": 120
+      }
+    },
+    {
+      "code": "PRINTER",
+      "title": "Printer",
+      "desc": "Accumulates slot unlock progress when you destroy wrecks. Unlocks extra base slots permanently once thresholds are met.",
+      "branchId": "FABRICATION",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "SLOT_UNLOCK_PROGRESS",
+      "slotPreference": "module",
+      "fixedSlotId": "SLOT_D",
+      "footprint": { "w": 1, "h": 1 },
+      "cost": { "baseFluxMicro": 24000, "growth": 1.0 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "NANOFORGE", "gte": 1 }] },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "progressPerWreckDestroyed": 1,
+        "thresholds": [25, 60]
+      }
+    },
+
+    {
+      "code": "DYSON",
+      "title": "Dyson Frame",
+      "desc": "Endgame structure that slightly increases Epic/Ancient wreck odds and stabilizes the sector.",
+      "branchId": "COSMIC",
+      "maxCount": 1,
+      "converter": false,
+      "behaviorType": "DYSON",
+      "slotPreference": "cosmic",
+      "fixedSlotId": "COSMIC_1",
+      "fixedSlotIdSecondary": "COSMIC_2",
+      "footprint": { "w": 1, "h": 2 },
+      "cost": { "baseFluxMicro": 120000, "growth": 1.0 },
+      "visibilityUnlock": {
+        "all": [
+          { "t": "DESTROY_RARITY", "rarity": "epic", "gte": 1 },
+          { "t": "TOTAL_FLUX_EARNED", "gteMicro": 50000000 }
+        ]
+      },
+      "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
+      "params": {
+        "rarityWeightMult": { "epic": 1.08, "ancient": 1.05 },
+        "eventGapMult": 1.15
+      }
+    }
+  ]
+}

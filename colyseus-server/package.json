@@ -27,6 +27,7 @@
     "@babel/preset-env": "^7.29.0",
     "@colyseus/sdk": "^0.17.30",
     "@colyseus/testing": "^0.17.0",
+    "@types/express": "^5.0.6",
     "@types/jest": "^29.5.0",
     "@types/node": "^22.0.0",
     "babel-jest": "^30.2.0",

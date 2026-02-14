@@ -4,7 +4,6 @@
     "module": "commonjs",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "experimentalDecorators": true,
@@ -17,6 +16,6 @@
     "sourceMap": true,
     "moduleResolution": "node"
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../packages/golf-duels-shared/src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]
 }

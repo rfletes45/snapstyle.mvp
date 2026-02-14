@@ -32,6 +32,7 @@
 
 import {
   AttachmentV2,
+  MentionSpan,
   MessageKind,
   MessageV2,
   OutboxItem,
@@ -64,6 +65,7 @@ interface SendMessageV2Params {
   text?: string;
   replyTo?: ReplyToMetadata;
   mentionUids?: string[];
+  mentionSpans?: MentionSpan[];
   attachments?: AttachmentV2[];
   clientId: string;
   messageId: string;
@@ -201,6 +203,7 @@ export async function sendMessageWithOutbox(params: {
   text?: string;
   replyTo?: ReplyToMetadata;
   mentionUids?: string[];
+  mentionSpans?: MentionSpan[];
 }): Promise<SendWithOutboxResult> {
   // 1. Enqueue to outbox first (ensures persistence)
   const outboxItem = await enqueueMessage({
@@ -210,6 +213,7 @@ export async function sendMessageWithOutbox(params: {
     text: params.text,
     replyTo: params.replyTo,
     mentionUids: params.mentionUids,
+    mentionSpans: params.mentionSpans,
   });
 
   log.info("Message enqueued", {
@@ -238,6 +242,7 @@ export async function sendMessageWithOutbox(params: {
         text: params.text,
         replyTo: params.replyTo,
         mentionUids: params.mentionUids,
+        mentionSpans: params.mentionSpans,
         attachments: [],
         clientId,
         messageId: outboxItem.messageId,
@@ -303,6 +308,7 @@ export async function retryFailedMessage(messageId: string): Promise<boolean> {
       text: item.text,
       replyTo: item.replyTo,
       mentionUids: item.mentionUids,
+      mentionSpans: item.mentionSpans,
       attachments: [], // NOTE: Handle attachments
       clientId,
       messageId: item.messageId,
@@ -340,6 +346,7 @@ export async function processPendingMessages(): Promise<{
       text: item.text,
       replyTo: item.replyTo,
       mentionUids: item.mentionUids,
+      mentionSpans: item.mentionSpans,
       attachments: [], // NOTE: Handle attachments
       clientId,
       messageId: item.messageId,

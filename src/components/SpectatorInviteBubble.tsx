@@ -23,6 +23,8 @@ export interface SpectatorInviteContent {
   hostName: string;
   score: number;
   playerName: string;
+  inviteMode?: "spectate" | "boost" | "expedition";
+  boostSessionEndsAt?: number;
   /** Set to true when the game has ended */
   finished?: boolean;
   /** The host's final score when the game ended */
@@ -47,6 +49,8 @@ function getSpectatorGameName(gameId: string): string {
   const names: Record<string, string> = {
     bounce_blitz: "Bounce Blitz",
     bounce_blitz_game: "Bounce Blitz",
+    clicker_mine: "Clicker Mine",
+    helix_drop: "Helix Drop",
     play_2048: "2048",
     play_2048_game: "2048",
     snake_master: "Snake Master",
@@ -79,6 +83,8 @@ function getSpectatorGameIcon(gameId: string): string {
   const icons: Record<string, string> = {
     bounce_blitz: "basketball",
     bounce_blitz_game: "basketball",
+    clicker_mine: "pickaxe",
+    helix_drop: "blur-radial",
     play_2048: "numeric",
     play_2048_game: "numeric",
     snake_master: "snake",
@@ -117,7 +123,7 @@ export default memo(function SpectatorInviteBubble({
 }: SpectatorInviteBubbleProps) {
   const theme = useTheme();
   const colors = useColors();
-  const { gameId, hostName, finished, finalScore } = invite;
+  const { gameId, hostName, finished, finalScore, inviteMode } = invite;
   const iconName = getSpectatorGameIcon(
     gameId,
   ) as keyof typeof MaterialCommunityIcons.glyphMap;
@@ -248,8 +254,16 @@ export default memo(function SpectatorInviteBubble({
           {isFinished
             ? "Game has ended"
             : isMine
-              ? "Sent spectator invite"
-              : "Tap to watch live! 👀"}
+              ? inviteMode === "boost"
+                ? "Sent boost invite"
+                : inviteMode === "expedition"
+                  ? "Sent expedition invite"
+                  : "Sent spectator invite"
+              : inviteMode === "boost"
+                ? "Tap to help mine live!"
+                : inviteMode === "expedition"
+                  ? "Tap to join expedition!"
+                  : "Tap to watch live! 👀"}
         </Text>
       </View>
     </Wrapper>
@@ -278,6 +292,13 @@ export function parseSpectatorInviteContent(
         hostName: data.hostName || "Player",
         score: data.score ?? 0,
         playerName: data.playerName || data.hostName || "Player",
+        inviteMode:
+          data.inviteMode === "boost"
+            ? "boost"
+            : data.inviteMode === "expedition"
+              ? "expedition"
+              : "spectate",
+        boostSessionEndsAt: data.boostSessionEndsAt ?? 0,
         finished: data.finished ?? false,
         finalScore: data.finalScore,
         gameName: data.gameName,
@@ -380,3 +401,4 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 });
+

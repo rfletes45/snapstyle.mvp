@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "starforge.baseSlots.v2",
+  "gridCellSize": 1.0,
+  "slots": [
+    { "id": "CUTTER_DOCK", "type": "dock", "gx": 0, "gz": 2, "x": 0.0, "z": 1.15 },
+
+    { "id": "SLOT_A", "type": "module", "gx": 1, "gz": 1, "x": 1.2, "z": 0.8 },
+    { "id": "SLOT_A2", "type": "module", "gx": 1, "gz": 2, "x": 1.2, "z": 1.55 },
+
+    { "id": "SLOT_B", "type": "module", "gx": -1, "gz": 1, "x": -1.2, "z": 0.8 },
+    { "id": "SLOT_B2", "type": "module", "gx": -1, "gz": 2, "x": -1.2, "z": 1.55 },
+
+    { "id": "SLOT_C", "type": "module", "gx": 1, "gz": 0, "x": 1.4, "z": -0.4 },
+    { "id": "SLOT_D", "type": "module", "gx": -1, "gz": 0, "x": -1.4, "z": -0.4 },
+    { "id": "SLOT_E", "type": "module", "gx": 0, "gz": -1, "x": 0.0, "z": -1.3 },
+
+    { "id": "UTILITY_1", "type": "utility", "gx": 2, "gz": 0, "x": 2.0, "z": 0.0 },
+    { "id": "UTILITY_2", "type": "utility", "gx": -2, "gz": 0, "x": -2.0, "z": 0.0 },
+
+    { "id": "COSMIC_1", "type": "cosmic", "gx": 0, "gz": -2, "x": 0.0, "z": -2.6, "lockedByNode": "T2_SLOT_EXPANSION" },
+    { "id": "COSMIC_2", "type": "cosmic", "gx": 0, "gz": -1, "x": 0.0, "z": -2.0, "lockedByNode": "T2_SLOT_EXPANSION" },
+
+    { "id": "SLOT_F", "type": "module", "gx": 2, "gz": 1, "x": 2.2, "z": 1.0, "lockedByNode": "T2_SLOT_EXPANSION" },
+    { "id": "SLOT_G", "type": "module", "gx": -2, "gz": 1, "x": -2.2, "z": 1.0, "lockedByNode": "T2_SLOT_EXPANSION" }
+  ],
+  "adjacency": [
+    ["CUTTER_DOCK", "SLOT_A"],
+    ["CUTTER_DOCK", "SLOT_B"],
+    ["SLOT_A", "SLOT_C"],
+    ["SLOT_B", "SLOT_D"],
+    ["SLOT_E", "SLOT_C"],
+    ["SLOT_E", "SLOT_D"],
+    ["UTILITY_1", "SLOT_C"],
+    ["UTILITY_2", "SLOT_D"]
+  ]
+}

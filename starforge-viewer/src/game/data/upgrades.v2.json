@@ -1,0 +1,221 @@
+﻿{
+  "schemaVersion": "starforge.upgrades.v2",
+  "upgrades": [
+    {
+      "id": "UPG_SALVAGE_TECH_I",
+      "title": "Salvage Techniques I",
+      "desc": "Gain 15% more Flux from wreck destruction.",
+      "category": "salvage",
+      "cost": { "fluxMicro": 5000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 5 }] },
+      "effects": [{ "op": "mul", "path": "wreckYieldMult", "value": 1.15 }]
+    },
+    {
+      "id": "UPG_SALVAGE_TECH_II",
+      "title": "Salvage Techniques II",
+      "desc": "Gain 20% more Flux from wreck destruction.",
+      "category": "salvage",
+      "cost": { "fluxMicro": 22000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 20 }, { "t": "UPGRADE_PURCHASED", "id": "UPG_SALVAGE_TECH_I" }] },
+      "effects": [{ "op": "mul", "path": "wreckYieldMult", "value": 1.2 }]
+    },
+    {
+      "id": "UPG_WRECK_RADAR_I",
+      "title": "Wreck Radar I",
+      "desc": "Wrecks spawn more frequently (10% shorter gaps).",
+      "category": "spawns",
+      "cost": { "fluxMicro": 7000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 6 }] },
+      "effects": [{ "op": "mul", "path": "spawnGapMult", "value": 0.9 }]
+    },
+    {
+      "id": "UPG_DOCKYARD_EXPANSION",
+      "title": "Dockyard Expansion",
+      "desc": "Increase maximum wrecks alive by 1.",
+      "category": "spawns",
+      "cost": { "fluxMicro": 14000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 12 }] },
+      "effects": [{ "op": "add", "path": "maxAliveWrecks", "value": 1 }]
+    },
+    {
+      "id": "UPG_RARITY_SHIFT_I",
+      "title": "Rarity Shift I",
+      "desc": "Slightly increases Rare and Epic wreck odds.",
+      "category": "spawns",
+      "cost": { "fluxMicro": 30000, "alloyMicro": 800, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "DESTROY_RARITY", "rarity": "uncommon", "gte": 5 }, { "t": "TOTAL_WRECKS_DESTROYED", "gte": 25 }] },
+      "effects": [
+        { "op": "mulRarity", "path": "rarityWeightMult", "rarity": "rare", "value": 1.12 },
+        { "op": "mulRarity", "path": "rarityWeightMult", "rarity": "epic", "value": 1.08 }
+      ]
+    },
+    {
+      "id": "UPG_CUT_PRECISION_I",
+      "title": "Cut Precision I",
+      "desc": "Deal 20% more cut damage per tap.",
+      "category": "cutting",
+      "cost": { "fluxMicro": 9000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_CUT_TAPS", "gte": 40 }] },
+      "effects": [{ "op": "mul", "path": "cutDamageMult", "value": 1.2 }]
+    },
+    {
+      "id": "UPG_WEAKPOINT_TRAINING",
+      "title": "Weakpoint Training",
+      "desc": "Weakpoints last longer (+0.5 seconds).",
+      "category": "cutting",
+      "cost": { "fluxMicro": 24000, "alloyMicro": 0, "signalMicro": 1200 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "SCANNER", "gte": 1 }] },
+      "effects": [{ "op": "add", "path": "weakpointWindowTicksAdd", "value": 10 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T2_CUTTER",
+      "title": "Unlock Cutter Tier 2",
+      "desc": "Reveals the Tier 2 upgrade option for Cutter.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 18000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "CUTTER", "gte": 10 }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.CUTTER.2", "value": 1 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T3_CUTTER",
+      "title": "Unlock Cutter Tier 3",
+      "desc": "Reveals the Tier 3 upgrade option for Cutter.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 60000, "alloyMicro": 2000, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "CUTTER", "gte": 25 }, { "t": "UPGRADE_PURCHASED", "id": "UPG_UNLOCK_T2_CUTTER" }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.CUTTER.3", "value": 1 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T2_HOPPER",
+      "title": "Unlock Hopper Tier 2",
+      "desc": "Reveals Tier 2 upgrade option for Hopper.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 12000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "HOPPER", "gte": 8 }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.HOPPER.2", "value": 1 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T3_HOPPER",
+      "title": "Unlock Hopper Tier 3",
+      "desc": "Reveals Tier 3 upgrade option for Hopper.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 42000, "alloyMicro": 1400, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "HOPPER", "gte": 18 }, { "t": "UPGRADE_PURCHASED", "id": "UPG_UNLOCK_T2_HOPPER" }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.HOPPER.3", "value": 1 }]
+    },
+    {
+      "id": "UPG_DRONE_FIRMWARE_I",
+      "title": "Drone Firmware I",
+      "desc": "Drones fetch wrecks more often (cooldown -15%).",
+      "category": "automation",
+      "cost": { "fluxMicro": 28000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }] },
+      "effects": [{ "op": "mul", "path": "droneCooldownMult", "value": 0.85 }]
+    },
+    {
+      "id": "UPG_CRANE_CALIBRATION",
+      "title": "Crane Calibration",
+      "desc": "Wreck transit is faster (additional -10%).",
+      "category": "automation",
+      "cost": { "fluxMicro": 36000, "alloyMicro": 800, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "CRANE", "gte": 1 }] },
+      "effects": [{ "op": "mul", "path": "transitTicksMult", "value": 0.9 }]
+    },
+    {
+      "id": "UPG_SIGNAL_ROUTING_I",
+      "title": "Signal Routing I",
+      "desc": "Generate more Signal while cutting (+25% rate).",
+      "category": "signal",
+      "cost": { "fluxMicro": 42000, "alloyMicro": 0, "signalMicro": 0 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "SIGNAL", "gte": 1 }] },
+      "effects": [{ "op": "mul", "path": "signalRateMult", "value": 1.25 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T2_SIGNAL",
+      "title": "Unlock Signal Tier 2",
+      "desc": "Reveals Tier 2 upgrade option for Signal Relay.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 30000, "alloyMicro": 0, "signalMicro": 900 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_FLUX_EARNED", "gteMicro": 2500000 }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.SIGNAL.2", "value": 1 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T3_SIGNAL",
+      "title": "Unlock Signal Tier 3",
+      "desc": "Reveals Tier 3 upgrade option for Signal Relay.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 90000, "alloyMicro": 0, "signalMicro": 3200 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "DESTROY_RARITY", "rarity": "rare", "gte": 2 }, { "t": "UPGRADE_PURCHASED", "id": "UPG_UNLOCK_T2_SIGNAL" }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.SIGNAL.3", "value": 1 }]
+    },
+    {
+      "id": "UPG_NANOFORGE_EFFICIENCY_I",
+      "title": "Nanoforge Efficiency I",
+      "desc": "Nanoforge converts Alloy to Flux faster (+30%).",
+      "category": "conversion",
+      "cost": { "fluxMicro": 65000, "alloyMicro": 0, "signalMicro": 2200 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "NANOFORGE", "gte": 1 }] },
+      "effects": [{ "op": "mul", "path": "nanoforgeRateMult", "value": 1.3 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T2_NANOFORGE",
+      "title": "Unlock Nanoforge Tier 2",
+      "desc": "Reveals Tier 2 upgrade option for Nanoforge.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 45000, "alloyMicro": 0, "signalMicro": 1600 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "TOTAL_FLUX_EARNED", "gteMicro": 6000000 }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.NANOFORGE.2", "value": 1 }]
+    },
+    {
+      "id": "UPG_UNLOCK_T3_NANOFORGE",
+      "title": "Unlock Nanoforge Tier 3",
+      "desc": "Reveals Tier 3 upgrade option for Nanoforge.",
+      "category": "tierUnlock",
+      "cost": { "fluxMicro": 130000, "alloyMicro": 0, "signalMicro": 5200 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "DESTROY_RARITY", "rarity": "epic", "gte": 1 }, { "t": "UPGRADE_PURCHASED", "id": "UPG_UNLOCK_T2_NANOFORGE" }] },
+      "effects": [{ "op": "flag", "path": "tierUnlock.NANOFORGE.3", "value": 1 }]
+    },
+    {
+      "id": "UPG_LAB_PROTOCOLS_I",
+      "title": "Lab Protocols I",
+      "desc": "Improves overall yield (+10%) and slightly increases rare odds.",
+      "category": "research",
+      "cost": { "fluxMicro": 50000, "alloyMicro": 1200, "signalMicro": 800 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "LAB", "gte": 1 }] },
+      "effects": [
+        { "op": "mul", "path": "wreckYieldMult", "value": 1.1 },
+        { "op": "mulRarity", "path": "rarityWeightMult", "rarity": "rare", "value": 1.08 }
+      ]
+    },
+    {
+      "id": "UPG_ANCIENT_TRACKING",
+      "title": "Ancient Tracking",
+      "desc": "Increases Ancient wreck odds (still rare).",
+      "category": "research",
+      "cost": { "fluxMicro": 150000, "alloyMicro": 4000, "signalMicro": 6000 },
+      "purchase": { "maxPurchases": 1 },
+      "visibilityUnlock": { "all": [{ "t": "DESTROY_RARITY", "rarity": "epic", "gte": 1 }, { "t": "OWN_MACHINE_COUNT", "code": "DYSON", "gte": 0 }] },
+      "effects": [{ "op": "mulRarity", "path": "rarityWeightMult", "rarity": "ancient", "value": 1.5 }]
+    }
+  ]
+}

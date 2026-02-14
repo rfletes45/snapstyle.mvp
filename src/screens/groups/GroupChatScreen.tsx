@@ -45,7 +45,6 @@ import {
   IconButton,
   Snackbar,
   Text,
-  useTheme,
 } from "react-native-paper";
 import {
   SafeAreaView,
@@ -54,6 +53,9 @@ import {
 
 // Auth
 import { useAuth } from "@/store/AuthContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
+import { useAppTheme } from "@/store/ThemeContext";
+import { useFocusEffect } from "@react-navigation/native";
 
 // Unified hooks
 import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
@@ -72,6 +74,7 @@ import {
   MentionAutocomplete,
   MessageActionsSheet,
   MessageHighlightOverlay,
+  MessageWithMentions,
   ReactionsSummary,
   ReplyBubble,
   ScrollReturnButton,
@@ -138,6 +141,7 @@ import { GAME_SCREEN_MAP } from "@/config/gameCategories";
 import { ExtendedGameType } from "@/types/games";
 
 // Types
+import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
 import {
   AttachmentV2,
   LinkPreviewV2,
@@ -145,8 +149,6 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { Group, GroupMember, ScheduledMessage } from "@/types/models";
-import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatScreen");
@@ -154,6 +156,7 @@ const logger = createLogger("screens/groups/GroupChatScreen");
 // Constants
 // =============================================================================
 
+const NOOP = () => {};
 const PAGINATION_PAGE_SIZE = 25;
 const LOAD_OLDER_DEBOUNCE_MS = 500;
 
@@ -168,10 +171,21 @@ interface Props {
 
 export default function GroupChatScreen({ route, navigation }: Props) {
   const { groupId, groupName: initialGroupName } = route.params;
-  const theme = useTheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
+  const { setCurrentChatId } = useInAppNotifications();
+
+  // Track current group chat for notification suppression
+  useFocusEffect(
+    useCallback(() => {
+      if (groupId) {
+        setCurrentChatId(groupId);
+      }
+      return () => setCurrentChatId(null);
+    }, [groupId, setCurrentChatId]),
+  );
 
   // ==========================================================================
   // Screen State (No message state - uses unified hook)
@@ -236,6 +250,15 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     null,
   );
 
+  // Clean up highlight timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // ==========================================================================
   // Mentionable Members
   // ==========================================================================
@@ -287,7 +310,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   const voiceRecorder = useVoiceRecorder({
     maxDuration: 60,
-    onRecordingComplete: () => {},
+    onRecordingComplete: NOOP,
   });
 
   // ==========================================================================
@@ -359,7 +382,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Update last read when messages change
   useEffect(() => {
     if (groupId && uid && messages.length > 0) {
-      updateLastRead(groupId, uid).catch(console.error);
+      updateLastRead(groupId, uid).catch((e) =>
+        logger.error("Failed to update last read:", e),
+      );
     }
   }, [groupId, uid, messages.length]);
 
@@ -372,7 +397,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     if (!uid || !groupId) return;
     getScheduledMessagesForChat(uid, groupId)
       .then(setScheduledMessages)
-      .catch(console.error);
+      .catch((e) => logger.error("Failed to load scheduled messages:", e));
   }, [uid, groupId]);
 
   // ==========================================================================
@@ -704,7 +729,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const text = screen.composer.text.trim();
       if (!uid || !groupId || !text) return;
 
-      const { mentionUids } = extractMentionsExact(text, mentionableMembers);
+      const { mentionUids, mentionSpans } = extractMentionsExact(
+        text,
+        mentionableMembers,
+      );
 
       try {
         const result = await scheduleMessage({
@@ -747,7 +775,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     if (!uid || (!hasText && !hasAttachments) || screen.sending) return;
 
     const text = screen.composer.text.trim();
-    const { mentionUids } = extractMentionsExact(text, mentionableMembers);
+    const { mentionUids, mentionSpans } = extractMentionsExact(
+      text,
+      mentionableMembers,
+    );
     const currentReplyTo = screen.chat.replyTo;
 
     screen.composer.clearText();
@@ -757,6 +788,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         const result = await screen.chat.sendMessage(text, {
           replyTo: currentReplyTo || undefined,
           mentionUids,
+          mentionSpans: mentionSpans.length > 0 ? mentionSpans : undefined,
         });
         if (!result.success) {
           setSnackbar({
@@ -969,8 +1001,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               style={[
                 styles.systemMessageText,
                 {
-                  color: theme.dark ? "#888" : "#666",
-                  backgroundColor: theme.dark ? "#1A1A1A" : "#e8e8e8",
+                  color: colors.textMuted,
+                  backgroundColor: colors.surfaceVariant,
                 },
               ]}
             >
@@ -1044,16 +1076,14 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                       size={32}
                     />
                   ) : (
-                    <View style={{ width: 37 }} />
+                    <View style={styles.avatarSpacer} />
                   )}
                 </View>
               )}
 
               <View style={styles.bubbleColumn}>
                 {!isOwnMessage && showSender && (
-                  <Text
-                    style={[styles.senderName, { color: theme.colors.primary }]}
-                  >
+                  <Text style={[styles.senderName, { color: colors.primary }]}>
                     {senderDisplayName}
                   </Text>
                 )}
@@ -1077,14 +1107,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                         isOwnMessage
                           ? [
                               styles.ownMessage,
-                              { backgroundColor: theme.colors.primary },
+                              { backgroundColor: colors.primary },
                             ]
                           : [
                               styles.otherMessage,
                               {
-                                backgroundColor: theme.dark
-                                  ? "#1A1A1A"
-                                  : "#e8e8e8",
+                                backgroundColor: colors.surfaceVariant,
                               },
                             ],
                         item.kind === "media" && styles.imageOnlyBubble,
@@ -1121,6 +1149,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                                         roomId: invite.roomId,
                                         gameType: invite.gameId,
                                         hostName: invite.hostName,
+                                        inviteMode: invite.inviteMode,
+                                        boostSessionEndsAt:
+                                          invite.boostSessionEndsAt,
                                       })
                                   : undefined
                               }
@@ -1133,9 +1164,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                             name="gamepad-variant"
                             size={24}
                             color={
-                              isOwnMessage
-                                ? theme.colors.onPrimary
-                                : theme.colors.onSurface
+                              isOwnMessage ? colors.textOnPrimary : colors.text
                             }
                           />
                           <Text
@@ -1143,8 +1172,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                               styles.scorecardGame,
                               {
                                 color: isOwnMessage
-                                  ? theme.colors.onPrimary
-                                  : theme.colors.onSurface,
+                                  ? colors.textOnPrimary
+                                  : colors.text,
                               },
                             ]}
                           >
@@ -1157,8 +1186,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                               styles.scorecardScore,
                               {
                                 color: isOwnMessage
-                                  ? theme.colors.onPrimary
-                                  : theme.colors.onSurface,
+                                  ? colors.textOnPrimary
+                                  : colors.text,
                               },
                             ]}
                           >
@@ -1169,18 +1198,27 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                         </View>
                       ) : (
                         <>
-                          <Text
-                            style={[
+                          <MessageWithMentions
+                            text={item.text || ""}
+                            mentionSpans={
+                              item.mentionSpans ??
+                              ((item.mentionUids?.length ?? 0) > 0
+                                ? extractMentionsExact(
+                                    item.text || "",
+                                    mentionableMembers,
+                                  ).mentionSpans
+                                : undefined)
+                            }
+                            currentUid={uid}
+                            textStyle={[
                               styles.messageText,
                               {
                                 color: isOwnMessage
-                                  ? theme.colors.onPrimary
-                                  : theme.colors.onSurface,
+                                  ? colors.textOnPrimary
+                                  : colors.text,
                               },
                             ]}
-                          >
-                            {item.text}
-                          </Text>
+                          />
                           {hasUrls(item.text || "") && (
                             <LinkPreviewCard
                               preview={
@@ -1210,10 +1248,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                     ]}
                   >
                     <Text
-                      style={[
-                        styles.messageTime,
-                        { color: theme.dark ? "#666" : "#888" },
-                      ]}
+                      style={[styles.messageTime, { color: colors.textMuted }]}
                     >
                       {formatTime(item.createdAt)}
                     </Text>
@@ -1243,7 +1278,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     },
     [
       uid,
-      theme,
+      colors,
       shouldShowSender,
       shouldShowTimestamp,
       shouldShowAvatar,
@@ -1271,17 +1306,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   if (error) {
     return (
       <SafeAreaView
-        style={[
-          styles.container,
-          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-        ]}
+        style={[styles.container, { backgroundColor: colors.background }]}
         edges={[]}
       >
         <Appbar.Header
-          style={[
-            styles.header,
-            { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-          ]}
+          style={[styles.header, { backgroundColor: colors.background }]}
         >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title="Error" />
@@ -1301,17 +1330,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   return (
     <>
-      <View
-        style={[
-          styles.container,
-          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-        ]}
-      >
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Appbar.Header
-          style={[
-            styles.header,
-            { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-          ]}
+          style={[styles.header, { backgroundColor: colors.background }]}
         >
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <TouchableOpacity
@@ -1330,30 +1351,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               <View
                 style={[
                   styles.groupIcon,
-                  { backgroundColor: theme.colors.surfaceVariant },
+                  { backgroundColor: colors.surfaceVariant },
                 ]}
               >
                 <MaterialCommunityIcons
                   name="account-group"
                   size={20}
-                  color={theme.colors.primary}
+                  color={colors.primary}
                 />
               </View>
             )}
             <View>
-              <Text
-                style={[
-                  styles.headerTitleText,
-                  { color: theme.colors.onSurface },
-                ]}
-              >
+              <Text style={[styles.headerTitleText, { color: colors.text }]}>
                 {group?.name}
               </Text>
               <Text
-                style={[
-                  styles.headerSubtitle,
-                  { color: theme.dark ? "#888" : "#666" },
-                ]}
+                style={[styles.headerSubtitle, { color: colors.textSecondary }]}
               >
                 {group?.memberCount} members
               </Text>
@@ -1366,13 +1379,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               style={styles.callButton}
             >
               {isStartingCall ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <Ionicons
-                  name="videocam"
-                  size={22}
-                  color={theme.colors.primary}
-                />
+                <Ionicons name="videocam" size={22} color={colors.primary} />
               )}
             </TouchableOpacity>
           )}
@@ -1412,21 +1421,12 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             ListHeaderComponent={
               screen.chat.pagination.isLoadingOlder ? (
                 <View style={styles.loadMoreContainer}>
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.colors.primary}
-                  />
+                  <ActivityIndicator size="small" color={colors.primary} />
                 </View>
               ) : null
             }
             ListEmptyComponent={
-              <View
-                style={{
-                  transform: [{ scaleY: -1 }],
-                  flexGrow: 1,
-                  justifyContent: "center",
-                }}
-              >
+              <View style={styles.emptyStateContainer}>
                 <EmptyState
                   icon="chat-outline"
                   title="No Messages Yet"
@@ -1491,7 +1491,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             attachmentPicker.attachments.length === 0 ? (
               <VoiceRecordButton
                 onRecordingComplete={handleVoiceRecordingComplete}
-                onRecordingCancelled={() => {}}
+                onRecordingCancelled={NOOP}
                 disabled={screen.sending}
                 size={32}
                 maxDuration={60000}
@@ -1547,7 +1547,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         onReply={handleReply}
         onEdited={handleMessageEdited}
         onDeleted={handleMessageDeleted}
-        onReactionAdded={() => {}}
+        onReactionAdded={NOOP}
       />
 
       <Snackbar
@@ -1574,7 +1574,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         conversationName={group?.name}
         eligibleUserIds={groupMemberIds}
         onSinglePlayerGame={handleSinglePlayerGame}
-        onInviteCreated={() => {}}
+        onInviteCreated={NOOP}
         onError={(error) => Alert.alert("Error", error)}
       />
     </>
@@ -1661,5 +1661,13 @@ const styles = StyleSheet.create({
     margin: 0,
     width: 40,
     height: 40,
+  },
+  emptyStateContainer: {
+    transform: [{ scaleY: -1 }],
+    flexGrow: 1,
+    justifyContent: "center",
+  },
+  avatarSpacer: {
+    width: 37,
   },
 });

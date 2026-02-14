@@ -7,16 +7,37 @@
  * @module components/chat/TypingIndicator
  */
 
+import { Spacing } from "@/constants/theme";
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { Spacing } from "@/constants/theme";
 
 interface TypingIndicatorProps {
-  /** Name of the user who is typing */
-  userName?: string;
+  /** Name(s) of the user(s) who are typing. String for single user, array for multiple. */
+  userName?: string | string[];
   /** Whether to show the indicator */
   visible: boolean;
+}
+
+/**
+ * Format typing label from user name(s).
+ *
+ * - Single: "Alice is typing"
+ * - Two: "Alice and Bob are typing"
+ * - Three+: "3 people are typing"
+ */
+function formatTypingLabel(userName?: string | string[]): string | null {
+  if (!userName) return null;
+
+  if (typeof userName === "string") {
+    return `${userName} is typing`;
+  }
+
+  if (userName.length === 0) return null;
+  if (userName.length === 1) return `${userName[0]} is typing`;
+  if (userName.length === 2)
+    return `${userName[0]} and ${userName[1]} are typing`;
+  return `${userName.length} people are typing`;
 }
 
 /**
@@ -134,12 +155,12 @@ export const TypingIndicator: React.FC<TypingIndicatorProps> = React.memo(
             ]}
           />
         </View>
-        {userName && (
+        {formatTypingLabel(userName) && (
           <Text
             variant="labelSmall"
             style={[styles.text, { color: theme.colors.onSurfaceVariant }]}
           >
-            {userName} is typing
+            {formatTypingLabel(userName)}
           </Text>
         )}
       </Animated.View>

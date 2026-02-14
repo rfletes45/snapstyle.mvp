@@ -35,7 +35,6 @@ import {
   useTheme,
 } from "react-native-paper";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/settings/SettingsScreen");
 const NOTIFICATION_SETTINGS_KEY = "@vibe/notification_settings";
@@ -96,7 +95,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         try {
           const parsed = JSON.parse(stored) as NotificationSettings;
           setNotifications(parsed);
-        } catch {}
+        } catch (e) {
+          logger.error("Failed to parse notification settings:", e);
+        }
       }
     });
   }, []);
@@ -125,17 +126,19 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         AsyncStorage.setItem(
           NOTIFICATION_SETTINGS_KEY,
           JSON.stringify(updated),
-        ).catch(console.warn);
+        ).catch((e) => logger.warn("Failed to save notification settings:", e));
+        // Use the updated value (not stale closure) for the toast
+        const label = key.charAt(0).toUpperCase() + key.slice(1);
+        showSuccess(
+          `${label} notifications ${updated[key] ? "enabled" : "disabled"}`,
+        );
         return updated;
       });
-      showSuccess(
-        `${key.charAt(0).toUpperCase() + key.slice(1)} notifications ${!notifications[key] ? "enabled" : "disabled"}`,
-      );
     },
-    [notifications, showSuccess],
+    [showSuccess],
   );
 
-  const handleSaveDisplayName = async () => {
+  const handleSaveDisplayName = useCallback(async () => {
     if (!editDisplayName.trim()) {
       showError("Display name is required");
       return;
@@ -181,7 +184,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     } finally {
       setSavingName(false);
     }
-  };
+  }, [
+    editDisplayName,
+    currentFirebaseUser,
+    refreshProfile,
+    showSuccess,
+    showError,
+  ]);
 
   const handleSignOut = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -202,7 +211,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     ]);
   }, [showError]);
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteAccount = useCallback(async () => {
     if (deleteConfirmText !== "DELETE") {
       showError("Please type DELETE to confirm");
       return;
@@ -231,7 +240,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       setShowDeleteDialog(false);
       setDeleteConfirmText("");
     }
-  };
+  }, [deleteConfirmText, currentFirebaseUser, showError, showSuccess]);
 
   // =============================================================================
   // Render
@@ -338,6 +347,16 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         <List.Subheader style={styles.sectionHeader}>
           Notifications
         </List.Subheader>
+
+        <Text
+          style={[
+            styles.notificationDisclaimer,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          These settings control in-app notification preferences. Push
+          notification settings are managed in your device settings.
+        </Text>
 
         <List.Item
           title="In-App Banners"
@@ -630,12 +649,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     // Uses Paper default theme color
   },
+  notificationDisclaimer: {
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    lineHeight: 16,
+  },
   sectionHeaderAdmin: {
     fontWeight: "bold",
     // Uses Paper error color inline
-  },
-  adminItem: {
-    // Background applied inline via theme.colors.errorContainer
   },
   themeButtonsContainer: {
     flexDirection: "row",

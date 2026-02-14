@@ -13,11 +13,11 @@ Do **not** redo these — they are verified done:
 
 | Item                                                                                          | Status         |
 | --------------------------------------------------------------------------------------------- | -------------- |
-| `useGameBackHandler` in all 32 game screens                                                   | ✅ 32/32       |
-| `useGameHaptics` in all 32 game screens                                                       | ✅ 32/32       |
-| `useGameCompletion` in all 32 game screens                                                    | ✅ 32/32       |
-| `GameOverModal` in all 32 game screens                                                        | ✅ 32/32       |
-| `GameErrorBoundary` wrapping all 32 game screens                                              | ✅ 32/32       |
+| `useGameBackHandler` in all 21 game screens                                                   | ✅ 21/21       |
+| `useGameHaptics` in all 21 game screens                                                       | ✅ 21/21       |
+| `useGameCompletion` in all 21 game screens                                                    | ✅ 21/21       |
+| `GameOverModal` in all 21 game screens                                                        | ✅ 21/21       |
+| `GameErrorBoundary` wrapping all 21 game screens                                              | ✅ 21/21       |
 | `PanResponder` → `GestureDetector` migration (all game screens)                               | ✅ 0 remaining |
 | TODO/FIXME markers in all TS/TSX code                                                         | ✅ 0 remaining |
 | `sendScorecard()` / `sendSpectatorInvite()` / `sendGroupSpectatorInvite()` → outbox migration | ✅             |
@@ -70,16 +70,16 @@ log.error("Failed", error, { operation: "method" });
 
 ---
 
-## Section 1: Spectator System — Wire Up All 19 Missing Games (🔴 CRITICAL)
+## Section 1: Spectator System — Wire Up All 12 Missing Games (🔴 CRITICAL)
 
 ### Current State
 
-Only **13/32** game screens have the `useSpectator` hook, `SpectatorOverlay`, `SpectatorBanner`, and `SpectatorInviteModal` wired up.
+Only **9/21** game screens have the `useSpectator` hook, `SpectatorOverlay`, `SpectatorBanner`, and `SpectatorInviteModal` wired up.
 
-**13 screens WITH full spectator support** (all single-player, all have `useSpectator` + `SpectatorOverlay` + `SpectatorInviteModal`):
-BounceBlitz, BrickBreaker, LightsOut, MemoryMaster, Minesweeper, NumberMaster, Play2048, Pong, ReactionTap, SnakeMaster, TileSlide, TimedTap, WordMaster
+**9 screens WITH full spectator support** (all single-player, all have `useSpectator` + `SpectatorOverlay` + `SpectatorInviteModal`):
+BounceBlitz, BrickBreaker, LightsOut, Minesweeper, Play2048, Pong, ReactionTap, TimedTap, WordMaster
 
-**19 screens MISSING spectator support:**
+**12 screens MISSING spectator support:**
 
 | #   | Game Screen            | SP or MP?       | Has SpectatorOverlay/Banner?     | Has SpectatorInviteModal? | Has Spectator Renderer? |
 | --- | ---------------------- | --------------- | -------------------------------- | ------------------------- | ----------------------- |
@@ -92,40 +92,11 @@ BounceBlitz, BrickBreaker, LightsOut, MemoryMaster, Minesweeper, NumberMaster, P
 | 7   | DotMatchGameScreen     | MP (turn-based) | ❌                               | ❌                        | ❌                      |
 | 8   | GomokuMasterGameScreen | MP (turn-based) | ❌                               | ❌                        | ❌                      |
 | 9   | HexGameScreen          | MP (turn-based) | ❌                               | ❌                        | ❌                      |
-| 10  | MatchGameScreen        | ??? (see §1a)   | ❌                               | ❌                        | ❌                      |
-| 11  | PoolGameScreen         | MP (physics)    | ❌                               | ❌                        | ❌                      |
-| 12  | RaceGameScreen         | MP (real-time)  | ❌                               | ❌                        | ❌                      |
-| 13  | ReversiGameScreen      | MP (turn-based) | ❌                               | ❌                        | ❌                      |
-| 14  | SliceGameScreen        | ??? (see §1a)   | ❌                               | ❌                        | ❌                      |
-| 15  | TapTapGameScreen       | ??? (see §1a)   | ❌                               | ❌                        | ❌                      |
-| 16  | TargetMasterGameScreen | ??? (see §1a)   | ❌                               | ❌                        | ❌                      |
-| 17  | TicTacToeGameScreen    | MP (turn-based) | ✅ (partial — via Colyseus hook) | ❌                        | ❌                      |
-| 18  | WarGameScreen          | MP (card)       | ❌                               | ❌                        | ❌                      |
-| 19  | WordsGameScreen        | ??? (see §1a)   | ❌                               | ❌                        | ❌                      |
+| 10  | PoolGameScreen         | MP (physics)    | ❌                               | ❌                        | ❌                      |
+| 11  | ReversiGameScreen      | MP (turn-based) | ❌                               | ❌                        | ❌                      |
+| 12  | TicTacToeGameScreen    | MP (turn-based) | ✅ (partial — via Colyseus hook) | ❌                        | ❌                      |
 
-### §1a — Unregistered Game Types (Fix First!)
-
-These 5 games use game type strings that are **NOT registered** in `src/types/games.ts`:
-
-| Game Screen            | Uses gameType     | Registered in types? | Registered in GAME_METADATA? |
-| ---------------------- | ----------------- | -------------------- | ---------------------------- |
-| MatchGameScreen        | `"match"`         | ❌ NOT in any union  | ❌ NOT in GAME_METADATA      |
-| SliceGameScreen        | `"slice"`         | ❌                   | ❌                           |
-| TapTapGameScreen       | `"tap_tap"`       | ❌                   | ❌                           |
-| TargetMasterGameScreen | `"target_master"` | ❌                   | ❌                           |
-| WordsGameScreen        | `"words"`         | ❌                   | ❌                           |
-
-**Fix**: Add these 5 to the `SinglePlayerGameType` union in `src/types/games.ts` and add their `GAME_METADATA` entries. They are all single-player games:
-
-- `"match"` → Match (memory/card matching variant), category: `"puzzle"`, single-player
-- `"slice"` → Slice (fruit-ninja style), category: `"quick_play"`, single-player
-- `"tap_tap"` → Tap Tap (tap game variant), category: `"quick_play"`, single-player
-- `"target_master"` → Target Master (target shooting), category: `"quick_play"`, single-player
-- `"words"` → Words (word grid), category: `"daily"`, single-player
-
-After adding these 5, the `SinglePlayerGameType` union should have **18 types** total.
-
-### §1b — For All 5 Newly-Registered Single-Player Games + Any Others That Are SP
+### §1b — For All SP Games Missing Spectator
 
 These are single-player and need **SP host** spectator wiring:
 
@@ -137,7 +108,7 @@ These are single-player and need **SP host** spectator wiring:
 6. **Render `<SpectatorInviteModal>`** with "Invite to Watch" button
 7. **Create a spectator renderer** in `src/components/games/spectator-renderers/`
 
-**Follow the exact pattern used by the 13 existing screens** (e.g., `BrickBreakerGameScreen.tsx` for a good SP example).
+**Follow the exact pattern used by the 9 existing screens** (e.g., `BrickBreakerGameScreen.tsx` for a good SP example).
 
 ### §1c — For All Multiplayer Games Missing Spectator
 
@@ -154,12 +125,12 @@ For each MP game screen missing spectator:
 
 **4 screens (Checkers, Chess, CrazyEights, TicTacToe) already have partial spectator UI** via their Colyseus multiplayer hooks — they render `SpectatorBanner`/`SpectatorOverlay` but DON'T call `useSpectator` and DON'T have `SpectatorInviteModal`. Complete their wiring.
 
-### §1d — Create 19 Missing Spectator Renderers
+### §1d — Create 12 Missing Spectator Renderers
 
-**Current spectator renderers** (13 exist in `src/components/games/spectator-renderers/`):
-BounceBlitz, BrickBreaker, LightsOut, MemoryMaster, Minesweeper, NumberMaster, Play2048, Pong, ReactionTap, Snake, TileSlide, TimedTap, WordMaster
+**Current spectator renderers** (9 exist in `src/components/games/spectator-renderers/`):
+BounceBlitz, BrickBreaker, LightsOut, Minesweeper, Play2048, Pong, ReactionTap, TimedTap, WordMaster
 
-**Create renderers for ALL 19 missing games:**
+**Create renderers for ALL 12 missing games:**
 
 Each renderer must:
 
@@ -176,35 +147,28 @@ After creating each renderer, **register it** in `src/components/games/spectator
 
 **Game type keys for the RENDERERS map** (must match `ExtendedGameType` strings):
 
-| Game         | Key for RENDERERS map               |
-| ------------ | ----------------------------------- |
-| AirHockey    | `"air_hockey"`                      |
-| Checkers     | `"checkers"`                        |
-| Chess        | `"chess"`                           |
-| ConnectFour  | `"connect_four"`                    |
-| CrazyEights  | `"crazy_eights"`                    |
-| Crossword    | `"crossword_puzzle"`                |
-| DotMatch     | `"dot_match"`                       |
-| Gomoku       | `"gomoku_master"`                   |
-| Hex          | `"hex"` ← verify actual type string |
-| Match        | `"match"`                           |
-| Pool         | `"8ball_pool"`                      |
-| Race         | `"race_game"`                       |
-| Reversi      | `"reversi_game"`                    |
-| Slice        | `"slice"`                           |
-| TapTap       | `"tap_tap"`                         |
-| TargetMaster | `"target_master"`                   |
-| TicTacToe    | `"tic_tac_toe"`                     |
-| War          | `"war_game"`                        |
-| Words        | `"words"`                           |
+| Game        | Key for RENDERERS map               |
+| ----------- | ----------------------------------- |
+| AirHockey   | `"air_hockey"`                      |
+| Checkers    | `"checkers"`                        |
+| Chess       | `"chess"`                           |
+| ConnectFour | `"connect_four"`                    |
+| CrazyEights | `"crazy_eights"`                    |
+| Crossword   | `"crossword_puzzle"`                |
+| DotMatch    | `"dot_match"`                       |
+| Gomoku      | `"gomoku_master"`                   |
+| Hex         | `"hex"` ← verify actual type string |
+| Pool        | `"8ball_pool"`                      |
+| Reversi     | `"reversi_game"`                    |
+| TicTacToe   | `"tic_tac_toe"`                     |
 
 ### §1e — Verify SpectatorViewScreen
 
-After wiring all 32 screens and creating all 32 renderers:
+After wiring all 21 screens and creating all 21 renderers:
 
 - Read `src/screens/games/SpectatorViewScreen.tsx`
 - Verify it uses `SpectatorGameRenderer` which maps to the `RENDERERS` object
-- Verify all 32 game type keys are present in the `RENDERERS` map
+- Verify all 21 game type keys are present in the `RENDERERS` map
 - Verify the stats bar (score, level, lives) works for all game types
 
 ---
@@ -213,22 +177,19 @@ After wiring all 32 screens and creating all 32 renderers:
 
 ### Current State
 
-**22 instances of `new Animated.Value` or `new Animated.ValueXY`** across **12 game screens**:
+**18 instances of `new Animated.Value` or `new Animated.ValueXY`** across **9 game screens**:
 
-| Screen                 | Count | Usage                                     |
-| ---------------------- | ----- | ----------------------------------------- |
-| PongGameScreen         | 3     | ball position (ValueXY), paddle positions |
-| WordMasterGameScreen   | 5     | shake anim, cell flip animations          |
-| TargetMasterGameScreen | 2     | target appear/hit animations              |
-| TicTacToeGameScreen    | 3     | scale, bounce, fade                       |
-| TimedTapGameScreen     | 2     | scale + button color                      |
-| ReactionTapGameScreen  | 1     | pulse animation                           |
-| CrazyEightsGameScreen  | 1     | scale animation                           |
-| CheckersGameScreen     | 1     | scale animation                           |
-| LightsOutGameScreen    | 1     | scale animation                           |
-| MemoryMasterGameScreen | 1     | card flip animation                       |
-| WarGameScreen          | 1     | card flip animation                       |
-| ChessGameScreen        | 1     | scale animation                           |
+| Screen                | Count | Usage                                     |
+| --------------------- | ----- | ----------------------------------------- |
+| PongGameScreen        | 3     | ball position (ValueXY), paddle positions |
+| WordMasterGameScreen  | 5     | shake anim, cell flip animations          |
+| TicTacToeGameScreen   | 3     | scale, bounce, fade                       |
+| TimedTapGameScreen    | 2     | scale + button color                      |
+| ReactionTapGameScreen | 1     | pulse animation                           |
+| CrazyEightsGameScreen | 1     | scale animation                           |
+| CheckersGameScreen    | 1     | scale animation                           |
+| LightsOutGameScreen   | 1     | scale animation                           |
+| ChessGameScreen       | 1     | scale animation                           |
 
 ### Task
 
@@ -306,11 +267,11 @@ Read `BrickBreakerGameScreen.tsx` for a good example of Skia Canvas rendering wi
 
 ### Current State
 
-**0/32 game screens** use `SkiaParticleBurst` despite it being available at `src/components/games/graphics/SkiaParticleBurst`.
+**0/21 game screens** use `SkiaParticleBurst` despite it being available at `src/components/games/graphics/SkiaParticleBurst`.
 
 ### Task
 
-For **every game screen** (all 32):
+For **every game screen** (all 21):
 
 1. **Read `SkiaParticleBurst`** to understand its interface (it takes position, colors, and a trigger)
 2. **Add particle burst on key celebration moments:**
@@ -320,8 +281,7 @@ For **every game screen** (all 32):
    - **Piece capture** (Chess, Checkers) — Small burst at captured piece location
    - **Line clear** (Connect Four, Gomoku) — Burst along the winning line
    - **Brick destroyed** (Brick Breaker) — Small burst at brick location (may already be partially implemented)
-   - **Card match** (Memory Master, Match) — Burst at matched card pair
-   - **Word found** (Word Master, Crossword, Words) — Burst at word location
+   - **Word found** (Word Master, Crossword) — Burst at word location
 
 3. **Choose appropriate colors:**
    - Win: gold (`#FFD700`), white, game's accent color
@@ -335,7 +295,7 @@ For **every game screen** (all 32):
 
 ### Current State
 
-The Colyseus server (`colyseus-server/src/`) has **125 raw `console.log` / `console.warn` calls** and **zero structured logging**. No `createLogger` utility exists in the server codebase.
+The Colyseus server (`colyseus-server/src/`) has **114 raw `console.log` / `console.warn` calls** and **zero structured logging**. No `createLogger` utility exists in the server codebase.
 
 ### Task
 
@@ -364,7 +324,7 @@ export function createServerLogger(source: string) {
 }
 ```
 
-2. **Replace all 125 `console.log/warn/error` calls** across all Colyseus server files with `createServerLogger`:
+2. **Replace all 114 `console.log/warn/error` calls** across all Colyseus server files with `createServerLogger`:
 
 | File                          | console calls | Logger source tag    |
 | ----------------------------- | ------------- | -------------------- |
@@ -374,10 +334,8 @@ export function createServerLogger(source: string) {
 | `rooms/SpectatorRoom.ts`      | 11            | `"SpectatorRoom"`    |
 | `rooms/CrosswordRoom.ts`      | 9             | `"CrosswordRoom"`    |
 | `rooms/WordMasterRoom.ts`     | 9             | `"WordMasterRoom"`   |
-| `rooms/SnakeRoom.ts`          | 7             | `"SnakeRoom"`        |
 | `rooms/BounceBlitzRoom.ts`    | 4             | `"BounceBlitzRoom"`  |
 | `rooms/BrickBreakerRoom.ts`   | 4             | `"BrickBreakerRoom"` |
-| `rooms/RaceRoom.ts`           | 4             | `"RaceRoom"`         |
 | `rooms/base/CardGameRoom.ts`  | 3             | `"CardGameRoom"`     |
 | `services/firebase.ts`        | ~8            | `"Firebase"`         |
 | `services/persistence.ts`     | ~10           | `"Persistence"`      |
@@ -397,16 +355,15 @@ export function createServerLogger(source: string) {
 
 ### Current State
 
-**3 remaining `console.error` calls** in game screens, **3 in hooks**:
+**2 remaining `console.error` calls** in game screens, **3 in hooks**:
 
-| File                         | Line  | Call                    |
-| ---------------------------- | ----- | ----------------------- |
-| `MemoryMasterGameScreen.tsx` | L423  | `.catch(console.error)` |
-| `WordMasterGameScreen.tsx`   | L1107 | `.catch(console.error)` |
-| `WordMasterGameScreen.tsx`   | L1151 | `.catch(console.error)` |
-| `useProfileData.ts`          | L151  | `console.log`           |
-| `useProfileData.ts`          | L168  | `console.log`           |
-| `useProfileData.ts`          | L279  | `console.log`           |
+| File                       | Line  | Call                    |
+| -------------------------- | ----- | ----------------------- |
+| `WordMasterGameScreen.tsx` | L1107 | `.catch(console.error)` |
+| `WordMasterGameScreen.tsx` | L1151 | `.catch(console.error)` |
+| `useProfileData.ts`        | L151  | `console.log`           |
+| `useProfileData.ts`        | L168  | `console.log`           |
+| `useProfileData.ts`        | L279  | `console.log`           |
 
 ### Task
 
@@ -416,18 +373,18 @@ export function createServerLogger(source: string) {
 
 ---
 
-## Section 7: Accessibility — All 32 Game Screens (🟡 MEDIUM)
+## Section 7: Accessibility — All 21 Game Screens (🟡 MEDIUM)
 
 ### Current State
 
-Only **7/32 game screens** have ANY accessibility attributes:
-ConnectFour (2), DotMatch (3), GomokuMaster (2), LightsOut (4), Minesweeper (5), NumberMaster (2), ReactionTap (1)
+Only **6/21 game screens** have ANY accessibility attributes:
+ConnectFour (2), DotMatch (3), GomokuMaster (2), LightsOut (4), Minesweeper (5), ReactionTap (1)
 
-**25/32 screens have ZERO accessibility attributes.**
+**15/21 screens have ZERO accessibility attributes.**
 
 ### Task
 
-For **every game screen** (all 32):
+For **every game screen** (all 21):
 
 1. **Add `accessibilityLabel`** to all interactive elements:
    - Board cells: `accessibilityLabel={`Row ${row}, Column ${col}`}`
@@ -459,7 +416,7 @@ For **every game screen** (all 32):
 
 ### Current State
 
-All 32 screens import theme hooks (`useTheme`, `useColors`, or ThemeContext). However, many games may have **hardcoded hex colors** that look wrong in one theme.
+All 21 screens import theme hooks (`useTheme`, `useColors`, or ThemeContext). However, many games may have **hardcoded hex colors** that look wrong in one theme.
 
 ### Task
 
@@ -499,7 +456,7 @@ For each game screen:
    - `usePremiumShop` — verify if used in any screen
    - `useGameOverAchievements` — verify if used
    - `useMultiplayerAchievements` — verify if used
-   - `PhysicsPlayerInfo`, `RacePlayerInfo` — verify if used by Colyseus schemas
+   - `PhysicsPlayerInfo` — verify if used by Colyseus schemas
    - `getGameDescription` — verify if used in UI
    - `PlayerGameStatsDocument`, `RecordGameResultInput`, `LeaderboardEntry` — verify usage
 
@@ -511,7 +468,7 @@ This section covers visual improvements BEYOND the Skia migration in Section 3.
 
 ### Task
 
-For **every game screen** (all 32):
+For **every game screen** (all 21):
 
 1. **Board/surface rendering:**
    - Replace flat `backgroundColor` surfaces with Skia gradients
@@ -538,10 +495,7 @@ For **every game screen** (all 32):
    - `PoolGameScreen` — felt-green gradient table, balls with Skia radial gradients for sphere look, number rendering on balls
    - `ConnectFourGameScreen` — board should look like physical Connect Four with depth/holes
    - `DotMatchGameScreen` — polished dot rendering, animated line drawing
-   - `WarGameScreen` — proper playing card rendering with suits, face cards, shadows
    - `HexGameScreen` — polished hexagonal grid with proper fills
-   - `RaceGameScreen` — racing-themed UI with progress bars
-   - `WordsGameScreen` — Scrabble-style tile rendering with letter scores
 
 ---
 
@@ -552,9 +506,9 @@ For **every game screen** (all 32):
    - `npx tsc --noEmit` (client — zero errors)
    - `cd colyseus-server && npx tsc --noEmit` (server — zero errors, if server files changed)
 3. **Never break existing gameplay** — all changes must be behavior-preserving unless fixing a bug
-4. **Be thorough** — if a section says "every game", check every single one of the 32 games
+4. **Be thorough** — if a section says "every game", check every single one of the 21 games
 5. **Follow existing patterns** — read the existing implementations before creating new ones
-6. **Section 1 is the largest** — it requires creating 19 spectator renderers (each ~100-300 lines of Skia rendering), wiring `useSpectator` into 19 screens, and adding SpectatorInviteModal to 19 screens. Budget most of your time here.
+6. **Section 1 is the largest** — it requires creating 12 spectator renderers (each ~100-300 lines of Skia rendering), wiring `useSpectator` into 12 screens, and adding SpectatorInviteModal to 12 screens. Budget most of your time here.
 
 ---
 
@@ -564,18 +518,17 @@ After completing all sections:
 
 - [ ] `npx tsc --noEmit` — zero errors (client)
 - [ ] `cd colyseus-server && npx tsc --noEmit` — zero errors (server)
-- [ ] All 5 unregistered game types added to `SinglePlayerGameType` union and `GAME_METADATA`
-- [ ] `useSpectator` in all 32 game screens (13 existing + 19 new)
-- [ ] `SpectatorOverlay` rendered in all 32 game screens
-- [ ] `SpectatorInviteModal` rendered in all 32 game screens (SP games: invite to watch; MP games: invite to spectate)
-- [ ] Spectator renderers exist for all 32 game types in `src/components/games/spectator-renderers/`
-- [ ] All 32 game type keys registered in `spectator-renderers/index.tsx` RENDERERS map
+- [ ] `useSpectator` in all 21 game screens (9 existing + 12 new)
+- [ ] `SpectatorOverlay` rendered in all 21 game screens
+- [ ] `SpectatorInviteModal` rendered in all 21 game screens (SP games: invite to watch; MP games: invite to spectate)
+- [ ] Spectator renderers exist for all 21 game types in `src/components/games/spectator-renderers/`
+- [ ] All 21 game type keys registered in `spectator-renderers/index.tsx` RENDERERS map
 - [ ] Zero `new Animated.Value` in game screens — all migrated to Reanimated `useSharedValue`
 - [ ] All 6 View-only boards migrated to Skia Canvas using existing Skia primitives
-- [ ] `SkiaParticleBurst` used in all 32 game screens for celebration effects
+- [ ] `SkiaParticleBurst` used in all 21 game screens for celebration effects
 - [ ] Zero `console.log/warn/error` in `src/screens/games/`, `src/hooks/`, and `colyseus-server/src/`
 - [ ] `createServerLogger` utility created and used in all Colyseus server files
-- [ ] Accessibility attributes (`accessibilityLabel`, `accessibilityRole`) on all interactive game elements in all 32 screens
+- [ ] Accessibility attributes (`accessibilityLabel`, `accessibilityRole`) on all interactive game elements in all 21 screens
 - [ ] No hardcoded theme-violating colors — all backgrounds/text/borders use theme tokens
 - [ ] Dead game-related exports removed (high-confidence only)
-- [ ] Visual polish applied — gradients, shadows, entrance animations, score animations across all 32 screens
+- [ ] Visual polish applied — gradients, shadows, entrance animations, score animations across all 21 screens

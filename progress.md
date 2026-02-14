@@ -1,0 +1,54 @@
+Original prompt: Extensively review the current map design and implementation of the beach and river areas and polish them. [$develop-web-game](C:\\Users\\rflet\\.codex\\skills\\develop-web-game\\SKILL.md)
+
+## Session Notes
+- Initialized by Codex on 2026-02-12.
+- Next: audit beach/river world layout, terrain, props, and water systems for visual and gameplay polish opportunities.
+- Completed baseline audit of:
+  - `client/src/engine/world/layout/BeachPortLayout.ts`
+  - `client/src/engine/world/layout/RiverLayout.ts`
+  - `client/src/engine/world/terrain/TerrainBuilder.ts`
+  - `client/src/engine/world/water/WaterBuilder.ts`
+  - `client/src/engine/world/WorldBuilder.ts`
+- Set up Playwright client dependencies and Chromium runtime required by the `develop-web-game` skill.
+- Captured baseline screenshots (`client/output/web-game/baseline/shot-0.png`, `shot-1.png`) after Play Solo.
+- Found missing automation hooks in game client: no `window.render_game_to_text` and no deterministic `window.advanceTime`.
+- Map polish pass implemented:
+  - Expanded beach and river prop distributions in layout point sets (palms/trees/shrubs/reeds/rocks).
+  - Added terrain refinement slabs/ramps for shoreline + river route readability.
+  - Added richer water layering (deep ocean band, shoreline foam, river foam strips, bridge pool plane).
+  - Added beach/river structure detail passes (rails, lanterns, vendor props, bridge supports, ranger notice sign, additional dock rocks).
+- Gameplay polish:
+  - Fixed challenge hazard logic in beach/river starts so checkpoint/goal are no longer inside hazard bands.
+  - Added challenge reset cooldown to prevent rapid reset spam.
+- Tooling/runtime polish:
+  - Added deterministic stepping integration path via `RendererHost.step(...)`.
+  - Added `window.render_game_to_text` and `window.advanceTime(ms)` hooks from `GameApp`.
+  - Added fullscreen controls (`f` toggle, `Esc` exit) with editable-field guards.
+- Additional review + polish follow-up:
+  - Re-ran skill Playwright loop for `beach_plaza`, `beach_reef`, `river_bridge`, `river_pool` presets and re-inspected screenshot/state/error artifacts.
+  - Found remaining traversal quality issue: player could enter foliage and some decorative berm/cliff pockets that produce camera-obscuring/under-mesh views.
+  - Added foliage trunk collisions (beach palms + beach/river trees) and beach edge collision guardrails in `WorldBuilder`.
+  - Tightened `createGroundHeightSampler()` coverage to better match beach terrain extents (reef shelf, dunes, bluff/plaza transitions, berm lip) plus lower-bank coverage in river.
+  - Retuned automation camera presets in `GameApp` for cleaner reproducible beach/river captures.
+  - Updated collision solver in `client/src/engine/collision.ts` to run 3 short resolving passes per frame, reducing corner penetration/sticking when multiple colliders overlap.
+  - Verified via short deterministic roam stress run (`client/output/web-game/stress-roam-short`) and no new console/page errors were emitted.
+  - Remaining known issue: automation preset screenshots can still be composition-poor because this is a first-person camera and presets may face large nearby geometry after spawn/collider correction; functional state and traversal were prioritized over static showcase framing.
+- 2026-02-12 follow-up polish pass (Codex):
+  - Reworked walkable terrain semantics by extending `addTerrainSlab(...)` with options and explicitly marking non-playable boundary slabs as `walkable: false` in `TerrainBuilder`.
+  - Added east beach lookout pad terrain (`beach_volcano_lookout_pad`) and removed legacy sampler behavior that elevated player to back-berm lip.
+  - Refactored runtime ground sampling (`WorldBuilder.createRuntimeGroundHeightSampler`) to select the walkable hit closest to current player height (with threshold guard) instead of first ray hit; prevents snapping to overhead slabs in overlap stacks.
+  - Updated world ground-height type contract to `(x, z, currentY?)` in `client/src/engine/world/types.ts` and `PlayerController`, with direct Y assignment to avoid oscillation.
+  - Collision hardening:
+    - Added second collision resolve pass after world-bounds clamp in `PlayerController`.
+    - Added/expanded colliders for pier rails, driftwood arch beam, ranger table/NPC, challenge rope barrier, bridge rope sides, beach-river seam lanes, and multiple cliff/berm seam guardrails.
+    - Increased foliage/rock collider footprints for beach and river nature props to reduce camera clipping into trunks/crowns and large rocks.
+  - Asset polish already present and retained:
+    - Redesigned sign kit in `PropFactory.addSign` (framed board, cap/sill, braces, emblem, dual posts).
+    - Redesigned rod stand in `PropFactory.addRodStand` (plinth, column/cradle, reel and rod details).
+  - Validation run summary:
+    - `npm run typecheck` and `npm run build` passed after each patch cycle.
+    - Playwright scenarios captured and inspected: `polish3-*`, `polish4-*`, `polish5-*`, `polish6-*` directories under `client/output/web-game`.
+    - No new runtime error logs produced in these runs.
+  - Remaining known issue:
+    - Stress automation can still produce close-up compositions of nearby obstacles (e.g. tree trunk/rail posts) because movement burst is deterministic and does not steer camera away; this is largely framing behavior, not fall-through.
+    - If desired, next pass should add soft camera obstacle avoidance (near-plane pushback) and route-aware automation movement scripts for cleaner showcase captures.

@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "holeId": "T6-3",
+  "tier": 6,
+  "bounds": {
+    "width": 18,
+    "height": 8
+  },
+  "start": {
+    "x": 2,
+    "z": 4
+  },
+  "cup": {
+    "x": 16,
+    "z": 4
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 18,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 18,
+        "z": 0
+      },
+      "b": {
+        "x": 18,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 18,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [
+    {
+      "type": "speed",
+      "id": "spd1",
+      "shape": "aabb",
+      "min": {
+        "x": 5,
+        "z": 3.5
+      },
+      "max": {
+        "x": 6.5,
+        "z": 4.5
+      },
+      "dir": {
+        "x": 1,
+        "z": 0
+      },
+      "accel": 6.0,
+      "maxSpeed": 12.0
+    },
+    {
+      "type": "speed",
+      "id": "spd2",
+      "shape": "aabb",
+      "min": {
+        "x": 9,
+        "z": 3.0
+      },
+      "max": {
+        "x": 10.5,
+        "z": 4.0
+      },
+      "dir": {
+        "x": 0,
+        "z": -1
+      },
+      "accel": 6.0,
+      "maxSpeed": 12.0
+    },
+    {
+      "type": "speed",
+      "id": "spd3",
+      "shape": "aabb",
+      "min": {
+        "x": 13,
+        "z": 3.5
+      },
+      "max": {
+        "x": 14.5,
+        "z": 4.5
+      },
+      "dir": {
+        "x": 1,
+        "z": 0
+      },
+      "accel": 6.0,
+      "maxSpeed": 12.0
+    }
+  ],
+  "heightFields": [],
+  "obstacles": [
+    {
+      "type": "bumper_wedge",
+      "id": "bw1",
+      "pos": {
+        "x": 7.5,
+        "z": 4.8
+      },
+      "halfLength": 0.7,
+      "rotationDeg": 20
+    },
+    {
+      "type": "bumper_wedge",
+      "id": "bw2",
+      "pos": {
+        "x": 11.5,
+        "z": 3.2
+      },
+      "halfLength": 0.7,
+      "rotationDeg": -20
+    },
+    {
+      "type": "bumper_wedge",
+      "id": "bw3",
+      "pos": {
+        "x": 15.0,
+        "z": 4.8
+      },
+      "halfLength": 0.7,
+      "rotationDeg": 25
+    },
+    {
+      "type": "bumper_wedge",
+      "id": "bw4",
+      "pos": {
+        "x": 8.0,
+        "z": 3.0
+      },
+      "halfLength": 0.7,
+      "rotationDeg": -25
+    }
+  ],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1603
+  }
+}

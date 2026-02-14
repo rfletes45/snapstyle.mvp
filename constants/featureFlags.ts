@@ -545,14 +545,17 @@ export const COLYSEUS_FEATURES = {
   /** Turn-based games: TicTacToe, ConnectFour, Gomoku, Reversi (Phase 2 â€” LIVE) */
   TURNBASED_ENABLED: true,
 
-  /** Complex turn-based games: Chess, Checkers, CrazyEights, War */
+  /** Complex turn-based games: Chess, Checkers, CrazyEights */
   COMPLEX_TURNBASED_ENABLED: true,
 
-  /** Physics-based games: Pong, AirHockey, BounceBlitz, BrickBreaker, Snake, Race */
+  /** Physics-based games: Pong, AirHockey, BounceBlitz, BrickBreaker */
   PHYSICS_ENABLED: true,
 
   /** Cooperative games: WordMaster, Crossword */
   COOP_ENABLED: true,
+
+  /** Incremental games: Starforge */
+  INCREMENTAL_ENABLED: true,
 
   // =========================================================================
   // Feature Sub-Flags

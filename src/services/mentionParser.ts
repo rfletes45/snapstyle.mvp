@@ -267,62 +267,11 @@ export function insertMention(
 
 /**
  * Extract all mentions from text.
- *
- * Looks for @DisplayName patterns and matches them against known members.
- * This is used before sending a message to populate mentionUids and mentionSpans.
- *
- * @param text - Message text
- * @param members - Known group members
- * @returns Extracted mentions with UIDs and spans
- */
-export function extractMentions(
-  text: string,
-  members: MentionableMember[],
-): ExtractMentionsResult {
-  const mentionUids: string[] = [];
-  const mentionSpans: MentionSpan[] = [];
-
-  // Build a map for efficient lookup (display name -> member)
-  const nameToMember = new Map<string, MentionableMember>();
-  for (const member of members) {
-    nameToMember.set(member.displayName.toLowerCase(), member);
-  }
-
-  // Regex to find @mentions
-  // Matches @ followed by word characters, spaces, hyphens until a delimiter
-  const mentionRegex = /@([a-zA-Z0-9_\s-]+?)(?=\s|$|@|[.,!?;:])/g;
-
-  let match;
-  while ((match = mentionRegex.exec(text)) !== null) {
-    // Check if we've hit the limit
-    if (mentionUids.length >= MAX_MENTIONS_PER_MESSAGE) {
-      break;
-    }
-
-    const potentialName = match[1].trim().toLowerCase();
-    const member = nameToMember.get(potentialName);
-
-    if (member && !mentionUids.includes(member.uid)) {
-      mentionUids.push(member.uid);
-      mentionSpans.push({
-        uid: member.uid,
-        start: match.index,
-        end: match.index + match[0].length,
-      });
-    }
-  }
-
-  return {
-    mentionUids,
-    mentionSpans,
-    limitReached: mentionUids.length >= MAX_MENTIONS_PER_MESSAGE,
-  };
-}
-
 /**
- * Alternative extraction that matches against exact display names.
+ * Extract mentions from message text using exact display name matching.
  *
- * More precise than regex-based extraction - looks for exact @DisplayName matches.
+ * Looks for exact @DisplayName patterns and matches them against known members.
+ * This is used before sending a message to populate mentionUids and mentionSpans.
  *
  * @param text - Message text
  * @param members - Known group members
@@ -340,16 +289,13 @@ export function extractMentionsExact(
     (a, b) => b.displayName.length - a.displayName.length,
   );
 
-  let searchText = text;
-  let offset = 0;
-
   for (const member of sortedMembers) {
     if (mentionUids.length >= MAX_MENTIONS_PER_MESSAGE) {
       break;
     }
 
     const mentionPattern = `@${member.displayName}`;
-    const lowerText = searchText.toLowerCase();
+    const lowerText = text.toLowerCase();
     const lowerPattern = mentionPattern.toLowerCase();
 
     let searchFrom = 0;

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "holeId": "T2-3",
+  "tier": 2,
+  "bounds": {
+    "width": 14,
+    "height": 8
+  },
+  "start": {
+    "x": 2,
+    "z": 4
+  },
+  "cup": {
+    "x": 12,
+    "z": 4
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [],
+  "heightFields": [
+    {
+      "type": "plane",
+      "a": -0.05,
+      "b": 0.0
+    }
+  ],
+  "obstacles": [
+    {
+      "type": "bumper_round",
+      "id": "br1",
+      "pos": {
+        "x": 8.0,
+        "z": 2.5
+      },
+      "radius": 0.35
+    }
+  ],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1203
+  }
+}

@@ -1,0 +1,418 @@
+/* Golf Duels — Global Styles */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1a472a;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #fff;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+canvas {
+  display: block;
+}
+
+/* HUD Overlay */
+.golf-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.golf-hud__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+}
+
+.golf-hud__score {
+  font-size: 18px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.golf-hud__hole {
+  font-size: 14px;
+  opacity: 0.9;
+  text-align: center;
+}
+
+.golf-hud__shot-clock {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.golf-hud__shot-clock--warning {
+  color: #ff4444;
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+.golf-hud__status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+.golf-hud__power-bar {
+  position: absolute;
+  right: 16px;
+  bottom: 80px;
+  width: 24px;
+  height: 200px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.golf-hud__power-fill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(0deg, #4caf50 0%, #ffc107 50%, #f44336 100%);
+  border-radius: 10px;
+  transition: height 0.05s linear;
+}
+
+.golf-hud__bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.golf-hud__btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+  text-transform: uppercase;
+}
+
+.golf-hud__btn--shoot {
+  background: #4caf50;
+  color: #fff;
+}
+
+.golf-hud__btn--ready {
+  background: #2196f3;
+  color: #fff;
+}
+
+.golf-hud__btn--back {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.golf-hud__error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(244, 67, 54, 0.9);
+  padding: 16px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.golf-hud__result {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.85);
+  padding: 32px 48px;
+  border-radius: 16px;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.golf-hud__result h2 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.golf-hud__result p {
+  font-size: 18px;
+  opacity: 0.8;
+  margin-bottom: 16px;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.5;
+  }
+}
+
+/* ================================================================
+   HUD element-based overlay styles (HUD.ts classes)
+   ================================================================ */
+
+#hud-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar -------------------------------------------------------- */
+.hud-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.65) 0%, transparent 100%);
+}
+
+.hud-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.hud-player-name {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.hud-player-score {
+  font-size: 22px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.hud-center-info {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hud-hole-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hud-shot-clock {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-shot-clock-urgent {
+  color: #ff4444;
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+/* Strokes row ---------------------------------------------------- */
+.hud-strokes-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.hud-strokes-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Match progress bar --------------------------------------------- */
+.hud-progress-row {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.hud-progress-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  transition:
+    background 0.3s,
+    border-color 0.3s;
+}
+
+.hud-dot-completed {
+  background: #4caf50;
+  border-color: #4caf50;
+}
+
+.hud-dot-current {
+  border-color: #ffc107;
+  background: rgba(255, 193, 7, 0.25);
+}
+
+/* Status overlay ------------------------------------------------- */
+.hud-status-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.hud-status-text {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+/* Power bar ------------------------------------------------------ */
+.hud-power-bar-container {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  max-width: 280px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.hud-power-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 5px;
+  transition: width 0.05s linear;
+}
+
+/* Bottom bar ----------------------------------------------------- */
+.hud-bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.hud-ready-btn {
+  padding: 10px 28px;
+  border-radius: 8px;
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+  text-transform: uppercase;
+  background: #2196f3;
+  color: #fff;
+}
+
+.hud-ready-btn:hover {
+  background: #1976d2;
+}
+
+/* Result screen -------------------------------------------------- */
+.hud-result-screen {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.88);
+  padding: 28px 40px;
+  border-radius: 14px;
+  text-align: center;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hud-result-title {
+  font-size: 26px;
+}
+
+.hud-result-score {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+
+.hud-result-reason {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* Error bar ------------------------------------------------------ */
+.hud-error-bar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(244, 67, 54, 0.92);
+  padding: 14px 22px;
+  border-radius: 8px;
+  font-size: 15px;
+  text-align: center;
+  pointer-events: none;
+}

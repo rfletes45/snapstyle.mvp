@@ -12,6 +12,7 @@
 You are performing a **complete, exhaustive codebase audit and refactor** of a production React Native + Expo application. Your job is to find and fix every inconsistency, inefficiency, dead code path, type safety hole, and architectural smell across the entire project. Do not stop until every system is consistent, clean, and properly typed.
 
 **You must**:
+
 1. Read and understand every file before modifying it
 2. Run `npx tsc --noEmit` after each batch of changes to verify zero TypeScript errors
 3. Never break existing functionality — all refactors must be behavior-preserving
@@ -21,17 +22,17 @@ You are performing a **complete, exhaustive codebase audit and refactor** of a p
 
 ## Tech Stack (Ground Truth)
 
-| Technology | Version | Purpose |
-|---|---|---|
-| React Native | 0.81.5 | Mobile framework |
-| Expo SDK | 54 | Build/dev toolchain |
-| React | 19.1.0 | UI library |
-| TypeScript | ~5.9.2 | Type safety (`strict: true`) |
-| Firebase | 12.8.0 | Auth, Firestore, Storage, Cloud Functions |
-| Colyseus SDK | 0.17.31 (client) / 0.17.35 (server) | Real-time multiplayer |
-| React Navigation | 7.x | Screen navigation |
-| expo-sqlite | 16.0.10 | Local-first message storage |
-| Path alias | `@/*` → `src/*` | Import paths |
+| Technology       | Version                             | Purpose                                   |
+| ---------------- | ----------------------------------- | ----------------------------------------- |
+| React Native     | 0.81.5                              | Mobile framework                          |
+| Expo SDK         | 54                                  | Build/dev toolchain                       |
+| React            | 19.1.0                              | UI library                                |
+| TypeScript       | ~5.9.2                              | Type safety (`strict: true`)              |
+| Firebase         | 12.8.0                              | Auth, Firestore, Storage, Cloud Functions |
+| Colyseus SDK     | 0.17.31 (client) / 0.17.35 (server) | Real-time multiplayer                     |
+| React Navigation | 7.x                                 | Screen navigation                         |
+| expo-sqlite      | 16.0.10                             | Local-first message storage               |
+| Path alias       | `@/*` → `src/*`                     | Import paths                              |
 
 **tsconfig.json** excludes `firebase-backend/`, `colyseus-server/`, and `node_modules` from compilation. The client app is in `src/`. Cloud Functions are in `firebase-backend/functions/src/`. Colyseus server is in `colyseus-server/src/`.
 
@@ -52,9 +53,11 @@ You are performing a **complete, exhaustive codebase audit and refactor** of a p
 ## Section 1: Import Path Consistency
 
 ### Problem
+
 The codebase mixes relative imports (`../../../services/auth`) with path-alias imports (`@/services/auth`). The `tsconfig.json` defines `@/*` → `src/*`.
 
 ### Task
+
 1. Scan every `.ts` and `.tsx` file under `src/`
 2. Convert all cross-directory relative imports to use the `@/` alias
 3. Keep same-directory relative imports (e.g., `./MyComponent`) as-is
@@ -66,9 +69,11 @@ The codebase mixes relative imports (`../../../services/auth`) with path-alias i
 ## Section 2: Console.log Cleanup → createLogger Migration
 
 ### Problem
+
 There are ~1,445 raw `console.log/warn/error/info/debug` calls. The codebase has a centralized `createLogger()` utility at `src/utils/log.ts` (349 lines) that provides structured, environment-aware logging. Only 72 files currently use it.
 
 ### Task
+
 1. Read `src/utils/log.ts` to understand the `createLogger()` API
 2. For every file in `src/` that uses raw `console.log/warn/error`:
    - Add `import { createLogger } from "@/utils/log";` (or equivalent)
@@ -86,9 +91,11 @@ There are ~1,445 raw `console.log/warn/error/info/debug` calls. The codebase has
 ## Section 3: `as any` Type Safety Audit
 
 ### Problem
+
 133 `as any` casts remain across `src/`. Each one is a type safety hole.
 
 ### Task
+
 1. For every `as any` in `src/`:
    - Determine the actual type the expression produces
    - Determine the type the surrounding context expects
@@ -108,9 +115,11 @@ There are ~1,445 raw `console.log/warn/error/info/debug` calls. The codebase has
 ## Section 4: Navigation Type Safety
 
 ### Problem
+
 `src/navigation/RootNavigator.tsx` uses `<any>` for all stack/tab navigator generic params. There are 9 such occurrences. This means `navigation.navigate("ScreenName", { ... })` has zero type checking on route params.
 
 ### Task
+
 1. Read `src/navigation/RootNavigator.tsx` and `src/navigation/ShopNavigator.tsx` to understand all navigator stacks
 2. Read `src/types/navigation/` to see if any `ParamList` types already exist
 3. For each navigator stack, define a proper `ParamList` type:
@@ -132,7 +141,9 @@ There are ~1,445 raw `console.log/warn/error/info/debug` calls. The codebase has
 ## Section 5: Chat System Consistency
 
 ### Problem
+
 The messaging system has multiple layers from a migration that left inconsistencies:
+
 - `src/services/chatV2.ts` (legacy DM operations)
 - `src/services/messaging/` (unified messaging: send.ts, subscribe.ts, memberState.ts, adapters/)
 - `src/services/messageList.ts` (legacy subscriptions)
@@ -143,6 +154,7 @@ The messaging system has multiple layers from a migration that left inconsistenc
 - `src/services/reactions.ts` (reactions)
 
 ### Task
+
 1. **Map the dependency graph**: For each file above, identify every importer (use grep or find-references)
 2. **Identify dead exports**: Functions that are exported but never imported anywhere
 3. **Identify inconsistent patterns**:
@@ -162,9 +174,11 @@ The messaging system has multiple layers from a migration that left inconsistenc
 ## Section 6: Game System Consistency
 
 ### Problem
+
 There are 37 game screen files, 6 game logic files, 13+ game hooks, and multiple component layers. Patterns vary wildly between games.
 
 ### Task
+
 1. **Audit every game screen** in `src/screens/games/`:
    - Does it clean up all `useEffect` subscriptions on unmount? (return cleanup functions)
    - Does it stop all animations (`Animated.Value.stopAnimation()`, `cancelAnimationFrame()`) on unmount?
@@ -185,7 +199,7 @@ There are 37 game screen files, 6 game logic files, 13+ game hooks, and multiple
    - Do they all handle reconnection consistently?
    - Do they all handle room disposal on unmount?
    - Do they all use the same error reporting pattern?
-4. **Game-specific multiplayer hooks** (`useSnakeMultiplayer`, `useCrosswordMultiplayer`, `useWordMasterMultiplayer`, `useRaceMultiplayer`):
+4. **Game-specific multiplayer hooks** (`useCrosswordMultiplayer`, `useWordMasterMultiplayer`):
    - Do they follow the same pattern as the generic hooks?
    - Are there duplicated patterns that could be extracted to the generic hooks?
 5. **Game logic files** (`src/services/games/*.ts`):
@@ -200,9 +214,11 @@ There are 37 game screen files, 6 game logic files, 13+ game hooks, and multiple
 ## Section 7: Feature Flag Cleanup
 
 ### Problem
+
 `constants/featureFlags.ts` is 858 lines with 8 flag groups. Two groups (`PROFILE_FEATURES` and `SHOP_FEATURES`) are marked as "GRADUATED" — all flags are permanently `true`. These add dead conditional paths.
 
 ### Task
+
 1. **PROFILE_FEATURES** and **SHOP_FEATURES**: Both are graduated. Previous audit inlined usages but the flag objects still exist (858 lines).
    - Search the entire `src/` tree for any remaining references to `PROFILE_FEATURES.*` or `SHOP_FEATURES.*`
    - If zero references remain, delete the flag object declarations entirely
@@ -221,6 +237,7 @@ There are 37 game screen files, 6 game logic files, 13+ game hooks, and multiple
 ## Section 8: Cloud Functions `index.ts` Split
 
 ### Problem
+
 `firebase-backend/functions/src/index.ts` is still 3,148 lines. The link preview section was already extracted to `linkPreview.ts`. The file has these inline sections that should be separate modules:
 
 - **Lines ~145-275**: Input validation helpers + Expo push notification utilities
@@ -237,6 +254,7 @@ There are 37 game screen files, 6 game logic files, 13+ game hooks, and multiple
 - **Lines ~3089-3148**: Admin moderation functions + domain events + ban expiration
 
 ### Task
+
 1. **Create a shared utilities module** (`firebase-backend/functions/src/utils.ts`):
    - Move `isValidString()`, `isValidUid()`, `sanitizeForLog()`
    - Move `sendExpoPushNotification()`, `getUserPushToken()`
@@ -260,9 +278,11 @@ There are 37 game screen files, 6 game logic files, 13+ game hooks, and multiple
 ## Section 9: Barrel Export Consistency
 
 ### Problem
+
 Multiple barrel files (`src/services/index.ts`, `src/types/index.ts`, `src/data/index.ts`, `src/utils/index.ts`) have commented-out exports due to naming conflicts. This is messy.
 
 ### Task
+
 1. **Identify all naming conflicts** by attempting to uncomment each disabled export and checking the error
 2. **Resolve conflicts** using one of these strategies:
    - Rename the conflicting export at its source (preferred if it's an internal function)
@@ -276,6 +296,7 @@ Multiple barrel files (`src/services/index.ts`, `src/types/index.ts`, `src/data/
 ## Section 10: Component & Hook Consistency Patterns
 
 ### Task
+
 1. **Error boundaries**: Verify every screen component is wrapped with `withErrorBoundary` or has an `<ErrorBoundary>` in its render tree
 2. **Loading states**: Verify every screen that fetches data shows a loading skeleton or `<LoadingScreen />`
 3. **Empty states**: Verify every list screen handles the empty case with `<EmptyState />`
@@ -288,11 +309,12 @@ Multiple barrel files (`src/services/index.ts`, `src/types/index.ts`, `src/data/
 ## Section 11: Colyseus Server Consistency
 
 ### Task
-1. Audit `colyseus-server/src/rooms/` — there are 25 rooms across 6 subdirectories:
+
+1. Audit `colyseus-server/src/rooms/` — there are 22 rooms across 6 subdirectories:
    - `base/`: CardGameRoom, PhysicsRoom, ScoreRaceRoom, TurnBasedRoom
    - `quickplay/`: DotMatchRoom, ReactionRoom, TimedTapRoom
-   - `physics/`: AirHockeyRoom, BounceBlitzRoom, BrickBreakerRoom, PongRoom, PoolRoom, RaceRoom, SnakeRoom
-   - `turnbased/`: CheckersRoom, ChessRoom, ConnectFourRoom, CrazyEightsRoom, GomokuRoom, ReversiRoom, TicTacToeRoom, WarRoom
+   - `physics/`: AirHockeyRoom, BounceBlitzRoom, BrickBreakerRoom, PongRoom, PoolRoom
+   - `turnbased/`: CheckersRoom, ChessRoom, ConnectFourRoom, CrazyEightsRoom, GomokuRoom, ReversiRoom, TicTacToeRoom
    - `coop/`: CrosswordRoom, WordMasterRoom
    - `spectator/`: SpectatorRoom
 2. **Verify every room** extends the correct base room (`ScoreRaceRoom`, `TurnBasedRoom`, `PhysicsRoom`, or `CardGameRoom`)
@@ -306,6 +328,7 @@ Multiple barrel files (`src/services/index.ts`, `src/types/index.ts`, `src/data/
 ## Section 12: Dead Code Sweep
 
 ### Task
+
 1. **Unused exports**: For every exported function/type/constant in `src/services/`, `src/utils/`, `src/types/`, `src/data/`, `src/hooks/`:
    - grep for its usage across the entire `src/` tree
    - If zero imports exist (besides the barrel re-export), flag it
@@ -319,6 +342,7 @@ Multiple barrel files (`src/services/index.ts`, `src/types/index.ts`, `src/data/
 ## Section 13: Firestore Security Rules Consistency
 
 ### Task
+
 1. Read `firebase-backend/firestore.rules` entirely
 2. **Verify every Firestore collection** accessed in `src/services/` has corresponding security rules
 3. **Verify rule patterns are consistent**:

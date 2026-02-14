@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "holeId": "T3-1",
+  "tier": 3,
+  "bounds": {
+    "width": 16,
+    "height": 6
+  },
+  "start": {
+    "x": 2,
+    "z": 3
+  },
+  "cup": {
+    "x": 14,
+    "z": 3
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 16,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 16,
+        "z": 0
+      },
+      "b": {
+        "x": 16,
+        "z": 6
+      }
+    },
+    {
+      "a": {
+        "x": 16,
+        "z": 6
+      },
+      "b": {
+        "x": 0,
+        "z": 6
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 6
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [
+    {
+      "type": "sand",
+      "shape": "aabb",
+      "min": {
+        "x": 7,
+        "z": 2
+      },
+      "max": {
+        "x": 11,
+        "z": 4
+      },
+      "id": "sand1"
+    }
+  ],
+  "heightFields": [],
+  "obstacles": [],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1301
+  }
+}

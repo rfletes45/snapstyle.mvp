@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "starforge.machineCategories.v1",
+  "categories": {
+    "HARVEST": ["DRONES_MAG", "SCANNER"],
+    "CONVERT": ["CUTTER", "NANOFORGE", "SIGNAL", "PRINTER"],
+    "STORAGE": ["HOPPER", "BATTERY", "CRANE"],
+    "BOOST": ["ASSEMBLER", "LAB"],
+    "SPECIAL": ["DYSON"]
+  }
+}

@@ -33,7 +33,6 @@ import {
 } from "./gameAchievements";
 import { StatsGameType } from "./gameStats";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/achievementTriggers");
 // =============================================================================
@@ -617,7 +616,6 @@ function gameTypeToStatsType(gameType: TurnBasedGameType): StatsGameType {
     dot_match: "dot_match",
     gomoku_master: "gomoku_master",
     reversi_game: "reversi_game" as StatsGameType,
-    war_game: "war_game" as StatsGameType,
   };
 
   return typeMap[gameType] || gameType;

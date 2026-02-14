@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "holeId": "T6-2",
+  "tier": 6,
+  "bounds": {
+    "width": 16,
+    "height": 8
+  },
+  "start": {
+    "x": 2,
+    "z": 4
+  },
+  "cup": {
+    "x": 14,
+    "z": 4
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 16,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 16,
+        "z": 0
+      },
+      "b": {
+        "x": 16,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 16,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 3.0,
+        "z": 2.8
+      },
+      "b": {
+        "x": 16.0,
+        "z": 2.8
+      }
+    },
+    {
+      "a": {
+        "x": 0.0,
+        "z": 5.2
+      },
+      "b": {
+        "x": 13.0,
+        "z": 5.2
+      }
+    }
+  ],
+  "surfaces": [],
+  "heightFields": [],
+  "obstacles": [
+    {
+      "type": "gate",
+      "id": "g1",
+      "hinge": {
+        "x": 7,
+        "z": 4
+      },
+      "armLength": 2.0,
+      "arcDeg": 90,
+      "periodSec": 2.2,
+      "phase": 0.0,
+      "rotationBaseDeg": 0.0
+    },
+    {
+      "type": "gate",
+      "id": "g2",
+      "hinge": {
+        "x": 10,
+        "z": 4
+      },
+      "armLength": 2.0,
+      "arcDeg": 90,
+      "periodSec": 1.8,
+      "phase": 0.7,
+      "rotationBaseDeg": 0.0
+    }
+  ],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1602
+  }
+}

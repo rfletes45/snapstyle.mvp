@@ -15,7 +15,13 @@
  * @module screens/profile/OwnProfileScreen
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   RefreshControl,
@@ -57,7 +63,6 @@ import { useUser } from "@/store/UserContext";
 import type { ProfileAction, ProfileTheme } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/OwnProfileScreen");
 // =============================================================================
@@ -92,18 +97,14 @@ export default function OwnProfileScreen({
   } = useProfileData(currentFirebaseUser?.uid);
 
   // Full profile data for bio and status
-  const {
-    profile: fullProfile,
-    isLoading: fullProfileLoading,
-    refresh: refreshFullProfile,
-  } = useFullProfileData({ userId: currentFirebaseUser?.uid || "" });
+  const { profile: fullProfile, refresh: refreshFullProfile } =
+    useFullProfileData({ userId: currentFirebaseUser?.uid || "" });
 
   // Profile picture hook
   const {
     picture,
     decoration,
     ownedDecorations,
-    isLoading: pictureLoading,
     refresh: refreshPicture,
   } = useProfilePicture({ userId: currentFirebaseUser?.uid || "" });
 
@@ -112,7 +113,6 @@ export default function OwnProfileScreen({
     displayScores: gameScores,
     allScores: allGameScores,
     config: gameScoresConfig,
-    isLoading: gameScoresLoading,
     updateConfig: updateGameScoresConfig,
     refresh: refreshGameScores,
   } = useGameScores({
@@ -136,6 +136,9 @@ export default function OwnProfileScreen({
   const [equippedTheme, setEquippedTheme] = useState<ProfileTheme | null>(null);
   const [ownedThemes, setOwnedThemes] = useState<string[]>([]);
   const [themeLoading, setThemeLoading] = useState(true);
+
+  // Ref to track decoration picker delay timer
+  const decorationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Bio and status from full profile data
   const userBio: ProfileBio | null = fullProfile?.bio || null;
@@ -184,6 +187,15 @@ export default function OwnProfileScreen({
     loadThemeData();
   }, [loadThemeData]);
 
+  // Clean up decoration timer on unmount
+  useEffect(() => {
+    return () => {
+      if (decorationTimerRef.current) {
+        clearTimeout(decorationTimerRef.current);
+      }
+    };
+  }, []);
+
   // ==========================================================================
   // Handlers
   // ==========================================================================
@@ -222,9 +234,14 @@ export default function OwnProfileScreen({
 
   const handleOpenDecorationPicker = useCallback(() => {
     setPictureEditorVisible(false);
-    setTimeout(() => {
+    // Wait for modal dismiss animation to complete before opening next modal
+    if (decorationTimerRef.current) {
+      clearTimeout(decorationTimerRef.current);
+    }
+    decorationTimerRef.current = setTimeout(() => {
       setDecorationPickerVisible(true);
-    }, 300);
+      decorationTimerRef.current = null;
+    }, 350);
   }, []);
 
   const handleOpenDecorationPickerDirect = useCallback(() => {
@@ -264,6 +281,27 @@ export default function OwnProfileScreen({
 
   const handleThemeChanged = useCallback((theme: ProfileTheme) => {
     setEquippedTheme(theme);
+  }, []);
+
+  // Modal close handlers
+  const handleClosePictureEditor = useCallback(() => {
+    setPictureEditorVisible(false);
+  }, []);
+
+  const handleCloseDecorationPicker = useCallback(() => {
+    setDecorationPickerVisible(false);
+  }, []);
+
+  const handleCloseBioEditor = useCallback(() => {
+    setBioEditorVisible(false);
+  }, []);
+
+  const handleCloseThemePicker = useCallback(() => {
+    setThemePickerVisible(false);
+  }, []);
+
+  const handleCloseGameScoresEditor = useCallback(() => {
+    setGameScoresEditorVisible(false);
   }, []);
 
   // Action buttons configuration
@@ -441,6 +479,7 @@ export default function OwnProfileScreen({
               buttonColor={colors.error}
               textColor={colors.onError}
               style={styles.signOutButton}
+              accessibilityLabel="Sign out of your account"
             >
               Sign Out
             </Button>
@@ -455,7 +494,7 @@ export default function OwnProfileScreen({
         currentPictureUrl={pictureUrl}
         name={baseProfile.displayName}
         decorationId={decorationId}
-        onClose={() => setPictureEditorVisible(false)}
+        onClose={handleClosePictureEditor}
         onPictureUpdated={handlePictureUpdated}
         onDecorationPress={handleOpenDecorationPicker}
       />
@@ -468,7 +507,7 @@ export default function OwnProfileScreen({
         name={baseProfile.displayName}
         ownedDecorationIds={ownedDecorations}
         currentDecorationId={decorationId}
-        onClose={() => setDecorationPickerVisible(false)}
+        onClose={handleCloseDecorationPicker}
         onDecorationChanged={handleDecorationChanged}
       />
 
@@ -477,7 +516,7 @@ export default function OwnProfileScreen({
         visible={bioEditorVisible}
         userId={currentFirebaseUser?.uid || ""}
         currentBio={userBio}
-        onClose={() => setBioEditorVisible(false)}
+        onClose={handleCloseBioEditor}
         onBioUpdated={handleBioUpdated}
       />
 
@@ -486,7 +525,7 @@ export default function OwnProfileScreen({
         visible={themePickerVisible}
         userId={currentFirebaseUser?.uid || ""}
         currentThemeId={equippedTheme?.id}
-        onClose={() => setThemePickerVisible(false)}
+        onClose={handleCloseThemePicker}
         onThemeChanged={handleThemeChanged}
       />
 
@@ -495,7 +534,7 @@ export default function OwnProfileScreen({
         visible={gameScoresEditorVisible}
         currentConfig={gameScoresConfig}
         availableScores={allGameScores}
-        onDismiss={() => setGameScoresEditorVisible(false)}
+        onDismiss={handleCloseGameScoresEditor}
         onSave={async (newConfig) => {
           await updateGameScoresConfig(newConfig);
           await refreshGameScores();

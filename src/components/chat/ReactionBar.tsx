@@ -13,26 +13,25 @@
  * @module components/chat/ReactionBar
  */
 
-import React, { useState, useCallback, memo } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  formatReactionCount,
+  getAllowedEmojis,
+  isAllowedEmoji,
+  ReactionSummary,
+  toggleReaction,
+} from "@/services/reactions";
+import React, { memo, useCallback, useState } from "react";
+import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useTheme } from "react-native-paper";
-import {
-  toggleReaction,
-  getAllowedEmojis,
-  isAllowedEmoji,
-  formatReactionCount,
-  ReactionSummary,
-} from "@/services/reactions";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/chat/ReactionBar");
@@ -335,16 +334,21 @@ export const ReactionBar = memo(function ReactionBar({
 interface QuickReactionBarProps {
   onSelect: (emoji: string) => void;
   selectedEmoji?: string;
+  /** When true, a "+" button is shown that opens the full emoji picker */
+  showExpandButton?: boolean;
 }
 
 /**
- * QuickReactionBar - Shows frequently used emojis for quick selection
+ * QuickReactionBar - Shows frequently used emojis for quick selection.
+ * Optionally includes a "+" button that opens the full EmojiPickerModal.
  */
 export const QuickReactionBar = memo(function QuickReactionBar({
   onSelect,
   selectedEmoji,
+  showExpandButton = true,
 }: QuickReactionBarProps) {
   const theme = useTheme();
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Frequently used emojis (top 6)
   const quickEmojis = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
@@ -366,6 +370,42 @@ export const QuickReactionBar = memo(function QuickReactionBar({
           <Text style={styles.quickEmojiText}>{emoji}</Text>
         </TouchableOpacity>
       ))}
+
+      {/* Expand to full emoji picker */}
+      {showExpandButton && (
+        <>
+          <TouchableOpacity
+            style={[
+              styles.quickEmoji,
+              {
+                borderWidth: 1,
+                borderStyle: "dashed",
+                borderColor: theme.colors.outline,
+              },
+            ]}
+            onPress={() => setPickerOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.quickEmojiText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              +
+            </Text>
+          </TouchableOpacity>
+          <EmojiPickerModal
+            visible={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            onSelect={(emoji) => {
+              onSelect(emoji);
+              setPickerOpen(false);
+            }}
+            currentReactions={[]}
+          />
+        </>
+      )}
     </View>
   );
 });

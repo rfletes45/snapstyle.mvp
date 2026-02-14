@@ -46,6 +46,7 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAppTheme } from "@/store/ThemeContext";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatSettingsScreen");
@@ -87,6 +88,7 @@ export default function ChatSettingsScreen({
     route.params as ChatSettingsParams;
   const conversationId = chatType === "dm" ? chatId : groupId;
   const theme = useTheme();
+  const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
@@ -285,7 +287,7 @@ export default function ChatSettingsScreen({
   );
 
   // Get mute status text
-  const getMuteStatusText = () => {
+  const getMuteStatusText = useCallback(() => {
     if (!settings?.mutedUntil) return "Off";
     if (settings.mutedUntil === -1) return "Until turned off";
     if (settings.mutedUntil > Date.now()) {
@@ -293,25 +295,31 @@ export default function ChatSettingsScreen({
       return `Until ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     }
     return "Off";
-  };
+  }, [settings?.mutedUntil]);
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["bottom"]}>
-        <Appbar.Header style={styles.header}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={["bottom"]}
+      >
+        <Appbar.Header style={{ backgroundColor: colors.background }}>
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title="Settings" />
         </Appbar.Header>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <Appbar.Header style={styles.header}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["bottom"]}
+    >
+      <Appbar.Header style={{ backgroundColor: colors.background }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content
           title={chatName ? `${chatName} Settings` : "Chat Settings"}
@@ -321,7 +329,9 @@ export default function ChatSettingsScreen({
       <ScrollView style={styles.content}>
         {/* Notifications Section */}
         <List.Section>
-          <List.Subheader style={styles.sectionHeader}>
+          <List.Subheader
+            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+          >
             Notifications
           </List.Subheader>
 
@@ -333,17 +343,21 @@ export default function ChatSettingsScreen({
               <List.Icon
                 {...props}
                 icon="bell-off-outline"
-                color={settings?.mutedUntil ? theme.colors.primary : "#888"}
+                color={
+                  settings?.mutedUntil
+                    ? theme.colors.primary
+                    : colors.textSecondary
+                }
               />
             )}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             onPress={() => setMuteModalVisible(true)}
-            style={styles.listItem}
-            titleStyle={styles.listItemTitle}
-            descriptionStyle={styles.listItemDescription}
+            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            titleStyle={{ color: colors.text, fontSize: 16 }}
+            descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
 
-          <Divider style={styles.divider} />
+          <Divider style={{ backgroundColor: colors.border }} />
 
           {/* Notification Level */}
           <List.Item
@@ -356,14 +370,18 @@ export default function ChatSettingsScreen({
                   : "None"
             }
             left={(props) => (
-              <List.Icon {...props} icon="bell-outline" color="#888" />
+              <List.Icon
+                {...props}
+                icon="bell-outline"
+                color={colors.textSecondary}
+              />
             )}
-            style={styles.listItem}
-            titleStyle={styles.listItemTitle}
-            descriptionStyle={styles.listItemDescription}
+            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            titleStyle={{ color: colors.text, fontSize: 16 }}
+            descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
 
-          <View style={styles.radioGroup}>
+          <View style={{ backgroundColor: colors.surface, paddingLeft: 40 }}>
             <RadioButton.Group
               onValueChange={(value) =>
                 handleNotifyLevelChange(value as "all" | "mentions" | "none")
@@ -374,7 +392,7 @@ export default function ChatSettingsScreen({
                 label="All messages"
                 value="all"
                 style={styles.radioItem}
-                labelStyle={styles.radioLabel}
+                labelStyle={{ color: colors.text, fontSize: 15 }}
                 color={theme.colors.primary}
               />
               {chatType === "group" && (
@@ -382,7 +400,7 @@ export default function ChatSettingsScreen({
                   label="Mentions only"
                   value="mentions"
                   style={styles.radioItem}
-                  labelStyle={styles.radioLabel}
+                  labelStyle={{ color: colors.text, fontSize: 15 }}
                   color={theme.colors.primary}
                 />
               )}
@@ -390,7 +408,7 @@ export default function ChatSettingsScreen({
                 label="None"
                 value="none"
                 style={styles.radioItem}
-                labelStyle={styles.radioLabel}
+                labelStyle={{ color: colors.text, fontSize: 15 }}
                 color={theme.colors.primary}
               />
             </RadioButton.Group>
@@ -399,14 +417,22 @@ export default function ChatSettingsScreen({
 
         {/* Privacy Section */}
         <List.Section>
-          <List.Subheader style={styles.sectionHeader}>Privacy</List.Subheader>
+          <List.Subheader
+            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+          >
+            Privacy
+          </List.Subheader>
 
           {/* Read Receipts */}
           <List.Item
             title="Read Receipts"
             description="Let others know when you've read messages"
             left={(props) => (
-              <List.Icon {...props} icon="check-all" color="#888" />
+              <List.Icon
+                {...props}
+                icon="check-all"
+                color={colors.textSecondary}
+              />
             )}
             right={() => (
               <Switch
@@ -416,15 +442,17 @@ export default function ChatSettingsScreen({
                 color={theme.colors.primary}
               />
             )}
-            style={styles.listItem}
-            titleStyle={styles.listItemTitle}
-            descriptionStyle={styles.listItemDescription}
+            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            titleStyle={{ color: colors.text, fontSize: 16 }}
+            descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
         </List.Section>
 
         {/* Chat Management Section */}
         <List.Section>
-          <List.Subheader style={styles.sectionHeader}>
+          <List.Subheader
+            style={[styles.sectionHeader, { color: colors.textSecondary }]}
+          >
             Chat Management
           </List.Subheader>
 
@@ -433,7 +461,11 @@ export default function ChatSettingsScreen({
             title="Archive Chat"
             description="Hide from your chat list"
             left={(props) => (
-              <List.Icon {...props} icon="archive-outline" color="#888" />
+              <List.Icon
+                {...props}
+                icon="archive-outline"
+                color={colors.textSecondary}
+              />
             )}
             right={() => (
               <Switch
@@ -443,14 +475,14 @@ export default function ChatSettingsScreen({
                 color={theme.colors.primary}
               />
             )}
-            style={styles.listItem}
-            titleStyle={styles.listItemTitle}
-            descriptionStyle={styles.listItemDescription}
+            style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+            titleStyle={{ color: colors.text, fontSize: 16 }}
+            descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
         </List.Section>
 
         {/* Info text */}
-        <Text style={styles.infoText}>
+        <Text style={[styles.infoText, { color: colors.textMuted }]}>
           {settings?.archived
             ? "This chat is archived and won't appear in your main chat list. You can find it in the Archived section."
             : "Archive this chat to hide it from your main chat list."}
@@ -462,10 +494,15 @@ export default function ChatSettingsScreen({
         <Modal
           visible={muteModalVisible}
           onDismiss={() => setMuteModalVisible(false)}
-          contentContainerStyle={styles.modal}
+          contentContainerStyle={[
+            styles.modal,
+            { backgroundColor: colors.surface },
+          ]}
         >
-          <Text style={styles.modalTitle}>Mute Notifications</Text>
-          <Text style={styles.modalSubtitle}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            Mute Notifications
+          </Text>
+          <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
             Choose how long to mute this chat
           </Text>
 
@@ -481,7 +518,7 @@ export default function ChatSettingsScreen({
                 label={duration.label}
                 value={duration.value}
                 style={styles.radioItem}
-                labelStyle={styles.radioLabel}
+                labelStyle={{ color: colors.text, fontSize: 15 }}
                 color={theme.colors.primary}
               />
             ))}
@@ -491,7 +528,7 @@ export default function ChatSettingsScreen({
             <Button
               mode="text"
               onPress={() => setMuteModalVisible(false)}
-              textColor="#888"
+              textColor={colors.textSecondary}
             >
               Cancel
             </Button>
@@ -517,10 +554,6 @@ export default function ChatSettingsScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
-  },
-  header: {
-    backgroundColor: "#000",
   },
   loadingContainer: {
     flex: 1,
@@ -531,60 +564,32 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionHeader: {
-    color: "#888",
     fontSize: 13,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginTop: 16,
   },
-  listItem: {
-    backgroundColor: "#1A1A1A",
-    paddingVertical: 4,
-  },
-  listItemTitle: {
-    color: "#FFF",
-    fontSize: 16,
-  },
-  listItemDescription: {
-    color: "#888",
-    fontSize: 13,
-  },
-  divider: {
-    backgroundColor: "#333",
-  },
-  radioGroup: {
-    backgroundColor: "#1A1A1A",
-    paddingLeft: 40,
-  },
   radioItem: {
     paddingVertical: 2,
   },
-  radioLabel: {
-    color: "#FFF",
-    fontSize: 15,
-  },
   infoText: {
-    color: "#666",
     fontSize: 13,
     paddingHorizontal: 16,
     paddingVertical: 16,
     lineHeight: 18,
   },
   modal: {
-    backgroundColor: "#1A1A1A",
     margin: 20,
     padding: 20,
     borderRadius: 12,
   },
   modalTitle: {
-    color: "#FFF",
     fontSize: 18,
     fontWeight: "600",
     marginBottom: 4,
   },
   modalSubtitle: {
-    color: "#888",
     fontSize: 14,
     marginBottom: 16,
   },

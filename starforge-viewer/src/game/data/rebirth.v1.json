@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "starforge.rebirth.v1",
+  "shardFormula": {
+    "fluxDivisor": 5000,
+    "fluxExponent": 0.65,
+    "rarityBonus": {
+      "rare": 1,
+      "epic": 3,
+      "ancient": 10
+    }
+  },
+  "gates": [
+    {
+      "minRebirthCount": 0,
+      "requires": {
+        "totalFluxEarnedMicro": 25000,
+        "wrecksDestroyedTotal": 10
+      }
+    },
+    {
+      "minRebirthCount": 1,
+      "requires": {
+        "totalFluxEarnedMicro": 80000,
+        "wrecksDestroyedTotal": 30
+      }
+    },
+    {
+      "minRebirthCount": 3,
+      "requires": {
+        "totalFluxEarnedMicro": 200000,
+        "wrecksDestroyedTotal": 80
+      }
+    }
+  ]
+}

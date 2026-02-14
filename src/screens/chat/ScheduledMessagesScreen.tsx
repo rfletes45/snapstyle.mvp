@@ -13,9 +13,12 @@ import {
   getScheduledMessages,
   getTimeUntilDelivery,
   subscribeToScheduledMessages,
+  updateScheduledMessageContent,
 } from "@/services/scheduledMessages";
 import { useAuth } from "@/store/AuthContext";
+import { useAppTheme } from "@/store/ThemeContext";
 import { ScheduledMessage, ScheduledMessageStatus } from "@/types/models";
+import { alertDialog, confirmDialog } from "@/utils/confirmDialog";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useState } from "react";
@@ -25,19 +28,22 @@ import {
   Platform,
   RefreshControl,
   StyleSheet,
+  TextInput,
   View,
 } from "react-native";
 import {
   Appbar,
+  Button,
   Card,
   Chip,
   IconButton,
   Menu,
+  Modal,
+  Portal,
   Text,
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ScheduledMessagesScreen");
@@ -45,6 +51,7 @@ type Props = NativeStackScreenProps<any, "ScheduledMessages">;
 
 export default function ScheduledMessagesScreen({ navigation }: Props) {
   const theme = useTheme();
+  const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
   const [messages, setMessages] = useState<ScheduledMessage[]>([]);
@@ -55,6 +62,10 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
     "pending",
   );
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ScheduledMessage | null>(
+    null,
+  );
+  const [editText, setEditText] = useState("");
 
   // Load scheduled messages
   const loadMessages = useCallback(async () => {
@@ -111,69 +122,38 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
       messageId,
     );
 
-    // Use native confirm for web, Alert for mobile
-    const isWeb = Platform.OS === "web";
-    const confirmed = isWeb
-      ? window.confirm(
-          "Are you sure you want to cancel this scheduled message?",
-        )
-      : true; // Will use Alert.alert below
-
-    if (isWeb && !confirmed) {
-      return;
-    }
-
-    const performCancel = async () => {
-      logger.info("[ScheduledMessagesScreen] User confirmed cancel");
-      try {
-        if (!user) {
-          logger.error("[ScheduledMessagesScreen] No user found");
-          return;
+    confirmDialog(
+      {
+        title: "Cancel Message",
+        message: "Are you sure you want to cancel this scheduled message?",
+        confirmText: "Yes, Cancel",
+        destructive: true,
+      },
+      async () => {
+        try {
+          if (!user) {
+            logger.error("[ScheduledMessagesScreen] No user found");
+            return;
+          }
+          await cancelScheduledMessage(messageId, user.uid);
+          logger.info("[ScheduledMessagesScreen] Cancel successful");
+          alertDialog({
+            title: "Cancelled",
+            message: "Message has been cancelled",
+          });
+          loadMessages();
+        } catch (error: any) {
+          logger.error(
+            "[ScheduledMessagesScreen] Error cancelling message:",
+            error,
+          );
+          alertDialog({
+            title: "Error",
+            message: `Failed to cancel message: ${error?.message || error}`,
+          });
         }
-        logger.info(
-          "[ScheduledMessagesScreen] Calling cancelScheduledMessage...",
-        );
-        await cancelScheduledMessage(messageId, user.uid);
-        logger.info("[ScheduledMessagesScreen] Cancel successful");
-
-        if (isWeb) {
-          window.alert("Message has been cancelled");
-        } else {
-          Alert.alert("Cancelled", "Message has been cancelled");
-        }
-
-        loadMessages();
-      } catch (error: any) {
-        logger.error(
-          "[ScheduledMessagesScreen] Error cancelling message:",
-          error,
-        );
-        const errorMsg = `Failed to cancel message: ${error?.message || error}`;
-
-        if (isWeb) {
-          window.alert(errorMsg);
-        } else {
-          Alert.alert("Error", errorMsg);
-        }
-      }
-    };
-
-    if (isWeb) {
-      performCancel();
-    } else {
-      Alert.alert(
-        "Cancel Message",
-        "Are you sure you want to cancel this scheduled message?",
-        [
-          { text: "No", style: "cancel" },
-          {
-            text: "Yes, Cancel",
-            style: "destructive",
-            onPress: performCancel,
-          },
-        ],
-      );
-    }
+      },
+    );
   };
 
   const handleDelete = async (messageId: string) => {
@@ -182,240 +162,295 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
       messageId,
     );
 
-    // Use native confirm for web, Alert for mobile
-    const isWeb = Platform.OS === "web";
-    const confirmed = isWeb
-      ? window.confirm(
+    confirmDialog(
+      {
+        title: "Delete Message",
+        message:
           "Are you sure you want to permanently delete this scheduled message?",
-        )
-      : true; // Will use Alert.alert below
-
-    if (isWeb && !confirmed) {
-      return;
-    }
-
-    const performDelete = async () => {
-      logger.info("[ScheduledMessagesScreen] User confirmed delete");
-      try {
-        if (!user) {
-          logger.error("[ScheduledMessagesScreen] No user found");
-          return;
+        confirmText: "Yes, Delete",
+        destructive: true,
+      },
+      async () => {
+        try {
+          if (!user) {
+            logger.error("[ScheduledMessagesScreen] No user found");
+            return;
+          }
+          await deleteScheduledMessage(messageId, user.uid);
+          logger.info("[ScheduledMessagesScreen] Delete successful");
+          alertDialog({
+            title: "Deleted",
+            message: "Message has been deleted",
+          });
+          loadMessages();
+        } catch (error: any) {
+          logger.error(
+            "[ScheduledMessagesScreen] Error deleting message:",
+            error,
+          );
+          alertDialog({
+            title: "Error",
+            message: `Failed to delete message: ${error?.message || error}`,
+          });
         }
-        logger.info(
-          "[ScheduledMessagesScreen] Calling deleteScheduledMessage...",
-        );
-        await deleteScheduledMessage(messageId, user.uid);
-        logger.info("[ScheduledMessagesScreen] Delete successful");
-
-        if (isWeb) {
-          window.alert("Message has been deleted");
-        } else {
-          Alert.alert("Deleted", "Message has been deleted");
-        }
-
-        loadMessages();
-      } catch (error: any) {
-        logger.error(
-          "[ScheduledMessagesScreen] Error deleting message:",
-          error,
-        );
-        const errorMsg = `Failed to delete message: ${error?.message || error}`;
-
-        if (isWeb) {
-          window.alert(errorMsg);
-        } else {
-          Alert.alert("Error", errorMsg);
-        }
-      }
-    };
-
-    if (isWeb) {
-      performDelete();
-    } else {
-      Alert.alert(
-        "Delete Message",
-        "Are you sure you want to permanently delete this scheduled message?",
-        [
-          { text: "No", style: "cancel" },
-          {
-            text: "Yes, Delete",
-            style: "destructive",
-            onPress: performDelete,
-          },
-        ],
-      );
-    }
-  };
-
-  const getStatusColor = (status: ScheduledMessageStatus): string => {
-    switch (status) {
-      case "pending":
-        return "#2196F3";
-      case "sent":
-        return "#4CAF50";
-      case "cancelled":
-        return "#9E9E9E";
-      case "failed":
-        return "#F44336";
-      default:
-        return "#757575";
-    }
-  };
-
-  const getStatusIcon = (status: ScheduledMessageStatus): string => {
-    switch (status) {
-      case "pending":
-        return "clock-outline";
-      case "sent":
-        return "check-circle";
-      case "cancelled":
-        return "cancel";
-      case "failed":
-        return "alert-circle";
-      default:
-        return "help-circle";
-    }
-  };
-
-  const renderMessage = ({ item }: { item: ScheduledMessage }) => {
-    const isPending = item.status === "pending";
-    const timeUntil = isPending
-      ? getTimeUntilDelivery(item.scheduledFor)
-      : null;
-
-    return (
-      <Card style={styles.messageCard} mode="elevated">
-        <Card.Content>
-          {/* Status chip */}
-          <View style={styles.headerRow}>
-            <Chip
-              icon={getStatusIcon(item.status)}
-              style={[
-                styles.statusChip,
-                { backgroundColor: getStatusColor(item.status) + "20" },
-              ]}
-              textStyle={{ color: getStatusColor(item.status), fontSize: 12 }}
-            >
-              {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-            </Chip>
-
-            {isPending && (
-              <Menu
-                visible={menuVisible === item.id}
-                onDismiss={() => setMenuVisible(null)}
-                anchor={
-                  <IconButton
-                    icon="dots-vertical"
-                    size={20}
-                    onPress={() => setMenuVisible(item.id)}
-                  />
-                }
-                contentStyle={{ backgroundColor: theme.colors.surface }}
-              >
-                <Menu.Item
-                  onPress={() => {
-                    setMenuVisible(null);
-                    handleCancel(item.id);
-                  }}
-                  title="Cancel Message"
-                  leadingIcon="cancel"
-                />
-                <Menu.Item
-                  onPress={() => {
-                    setMenuVisible(null);
-                    handleDelete(item.id);
-                  }}
-                  title="Delete"
-                  leadingIcon="delete"
-                />
-              </Menu>
-            )}
-
-            {!isPending && (
-              <IconButton
-                icon="delete"
-                size={20}
-                onPress={() => handleDelete(item.id)}
-              />
-            )}
-          </View>
-
-          {/* Message content */}
-          <Text style={styles.messageContent} numberOfLines={3}>
-            {item.type === "image" ? "📸 Picture" : item.content}
-          </Text>
-
-          {/* Scheduled time */}
-          <View style={styles.timeRow}>
-            <IconButton icon="clock" size={16} style={styles.timeIcon} />
-            <Text style={styles.scheduledTime}>
-              {formatScheduledTime(item.scheduledFor)}
-            </Text>
-          </View>
-
-          {/* Time until delivery (for pending) */}
-          {isPending && timeUntil && (
-            <Text style={styles.timeUntil}>Sends {timeUntil}</Text>
-          )}
-
-          {/* Sent time (for sent messages) */}
-          {item.status === "sent" && item.sentAt && (
-            <Text style={styles.sentTime}>
-              Sent at {formatScheduledTime(item.sentAt)}
-            </Text>
-          )}
-
-          {/* Fail reason */}
-          {item.status === "failed" && item.failReason && (
-            <Text style={styles.failReason}>Failed: {item.failReason}</Text>
-          )}
-        </Card.Content>
-      </Card>
+      },
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <IconButton icon="clock-outline" size={64} disabled />
-      <Text style={styles.emptyTitle}>No Scheduled Messages</Text>
-      <Text style={styles.emptySubtitle}>
-        {filter === "pending"
-          ? "You don't have any pending scheduled messages"
-          : `No ${filter} messages to show`}
-      </Text>
-    </View>
+  // ---- Edit scheduled message text ----
+
+  const handleStartEdit = useCallback((message: ScheduledMessage) => {
+    setEditingMessage(message);
+    setEditText(message.content);
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingMessage || !user) return;
+    const trimmed = editText.trim();
+    if (!trimmed || trimmed === editingMessage.content) {
+      setEditingMessage(null);
+      return;
+    }
+
+    try {
+      await updateScheduledMessageContent(editingMessage.id, user.uid, trimmed);
+      setEditingMessage(null);
+      loadMessages();
+    } catch (error: any) {
+      logger.error("[ScheduledMessagesScreen] Error editing message:", error);
+      const errorMsg = `Failed to edit message: ${error?.message || error}`;
+      if (Platform.OS === "web") {
+        window.alert(errorMsg);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    }
+  }, [editingMessage, editText, user, loadMessages]);
+
+  const getStatusColor = useCallback(
+    (status: ScheduledMessageStatus): string => {
+      switch (status) {
+        case "pending":
+          return colors.info;
+        case "sent":
+          return colors.success;
+        case "cancelled":
+          return colors.textMuted;
+        case "failed":
+          return colors.error;
+        default:
+          return colors.textSecondary;
+      }
+    },
+    [colors],
   );
 
-  const renderFilterChips = () => (
-    <View style={styles.filterContainer}>
-      {(["all", "pending", "sent", "cancelled", "failed"] as const).map(
-        (status) => (
-          <Chip
-            key={status}
-            selected={filter === status}
-            onPress={() => setFilter(status)}
-            style={styles.filterChip}
-            textStyle={styles.filterChipText}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </Chip>
-        ),
-      )}
-    </View>
+  const getStatusIcon = useCallback(
+    (status: ScheduledMessageStatus): string => {
+      switch (status) {
+        case "pending":
+          return "clock-outline";
+        case "sent":
+          return "check-circle";
+        case "cancelled":
+          return "cancel";
+        case "failed":
+          return "alert-circle";
+        default:
+          return "help-circle";
+      }
+    },
+    [],
+  );
+
+  const renderMessage = useCallback(
+    ({ item }: { item: ScheduledMessage }) => {
+      const isPending = item.status === "pending";
+      const timeUntil = isPending
+        ? getTimeUntilDelivery(item.scheduledFor)
+        : null;
+
+      return (
+        <Card style={styles.messageCard} mode="elevated">
+          <Card.Content>
+            {/* Status chip */}
+            <View style={styles.headerRow}>
+              <Chip
+                icon={getStatusIcon(item.status)}
+                style={[
+                  styles.statusChip,
+                  { backgroundColor: getStatusColor(item.status) + "20" },
+                ]}
+                textStyle={{ color: getStatusColor(item.status), fontSize: 12 }}
+              >
+                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+              </Chip>
+
+              {isPending && (
+                <Menu
+                  visible={menuVisible === item.id}
+                  onDismiss={() => setMenuVisible(null)}
+                  anchor={
+                    <IconButton
+                      icon="dots-vertical"
+                      size={20}
+                      onPress={() => setMenuVisible(item.id)}
+                    />
+                  }
+                  contentStyle={{ backgroundColor: theme.colors.surface }}
+                >
+                  {item.type !== "image" && (
+                    <Menu.Item
+                      onPress={() => {
+                        setMenuVisible(null);
+                        handleStartEdit(item);
+                      }}
+                      title="Edit Text"
+                      leadingIcon="pencil"
+                    />
+                  )}
+                  <Menu.Item
+                    onPress={() => {
+                      setMenuVisible(null);
+                      handleCancel(item.id);
+                    }}
+                    title="Cancel Message"
+                    leadingIcon="cancel"
+                  />
+                  <Menu.Item
+                    onPress={() => {
+                      setMenuVisible(null);
+                      handleDelete(item.id);
+                    }}
+                    title="Delete"
+                    leadingIcon="delete"
+                  />
+                </Menu>
+              )}
+
+              {!isPending && (
+                <IconButton
+                  icon="delete"
+                  size={20}
+                  onPress={() => handleDelete(item.id)}
+                />
+              )}
+            </View>
+
+            {/* Message content */}
+            <Text
+              style={[styles.messageContent, { color: colors.text }]}
+              numberOfLines={3}
+            >
+              {item.type === "image" ? "📸 Picture" : item.content}
+            </Text>
+
+            {/* Scheduled time */}
+            <View style={styles.timeRow}>
+              <IconButton icon="clock" size={16} style={styles.timeIcon} />
+              <Text
+                style={[styles.scheduledTime, { color: colors.textSecondary }]}
+              >
+                {formatScheduledTime(item.scheduledFor)}
+              </Text>
+            </View>
+
+            {/* Time until delivery (for pending) */}
+            {isPending && timeUntil && (
+              <Text style={[styles.timeUntil, { color: colors.info }]}>
+                Sends {timeUntil}
+              </Text>
+            )}
+
+            {/* Sent time (for sent messages) */}
+            {item.status === "sent" && item.sentAt && (
+              <Text style={[styles.sentTime, { color: colors.success }]}>
+                Sent at {formatScheduledTime(item.sentAt)}
+              </Text>
+            )}
+
+            {/* Fail reason */}
+            {item.status === "failed" && item.failReason && (
+              <Text style={[styles.failReason, { color: colors.error }]}>
+                Failed: {item.failReason}
+              </Text>
+            )}
+          </Card.Content>
+        </Card>
+      );
+    },
+    [
+      getStatusColor,
+      getStatusIcon,
+      menuVisible,
+      handleCancel,
+      handleDelete,
+      colors,
+    ],
+  );
+
+  const renderEmptyState = useCallback(
+    () => (
+      <View style={styles.emptyContainer}>
+        <IconButton icon="clock-outline" size={64} disabled />
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>
+          No Scheduled Messages
+        </Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+          {filter === "pending"
+            ? "You don't have any pending scheduled messages"
+            : `No ${filter} messages to show`}
+        </Text>
+      </View>
+    ),
+    [filter, colors],
+  );
+
+  const renderFilterChips = useCallback(
+    () => (
+      <View
+        style={[
+          styles.filterContainer,
+          { backgroundColor: colors.surface, borderBottomColor: colors.border },
+        ]}
+      >
+        {(["all", "pending", "sent", "cancelled", "failed"] as const).map(
+          (status) => (
+            <Chip
+              key={status}
+              selected={filter === status}
+              onPress={() => setFilter(status)}
+              style={styles.filterChip}
+              textStyle={styles.filterChipText}
+            >
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </Chip>
+          ),
+        )}
+      </View>
+    ),
+    [filter, colors],
   );
 
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
         <View style={styles.centerContainer}>
-          <Text>Please sign in to view scheduled messages</Text>
+          <Text style={{ color: colors.text }}>
+            Please sign in to view scheduled messages
+          </Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["bottom"]}
+    >
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Scheduled Messages" />
@@ -444,6 +479,54 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
           ListEmptyComponent={renderEmptyState}
         />
       )}
+
+      {/* Edit scheduled message modal */}
+      <Portal>
+        <Modal
+          visible={editingMessage !== null}
+          onDismiss={() => setEditingMessage(null)}
+          contentContainerStyle={[
+            styles.editModal,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
+          <Text
+            variant="titleMedium"
+            style={{ color: theme.colors.onSurface, marginBottom: 12 }}
+          >
+            Edit Scheduled Message
+          </Text>
+          <TextInput
+            value={editText}
+            onChangeText={setEditText}
+            multiline
+            numberOfLines={4}
+            style={[
+              styles.editInput,
+              {
+                color: theme.colors.onSurface,
+                borderColor: theme.colors.outline,
+                backgroundColor: theme.colors.surfaceVariant,
+              },
+            ]}
+            autoFocus
+          />
+          <View style={styles.editActions}>
+            <Button mode="text" onPress={() => setEditingMessage(null)}>
+              Cancel
+            </Button>
+            <Button
+              mode="contained"
+              onPress={handleSaveEdit}
+              disabled={
+                !editText.trim() || editText.trim() === editingMessage?.content
+              }
+            >
+              Save
+            </Button>
+          </View>
+        </Modal>
+      </Portal>
     </SafeAreaView>
   );
 }
@@ -451,7 +534,6 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
   },
 
   centerContainer: {
@@ -461,19 +543,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
-  loadingText: {
-    marginTop: 12,
-    color: "#666",
-  },
-
   filterContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
     gap: 8,
   },
 
@@ -492,7 +567,6 @@ const styles = StyleSheet.create({
 
   messageCard: {
     marginBottom: 12,
-    backgroundColor: "#fff",
   },
 
   headerRow: {
@@ -508,7 +582,6 @@ const styles = StyleSheet.create({
 
   messageContent: {
     fontSize: 16,
-    color: "#333",
     marginBottom: 12,
   },
 
@@ -524,12 +597,10 @@ const styles = StyleSheet.create({
 
   scheduledTime: {
     fontSize: 14,
-    color: "#666",
   },
 
   timeUntil: {
     fontSize: 13,
-    color: "#2196F3",
     fontWeight: "500",
     marginTop: 4,
     marginLeft: 24,
@@ -537,14 +608,12 @@ const styles = StyleSheet.create({
 
   sentTime: {
     fontSize: 13,
-    color: "#4CAF50",
     marginTop: 4,
     marginLeft: 24,
   },
 
   failReason: {
     fontSize: 13,
-    color: "#F44336",
     marginTop: 4,
     marginLeft: 24,
   },
@@ -559,13 +628,33 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#333",
     marginBottom: 8,
   },
 
   emptySubtitle: {
     fontSize: 14,
-    color: "#666",
     textAlign: "center",
+  },
+
+  editModal: {
+    margin: 20,
+    padding: 20,
+    borderRadius: 12,
+  },
+
+  editInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: "top",
+    marginBottom: 16,
+  },
+
+  editActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
   },
 });

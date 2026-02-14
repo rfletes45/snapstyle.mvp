@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "starforge.wrecks.v1",
+  "wreckArchetypes": [
+    {
+      "id": "cargo_barge",
+      "moduleArchetype": "CargoBarge",
+      "rarity": 1,
+      "weight": 40,
+      "hpMicro": 5000,
+      "baseYieldMicro": { "flux": 2000, "alloy": 200, "signal": 0 },
+      "yieldPerTapMicro": { "flux": 25, "alloy": 2, "signal": 0 },
+      "weakpointBonusMult": 2.0,
+      "despawnOnDepleted": true
+    },
+    {
+      "id": "fighter_cluster",
+      "moduleArchetype": "FighterCluster",
+      "rarity": 1,
+      "weight": 30,
+      "hpMicro": 8000,
+      "baseYieldMicro": { "flux": 1200, "alloy": 800, "signal": 0 },
+      "yieldPerTapMicro": { "flux": 15, "alloy": 10, "signal": 0 },
+      "weakpointBonusMult": 2.0,
+      "despawnOnDepleted": true
+    },
+    {
+      "id": "research_ark",
+      "moduleArchetype": "ResearchArk",
+      "rarity": 2,
+      "weight": 18,
+      "hpMicro": 12000,
+      "baseYieldMicro": { "flux": 3000, "alloy": 600, "signal": 400 },
+      "yieldPerTapMicro": { "flux": 30, "alloy": 6, "signal": 4 },
+      "weakpointBonusMult": 2.5,
+      "despawnOnDepleted": true
+    },
+    {
+      "id": "ancient_relic",
+      "moduleArchetype": "AncientRelic",
+      "rarity": 3,
+      "weight": 8,
+      "hpMicro": 20000,
+      "baseYieldMicro": { "flux": 8000, "alloy": 2000, "signal": 1500 },
+      "yieldPerTapMicro": { "flux": 60, "alloy": 15, "signal": 12 },
+      "weakpointBonusMult": 3.0,
+      "despawnOnDepleted": true
+    },
+    {
+      "id": "ore_hauler",
+      "moduleArchetype": "CargoBarge",
+      "rarity": 1,
+      "weight": 25,
+      "hpMicro": 4000,
+      "baseYieldMicro": { "flux": 400, "alloy": 1800, "signal": 0 },
+      "yieldPerTapMicro": { "flux": 5, "alloy": 22, "signal": 0 },
+      "weakpointBonusMult": 2.0,
+      "despawnOnDepleted": true
+    },
+    {
+      "id": "signal_probe",
+      "moduleArchetype": "FighterCluster",
+      "rarity": 2,
+      "weight": 12,
+      "hpMicro": 6000,
+      "baseYieldMicro": { "flux": 500, "alloy": 100, "signal": 2000 },
+      "yieldPerTapMicro": { "flux": 5, "alloy": 1, "signal": 25 },
+      "weakpointBonusMult": 2.5,
+      "despawnOnDepleted": true
+    }
+  ]
+}

@@ -1,14 +1,14 @@
 /**
- * Physics Schemas — State types for all Tier 1 real-time physics games
+ * Physics Schemas â€” State types for all Tier 1 real-time physics games
  *
  * Used by PhysicsRoom base and its subclasses:
- *   PongRoom, AirHockeyRoom, BounceBlitzRoom, BrickBreakerRoom, SnakeRoom, RaceRoom
+ *   PongRoom, AirHockeyRoom, BounceBlitzRoom, BrickBreakerRoom
  *
  * IMPORTANT: @colyseus/schema has a 64-property-per-class limit.
- * Complex games (BrickBreaker, Snake) use sub-schemas.
+ * Complex games (BrickBreaker) use sub-schemas.
  */
 
-import { ArraySchema, MapSchema, Schema, type } from "@colyseus/schema";
+import { MapSchema, Schema, type } from "@colyseus/schema";
 import { Player } from "./common";
 import { SpectatorEntry } from "./spectator";
 
@@ -35,7 +35,7 @@ export class Paddle extends Schema {
   @type("string") ownerId: string = "";
 }
 
-/** Physics player — extends Player with physics-specific fields */
+/** Physics player â€” extends Player with physics-specific fields */
 export class PhysicsPlayer extends Player {
   /** Paddle X position (normalised 0-1 of field width) */
   @type("float32") paddleX: number = 0.5;
@@ -50,7 +50,7 @@ export class PhysicsPlayer extends Player {
 }
 
 // =============================================================================
-// PhysicsState — Base state for Pong / Air Hockey
+// PhysicsState â€” Base state for Pong / Air Hockey
 // =============================================================================
 
 export class PhysicsState extends Schema {
@@ -87,51 +87,6 @@ export class PhysicsState extends Schema {
   @type({ map: SpectatorEntry }) spectators = new MapSchema<SpectatorEntry>();
   @type("uint8") spectatorCount: number = 0;
   @type("uint8") maxSpectators: number = 10;
-}
-
-// =============================================================================
-// Snake Schemas
-// =============================================================================
-
-export class SnakeSegment extends Schema {
-  @type("int16") x: number = 0;
-  @type("int16") y: number = 0;
-}
-
-export class SnakePlayerState extends Player {
-  @type([SnakeSegment]) segments = new ArraySchema<SnakeSegment>();
-  @type("string") direction: string = "right";
-  @type("boolean") alive: boolean = true;
-  @type("uint16") length: number = 3;
-}
-
-export class Food extends Schema {
-  @type("int16") x: number = 0;
-  @type("int16") y: number = 0;
-  @type("uint8") value: number = 1;
-}
-
-export class SnakeState extends Schema {
-  // --- Game lifecycle ---
-  @type("string") phase: string = "waiting";
-  @type("string") gameId: string = "";
-  @type("string") gameType: string = "";
-  @type("uint8") maxPlayers: number = 2;
-  @type("string") winnerId: string = "";
-  @type("string") winReason: string = "";
-
-  // --- Timer ---
-  @type("float32") elapsed: number = 0;
-  @type("uint8") countdown: number = 0;
-
-  // --- Snake-specific ---
-  @type({ map: SnakePlayerState }) snakePlayers =
-    new MapSchema<SnakePlayerState>();
-  @type([Food]) food = new ArraySchema<Food>();
-  @type("uint8") gridWidth: number = 20;
-  @type("uint8") gridHeight: number = 20;
-  @type("uint32") seed: number = 0;
-  @type("uint16") tickRate: number = 150;
 }
 
 // =============================================================================
@@ -203,34 +158,4 @@ export class BounceBlitzState extends Schema {
     new MapSchema<BounceBlitzPlayerState>();
   @type("uint32") seed: number = 0;
   @type("float32") gameDuration: number = 120;
-}
-
-// =============================================================================
-// Race (Typing) Schemas — Score race format
-// =============================================================================
-
-export class RacePlayerState extends Player {
-  @type("boolean") finished: boolean = false;
-  @type("float32") progress: number = 0;
-  @type("float32") wpm: number = 0;
-  @type("float32") accuracy: number = 0;
-  @type("float32") finishTime: number = 0;
-}
-
-export class RaceState extends Schema {
-  @type("string") phase: string = "waiting";
-  @type("string") gameId: string = "";
-  @type("string") gameType: string = "";
-  @type("uint8") maxPlayers: number = 2;
-  @type("string") winnerId: string = "";
-  @type("string") winReason: string = "";
-
-  @type("float32") elapsed: number = 0;
-  @type("uint8") countdown: number = 0;
-
-  @type({ map: RacePlayerState }) racePlayers =
-    new MapSchema<RacePlayerState>();
-  /** The sentence both players must type */
-  @type("string") sentence: string = "";
-  @type("uint32") seed: number = 0;
 }

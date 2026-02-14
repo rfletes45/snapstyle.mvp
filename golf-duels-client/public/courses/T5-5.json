@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "holeId": "T5-5",
+  "tier": 5,
+  "bounds": {
+    "width": 14,
+    "height": 10
+  },
+  "start": {
+    "x": 2,
+    "z": 5
+  },
+  "cup": {
+    "x": 12,
+    "z": 5
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 10
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 10
+      },
+      "b": {
+        "x": 0,
+        "z": 10
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 10
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [],
+  "heightFields": [],
+  "obstacles": [
+    {
+      "type": "bumper_round",
+      "id": "br1",
+      "pos": {
+        "x": 4.838339167963094,
+        "z": 2.469868165613647
+      },
+      "radius": 0.38
+    },
+    {
+      "type": "bumper_round",
+      "id": "br2",
+      "pos": {
+        "x": 8.047639348592035,
+        "z": 4.992431702120221
+      },
+      "radius": 0.38
+    },
+    {
+      "type": "bumper_round",
+      "id": "br3",
+      "pos": {
+        "x": 6.536740824137091,
+        "z": 6.291664138561238
+      },
+      "radius": 0.38
+    },
+    {
+      "type": "bumper_round",
+      "id": "br4",
+      "pos": {
+        "x": 5.059591713457049,
+        "z": 4.287757328153534
+      },
+      "radius": 0.38
+    },
+    {
+      "type": "bumper_round",
+      "id": "br5",
+      "pos": {
+        "x": 9.427407031037962,
+        "z": 2.08193554774245
+      },
+      "radius": 0.38
+    },
+    {
+      "type": "bumper_round",
+      "id": "br6",
+      "pos": {
+        "x": 6.35449281870164,
+        "z": 2.457953314658776
+      },
+      "radius": 0.38
+    }
+  ],
+  "hazards": [
+    {
+      "type": "out_of_bounds",
+      "shape": "aabb",
+      "min": {
+        "x": 0,
+        "z": 0
+      },
+      "max": {
+        "x": 1.2,
+        "z": 1.2
+      },
+      "id": "oob1"
+    },
+    {
+      "type": "out_of_bounds",
+      "shape": "aabb",
+      "min": {
+        "x": 12.8,
+        "z": 0
+      },
+      "max": {
+        "x": 14,
+        "z": 1.2
+      },
+      "id": "oob2"
+    },
+    {
+      "type": "out_of_bounds",
+      "shape": "aabb",
+      "min": {
+        "x": 0,
+        "z": 8.8
+      },
+      "max": {
+        "x": 1.2,
+        "z": 10
+      },
+      "id": "oob3"
+    },
+    {
+      "type": "out_of_bounds",
+      "shape": "aabb",
+      "min": {
+        "x": 12.8,
+        "z": 8.8
+      },
+      "max": {
+        "x": 14,
+        "z": 10
+      },
+      "id": "oob4"
+    }
+  ],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1505
+  }
+}

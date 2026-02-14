@@ -27,7 +27,6 @@ import { getOrCreateChat } from "./chat";
 import { getFirestoreInstance } from "./firebase";
 import { sendMessage } from "./messaging/send";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/games");
 // =============================================================================
@@ -257,7 +256,10 @@ export async function getAllPersonalBests(
 /**
  * Format score for display
  */
-export function formatScore(gameId: ExtendedGameType | string, score: number): string {
+export function formatScore(
+  gameId: ExtendedGameType | string,
+  score: number,
+): string {
   if (gameId === "reaction_tap") {
     return `${score}ms`;
   } else if (gameId === "timed_tap") {
@@ -273,6 +275,7 @@ export function getGameDisplayName(gameId: ExtendedGameType | string): string {
   const names: Record<string, string> = {
     reaction_tap: "Reaction Time",
     timed_tap: "Speed Tap",
+    tropical_fishing: "Tropical Fishing",
   };
   return names[gameId] || gameId;
 }
@@ -284,6 +287,8 @@ export function getGameDescription(gameId: ExtendedGameType | string): string {
   const descriptions: Record<string, string> = {
     reaction_tap: "Tap as fast as you can when the color changes!",
     timed_tap: "Tap as many times as you can in 10 seconds!",
+    tropical_fishing:
+      "Explore islands together, catch fish, and sell for party-scaled rewards.",
   };
   return descriptions[gameId] || "";
 }
@@ -295,6 +300,7 @@ export function getGameIcon(gameId: ExtendedGameType | string): string {
   const icons: Record<string, string> = {
     reaction_tap: "lightning-bolt",
     timed_tap: "timer-outline",
+    tropical_fishing: "fish",
   };
   return icons[gameId] || "gamepad-variant";
 }
@@ -361,6 +367,10 @@ export interface SpectatorInviteData {
   hostName: string;
   /** Host's current score at time of invite */
   currentScore?: number;
+  /** Invite mode: passive watch or helper boost session */
+  inviteMode?: "spectate" | "boost" | "expedition";
+  /** Optional boost-session end timestamp for helper invites */
+  boostSessionEndsAt?: number;
 }
 
 /**
@@ -398,7 +408,15 @@ export async function sendSpectatorInvite(
       hostName: invite.hostName,
       score: invite.currentScore ?? 0,
       playerName: invite.hostName,
+      inviteMode: invite.inviteMode || "spectate",
+      boostSessionEndsAt: invite.boostSessionEndsAt ?? 0,
     });
+    if (invite.inviteMode === "expedition") {
+      logger.info("expedition_invite_sent", {
+        roomId: invite.roomId,
+        target: friendUid,
+      });
+    }
 
     // Send via unified outbox path for optimistic local visibility + retries.
     const { outboxItem, sendPromise } = await sendMessage({
@@ -409,12 +427,19 @@ export async function sendSpectatorInvite(
     });
     const result = await sendPromise;
     if (!result.success) {
-      logger.error("[games] Failed to send spectator invite via outbox", result);
+      logger.error(
+        "[games] Failed to send spectator invite via outbox",
+        result,
+      );
       return null;
     }
 
     logger.info("[games] Spectator invite sent successfully via V2");
-    return { conversationId: chatId, messageId: outboxItem.messageId, scope: "dm" };
+    return {
+      conversationId: chatId,
+      messageId: outboxItem.messageId,
+      scope: "dm",
+    };
   } catch (error) {
     logger.error("[games] Error sending spectator invite:", error);
     return null;
@@ -446,7 +471,15 @@ export async function sendGroupSpectatorInvite(
       hostName: invite.hostName,
       score: invite.currentScore ?? 0,
       playerName: invite.hostName,
+      inviteMode: invite.inviteMode || "spectate",
+      boostSessionEndsAt: invite.boostSessionEndsAt ?? 0,
     });
+    if (invite.inviteMode === "expedition") {
+      logger.info("expedition_invite_sent", {
+        roomId: invite.roomId,
+        target: groupId,
+      });
+    }
 
     const { outboxItem, sendPromise } = await sendMessage({
       conversationId: groupId,
@@ -506,10 +539,7 @@ export async function updateSpectatorInviteToFinished(
     const { getDoc: getDocFn } = await import("firebase/firestore");
     const snap = await getDocFn(messageRef);
     if (!snap.exists()) {
-      logger.warn(
-        "[games] Spectator invite message not found:",
-        ref.messageId,
-      );
+      logger.warn("[games] Spectator invite message not found:", ref.messageId);
       return false;
     }
 

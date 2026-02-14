@@ -13,6 +13,7 @@
  */
 
 import { ConversationItem } from "@/components/chat/inbox";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useInboxData } from "@/hooks/useInboxData";
 import {
   addRecentSearch,
@@ -26,6 +27,7 @@ import type { InboxConversation } from "@/types/messaging";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Keyboard,
   ScrollView,
@@ -35,7 +37,6 @@ import {
 } from "react-native";
 import { Appbar, Chip, IconButton, Searchbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -48,6 +49,20 @@ interface SearchResult {
   matchType: "name" | "message" | "media";
   matchedText?: string;
 }
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+const NOOP = () => {};
+
+const FILTERS: Array<{ key: SearchFilter; label: string; icon?: string }> = [
+  { key: "all", label: "All" },
+  { key: "people", label: "People", icon: "account" },
+  { key: "groups", label: "Groups", icon: "account-group" },
+  { key: "messages", label: "Messages", icon: "message-text" },
+  { key: "media", label: "Media", icon: "image" },
+];
 
 // =============================================================================
 // Component
@@ -69,6 +84,7 @@ export default function InboxSearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
+  const [isDebouncing, setIsDebouncing] = useState(false);
 
   // =============================================================================
   // Load Recent Searches
@@ -164,9 +180,16 @@ export default function InboxSearchScreen() {
     [allConversations, filter],
   );
 
-  // Debounced search
+  // Debounced search with loading indicator
   useEffect(() => {
+    if (query.trim()) {
+      setIsDebouncing(true);
+    } else {
+      setIsDebouncing(false);
+    }
+
     const timer = setTimeout(() => {
+      setIsDebouncing(false);
       performSearch(query);
     }, 300);
 
@@ -242,8 +265,8 @@ export default function InboxSearchScreen() {
       <ConversationItem
         conversation={item.conversation}
         onPress={() => handleConversationPress(item.conversation)}
-        onAvatarPress={() => {}}
-        onLongPress={() => {}}
+        onAvatarPress={NOOP}
+        onLongPress={NOOP}
         highlightText={query.trim()}
       />
     ),
@@ -256,6 +279,8 @@ export default function InboxSearchScreen() {
         key={`${term}-${index}`}
         style={[styles.recentItem, { borderBottomColor: colors.border }]}
         onPress={() => handleRecentSearchTap(term)}
+        accessibilityRole="button"
+        accessibilityLabel={`Search for ${term}`}
       >
         <View style={styles.recentItemLeft}>
           <IconButton
@@ -273,23 +298,12 @@ export default function InboxSearchScreen() {
           size={18}
           iconColor={colors.textSecondary}
           onPress={() => handleClearRecent(term)}
+          accessibilityLabel={`Remove ${term} from recent searches`}
         />
       </TouchableOpacity>
     ),
     [colors, handleRecentSearchTap, handleClearRecent],
   );
-
-  // =============================================================================
-  // Filter Chips
-  // =============================================================================
-
-  const filters: Array<{ key: SearchFilter; label: string; icon?: string }> = [
-    { key: "all", label: "All" },
-    { key: "people", label: "People", icon: "account" },
-    { key: "groups", label: "Groups", icon: "account-group" },
-    { key: "messages", label: "Messages", icon: "message-text" },
-    { key: "media", label: "Media", icon: "image" },
-  ];
 
   // =============================================================================
   // Main Render
@@ -323,7 +337,7 @@ export default function InboxSearchScreen() {
         style={[styles.filtersContainer, { borderBottomColor: colors.border }]}
         contentContainerStyle={styles.filtersContent}
       >
-        {filters.map((f) => (
+        {FILTERS.map((f) => (
           <Chip
             key={f.key}
             selected={filter === f.key}
@@ -331,12 +345,19 @@ export default function InboxSearchScreen() {
             icon={f.icon}
             style={[
               styles.chip,
-              filter === f.key && { backgroundColor: colors.primary + "20" },
+              filter === f.key && {
+                backgroundColor: colors.primaryContainer,
+              },
             ]}
-            textStyle={{
-              color: filter === f.key ? colors.primary : colors.textSecondary,
-              fontSize: 13,
-            }}
+            textStyle={[
+              styles.chipText,
+              {
+                color: filter === f.key ? colors.primary : colors.textSecondary,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter by ${f.label}`}
+            accessibilityState={{ selected: filter === f.key }}
           >
             {f.label}
           </Chip>
@@ -352,7 +373,11 @@ export default function InboxSearchScreen() {
             >
               RECENT SEARCHES
             </Text>
-            <TouchableOpacity onPress={handleClearAllRecent}>
+            <TouchableOpacity
+              onPress={handleClearAllRecent}
+              accessibilityRole="button"
+              accessibilityLabel="Clear all recent searches"
+            >
               <Text style={[styles.clearAll, { color: colors.primary }]}>
                 Clear All
               </Text>
@@ -362,8 +387,18 @@ export default function InboxSearchScreen() {
         </View>
       )}
 
+      {/* Debounce loading indicator */}
+      {showResults && isDebouncing && (
+        <View style={styles.debounceIndicator}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.debounceText, { color: colors.textSecondary }]}>
+            Searching…
+          </Text>
+        </View>
+      )}
+
       {/* Search Results */}
-      {showResults && (
+      {showResults && !isDebouncing && (
         <FlatList
           data={results}
           renderItem={renderSearchResult}
@@ -465,6 +500,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     height: 32,
   },
+  chipText: {
+    fontSize: 13,
+  },
   recentContainer: {
     flex: 1,
   },
@@ -539,5 +577,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     marginTop: Spacing.sm,
+  },
+  debounceIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  debounceText: {
+    fontSize: 14,
   },
 });

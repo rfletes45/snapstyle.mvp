@@ -16,16 +16,14 @@ export {
   BrickBreakerPlayerState,
   BrickBreakerState,
   BrickState,
-  Food,
   Paddle,
   PhysicsPlayer,
   PhysicsState,
-  RacePlayerState,
-  RaceState,
-  SnakePlayerState,
-  SnakeSegment,
-  SnakeState,
 } from "./physics";
+export {
+  TropicalFishingPlayerState,
+  TropicalFishingState,
+} from "./tropicalFishing";
 
 // Turn-based game schemas (Phase 2–3)
 export {

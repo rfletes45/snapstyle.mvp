@@ -1,0 +1,85 @@
+﻿{
+  "schemaVersion": "starforge.wrecks.v2",
+  "spawn": {
+    "minGapSec": 18,
+    "maxGapSec": 38,
+    "maxAliveBase": 3,
+    "spawnRadiusMin": 4.5,
+    "spawnRadiusMax": 6.5,
+    "transitBaseTicks": 40,
+    "despawnEnabled": false,
+    "despawnSecMin": 0,
+    "despawnSecMax": 0
+  },
+  "rarities": {
+    "common": {
+      "weight": 70,
+      "hpMult": 1.0,
+      "fluxMult": 1.0,
+      "uiColor": "#9aa0a6",
+      "label": "Common"
+    },
+    "uncommon": {
+      "weight": 20,
+      "hpMult": 1.2,
+      "fluxMult": 1.4,
+      "uiColor": "#34a853",
+      "label": "Uncommon"
+    },
+    "rare": {
+      "weight": 8,
+      "hpMult": 1.6,
+      "fluxMult": 2.2,
+      "uiColor": "#4285f4",
+      "label": "Rare"
+    },
+    "epic": {
+      "weight": 1.8,
+      "hpMult": 2.4,
+      "fluxMult": 4.0,
+      "uiColor": "#a142f4",
+      "label": "Epic"
+    },
+    "ancient": {
+      "weight": 0.2,
+      "hpMult": 3.5,
+      "fluxMult": 9.0,
+      "uiColor": "#fbbc04",
+      "label": "Ancient"
+    }
+  },
+  "base": {
+    "hpMicro": 5000,
+    "fluxPayoutMicro": 2000
+  },
+  "drops": {
+    "alloyChanceByRarity": {
+      "common": 0.02,
+      "uncommon": 0.06,
+      "rare": 0.12,
+      "epic": 0.20,
+      "ancient": 0.35
+    },
+    "alloyMicroPerDropBase": 350,
+    "signalChanceByRarity": {
+      "common": 0.00,
+      "uncommon": 0.02,
+      "rare": 0.06,
+      "epic": 0.10,
+      "ancient": 0.18
+    },
+    "signalMicroPerDropBase": 120
+  },
+  "weakpoints": {
+    "enabled": true,
+    "windowTicks": 30,
+    "baseMult": 2.0,
+    "chancePerSecByRarity": {
+      "common": 0.0,
+      "uncommon": 0.03,
+      "rare": 0.08,
+      "epic": 0.15,
+      "ancient": 0.2
+    }
+  }
+}

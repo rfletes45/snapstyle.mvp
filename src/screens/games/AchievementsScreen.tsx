@@ -136,6 +136,8 @@ const gameIdToCategoryMap: Record<string, AchievementCategory[]> = {
   tile_slide: ["tile_slide"],
   reaction_tap: ["casual_games"],
   timed_tap: ["casual_games"],
+  clicker_mine: ["casual_games"],
+  helix_drop: ["casual_games"],
   tic_tac_toe: ["tic_tac_toe"],
   checkers: ["checkers"],
   chess: ["chess"],

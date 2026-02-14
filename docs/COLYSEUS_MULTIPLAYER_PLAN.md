@@ -1,7 +1,7 @@
 # Colyseus Real-Time Multiplayer Integration Plan
 
 > **Version:** 1.0  
-> **Status:** ✅ Implemented — Reference documentation  
+> **Status:** âœ… Implemented â€” Reference documentation  
 > **Created:** 2025  
 > **Framework:** Colyseus v0.17 + Firebase Firestore Persistence  
 > **Target:** All 25 playable game screens
@@ -35,7 +35,7 @@
 
 ### Current State
 
-All 25 playable games run either as **pure client-side single-player** experiences or as **Firestore-poll-based "multiplayer"** using `onSnapshot` listeners. There is **no dedicated game server** — turn-based games write moves to Firestore documents, and "real-time" games (Race) are simulated locally. This approach works for low-frequency turn-based games but cannot deliver:
+All 25 playable games run either as **pure client-side single-player** experiences or as **Firestore-poll-based "multiplayer"** using `onSnapshot` listeners. There is **no dedicated game server** â€” turn-based games write moves to Firestore documents, and "real-time" games (Race) are simulated locally. This approach works for low-frequency turn-based games but cannot deliver:
 
 - Sub-100ms state synchronization for physics-based games
 - Server-authoritative game logic (anti-cheat)
@@ -50,20 +50,20 @@ Introduce a **Colyseus v0.17 game server** as a dedicated real-time multiplayer 
 2. **Manages turn validation** for turn-based games (server validates moves, broadcasts state)
 3. **Persists to Firestore** when all players leave a turn-based room (cold storage)
 4. **Restores from Firestore** when a player re-opens a suspended turn-based game
-5. **Coexists with Firebase** — Firebase Auth for identity, Firestore for persistence/history, Colyseus for real-time gameplay
+5. **Coexists with Firebase** â€” Firebase Auth for identity, Firestore for persistence/history, Colyseus for real-time gameplay
 
 ### What Colyseus Is
 
 Colyseus is a Node.js-based multiplayer game server framework (v0.17, latest) that provides:
 
-- **Room-based architecture** — isolated game sessions with lifecycle hooks (`onCreate`, `onJoin`, `onDrop`, `onReconnect`, `onLeave`, `onDispose`)
-- **Schema-based state sync** — `@colyseus/schema` with `@type()` decorators, automatic binary delta-encoded patches at configurable rates (default 20fps/50ms)
-- **Built-in reconnection** — `onDrop()`/`allowReconnection()` with configurable timeout, automatic client-side retry with exponential backoff
-- **Simulation intervals** — `setSimulationInterval()` for fixed-tick game loops (default 60fps/16.6ms)
-- **Timing events** — `this.clock.setTimeout()`/`setInterval()` auto-cleaned on room disposal
-- **Client SDK** — `@colyseus/sdk` with `joinOrCreate()`, `joinById()`, state sync callbacks, message sending
-- **Matchmaker API** — server-side `matchMaker.createRoom()`, `reserveSeatFor()`, `query()`, `joinOrCreate()`
-- **Zod validation** — `validate()` helper for type-safe message input validation
+- **Room-based architecture** â€” isolated game sessions with lifecycle hooks (`onCreate`, `onJoin`, `onDrop`, `onReconnect`, `onLeave`, `onDispose`)
+- **Schema-based state sync** â€” `@colyseus/schema` with `@type()` decorators, automatic binary delta-encoded patches at configurable rates (default 20fps/50ms)
+- **Built-in reconnection** â€” `onDrop()`/`allowReconnection()` with configurable timeout, automatic client-side retry with exponential backoff
+- **Simulation intervals** â€” `setSimulationInterval()` for fixed-tick game loops (default 60fps/16.6ms)
+- **Timing events** â€” `this.clock.setTimeout()`/`setInterval()` auto-cleaned on room disposal
+- **Client SDK** â€” `@colyseus/sdk` with `joinOrCreate()`, `joinById()`, state sync callbacks, message sending
+- **Matchmaker API** â€” server-side `matchMaker.createRoom()`, `reserveSeatFor()`, `query()`, `joinOrCreate()`
+- **Zod validation** â€” `validate()` helper for type-safe message input validation
 - **Max 64 sync properties per Schema class** (split into sub-schemas for larger states)
 
 ---
@@ -71,61 +71,60 @@ Colyseus is a Node.js-based multiplayer game server framework (v0.17, latest) th
 ## 2. Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        REACT NATIVE CLIENT                         │
-│                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
-│  │  Game Screen  │  │ useColyseus  │  │  ColyseusProvider        │  │
-│  │  (Skia/SVG)  │──│    Hook      │──│  (Context + Client)      │  │
-│  └──────────────┘  └──────────────┘  └──────────┬───────────────┘  │
-│                                                  │                  │
-│  ┌──────────────────────────────────────────────┐│                  │
-│  │  Firebase Auth (useAuth)                     ││                  │
-│  │  Firestore (game history, stats, invites)    ││                  │
-│  └──────────────────────────────────────────────┘│                  │
-└──────────────────────────────────────────────────│──────────────────┘
-                                                   │ WebSocket (port 2567)
-                                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        COLYSEUS SERVER                              │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │  app.config.ts (defineServer)                                 │  │
-│  │                                                               │  │
-│  │  Rooms:                                                       │  │
-│  │  ├── PhysicsRoom (base)  → PongRoom, BounceBlitzRoom, ...   │  │
-│  │  ├── TurnBasedRoom (base) → ChessRoom, CheckersRoom, ...    │  │
-│  │  ├── PuzzleCoopRoom (base) → CrosswordRoom              │  │
-│  │  └── RaceRoom                                                │  │
-│  │                                                               │  │
-│  │  Schemas:                                                     │  │
-│  │  ├── PhysicsState → Ball, Paddle, Player                    │  │
-│  │  ├── TurnBasedState → Board, Piece, Move                    │  │
-│  │  └── Per-game specialized schemas                            │  │
-│  └───────────────┬───────────────────────────────────────────────┘  │
-│                  │                                                   │
-│  ┌───────────────▼───────────────────────────────────────────────┐  │
-│  │  Firebase Admin SDK                                           │  │
-│  │  ├── Auth verification (onAuth → verifyIdToken)              │  │
-│  │  ├── Firestore write (onDispose → persist turn-based state)  │  │
-│  │  └── Firestore read (onCreate → restore suspended games)     │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-                                                   │
-                                                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FIREBASE / FIRESTORE                         │
-│                                                                     │
-│  Collections:                                                       │
-│  ├── TurnBasedGames/      (existing — game documents)              │
-│  │   └── Moves/           (existing — move history)                │
-│  ├── GameInvites/         (existing — invite documents)            │
-│  ├── MatchmakingQueue/    (existing — ELO matchmaking)             │
-│  ├── GameSessions/        (existing — single-player records)       │
-│  ├── PlayerGameStats/     (existing — aggregated stats)            │
-│  ├── ColyseusGameState/   (NEW — cold-stored room states)          │
-│  └── RealtimeGameSessions/ (NEW — real-time game history)          │
-└─────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                        REACT NATIVE CLIENT                         â”‚
+â”‚                                                                     â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚  Game Screen  â”‚  â”‚ useColyseus  â”‚  â”‚  ColyseusProvider        â”‚  â”‚
+â”‚  â”‚  (Skia/SVG)  â”‚â”€â”€â”‚    Hook      â”‚â”€â”€â”‚  (Context + Client)      â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â”‚                                                  â”‚                  â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”â”‚                  â”‚
+â”‚  â”‚  Firebase Auth (useAuth)                     â”‚â”‚                  â”‚
+â”‚  â”‚  Firestore (game history, stats, invites)    â”‚â”‚                  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜â”‚                  â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                                   â”‚ WebSocket (port 2567)
+                                                   â–¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                        COLYSEUS SERVER                              â”‚
+â”‚                                                                     â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚  app.config.ts (defineServer)                                 â”‚  â”‚
+â”‚  â”‚                                                               â”‚  â”‚
+â”‚  â”‚  Rooms:                                                       â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ PhysicsRoom (base)  â†’ PongRoom, BounceBlitzRoom, ...   â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ TurnBasedRoom (base) â†’ ChessRoom, CheckersRoom, ...    â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ PuzzleCoopRoom (base) â†’ CrosswordRoom              â”‚  â”‚
+â”‚  â”‚                                                               â”‚  â”‚
+â”‚  â”‚  Schemas:                                                     â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ PhysicsState â†’ Ball, Paddle, Player                    â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ TurnBasedState â†’ Board, Piece, Move                    â”‚  â”‚
+â”‚  â”‚  â””â”€â”€ Per-game specialized schemas                            â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â”‚                  â”‚                                                   â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
+â”‚  â”‚  Firebase Admin SDK                                           â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ Auth verification (onAuth â†’ verifyIdToken)              â”‚  â”‚
+â”‚  â”‚  â”œâ”€â”€ Firestore write (onDispose â†’ persist turn-based state)  â”‚  â”‚
+â”‚  â”‚  â””â”€â”€ Firestore read (onCreate â†’ restore suspended games)     â”‚  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                                   â”‚
+                                                   â–¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                        FIREBASE / FIRESTORE                         â”‚
+â”‚                                                                     â”‚
+â”‚  Collections:                                                       â”‚
+â”‚  â”œâ”€â”€ TurnBasedGames/      (existing â€” game documents)              â”‚
+â”‚  â”‚   â””â”€â”€ Moves/           (existing â€” move history)                â”‚
+â”‚  â”œâ”€â”€ GameInvites/         (existing â€” invite documents)            â”‚
+â”‚  â”œâ”€â”€ MatchmakingQueue/    (existing â€” ELO matchmaking)             â”‚
+â”‚  â”œâ”€â”€ GameSessions/        (existing â€” single-player records)       â”‚
+â”‚  â”œâ”€â”€ PlayerGameStats/     (existing â€” aggregated stats)            â”‚
+â”‚  â”œâ”€â”€ ColyseusGameState/   (NEW â€” cold-stored room states)          â”‚
+â”‚  â””â”€â”€ RealtimeGameSessions/ (NEW â€” real-time game history)          â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Key Design Decisions
@@ -155,7 +154,7 @@ These games require sub-frame state synchronization with a server-authoritative 
 | Snake         | `SnakeMasterGameScreen.tsx`  | 2-4         | 30fps     | Grid movement, collision        |
 | Race          | `RaceGameScreen.tsx`         | 2-4         | 60fps     | Vehicle physics, track position |
 
-**Simulation Pattern:** `setSimulationInterval(deltaTime => this.update(deltaTime), 16.6)` — server owns physics state, broadcasts at `patchRate = 33` (30fps sync).
+**Simulation Pattern:** `setSimulationInterval(deltaTime => this.update(deltaTime), 16.6)` â€” server owns physics state, broadcasts at `patchRate = 33` (30fps sync).
 
 ### Tier 2: Turn-Based Strategy Games (Colyseus + Firestore Persistence)
 
@@ -163,22 +162,22 @@ These games have discrete turns. The server validates moves and broadcasts state
 
 | Game         | Screen File                  | Max Players | Key State                                        |
 | ------------ | ---------------------------- | ----------- | ------------------------------------------------ |
-| Chess        | `ChessGameScreen.tsx`        | 2           | 8×8 board, piece positions, move history, timers |
-| Checkers     | `CheckersGameScreen.tsx`     | 2           | 8×8 board, piece positions, king status          |
-| TicTacToe    | `TicTacToeGameScreen.tsx`    | 2           | 3×3 grid, X/O placement                          |
-| Connect Four | `ConnectFourGameScreen.tsx`  | 2           | 7×6 grid, disc drops                             |
-| Reversi      | `ReversiGameScreen.tsx`      | 2           | 8×8 board, disc flips                            |
-| Gomoku       | `GomokuMasterGameScreen.tsx` | 2           | 15×15 or 19×19 grid                              |
+| Chess        | `ChessGameScreen.tsx`        | 2           | 8Ã—8 board, piece positions, move history, timers |
+| Checkers     | `CheckersGameScreen.tsx`     | 2           | 8Ã—8 board, piece positions, king status          |
+| TicTacToe    | `TicTacToeGameScreen.tsx`    | 2           | 3Ã—3 grid, X/O placement                          |
+| Connect Four | `ConnectFourGameScreen.tsx`  | 2           | 7Ã—6 grid, disc drops                             |
+| Reversi      | `ReversiGameScreen.tsx`      | 2           | 8Ã—8 board, disc flips                            |
+| Gomoku       | `GomokuMasterGameScreen.tsx` | 2           | 15Ã—15 or 19Ã—19 grid                              |
 | Crazy Eights | `CrazyEightsGameScreen.tsx`  | 2-4         | Card hands, discard pile, suit selection         |
 | War          | `WarGameScreen.tsx`          | 2           | Card decks, war pile                             |
 
 **Persistence Pattern:**
 
 ```
-Player A leaves → onDrop → allowReconnection(client, 300) → 5 min window
-Player B also leaves within window → both onLeave fire → onDispose triggers
-onDispose → serialize state → write to Firestore ColyseusGameState/{gameId}
-Player A returns → joinById → onCreate reads Firestore → restores state
+Player A leaves â†’ onDrop â†’ allowReconnection(client, 300) â†’ 5 min window
+Player B also leaves within window â†’ both onLeave fire â†’ onDispose triggers
+onDispose â†’ serialize state â†’ write to Firestore ColyseusGameState/{gameId}
+Player A returns â†’ joinById â†’ onCreate reads Firestore â†’ restores state
 ```
 
 ### Tier 3: Cooperative/Competitive Word Games (Colyseus Real-Time + Turn Hybrid)
@@ -204,7 +203,7 @@ Fast-paced games where both players play simultaneously and compete on score. Se
 
 **Sync Pattern:** Server manages timer, syncs opponent's live score. Game logic runs client-side. Anti-cheat via server-side score bounds checking.
 
-### Tier 5: Puzzle Games (Single-Player Only — No Colyseus)
+### Tier 5: Puzzle Games (Single-Player Only â€” No Colyseus)
 
 These games are inherently single-player puzzles. They stay 100% client-side with existing Firestore score recording.
 
@@ -223,11 +222,11 @@ These games are inherently single-player puzzles. They stay 100% client-side wit
 
 | Tier           | Games | Colyseus? | Server Authority           | Firestore Persist?    |
 | -------------- | ----- | --------- | -------------------------- | --------------------- |
-| 1: Physics     | 6     | ✅ Yes    | Full (server owns physics) | No (ephemeral)        |
-| 2: Turn-Based  | 8     | ✅ Yes    | Move validation            | ✅ Yes (cold storage) |
-| 3: Cooperative | 2     | ✅ Yes    | Hybrid (presence + turns)  | ✅ Yes                |
-| 4: Quick-Play  | 3     | ✅ Yes    | Score validation only      | No (ephemeral)        |
-| 5: Puzzle      | 6     | ❌ No     | N/A                        | Existing Firestore    |
+| 1: Physics     | 6     | âœ… Yes    | Full (server owns physics) | No (ephemeral)        |
+| 2: Turn-Based  | 8     | âœ… Yes    | Move validation            | âœ… Yes (cold storage) |
+| 3: Cooperative | 2     | âœ… Yes    | Hybrid (presence + turns)  | âœ… Yes                |
+| 4: Quick-Play  | 3     | âœ… Yes    | Score validation only      | No (ephemeral)        |
+| 5: Puzzle      | 6     | âŒ No     | N/A                        | Existing Firestore    |
 
 **Total Colyseus-enabled games: 19 out of 25**
 
@@ -241,68 +240,64 @@ The Colyseus server lives as a **sibling directory** to the Expo app, sharing th
 
 ```
 snapstyle-mvp/
-├── app.config.ts              (Expo config)
-├── src/                       (React Native app)
-├── firebase-backend/          (Cloud Functions)
-├── colyseus-server/           ← NEW
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── Dockerfile
-│   ├── .env
-│   ├── src/
-│   │   ├── app.config.ts      (Colyseus defineServer)
-│   │   ├── rooms/
-│   │   │   ├── base/
-│   │   │   │   ├── PhysicsRoom.ts
-│   │   │   │   ├── TurnBasedRoom.ts
-│   │   │   │   ├── ScoreRaceRoom.ts
-│   │   │   │   └── CoopRoom.ts
-│   │   │   ├── physics/
-│   │   │   │   ├── PongRoom.ts
-│   │   │   │   ├── BounceBlitzRoom.ts
-│   │   │   │   ├── BrickBreakerRoom.ts
-│   │   │   │   ├── AirHockeyRoom.ts
-│   │   │   │   ├── SnakeRoom.ts
-│   │   │   │   └── RaceRoom.ts
-│   │   │   ├── turnbased/
-│   │   │   │   ├── ChessRoom.ts
-│   │   │   │   ├── CheckersRoom.ts
-│   │   │   │   ├── TicTacToeRoom.ts
-│   │   │   │   ├── ConnectFourRoom.ts
-│   │   │   │   ├── ReversiRoom.ts
-│   │   │   │   ├── GomokuRoom.ts
-│   │   │   │   ├── CrazyEightsRoom.ts
-│   │   │   │   └── WarRoom.ts
-│   │   │   ├── coop/
-│   │   │   │   ├── CrosswordRoom.ts
-│   │   │   │   └── WordMasterRoom.ts
-│   │   │   └── quickplay/
-│   │   │       ├── ReactionRoom.ts
-│   │   │       └── DotMatchRoom.ts
-│   │   ├── schemas/
-│   │   │   ├── common.ts          (Player, Vec2, Timer)
-│   │   │   ├── physics.ts         (Ball, Paddle, PhysicsState)
-│   │   │   ├── turnbased.ts       (TurnBasedState, Move)
-│   │   │   ├── chess.ts           (ChessPiece, ChessBoard)
-│   │   │   ├── checkers.ts
-│   │   │   ├── cards.ts           (Card, Hand, Deck)
-│   │   │   ├── board.ts           (GridCell, Board)
-│   │   │   └── quickplay.ts       (ScoreRaceState)
-│   │   ├── services/
-│   │   │   ├── firebase.ts        (Admin SDK init)
-│   │   │   ├── persistence.ts     (save/restore game state)
-│   │   │   └── validation.ts      (move validators per game)
-│   │   └── utils/
-│   │       ├── physics.ts         (collision detection, vector math)
-│   │       ├── elo.ts             (ELO calculation)
-│   │       └── gameLogic/         (per-game logic modules)
-│   │           ├── chess.ts
-│   │           ├── checkers.ts
-│   │           ├── tictactoe.ts
-│   │           └── ...
-│   └── tests/
-│       ├── rooms/
-│       └── schemas/
+â”œâ”€â”€ app.config.ts              (Expo config)
+â”œâ”€â”€ src/                       (React Native app)
+â”œâ”€â”€ firebase-backend/          (Cloud Functions)
+â”œâ”€â”€ colyseus-server/           â† NEW
+â”‚   â”œâ”€â”€ package.json
+â”‚   â”œâ”€â”€ tsconfig.json
+â”‚   â”œâ”€â”€ Dockerfile
+â”‚   â”œâ”€â”€ .env
+â”‚   â”œâ”€â”€ src/
+â”‚   â”‚   â”œâ”€â”€ app.config.ts      (Colyseus defineServer)
+â”‚   â”‚   â”œâ”€â”€ rooms/
+â”‚   â”‚   â”‚   â”œâ”€â”€ base/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ PhysicsRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ TurnBasedRoom.ts
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ CoopRoom.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ physics/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ PongRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ BounceBlitzRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ BrickBreakerRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ AirHockeyRoom.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ turnbased/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ ChessRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ CheckersRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ TicTacToeRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ ConnectFourRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ ReversiRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ GomokuRoom.ts
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ CrazyEightsRoom.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ coop/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ CrosswordRoom.ts
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ WordMasterRoom.ts
+â”‚   â”‚   â”‚   â””â”€â”€ quickplay/
+â”‚   â”‚   â”‚       â”œâ”€â”€ ReactionRoom.ts
+â”‚   â”‚   â”‚       â””â”€â”€ DotMatchRoom.ts
+â”‚   â”‚   â”œâ”€â”€ schemas/
+â”‚   â”‚   â”‚   â”œâ”€â”€ common.ts          (Player, Vec2, Timer)
+â”‚   â”‚   â”‚   â”œâ”€â”€ physics.ts         (Ball, Paddle, PhysicsState)
+â”‚   â”‚   â”‚   â”œâ”€â”€ turnbased.ts       (TurnBasedState, Move)
+â”‚   â”‚   â”‚   â”œâ”€â”€ chess.ts           (ChessPiece, ChessBoard)
+â”‚   â”‚   â”‚   â”œâ”€â”€ checkers.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ cards.ts           (Card, Hand, Deck)
+â”‚   â”‚   â”‚   â”œâ”€â”€ board.ts           (GridCell, Board)
+â”‚   â”‚   â”‚   â””â”€â”€ quickplay.ts       (ScoreRaceState)
+â”‚   â”‚   â”œâ”€â”€ services/
+â”‚   â”‚   â”‚   â”œâ”€â”€ firebase.ts        (Admin SDK init)
+â”‚   â”‚   â”‚   â”œâ”€â”€ persistence.ts     (save/restore game state)
+â”‚   â”‚   â”‚   â””â”€â”€ validation.ts      (move validators per game)
+â”‚   â”‚   â””â”€â”€ utils/
+â”‚   â”‚       â”œâ”€â”€ physics.ts         (collision detection, vector math)
+â”‚   â”‚       â”œâ”€â”€ elo.ts             (ELO calculation)
+â”‚   â”‚       â””â”€â”€ gameLogic/         (per-game logic modules)
+â”‚   â”‚           â”œâ”€â”€ chess.ts
+â”‚   â”‚           â”œâ”€â”€ checkers.ts
+â”‚   â”‚           â”œâ”€â”€ tictactoe.ts
+â”‚   â”‚           â””â”€â”€ ...
+â”‚   â””â”€â”€ tests/
+â”‚       â”œâ”€â”€ rooms/
+â”‚       â””â”€â”€ schemas/
 ```
 
 ### Dependencies
@@ -369,8 +364,6 @@ import { PongRoom } from "./rooms/physics/PongRoom";
 import { BounceBlitzRoom } from "./rooms/physics/BounceBlitzRoom";
 import { BrickBreakerRoom } from "./rooms/physics/BrickBreakerRoom";
 import { AirHockeyRoom } from "./rooms/physics/AirHockeyRoom";
-import { SnakeRoom } from "./rooms/physics/SnakeRoom";
-import { RaceRoom } from "./rooms/physics/RaceRoom";
 
 // Turn-based rooms
 import { ChessRoom } from "./rooms/turnbased/ChessRoom";
@@ -380,7 +373,6 @@ import { ConnectFourRoom } from "./rooms/turnbased/ConnectFourRoom";
 import { ReversiRoom } from "./rooms/turnbased/ReversiRoom";
 import { GomokuRoom } from "./rooms/turnbased/GomokuRoom";
 import { CrazyEightsRoom } from "./rooms/turnbased/CrazyEightsRoom";
-import { WarRoom } from "./rooms/turnbased/WarRoom";
 
 // Coop rooms
 import { CrosswordRoom } from "./rooms/coop/CrosswordRoom";
@@ -397,8 +389,6 @@ export default defineServer({
     bounce_blitz: defineRoom(BounceBlitzRoom),
     brick_breaker: defineRoom(BrickBreakerRoom),
     air_hockey: defineRoom(AirHockeyRoom),
-    snake: defineRoom(SnakeRoom),
-    race: defineRoom(RaceRoom),
 
     // Tier 2: Turn-Based (validated moves, Firestore persistence)
     chess: defineRoom(ChessRoom),
@@ -408,7 +398,6 @@ export default defineServer({
     reversi: defineRoom(ReversiRoom),
     gomoku: defineRoom(GomokuRoom),
     crazy_eights: defineRoom(CrazyEightsRoom),
-    war: defineRoom(WarRoom),
 
     // Tier 3: Cooperative
     crossword: defineRoom(CrosswordRoom),
@@ -705,7 +694,7 @@ export abstract class PhysicsRoom extends Room {
   }
 
   onLeave(client: Client, code: number) {
-    // Player permanently left — award win to remaining player
+    // Player permanently left â€” award win to remaining player
     if (this.state.phase === "playing") {
       const remainingPlayer = Array.from(this.state.players.values()).find(
         (p) => p.sessionId !== client.sessionId,
@@ -907,16 +896,16 @@ export abstract class TurnBasedRoom extends Room {
 
     if (!anyConnected && this.state.phase === "playing") {
       this.allPlayersLeft = true;
-      // Don't delete players — we need them for restoration
+      // Don't delete players â€” we need them for restoration
     }
   }
 
   async onDispose() {
     if (this.state.phase === "finished") {
-      // Game completed — persist final result to existing TurnBasedGames collection
+      // Game completed â€” persist final result to existing TurnBasedGames collection
       await persistGameResult(this.state);
     } else if (this.allPlayersLeft && this.state.phase === "playing") {
-      // Game in progress but all players left — save state for later restoration
+      // Game in progress but all players left â€” save state for later restoration
       await saveGameState(this.state, this.roomId);
     }
   }
@@ -953,7 +942,6 @@ export abstract class TurnBasedRoom extends Room {
 }
 ```
 
-### 7.3 Base Room: `ScoreRaceRoom`
 
 For quick-play competitive games where both players play simultaneously.
 
@@ -962,7 +950,6 @@ import { Room, Client } from "colyseus";
 import { ScoreRaceState, ScoreRacePlayer } from "../schemas/quickplay";
 import { verifyFirebaseToken, persistGameResult } from "../services/firebase";
 
-export abstract class ScoreRaceRoom extends Room {
   state = new ScoreRaceState();
   maxClients = 2;
   patchRate = 100; // 10fps sync (just scores + timer)
@@ -1229,7 +1216,7 @@ import { Platform } from "react-native";
 // Development: localhost
 // Production: your deployed Colyseus server URL
 const DEV_URL = Platform.select({
-  android: "ws://10.0.2.2:2567", // Android emulator → host machine
+  android: "ws://10.0.2.2:2567", // Android emulator â†’ host machine
   ios: "ws://localhost:2567",
   default: "ws://localhost:2567",
 });
@@ -1587,37 +1574,37 @@ match /RealtimeGameSessions/{sessionId} {
 ### 9.3 State Restoration Flow (Detailed)
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  SAVE FLOW (both players leave mid-game)                     │
-│                                                              │
-│  1. Player A drops → onDrop → allowReconnection(300s)       │
-│  2. Player A times out → onLeave (connected=false)          │
-│  3. Player B drops → onDrop → allowReconnection(300s)       │
-│  4. Player B times out → onLeave (connected=false)          │
-│  5. No clients remaining → autoDispose triggers             │
-│  6. onDispose() detects allPlayersLeft && phase=="playing"  │
-│  7. saveGameState() → serializes to ColyseusGameState/      │
-│  8. Updates TurnBasedGames/ doc status → "suspended"        │
-│  9. Room is disposed from memory                            │
-└──────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  SAVE FLOW (both players leave mid-game)                     â”‚
+â”‚                                                              â”‚
+â”‚  1. Player A drops â†’ onDrop â†’ allowReconnection(300s)       â”‚
+â”‚  2. Player A times out â†’ onLeave (connected=false)          â”‚
+â”‚  3. Player B drops â†’ onDrop â†’ allowReconnection(300s)       â”‚
+â”‚  4. Player B times out â†’ onLeave (connected=false)          â”‚
+â”‚  5. No clients remaining â†’ autoDispose triggers             â”‚
+â”‚  6. onDispose() detects allPlayersLeft && phase=="playing"  â”‚
+â”‚  7. saveGameState() â†’ serializes to ColyseusGameState/      â”‚
+â”‚  8. Updates TurnBasedGames/ doc status â†’ "suspended"        â”‚
+â”‚  9. Room is disposed from memory                            â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌──────────────────────────────────────────────────────────────┐
-│  RESTORE FLOW (player returns to suspended game)             │
-│                                                              │
-│  1. Player opens game → ActiveGamesList shows "suspended"   │
-│  2. Player taps game → navigates to game screen             │
-│  3. Game screen calls colyseusService.restoreGame(          │
-│       roomName, firestoreGameId)                            │
-│  4. → joinOrCreate(roomName, {firestoreGameId})             │
-│  5. Server creates new room → onCreate receives options     │
-│  6. onCreate detects firestoreGameId → loadGameState()      │
-│  7. Loads from ColyseusGameState/ → restoreFromSaved()      │
-│  8. Room state populated → phase set to "playing"           │
-│  9. Player A joins → onJoin → matched to restored player   │
-│  10. Room waits for Player B to join                        │
-│  11. Player B opens game → joinById(roomId)                 │
-│  12. Both players connected → game resumes                  │
-└──────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  RESTORE FLOW (player returns to suspended game)             â”‚
+â”‚                                                              â”‚
+â”‚  1. Player opens game â†’ ActiveGamesList shows "suspended"   â”‚
+â”‚  2. Player taps game â†’ navigates to game screen             â”‚
+â”‚  3. Game screen calls colyseusService.restoreGame(          â”‚
+â”‚       roomName, firestoreGameId)                            â”‚
+â”‚  4. â†’ joinOrCreate(roomName, {firestoreGameId})             â”‚
+â”‚  5. Server creates new room â†’ onCreate receives options     â”‚
+â”‚  6. onCreate detects firestoreGameId â†’ loadGameState()      â”‚
+â”‚  7. Loads from ColyseusGameState/ â†’ restoreFromSaved()      â”‚
+â”‚  8. Room state populated â†’ phase set to "playing"           â”‚
+â”‚  9. Player A joins â†’ onJoin â†’ matched to restored player   â”‚
+â”‚  10. Room waits for Player B to join                        â”‚
+â”‚  11. Player B opens game â†’ joinById(roomId)                 â”‚
+â”‚  12. Both players connected â†’ game resumes                  â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
@@ -1628,17 +1615,17 @@ match /RealtimeGameSessions/{sessionId} {
 
 React Native apps face unique reconnection scenarios:
 
-- **App backgrounded** (user switches apps) — OS may kill the WebSocket
-- **Network switch** (WiFi → cellular) — connection drops briefly
-- **Lock screen** — iOS suspends JS after ~30 seconds
-- **Poor signal** — intermittent connectivity
+- **App backgrounded** (user switches apps) â€” OS may kill the WebSocket
+- **Network switch** (WiFi â†’ cellular) â€” connection drops briefly
+- **Lock screen** â€” iOS suspends JS after ~30 seconds
+- **Poor signal** â€” intermittent connectivity
 
 ### Reconnection Strategy by Game Tier
 
 | Tier                     | Timeout      | Behavior on Timeout               |
 | ------------------------ | ------------ | --------------------------------- |
 | Physics (Pong, etc.)     | 30s          | Opponent wins by forfeit          |
-| Turn-Based (Chess, etc.) | 300s (5 min) | If BOTH leave → save to Firestore |
+| Turn-Based (Chess, etc.) | 300s (5 min) | If BOTH leave â†’ save to Firestore |
 | Coop (Crossword)         | 60s          | Player removed from session       |
 | Quick-Play (Tap, etc.)   | 15s          | Player gets score of 0            |
 
@@ -1663,13 +1650,13 @@ export function useColyseusAppState(room: Room | null) {
           appStateRef.current.match(/inactive|background/) &&
           nextAppState === "active"
         ) {
-          // App came to foreground — reconnection is handled
+          // App came to foreground â€” reconnection is handled
           // automatically by Colyseus SDK if onDrop is configured
           console.log("[Colyseus] App returned to foreground");
         }
 
         if (nextAppState === "background") {
-          // App going to background — send a "pause" message
+          // App going to background â€” send a "pause" message
           // so server knows player isn't actively playing
           room.send("app_state", { state: "background" });
         }
@@ -1706,17 +1693,17 @@ The app already has a robust invite system (`src/services/gameInvites.ts`) that 
 **Current Flow:**
 
 ```
-Invite accepted → Cloud Function creates TurnBasedGames/ doc → Both players open
-game → Each listens to onSnapshot on TurnBasedGames doc → Moves written to Firestore
+Invite accepted â†’ Cloud Function creates TurnBasedGames/ doc â†’ Both players open
+game â†’ Each listens to onSnapshot on TurnBasedGames doc â†’ Moves written to Firestore
 ```
 
 **New Flow (Colyseus-enabled games):**
 
 ```
-Invite accepted → Cloud Function creates TurnBasedGames/ doc + stores roomConfig →
-Player A opens game → calls colyseusService.joinOrCreate(gameType, {gameId}) →
-Colyseus room created → Player A joins → Player B opens game →
-joinById(colyseus roomId) → Both connected via WebSocket → Real-time play
+Invite accepted â†’ Cloud Function creates TurnBasedGames/ doc + stores roomConfig â†’
+Player A opens game â†’ calls colyseusService.joinOrCreate(gameType, {gameId}) â†’
+Colyseus room created â†’ Player A joins â†’ Player B opens game â†’
+joinById(colyseus roomId) â†’ Both connected via WebSocket â†’ Real-time play
 ```
 
 ### 11.2 Friend Invite via Colyseus
@@ -1824,7 +1811,7 @@ await db.collection("MatchmakingQueue").doc(match.player2Id).update({
 
 ## 12. Authentication Bridge
 
-### Firebase Auth → Colyseus `onAuth`
+### Firebase Auth â†’ Colyseus `onAuth`
 
 The Colyseus server verifies Firebase ID tokens to authenticate players:
 
@@ -1874,7 +1861,7 @@ async onAuth(client: Client, options: any, context: any) {
 
 Games are migrated in order of impact and complexity:
 
-### Phase 1: Quick-Play Games (Simplest — Score Race Pattern)
+### Phase 1: Quick-Play Games (Simplest â€” Score Race Pattern)
 
 | Priority | Game         | Room Type    | Complexity | Estimated Effort |
 | -------- | ------------ | ------------ | ---------- | ---------------- |
@@ -1884,7 +1871,6 @@ Games are migrated in order of impact and complexity:
 
 **What changes per game:**
 
-- Create Colyseus room class (extends `ScoreRaceRoom`)
 - Define score validation bounds
 - Add `useColyseus` hook to game screen
 - Show opponent's live score
@@ -1915,7 +1901,6 @@ Games are migrated in order of impact and complexity:
 | -------- | ------------ | --------------- | ---------- | ---------------- |
 | 3.1      | Checkers     | CheckersRoom    | Medium     | 3 days           |
 | 3.2      | Crazy Eights | CrazyEightsRoom | Medium     | 3 days           |
-| 3.3      | War          | WarRoom         | Medium     | 2 days           |
 | 3.4      | Chess        | ChessRoom       | High       | 5 days           |
 
 **Additional complexity:**
@@ -1932,8 +1917,6 @@ Games are migrated in order of impact and complexity:
 | 4.2      | Air Hockey    | AirHockeyRoom    | Medium     | 3 days           |
 | 4.3      | Bounce Blitz  | BounceBlitzRoom  | Medium     | 3 days           |
 | 4.4      | Brick Breaker | BrickBreakerRoom | High       | 4 days           |
-| 4.5      | Snake         | SnakeRoom        | High       | 4 days           |
-| 4.6      | Race          | RaceRoom         | Very High  | 5 days           |
 
 **Additional complexity:**
 
@@ -1959,13 +1942,13 @@ Games are migrated in order of impact and complexity:
 
 | Phase                       | Games  | Days         |
 | --------------------------- | ------ | ------------ |
-| Infrastructure Setup        | —      | 5 days       |
+| Infrastructure Setup        | â€”      | 5 days       |
 | Phase 1: Quick-Play         | 3      | 2.5 days     |
 | Phase 2: Simple Turn-Based  | 4      | 6.5 days     |
 | Phase 3: Complex Turn-Based | 4      | 13 days      |
 | Phase 4: Physics            | 6      | 22 days      |
 | Phase 5: Cooperative        | 2      | 8 days       |
-| Testing & Polish            | —      | 10 days      |
+| Testing & Polish            | â€”      | 10 days      |
 | **TOTAL**                   | **19** | **~67 days** |
 
 ---
@@ -2044,10 +2027,10 @@ describe("ChessRoom", () => {
 ```typescript
 // __tests__/integration/colyseusMultiplayer.test.ts
 describe("Colyseus Multiplayer Integration", () => {
-  it("should handle invite → join → play → complete flow");
-  it("should handle disconnect → reconnect during physics game");
+  it("should handle invite â†’ join â†’ play â†’ complete flow");
+  it("should handle disconnect â†’ reconnect during physics game");
   it("should save/restore turn-based game via Firestore");
-  it("should handle matchmaking → room creation → gameplay");
+  it("should handle matchmaking â†’ room creation â†’ gameplay");
   it("should sync scores in real-time for quick-play games");
 });
 ```
@@ -2173,10 +2156,10 @@ server {
 
 ### 16.1 Schema Optimization
 
-- **Max 64 properties per Schema class** — split large states into sub-schemas
+- **Max 64 properties per Schema class** â€” split large states into sub-schemas
 - Use **smallest possible numeric types**: `uint8` (0-255) for grid indices, `int16` for coordinates, `float32` for positions
 - Use **ArraySchema** for ordered data (board cells, move history), **MapSchema** for keyed data (players)
-- Avoid storing unnecessary data in synchronized state — use `client.userData` for server-only data
+- Avoid storing unnecessary data in synchronized state â€” use `client.userData` for server-only data
 
 ### 16.2 Network Optimization
 
@@ -2219,7 +2202,6 @@ const interpolatedX = lerp(
 
 - [ ] Set up `colyseus-server/` directory with TypeScript config
 - [ ] Install Colyseus v0.17 + Firebase Admin SDK
-- [ ] Create base room classes (PhysicsRoom, TurnBasedRoom, ScoreRaceRoom)
 - [ ] Create common schemas (Player, Vec2, Timer, BaseGameState)
 - [ ] Set up Firebase Admin authentication bridge
 - [ ] Create `src/services/colyseus.ts` client service
@@ -2242,7 +2224,7 @@ const interpolatedX = lerp(
 
 - [ ] Implement TicTacToeRoom with full move validation
 - [ ] Implement Firestore save/restore cycle
-- [ ] Test both-players-leave → Firestore → restore flow
+- [ ] Test both-players-leave â†’ Firestore â†’ restore flow
 - [ ] Roll out Connect Four, Gomoku, Reversi
 - [ ] Feature flag: `COLYSEUS_TURNBASED_ENABLED`
 
@@ -2251,7 +2233,6 @@ const interpolatedX = lerp(
 - [ ] Implement ChessRoom (FEN, castling, en passant, timers)
 - [ ] Implement CheckersRoom (king promotion, mandatory jumps)
 - [ ] Implement CrazyEightsRoom (deck, draw, suit selection)
-- [ ] Implement WarRoom (deck, war pile)
 - [ ] Feature flag: `COLYSEUS_COMPLEX_TURNBASED_ENABLED`
 
 ### Phase 4: Physics Games (Week 11-14)
@@ -2260,8 +2241,6 @@ const interpolatedX = lerp(
 - [ ] Add client-side prediction + interpolation
 - [ ] Implement AirHockeyRoom, BounceBlitzRoom
 - [ ] Implement BrickBreakerRoom (co-op or competitive)
-- [ ] Implement SnakeRoom (multi-snake, grid collision)
-- [ ] Implement RaceRoom (vehicle physics, track)
 - [ ] Feature flag: `COLYSEUS_PHYSICS_ENABLED`
 
 ### Phase 5: Cooperative Games (Week 15-16)
@@ -2356,7 +2335,7 @@ export const COLYSEUS_FLAGS = {
 
 ## Appendix D: Message Protocol Reference
 
-### Client → Server Messages
+### Client â†’ Server Messages
 
 | Message Type     | Payload                               | Used By          |
 | ---------------- | ------------------------------------- | ---------------- |
@@ -2374,7 +2353,7 @@ export const COLYSEUS_FLAGS = {
 | `"letter"`       | `{ x, y, letter }`                    | Crossword room   |
 | `"cursor"`       | `{ x, y }`                            | Crossword room   |
 
-### Server → Client Messages
+### Server â†’ Client Messages
 
 | Message Type              | Payload                       | Used By   |
 | ------------------------- | ----------------------------- | --------- |

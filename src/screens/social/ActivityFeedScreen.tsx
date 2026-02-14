@@ -18,6 +18,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -30,10 +31,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ActivityFeedItem from "@/components/activity/ActivityFeedItem";
 import { EmptyState } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
-import { fetchActivityFeed } from "@/services/activityFeed";
+import { fetchActivityFeed, likeActivity } from "@/services/activityFeed";
 import { useAuth } from "@/store/AuthContext";
 import type { ActivityEvent, ActivityEventType } from "@/types/activityFeed";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/social/ActivityFeedScreen");
@@ -133,7 +133,12 @@ export default function ActivityFeedScreen({
         setHasMore(false);
       }
 
-      setEvents((prev) => [...prev, ...moreEvents]);
+      // Deduplicate events by ID to prevent duplicates on pagination boundary
+      setEvents((prev) => {
+        const existingIds = new Set(prev.map((e) => e.id));
+        const newEvents = moreEvents.filter((e) => !existingIds.has(e.id));
+        return [...prev, ...newEvents];
+      });
     } catch (error) {
       logger.error("[ActivityFeed] Error loading more:", error);
     } finally {
@@ -191,23 +196,45 @@ export default function ActivityFeedScreen({
     [navigation],
   );
 
-  const handleLikePress = useCallback((eventId: string) => {
-    // Optimistic update
-    setEvents((prev) =>
-      prev.map((e) =>
-        e.id === eventId
-          ? {
-              ...e,
-              liked: !e.liked,
-              likeCount: e.liked
-                ? (e.likeCount || 1) - 1
-                : (e.likeCount || 0) + 1,
-            }
-          : e,
-      ),
-    );
-    // NOTE: Persist like to Firestore
-  }, []);
+  const handleLikePress = useCallback(
+    (eventId: string) => {
+      // Optimistic update
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === eventId
+            ? {
+                ...e,
+                liked: !e.liked,
+                likeCount: e.liked
+                  ? (e.likeCount || 1) - 1
+                  : (e.likeCount || 0) + 1,
+              }
+            : e,
+        ),
+      );
+      // Persist like to Firestore
+      if (uid) {
+        likeActivity(eventId, uid).catch((error) => {
+          logger.error("[ActivityFeed] Failed to persist like:", error);
+          // Revert optimistic update on failure
+          setEvents((prev) =>
+            prev.map((e) =>
+              e.id === eventId
+                ? {
+                    ...e,
+                    liked: !e.liked,
+                    likeCount: e.liked
+                      ? (e.likeCount || 1) - 1
+                      : (e.likeCount || 0) + 1,
+                  }
+                : e,
+            ),
+          );
+        });
+      }
+    },
+    [uid],
+  );
 
   // ==========================================================================
   // Render
@@ -225,72 +252,90 @@ export default function ActivityFeedScreen({
     [handleEventPress, handleUserPress, handleLikePress],
   );
 
-  const renderFilterBar = () => (
-    <View style={styles.filterBar}>
-      <FlatList
-        horizontal
-        data={FILTER_OPTIONS}
-        keyExtractor={(item) => item.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterContent}
-        renderItem={({ item }) => (
-          <Chip
-            mode={activeFilter === item.id ? "flat" : "outlined"}
-            selected={activeFilter === item.id}
-            onPress={() => setActiveFilter(item.id)}
-            style={[
-              styles.filterChip,
-              activeFilter === item.id && {
-                backgroundColor: theme.colors.primaryContainer,
-              },
-            ]}
-            textStyle={[
-              styles.filterChipText,
-              activeFilter === item.id && {
-                color: theme.colors.onPrimaryContainer,
-              },
-            ]}
-          >
-            {item.emoji} {item.label}
-          </Chip>
-        )}
-      />
-    </View>
-  );
-
-  const renderHeader = () => (
-    <View
-      style={[
-        styles.header,
-        {
-          paddingTop: insets.top + Spacing.sm,
-          backgroundColor: theme.colors.background,
-        },
-      ]}
-    >
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="Go back"
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="arrow-left"
-            size={24}
-            color={theme.colors.onSurface}
-          />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
-          Activity Feed
-        </Text>
-        <View style={{ width: 24 }} />
+  const renderFilterBar = useCallback(
+    () => (
+      <View style={styles.filterBar}>
+        <FlatList
+          horizontal
+          data={FILTER_OPTIONS}
+          keyExtractor={(item) => item.id}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterContent}
+          renderItem={({ item }) => (
+            <Chip
+              mode={activeFilter === item.id ? "flat" : "outlined"}
+              selected={activeFilter === item.id}
+              onPress={() => setActiveFilter(item.id)}
+              style={[
+                styles.filterChip,
+                activeFilter === item.id && {
+                  backgroundColor: theme.colors.primaryContainer,
+                },
+              ]}
+              textStyle={[
+                styles.filterChipText,
+                activeFilter === item.id && {
+                  color: theme.colors.onPrimaryContainer,
+                },
+              ]}
+            >
+              {item.emoji} {item.label}
+            </Chip>
+          )}
+        />
       </View>
-      {renderFilterBar()}
-    </View>
+    ),
+    [
+      activeFilter,
+      theme.colors.primaryContainer,
+      theme.colors.onPrimaryContainer,
+    ],
   );
 
-  const renderFooter = () => {
+  const renderHeader = useCallback(
+    () => (
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + Spacing.sm,
+            backgroundColor: theme.colors.background,
+            borderBottomColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons
+              name="arrow-left"
+              size={24}
+              color={theme.colors.onSurface}
+            />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
+            Activity Feed
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        {renderFilterBar()}
+      </View>
+    ),
+    [
+      insets.top,
+      theme.colors.background,
+      theme.colors.outlineVariant,
+      theme.colors.onSurface,
+      navigation,
+      renderFilterBar,
+    ],
+  );
+
+  const renderFooter = useCallback(() => {
     if (!loadingMore) return null;
     return (
       <View style={styles.footer}>
@@ -301,7 +346,7 @@ export default function ActivityFeedScreen({
         </Text>
       </View>
     );
-  };
+  }, [loadingMore, theme.colors.onSurfaceVariant]);
 
   return (
     <View
@@ -327,7 +372,19 @@ export default function ActivityFeedScreen({
         onEndReached={loadMore}
         onEndReachedThreshold={0.3}
         ListEmptyComponent={
-          loading ? null : (
+          loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+              <Text
+                style={[
+                  styles.loadingText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Loading activity...
+              </Text>
+            </View>
+          ) : (
             <EmptyState
               icon="account-group-outline"
               title="No activity yet"
@@ -353,7 +410,7 @@ const styles = StyleSheet.create({
   header: {
     paddingBottom: Spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(0,0,0,0.1)",
+    borderBottomColor: undefined, // Themed via inline style
   },
   headerRow: {
     flexDirection: "row",
@@ -365,6 +422,9 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
+  },
+  headerSpacer: {
+    width: 24,
   },
   filterBar: {
     paddingVertical: Spacing.xs,
@@ -385,6 +445,13 @@ const styles = StyleSheet.create({
   footer: {
     padding: Spacing.lg,
     alignItems: "center",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: Spacing.xl * 2,
+    gap: Spacing.md,
   },
   loadingText: {
     fontSize: 14,

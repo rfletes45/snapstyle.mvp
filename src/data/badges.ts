@@ -71,16 +71,6 @@ export const BADGE_DEFINITIONS: Badge[] = [
     hidden: false,
   },
   {
-    id: "memory_master",
-    name: "Memory Master",
-    description: "Complete Memory with perfect recall",
-    icon: "🧠",
-    tier: "gold",
-    category: "games",
-    earnedVia: { type: "achievement", achievementId: "memory_perfect" },
-    hidden: false,
-  },
-  {
     id: "2048_champion",
     name: "2048 Champion",
     description: "Reach the 2048 tile",
@@ -88,16 +78,6 @@ export const BADGE_DEFINITIONS: Badge[] = [
     tier: "gold",
     category: "games",
     earnedVia: { type: "achievement", achievementId: "tile_2048" },
-    hidden: false,
-  },
-  {
-    id: "snake_master",
-    name: "Snake Master",
-    description: "Reach length 50 in Snake",
-    icon: "🐍",
-    tier: "gold",
-    category: "games",
-    earnedVia: { type: "achievement", achievementId: "snake_length_50" },
     hidden: false,
   },
 

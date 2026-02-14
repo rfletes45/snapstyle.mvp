@@ -19,8 +19,14 @@
 import { UniversalInviteCard } from "@/components/games";
 import { GameInviteBadge } from "@/components/games/GameInviteBadge";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { ThreeFloatingIcons, ThreeGameBackground } from "@/components/three";
 import { ErrorState, LoadingState } from "@/components/ui";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
+import {
+  PLAY_SCREEN_FEATURES,
+  THREE_JS_FEATURES,
+} from "@/constants/featureFlags";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
 import { isDailyGameCompleted } from "@/services/dailyGamePersistence";
@@ -93,15 +99,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import {
-  PLAY_SCREEN_FEATURES,
-  THREE_JS_FEATURES,
-} from "@/constants/featureFlags";
-import { BorderRadius, Spacing } from "@/constants/theme";
-import {
-  ThreeFloatingIcons,
-  ThreeGameBackground,
-} from "@/components/three";
-import {
   ActiveGamesMini,
   ActiveGamesSection,
   DailyChallengeCard,
@@ -115,22 +112,17 @@ import {
   SearchResultsView,
 } from "./components";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/GamesHubScreen");
 
 const SINGLE_PLAYER_GAME_TYPES = new Set<SinglePlayerGameType>([
   "bounce_blitz",
   "play_2048",
-  "snake_master",
-  "memory_master",
   "word_master",
   "reaction_tap",
   "timed_tap",
   "brick_breaker",
-  "tile_slide",
   "minesweeper_classic",
-  "number_master",
   "lights_out",
   "pong_game",
 ]);
@@ -492,12 +484,13 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     return searchGames(searchQuery, searchFilters);
   }, [searchQuery, searchFilters, isSearchActive]);
 
-  // Combine all high scores into a single map
-  const highScoresMap = new Map<string, number>();
-  personalBests.forEach((pb) => highScoresMap.set(pb.gameId, pb.bestScore));
-  singlePlayerHighScores.forEach((hs) =>
-    highScoresMap.set(hs.gameType, hs.highScore),
-  );
+  // Combine all high scores into a single map (memoized)
+  const highScoresMap = useMemo(() => {
+    const map = new Map<string, number>();
+    personalBests.forEach((pb) => map.set(pb.gameId, pb.bestScore));
+    singlePlayerHighScores.forEach((hs) => map.set(hs.gameType, hs.highScore));
+    return map;
+  }, [personalBests, singlePlayerHighScores]);
 
   // Phase 2: Format high scores as strings for new components
   const highScoresFormatted = useMemo(() => {
@@ -569,10 +562,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         setActiveGames(matches);
       },
       (error) => {
-        logger.error(
-          "[GamesScreen] Active matches subscription error:",
-          error,
-        );
+        logger.error("[GamesScreen] Active matches subscription error:", error);
       },
     );
 
@@ -593,9 +583,8 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     return () => unsubscribe();
   }, [currentFirebaseUser]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Initial load is handled by the focus listener below
+  // which also refreshes when coming back from a game
 
   // Refresh when coming back from a game
   useEffect(() => {
@@ -611,17 +600,20 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     return unsubscribe;
   }, [navigation, loadData]);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
     loadData();
-  };
+  }, [loadData]);
 
-  const navigateToGame = (gameId: ExtendedGameType) => {
-    const screen = GAME_SCREEN_MAP[gameId];
-    if (screen) {
-      navigation.navigate(screen);
-    }
-  };
+  const navigateToGame = useCallback(
+    (gameId: ExtendedGameType) => {
+      const screen = GAME_SCREEN_MAP[gameId];
+      if (screen) {
+        navigation.navigate(screen);
+      }
+    },
+    [navigation],
+  );
 
   // =========================================================================
   // Game Quick Actions Handlers
@@ -650,27 +642,30 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     [navigation],
   );
 
-  const handleSelectActiveGame = (game: AnyMatch) => {
-    // Navigate to the appropriate game screen with the match ID
-    const screen = GAME_SCREEN_MAP[game.gameType];
-    if (screen) {
-      navigation.navigate(screen, { matchId: game.id, entryPoint: "play" });
-    }
-  };
+  const handleSelectActiveGame = useCallback(
+    (game: AnyMatch) => {
+      // Navigate to the appropriate game screen with the match ID
+      const screen = GAME_SCREEN_MAP[game.gameType];
+      if (screen) {
+        navigation.navigate(screen, { matchId: game.id, entryPoint: "play" });
+      }
+    },
+    [navigation],
+  );
 
-  const handleAcceptInvite = (
-    matchId: string,
-    gameType: TurnBasedGameType | RealTimeGameType,
-  ) => {
-    const screen = GAME_SCREEN_MAP[gameType];
-    if (screen) {
-      navigation.navigate(screen, {
-        matchId,
-        entryPoint: "play",
-      });
-    }
-    loadData(); // Refresh the data
-  };
+  const handleAcceptInvite = useCallback(
+    (matchId: string, gameType: TurnBasedGameType | RealTimeGameType) => {
+      const screen = GAME_SCREEN_MAP[gameType];
+      if (screen) {
+        navigation.navigate(screen, {
+          matchId,
+          entryPoint: "play",
+        });
+      }
+      loadData(); // Refresh the data
+    },
+    [navigation, loadData],
+  );
 
   // =========================================================================
   // Game Action Handlers (Archive, Resign, Rematch)
@@ -710,15 +705,8 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   const handleRematchGame = useCallback(
     (game: AnyMatch) => {
-      // Navigate to game screen with rematch flag
-      const screenMap: Record<string, string> = {
-        tic_tac_toe: "TicTacToeGame",
-        checkers: "CheckersGame",
-        chess: "ChessGame",
-        crazy_eights: "CrazyEightsGame",
-      };
-
-      const screen = screenMap[game.gameType];
+      // Navigate to game screen with rematch flag using the canonical screen map
+      const screen = GAME_SCREEN_MAP[game.gameType as ExtendedGameType];
       if (screen) {
         // Get opponent ID for rematch
         const opponentId =
@@ -816,24 +804,24 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     [navigation],
   );
 
-  // Game categories
-  const quickPlayGames: ExtendedGameType[] = [
-    "reaction_tap",
-    "timed_tap",
-    "bounce_blitz",
-  ];
-  const puzzleGames: ExtendedGameType[] = [
-    "play_2048",
-    "snake_master",
-    "memory_master",
-  ];
-  const dailyGames: ExtendedGameType[] = ["word_master"];
-  const multiplayerGames: ExtendedGameType[] = [
-    "tic_tac_toe",
-    "checkers",
-    "chess",
-    "crazy_eights",
-  ];
+  // Game categories (memoized to avoid recreating on every render)
+  const quickPlayGames = useMemo<ExtendedGameType[]>(
+    () => ["reaction_tap", "timed_tap", "bounce_blitz"],
+    [],
+  );
+  const puzzleGames = useMemo<ExtendedGameType[]>(() => ["play_2048"], []);
+  const dailyGames = useMemo<ExtendedGameType[]>(() => ["word_master"], []);
+  const multiplayerGames = useMemo<ExtendedGameType[]>(
+    () => [
+      "tic_tac_toe",
+      "checkers",
+      "chess",
+      "crazy_eights",
+      "tropical_fishing",
+      "golf_duels",
+    ],
+    [],
+  );
 
   // =========================================================================
   // Phase 1: Header Navigation Handlers
@@ -1616,4 +1604,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-

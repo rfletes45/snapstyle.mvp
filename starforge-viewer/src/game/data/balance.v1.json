@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "starforge.balance.v1",
+  "click": {
+    "baseMicroFlux": 10
+  },
+  "defaultCapsMicro": {
+    "flux": 10000,
+    "alloy": 5000,
+    "signal": 3000
+  },
+  "simHz": 20,
+  "contracts": {
+    "revealIntervalTicks": 600,
+    "baseRevealChance": 0.25,
+    "maxRevealed": 3
+  },
+  "events": {
+    "spawnIntervalTicks": 200,
+    "baseSpawnChance": 0.2,
+    "eventLifetimeTicks": 200
+  },
+  "wrecks": {
+    "tapDamageMicro": 500,
+    "spawnIntervalTicks": 80,
+    "baseSpawnChance": 0.35,
+    "maxActiveWrecks": 5,
+    "wreckRingMinRadius": 3.0,
+    "wreckRingMaxRadius": 7.0,
+    "droneHarvestIntervalTicks": 40,
+    "droneTapDamageMicro": 300
+  }
+}

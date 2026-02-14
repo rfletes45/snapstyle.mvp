@@ -11,6 +11,20 @@
  */
 
 import {
+  ExtendedGameType,
+  GAME_METADATA,
+  GameCategory,
+  RealTimeGameType,
+  TurnBasedGameType,
+} from "@/types/games";
+import type { TurnBasedMatchConfig, TurnBasedPlayer } from "@/types/turnBased";
+import {
+  PlayerSlot,
+  SendUniversalInviteParams,
+  UniversalGameInvite,
+  UniversalInviteStatus,
+} from "@/types/turnBased";
+import {
   collection,
   deleteDoc,
   doc,
@@ -28,24 +42,9 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import {
-  ExtendedGameType,
-  GAME_METADATA,
-  GameCategory,
-  RealTimeGameType,
-  TurnBasedGameType,
-} from "@/types/games";
-import type { TurnBasedMatchConfig, TurnBasedPlayer } from "@/types/turnBased";
-import {
-  PlayerSlot,
-  SendUniversalInviteParams,
-  UniversalGameInvite,
-  UniversalInviteStatus,
-} from "@/types/turnBased";
 import { getOrCreateChat } from "./chat";
 import { getAuthInstance, getFirestoreInstance } from "./firebase";
 import { createMatch } from "./turnBasedGames";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/gameInvites");
@@ -205,19 +204,24 @@ const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
     timeControl: { type: "per_turn", seconds: 120 },
     chatEnabled: true,
   },
-  war_game: {
-    isRated: false,
-    timeControl: { type: "per_turn", seconds: 30 },
-    chatEnabled: true,
-  },
   // Phase 3 real-time games
-  race_game: {
+  crossword_puzzle: {
     isRated: false,
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
-  crossword_puzzle: {
+  tropical_fishing: {
     isRated: false,
+    timeControl: { type: "none", seconds: 0 },
+    chatEnabled: true,
+  },
+  starforge_game: {
+    isRated: false,
+    timeControl: { type: "none", seconds: 0 },
+    chatEnabled: true,
+  },
+  golf_duels: {
+    isRated: true,
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
@@ -231,7 +235,6 @@ const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
  * Get game category from type
  */
 function getGameCategory(gameType: InviteGameType): GameCategory {
-  if (gameType === "8ball_pool") return "multiplayer";
   return "multiplayer";
 }
 
@@ -315,19 +318,24 @@ function getDefaultInviteSettings(
       timeControl: { type: "per_turn", seconds: 120 },
       chatEnabled: true,
     },
-    war_game: {
-      isRated: false,
-      timeControl: { type: "per_turn", seconds: 30 },
-      chatEnabled: true,
-    },
     // Phase 3 real-time games
-    race_game: {
+    crossword_puzzle: {
       isRated: false,
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
-    crossword_puzzle: {
+    tropical_fishing: {
       isRated: false,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    starforge_game: {
+      isRated: false,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    golf_duels: {
+      isRated: true,
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
@@ -347,6 +355,21 @@ function getPlayerCounts(gameType: InviteGameType): {
     return { min: metadata.minPlayers, max: metadata.maxPlayers };
   }
   return { min: 2, max: 2 }; // Default for unknown games
+}
+
+function usesExternalSessionId(gameType: InviteGameType): boolean {
+  return (
+    gameType === "tropical_fishing" ||
+    gameType === "starforge_game" ||
+    gameType === "golf_duels"
+  );
+}
+
+function createExternalSessionId(
+  inviteId: string,
+  gameType: InviteGameType,
+): string {
+  return `ext_${gameType}_${inviteId}`;
 }
 
 // =============================================================================
@@ -706,7 +729,7 @@ export async function sendUniversalInvite(
     claimedSlots: [hostSlot],
     filledAt: undefined,
 
-    spectatingEnabled: true,
+    spectatingEnabled: gameType !== "tropical_fishing",
 
     status: "pending",
     gameId: undefined,
@@ -1035,6 +1058,20 @@ export async function startGameEarly(
           success: false,
           error: `Need at least ${metadata.minPlayers} players to start`,
         };
+      }
+
+      if (usesExternalSessionId(invite.gameType as InviteGameType)) {
+        const gameId = createExternalSessionId(
+          invite.id,
+          invite.gameType as InviteGameType,
+        );
+        transaction.update(inviteRef, {
+          status: "active" as UniversalInviteStatus,
+          gameId,
+          updatedAt: Date.now(),
+          filledAt: Date.now(),
+        });
+        return { success: true, gameId };
       }
 
       // Build player objects from claimed slots
@@ -1444,10 +1481,7 @@ function subscribeToUniversalInvite(
       onUpdate(snapshot.data() as UniversalGameInvite);
     },
     (error) => {
-      logger.error(
-        "[GameInvites] Universal invite subscription error:",
-        error,
-      );
+      logger.error("[GameInvites] Universal invite subscription error:", error);
       onError?.(error);
     },
   );

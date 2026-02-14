@@ -1,0 +1,32 @@
+﻿{
+  "schemaVersion": "starforge.balance.v2",
+  "simHz": 20,
+  "currency": {
+    "microDivisor": 1000
+  },
+  "cut": {
+    "baseDamageMicroPerTap": 250,
+    "tapCooldownMs": 0
+  },
+  "resources": {
+    "fluxCapMicroBase": 50000,
+    "alloyCapMicroBase": 15000,
+    "signalCapMicroBase": 8000
+  },
+  "ui": {
+    "hpBarShowMicroThreshold": 1,
+    "toastDurationMs": 3500
+  },
+  "events": {
+    "enabled": true,
+    "minGapSec": 120,
+    "maxGapSec": 300,
+    "maxActive": 1
+  },
+  "contracts": {
+    "enabled": true,
+    "revealRollEverySec": 15,
+    "maxRevealed": 6,
+    "maxActive": 2
+  }
+}

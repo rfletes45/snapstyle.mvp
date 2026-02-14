@@ -3,10 +3,8 @@
  *
  * Type definitions for single-player games including:
  * - Bounce Blitz
- * - Memory Master
  * - Word Master
  * - Play 2048
- * - Snake
  *
  * @see docs/07_GAMES_ARCHITECTURE.md Section 1
  */
@@ -152,116 +150,6 @@ export const BOUNCE_MASTER_CONFIG = {
     two: 0.6, // 60%
     three: 0.9, // 90%
   },
-};
-
-// =============================================================================
-// Color Match Blitz
-// =============================================================================
-
-/**
- * Memory Master game state (memory matching)
- */
-export interface MemoryMasterState extends BaseSinglePlayerState {
-  gameType: "memory_master";
-  category: "puzzle";
-
-  // Grid state
-  grid: ColorTile[][];
-  gridSize: { rows: number; cols: number };
-
-  // Selection
-  selectedTiles: Array<{ row: number; col: number }>;
-
-  // Combo and multiplier
-  comboCount: number;
-  maxCombo: number;
-  multiplier: number;
-
-  // Time-based mode
-  timeRemaining: number; // Seconds
-  totalTime: number;
-
-  // Level (endless mode)
-  level: number;
-  tilesCleared: number;
-  tilesToClearForLevel: number;
-
-  // Power-ups
-  availablePowerUps: ColorMatchPowerUp[];
-  activePowerUp?: ColorMatchPowerUp;
-}
-
-/**
- * Single tile in the grid
- */
-export interface ColorTile {
-  id: string;
-  color: TileColor;
-  special?: TileSpecial;
-  selected: boolean;
-  matched: boolean;
-  falling: boolean;
-
-  // Animation state
-  animating: boolean;
-  animationType?: "match" | "fall" | "spawn";
-}
-
-/**
- * Tile colors
- */
-export type TileColor =
-  | "red"
-  | "blue"
-  | "green"
-  | "yellow"
-  | "purple"
-  | "orange";
-
-/**
- * Special tile types
- */
-export type TileSpecial =
-  | "bomb" // Clears surrounding tiles
-  | "row_clear" // Clears entire row
-  | "col_clear" // Clears entire column
-  | "color_bomb" // Clears all of one color
-  | "multiplier"; // 2x points for match
-
-/**
- * Power-ups
- */
-export interface ColorMatchPowerUp {
-  type: "shuffle" | "extra_time" | "hint" | "clear_color";
-  uses: number;
-}
-
-/**
- * Color Match Blitz constants
- */
-export const COLOR_MATCH_CONFIG = {
-  // Grid
-  defaultRows: 8,
-  defaultCols: 8,
-  minMatchSize: 3,
-
-  // Scoring
-  baseScore: 10,
-  comboMultiplierStep: 0.25,
-  maxMultiplier: 5,
-
-  // Time
-  baseTime: 60, // Seconds
-  timePerLevel: 10, // Bonus per level
-
-  // Special creation thresholds
-  matchForBomb: 5,
-  matchForRowClear: 6,
-  matchForColorBomb: 7,
-
-  // Level progression
-  baseTilesToClear: 50,
-  tilesIncreasePerLevel: 20,
 };
 
 // =============================================================================
@@ -512,77 +400,6 @@ export const PLAY_2048_CONFIG = {
 };
 
 // =============================================================================
-// Snake
-// =============================================================================
-
-/**
- * Snake game state
- */
-export interface SnakeState extends BaseSinglePlayerState {
-  gameType: "snake_master";
-  category: "quick_play";
-
-  // Snake body segments (head is at index 0)
-  snake: { x: number; y: number }[];
-
-  // Current food position
-  food: { x: number; y: number };
-
-  // Current direction
-  direction: SnakeDirection;
-
-  // Buffered direction (for smooth input handling)
-  nextDirection: SnakeDirection;
-
-  // Grid dimensions
-  gridWidth: number;
-  gridHeight: number;
-
-  // Game speed (ms per tick)
-  speed: number;
-
-  // Food eaten count
-  foodEaten: number;
-
-  // Longest length achieved
-  maxLength: number;
-}
-
-/**
- * Snake movement direction
- */
-export type SnakeDirection = "up" | "down" | "left" | "right";
-
-/**
- * Snake game constants
- */
-export const snake_master_CONFIG = {
-  // Grid
-  defaultGridWidth: 20,
-  defaultGridHeight: 28,
-
-  // Initial state
-  initialLength: 3,
-  initialSpeed: 150, // ms per tick
-
-  // Speed scaling
-  minSpeed: 60, // Fastest speed (ms per tick)
-  speedDecreasePerFood: 2, // Speed up by 2ms per food eaten
-
-  // Scoring
-  baseScorePerFood: 10,
-  lengthBonusMultiplier: 1, // Extra points per current length
-
-  // Colors
-  snakeHeadColor: "#4CAF50",
-  snakeBodyColor: "#66BB6A",
-  snakeTailColor: "#81C784",
-  foodColor: "#FF5722",
-  gridColor: "#1a1a2e",
-  gridLineColor: "#16213e",
-};
-
-// =============================================================================
 // 2048 Stats
 // =============================================================================
 
@@ -592,17 +409,6 @@ export interface Play2048Stats {
   moveCount: number;
   mergeCount: number;
   didWin: boolean;
-}
-
-// =============================================================================
-// Snake Stats
-// =============================================================================
-
-export interface SnakeMasterStats {
-  gameType: "snake_master";
-  foodEaten: number;
-  maxLength: number;
-  survivalTime: number; // seconds
 }
 
 // =============================================================================
@@ -809,119 +615,6 @@ export const BRICK_BREAKER_CONFIG = {
 };
 
 // =============================================================================
-// Tile Slide (New Game)
-// =============================================================================
-
-/**
- * Tile Slide puzzle size
- */
-export type TileSlideSize = 3 | 4 | 5;
-
-/**
- * Tile Slide mode
- */
-export type TileSlideMode = "numbers" | "image";
-
-/**
- * Slide direction
- */
-export type SlideDirection = "up" | "down" | "left" | "right";
-
-/**
- * Tile Slide game state
- */
-export interface TileSlideState extends BaseSinglePlayerState {
-  gameType: "tile_slide";
-  category: "puzzle";
-
-  // Puzzle configuration
-  gridSize: TileSlideSize;
-  mode: TileSlideMode;
-  imageUri?: string;
-
-  // Board state (flat array, row-major order)
-  // null represents the empty space
-  tiles: (number | null)[];
-  emptyIndex: number;
-
-  // Solution reference
-  solvedState: number[];
-
-  // Progress
-  moveCount: number;
-  hintsUsed: number;
-  optimalMoves: number;
-
-  // Daily puzzle
-  isDailyPuzzle: boolean;
-  dailyPuzzleDate?: string;
-
-  // Animation
-  slidingTile: number | null;
-  slideDirection: SlideDirection | null;
-}
-
-/**
- * Tile Slide stats for session recording
- */
-export interface TileSlideStats {
-  gameType: "tile_slide";
-  puzzlesSolved: number;
-  totalMoves: number;
-  optimalSolves: number;
-  hintsUsed: number;
-  dailyPuzzlesCompleted: number;
-}
-
-/**
- * Tile Slide configuration constants
- */
-export const TILE_SLIDE_CONFIG = {
-  // Available sizes
-  sizes: [3, 4, 5] as const,
-
-  // Shuffle moves per size (ensures solvability)
-  shuffleMoves: {
-    3: 50,
-    4: 100,
-    5: 200,
-  },
-
-  // Animation
-  slideAnimationMs: 200,
-  hintHighlightMs: 1000,
-
-  // Scoring
-  baseScore: {
-    3: 100,
-    4: 200,
-    5: 350,
-  },
-  optimalBonus: 100,
-  nearOptimalBonus: 50,
-  timeBonus30s: 40,
-  timeBonus60s: 20,
-  noHintsBonus: 30,
-  hintPenalty: 10,
-
-  // Optimal moves (average)
-  optimalMoves: {
-    3: 22,
-    4: 50,
-    5: 100,
-  },
-
-  // Visual
-  tileSize: 80,
-  tilePadding: 4,
-  tileBorderRadius: 8,
-  backgroundColor: "#1a1a2e",
-  tileColor: "#4a4a6a",
-  tileTextColor: "#ffffff",
-  correctTileColor: "#4CAF50",
-};
-
-// =============================================================================
 // Game Session Management
 // =============================================================================
 
@@ -961,13 +654,9 @@ export interface SinglePlayerGameSession {
  */
 export type SinglePlayerGameStats =
   | BounceBlitzStats
-  | MemoryMasterStats
   | WordMasterStats
   | Play2048Stats
-  | SnakeMasterStats
-  // New game stats (Phase 1)
-  | BrickBreakerStats
-  | TileSlideStats;
+  | BrickBreakerStats;
 
 export interface BounceBlitzStats {
   gameType: "bounce_blitz";
@@ -975,14 +664,6 @@ export interface BounceBlitzStats {
   blocksDestroyed: number;
   ballsLaunched: number;
   totalBounces: number;
-}
-
-export interface MemoryMasterStats {
-  gameType: "memory_master";
-  pairsMatched: number;
-  attempts: number;
-  perfectMatches: number;
-  bestTime: number;
 }
 
 export interface WordMasterStats {

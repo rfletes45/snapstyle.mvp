@@ -25,6 +25,7 @@
 
 import {
   LocalAttachment,
+  MentionSpan,
   MessageKind,
   OutboxItem,
   ReplyToMetadata,
@@ -157,6 +158,7 @@ export async function enqueueMessage(params: {
   text?: string;
   replyTo?: ReplyToMetadata;
   mentionUids?: string[];
+  mentionSpans?: MentionSpan[];
   localAttachments?: LocalAttachment[];
 }): Promise<OutboxItem> {
   const outbox = await getOutbox();
@@ -193,6 +195,7 @@ export async function enqueueMessage(params: {
     text: params.text,
     replyTo: params.replyTo,
     mentionUids: params.mentionUids,
+    mentionSpans: params.mentionSpans,
     localAttachments: params.localAttachments,
     createdAt: Date.now(),
     attemptCount: 0,

@@ -1,0 +1,233 @@
+{
+  "schemaVersion": "starforge.tierUnlocks.v1",
+  "perMachine": {
+    "CUTTER": {
+      "unlockT2": {
+        "cost": { "alloyMicro": 5000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "signalMicro": 2500 },
+        "prereqs": ["UNLOCK_T2_CUTTER"]
+      },
+      "tier2UpgradeCost": { "alloyMicro": 25000 },
+      "tier3UpgradeCost": { "signalMicro": 25000, "alloyMicro": 50000 }
+    },
+    "SIGNAL": {
+      "unlockT2": {
+        "cost": { "alloyMicro": 4000, "fluxMicro": 2000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "signalMicro": 3000, "alloyMicro": 5000 },
+        "prereqs": ["UNLOCK_T2_SIGNAL"]
+      },
+      "tier2UpgradeCost": { "fluxMicro": 20000, "alloyMicro": 15000 },
+      "tier3UpgradeCost": {
+        "fluxMicro": 50000,
+        "alloyMicro": 40000,
+        "signalMicro": 20000
+      }
+    },
+    "HOPPER": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 5000, "alloyMicro": 3000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 8000, "signalMicro": 2000 },
+        "prereqs": ["UNLOCK_T2_HOPPER"]
+      },
+      "tier2UpgradeCost": { "fluxMicro": 25000, "alloyMicro": 20000 },
+      "tier3UpgradeCost": {
+        "fluxMicro": 60000,
+        "alloyMicro": 50000,
+        "signalMicro": 15000
+      }
+    },
+    "DRONES_MAG": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 8000, "alloyMicro": 4000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 10000, "signalMicro": 5000 },
+        "prereqs": ["UNLOCK_T2_DRONES_MAG"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 40000,
+        "alloyMicro": 20000,
+        "signalMicro": 5000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 80000,
+        "alloyMicro": 50000,
+        "signalMicro": 25000
+      }
+    },
+    "ASSEMBLER": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 15000, "alloyMicro": 6000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 15000, "signalMicro": 8000 },
+        "prereqs": ["UNLOCK_T2_ASSEMBLER"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 50000,
+        "alloyMicro": 30000,
+        "signalMicro": 10000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 100000,
+        "alloyMicro": 60000,
+        "signalMicro": 30000
+      }
+    },
+    "CRANE": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 20000, "alloyMicro": 8000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 20000, "signalMicro": 10000 },
+        "prereqs": ["UNLOCK_T2_CRANE"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 60000,
+        "alloyMicro": 40000,
+        "signalMicro": 15000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 120000,
+        "alloyMicro": 80000,
+        "signalMicro": 40000
+      }
+    },
+    "NANOFORGE": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 40000, "alloyMicro": 15000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 30000, "signalMicro": 15000 },
+        "prereqs": ["UNLOCK_T2_NANOFORGE"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 80000,
+        "alloyMicro": 50000,
+        "signalMicro": 20000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 150000,
+        "alloyMicro": 100000,
+        "signalMicro": 50000
+      }
+    },
+    "PRINTER": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 50000, "alloyMicro": 20000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 40000, "signalMicro": 20000 },
+        "prereqs": ["UNLOCK_T2_PRINTER"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 100000,
+        "alloyMicro": 60000,
+        "signalMicro": 25000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 200000,
+        "alloyMicro": 120000,
+        "signalMicro": 60000
+      }
+    },
+    "SCANNER": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 25000, "signalMicro": 5000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 15000, "signalMicro": 10000 },
+        "prereqs": ["UNLOCK_T2_SCANNER"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 50000,
+        "alloyMicro": 30000,
+        "signalMicro": 15000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 100000,
+        "alloyMicro": 60000,
+        "signalMicro": 40000
+      }
+    },
+    "BATTERY": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 10000, "alloyMicro": 5000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 10000, "signalMicro": 5000 },
+        "prereqs": ["UNLOCK_T2_BATTERY"]
+      },
+      "tier2UpgradeCost": { "fluxMicro": 30000, "alloyMicro": 20000 },
+      "tier3UpgradeCost": {
+        "fluxMicro": 70000,
+        "alloyMicro": 50000,
+        "signalMicro": 20000
+      }
+    },
+    "LAB": {
+      "unlockT2": {
+        "cost": { "fluxMicro": 18000, "alloyMicro": 6000 },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": { "alloyMicro": 12000, "signalMicro": 8000 },
+        "prereqs": ["UNLOCK_T2_LAB"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 45000,
+        "alloyMicro": 25000,
+        "signalMicro": 10000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 90000,
+        "alloyMicro": 60000,
+        "signalMicro": 35000
+      }
+    },
+    "DYSON": {
+      "unlockT2": {
+        "cost": {
+          "fluxMicro": 200000,
+          "alloyMicro": 80000,
+          "signalMicro": 40000
+        },
+        "prereqs": []
+      },
+      "unlockT3": {
+        "cost": {
+          "fluxMicro": 500000,
+          "alloyMicro": 200000,
+          "signalMicro": 100000
+        },
+        "prereqs": ["UNLOCK_T2_DYSON"]
+      },
+      "tier2UpgradeCost": {
+        "fluxMicro": 500000,
+        "alloyMicro": 200000,
+        "signalMicro": 100000
+      },
+      "tier3UpgradeCost": {
+        "fluxMicro": 1000000,
+        "alloyMicro": 500000,
+        "signalMicro": 300000
+      }
+    }
+  }
+}

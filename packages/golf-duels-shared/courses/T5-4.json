@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "holeId": "T5-4",
+  "tier": 5,
+  "bounds": {
+    "width": 16,
+    "height": 8
+  },
+  "start": {
+    "x": 2,
+    "z": 4
+  },
+  "cup": {
+    "x": 14,
+    "z": 4
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 16,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 16,
+        "z": 0
+      },
+      "b": {
+        "x": 16,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 16,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [],
+  "heightFields": [
+    {
+      "type": "dome",
+      "center": {
+        "x": 7,
+        "z": 4
+      },
+      "radius": 1.4,
+      "height": 0.35
+    }
+  ],
+  "obstacles": [
+    {
+      "type": "gate",
+      "id": "g1",
+      "hinge": {
+        "x": 11,
+        "z": 4
+      },
+      "armLength": 2.0,
+      "arcDeg": 90,
+      "periodSec": 2.0,
+      "phase": 0.3,
+      "rotationBaseDeg": 0.0
+    }
+  ],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1504
+  }
+}

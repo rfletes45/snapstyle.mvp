@@ -3,6 +3,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
 import { CallProvider } from "@/contexts/CallContext";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
+import { lockToPortrait } from "@/hooks/useScreenOrientation";
 import RootNavigator from "@/navigation/RootNavigator";
 import {
   createCallNotificationChannel,
@@ -17,11 +18,11 @@ import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
 import { SnackbarProvider } from "@/store/SnackbarContext";
 import { ThemeProvider, useAppTheme } from "@/store/ThemeContext";
 import { UserProvider } from "@/store/UserContext";
+import type { RootStackParamList } from "@/types/navigation/root";
 import {
   CommonActions,
   NavigationContainerRef,
 } from "@react-navigation/native";
-import type { RootStackParamList } from "@/types/navigation/root";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import React, { useCallback, useRef } from "react";
 import { StyleSheet, View } from "react-native";
@@ -31,6 +32,10 @@ import { PaperProvider } from "react-native-paper";
 
 // Initialize Firebase synchronously before rendering
 initializeFirebase(firebaseConfig);
+
+// Lock the app to portrait at startup. Individual screens (e.g. Tropical
+// Fishing) can temporarily switch to landscape via useScreenOrientation().
+lockToPortrait();
 
 // Initialize background call handler for incoming calls when app is in background
 initializeBackgroundCallHandler();
@@ -52,7 +57,8 @@ function handleError(error: Error, errorInfo: React.ErrorInfo): void {
  */
 function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
-  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+  const navigationRef =
+    useRef<NavigationContainerRef<RootStackParamList>>(null);
 
   /**
    * Handle navigation from in-app toast notifications

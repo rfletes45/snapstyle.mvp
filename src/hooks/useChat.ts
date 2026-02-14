@@ -48,6 +48,7 @@
  * @module hooks/useChat
  */
 
+import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import {
   getOrCreateDMConversation,
   getOrCreateGroupConversation,
@@ -60,6 +61,7 @@ import { sendMessage as sendMessageService } from "@/services/messaging/send";
 import { syncPendingMessages } from "@/services/sync/syncEngine";
 import {
   LocalAttachment,
+  MentionSpan,
   MessageKind,
   MessageV2,
   OutboxItem,
@@ -68,7 +70,6 @@ import {
 import { createLogger } from "@/utils/log";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
-import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
 import {
   useChatKeyboard,
@@ -121,6 +122,8 @@ export interface SendMessageOptions {
   replyTo?: ReplyToMetadata;
   /** User IDs mentioned in the message */
   mentionUids?: string[];
+  /** Mention spans for highlighting */
+  mentionSpans?: MentionSpan[];
   /** Local attachments to upload */
   attachments?: LocalAttachment[];
   /** Message kind (default: "text") */
@@ -419,6 +422,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
       const {
         replyTo: optionsReplyTo,
         mentionUids,
+        mentionSpans,
         attachments,
         kind = "text",
         clearReplyOnSend = true,
@@ -500,6 +504,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           text: text.trim(),
           replyTo: replyToUse ?? undefined,
           mentionUids,
+          mentionSpans,
           localAttachments: attachments,
         });
 

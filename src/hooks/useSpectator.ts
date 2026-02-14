@@ -62,6 +62,22 @@ export interface SpectatorInfo {
   joinedAt: number;
 }
 
+export interface HelperBoostEvent {
+  helperUid: string;
+  helperName: string;
+  helperSessionId: string;
+  kind: string;
+  value: number;
+  at: number;
+}
+
+export interface CheerEvent {
+  helperUid: string;
+  helperName: string;
+  emoji: string;
+  at: number;
+}
+
 /**
  * Multiplayer spectating — spectator joins existing game room.
  * The game screen handles the Colyseus connection; this hook just
@@ -82,6 +98,10 @@ interface SpHostParams {
   mode: "sp-host";
   /** Game type key for the SpectatorRoom */
   gameType: string;
+  /** Callback for helper boost actions coming from spectators */
+  onHelperBoost?: (event: HelperBoostEvent) => void;
+  /** Callback for cheer reactions coming from spectators */
+  onCheer?: (event: CheerEvent) => void;
 }
 
 /**
@@ -140,6 +160,15 @@ export interface UseSpectatorReturn {
   /** Room phase (SP spectator mode only) */
   phase: string;
 
+  /** Epoch ms when helper boost session ends (0 if inactive) */
+  boostSessionEndsAt: number;
+
+  /** Remaining helper energy for this spectator (SP spectator mode only) */
+  helperEnergyRemaining: number;
+
+  /** Max helper energy for this spectator (SP spectator mode only) */
+  helperEnergyMax: number;
+
   // ─── Actions ──────────────────────────────────────────────────────────
 
   /** Leave spectator mode (cleans up room connection) */
@@ -156,16 +185,38 @@ export interface UseSpectatorReturn {
     score: number,
     level?: number,
     remainingLives?: number,
+    extras?: {
+      sessionMode?: "spectate" | "boost" | "expedition";
+      activeMineId?: string;
+      bossHp?: number;
+      bossMaxHp?: number;
+      expeditionBossHp?: number;
+      expeditionBossMaxHp?: number;
+      crewSummaryJson?: string;
+      deltaEvents?: Array<{ type: string; payload?: Record<string, unknown>; at?: number }>;
+    },
   ) => void;
 
   /** Signal game over to spectators (SP host mode) */
   endHosting: (finalScore?: number) => Promise<void>;
+
+  /** Start a timed helper boost session for invited spectators */
+  startBoostSession: (durationMs?: number) => void;
 
   /** The SpectatorRoom ID (SP host mode, for sharing) */
   spectatorRoomId: string | null;
 
   /** Register a sent spectator invite so it can be updated when the game ends */
   registerInviteMessage: (ref: SentInviteRef) => void;
+
+  /** Send helper boost action from spectator to host */
+  sendHelperBoost: (
+    kind: "tap_boost" | "ore_rain" | "support_strike",
+    value?: number,
+  ) => void;
+
+  /** Send cheer reaction from spectator to host/watchers */
+  sendCheer: (emoji?: string) => void;
 }
 
 // =============================================================================
@@ -233,12 +284,18 @@ function useMultiplayerSpectator(
     hostName: "",
     gameType: state?.gameType ?? "",
     phase: state?.phase ?? "",
+    boostSessionEndsAt: 0,
+    helperEnergyRemaining: 0,
+    helperEnergyMax: 0,
     leaveSpectator,
     startHosting: async () => null,
     updateGameState: () => {},
     endHosting: async () => {},
+    startBoostSession: () => {},
     spectatorRoomId: null,
     registerInviteMessage: () => {},
+    sendHelperBoost: () => {},
+    sendCheer: () => {},
   };
 }
 
@@ -247,7 +304,7 @@ function useMultiplayerSpectator(
 // =============================================================================
 
 function useSpHost(params: SpHostParams): UseSpectatorReturn {
-  const { gameType } = params;
+  const { gameType, onHelperBoost, onCheer } = params;
   const [room, setRoom] = useState<Room | null>(null);
   const [spectatorCount, setSpectatorCount] = useState(0);
   const [spectators, setSpectators] = useState<SpectatorInfo[]>([]);
@@ -255,8 +312,13 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [boostSessionEndsAt, setBoostSessionEndsAt] = useState(0);
   const roomRef = useRef<Room | null>(null);
   const mountedRef = useRef(true);
+  const onHelperBoostRef = useRef<SpHostParams["onHelperBoost"]>(
+    onHelperBoost,
+  );
+  const onCheerRef = useRef<SpHostParams["onCheer"]>(onCheer);
 
   // Track sent invite message refs so we can update them when the game ends
   const sentInviteRefs = useRef<SentInviteRef[]>([]);
@@ -264,6 +326,11 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
   const registerInviteMessage = useCallback((ref: SentInviteRef) => {
     sentInviteRefs.current.push(ref);
   }, []);
+
+  useEffect(() => {
+    onHelperBoostRef.current = onHelperBoost;
+    onCheerRef.current = onCheer;
+  }, [onCheer, onHelperBoost]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -304,9 +371,33 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
       newRoom.onStateChange((newState: any) => {
         if (!mountedRef.current) return;
         setSpectatorCount(newState.spectatorCount ?? 0);
+        setBoostSessionEndsAt(newState.boostSessionEndsAt ?? 0);
         const specs = extractSpectators(newState);
         setSpectators(specs);
       });
+
+      newRoom.onMessage("helper_boost", (payload: any) => {
+        onHelperBoostRef.current?.({
+          helperUid: payload?.helperUid || "",
+          helperName: payload?.helperName || "Helper",
+          helperSessionId: payload?.helperSessionId || "",
+          kind: payload?.kind || "tap_boost",
+          value: payload?.value ?? 1,
+          at: payload?.at ?? Date.now(),
+        });
+      });
+
+      newRoom.onMessage("cheer", (payload: any) => {
+        onCheerRef.current?.({
+          helperUid: payload?.helperUid || "",
+          helperName: payload?.helperName || "Spectator",
+          emoji: payload?.emoji || "👏",
+          at: payload?.at ?? Date.now(),
+        });
+      });
+
+      newRoom.onMessage("host_confirmed", () => {});
+      newRoom.onMessage("helper_energy", () => {});
 
       newRoom.onLeave(() => {
         if (!mountedRef.current) return;
@@ -334,11 +425,37 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
       score: number,
       level?: number,
       remainingLives?: number,
+      extras?: {
+        sessionMode?: "spectate" | "boost" | "expedition";
+        activeMineId?: string;
+        bossHp?: number;
+        bossMaxHp?: number;
+        expeditionBossHp?: number;
+        expeditionBossMaxHp?: number;
+        crewSummaryJson?: string;
+        deltaEvents?: Array<{ type: string; payload?: Record<string, unknown>; at?: number }>;
+      },
     ) => {
       if (!roomRef.current) return;
       const payload: any = { gameStateJson, currentScore: score };
       if (level !== undefined) payload.currentLevel = level;
       if (remainingLives !== undefined) payload.lives = remainingLives;
+      if (extras?.sessionMode) payload.sessionMode = extras.sessionMode;
+      if (extras?.activeMineId !== undefined) payload.activeMineId = extras.activeMineId;
+      if (extras?.bossHp !== undefined) payload.bossHp = extras.bossHp;
+      if (extras?.bossMaxHp !== undefined) payload.bossMaxHp = extras.bossMaxHp;
+      if (extras?.expeditionBossHp !== undefined) {
+        payload.expeditionBossHp = extras.expeditionBossHp;
+      }
+      if (extras?.expeditionBossMaxHp !== undefined) {
+        payload.expeditionBossMaxHp = extras.expeditionBossMaxHp;
+      }
+      if (extras?.crewSummaryJson !== undefined) {
+        payload.crewSummaryJson = extras.crewSummaryJson;
+      }
+      if (extras?.deltaEvents?.length) {
+        payload.deltaEvents = extras.deltaEvents.slice(0, 12);
+      }
       roomRef.current.send("state_update", payload);
     },
     [],
@@ -385,6 +502,11 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
     await endHosting();
   }, [endHosting]);
 
+  const startBoostSession = useCallback((durationMs?: number) => {
+    if (!roomRef.current) return;
+    roomRef.current.send("boost_session_start", { durationMs });
+  }, []);
+
   return {
     isSpectator: false,
     spectatorCount,
@@ -399,12 +521,18 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
     hostName: "",
     gameType,
     phase: "",
+    boostSessionEndsAt,
+    helperEnergyRemaining: 0,
+    helperEnergyMax: 0,
     leaveSpectator,
     startHosting,
     updateGameState,
     endHosting,
+    startBoostSession,
     spectatorRoomId: roomId,
     registerInviteMessage,
+    sendHelperBoost: () => {},
+    sendCheer: () => {},
   };
 }
 
@@ -430,6 +558,9 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
   const [hostName, setHostName] = useState("");
   const [gameType, setGameType] = useState("");
   const [phase, setPhase] = useState("waiting");
+  const [boostSessionEndsAt, setBoostSessionEndsAt] = useState(0);
+  const [helperEnergyRemaining, setHelperEnergyRemaining] = useState(0);
+  const [helperEnergyMax, setHelperEnergyMax] = useState(0);
 
   const roomRef = useRef<Room | null>(null);
   const mountedRef = useRef(true);
@@ -465,6 +596,7 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
           setHostName(newState.hostName ?? "");
           setGameType(newState.gameType ?? "");
           setPhase(newState.phase ?? "");
+          setBoostSessionEndsAt(newState.boostSessionEndsAt ?? 0);
           setCurrentScore(newState.currentScore ?? 0);
           setCurrentLevel(newState.currentLevel ?? 1);
           setLives(newState.lives ?? 3);
@@ -482,6 +614,35 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
           setPhase("finished");
           setError("Host left the game");
         });
+
+        newRoom.onMessage("helper_energy", (payload: any) => {
+          if (!mountedRef.current) return;
+          setHelperEnergyRemaining(payload?.remaining ?? 0);
+          setHelperEnergyMax(payload?.max ?? 0);
+        });
+
+        newRoom.onMessage("boost_session_started", (payload: any) => {
+          if (!mountedRef.current) return;
+          setBoostSessionEndsAt(payload?.endsAt ?? 0);
+        });
+
+        newRoom.onMessage("spectator_delta", (payload: any) => {
+          if (!mountedRef.current) return;
+          setGameState((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  __lastDelta: payload,
+                }
+              : previous,
+          );
+        });
+
+        newRoom.onMessage("host_confirmed", () => {});
+
+        // Request helper energy after handlers are registered. This avoids
+        // early join-time messages being emitted before onMessage bindings.
+        newRoom.send("helper_energy_sync");
 
         newRoom.onLeave(() => {
           if (!mountedRef.current) return;
@@ -523,6 +684,19 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
     }
   }, []);
 
+  const sendHelperBoost = useCallback(
+    (kind: "tap_boost" | "ore_rain" | "support_strike", value?: number) => {
+      if (!roomRef.current) return;
+      roomRef.current.send("helper_boost", { kind, value });
+    },
+    [],
+  );
+
+  const sendCheer = useCallback((emoji?: string) => {
+    if (!roomRef.current) return;
+    roomRef.current.send("cheer", { emoji });
+  }, []);
+
   return {
     isSpectator: true,
     spectatorCount,
@@ -537,12 +711,18 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
     hostName,
     gameType,
     phase,
+    boostSessionEndsAt,
+    helperEnergyRemaining,
+    helperEnergyMax,
     leaveSpectator,
     startHosting: async () => null,
     updateGameState: () => {},
     endHosting: async () => {},
+    startBoostSession: () => {},
     spectatorRoomId: null,
     registerInviteMessage: () => {},
+    sendHelperBoost,
+    sendCheer,
   };
 }
 

@@ -69,8 +69,6 @@ describe("Colyseus config helpers", () => {
       expect(shouldUseColyseus("air_hockey_game")).toBe(true);
       expect(shouldUseColyseus("bounce_blitz_game")).toBe(true);
       expect(shouldUseColyseus("brick_breaker_game")).toBe(true);
-      expect(shouldUseColyseus("snake_game")).toBe(true);
-      expect(shouldUseColyseus("race_game")).toBe(true);
     });
 
     it("returns false for physics games when PHYSICS_ENABLED is off", () => {
@@ -113,7 +111,6 @@ describe("Colyseus config helpers", () => {
       expect(shouldUseColyseus("chess_game")).toBe(true);
       expect(shouldUseColyseus("checkers_game")).toBe(true);
       expect(shouldUseColyseus("crazy_eights_game")).toBe(true);
-      expect(shouldUseColyseus("war_game")).toBe(true);
     });
 
     it("returns false for complex games when COMPLEX_TURNBASED_ENABLED is off", () => {
@@ -215,8 +212,6 @@ describe("Colyseus config helpers", () => {
         "air_hockey_game",
         "bounce_blitz_game",
         "brick_breaker_game",
-        "snake_game",
-        "race_game",
         "reaction_tap_game",
         "timed_tap_game",
         "dot_match_game",
@@ -227,7 +222,6 @@ describe("Colyseus config helpers", () => {
         "chess_game",
         "checkers_game",
         "crazy_eights_game",
-        "war_game",
         "word_master_game",
         "crossword_puzzle_game",
       ];

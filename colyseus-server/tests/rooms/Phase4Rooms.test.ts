@@ -1,20 +1,18 @@
-/**
+﻿/**
  * Phase 4 Physics / Real-Time Room Unit Tests
  *
  * Tests schemas, game logic, physics, collision detection, scoring,
  * win conditions, validation, and lifecycle for all 6 Phase-4 games:
  *   - Pong (ball physics, paddle collision, wall bounce, scoring)
  *   - Air Hockey (circle-circle collision, friction, goals, half-constraint)
- *   - Snake (grid movement, self/wall/other collision, food, tick speed)
  *   - Bounce Blitz (score-race, anti-cheat, timer)
  *   - Brick Breaker (score/level tracking, lives, tiebreaker)
- *   - Race (typing progress, WPM cap, accuracy, finish detection)
  *
  * Pattern: Direct schema/logic testing (no Colyseus Room simulation).
  */
 
 // ---------------------------------------------------------------------------
-// Mocks — must be before imports
+// Mocks Ã¢â‚¬â€ must be before imports
 // ---------------------------------------------------------------------------
 jest.mock("../../src/services/firebase", () => ({
   initializeFirebaseAdmin: jest.fn(),
@@ -40,20 +38,14 @@ import {
   BrickBreakerPlayerState,
   BrickBreakerState,
   BrickState,
-  Food,
   Paddle,
   PhysicsPlayer,
   PhysicsState,
-  RacePlayerState,
-  RaceState,
-  SnakePlayerState,
-  SnakeSegment,
-  SnakeState,
 } from "../../src/schemas/physics";
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 1. Physics Schemas — Ball, Paddle, PhysicsPlayer, PhysicsState
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 1. Physics Schemas Ã¢â‚¬â€ Ball, Paddle, PhysicsPlayer, PhysicsState
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("Physics Schemas", () => {
   describe("Ball", () => {
@@ -180,73 +172,10 @@ describe("Physics Schemas", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. Snake Schemas — SnakeSegment, SnakePlayerState, Food, SnakeState
-// ═══════════════════════════════════════════════════════════════════════════
 
-describe("Snake Schemas", () => {
-  describe("SnakeSegment", () => {
-    it("should have correct defaults", () => {
-      const seg = new SnakeSegment();
-      expect(seg.x).toBe(0);
-      expect(seg.y).toBe(0);
-    });
-  });
-
-  describe("SnakePlayerState", () => {
-    it("should extend Player with snake fields", () => {
-      const player = new SnakePlayerState();
-      // Inherited
-      expect(player.uid).toBe("");
-      expect(player.connected).toBe(true);
-      expect(player.score).toBe(0);
-      // Snake-specific
-      expect(player.direction).toBe("right");
-      expect(player.alive).toBe(true);
-      expect(player.length).toBe(3);
-      expect(player.segments).toBeInstanceOf(ArraySchema);
-      expect(player.segments.length).toBe(0);
-    });
-
-    it("should track segments in order (head first)", () => {
-      const player = new SnakePlayerState();
-      for (let i = 0; i < 3; i++) {
-        const seg = new SnakeSegment();
-        seg.x = 5 - i;
-        seg.y = 10;
-        player.segments.push(seg);
-      }
-      expect(player.segments.length).toBe(3);
-      expect(player.segments[0].x).toBe(5); // head
-      expect(player.segments[2].x).toBe(3); // tail
-    });
-  });
-
-  describe("Food", () => {
-    it("should have correct defaults", () => {
-      const food = new Food();
-      expect(food.x).toBe(0);
-      expect(food.y).toBe(0);
-      expect(food.value).toBe(1);
-    });
-  });
-
-  describe("SnakeState", () => {
-    it("should have correct default values", () => {
-      const state = new SnakeState();
-      expect(state.phase).toBe("waiting");
-      expect(state.gridWidth).toBe(20);
-      expect(state.gridHeight).toBe(20);
-      expect(state.tickRate).toBe(150);
-      expect(state.food).toBeInstanceOf(ArraySchema);
-      expect(state.snakePlayers).toBeInstanceOf(MapSchema);
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 3. Brick Breaker Schemas
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("BrickBreaker Schemas", () => {
   describe("BrickState", () => {
@@ -305,9 +234,9 @@ describe("BrickBreaker Schemas", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 4. Bounce Blitz Schemas
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("BounceBlitz Schemas", () => {
   describe("BounceBlitzPlayerState", () => {
@@ -330,36 +259,10 @@ describe("BounceBlitz Schemas", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 5. Race Schemas
-// ═══════════════════════════════════════════════════════════════════════════
 
-describe("Race Schemas", () => {
-  describe("RacePlayerState", () => {
-    it("should extend Player with race fields", () => {
-      const player = new RacePlayerState();
-      expect(player.finished).toBe(false);
-      expect(player.progress).toBe(0);
-      expect(player.wpm).toBe(0);
-      expect(player.accuracy).toBe(0);
-      expect(player.finishTime).toBe(0);
-      expect(player.score).toBe(0);
-    });
-  });
-
-  describe("RaceState", () => {
-    it("should have correct defaults", () => {
-      const state = new RaceState();
-      expect(state.phase).toBe("waiting");
-      expect(state.sentence).toBe("");
-      expect(state.racePlayers).toBeInstanceOf(MapSchema);
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 6. Pong Game Logic
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("Pong Game Logic", () => {
   // Constants matching PongRoom
@@ -523,7 +426,7 @@ describe("Pong Game Logic", () => {
       b.vy > 0;
 
     expect(withinX).toBe(true);
-    // Ball at exact surface, y + radius = pad.y → should trigger
+    // Ball at exact surface, y + radius = pad.y Ã¢â€ â€™ should trigger
     expect(b.y + b.radius).toBeGreaterThanOrEqual(pad.y);
   });
 
@@ -532,15 +435,15 @@ describe("Pong Game Logic", () => {
     pad.width = PADDLE_W;
     pad.x = 160; // centered
 
-    // Hit at left edge → hitPos = -0.5
+    // Hit at left edge Ã¢â€ â€™ hitPos = -0.5
     const hitPosLeft = (160 - pad.x) / pad.width - 0.5;
     expect(hitPosLeft).toBeCloseTo(-0.5);
 
-    // Hit at center → hitPos = 0
+    // Hit at center Ã¢â€ â€™ hitPos = 0
     const hitPosCenter = (pad.x + pad.width / 2 - pad.x) / pad.width - 0.5;
     expect(hitPosCenter).toBeCloseTo(0);
 
-    // Hit at right edge → hitPos = +0.5
+    // Hit at right edge Ã¢â€ â€™ hitPos = +0.5
     const hitPosRight = (pad.x + pad.width - pad.x) / pad.width - 0.5;
     expect(hitPosRight).toBeCloseTo(0.5);
   });
@@ -643,9 +546,9 @@ describe("Pong Game Logic", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 7. Air Hockey Game Logic
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("Air Hockey Game Logic", () => {
   const FIELD_W = 400;
@@ -864,7 +767,7 @@ describe("Air Hockey Game Logic", () => {
   });
 
   it("should constrain bottom player (index 0) to bottom half", () => {
-    // y ∈ [0.5, 1.0]
+    // y Ã¢Ë†Ë† [0.5, 1.0]
     const inputY = 0.3; // trying to go into top half
     const constrainedY = Math.max(0.5, Math.min(1, inputY));
     expect(constrainedY).toBe(0.5);
@@ -875,7 +778,7 @@ describe("Air Hockey Game Logic", () => {
   });
 
   it("should constrain top player (index 1) to top half", () => {
-    // y ∈ [0.0, 0.5]
+    // y Ã¢Ë†Ë† [0.0, 0.5]
     const inputY = 0.8; // trying to go into bottom half
     const constrainedY = Math.max(0, Math.min(0.5, inputY));
     expect(constrainedY).toBe(0.5);
@@ -911,503 +814,9 @@ describe("Air Hockey Game Logic", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 8. Snake Game Logic
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe("Snake Game Logic", () => {
-  const GRID_W = 20;
-  const GRID_H = 20;
-  const INITIAL_LENGTH = 3;
-  const INITIAL_TICK_MS = 150;
-  const MIN_TICK_MS = 80;
-  const FOOD_COUNT = 3;
-
-  type Direction = "up" | "down" | "left" | "right";
-  const OPPOSITES: Record<Direction, Direction> = {
-    up: "down",
-    down: "up",
-    left: "right",
-    right: "left",
-  };
-
-  function createSnakeState(): SnakeState {
-    const state = new SnakeState();
-    state.gameType = "snake_game";
-    state.gridWidth = GRID_W;
-    state.gridHeight = GRID_H;
-    state.tickRate = INITIAL_TICK_MS;
-    state.phase = "playing";
-    return state;
-  }
-
-  function addSnakePlayer(
-    state: SnakeState,
-    sessionId: string,
-    uid: string,
-    playerIndex: number,
-  ): SnakePlayerState {
-    const player = new SnakePlayerState();
-    player.uid = uid;
-    player.sessionId = sessionId;
-    player.playerIndex = playerIndex;
-    player.alive = true;
-    player.length = INITIAL_LENGTH;
-    player.connected = true;
-
-    const startX =
-      playerIndex === 0
-        ? Math.floor(GRID_W * 0.25) // 5
-        : Math.floor(GRID_W * 0.75); // 15
-    const startY = Math.floor(GRID_H / 2); // 10
-    player.direction = playerIndex === 0 ? "right" : "left";
-
-    for (let i = 0; i < INITIAL_LENGTH; i++) {
-      const seg = new SnakeSegment();
-      seg.x = playerIndex === 0 ? startX - i : startX + i;
-      seg.y = startY;
-      player.segments.push(seg);
-    }
-
-    state.snakePlayers.set(sessionId, player);
-    return player;
-  }
-
-  describe("Direction Opposites", () => {
-    it("should define correct opposites", () => {
-      expect(OPPOSITES["up"]).toBe("down");
-      expect(OPPOSITES["down"]).toBe("up");
-      expect(OPPOSITES["left"]).toBe("right");
-      expect(OPPOSITES["right"]).toBe("left");
-    });
-
-    it("should prevent 180° turns", () => {
-      const currentDir: Direction = "right";
-      const newDir: Direction = "left"; // opposite
-      expect(OPPOSITES[newDir] === currentDir).toBe(true);
-      // Should be rejected
-    });
-
-    it("should allow 90° turns", () => {
-      const currentDir: Direction = "right";
-
-      const upTurn: Direction = "up";
-      expect(OPPOSITES[upTurn] !== currentDir).toBe(true);
-
-      const downTurn: Direction = "down";
-      expect(OPPOSITES[downTurn] !== currentDir).toBe(true);
-    });
-
-    it("should allow same-direction input", () => {
-      const currentDir: Direction = "right";
-      const sameDir: Direction = "right";
-      expect(OPPOSITES[sameDir] !== currentDir).toBe(true);
-      // "right" opposite is "left", "left" !== "right" → allowed
-    });
-  });
-
-  describe("Initial Snake Setup", () => {
-    it("should create player 0 snake at left side facing right", () => {
-      const state = createSnakeState();
-      const p = addSnakePlayer(state, "s1", "uid-1", 0);
-
-      expect(p.direction).toBe("right");
-      expect(p.segments.length).toBe(INITIAL_LENGTH);
-      // Head at x=5, y=10; tail extends left
-      expect(p.segments[0].x).toBe(5);
-      expect(p.segments[0].y).toBe(10);
-      expect(p.segments[1].x).toBe(4);
-      expect(p.segments[2].x).toBe(3);
-    });
-
-    it("should create player 1 snake at right side facing left", () => {
-      const state = createSnakeState();
-      const p = addSnakePlayer(state, "s2", "uid-2", 1);
-
-      expect(p.direction).toBe("left");
-      expect(p.segments.length).toBe(INITIAL_LENGTH);
-      // Head at x=15, y=10; tail extends right
-      expect(p.segments[0].x).toBe(15);
-      expect(p.segments[1].x).toBe(16);
-      expect(p.segments[2].x).toBe(17);
-    });
-  });
-
-  describe("Movement", () => {
-    it("should advance head in direction right", () => {
-      const head = new SnakeSegment();
-      head.x = 5;
-      head.y = 10;
-
-      let newX = head.x;
-      let newY = head.y;
-      const dir = "right" as Direction;
-
-      if (dir === "up") newY--;
-      else if (dir === "down") newY++;
-      else if (dir === "left") newX--;
-      else if (dir === "right") newX++;
-
-      expect(newX).toBe(6);
-      expect(newY).toBe(10);
-    });
-
-    it("should advance head in direction up", () => {
-      let newX = 5,
-        newY = 10;
-      newY--; // up
-      expect(newY).toBe(9);
-    });
-
-    it("should advance head in direction down", () => {
-      let newX = 5,
-        newY = 10;
-      newY++; // down
-      expect(newY).toBe(11);
-    });
-
-    it("should advance head in direction left", () => {
-      let newX = 5,
-        newY = 10;
-      newX--; // left
-      expect(newX).toBe(4);
-    });
-  });
-
-  describe("Wall Collision", () => {
-    it("should detect left wall collision (x < 0)", () => {
-      const newX = -1;
-      expect(newX < 0).toBe(true);
-    });
-
-    it("should detect right wall collision (x >= GRID_W)", () => {
-      const newX = GRID_W;
-      expect(newX >= GRID_W).toBe(true);
-    });
-
-    it("should detect top wall collision (y < 0)", () => {
-      const newY = -1;
-      expect(newY < 0).toBe(true);
-    });
-
-    it("should detect bottom wall collision (y >= GRID_H)", () => {
-      const newY = GRID_H;
-      expect(newY >= GRID_H).toBe(true);
-    });
-
-    it("should NOT detect collision at edge cells", () => {
-      // Valid positions: 0 to GRID_W-1
-      expect(0 >= 0 && 0 < GRID_W).toBe(true);
-      expect(GRID_W - 1 >= 0 && GRID_W - 1 < GRID_W).toBe(true);
-    });
-  });
-
-  describe("Self Collision", () => {
-    it("should detect self collision when head overlaps body", () => {
-      const state = createSnakeState();
-      const p = addSnakePlayer(state, "s1", "uid-1", 0);
-
-      // Create a snake that has looped (artificial)
-      p.segments[0].x = 5;
-      p.segments[0].y = 10;
-      p.segments[1].x = 6;
-      p.segments[1].y = 10;
-      p.segments[2].x = 6;
-      p.segments[2].y = 11;
-
-      // New head position that overlaps segment[1]
-      const newX = 6;
-      const newY = 10;
-
-      let collision = false;
-      for (let i = 0; i < p.segments.length; i++) {
-        if (p.segments[i].x === newX && p.segments[i].y === newY) {
-          collision = true;
-          break;
-        }
-      }
-
-      expect(collision).toBe(true);
-    });
-
-    it("should NOT detect self collision when moving to empty cell", () => {
-      const state = createSnakeState();
-      const p = addSnakePlayer(state, "s1", "uid-1", 0);
-      // Default snake at (5,10)(4,10)(3,10)
-      // Moving right to (6,10) → no collision
-      const newX = 6;
-      const newY = 10;
-
-      let collision = false;
-      for (let i = 0; i < p.segments.length; i++) {
-        if (p.segments[i].x === newX && p.segments[i].y === newY) {
-          collision = true;
-          break;
-        }
-      }
-
-      expect(collision).toBe(false);
-    });
-  });
-
-  describe("Other Snake Collision", () => {
-    it("should detect collision with opponent snake", () => {
-      const state = createSnakeState();
-      addSnakePlayer(state, "s1", "uid-1", 0); // at (5,10)
-      const p2 = addSnakePlayer(state, "s2", "uid-2", 1); // at (15,10)
-
-      // Move p1's head into p2's body position
-      const newX = 15;
-      const newY = 10;
-
-      let collision = false;
-      for (let i = 0; i < p2.segments.length; i++) {
-        if (p2.segments[i].x === newX && p2.segments[i].y === newY) {
-          collision = true;
-          break;
-        }
-      }
-
-      expect(collision).toBe(true); // collision with p2's head
-    });
-  });
-
-  describe("Food Mechanics", () => {
-    it("should detect food collision at head position", () => {
-      const state = createSnakeState();
-      const p = addSnakePlayer(state, "s1", "uid-1", 0);
-
-      const food = new Food();
-      food.x = 6; // next position when moving right from (5,10)
-      food.y = 10;
-      state.food.push(food);
-
-      const headX = 6;
-      const headY = 10;
-      let ate = false;
-      for (let i = state.food.length - 1; i >= 0; i--) {
-        const f = state.food[i];
-        if (f.x === headX && f.y === headY) {
-          ate = true;
-          state.food.splice(i, 1);
-          break;
-        }
-      }
-
-      expect(ate).toBe(true);
-      expect(state.food.length).toBe(0);
-    });
-
-    it("should increase score when eating food", () => {
-      const p = new SnakePlayerState();
-      p.length = 3;
-      p.score = 0;
-
-      // Score formula: 10 + length * 2
-      p.score += 10 + p.length * 2;
-      p.length++;
-
-      expect(p.score).toBe(16); // 10 + 3*2 = 16
-      expect(p.length).toBe(4);
-    });
-
-    it("should grow snake when food eaten (no tail pop)", () => {
-      const p = new SnakePlayerState();
-      // Create 3-segment snake at (5,10)(4,10)(3,10)
-      for (let i = 0; i < 3; i++) {
-        const seg = new SnakeSegment();
-        seg.x = 5 - i;
-        seg.y = 10;
-        p.segments.push(seg);
-      }
-
-      const ate = true;
-
-      // Add new head
-      const newHead = new SnakeSegment();
-      newHead.x = 6;
-      newHead.y = 10;
-      p.segments.unshift(newHead);
-
-      // If ate, don't remove tail
-      if (!ate) {
-        p.segments.pop();
-      }
-
-      expect(p.segments.length).toBe(4); // grew by 1
-      expect(p.segments[0].x).toBe(6); // new head
-      expect(p.segments[3].x).toBe(3); // tail preserved
-    });
-
-    it("should NOT grow snake when no food eaten (tail pops)", () => {
-      const p = new SnakePlayerState();
-      for (let i = 0; i < 3; i++) {
-        const seg = new SnakeSegment();
-        seg.x = 5 - i;
-        seg.y = 10;
-        p.segments.push(seg);
-      }
-
-      const ate = false;
-
-      const newHead = new SnakeSegment();
-      newHead.x = 6;
-      newHead.y = 10;
-      p.segments.unshift(newHead);
-
-      if (!ate) {
-        p.segments.pop();
-      }
-
-      expect(p.segments.length).toBe(3); // same length
-      expect(p.segments[0].x).toBe(6); // new head
-      expect(p.segments[2].x).toBe(4); // old tail removed, (3,10) gone
-    });
-  });
-
-  describe("Food Spawning", () => {
-    it("should not spawn food on occupied cells", () => {
-      const state = createSnakeState();
-      addSnakePlayer(state, "s1", "uid-1", 0);
-
-      const occupied = new Set<string>();
-      state.snakePlayers.forEach((p: SnakePlayerState) => {
-        for (const seg of p.segments) {
-          occupied.add(`${seg.x},${seg.y}`);
-        }
-      });
-
-      // Snake occupies (5,10)(4,10)(3,10)
-      expect(occupied.has("5,10")).toBe(true);
-      expect(occupied.has("4,10")).toBe(true);
-      expect(occupied.has("3,10")).toBe(true);
-      expect(occupied.has("6,10")).toBe(false);
-    });
-  });
-
-  describe("Tick Rate Acceleration", () => {
-    it("should decrease tick rate as snake grows", () => {
-      const maxLength = 10;
-      const newTick = Math.max(
-        MIN_TICK_MS,
-        INITIAL_TICK_MS - (maxLength - INITIAL_LENGTH) * 3,
-      );
-      // 150 - (10 - 3) * 3 = 150 - 21 = 129
-      expect(newTick).toBe(129);
-    });
-
-    it("should not go below MIN_TICK_MS", () => {
-      const maxLength = 50;
-      const newTick = Math.max(
-        MIN_TICK_MS,
-        INITIAL_TICK_MS - (maxLength - INITIAL_LENGTH) * 3,
-      );
-      // 150 - (50 - 3) * 3 = 150 - 141 = 9 → clamped to 80
-      expect(newTick).toBe(MIN_TICK_MS);
-    });
-
-    it("should keep initial tick rate when snake is initial length", () => {
-      const maxLength = INITIAL_LENGTH;
-      const newTick = Math.max(
-        MIN_TICK_MS,
-        INITIAL_TICK_MS - (maxLength - INITIAL_LENGTH) * 3,
-      );
-      expect(newTick).toBe(INITIAL_TICK_MS);
-    });
-  });
-
-  describe("Win Detection", () => {
-    it("should detect winner when one player dies", () => {
-      const state = createSnakeState();
-      addSnakePlayer(state, "s1", "uid-1", 0);
-      addSnakePlayer(state, "s2", "uid-2", 1);
-
-      const p1 = state.snakePlayers.get("s1")!;
-      p1.alive = false;
-
-      const players = Array.from(
-        state.snakePlayers.values(),
-      ) as SnakePlayerState[];
-      const alive = players.filter((p) => p.alive);
-
-      expect(alive.length).toBe(1);
-      expect(alive[0].uid).toBe("uid-2");
-    });
-
-    it("should resolve mutual crash by longer snake", () => {
-      const state = createSnakeState();
-      const p1 = addSnakePlayer(state, "s1", "uid-1", 0);
-      const p2 = addSnakePlayer(state, "s2", "uid-2", 1);
-
-      // Make p1 longer
-      p1.length = 8;
-      p2.length = 5;
-      p1.alive = false;
-      p2.alive = false;
-
-      const players = Array.from(
-        state.snakePlayers.values(),
-      ) as SnakePlayerState[];
-      const alive = players.filter((p) => p.alive);
-      expect(alive.length).toBe(0);
-
-      // Longer snake wins
-      const sorted = [...players].sort((a, b) => b.length - a.length);
-      expect(sorted[0].uid).toBe("uid-1");
-      expect(sorted[0].length).toBe(8);
-    });
-
-    it("should detect draw when both die with same length", () => {
-      const state = createSnakeState();
-      const p1 = addSnakePlayer(state, "s1", "uid-1", 0);
-      const p2 = addSnakePlayer(state, "s2", "uid-2", 1);
-
-      p1.length = 5;
-      p2.length = 5;
-      p1.alive = false;
-      p2.alive = false;
-
-      const players = Array.from(
-        state.snakePlayers.values(),
-      ) as SnakePlayerState[];
-      const sorted = [...players].sort((a, b) => b.length - a.length);
-
-      expect(sorted[0].length).toBe(sorted[1].length);
-      // This would be a "mutual_crash" draw
-    });
-  });
-
-  describe("Rematch Reset", () => {
-    it("should reset all snake player state for rematch", () => {
-      const state = createSnakeState();
-      const p = addSnakePlayer(state, "s1", "uid-1", 0);
-      p.score = 100;
-      p.alive = false;
-      p.length = 10;
-      state.phase = "finished";
-      state.winnerId = "uid-1";
-
-      // Reset
-      p.segments.splice(0, p.segments.length);
-      p.score = 0;
-      p.alive = true;
-      p.length = INITIAL_LENGTH;
-      p.ready = false;
-      state.phase = "waiting";
-      state.winnerId = "";
-
-      expect(p.score).toBe(0);
-      expect(p.alive).toBe(true);
-      expect(p.length).toBe(INITIAL_LENGTH);
-      expect(p.segments.length).toBe(0);
-      expect(state.phase).toBe("waiting");
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 9. Bounce Blitz Game Logic
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("Bounce Blitz Game Logic", () => {
   const DEFAULT_DURATION = 120;
@@ -1578,9 +987,9 @@ describe("Bounce Blitz Game Logic", () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 10. Brick Breaker Game Logic
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("Brick Breaker Game Logic", () => {
   const MAX_LEVEL = 10;
@@ -1818,323 +1227,14 @@ describe("Brick Breaker Game Logic", () => {
     });
   });
 });
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 11. Race (Typing) Game Logic
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe("Race Game Logic", () => {
-  const SENTENCES = [
-    "The quick brown fox jumps over the lazy dog",
-    "Pack my box with five dozen liquor jugs",
-    "How vexingly quick daft zebras jump",
-    "The five boxing wizards jump quickly",
-    "Bright vixens jump dozy fowl quack",
-    "Sphinx of black quartz judge my vow",
-    "Two driven jocks help fax my big quiz",
-    "The jay pig fox and zebra did waltz quickly",
-    "Crazy Frederick bought many very exquisite opal jewels",
-    "We promptly judged antique ivory buckles for the next prize",
-    "A mad boxer shot a quick gloved jab to the jaw of his dizzy opponent",
-    "The wizard quickly jinxed the gnomes before they vaporized",
-    "Jackdaws love my big sphinx of quartz",
-    "Amazingly few discotheques provide jukeboxes",
-    "My girl wove six dozen plaid jackets before she quit",
-  ];
-
-  function createRaceState(): RaceState {
-    const state = new RaceState();
-    state.gameType = "race_game";
-    state.seed = 42;
-    state.sentence = SENTENCES[state.seed % SENTENCES.length];
-    state.phase = "playing";
-    return state;
-  }
-
-  function addRacePlayers(state: RaceState): void {
-    const p1 = new RacePlayerState();
-    p1.uid = "uid-1";
-    p1.sessionId = "s1";
-    p1.playerIndex = 0;
-    p1.displayName = "Player 1";
-    state.racePlayers.set("s1", p1);
-
-    const p2 = new RacePlayerState();
-    p2.uid = "uid-2";
-    p2.sessionId = "s2";
-    p2.playerIndex = 1;
-    p2.displayName = "Player 2";
-    state.racePlayers.set("s2", p2);
-  }
-
-  describe("Sentence Selection", () => {
-    it("should select sentence using seed modulo", () => {
-      const state = createRaceState();
-      const expectedIdx = 42 % SENTENCES.length;
-      expect(state.sentence).toBe(SENTENCES[expectedIdx]);
-    });
-
-    it("should have 15 sentences in the pool", () => {
-      expect(SENTENCES.length).toBe(15);
-    });
-
-    it("should wrap around with large seed", () => {
-      const seed = 1000000;
-      const idx = seed % SENTENCES.length;
-      expect(idx).toBeGreaterThanOrEqual(0);
-      expect(idx).toBeLessThan(SENTENCES.length);
-    });
-  });
-
-  describe("Progress Validation", () => {
-    it("should accept monotonically increasing progress", () => {
-      const p = new RacePlayerState();
-      p.progress = 0.3;
-
-      const newProgress = 0.5;
-      const valid = newProgress >= p.progress && newProgress <= 1;
-      expect(valid).toBe(true);
-    });
-
-    it("should reject decreasing progress", () => {
-      const p = new RacePlayerState();
-      p.progress = 0.5;
-
-      const newProgress = 0.3;
-      const valid = newProgress >= p.progress;
-      expect(valid).toBe(false);
-    });
-
-    it("should reject progress greater than 1", () => {
-      const newProgress = 1.5;
-      expect(newProgress > 1).toBe(true);
-      // Should be rejected
-    });
-
-    it("should accept progress of exactly 1 (completion)", () => {
-      const newProgress = 1;
-      expect(newProgress >= 0 && newProgress <= 1).toBe(true);
-    });
-  });
-
-  describe("WPM Validation", () => {
-    it("should cap WPM at 300", () => {
-      const wpm = 350;
-      const capped = Math.max(0, Math.min(300, wpm));
-      expect(capped).toBe(300);
-    });
-
-    it("should not allow negative WPM", () => {
-      const wpm = -10;
-      const capped = Math.max(0, Math.min(300, wpm));
-      expect(capped).toBe(0);
-    });
-
-    it("should accept valid WPM", () => {
-      const wpm = 85;
-      const capped = Math.max(0, Math.min(300, wpm));
-      expect(capped).toBe(85);
-    });
-  });
-
-  describe("Accuracy Validation", () => {
-    it("should cap accuracy at 100", () => {
-      const accuracy = 105;
-      const capped = Math.max(0, Math.min(100, accuracy));
-      expect(capped).toBe(100);
-    });
-
-    it("should not allow negative accuracy", () => {
-      const accuracy = -5;
-      const capped = Math.max(0, Math.min(100, accuracy));
-      expect(capped).toBe(0);
-    });
-
-    it("should accept valid accuracy", () => {
-      const accuracy = 95.5;
-      const capped = Math.max(0, Math.min(100, accuracy));
-      expect(capped).toBe(95.5);
-    });
-  });
-
-  describe("Score Calculation", () => {
-    it("should set score to rounded WPM", () => {
-      const wpm = 85.7;
-      const score = Math.round(wpm);
-      expect(score).toBe(86);
-    });
-  });
-
-  describe("Completion Detection", () => {
-    it("should mark player finished at progress >= 1", () => {
-      const p = new RacePlayerState();
-      p.progress = 1;
-      p.finished = p.progress >= 1;
-      expect(p.finished).toBe(true);
-    });
-
-    it("should NOT mark player finished below progress 1", () => {
-      const p = new RacePlayerState();
-      p.progress = 0.99;
-      p.finished = p.progress >= 1;
-      expect(p.finished).toBe(false);
-    });
-  });
-
-  describe("Win Detection", () => {
-    it("should determine winner by fastest finish time", () => {
-      const state = createRaceState();
-      addRacePlayers(state);
-
-      const p1 = state.racePlayers.get("s1")!;
-      const p2 = state.racePlayers.get("s2")!;
-      p1.progress = 1;
-      p1.finished = true;
-      p1.finishTime = 25.5;
-      p2.progress = 1;
-      p2.finished = true;
-      p2.finishTime = 30.2;
-
-      const completers = [p1, p2].filter((p) => p.progress >= 1);
-      expect(completers.length).toBe(2);
-
-      const sorted = [...completers].sort(
-        (a, b) => a.finishTime - b.finishTime,
-      );
-      expect(sorted[0].uid).toBe("uid-1"); // faster
-    });
-
-    it("should use WPM as tiebreaker when finish times match", () => {
-      const state = createRaceState();
-      addRacePlayers(state);
-
-      const p1 = state.racePlayers.get("s1")!;
-      const p2 = state.racePlayers.get("s2")!;
-      p1.progress = 1;
-      p1.finished = true;
-      p1.finishTime = 25;
-      p1.wpm = 90;
-      p2.progress = 1;
-      p2.finished = true;
-      p2.finishTime = 25;
-      p2.wpm = 85;
-
-      const completers = [p1, p2];
-      const sorted = [...completers].sort(
-        (a, b) => a.finishTime - b.finishTime,
-      );
-
-      if (sorted[0].finishTime === sorted[1].finishTime) {
-        const wpmSorted = [...sorted].sort((a, b) => b.wpm - a.wpm);
-        expect(wpmSorted[0].uid).toBe("uid-1"); // higher WPM
-      }
-    });
-
-    it("should determine winner by most progress if neither finished", () => {
-      const state = createRaceState();
-      addRacePlayers(state);
-
-      const p1 = state.racePlayers.get("s1")!;
-      const p2 = state.racePlayers.get("s2")!;
-      p1.progress = 0.8;
-      p1.finished = true; // forced finish (left/timeout)
-      p2.progress = 0.6;
-      p2.finished = true;
-
-      const completers = [p1, p2].filter((p) => p.progress >= 1);
-      expect(completers.length).toBe(0);
-
-      const players = [p1, p2];
-      const sorted = [...players].sort((a, b) => b.progress - a.progress);
-      expect(sorted[0].uid).toBe("uid-1"); // more progress
-    });
-
-    it("should detect tie when progress is equal and neither finished", () => {
-      const state = createRaceState();
-      addRacePlayers(state);
-
-      const p1 = state.racePlayers.get("s1")!;
-      const p2 = state.racePlayers.get("s2")!;
-      p1.progress = 0.5;
-      p2.progress = 0.5;
-
-      const sorted = [p1, p2].sort((a, b) => b.progress - a.progress);
-      expect(sorted[0].progress === sorted[1].progress).toBe(true);
-    });
-
-    it("should select single completer as winner", () => {
-      const state = createRaceState();
-      addRacePlayers(state);
-
-      const p1 = state.racePlayers.get("s1")!;
-      const p2 = state.racePlayers.get("s2")!;
-      p1.progress = 1;
-      p1.finished = true;
-      p2.progress = 0.7;
-      p2.finished = true;
-
-      const completers = [p1, p2].filter((p) => p.progress >= 1);
-      expect(completers.length).toBe(1);
-      expect(completers[0].uid).toBe("uid-1");
-    });
-  });
-
-  describe("Rematch Reset", () => {
-    it("should reset all player state and get new sentence", () => {
-      const state = createRaceState();
-      addRacePlayers(state);
-
-      const p1 = state.racePlayers.get("s1")!;
-      p1.progress = 1;
-      p1.wpm = 90;
-      p1.accuracy = 98;
-      p1.finishTime = 25;
-      p1.finished = true;
-      p1.score = 90;
-      state.phase = "finished";
-      state.winnerId = "uid-1";
-
-      // Reset
-      state.racePlayers.forEach((p: RacePlayerState) => {
-        p.score = 0;
-        p.ready = false;
-        p.finished = false;
-        p.progress = 0;
-        p.wpm = 0;
-        p.accuracy = 0;
-        p.finishTime = 0;
-      });
-      state.phase = "waiting";
-      state.winnerId = "";
-      state.winReason = "";
-      state.elapsed = 0;
-      const newSeed = Math.floor(Math.random() * 2147483647);
-      state.seed = newSeed;
-      state.sentence = SENTENCES[newSeed % SENTENCES.length];
-
-      expect(p1.score).toBe(0);
-      expect(p1.progress).toBe(0);
-      expect(p1.wpm).toBe(0);
-      expect(p1.accuracy).toBe(0);
-      expect(p1.finishTime).toBe(0);
-      expect(p1.finished).toBe(false);
-      expect(state.phase).toBe("waiting");
-      expect(state.sentence).not.toBe("");
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
 // 12. Game Lifecycle (Shared Patterns)
-// ═══════════════════════════════════════════════════════════════════════════
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 describe("Shared Game Lifecycle", () => {
   it("should start in waiting phase", () => {
     expect(new PhysicsState().phase).toBe("waiting");
-    expect(new SnakeState().phase).toBe("waiting");
     expect(new BounceBlitzState().phase).toBe("waiting");
     expect(new BrickBreakerState().phase).toBe("waiting");
-    expect(new RaceState().phase).toBe("waiting");
   });
 
   it("should track countdown correctly", () => {
@@ -2198,8 +1298,6 @@ describe("Shared Game Lifecycle", () => {
       expect(p.connected).toBe(false);
     });
 
-    it("should track connection status for SnakePlayerState", () => {
-      const p = new SnakePlayerState();
       expect(p.connected).toBe(true);
       p.connected = false;
       expect(p.connected).toBe(false);
@@ -2215,8 +1313,6 @@ describe("Shared Game Lifecycle", () => {
       expect(p.connected).toBe(true);
     });
 
-    it("should track connection status for RacePlayerState", () => {
-      const p = new RacePlayerState();
       expect(p.connected).toBe(true);
     });
   });

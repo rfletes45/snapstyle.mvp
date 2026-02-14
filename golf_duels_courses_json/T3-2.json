@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "holeId": "T3-2",
+  "tier": 3,
+  "bounds": {
+    "width": 14,
+    "height": 6
+  },
+  "start": {
+    "x": 2,
+    "z": 3
+  },
+  "cup": {
+    "x": 12,
+    "z": 3
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 0
+      },
+      "b": {
+        "x": 14,
+        "z": 6
+      }
+    },
+    {
+      "a": {
+        "x": 14,
+        "z": 6
+      },
+      "b": {
+        "x": 0,
+        "z": 6
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 6
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    }
+  ],
+  "surfaces": [
+    {
+      "type": "slow",
+      "shape": "aabb",
+      "min": {
+        "x": 10,
+        "z": 2
+      },
+      "max": {
+        "x": 13,
+        "z": 4
+      },
+      "id": "slow1"
+    }
+  ],
+  "heightFields": [],
+  "obstacles": [],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1302
+  }
+}

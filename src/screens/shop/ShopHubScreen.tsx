@@ -11,7 +11,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, {
   FadeInDown,
@@ -26,7 +26,6 @@ import { subscribeToWallet } from "@/services/economy";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { Wallet } from "@/types/models";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/shop/ShopHubScreen");
@@ -71,21 +70,25 @@ export default function ShopHubScreen() {
   // Wallet state
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
+  const [walletError, setWalletError] = useState(false);
 
   // Subscribe to wallet updates
   useEffect(() => {
     if (!user?.uid) return;
 
     setWalletLoading(true);
+    setWalletError(false);
     const unsubscribe = subscribeToWallet(
       user.uid,
       (newWallet) => {
         setWallet(newWallet);
         setWalletLoading(false);
+        setWalletError(false);
       },
       (error) => {
         logger.error("[ShopHubScreen] Wallet subscription error:", error);
         setWalletLoading(false);
+        setWalletError(true);
       },
     );
 
@@ -112,32 +115,39 @@ export default function ShopHubScreen() {
     }
   }, [navigation]);
 
-  // Shop options configuration
-  const shopOptions: ShopOption[] = [
-    {
-      id: "points",
-      title: "Points Shop",
-      subtitle: "Spend your tokens on cosmetics",
-      icon: "star-circle",
-      features: ["Avatar items", "Profile decorations", "Chat customizations"],
-      gradient: SHOP_GRADIENTS.points,
-      onPress: handlePointsShop,
-    },
-    {
-      id: "premium",
-      title: "Premium Shop",
-      subtitle: "Exclusive items & bundles",
-      icon: "diamond-stone",
-      features: [
-        "Token packs",
-        "Premium bundles",
-        "Limited exclusives",
-        "Gift items",
-      ],
-      gradient: SHOP_GRADIENTS.premium,
-      onPress: handlePremiumShop,
-    },
-  ];
+  // Shop options configuration (memoized to avoid recreating on every render)
+  const shopOptions = useMemo<ShopOption[]>(
+    () => [
+      {
+        id: "points",
+        title: "Points Shop",
+        subtitle: "Spend your tokens on cosmetics",
+        icon: "star-circle",
+        features: [
+          "Avatar items",
+          "Profile decorations",
+          "Chat customizations",
+        ],
+        gradient: SHOP_GRADIENTS.points,
+        onPress: handlePointsShop,
+      },
+      {
+        id: "premium",
+        title: "Premium Shop",
+        subtitle: "Exclusive items & bundles",
+        icon: "diamond-stone",
+        features: [
+          "Token packs",
+          "Premium bundles",
+          "Limited exclusives",
+          "Gift items",
+        ],
+        gradient: SHOP_GRADIENTS.premium,
+        onPress: handlePremiumShop,
+      },
+    ],
+    [handlePointsShop, handlePremiumShop],
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -158,6 +168,8 @@ export default function ShopHubScreen() {
             onPress={handleBack}
             style={styles.backButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
           >
             <MaterialCommunityIcons
               name="arrow-left"
@@ -174,16 +186,30 @@ export default function ShopHubScreen() {
         </Text>
 
         {/* Wallet Balance */}
-        <View style={styles.walletContainer}>
+        <View
+          style={styles.walletContainer}
+          accessibilityLabel={`Token balance: ${walletLoading ? "loading" : walletError ? "error" : (wallet?.tokensBalance?.toLocaleString() ?? "0")}`}
+        >
           <MaterialCommunityIcons
             name="star-circle"
             size={20}
             color="#FFD700"
           />
-          <Text style={[styles.walletBalance, { color: colors.headerText }]}>
+          <Text
+            style={[
+              styles.walletBalance,
+              {
+                color: walletError
+                  ? (colors.error ?? "#ff4444")
+                  : colors.headerText,
+              },
+            ]}
+          >
             {walletLoading
               ? "..."
-              : (wallet?.tokensBalance?.toLocaleString() ?? "0")}
+              : walletError
+                ? "Error"
+                : (wallet?.tokensBalance?.toLocaleString() ?? "0")}
           </Text>
         </View>
       </Animated.View>
@@ -212,6 +238,8 @@ export default function ShopHubScreen() {
         <Animated.View entering={FadeInUp.delay(400).duration(300)}>
           <Pressable
             onPress={handlePurchaseHistory}
+            accessibilityLabel="View purchase history"
+            accessibilityRole="button"
             style={({ pressed }) => [
               styles.historyButton,
               {
@@ -296,6 +324,8 @@ function ShopOptionCard({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         style={styles.cardPressable}
+        accessibilityLabel={`${option.title}: ${option.subtitle}`}
+        accessibilityRole="button"
       >
         <LinearGradient
           colors={[option.gradient[0], option.gradient[1]]}
@@ -319,8 +349,8 @@ function ShopOptionCard({
 
             {/* Features List */}
             <View style={styles.featuresList}>
-              {option.features.map((feature, i) => (
-                <View key={i} style={styles.featureItem}>
+              {option.features.map((feature) => (
+                <View key={feature} style={styles.featureItem}>
                   <MaterialCommunityIcons
                     name="check-circle"
                     size={16}

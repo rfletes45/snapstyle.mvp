@@ -19,6 +19,17 @@
  */
 
 import {
+  GameHistoryQuery,
+  GameHistoryRecord,
+  GameHistoryResponse,
+  GameHistoryStats,
+  GameTypeStats,
+  HeadToHeadRecord,
+} from "@/types/gameHistory";
+import { SinglePlayerGameType } from "@/types/games";
+import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
+import { TurnBasedGameType } from "@/types/turnBased";
+import {
   collection,
   doc,
   getDoc,
@@ -30,19 +41,7 @@ import {
   startAfter,
   where,
 } from "firebase/firestore";
-import {
-  GameHistoryQuery,
-  GameHistoryRecord,
-  GameHistoryResponse,
-  GameHistoryStats,
-  GameTypeStats,
-  HeadToHeadRecord,
-} from "@/types/gameHistory";
-import { SinglePlayerGameType } from "@/types/games";
-import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
-import { TurnBasedGameType } from "@/types/turnBased";
 import { getFirestoreInstance } from "./firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/gameHistory");
@@ -60,8 +59,6 @@ const SINGLE_PLAYER_FETCH_LIMIT = 50; // Reasonable limit for single-player sess
 const SINGLE_PLAYER_GAME_TYPES: SinglePlayerGameType[] = [
   "bounce_blitz",
   "play_2048",
-  "snake_master",
-  "memory_master",
   "word_master",
   "reaction_tap",
   "timed_tap",
@@ -135,13 +132,8 @@ function determineSinglePlayerWin(session: SinglePlayerGameSession): boolean {
       // Word: win if word was guessed
       return "wordGuessed" in stats && stats.wordGuessed === true;
 
-    case "memory_master":
-      // Memory: always a "win" if completed (matched all pairs)
-      return "pairsMatched" in stats && stats.pairsMatched > 0;
-
     case "bounce_blitz":
     case "play_2048":
-    case "snake_master":
       // Score-based games: win if score > 0 (completed at least something)
       return session.finalScore > 0;
 

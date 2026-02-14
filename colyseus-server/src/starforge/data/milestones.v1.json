@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "starforge.milestones.v1",
+  "milestones": [
+    {
+      "id": "MS_FIRST_TAP",
+      "title": "First Tap",
+      "desc": "You tapped for the first time!",
+      "threshold": { "t": "TOTAL_TAPS", "count": 1 },
+      "reward": { "fluxMicro": 100 }
+    },
+    {
+      "id": "MS_TAP_50",
+      "title": "Tapper",
+      "desc": "50 taps and counting.",
+      "threshold": { "t": "TOTAL_TAPS", "count": 50 },
+      "reward": { "fluxMicro": 500 }
+    },
+    {
+      "id": "MS_FLUX_1K",
+      "title": "Flux Novice",
+      "desc": "Earn 1,000 micro-flux total.",
+      "threshold": {
+        "t": "RESOURCE_EARNED",
+        "key": "flux",
+        "amountMicro": 1000
+      },
+      "reward": { "alloyMicro": 200 }
+    },
+    {
+      "id": "MS_FLUX_10K",
+      "title": "Flux Adept",
+      "desc": "Earn 10,000 micro-flux total.",
+      "threshold": {
+        "t": "RESOURCE_EARNED",
+        "key": "flux",
+        "amountMicro": 10000
+      },
+      "reward": { "alloyMicro": 500, "signalMicro": 200 }
+    },
+    {
+      "id": "MS_FIRST_MACHINE",
+      "title": "Industrialist",
+      "desc": "Own your first machine.",
+      "threshold": { "t": "MACHINES_OWNED", "count": 1 },
+      "reward": { "fluxMicro": 300 }
+    },
+    {
+      "id": "MS_MACHINES_5",
+      "title": "Factory Floor",
+      "desc": "Own 5 machines.",
+      "threshold": { "t": "MACHINES_OWNED", "count": 5 },
+      "reward": { "fluxMicro": 1000, "alloyMicro": 500 }
+    },
+    {
+      "id": "MS_FIRST_UPGRADE",
+      "title": "Researcher",
+      "desc": "Purchase your first upgrade.",
+      "threshold": { "t": "UPGRADES_PURCHASED", "count": 1 },
+      "reward": { "fluxMicro": 200 }
+    },
+    {
+      "id": "MS_UPGRADES_5",
+      "title": "Scientist",
+      "desc": "Purchase 5 upgrades.",
+      "threshold": { "t": "UPGRADES_PURCHASED", "count": 5 },
+      "reward": { "fluxMicro": 1000, "signalMicro": 300 }
+    },
+    {
+      "id": "MS_FIRST_CONTRACT",
+      "title": "Contractor",
+      "desc": "Complete your first contract.",
+      "threshold": { "t": "CONTRACTS_COMPLETED", "count": 1 },
+      "reward": { "fluxMicro": 500 }
+    },
+    {
+      "id": "MS_CONTRACTS_3",
+      "title": "Deal Maker",
+      "desc": "Complete 3 contracts.",
+      "threshold": { "t": "CONTRACTS_COMPLETED", "count": 3 },
+      "reward": { "fluxMicro": 1500, "alloyMicro": 800, "signalMicro": 400 }
+    }
+  ]
+}

@@ -98,7 +98,6 @@ export const COLYSEUS_ROOM_NAMES: Record<string, string> = {
   chess_game: "chess",
   checkers_game: "checkers",
   crazy_eights_game: "crazy_eights",
-  war_game: "war",
 
   // Physics / Real-Time
   pong_game: "pong",
@@ -108,12 +107,18 @@ export const COLYSEUS_ROOM_NAMES: Record<string, string> = {
   "8ball_pool": "pool",
   bounce_blitz_game: "bounce_blitz",
   brick_breaker_game: "brick_breaker",
-  snake_game: "snake",
-  race_game: "race",
 
   // Cooperative / Creative
   word_master_game: "word_master",
   crossword_puzzle_game: "crossword",
+  tropical_fishing: "island_room",
+
+  // Physics / Real-Time (Golf)
+  golf_duels: "golf_duels",
+  golf_duels_game: "golf_duels",
+
+  // Incremental
+  starforge_game: "starforge",
 };
 
 /**
@@ -149,7 +154,8 @@ export type ColyseusGameCategory =
   | "quickplay"
   | "turnbased"
   | "complex"
-  | "coop";
+  | "coop"
+  | "incremental";
 
 /**
  * Maps each game type key to its Colyseus tier category.
@@ -171,7 +177,6 @@ const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
   chess_game: "complex",
   checkers_game: "complex",
   crazy_eights_game: "complex",
-  war_game: "complex",
 
   // Physics / Real-Time
   pong_game: "physics",
@@ -181,12 +186,18 @@ const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
   "8ball_pool": "physics",
   bounce_blitz_game: "physics",
   brick_breaker_game: "physics",
-  snake_game: "physics",
-  race_game: "physics",
 
   // Cooperative / Creative
   word_master_game: "coop",
   crossword_puzzle_game: "coop",
+  tropical_fishing: "coop",
+
+  // Physics / Real-Time (Golf)
+  golf_duels: "physics",
+  golf_duels_game: "physics",
+
+  // Incremental
+  starforge_game: "incremental",
 };
 
 /**
@@ -220,6 +231,8 @@ export function shouldUseColyseus(gameType: string): boolean {
       return !!COLYSEUS_FEATURES.COMPLEX_TURNBASED_ENABLED;
     case "coop":
       return !!COLYSEUS_FEATURES.COOP_ENABLED;
+    case "incremental":
+      return !!COLYSEUS_FEATURES.INCREMENTAL_ENABLED;
     default:
       return false;
   }

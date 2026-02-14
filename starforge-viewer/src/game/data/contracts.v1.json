@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "starforge.contracts.v1",
+  "contracts": [
+    {
+      "id": "C_FLUX_100",
+      "title": "Flux Harvest I",
+      "desc": "Earn 100 Flux during the contract.",
+      "durationSec": 120,
+      "requirements": [
+        { "t": "EARN_RESOURCE", "key": "flux", "amountMicro": 100000 }
+      ],
+      "rewards": { "alloyMicro": 500, "signalMicro": 200 },
+      "difficulty": 1,
+      "tags": ["daily"]
+    },
+    {
+      "id": "C_ALLOY_50",
+      "title": "Alloy Sprint",
+      "desc": "Earn 50 Alloy during the contract.",
+      "durationSec": 180,
+      "requirements": [
+        { "t": "EARN_RESOURCE", "key": "alloy", "amountMicro": 50000 }
+      ],
+      "rewards": { "fluxMicro": 2000, "signalMicro": 300 },
+      "difficulty": 2,
+      "tags": ["daily"]
+    },
+    {
+      "id": "C_OWN_3_CUTTERS",
+      "title": "Supply Lines",
+      "desc": "Own at least 3 CUTTERs.",
+      "durationSec": 300,
+      "requirements": [{ "t": "OWN_MACHINE", "code": "CUTTER", "count": 3 }],
+      "rewards": { "fluxMicro": 5000, "alloyMicro": 1000 },
+      "difficulty": 2,
+      "tags": ["story"]
+    },
+    {
+      "id": "C_SIGNAL_RUSH",
+      "title": "Signal Rush",
+      "desc": "Earn 30 Signal during the contract.",
+      "durationSec": 240,
+      "requirements": [
+        { "t": "EARN_RESOURCE", "key": "signal", "amountMicro": 30000 }
+      ],
+      "rewards": { "fluxMicro": 3000, "alloyMicro": 500 },
+      "difficulty": 2,
+      "tags": ["story"]
+    },
+    {
+      "id": "C_UPGRADES_3",
+      "title": "Research Phase",
+      "desc": "Purchase at least 3 upgrades.",
+      "durationSec": 300,
+      "requirements": [{ "t": "UPGRADES_PURCHASED", "count": 3 }],
+      "rewards": { "fluxMicro": 4000, "alloyMicro": 1500, "signalMicro": 500 },
+      "difficulty": 3,
+      "tags": ["story"]
+    },
+    {
+      "id": "C_FLUX_1K",
+      "title": "Flux Harvest II",
+      "desc": "Earn 1,000 Flux during the contract.",
+      "durationSec": 300,
+      "requirements": [
+        { "t": "EARN_RESOURCE", "key": "flux", "amountMicro": 1000000 }
+      ],
+      "rewards": { "alloyMicro": 5000, "signalMicro": 2000 },
+      "difficulty": 3,
+      "tags": ["daily"]
+    },
+    {
+      "id": "C_MULTI_RESOURCE",
+      "title": "Balanced Economy",
+      "desc": "Earn 200 Flux and 100 Alloy during the contract.",
+      "durationSec": 300,
+      "requirements": [
+        { "t": "EARN_RESOURCE", "key": "flux", "amountMicro": 200000 },
+        { "t": "EARN_RESOURCE", "key": "alloy", "amountMicro": 100000 }
+      ],
+      "rewards": { "signalMicro": 3000 },
+      "difficulty": 3,
+      "tags": ["anomaly"]
+    },
+    {
+      "id": "C_OWN_MACHINES_5",
+      "title": "Industrial Complex",
+      "desc": "Own at least 5 machines total.",
+      "durationSec": 600,
+      "requirements": [{ "t": "OWN_MACHINE", "code": "*", "count": 5 }],
+      "rewards": {
+        "fluxMicro": 10000,
+        "alloyMicro": 3000,
+        "signalMicro": 1000
+      },
+      "difficulty": 4,
+      "tags": ["story"]
+    },
+    {
+      "id": "C_ANOMALY_FLUX_5K",
+      "title": "Anomaly: Flux Surge",
+      "desc": "Earn 5,000 Flux in 5 minutes.",
+      "durationSec": 300,
+      "requirements": [
+        { "t": "EARN_RESOURCE", "key": "flux", "amountMicro": 5000000 }
+      ],
+      "rewards": { "alloyMicro": 10000, "signalMicro": 5000 },
+      "difficulty": 5,
+      "tags": ["anomaly"]
+    },
+    {
+      "id": "C_UPGRADES_6",
+      "title": "Tech Lead",
+      "desc": "Purchase at least 6 upgrades.",
+      "durationSec": 600,
+      "requirements": [{ "t": "UPGRADES_PURCHASED", "count": 6 }],
+      "rewards": {
+        "fluxMicro": 15000,
+        "alloyMicro": 5000,
+        "signalMicro": 3000
+      },
+      "difficulty": 4,
+      "tags": ["story"]
+    }
+  ]
+}

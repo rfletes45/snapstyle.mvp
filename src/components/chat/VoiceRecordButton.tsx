@@ -354,8 +354,17 @@ export const VoiceRecordButton = memo(function VoiceRecordButton({
               color={isCancelling ? "#FF4444" : "#888"}
             />
             <Text style={[styles.slideText, isCancelling && styles.cancelText]}>
-              {isCancelling ? "Release to cancel" : "Slide to cancel"}
+              {isCancelling ? "Release to cancel" : "‹ Slide to cancel"}
             </Text>
+            {/* Animated chevron hint */}
+            {!isCancelling && (
+              <MaterialCommunityIcons
+                name="chevron-left"
+                size={14}
+                color="rgba(136,136,136,0.5)"
+                style={{ marginLeft: -4 }}
+              />
+            )}
           </View>
 
           {/* Duration display */}

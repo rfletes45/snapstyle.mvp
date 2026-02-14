@@ -18,6 +18,42 @@
  *   - DraggableItem uses Animated.ValueXY for real-time 60 fps dragging
  */
 
+import CameraFilterOverlay from "@/components/camera/CameraFilterOverlay";
+import DrawingCanvas, {
+  type DrawnPath,
+} from "@/components/camera/DrawingCanvas";
+import FaceEffectOverlay from "@/components/camera/FaceEffectOverlay";
+import FaceEffectPicker from "@/components/camera/FaceEffectPicker";
+import PollCreator from "@/components/camera/PollCreator";
+import SkiaFilteredImage, {
+  SkiaFilterThumbnail,
+  type SkiaFilteredImageRef,
+} from "@/components/camera/SkiaFilteredImage";
+import {
+  useCamera,
+  useCameraPermissions,
+  usePhotoCapture,
+  useRecording,
+} from "@/hooks/camera/useCameraHooks";
+import { useFaceDetection } from "@/hooks/camera/useFaceDetection";
+import * as CameraService from "@/services/camera/cameraService";
+import { FILTER_LIBRARY } from "@/services/camera/filterService";
+import {
+  useCameraState,
+  useEditorState,
+  useSnapState,
+} from "@/store/CameraContext";
+import type {
+  CapturedMedia,
+  FaceEffect as FaceEffectType,
+  FilterConfig,
+  OverlayElement,
+  PollElement,
+  Snap,
+  StickerElement,
+  TextElement,
+} from "@/types/camera";
+import { generateUUID } from "@/utils/uuid";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -34,8 +70,8 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   PanResponder,
   Platform,
@@ -54,36 +90,22 @@ import {
   type PinchGestureHandlerEventPayload,
   type PinchGestureHandlerGestureEvent,
 } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ViewShot, { captureRef } from "react-native-view-shot";
-import CameraFilterOverlay from "@/components/camera/CameraFilterOverlay";
-import DrawingCanvas, {
-  type DrawnPath,
-} from "@/components/camera/DrawingCanvas";
-import PollCreator from "@/components/camera/PollCreator";
-import {
-  useCamera,
-  useCameraPermissions,
-  usePhotoCapture,
-} from "@/hooks/camera/useCameraHooks";
-import { FILTER_LIBRARY } from "@/services/camera/filterService";
-import {
-  useCameraState,
-  useEditorState,
-  useSnapState,
-} from "@/store/CameraContext";
-import type {
-  CapturedMedia,
-  FilterConfig,
-  OverlayElement,
-  PollElement,
-  Snap,
-  StickerElement,
-  TextElement,
-} from "@/types/camera";
-import { generateUUID } from "@/utils/uuid";
-
 
 import { createLogger } from "@/utils/log";
+
+// VisionCamera — loaded for AR face-effect mode
+let VisionCamera: any = null;
+let useCameraDevice: any = null;
+try {
+  const vc = require("react-native-vision-camera");
+  VisionCamera = vc.Camera;
+  useCameraDevice = vc.useCameraDevice;
+} catch {
+  // VisionCamera unavailable — AR effects will be disabled
+}
+
 const logger = createLogger("screens/camera/CameraScreen");
 // =============================================================================
 // TYPES & CONSTANTS
@@ -325,8 +347,16 @@ const CameraScreen: React.FC = () => {
   const mode: CameraMode = params.mode || "full";
 
   // -- Context state ----------------------------------------------------------
-  const { setCameraFacing, setFlashMode, setZoom, selectFilter } =
-    useCameraState();
+  const {
+    setCameraFacing,
+    setFlashMode,
+    setZoom,
+    selectFilter,
+    setExposure,
+    selectFaceEffect,
+    selectedFaceEffect,
+    arModeActive,
+  } = useCameraState();
   const {
     overlayElements,
     appliedFilters,
@@ -347,10 +377,30 @@ const CameraScreen: React.FC = () => {
   const { isPermissionGranted, permissionError, requestPermissions } =
     useCameraPermissions();
 
+  // Safe area insets for proper screen padding
+  const insets = useSafeAreaInsets();
+
   // -- Camera controls --------------------------------------------------------
   const { cameraRef, cameraReady, settings, onCameraReady, onCameraError } =
     useCamera();
   const { isCapturing, capturePhoto } = usePhotoCapture(cameraRef);
+  const { recordingState, startRecording, stopRecording } =
+    useRecording(cameraRef);
+
+  // -- AR Face Detection (VisionCamera + MLKit) -------------------------------
+  const visionDevice = useCameraDevice
+    ? useCameraDevice(settings.facing === "front" ? "front" : "back")
+    : null;
+  const visionCameraRef = useRef<any>(null);
+  const {
+    detectedFaces,
+    handleFacesDetected,
+    faceDetectionOptions,
+    clearFaces,
+  } = useFaceDetection({ enabled: arModeActive });
+
+  // Show face effects toggle (camera mode only, not while recording)
+  const [showFaceEffects, setShowFaceEffects] = useState(false);
 
   // ==========================================================================
   // LOCAL STATE - Camera mode
@@ -363,8 +413,16 @@ const CameraScreen: React.FC = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
+  // Video recording timer display (seconds)
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const MAX_RECORDING_SECONDS = 60;
+
   // Pinch-to-zoom tracking
   const baseZoom = useRef(0);
+
+  // Double-tap-to-flip tracking
+  const lastTapTime = useRef(0);
 
   // ==========================================================================
   // LOCAL STATE - Editor mode
@@ -388,6 +446,9 @@ const CameraScreen: React.FC = () => {
   const [drawColor, setDrawColor] = useState("#FF3B30");
   const [drawBrush, setDrawBrush] = useState(6);
   const [drawPaths, setDrawPaths] = useState<DrawnPath[]>([]);
+  const [drawEraser, setDrawEraser] = useState(false);
+  /** Tracks drawing history for per-stroke undo (separate from element undo). */
+  const drawPathsHistory = useRef<DrawnPath[][]>([]);
 
   // Filter (editor)
   const [selectedFilterId, setSelectedFilterId] = useState<string>("none");
@@ -409,7 +470,14 @@ const CameraScreen: React.FC = () => {
 
   // ViewShot ref for compositing the editor view into a flat image
   const editorViewShotRef = useRef<ViewShot>(null);
+  const skiaFilterRef = useRef<SkiaFilteredImageRef>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Capture flash (white flash feedback on photo capture)
+  const [showCaptureFlash, setShowCaptureFlash] = useState(false);
+
+  // Save to library success
+  const [showSavedBadge, setShowSavedBadge] = useState(false);
 
   const isEditorMode = capturedMedia !== null;
 
@@ -452,6 +520,11 @@ const CameraScreen: React.FC = () => {
 
     try {
       triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Flash effect
+      setShowCaptureFlash(true);
+      setTimeout(() => setShowCaptureFlash(false), 150);
+
       const media = await capturePhoto(settings);
 
       if (!media) {
@@ -525,6 +598,95 @@ const CameraScreen: React.FC = () => {
     }
   }, [timerSeconds, triggerHaptic, isBusy, countdown]);
 
+  // -- Video recording (long-press) ------------------------------------------
+  const handleStartVideoRecording = useCallback(async () => {
+    if (!cameraReady || isBusy || recordingState.isRecording) return;
+    setIsBusy(true);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+
+    try {
+      await startRecording(settings);
+
+      // Start visual timer
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          const next = prev + 1;
+          if (next >= MAX_RECORDING_SECONDS) {
+            // Auto-stop at max duration
+            handleStopVideoRecordingRef.current?.();
+          }
+          return next;
+        });
+      }, 1000);
+    } catch {
+      setIsBusy(false);
+    }
+  }, [
+    cameraReady,
+    isBusy,
+    recordingState.isRecording,
+    startRecording,
+    settings,
+    triggerHaptic,
+  ]);
+
+  const handleStopVideoRecording = useCallback(async () => {
+    if (!recordingState.isRecording) return;
+
+    // Stop timer
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      const media = await stopRecording();
+      if (media) {
+        media.duration = recordingSeconds * 1000;
+        setCurrentSnap(media);
+        setEditorEditMode("none");
+        setCapturedMedia(media);
+      } else {
+        setIsBusy(false);
+      }
+    } catch {
+      setIsBusy(false);
+    }
+    setRecordingSeconds(0);
+  }, [
+    recordingState.isRecording,
+    stopRecording,
+    recordingSeconds,
+    setCurrentSnap,
+    setEditorEditMode,
+    triggerHaptic,
+  ]);
+
+  // Ref so the auto-stop timer can call the latest version
+  const handleStopVideoRecordingRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    handleStopVideoRecordingRef.current = handleStopVideoRecording;
+  }, [handleStopVideoRecording]);
+
+  // Cleanup recording timer on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
+
+  // Format recording time as MM:SS
+  const formatRecordingTime = useCallback((seconds: number) => {
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }, []);
+
   // -- Camera flip / flash / zoom / exposure / timer / grid -------------------
   const handleFlipCamera = useCallback(() => {
     const newFacing = settings.facing === "back" ? "front" : "back";
@@ -538,6 +700,29 @@ const CameraScreen: React.FC = () => {
     setFlashMode(modes[(currentIndex + 1) % modes.length]);
     triggerHaptic();
   }, [settings.flashMode, setFlashMode, triggerHaptic]);
+
+  // -- AR Face Effect handlers ------------------------------------------------
+  const handleSelectFaceEffect = useCallback(
+    (effectId: FaceEffectType | null) => {
+      selectFaceEffect(effectId ?? undefined);
+      if (effectId) {
+        setShowFaceEffects(true);
+      }
+      triggerHaptic();
+    },
+    [selectFaceEffect, triggerHaptic],
+  );
+
+  const handleToggleFaceEffects = useCallback(() => {
+    const next = !showFaceEffects;
+    setShowFaceEffects(next);
+    if (!next) {
+      // Leaving face effects mode — clear the selection and faces
+      selectFaceEffect(undefined);
+      clearFaces();
+    }
+    triggerHaptic();
+  }, [showFaceEffects, selectFaceEffect, clearFaces, triggerHaptic]);
 
   const onPinchGestureEvent = useCallback(
     (event: PinchGestureHandlerGestureEvent) => {
@@ -561,8 +746,11 @@ const CameraScreen: React.FC = () => {
   );
 
   const handleExposureChange = useCallback(
-    (value: number) => setExposureValue(value),
-    [],
+    (value: number) => {
+      setExposureValue(value);
+      setExposure(value);
+    },
+    [setExposure],
   );
 
   const handleTimerToggle = useCallback(() => {
@@ -577,6 +765,18 @@ const CameraScreen: React.FC = () => {
     setShowGrid((prev) => !prev);
     triggerHaptic();
   }, [triggerHaptic]);
+
+  /** Double-tap on camera preview to flip the camera */
+  const handleDoubleTapFlip = useCallback(() => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    if (now - lastTapTime.current < DOUBLE_TAP_DELAY) {
+      handleFlipCamera();
+      lastTapTime.current = 0; // reset so triple-tap doesn't fire again
+    } else {
+      lastTapTime.current = now;
+    }
+  }, [handleFlipCamera]);
 
   // Filter carousel item
   const renderFilterItem = useCallback(
@@ -703,7 +903,13 @@ const CameraScreen: React.FC = () => {
 
   // -- Undo drawing -----------------------------------------------------------
   const handleUndoDrawing = useCallback(() => {
-    if (drawPaths.length > 0) {
+    if (drawPathsHistory.current.length > 0) {
+      // Pop the last snapshot from history and restore it
+      const previous = drawPathsHistory.current.pop()!;
+      setDrawPaths(previous);
+      haptic();
+    } else if (drawPaths.length > 0) {
+      // Fallback: remove the last path if no history entry exists
       setDrawPaths((prev) => prev.slice(0, -1));
       haptic();
     } else {
@@ -726,6 +932,8 @@ const CameraScreen: React.FC = () => {
     setIsBusy(false); // fixes the stuck capture button bug
     setActiveTool("none");
     setDrawPaths([]);
+    setDrawEraser(false);
+    drawPathsHistory.current = [];
     setElementPositions({});
     setRotation(0);
     setSelectedFilterId("none");
@@ -733,16 +941,125 @@ const CameraScreen: React.FC = () => {
     haptic();
   }, [clearAllFilters, haptic]);
 
+  // -- Save to photo library --------------------------------------------------
+  const handleSaveToLibrary = useCallback(async () => {
+    if (!capturedMedia) return;
+    try {
+      let saveUri = capturedMedia.uri;
+
+      // Check if there are overlay elements that need compositing
+      const hasOverlays = overlayElements.length > 0 || drawPaths.length > 0;
+
+      if (!hasOverlays && skiaFilterRef.current && editorFilter) {
+        // No overlays — use Skia's full-resolution snapshot for pixel-perfect export
+        try {
+          const snapshot = await skiaFilterRef.current.makeSnapshot();
+          if (snapshot) {
+            const bytes = snapshot.encodeToBytes();
+            if (bytes) {
+              const FileSystem = await import("expo-file-system/legacy");
+              const tmpPath = `${FileSystem.cacheDirectory}skia_save_${Date.now()}.jpg`;
+              const base64 = btoa(
+                String.fromCharCode(...new Uint8Array(bytes)),
+              );
+              await FileSystem.writeAsStringAsync(tmpPath, base64, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              saveUri = tmpPath;
+              logger.info("[Camera] Skia snapshot used for save (full-res)");
+            }
+          }
+        } catch (skiaErr) {
+          logger.warn(
+            "[Camera] Skia snapshot failed, falling back to ViewShot:",
+            skiaErr,
+          );
+        }
+      }
+
+      // Fall back to ViewShot composite if we haven't got a Skia export
+      if (saveUri === capturedMedia.uri && editorViewShotRef.current) {
+        try {
+          const composited = await captureRef(editorViewShotRef, {
+            format: "jpg",
+            quality: 0.95,
+            result: "tmpfile",
+          });
+          if (composited) saveUri = composited;
+        } catch {
+          // Fall back to raw image
+        }
+      }
+
+      // Try expo-media-library for saving to camera roll
+      try {
+        const MediaLibrary = await import("expo-media-library");
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === "granted") {
+          await MediaLibrary.saveToLibraryAsync(saveUri);
+          setShowSavedBadge(true);
+          setTimeout(() => setShowSavedBadge(false), 2000);
+          haptic(Haptics.ImpactFeedbackStyle.Medium);
+          logger.info("[Camera] Saved to photo library");
+        } else {
+          logger.warn("[Camera] Photo library permission denied");
+        }
+      } catch (libError) {
+        // expo-media-library may not be installed — fall back to local save
+        const filename = `snap_${Date.now()}.jpg`;
+        await CameraService.saveMediaToLibrary(saveUri, filename);
+        setShowSavedBadge(true);
+        setTimeout(() => setShowSavedBadge(false), 2000);
+        haptic(Haptics.ImpactFeedbackStyle.Medium);
+        logger.info("[Camera] Saved to app storage");
+      }
+    } catch (error) {
+      logger.error("[Camera] Failed to save to library:", error);
+    }
+  }, [capturedMedia, haptic, overlayElements, drawPaths, editorFilter]);
+
   // -- Done / Send / Next -----------------------------------------------------
   const handleDone = useCallback(async () => {
     if (!capturedMedia || isExporting) return;
 
     setIsExporting(true);
     try {
-      // Flatten the editor view (image + filter overlay + drawings + overlays)
-      // into a single composited image using ViewShot
+      // Flatten the editor view (image + filter + drawings + overlays)
+      // into a single composited image.
       let finalUri = capturedMedia.uri;
-      if (editorViewShotRef.current) {
+
+      // Check if there are overlay elements that need ViewShot compositing
+      const hasOverlays = overlayElements.length > 0 || drawPaths.length > 0;
+
+      if (!hasOverlays && skiaFilterRef.current && editorFilter) {
+        // No overlays — use Skia full-res snapshot for pixel-perfect export
+        try {
+          const snapshot = await skiaFilterRef.current.makeSnapshot();
+          if (snapshot) {
+            const bytes = snapshot.encodeToBytes();
+            if (bytes) {
+              const FileSystem = await import("expo-file-system/legacy");
+              const tmpPath = `${FileSystem.cacheDirectory}skia_export_${Date.now()}.jpg`;
+              const base64 = btoa(
+                String.fromCharCode(...new Uint8Array(bytes)),
+              );
+              await FileSystem.writeAsStringAsync(tmpPath, base64, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              finalUri = tmpPath;
+              logger.info("[Camera] Skia snapshot exported (full-res)");
+            }
+          }
+        } catch (skiaErr) {
+          logger.warn(
+            "[Camera] Skia export failed, falling back to ViewShot:",
+            skiaErr,
+          );
+        }
+      }
+
+      // Fall back to ViewShot composite for overlays or if Skia failed
+      if (finalUri === capturedMedia.uri && editorViewShotRef.current) {
         try {
           const composited = await captureRef(editorViewShotRef, {
             format: "jpg",
@@ -751,13 +1068,26 @@ const CameraScreen: React.FC = () => {
           });
           if (composited) {
             finalUri = composited;
-            logger.info("[Camera] Editor view composited successfully");
+            logger.info("[Camera] Editor view composited via ViewShot");
           }
         } catch (flattenError) {
           logger.warn(
             "[Camera] ViewShot capture failed, using raw image:",
             flattenError,
           );
+        }
+      }
+
+      // Compress the final image for smaller upload size (photos only)
+      if (capturedMedia.type === "photo") {
+        try {
+          const compressed = await CameraService.compressImage(finalUri, 0.82);
+          finalUri = compressed.uri;
+          logger.info(
+            `[Camera] Compressed export: ${CameraService.formatFileSize(compressed.size)}`,
+          );
+        } catch {
+          // Non-fatal — proceed with uncompressed
         }
       }
 
@@ -816,92 +1146,12 @@ const CameraScreen: React.FC = () => {
     navigation,
   ]);
 
-  // -- Computed filter overlay colour (for editor) ----------------------------
-  const editorFilterOverlayColor = useMemo(() => {
+  // -- Computed editor filter (for Skia rendering) ----------------------------
+  const editorFilter = useMemo<FilterConfig | null>(() => {
     if (selectedFilterId === "none") return null;
     const f = ALL_FILTERS.find((ff) => ff.id === selectedFilterId);
-    if (!f) return null;
-
-    const { brightness, contrast, saturation, hue, sepia = 0, invert = 0 } = f;
-    const isIdentity =
-      brightness === 0 &&
-      contrast === 1 &&
-      saturation === 1 &&
-      hue === 0 &&
-      sepia === 0 &&
-      invert === 0;
-    if (isIdentity) return null;
-
-    let r = 0,
-      g = 0,
-      b = 0,
-      a = 0;
-
-    if (hue > 0) {
-      const h = (hue % 360) / 60;
-      const x = 1 - Math.abs((h % 2) - 1);
-      if (h < 1) {
-        r = 1;
-        g = x;
-      } else if (h < 2) {
-        r = x;
-        g = 1;
-      } else if (h < 3) {
-        g = 1;
-        b = x;
-      } else if (h < 4) {
-        g = x;
-        b = 1;
-      } else if (h < 5) {
-        r = x;
-        b = 1;
-      } else {
-        r = 1;
-        b = x;
-      }
-      a += 0.12;
-    }
-    if (sepia > 0) {
-      const sw = sepia * 0.6;
-      r = r * (1 - sw) + 0.76 * sw;
-      g = g * (1 - sw) + 0.58 * sw;
-      b = b * (1 - sw) + 0.36 * sw;
-      a += sepia * 0.18;
-    }
-    if (saturation < 1) {
-      const d = 1 - saturation;
-      r = r * saturation + 0.5 * d;
-      g = g * saturation + 0.5 * d;
-      b = b * saturation + 0.5 * d;
-      a += d * 0.25;
-    }
-    if (brightness > 0) {
-      r += (1 - r) * brightness * 0.5;
-      g += (1 - g) * brightness * 0.5;
-      b += (1 - b) * brightness * 0.5;
-      a += brightness * 0.08;
-    } else if (brightness < 0) {
-      const dk = -brightness;
-      r *= 1 - dk * 0.6;
-      g *= 1 - dk * 0.6;
-      b *= 1 - dk * 0.6;
-      a += dk * 0.15;
-    }
-    if (contrast > 1) a += (contrast - 1) * 0.04;
-    if (invert === 1) {
-      r = 0.3;
-      g = 0.6;
-      b = 0.8;
-      a += 0.2;
-    }
-
-    a = Math.min(0.4, Math.max(0, a)) * filterIntensity;
-    if (a < 0.01) return null;
-    const ri = Math.round(Math.min(1, Math.max(0, r)) * 255);
-    const gi = Math.round(Math.min(1, Math.max(0, g)) * 255);
-    const bi = Math.round(Math.min(1, Math.max(0, b)) * 255);
-    return `rgba(${ri}, ${gi}, ${bi}, ${a.toFixed(2)})`;
-  }, [selectedFilterId, filterIntensity]);
+    return f ?? null;
+  }, [selectedFilterId]);
 
   // -- Render overlay elements (editor) ---------------------------------------
   const renderOverlayElement = useCallback(
@@ -1028,10 +1278,11 @@ const CameraScreen: React.FC = () => {
           activeOpacity={0.7}
         >
           {capturedMedia && (
-            <Image
-              source={{ uri: capturedMedia.uri }}
-              style={styles.filterThumbImage}
-              resizeMode="cover"
+            <SkiaFilterThumbnail
+              uri={capturedMedia.uri}
+              filter={item}
+              width={72}
+              height={64}
             />
           )}
           <View
@@ -1060,18 +1311,62 @@ const CameraScreen: React.FC = () => {
   // ==========================================================================
 
   if (!isPermissionGranted) {
+    const isDenied =
+      permissionError?.toLowerCase().includes("denied") ||
+      permissionError?.toLowerCase().includes("blocked");
+
     return (
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        ]}
+      >
         <View style={styles.permissionContainer}>
-          <Ionicons name="camera-outline" size={64} color="#fff" />
+          <View style={styles.permissionIconCircle}>
+            <Ionicons name="camera-outline" size={48} color="#fff" />
+          </View>
+          <Text style={styles.permissionTitle}>Camera Access Required</Text>
           <Text style={styles.permissionText}>
-            {permissionError || "Camera permissions required"}
+            {permissionError ||
+              "SnapStyle needs access to your camera and microphone to take photos and videos."}
           </Text>
           <TouchableOpacity
             style={styles.permissionButton}
             onPress={requestPermissions}
           >
-            <Text style={styles.permissionButtonText}>Request Permissions</Text>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={20}
+              color="#fff"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.permissionButtonText}>Grant Permissions</Text>
+          </TouchableOpacity>
+          {isDenied && (
+            <TouchableOpacity
+              style={styles.permissionSettingsButton}
+              onPress={() => Linking.openSettings()}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={18}
+                color="#007AFF"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.permissionSettingsText}>Open Settings</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.permissionBackButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.permissionBackText}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1098,67 +1393,66 @@ const CameraScreen: React.FC = () => {
               options={{ format: "jpg", quality: 0.9 }}
               style={styles.previewContainer}
             >
-              <Image
-                source={{ uri: capturedMedia.uri }}
-                style={[
-                  styles.editorPreview,
-                  { transform: [{ rotate: `${rotation}deg` }] },
-                ]}
-                resizeMode="cover"
+              {/* Skia-rendered image with real GPU filter */}
+              <SkiaFilteredImage
+                ref={skiaFilterRef}
+                uri={capturedMedia.uri}
+                filter={editorFilter}
+                intensity={filterIntensity}
+                width={SCREEN_W}
+                height={SCREEN_H}
+                rotation={rotation}
+                style={StyleSheet.absoluteFill}
               />
-
-              {/* Editor filter colour overlay */}
-              {editorFilterOverlayColor && (
-                <View
-                  style={[
-                    styles.filterOverlay,
-                    { backgroundColor: editorFilterOverlayColor },
-                  ]}
-                  pointerEvents="none"
-                />
-              )}
 
               {/* Drawing canvas */}
               <DrawingCanvas
                 color={drawColor}
-                strokeWidth={drawBrush}
+                strokeWidth={
+                  drawEraser ? Math.max(20, drawBrush * 3) : drawBrush
+                }
                 enabled={activeTool === "draw"}
+                eraser={drawEraser}
                 paths={drawPaths}
-                onPathsChange={setDrawPaths}
+                onPathsChange={(newPaths) => {
+                  // Record a snapshot before the change for undo history
+                  drawPathsHistory.current.push(drawPaths);
+                  setDrawPaths(newPaths);
+                }}
               />
 
               {/* Overlay elements (text, stickers, polls) */}
               {overlayElements.map(renderOverlayElement)}
             </ViewShot>
-          ) : (
-            /* -- CAMERA: live CameraView ---------------------------------- */
-            <CameraView
-              ref={cameraRef}
-              style={styles.camera}
-              facing={settings.facing}
-              flash={settings.flashMode}
-              zoom={settings.zoom}
-              onCameraReady={onCameraReady}
-              onMountError={onCameraError}
+          ) : arModeActive && VisionCamera && visionDevice ? (
+            /* -- AR MODE: VisionCamera with face detection ---------------- */
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleDoubleTapFlip}
+              style={{ flex: 1 }}
             >
-              {/* Live Filter Overlay (translucent tint) */}
-              <CameraFilterOverlay filter={activeFilter} />
+              <VisionCamera
+                ref={visionCameraRef}
+                style={styles.camera}
+                device={visionDevice}
+                isActive={true}
+                photo={true}
+                video={true}
+                faceDetectionCallback={handleFacesDetected}
+                faceDetectionOptions={faceDetectionOptions}
+              />
 
-              {/* Brightness Overlay */}
-              {exposureValue !== 0 && (
-                <View
-                  style={[
-                    styles.brightnessOverlay,
-                    {
-                      backgroundColor:
-                        exposureValue > 0
-                          ? `rgba(255,255,255,${Math.min(0.5, exposureValue * 0.25)})`
-                          : `rgba(0,0,0,${Math.min(0.6, Math.abs(exposureValue) * 0.3)})`,
-                    },
-                  ]}
-                  pointerEvents="none"
-                />
-              )}
+              {/* Face Effect Overlay (Skia-rendered) */}
+              <FaceEffectOverlay
+                faces={detectedFaces}
+                selectedEffect={selectedFaceEffect ?? null}
+                previewWidth={SCREEN_W}
+                previewHeight={SCREEN_H}
+                mirrored={settings.facing === "front"}
+              />
+
+              {/* Live Filter Overlay (translucent tint) — also works in AR mode */}
+              <CameraFilterOverlay filter={activeFilter} />
 
               {/* Grid Overlay */}
               {showGrid && (
@@ -1196,14 +1490,22 @@ const CameraScreen: React.FC = () => {
 
               {/* Close Button */}
               <TouchableOpacity
-                style={styles.closeButton}
+                style={[
+                  styles.closeButton,
+                  { top: Math.max(50, insets.top + 8) },
+                ]}
                 onPress={() => navigation.goBack()}
               >
                 <Ionicons name="close" size={30} color="#fff" />
               </TouchableOpacity>
 
-              {/* Top-left toolbar: Timer, Grid, Exposure */}
-              <View style={styles.topToolbar}>
+              {/* Top-left toolbar */}
+              <View
+                style={[
+                  styles.topToolbar,
+                  { top: Math.max(50, insets.top + 8) },
+                ]}
+              >
                 <TouchableOpacity
                   style={styles.toolbarButton}
                   onPress={handleTimerToggle}
@@ -1227,42 +1529,7 @@ const CameraScreen: React.FC = () => {
                     color={showGrid ? "#FFD700" : "#fff"}
                   />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.toolbarButton}
-                  onPress={() => setShowExposure((v) => !v)}
-                >
-                  <Ionicons
-                    name="sunny-outline"
-                    size={24}
-                    color={showExposure ? "#FFD700" : "#fff"}
-                  />
-                </TouchableOpacity>
               </View>
-
-              {/* Exposure Slider */}
-              {showExposure && (
-                <View style={styles.exposureSliderContainer}>
-                  <Ionicons name="sunny" size={16} color="#FFD700" />
-                  <View style={styles.exposureSliderWrapper}>
-                    <Slider
-                      style={styles.exposureSlider}
-                      minimumValue={-2}
-                      maximumValue={2}
-                      value={exposureValue}
-                      onValueChange={handleExposureChange}
-                      minimumTrackTintColor="#FFD700"
-                      maximumTrackTintColor="rgba(255,255,255,0.4)"
-                      thumbTintColor="#fff"
-                      step={0.1}
-                    />
-                  </View>
-                  <Ionicons name="moon-outline" size={16} color="#fff" />
-                  <Text style={styles.exposureValueText}>
-                    {exposureValue > 0 ? "+" : ""}
-                    {exposureValue.toFixed(1)} EV
-                  </Text>
-                </View>
-              )}
 
               {/* Countdown Overlay */}
               {countdown !== null && (
@@ -1270,23 +1537,216 @@ const CameraScreen: React.FC = () => {
                   <Text style={styles.countdownText}>{countdown}</Text>
                 </View>
               )}
+            </TouchableOpacity>
+          ) : (
+            /* -- CAMERA: live CameraView ---------------------------------- */
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleDoubleTapFlip}
+              style={{ flex: 1 }}
+            >
+              <CameraView
+                ref={cameraRef}
+                style={styles.camera}
+                facing={settings.facing}
+                flash={settings.flashMode}
+                zoom={settings.zoom}
+                exposure={exposureValue}
+                onCameraReady={onCameraReady}
+                onMountError={onCameraError}
+              >
+                {/* Live Filter Overlay (translucent tint) */}
+                <CameraFilterOverlay filter={activeFilter} />
 
-              {/* Zoom Level Indicator */}
-              {settings.zoom > 0 && (
-                <View style={styles.zoomIndicator}>
-                  <Text style={styles.zoomText}>
-                    {(1 + settings.zoom * 7).toFixed(1)}x
-                  </Text>
+                {/* Brightness Overlay */}
+                {exposureValue !== 0 && (
+                  <View
+                    style={[
+                      styles.brightnessOverlay,
+                      {
+                        backgroundColor:
+                          exposureValue > 0
+                            ? `rgba(255,255,255,${Math.min(0.5, exposureValue * 0.25)})`
+                            : `rgba(0,0,0,${Math.min(0.6, Math.abs(exposureValue) * 0.3)})`,
+                      },
+                    ]}
+                    pointerEvents="none"
+                  />
+                )}
+
+                {/* Grid Overlay */}
+                {showGrid && (
+                  <View style={styles.gridOverlay} pointerEvents="none">
+                    <View
+                      style={[
+                        styles.gridLine,
+                        styles.gridLineV,
+                        { left: "33.33%" },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.gridLine,
+                        styles.gridLineV,
+                        { left: "66.66%" },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.gridLine,
+                        styles.gridLineH,
+                        { top: "33.33%" },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.gridLine,
+                        styles.gridLineH,
+                        { top: "66.66%" },
+                      ]}
+                    />
+                  </View>
+                )}
+
+                {/* Close Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.closeButton,
+                    { top: Math.max(50, insets.top + 8) },
+                  ]}
+                  onPress={() => navigation.goBack()}
+                >
+                  <Ionicons name="close" size={30} color="#fff" />
+                </TouchableOpacity>
+
+                {/* Top-left toolbar: Timer, Grid, Exposure */}
+                <View
+                  style={[
+                    styles.topToolbar,
+                    { top: Math.max(50, insets.top + 8) },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.toolbarButton}
+                    onPress={handleTimerToggle}
+                  >
+                    <Ionicons name="timer-outline" size={24} color="#fff" />
+                    {timerSeconds > 0 && (
+                      <View style={styles.toolbarBadgeContainer}>
+                        <Text style={styles.toolbarBadgeText}>
+                          {timerSeconds}s
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.toolbarButton}
+                    onPress={handleGridToggle}
+                  >
+                    <Ionicons
+                      name={showGrid ? "grid" : "grid-outline"}
+                      size={24}
+                      color={showGrid ? "#FFD700" : "#fff"}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.toolbarButton}
+                    onPress={() => setShowExposure((v) => !v)}
+                  >
+                    <Ionicons
+                      name="sunny-outline"
+                      size={24}
+                      color={showExposure ? "#FFD700" : "#fff"}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.toolbarButton}
+                    onPress={handleToggleFaceEffects}
+                  >
+                    <Ionicons
+                      name="happy-outline"
+                      size={24}
+                      color={showFaceEffects ? "#FFD700" : "#fff"}
+                    />
+                  </TouchableOpacity>
                 </View>
-              )}
-            </CameraView>
+
+                {/* Exposure Slider */}
+                {showExposure && (
+                  <View style={styles.exposureSliderContainer}>
+                    <Ionicons name="sunny" size={16} color="#FFD700" />
+                    <View style={styles.exposureSliderWrapper}>
+                      <Slider
+                        style={styles.exposureSlider}
+                        minimumValue={-2}
+                        maximumValue={2}
+                        value={exposureValue}
+                        onValueChange={handleExposureChange}
+                        minimumTrackTintColor="#FFD700"
+                        maximumTrackTintColor="rgba(255,255,255,0.4)"
+                        thumbTintColor="#fff"
+                        step={0.1}
+                      />
+                    </View>
+                    <Ionicons name="moon-outline" size={16} color="#fff" />
+                    {exposureValue !== 0 && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setExposureValue(0);
+                          setExposure(0);
+                          haptic();
+                        }}
+                        style={styles.exposureResetBtn}
+                      >
+                        <Text style={styles.exposureResetText}>Reset</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text style={styles.exposureValueText}>
+                      {exposureValue > 0 ? "+" : ""}
+                      {exposureValue.toFixed(1)} EV
+                    </Text>
+                  </View>
+                )}
+
+                {/* Countdown Overlay */}
+                {countdown !== null && (
+                  <View style={styles.countdownOverlay}>
+                    <Text style={styles.countdownText}>{countdown}</Text>
+                  </View>
+                )}
+
+                {/* Zoom Level Indicator */}
+                {settings.zoom > 0 && (
+                  <View style={styles.zoomIndicator}>
+                    <Text style={styles.zoomText}>
+                      {(1 + settings.zoom * 7).toFixed(1)}x
+                    </Text>
+                  </View>
+                )}
+              </CameraView>
+            </TouchableOpacity>
           )}
         </View>
       </PinchGestureHandler>
 
+      {/* --- CAPTURE FLASH (white overlay) -------------------------------- */}
+      {showCaptureFlash && (
+        <View style={styles.captureFlash} pointerEvents="none" />
+      )}
+
+      {/* --- SAVED BADGE -------------------------------------------------- */}
+      {showSavedBadge && (
+        <View style={styles.savedBadge} pointerEvents="none">
+          <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+          <Text style={styles.savedBadgeText}>Saved</Text>
+        </View>
+      )}
+
       {/* --- EDITOR TOP BAR (only in editor mode) ------------------------- */}
       {isEditorMode && (
-        <View style={styles.editorTopBar}>
+        <View
+          style={[styles.editorTopBar, { top: Math.max(50, insets.top + 8) }]}
+        >
           <TouchableOpacity onPress={handleDiscard} style={styles.topBtn}>
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
@@ -1310,6 +1770,12 @@ const CameraScreen: React.FC = () => {
             </TouchableOpacity>
             <TouchableOpacity onPress={handleRotate} style={styles.topBtn}>
               <Ionicons name="refresh-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSaveToLibrary}
+              style={styles.topBtn}
+            >
+              <Ionicons name="download-outline" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -1344,11 +1810,12 @@ const CameraScreen: React.FC = () => {
                 key={sz}
                 onPress={() => {
                   setDrawBrush(sz);
+                  setDrawEraser(false);
                   haptic();
                 }}
                 style={[
                   styles.brushBtn,
-                  drawBrush === sz && styles.brushBtnActive,
+                  drawBrush === sz && !drawEraser && styles.brushBtnActive,
                 ]}
               >
                 <View
@@ -1364,6 +1831,20 @@ const CameraScreen: React.FC = () => {
                 />
               </TouchableOpacity>
             ))}
+            {/* Eraser toggle */}
+            <TouchableOpacity
+              onPress={() => {
+                setDrawEraser((prev) => !prev);
+                haptic();
+              }}
+              style={[styles.brushBtn, drawEraser && styles.brushBtnActive]}
+            >
+              <Ionicons
+                name="bandage-outline"
+                size={18}
+                color={drawEraser ? "#007AFF" : "#fff"}
+              />
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -1474,8 +1955,8 @@ const CameraScreen: React.FC = () => {
         </View>
       )}
 
-      {/* --- CAMERA: Filter Carousel (only in camera mode) ---------------- */}
-      {!isEditorMode && (
+      {/* --- CAMERA: Filter Carousel (only in camera mode, hidden while recording) */}
+      {!isEditorMode && !recordingState.isRecording && !showFaceEffects && (
         <View style={styles.filterCarouselContainer}>
           <FlatList
             data={ALL_FILTERS}
@@ -1488,6 +1969,26 @@ const CameraScreen: React.FC = () => {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterCarouselContent}
           />
+        </View>
+      )}
+
+      {/* --- CAMERA: Face Effect Picker (replaces filter carousel) -------- */}
+      {!isEditorMode && !recordingState.isRecording && showFaceEffects && (
+        <FaceEffectPicker
+          selectedEffect={selectedFaceEffect ?? null}
+          onSelectEffect={handleSelectFaceEffect}
+          expanded={true}
+        />
+      )}
+
+      {/* --- CAMERA: Recording Timer Indicator ----------------------------- */}
+      {!isEditorMode && recordingState.isRecording && (
+        <View style={styles.recordingIndicator}>
+          <View style={styles.recordingDot} />
+          <Text style={styles.recordingTimerText}>
+            {formatRecordingTime(recordingSeconds)}
+          </Text>
+          <Text style={styles.recordingHint}>Tap to stop</Text>
         </View>
       )}
 
@@ -1519,12 +2020,27 @@ const CameraScreen: React.FC = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.captureButton}
-            onPress={handleCapture}
+            style={[
+              styles.captureButton,
+              recordingState.isRecording && styles.captureButtonRecording,
+            ]}
+            onPress={
+              recordingState.isRecording
+                ? handleStopVideoRecording
+                : handleCapture
+            }
+            onLongPress={handleStartVideoRecording}
+            delayLongPress={400}
             activeOpacity={0.7}
-            disabled={isBusy || countdown !== null}
+            disabled={isBusy && !recordingState.isRecording}
           >
-            <View style={styles.captureButtonInner} />
+            <View
+              style={[
+                styles.captureButtonInner,
+                recordingState.isRecording &&
+                  styles.captureButtonInnerRecording,
+              ]}
+            />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1687,6 +2203,33 @@ const CameraScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
 
+  // -- Capture Flash ----------------------------------------------------------
+  captureFlash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.65)",
+    zIndex: 50,
+  },
+
+  // -- Saved Badge ------------------------------------------------------------
+  savedBadge: {
+    position: "absolute",
+    top: "15%",
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+    zIndex: 40,
+  },
+  savedBadgeText: {
+    color: "#34C759",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
   // -- Camera -----------------------------------------------------------------
   cameraContainer: { flex: 1 },
   camera: { flex: 1 },
@@ -1709,21 +2252,65 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 32,
   },
-  permissionText: {
-    fontSize: 18,
+  permissionIconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "rgba(0,122,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  permissionTitle: {
+    fontSize: 22,
+    fontWeight: "700",
     color: "#fff",
     textAlign: "center",
-    marginVertical: 20,
+    marginBottom: 10,
+  },
+  permissionText: {
+    fontSize: 15,
+    color: "rgba(255,255,255,0.7)",
+    textAlign: "center",
+    marginBottom: 28,
+    lineHeight: 22,
   },
   permissionButton: {
+    flexDirection: "row",
     paddingHorizontal: 30,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: "#007AFF",
-    borderRadius: 8,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    marginBottom: 12,
   },
-  permissionButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  permissionButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  permissionSettingsButton: {
+    flexDirection: "row",
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  permissionSettingsText: {
+    color: "#007AFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  permissionBackButton: {
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  permissionBackText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 14,
+    fontWeight: "500",
+  },
 
   // -- Camera Top Toolbar -----------------------------------------------------
   topToolbar: {
@@ -1787,6 +2374,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     marginTop: 4,
+  },
+  exposureResetBtn: {
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,215,0,0.25)",
+  },
+  exposureResetText: {
+    color: "#FFD700",
+    fontSize: 10,
+    fontWeight: "700",
   },
 
   // -- Countdown --------------------------------------------------------------
@@ -1886,6 +2485,47 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 29,
     backgroundColor: "#fff",
+  },
+  captureButtonRecording: {
+    borderColor: "#FF3B30",
+  },
+  captureButtonInnerRecording: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: "#FF3B30",
+  },
+
+  // -- Recording Indicator ----------------------------------------------------
+  recordingIndicator: {
+    position: "absolute",
+    bottom: 180,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+    zIndex: 15,
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#FF3B30",
+  },
+  recordingTimerText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  recordingHint: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 11,
+    fontWeight: "500",
   },
 
   // === EDITOR STYLES =========================================================
@@ -2051,7 +2691,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.85)",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingBottom: Platform.OS === "ios" ? 20 : 0,
+    paddingBottom: Platform.OS === "ios" ? 20 : 8,
     gap: 12,
   },
   discardBtn: {

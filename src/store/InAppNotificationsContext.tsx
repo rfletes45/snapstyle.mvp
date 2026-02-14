@@ -507,6 +507,9 @@ export function InAppNotificationsProvider({
             const lastMessageText = data.lastMessageText || "";
             const lastMessageSenderId = data.lastMessageSenderId || "";
             const groupName = data.name || "Group";
+            const lastMentionUids = data.lastMentionUids as
+              | string[]
+              | undefined;
 
             // Check if this is actually a new message
             const previousTimestamp =
@@ -524,13 +527,8 @@ export function InAppNotificationsProvider({
               continue;
             }
 
-            // Skip if we're currently viewing this group
-            if (groupId === currentChatId) {
-              log.debug(
-                `User is viewing group ${groupId}, skipping notification`,
-              );
-              continue;
-            }
+            // Note: currentChatId suppression is handled by pushNotification()
+            // to avoid stale closure issues with snapshot callbacks.
 
             // Skip our own messages
             if (lastMessageSenderId === uid) {
@@ -545,9 +543,14 @@ export function InAppNotificationsProvider({
                   ? lastMessageText.slice(0, 40) + "..."
                   : lastMessageText || "New message";
 
+              // Check if the current user was mentioned
+              const wasMentioned = lastMentionUids?.includes(uid!) || false;
+
               pushNotification({
                 type: "message",
-                title: groupName,
+                title: wasMentioned
+                  ? `${groupName} — mentioned you`
+                  : groupName,
                 body: preview,
                 entityId: groupId,
                 fromUserId: lastMessageSenderId,
@@ -575,7 +578,7 @@ export function InAppNotificationsProvider({
         (u) => u !== unsubscribe,
       );
     };
-  }, [uid, enabled, currentChatId, pushNotification]);
+  }, [uid, enabled, pushNotification]);
 
   // Subscribe to chat list for new messages
   useEffect(() => {
@@ -601,13 +604,20 @@ export function InAppNotificationsProvider({
             const chatId = change.doc.id;
             const lastMessageAt = data.lastMessageAt?.toMillis?.() || 0;
             const lastMessageText = data.lastMessageText || "";
+            const lastMessageSenderId = data.lastMessageSenderId || "";
             const members = data.members as string[];
 
             // Find the other user
             const otherUid = members.find((m) => m !== uid);
             if (!otherUid) continue;
 
-            // Check if this is actually a new message (not just us sending)
+            // Skip our own messages
+            if (lastMessageSenderId === uid) {
+              log.debug(`Skipping own message in chat: ${chatId}`);
+              continue;
+            }
+
+            // Check if this is actually a new message
             const previousTimestamp =
               lastMessageTimestamps.current.get(chatId) || 0;
             if (lastMessageAt <= previousTimestamp) {
@@ -623,13 +633,8 @@ export function InAppNotificationsProvider({
               continue;
             }
 
-            // Skip if we're currently viewing this chat
-            if (chatId === currentChatId) {
-              log.debug(
-                `User is viewing chat ${chatId}, skipping notification`,
-              );
-              continue;
-            }
+            // Note: currentChatId suppression is handled by pushNotification()
+            // to avoid stale closure issues with snapshot callbacks.
 
             try {
               // Fetch sender's profile
@@ -677,7 +682,7 @@ export function InAppNotificationsProvider({
         (u) => u !== unsubscribe,
       );
     };
-  }, [uid, enabled, currentChatId, pushNotification]);
+  }, [uid, enabled, pushNotification]);
 
   // Subscribe to incoming game invites
   useEffect(() => {

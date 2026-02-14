@@ -14,7 +14,7 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -44,7 +44,14 @@ export default function SpectatorViewScreen({
 }) {
   const theme = useTheme();
   const { width: screenWidth } = useWindowDimensions();
-  const { roomId, gameType, hostName: routeHostName } = route.params ?? {};
+  const [nowMs, setNowMs] = useState(Date.now());
+  const {
+    roomId,
+    gameType,
+    hostName: routeHostName,
+    inviteMode,
+    boostSessionEndsAt: routeBoostSessionEndsAt = 0,
+  } = route.params ?? {};
 
   const {
     connected,
@@ -58,7 +65,12 @@ export default function SpectatorViewScreen({
     lives,
     hostName,
     phase,
+    boostSessionEndsAt,
+    helperEnergyRemaining,
+    helperEnergyMax,
     leaveSpectator,
+    sendHelperBoost,
+    sendCheer,
   } = useSpectator({
     mode: "sp-spectator",
     roomId,
@@ -67,11 +79,51 @@ export default function SpectatorViewScreen({
   const displayHostName = hostName || routeHostName || "Host";
   const gameName =
     GAME_METADATA[gameType as ExtendedGameType]?.name || gameType;
+  const effectiveBoostSessionEndsAt = Math.max(
+    boostSessionEndsAt,
+    Number(routeBoostSessionEndsAt || 0),
+  );
+  const isBoostMode = inviteMode === "boost" && gameType === "clicker_mine";
+  const isExpeditionMode =
+    inviteMode === "expedition" && gameType === "clicker_mine";
+  const boostActive =
+    isBoostMode && phase === "active" && effectiveBoostSessionEndsAt > nowMs;
+  const expeditionActive =
+    isExpeditionMode &&
+    phase === "active" &&
+    !!gameState &&
+    Boolean((gameState as any).expedition?.active);
+  const boostRemainingSeconds = Math.max(
+    0,
+    Math.floor((effectiveBoostSessionEndsAt - nowMs) / 1000),
+  );
+  const helperOutOfEnergy = helperEnergyRemaining <= 0;
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLeave = useCallback(async () => {
     await leaveSpectator();
     navigation.goBack();
   }, [leaveSpectator, navigation]);
+
+  const handleTapBoost = useCallback(() => {
+    sendHelperBoost("tap_boost", 1);
+  }, [sendHelperBoost]);
+
+  const handleOreRain = useCallback(() => {
+    sendHelperBoost("ore_rain", 1);
+  }, [sendHelperBoost]);
+
+  const handleSupportStrike = useCallback(() => {
+    sendHelperBoost("support_strike", 1);
+  }, [sendHelperBoost]);
+
+  const handleCheer = useCallback(() => {
+    sendCheer("👏");
+  }, [sendCheer]);
 
   // ─── Loading State ────────────────────────────────────────────────────
 
@@ -238,6 +290,89 @@ export default function SpectatorViewScreen({
           </View>
         )}
 
+        {/* Boost Controls (Clicker Mine helper mode) */}
+        {(isBoostMode || isExpeditionMode) && (
+          <Surface style={styles.boostCard} elevation={1}>
+            <View style={styles.boostHeader}>
+              <Text
+                variant="titleSmall"
+                style={{ color: theme.colors.onSurface, fontWeight: "700" }}
+              >
+                {isExpeditionMode ? "Expedition Mode" : "Helper Mode"}
+              </Text>
+              <Text
+                variant="bodySmall"
+                style={{ color: theme.colors.onSurfaceVariant }}
+              >
+                {isExpeditionMode
+                  ? expeditionActive
+                    ? "Live"
+                    : "Session ended"
+                  : boostActive
+                    ? `${boostRemainingSeconds}s left`
+                    : "Session ended"}
+              </Text>
+            </View>
+
+            <Text
+              variant="bodySmall"
+              style={{
+                color: theme.colors.onSurfaceVariant,
+                marginTop: Spacing.xs,
+              }}
+            >
+              Energy {helperEnergyRemaining}/{helperEnergyMax || 0}
+            </Text>
+
+            <View style={styles.boostActionsRow}>
+              {isExpeditionMode ? (
+                <Button
+                  mode="contained"
+                  compact
+                  disabled={!expeditionActive || helperOutOfEnergy}
+                  onPress={handleSupportStrike}
+                  icon="sword-cross"
+                >
+                  Support Strike
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    mode="contained"
+                    compact
+                    disabled={!boostActive || helperOutOfEnergy}
+                    onPress={handleTapBoost}
+                    icon="pickaxe"
+                  >
+                    Tap Boost
+                  </Button>
+                  <Button
+                    mode="contained-tonal"
+                    compact
+                    disabled={!boostActive || helperOutOfEnergy}
+                    onPress={handleOreRain}
+                    icon="weather-pouring"
+                  >
+                    Ore Rain
+                  </Button>
+                </>
+              )}
+              <Button mode="outlined" compact onPress={handleCheer} icon="emoticon-happy-outline">
+                Cheer
+              </Button>
+            </View>
+
+            {!boostActive && !expeditionActive && (
+              <Text
+                variant="bodySmall"
+                style={{ color: theme.colors.error, marginTop: Spacing.sm }}
+              >
+                Actions are only available during an active host helper session.
+              </Text>
+            )}
+          </Surface>
+        )}
+
         {/* Spectator List */}
         {spectators.length > 0 && (
           <Surface style={styles.spectatorsCard} elevation={1}>
@@ -390,6 +525,22 @@ const styles = StyleSheet.create({
   spectatorsCard: {
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
+  },
+  boostCard: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+  },
+  boostHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  boostActionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
   },
   spectatorRow: {
     flexDirection: "row",

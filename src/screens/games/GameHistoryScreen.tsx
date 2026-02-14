@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GameHistoryScreen - View completed games with filtering
  *
  * Features:
@@ -48,6 +48,8 @@ import {
 } from "@/types/games";
 import {
   BounceBlitzStats,
+  ClickerMineStats,
+  HelixDropStats,
   MemoryMasterStats,
   Play2048Stats,
   SinglePlayerGameStats,
@@ -81,11 +83,11 @@ const MULTIPLAYER_GAMES: {
   label: string;
   icon: string;
 }[] = [
-  { type: "all", label: "All Games", icon: "🎮" },
-  { type: "chess", label: "Chess", icon: "♟️" },
-  { type: "checkers", label: "Checkers", icon: "⚫" },
-  { type: "tic_tac_toe", label: "Tic-Tac-Toe", icon: "⭕" },
-  { type: "crazy_eights", label: "Crazy Eights", icon: "🎴" },
+  { type: "all", label: "All Games", icon: "ðŸŽ®" },
+  { type: "chess", label: "Chess", icon: "â™Ÿï¸" },
+  { type: "checkers", label: "Checkers", icon: "âš«" },
+  { type: "tic_tac_toe", label: "Tic-Tac-Toe", icon: "â­•" },
+  { type: "crazy_eights", label: "Crazy Eights", icon: "ðŸŽ´" },
 ];
 
 // Single-player games for filtering
@@ -94,12 +96,14 @@ const SINGLEPLAYER_GAMES: {
   label: string;
   icon: string;
 }[] = [
-  { type: "all", label: "All Games", icon: "🎮" },
-  { type: "word_master", label: "Word", icon: "📝" },
-  { type: "bounce_blitz", label: "Bounce Blitz", icon: "⚪" },
-  { type: "play_2048", label: "2048", icon: "🔢" },
-  { type: "snake_master", label: "Snake", icon: "🐍" },
-  { type: "memory_master", label: "Memory", icon: "🧠" },
+  { type: "all", label: "All Games", icon: "ðŸŽ®" },
+  { type: "word_master", label: "Word", icon: "ðŸ“" },
+  { type: "bounce_blitz", label: "Bounce Blitz", icon: "âšª" },
+  { type: "clicker_mine", label: "Clicker Mine", icon: "⛏️" },
+  { type: "helix_drop", label: "Helix Drop", icon: "🌀" },
+  { type: "play_2048", label: "2048", icon: "ðŸ”¢" },
+  { type: "snake_master", label: "Snake", icon: "ðŸ" },
+  { type: "memory_master", label: "Memory", icon: "ðŸ§ " },
 ];
 
 // =============================================================================
@@ -620,25 +624,33 @@ export function GameHistoryScreen() {
       case "word_master": {
         const ws = stats as WordMasterStats;
         if (ws.wordGuessed) {
-          return `✅ Guessed in ${ws.attemptsUsed} attempt${ws.attemptsUsed !== 1 ? "s" : ""}`;
+          return `âœ… Guessed in ${ws.attemptsUsed} attempt${ws.attemptsUsed !== 1 ? "s" : ""}`;
         }
-        return `❌ ${ws.attemptsUsed}/6 attempts`;
+        return `âŒ ${ws.attemptsUsed}/6 attempts`;
       }
       case "snake_master": {
         const ss = stats as SnakeMasterStats;
-        return `🍎 ${ss.foodEaten} apples • ${ss.maxLength} max length`;
+        return `ðŸŽ ${ss.foodEaten} apples â€¢ ${ss.maxLength} max length`;
       }
       case "play_2048": {
         const s2 = stats as Play2048Stats;
-        return `🔢 Best: ${s2.bestTile} • ${s2.moveCount} moves`;
+        return `ðŸ”¢ Best: ${s2.bestTile} â€¢ ${s2.moveCount} moves`;
       }
       case "memory_master": {
         const ms = stats as MemoryMasterStats;
-        return `🧠 ${ms.pairsMatched} pairs • ${ms.attempts} attempts`;
+        return `ðŸ§  ${ms.pairsMatched} pairs â€¢ ${ms.attempts} attempts`;
       }
       case "bounce_blitz": {
         const bb = stats as BounceBlitzStats;
-        return `⚪ Level ${bb.levelReached} • ${bb.blocksDestroyed} blocks`;
+        return `âšª Level ${bb.levelReached} â€¢ ${bb.blocksDestroyed} blocks`;
+      }
+      case "clicker_mine": {
+        const cm = stats as ClickerMineStats;
+        return `⛏️ Depth ${cm.depthReached} • ${cm.taps} taps • ${cm.prestiges} prestige`;
+      }
+      case "helix_drop": {
+        const hd = stats as HelixDropStats;
+        return `🌀 Level ${hd.levelReached} • Combo x${hd.maxCombo}`;
       }
       default:
         return item.singlePlayerScore !== undefined
@@ -671,7 +683,7 @@ export function GameHistoryScreen() {
 
       if (userPlayer?.isWinner || item.winnerId === currentFirebaseUser?.uid) {
         outcomeColor = theme.colors.primary;
-        outcomeText = isNewHighScore ? "🏆 New Best!" : "Completed";
+        outcomeText = isNewHighScore ? "ðŸ† New Best!" : "Completed";
       } else {
         outcomeColor = theme.colors.error;
         outcomeText = "Game Over";
@@ -702,7 +714,7 @@ export function GameHistoryScreen() {
             { backgroundColor: theme.colors.primaryContainer },
           ]}
         >
-          <Text style={styles.gameIconEmoji}>{metadata?.icon || "🎮"}</Text>
+          <Text style={styles.gameIconEmoji}>{metadata?.icon || "ðŸŽ®"}</Text>
         </View>
 
         {/* Game Info */}
@@ -1085,3 +1097,4 @@ const styles = StyleSheet.create({
 });
 
 export default GameHistoryScreen;
+

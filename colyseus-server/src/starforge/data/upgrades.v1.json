@@ -1,0 +1,333 @@
+{
+  "schemaVersion": "starforge.upgrades.v1",
+  "upgrades": [
+    {
+      "id": "CLICK_1",
+      "name": "Reinforced Tap",
+      "description": "Tap yields 2× Flux.",
+      "requiresFluxMicro": 50,
+      "cost": { "fluxMicro": 100 },
+      "effects": [{ "type": "clickMult", "mult": 2 }]
+    },
+    {
+      "id": "CLICK_2",
+      "name": "Plasma Tap",
+      "description": "Tap yields 3× Flux.",
+      "requiresFluxMicro": 500,
+      "requires": ["CLICK_1"],
+      "cost": { "fluxMicro": 800, "alloyMicro": 200 },
+      "effects": [{ "type": "clickMult", "mult": 1.5 }]
+    },
+    {
+      "id": "PROD_1",
+      "name": "Overclocked Lines",
+      "description": "All machines produce 25% more.",
+      "requiresFluxMicro": 200,
+      "cost": { "fluxMicro": 400 },
+      "effects": [{ "type": "globalProdMult", "mult": 1.25 }]
+    },
+    {
+      "id": "PROD_2",
+      "name": "Quantum Efficiency",
+      "description": "All machines produce 50% more.",
+      "requiresFluxMicro": 2000,
+      "requires": ["PROD_1"],
+      "cost": { "fluxMicro": 3000, "alloyMicro": 500 },
+      "effects": [{ "type": "globalProdMult", "mult": 1.5 }]
+    },
+    {
+      "id": "CAP_FLUX_1",
+      "name": "Flux Capacitor I",
+      "description": "+10 Flux storage cap.",
+      "requiresFluxMicro": 100,
+      "cost": { "fluxMicro": 200 },
+      "effects": [
+        { "type": "capBonus", "resource": "flux", "amountMicro": 10000 }
+      ]
+    },
+    {
+      "id": "CAP_ALLOY_1",
+      "name": "Alloy Vault I",
+      "description": "+5 Alloy storage cap.",
+      "requiresFluxMicro": 300,
+      "cost": { "fluxMicro": 300, "alloyMicro": 100 },
+      "effects": [
+        { "type": "capBonus", "resource": "alloy", "amountMicro": 5000 }
+      ]
+    },
+    {
+      "id": "CAP_SIGNAL_1",
+      "name": "Signal Relay I",
+      "description": "+3 Signal storage cap.",
+      "requiresFluxMicro": 500,
+      "cost": { "fluxMicro": 400, "signalMicro": 50 },
+      "effects": [
+        { "type": "capBonus", "resource": "signal", "amountMicro": 3000 }
+      ]
+    },
+    {
+      "id": "CUTTER_BOOST",
+      "name": "Diamond Blades",
+      "description": "CUTTERs convert 50% faster.",
+      "requiresFluxMicro": 400,
+      "cost": { "fluxMicro": 500, "alloyMicro": 200 },
+      "effects": [
+        { "type": "machineProdMult", "machineCode": "CUTTER", "mult": 1.5 }
+      ]
+    },
+    {
+      "id": "SIGNAL_BOOST",
+      "name": "High-Gain Antenna",
+      "description": "SIGNAL generators produce 2× Signal.",
+      "requiresFluxMicro": 600,
+      "cost": { "fluxMicro": 600, "signalMicro": 100 },
+      "effects": [
+        { "type": "machineProdMult", "machineCode": "SIGNAL", "mult": 2 }
+      ]
+    },
+    {
+      "id": "CUTTER_EFF",
+      "name": "Precision Optics",
+      "description": "CUTTERs yield 30% more Alloy per Flux.",
+      "requiresFluxMicro": 1000,
+      "requires": ["CUTTER_BOOST"],
+      "cost": { "fluxMicro": 1500, "alloyMicro": 400 },
+      "effects": [
+        { "type": "converterEfficiency", "machineCode": "CUTTER", "mult": 1.3 }
+      ]
+    },
+    {
+      "id": "COST_RED_1",
+      "name": "Bulk Contracts",
+      "description": "All machines cost 10% less.",
+      "requiresFluxMicro": 1500,
+      "cost": { "fluxMicro": 2000, "alloyMicro": 300 },
+      "effects": [{ "type": "costReduction", "machineCode": "*", "mult": 0.9 }]
+    },
+
+    {
+      "id": "UNLOCK_T2_CUTTER",
+      "name": "Cutter Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for CUTTER stacks.",
+      "requiresFluxMicro": 0,
+      "cost": { "alloyMicro": 5000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "CUTTER", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_CUTTER",
+      "name": "Cutter Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for CUTTER stacks.",
+      "requiresFluxMicro": 0,
+      "requires": ["UNLOCK_T2_CUTTER"],
+      "cost": { "signalMicro": 2500 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "CUTTER", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_SIGNAL",
+      "name": "Signal Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for SIGNAL stacks.",
+      "requiresFluxMicro": 200,
+      "cost": { "alloyMicro": 4000, "fluxMicro": 2000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "SIGNAL", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_SIGNAL",
+      "name": "Signal Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for SIGNAL stacks.",
+      "requiresFluxMicro": 200,
+      "requires": ["UNLOCK_T2_SIGNAL"],
+      "cost": { "signalMicro": 3000, "alloyMicro": 5000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "SIGNAL", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_HOPPER",
+      "name": "Hopper Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for HOPPER stacks.",
+      "requiresFluxMicro": 500,
+      "cost": { "fluxMicro": 5000, "alloyMicro": 3000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "HOPPER", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_HOPPER",
+      "name": "Hopper Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for HOPPER stacks.",
+      "requiresFluxMicro": 500,
+      "requires": ["UNLOCK_T2_HOPPER"],
+      "cost": { "alloyMicro": 8000, "signalMicro": 2000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "HOPPER", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_DRONES_MAG",
+      "name": "Drones Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for DRONES_MAG stacks.",
+      "requiresFluxMicro": 1000,
+      "cost": { "fluxMicro": 8000, "alloyMicro": 4000 },
+      "effects": [
+        { "type": "tierUnlock", "machineCode": "DRONES_MAG", "tier": 2 }
+      ]
+    },
+    {
+      "id": "UNLOCK_T3_DRONES_MAG",
+      "name": "Drones Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for DRONES_MAG stacks.",
+      "requiresFluxMicro": 1000,
+      "requires": ["UNLOCK_T2_DRONES_MAG"],
+      "cost": { "alloyMicro": 10000, "signalMicro": 5000 },
+      "effects": [
+        { "type": "tierUnlock", "machineCode": "DRONES_MAG", "tier": 3 }
+      ]
+    },
+    {
+      "id": "UNLOCK_T2_ASSEMBLER",
+      "name": "Assembler Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for ASSEMBLER stacks.",
+      "requiresFluxMicro": 3000,
+      "cost": { "fluxMicro": 15000, "alloyMicro": 6000 },
+      "effects": [
+        { "type": "tierUnlock", "machineCode": "ASSEMBLER", "tier": 2 }
+      ]
+    },
+    {
+      "id": "UNLOCK_T3_ASSEMBLER",
+      "name": "Assembler Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for ASSEMBLER stacks.",
+      "requiresFluxMicro": 3000,
+      "requires": ["UNLOCK_T2_ASSEMBLER"],
+      "cost": { "alloyMicro": 15000, "signalMicro": 8000 },
+      "effects": [
+        { "type": "tierUnlock", "machineCode": "ASSEMBLER", "tier": 3 }
+      ]
+    },
+    {
+      "id": "UNLOCK_T2_CRANE",
+      "name": "Crane Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for CRANE stacks.",
+      "requiresFluxMicro": 5000,
+      "cost": { "fluxMicro": 20000, "alloyMicro": 8000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "CRANE", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_CRANE",
+      "name": "Crane Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for CRANE stacks.",
+      "requiresFluxMicro": 5000,
+      "requires": ["UNLOCK_T2_CRANE"],
+      "cost": { "alloyMicro": 20000, "signalMicro": 10000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "CRANE", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_NANOFORGE",
+      "name": "Nanoforge Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for NANOFORGE stacks.",
+      "requiresFluxMicro": 15000,
+      "cost": { "fluxMicro": 40000, "alloyMicro": 15000 },
+      "effects": [
+        { "type": "tierUnlock", "machineCode": "NANOFORGE", "tier": 2 }
+      ]
+    },
+    {
+      "id": "UNLOCK_T3_NANOFORGE",
+      "name": "Nanoforge Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for NANOFORGE stacks.",
+      "requiresFluxMicro": 15000,
+      "requires": ["UNLOCK_T2_NANOFORGE"],
+      "cost": { "alloyMicro": 30000, "signalMicro": 15000 },
+      "effects": [
+        { "type": "tierUnlock", "machineCode": "NANOFORGE", "tier": 3 }
+      ]
+    },
+    {
+      "id": "UNLOCK_T2_PRINTER",
+      "name": "Printer Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for PRINTER stacks.",
+      "requiresFluxMicro": 25000,
+      "cost": { "fluxMicro": 50000, "alloyMicro": 20000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "PRINTER", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_PRINTER",
+      "name": "Printer Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for PRINTER stacks.",
+      "requiresFluxMicro": 25000,
+      "requires": ["UNLOCK_T2_PRINTER"],
+      "cost": { "alloyMicro": 40000, "signalMicro": 20000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "PRINTER", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_SCANNER",
+      "name": "Scanner Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for SCANNER stacks.",
+      "requiresFluxMicro": 8000,
+      "cost": { "fluxMicro": 25000, "signalMicro": 5000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "SCANNER", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_SCANNER",
+      "name": "Scanner Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for SCANNER stacks.",
+      "requiresFluxMicro": 8000,
+      "requires": ["UNLOCK_T2_SCANNER"],
+      "cost": { "alloyMicro": 15000, "signalMicro": 10000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "SCANNER", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_BATTERY",
+      "name": "Battery Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for BATTERY stacks.",
+      "requiresFluxMicro": 2000,
+      "cost": { "fluxMicro": 10000, "alloyMicro": 5000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "BATTERY", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_BATTERY",
+      "name": "Battery Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for BATTERY stacks.",
+      "requiresFluxMicro": 2000,
+      "requires": ["UNLOCK_T2_BATTERY"],
+      "cost": { "alloyMicro": 10000, "signalMicro": 5000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "BATTERY", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_LAB",
+      "name": "Lab Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for LAB stacks.",
+      "requiresFluxMicro": 4000,
+      "cost": { "fluxMicro": 18000, "alloyMicro": 6000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "LAB", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_LAB",
+      "name": "Lab Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for LAB stacks.",
+      "requiresFluxMicro": 4000,
+      "requires": ["UNLOCK_T2_LAB"],
+      "cost": { "alloyMicro": 12000, "signalMicro": 8000 },
+      "effects": [{ "type": "tierUnlock", "machineCode": "LAB", "tier": 3 }]
+    },
+    {
+      "id": "UNLOCK_T2_DYSON",
+      "name": "Dyson Tier 2 Blueprint",
+      "description": "Unlock Tier 2 for DYSON stacks.",
+      "requiresFluxMicro": 100000,
+      "cost": {
+        "fluxMicro": 200000,
+        "alloyMicro": 80000,
+        "signalMicro": 40000
+      },
+      "effects": [{ "type": "tierUnlock", "machineCode": "DYSON", "tier": 2 }]
+    },
+    {
+      "id": "UNLOCK_T3_DYSON",
+      "name": "Dyson Tier 3 Blueprint",
+      "description": "Unlock Tier 3 for DYSON stacks.",
+      "requiresFluxMicro": 100000,
+      "requires": ["UNLOCK_T2_DYSON"],
+      "cost": {
+        "fluxMicro": 500000,
+        "alloyMicro": 200000,
+        "signalMicro": 100000
+      },
+      "effects": [{ "type": "tierUnlock", "machineCode": "DYSON", "tier": 3 }]
+    }
+  ]
+}

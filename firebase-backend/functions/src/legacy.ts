@@ -79,6 +79,7 @@ import {
 
 // Import Link Preview function
 import { fetchLinkPreviewFunction } from "./linkPreview";
+import type { ExpoPushMessage } from "./utils";
 import {
   getUserPushToken,
   isDmChatMuted,
@@ -87,7 +88,6 @@ import {
   sanitizeForLog,
   sendExpoPushNotification,
 } from "./utils";
-import type { ExpoPushMessage } from "./utils";
 
 // Re-export V2 Messaging functions
 export const sendMessageV2 = sendMessageV2Function;
@@ -1154,26 +1154,32 @@ export const processScheduledMessages = functions.pubsub
         const messageId = doc.id;
 
         try {
-          // Get the chat to verify it still exists
-          const chatDoc = await db
-            .collection("Chats")
+          // Determine scope — default to "dm" for backward compatibility
+          const scope: "dm" | "group" = scheduledMessage.scope || "dm";
+          const isGroup = scope === "group";
+
+          // Verify the conversation still exists
+          const conversationCollection = isGroup ? "Groups" : "Chats";
+          const conversationDoc = await db
+            .collection(conversationCollection)
             .doc(scheduledMessage.chatId)
             .get();
 
-          if (!chatDoc.exists) {
-            // Chat no longer exists, mark as failed
+          if (!conversationDoc.exists) {
             await doc.ref.update({
               status: "failed",
-              failReason: "Chat no longer exists",
+              failReason: `${conversationCollection.slice(0, -1)} no longer exists`,
             });
             failedCount++;
-            console.log(`❌ Chat not found for scheduled message ${messageId}`);
+            console.log(
+              `❌ ${conversationCollection.slice(0, -1)} not found for scheduled message ${messageId}`,
+            );
             continue;
           }
 
-          // Create the actual message in the chat
+          // Route to the correct Messages sub-collection
           const newMessageRef = db
-            .collection("Chats")
+            .collection(conversationCollection)
             .doc(scheduledMessage.chatId)
             .collection("Messages")
             .doc();
@@ -1189,33 +1195,83 @@ export const processScheduledMessages = functions.pubsub
 
           const messageData: any = {
             id: newMessageRef.id,
+            scope,
+            conversationId: scheduledMessage.chatId,
+            // V2 field names
+            senderId: scheduledMessage.senderId,
+            text: scheduledMessage.content,
+            kind: scheduledMessage.type === "image" ? "media" : "text",
+            // Legacy field names for backward compatibility
             sender: scheduledMessage.senderId,
             content: scheduledMessage.content,
             type: scheduledMessage.type,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            serverReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
             expiresAt: expiresAt,
             read: false,
           };
+
+          // Copy mention UIDs from the scheduled message
+          if (
+            scheduledMessage.mentionUids &&
+            scheduledMessage.mentionUids.length > 0
+          ) {
+            messageData.mentionUids = scheduledMessage.mentionUids;
+          }
 
           // If it's an image message, include the image URL
           if (scheduledMessage.type === "image" && scheduledMessage.imageUrl) {
             messageData.imageUrl = scheduledMessage.imageUrl;
           }
 
+          // For groups, add sender profile snapshot
+          if (isGroup) {
+            const senderDoc = await db
+              .collection("Users")
+              .doc(scheduledMessage.senderId)
+              .get();
+            if (senderDoc.exists) {
+              const senderData = senderDoc.data();
+              messageData.senderName = senderData?.displayName || "Unknown";
+              messageData.senderDisplayName =
+                senderData?.displayName || "Unknown";
+              if (senderData?.avatarConfig) {
+                messageData.senderAvatarConfig = senderData.avatarConfig;
+              }
+            }
+          }
+
           // Create the message
           await newMessageRef.set(messageData);
 
-          // Update the chat's lastMessage
+          // Update the conversation's lastMessage
+          const previewText =
+            scheduledMessage.type === "image"
+              ? "📸 Picture"
+              : scheduledMessage.content;
+
+          const conversationUpdate: Record<string, unknown> = {
+            lastMessage: previewText,
+            lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastMessageText: previewText,
+            lastMessageKind:
+              scheduledMessage.type === "image" ? "media" : "text",
+            lastMessageSenderId: scheduledMessage.senderId,
+            lastMessageId: newMessageRef.id,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+
+          if (
+            scheduledMessage.mentionUids &&
+            scheduledMessage.mentionUids.length > 0
+          ) {
+            conversationUpdate.lastMentionUids = scheduledMessage.mentionUids;
+          }
+
           await db
-            .collection("Chats")
+            .collection(conversationCollection)
             .doc(scheduledMessage.chatId)
-            .update({
-              lastMessage:
-                scheduledMessage.type === "image"
-                  ? "📸 Picture"
-                  : scheduledMessage.content,
-              lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            .update(conversationUpdate);
 
           // Mark scheduled message as sent
           await doc.ref.update({

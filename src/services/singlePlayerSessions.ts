@@ -452,9 +452,6 @@ function calculateCoinsEarned(
     case "bounce_blitz":
       coins += Math.floor(score / 50);
       break;
-    case "memory_master":
-      coins += Math.floor(score / 100);
-      break;
     case "word_master":
       coins += score > 0 ? 15 : 0;
       break;
@@ -515,14 +512,10 @@ export function formatScore(
   switch (gameType) {
     case "bounce_blitz":
       return `${score} pts`;
-    case "memory_master":
-      return `${score} pts`;
     case "word_master":
       return score > 0 ? `${score} pts` : "X";
     case "play_2048":
       return score.toLocaleString();
-    case "snake_master":
-      return `${score} length`;
     default:
       return score.toString();
   }

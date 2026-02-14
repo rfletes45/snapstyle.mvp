@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "holeId": "T6-5",
+  "tier": 6,
+  "bounds": {
+    "width": 18,
+    "height": 8
+  },
+  "start": {
+    "x": 2,
+    "z": 4
+  },
+  "cup": {
+    "x": 16,
+    "z": 4
+  },
+  "walls": [
+    {
+      "a": {
+        "x": 0,
+        "z": 0
+      },
+      "b": {
+        "x": 18,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 18,
+        "z": 0
+      },
+      "b": {
+        "x": 18,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 18,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 8
+      }
+    },
+    {
+      "a": {
+        "x": 0,
+        "z": 8
+      },
+      "b": {
+        "x": 0,
+        "z": 0
+      }
+    },
+    {
+      "a": {
+        "x": 6.0,
+        "z": 2.5
+      },
+      "b": {
+        "x": 8.0,
+        "z": 3.2
+      }
+    },
+    {
+      "a": {
+        "x": 6.0,
+        "z": 5.5
+      },
+      "b": {
+        "x": 8.0,
+        "z": 4.8
+      }
+    }
+  ],
+  "surfaces": [],
+  "heightFields": [],
+  "obstacles": [
+    {
+      "type": "speed_gate",
+      "id": "loop1",
+      "entry": {
+        "shape": "aabb",
+        "min": {
+          "x": 8.0,
+          "z": 3.2
+        },
+        "max": {
+          "x": 9.0,
+          "z": 4.8
+        }
+      },
+      "exit": {
+        "x": 13.5,
+        "z": 4.0
+      },
+      "minSpeed": 8.5,
+      "maxSpeed": 9.5,
+      "onFail": "reflect",
+      "reflectRestitution": 0.7
+    }
+  ],
+  "hazards": [],
+  "decor": {
+    "theme": "turf_classic",
+    "seed": 1605
+  }
+}

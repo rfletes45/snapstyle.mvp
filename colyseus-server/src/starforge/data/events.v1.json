@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "starforge.events.v1",
+  "events": [
+    {
+      "id": "EVT_FLUX_SHOWER",
+      "title": "Flux Shower",
+      "desc": "A burst of flux rains down!",
+      "trigger": "TAP",
+      "effects": [{ "t": "RESOURCE_BURST", "key": "flux", "amountMicro": 500 }],
+      "vfxHint": "spark",
+      "weight": 10
+    },
+    {
+      "id": "EVT_ALLOY_DROP",
+      "title": "Alloy Drop",
+      "desc": "An alloy meteorite crashes nearby.",
+      "trigger": "TAP",
+      "effects": [
+        { "t": "RESOURCE_BURST", "key": "alloy", "amountMicro": 300 }
+      ],
+      "vfxHint": "pulse",
+      "weight": 8
+    },
+    {
+      "id": "EVT_SIGNAL_WAVE",
+      "title": "Signal Wave",
+      "desc": "A mysterious signal is detected!",
+      "trigger": "TAP",
+      "effects": [
+        { "t": "RESOURCE_BURST", "key": "signal", "amountMicro": 200 }
+      ],
+      "vfxHint": "ring",
+      "weight": 6
+    },
+    {
+      "id": "EVT_OVERCHARGE",
+      "title": "Overcharge",
+      "desc": "Machines surge with power!",
+      "trigger": "AUTO",
+      "effects": [{ "t": "PROD_BOOST", "mult": 2.0, "durationTicks": 100 }],
+      "vfxHint": "star",
+      "weight": 4
+    },
+    {
+      "id": "EVT_WINDFALL",
+      "title": "Windfall",
+      "desc": "All resources flow freely.",
+      "trigger": "TAP",
+      "effects": [
+        { "t": "RESOURCE_BURST", "key": "flux", "amountMicro": 250 },
+        { "t": "RESOURCE_BURST", "key": "alloy", "amountMicro": 150 },
+        { "t": "RESOURCE_BURST", "key": "signal", "amountMicro": 100 }
+      ],
+      "vfxHint": "star",
+      "weight": 3
+    },
+    {
+      "id": "EVT_CAP_SURGE",
+      "title": "Cap Surge",
+      "desc": "Storage expands temporarily.",
+      "trigger": "AUTO",
+      "effects": [
+        {
+          "t": "CAP_BOOST",
+          "key": "flux",
+          "amountMicro": 5000,
+          "durationTicks": 200
+        }
+      ],
+      "vfxHint": "pulse",
+      "weight": 3
+    }
+  ]
+}

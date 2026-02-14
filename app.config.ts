@@ -5,7 +5,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "Vibe",
   slug: "snapstyle-mvp", // Must match EAS projectId slug - keep app name, removing snap game prefix
   version: "1.0.0",
-  orientation: "portrait",
+  orientation: "default",
   userInterfaceStyle: "automatic",
   ios: {
     supportsTablet: true,
@@ -65,6 +65,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "expo-audio",
     "expo-sqlite",
+    [
+      "expo-screen-orientation",
+      {
+        initialOrientation: "PORTRAIT",
+      },
+    ],
+    [
+      "react-native-vision-camera",
+      {
+        cameraPermissionText:
+          "Vibe needs camera access for photos, videos, and AR face effects",
+        enableMicrophonePermission: true,
+        microphonePermissionText:
+          "Vibe needs microphone access for video recording",
+        enableFrameProcessors: true,
+      },
+    ],
     // Note: react-native-webrtc and react-native-callkeep require
     // expo-dev-client for native module support. They don't have
     // Expo config plugins but work with bare workflow / dev client.

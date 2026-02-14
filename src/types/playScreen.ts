@@ -104,7 +104,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Fast-paced action games",
     icon: "lightning-bolt",
     accentColor: "#FF6B6B",
-    games: ["reaction_tap", "timed_tap", "bounce_blitz", "snake_master"],
+    games: ["reaction_tap", "timed_tap", "bounce_blitz"],
     layout: "carousel",
   },
   {
@@ -113,7 +113,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Test your brain",
     icon: "puzzle",
     accentColor: "#4ECDC4",
-    games: ["play_2048", "memory_master"],
+    games: ["play_2048"],
     layout: "carousel",
   },
   {
@@ -122,7 +122,14 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Challenge your friends",
     icon: "account-group",
     accentColor: "#6C5CE7",
-    games: ["tic_tac_toe", "checkers", "chess", "crazy_eights"],
+    games: [
+      "tic_tac_toe",
+      "checkers",
+      "chess",
+      "crazy_eights",
+      "tropical_fishing",
+      "golf_duels",
+    ],
     layout: "carousel",
   },
   {
@@ -304,4 +311,3 @@ export function getCategoryLabel(category: GameCategory): string {
   };
   return labels[category];
 }
-

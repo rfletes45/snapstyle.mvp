@@ -56,11 +56,28 @@ export class SpectatorRoomState extends Schema {
   /** Host's current score */
   @type("int32") currentScore: number = 0;
 
+  /** Active spectator interaction mode: spectate | boost | expedition */
+  @type("string") sessionMode: string = "spectate";
+
   /** Host's current level (for level-based games) */
   @type("int32") currentLevel: number = 1;
 
   /** Host's remaining lives (for games with lives) */
   @type("int32") lives: number = 3;
+
+  /** Active mine id for Clicker Mine V2 overlays */
+  @type("string") activeMineId: string = "";
+
+  /** Coarse boss vein hp for spectator overlay */
+  @type("int32") bossHp: number = 0;
+  @type("int32") bossMaxHp: number = 0;
+
+  /** Coarse expedition boss hp for spectator overlay */
+  @type("int32") expeditionBossHp: number = 0;
+  @type("int32") expeditionBossMaxHp: number = 0;
+
+  /** Serialized crew contribution summary for expedition overlays */
+  @type("string") crewSummaryJson: string = "[]";
 
   /**
    * Serialized game-specific state as JSON string.
@@ -77,4 +94,10 @@ export class SpectatorRoomState extends Schema {
 
   /** Maximum spectators allowed */
   @type("uint8") maxSpectators: number = 10;
+
+  /**
+   * Epoch ms when the current helper/boost session ends.
+   * 0 means no active helper session.
+   */
+  @type("float64") boostSessionEndsAt: number = 0;
 }

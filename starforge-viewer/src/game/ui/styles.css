@@ -1,0 +1,989 @@
+/* ─── Starforge Game HUD ─── mobile-first bottom bar ─── */
+
+/* Generic hidden class for all HUD elements */
+.hidden {
+  display: none !important;
+}
+
+#game-hud {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  background: linear-gradient(0deg, rgba(8, 10, 16, 0.94) 60%, transparent);
+  pointer-events: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* All direct children of HUD are interactive */
+#game-hud > * {
+  pointer-events: auto;
+}
+
+/* Ensure every button/input inside HUD is explicitly tappable */
+#game-hud button,
+#game-hud input,
+#game-hud select,
+#game-hud .contracts-header-row {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Back button (in-viewer, top-left, safe-area aware) ── */
+
+#sf-back-btn {
+  position: absolute;
+  top: calc(2px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  z-index: 30;
+  background: rgba(10, 12, 16, 0.72);
+  border: 1px solid rgba(49, 214, 255, 0.3);
+  border-radius: 10px;
+  color: #d0d6de;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+#sf-back-btn:active {
+  background: rgba(49, 214, 255, 0.2);
+}
+
+/* ── Auto-rotate toggle (top-right) ───────────────────── */
+
+#auto-rotate-btn {
+  position: absolute;
+  top: calc(2px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  background: rgba(10, 12, 16, 0.72);
+  border: 1px solid rgba(49, 214, 255, 0.3);
+  border-radius: 10px;
+  color: #d0d6de;
+  font-size: 18px;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+#auto-rotate-btn:active {
+  background: rgba(49, 214, 255, 0.2);
+}
+
+#auto-rotate-btn.off {
+  border-color: rgba(255, 80, 80, 0.3);
+  opacity: 0.7;
+}
+
+/* ── Resource panel (top-left, vertical stack) ─────────── */
+
+#resources-panel {
+  position: absolute;
+  top: calc(36px + env(safe-area-inset-top, 0px));
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#resources-panel .res-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(10, 12, 16, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 8px;
+  padding: 3px 10px;
+  pointer-events: none;
+}
+
+#resources-panel .res-icon {
+  font-size: 13px;
+}
+
+#resources-panel .res-label {
+  color: #8892a0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  min-width: 36px;
+}
+
+#resources-panel .res-value {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  min-width: 50px;
+  text-align: right;
+}
+
+/* ── TAP button ───────────────────────────────────────── */
+
+/* ── Boost status widget (top-right, active effects) ──── */
+
+#boost-status {
+  position: absolute;
+  top: calc(36px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  max-width: 180px;
+}
+
+#boost-status.hidden {
+  display: none !important;
+}
+
+/* When boost panel is visible, push event-status below it */
+#boost-status:not(.hidden) ~ #event-status {
+  top: calc(100px + env(safe-area-inset-top, 0px));
+}
+
+.boost-status-header {
+  color: #ffd700;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 0 2px 2px;
+}
+
+.boost-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 12, 16, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 8px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 200, 50, 0.15);
+}
+
+.boost-status-row.prod-boost {
+  border-color: rgba(49, 214, 255, 0.25);
+}
+
+.boost-status-row.cap-boost {
+  border-color: rgba(136, 255, 51, 0.2);
+}
+
+.boost-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.boost-label {
+  color: #d0d6de;
+  font-size: 11px;
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.boost-timer {
+  color: #ffc832;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 24px;
+  text-align: right;
+}
+
+/* ── TAP button (continued) ──────────────────────────── */
+
+#tap-btn {
+  width: min(280px, 80vw);
+  height: 64px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #31d6ff, #1a8cff);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    transform 0.06s ease,
+    box-shadow 0.06s ease;
+  box-shadow: 0 4px 20px rgba(49, 214, 255, 0.35);
+}
+
+#tap-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(49, 214, 255, 0.5);
+}
+
+/* ── Shop toggle ──────────────────────────────────────── */
+
+#shop-toggle-btn,
+.action-toggle-btn {
+  background: rgba(49, 214, 255, 0.12);
+  border: 1px solid #31d6ff44;
+  border-radius: 10px;
+  color: #a6d8f0;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 20px;
+  cursor: pointer;
+  touch-action: manipulation;
+  letter-spacing: 0.3px;
+}
+
+#shop-toggle-btn:active,
+.action-toggle-btn:active {
+  background: rgba(49, 214, 255, 0.25);
+}
+
+/* ── Shop panel (tabbed / searchable) ─────────────────── */
+
+#shop-panel {
+  width: min(400px, 94vw);
+  max-height: 55vh;
+  overflow-y: auto;
+  background: rgba(12, 14, 22, 0.97);
+  border: 1px solid #31d6ff33;
+  border-radius: 12px;
+  padding: 0;
+}
+
+#shop-panel.hidden {
+  display: none;
+}
+
+.shop-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  position: sticky;
+  top: 0;
+  background: rgba(12, 14, 22, 0.98);
+  z-index: 2;
+}
+
+.shop-header h3 {
+  color: #31d6ff;
+  font-size: 14px;
+  margin: 0;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.shop-search {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(49, 214, 255, 0.15);
+  border-radius: 6px;
+  color: #d0d6de;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.shop-search::placeholder {
+  color: #556;
+}
+
+.shop-search:focus {
+  border-color: #31d6ff88;
+}
+
+/* ── Category tabs ────────────────────────────────────── */
+
+.shop-tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 6px;
+  overflow-x: auto;
+  position: sticky;
+  top: 40px;
+  background: rgba(12, 14, 22, 0.98);
+  z-index: 2;
+  scrollbar-width: none;
+}
+
+.shop-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.shop-tab {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #8892a0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.shop-tab.active {
+  background: rgba(49, 214, 255, 0.18);
+  border-color: #31d6ff66;
+  color: #31d6ff;
+}
+
+.shop-tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Machine grid ─────────────────────────────────────── */
+
+#machine-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 10px;
+}
+
+.mach-row {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: border-color 0.15s;
+}
+
+.mach-row:hover {
+  border-color: rgba(49, 214, 255, 0.15);
+}
+
+.mach-row.hidden-row {
+  display: none;
+}
+
+.mach-row.hidden-row {
+  display: none !important;
+}
+
+/* Header: name + desc + count badge */
+.mach-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.mach-name {
+  color: #d0d6de;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mach-desc {
+  color: #667;
+  font-size: 10px;
+  flex: 1;
+}
+
+.mach-badge {
+  color: #31d6ff;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(49, 214, 255, 0.12);
+  border-radius: 10px;
+  padding: 1px 8px;
+  min-width: 24px;
+  text-align: center;
+  visibility: hidden;
+}
+
+.mach-badge.has-count {
+  visibility: visible;
+}
+
+/* Body: cost + buy buttons + toggle */
+.mach-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mach-cost {
+  color: #8892a0;
+  font-size: 11px;
+  min-width: 80px;
+  white-space: nowrap;
+}
+
+.mach-buy-group {
+  display: flex;
+  gap: 3px;
+}
+
+.mach-buy-btn {
+  background: linear-gradient(135deg, #31d6ff, #1a8cff);
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.mach-buy-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.mach-buy-btn:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+.mach-toggle {
+  border: none;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+  min-width: 32px;
+}
+
+.mach-toggle.on {
+  background: rgba(49, 214, 255, 0.18);
+  color: #31d6ff;
+}
+
+.mach-toggle.off {
+  background: rgba(255, 80, 80, 0.18);
+  color: #ff6666;
+}
+
+/* Tier area */
+.mach-tier-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-height: 0;
+}
+
+.mach-tier-area:empty {
+  display: none;
+}
+
+.mach-tier-label {
+  color: #8892a0;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.mach-tier-btn {
+  border: none;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 10px;
+  cursor: pointer;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.mach-tier-btn.locked {
+  background: rgba(255, 200, 50, 0.15);
+  color: #ffdd66;
+}
+
+.mach-tier-btn.upgrade {
+  background: rgba(51, 255, 136, 0.15);
+  color: #88ffaa;
+}
+
+.mach-tier-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mach-tier-max {
+  color: #33ff88;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ── Reset button ─────────────────────────────────────── */
+
+#reset-btn {
+  background: transparent;
+  border: 1px solid #ffffff22;
+  border-radius: 8px;
+  color: #8892a0;
+  font-size: 11px;
+  padding: 6px 16px;
+  cursor: pointer;
+  touch-action: manipulation;
+  letter-spacing: 0.3px;
+}
+
+#reset-btn:active {
+  color: #ff4444;
+  border-color: #ff444488;
+}
+
+/* ── Upgrade store modal (PR#3) ───────────────────────── */
+
+#upgrade-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#upgrade-overlay.hidden {
+  display: none;
+}
+
+#upgrade-panel {
+  width: min(400px, 92vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  background: rgba(15, 18, 25, 0.98);
+  border: 1px solid #31d6ff44;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+#upgrade-panel h3 {
+  color: #31d6ff;
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+
+.upgrade-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+}
+
+.upgrade-row.locked {
+  opacity: 0.4;
+}
+
+.upgrade-row.purchased {
+  opacity: 0.6;
+  border-left: 3px solid #33ff88;
+}
+
+.upgrade-title {
+  color: #d0d6de;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.upgrade-desc {
+  color: #8892a0;
+  font-size: 11px;
+}
+
+.upgrade-cost {
+  color: #aaa;
+  font-size: 11px;
+}
+
+.upgrade-buy-btn {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #33ff88, #1aff66);
+  border: none;
+  border-radius: 6px;
+  color: #111;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 14px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.upgrade-buy-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ── Contracts panel (absolutely positioned, outside HUD flow) ── */
+
+#contracts-panel {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  width: min(360px, 92vw);
+  max-height: 300px;
+  overflow-y: auto;
+  background: rgba(20, 18, 10, 0.95);
+  border: 1px solid rgba(255, 200, 50, 0.2);
+  border-radius: 10px;
+  padding: 10px;
+  transition: max-height 0.25s ease;
+  pointer-events: auto;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#contracts-panel.hidden {
+  display: none !important;
+}
+
+#contracts-panel.minimized {
+  max-height: 36px;
+  overflow: hidden;
+}
+
+#contracts-panel .contracts-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#contracts-panel .contracts-toggle-icon {
+  color: #ffc832;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+#contracts-panel h3 {
+  color: #ffdd66;
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.contract-active-hdr {
+  color: #ffdd66;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.contract-desc {
+  color: #aaa;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.contract-req {
+  margin: 4px 0;
+}
+
+.contract-req-label {
+  color: #ccc;
+  font-size: 11px;
+}
+
+.contract-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  margin: 2px 0;
+  overflow: hidden;
+}
+
+.contract-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffc832, #ffdd66);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.contract-req-count {
+  color: #888;
+  font-size: 10px;
+  text-align: right;
+}
+
+.contract-time {
+  color: #ff8844;
+  font-size: 11px;
+  margin: 4px 0;
+}
+
+.contract-claim-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #ffc832, #ffaa00);
+  border: none;
+  border-radius: 6px;
+  color: #111;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  margin-top: 4px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.contract-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 200, 50, 0.1);
+}
+
+.contract-info {
+  flex: 1;
+  font-size: 11px;
+  color: #ccc;
+}
+
+.contract-diff {
+  color: #ffc832;
+  font-size: 10px;
+}
+
+.contract-reward {
+  font-size: 11px;
+  color: #88ffaa;
+  white-space: nowrap;
+}
+
+.contract-start-btn {
+  background: linear-gradient(135deg, #ffc832, #ffaa00);
+  border: none;
+  border-radius: 6px;
+  color: #111;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.contract-start-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ── Event orb ───────────────────────────────────────── */
+
+#event-orb {
+  background: radial-gradient(
+    circle,
+    rgba(255, 200, 50, 0.3),
+    rgba(255, 100, 0, 0.15)
+  );
+  border: 2px solid rgba(255, 200, 50, 0.5);
+  border-radius: 20px;
+  color: #ffdd66;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 20px;
+  cursor: pointer;
+  touch-action: manipulation;
+  animation: event-pulse 1.5s ease-in-out infinite;
+}
+
+#event-orb.event-aura {
+  border-color: var(--event-aura, rgba(255, 200, 50, 0.5));
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--event-aura, #ffc832) 50%, transparent),
+    0 0 28px color-mix(in srgb, var(--event-aura, #ffc832) 25%, transparent);
+}
+
+#event-orb:disabled {
+  cursor: default;
+  animation: event-glow 2s ease-in-out infinite;
+}
+
+@keyframes event-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(255, 200, 50, 0.3);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 16px rgba(255, 200, 50, 0.6);
+  }
+}
+
+@keyframes event-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(255, 100, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 100, 0, 0.4);
+  }
+}
+
+/* ── Event status indicator (top-right) ──────────────── */
+
+#event-status {
+  position: absolute;
+  top: calc(36px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  max-width: 200px;
+  background: rgba(10, 12, 16, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--event-border, rgba(255, 200, 50, 0.3));
+  box-shadow: 0 0 10px
+    color-mix(in srgb, var(--event-border, #ffc832) 20%, transparent);
+}
+
+#event-status.hidden {
+  display: none !important;
+}
+
+.event-status-header {
+  color: #ffd700;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.event-status-desc {
+  color: #c0c4cc;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.event-status-timer {
+  color: #ffaa33;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.event-status-hint {
+  color: #88ff33;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  animation: hint-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes hint-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ── Milestone toast ─────────────────────────────────── */
+
+#milestone-toast {
+  position: absolute;
+  top: calc(78px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 215, 0, 0.95),
+    rgba(255, 180, 0, 0.9)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  color: #1a1a00;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 24px;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(255, 200, 0, 0.4);
+  max-width: 340px;
+  text-align: center;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+#milestone-toast.toast-enter {
+  animation: toast-in 0.4s ease-out;
+}
+
+#milestone-toast.toast-exit {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-12px);
+  pointer-events: none;
+}
+
+#milestone-toast.hidden {
+  display: none;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

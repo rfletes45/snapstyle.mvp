@@ -12,6 +12,7 @@
  */
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { getFriends } from "@/services/friends";
 import {
   filterExpiredStories,
@@ -33,14 +34,13 @@ import {
   ActionSheetIOS,
   Alert,
   FlatList,
+  Image,
   Platform,
   StyleSheet,
   TouchableOpacity,
   View,
 } from "react-native";
 import { FAB, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/stories/StoriesScreen");
@@ -71,10 +71,10 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       }
       // Reset posting state when returning to this screen
       setPostingStory(false);
-    }, [currentFirebaseUser]),
+    }, [currentFirebaseUser, loadStories]),
   );
 
-  const loadStories = async () => {
+  const loadStories = useCallback(async () => {
     if (!currentFirebaseUser) return;
 
     try {
@@ -145,9 +145,12 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentFirebaseUser]);
 
-  const handlePostStory = async () => {
+  const handlePostStory = useCallback(async () => {
+    // Prevent double-tap
+    if (postingStory) return;
+
     try {
       const permission = await requestMediaLibraryPermission();
       if (!permission) {
@@ -159,16 +162,16 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
       // Show photo menu
       if (Platform.OS === "web") {
-        // On web, use browser's native confirm for reliability
-        const useCamera = window.confirm(
-          "Post Moment\n\nClick OK to take a photo with camera, or Cancel to choose from gallery.",
-        );
-
-        if (useCamera) {
-          await capturePhoto();
-        } else {
-          await selectPhoto();
-        }
+        // On web, use Alert for consistency (falls back to confirm on web)
+        Alert.alert("Post Moment", "How would you like to add a moment?", [
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => setPostingStory(false),
+          },
+          { text: "Take Photo", onPress: () => capturePhoto() },
+          { text: "Choose from Gallery", onPress: () => selectPhoto() },
+        ]);
       } else if (Platform.OS === "ios") {
         ActionSheetIOS.showActionSheetWithOptions(
           {
@@ -221,9 +224,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       Alert.alert("Error", `Failed to post moment: ${String(error)}`);
       setPostingStory(false);
     }
-  };
+  }, [postingStory]);
 
-  const capturePhoto = async () => {
+  const capturePhoto = useCallback(async () => {
     try {
       logger.info("🔵 [capturePhoto] Starting capture");
 
@@ -254,9 +257,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     } finally {
       setPostingStory(false);
     }
-  };
+  }, [navigation]);
 
-  const selectPhoto = async () => {
+  const selectPhoto = useCallback(async () => {
     try {
       logger.info("🔵 [selectPhoto] Starting photo selection");
       let imageUri: string | null = null;
@@ -297,26 +300,32 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
     } finally {
       setPostingStory(false);
     }
-  };
+  }, [navigation]);
 
-  const navigateToStoryViewer = (imageUri: string) => {
-    navigation.navigate("StoryViewer", {
-      imageUri,
-      isNewStory: true,
-    });
-  };
+  const navigateToStoryViewer = useCallback(
+    (imageUri: string) => {
+      navigation.navigate("StoryViewer", {
+        imageUri,
+        isNewStory: true,
+      });
+    },
+    [navigation],
+  );
 
-  const handleStoryPress = (story: Story) => {
-    // Find the index of this story in the list
-    const storyIndex = stories.findIndex((s) => s.id === story.id);
-    navigation.navigate("StoryViewer", {
-      storyId: story.id,
-      authorId: story.authorId,
-      // Pass all story IDs for navigation between stories
-      allStoryIds: stories.map((s) => s.id),
-      currentIndex: storyIndex >= 0 ? storyIndex : 0,
-    });
-  };
+  const handleStoryPress = useCallback(
+    (story: Story) => {
+      // Find the index of this story in the list
+      const storyIndex = stories.findIndex((s) => s.id === story.id);
+      navigation.navigate("StoryViewer", {
+        storyId: story.id,
+        authorId: story.authorId,
+        // Pass all story IDs for navigation between stories
+        allStoryIds: stories.map((s) => s.id),
+        currentIndex: storyIndex >= 0 ? storyIndex : 0,
+      });
+    },
+    [navigation, stories],
+  );
 
   const requestMediaLibraryPermission = async (): Promise<boolean> => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -354,7 +363,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       <View
         style={[
           styles.header,
-          { borderBottomColor: theme.colors.outlineVariant },
+          {
+            borderBottomColor: theme.colors.outlineVariant,
+          },
         ]}
       >
         <Text style={[styles.title, { color: theme.colors.onBackground }]}>
@@ -397,6 +408,8 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               ]}
               onPress={handlePostStory}
               disabled={postingStory}
+              accessibilityLabel="Add a new moment"
+              accessibilityRole="button"
             >
               <View style={styles.addStoryContent}>
                 <Text
@@ -426,27 +439,43 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
                 ],
               ]}
               onPress={() => handleStoryPress(story)}
+              accessibilityLabel={`View moment with ${story.viewCount} ${story.viewCount === 1 ? "view" : "views"}${viewedStories.has(story.id) ? ", already viewed" : ", new"}`}
+              accessibilityRole="button"
             >
               <View style={styles.storyImageContainer}>
-                {/* Placeholder for moment thumbnail - would need to fetch image */}
-                <View
-                  style={[
-                    styles.storyImagePlaceholder,
-                    { backgroundColor: theme.colors.surfaceDisabled },
-                    !viewedStories.has(story.id) && {
-                      backgroundColor: theme.colors.primaryContainer,
-                    },
-                  ]}
-                >
-                  <Text
+                {/* Moment thumbnail image */}
+                {story.imageUrl ? (
+                  <Image
+                    source={{ uri: story.imageUrl }}
                     style={[
-                      styles.storyInitial,
-                      { color: theme.colors.onPrimaryContainer },
+                      styles.storyImage,
+                      !viewedStories.has(story.id) && {
+                        borderColor: theme.colors.primary,
+                        borderWidth: 2,
+                      },
+                    ]}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.storyImagePlaceholder,
+                      { backgroundColor: theme.colors.surfaceDisabled },
+                      !viewedStories.has(story.id) && {
+                        backgroundColor: theme.colors.primaryContainer,
+                      },
                     ]}
                   >
-                    {story.authorId.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                    <Text
+                      style={[
+                        styles.storyInitial,
+                        { color: theme.colors.onPrimaryContainer },
+                      ]}
+                    >
+                      {story.authorId.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
 
                 {/* Viewed indicator */}
                 {viewedStories.has(story.id) && (
@@ -571,6 +600,10 @@ const styles = StyleSheet.create({
   storyImageContainer: {
     flex: 1,
     position: "relative",
+  },
+  storyImage: {
+    flex: 1,
+    borderRadius: BorderRadius.md - 2,
   },
   storyImagePlaceholder: {
     flex: 1,

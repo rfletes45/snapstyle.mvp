@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "starforge.rebirthTree.v1",
+  "nodes": [
+    {
+      "id": "T1_SHARD_FLUX",
+      "title": "Flux Resonance",
+      "desc": "Start each run with 2000 bonus Flux.",
+      "cost": 2,
+      "requires": [],
+      "effects": [{ "t": "ADD", "path": "startBonusFluxMicro", "value": 2000 }]
+    },
+    {
+      "id": "T1_CUT_DMG",
+      "title": "Hardened Laser",
+      "desc": "Permanent +10% cut damage.",
+      "cost": 3,
+      "requires": [],
+      "effects": [{ "t": "MUL", "path": "cutDamageMult", "value": 1.1 }]
+    },
+    {
+      "id": "T1_WRECK_YIELD",
+      "title": "Salvage Expertise",
+      "desc": "Permanent +8% wreck payout.",
+      "cost": 3,
+      "requires": [],
+      "effects": [{ "t": "MUL", "path": "wreckYieldMult", "value": 1.08 }]
+    },
+    {
+      "id": "T2_SLOT_EXPANSION",
+      "title": "Cosmic Bay",
+      "desc": "Unlock the COSMIC_1 slot for Dyson-class machines.",
+      "cost": 8,
+      "requires": ["T1_CUT_DMG"],
+      "effects": [{ "t": "FLAG", "path": "slotUnlock", "value": 1 }]
+    },
+    {
+      "id": "T2_SPAWN_RATE",
+      "title": "Beacon Array",
+      "desc": "Wrecks spawn 12% faster.",
+      "cost": 5,
+      "requires": ["T1_WRECK_YIELD"],
+      "effects": [{ "t": "MUL", "path": "spawnGapMult", "value": 0.88 }]
+    },
+    {
+      "id": "T2_EXTRA_ALIVE",
+      "title": "Extended Salvage",
+      "desc": "+1 max alive wrecks.",
+      "cost": 6,
+      "requires": ["T1_WRECK_YIELD"],
+      "effects": [{ "t": "ADD", "path": "maxAliveWrecks", "value": 1 }]
+    }
+  ]
+}

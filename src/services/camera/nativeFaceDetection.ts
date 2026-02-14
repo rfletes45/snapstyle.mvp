@@ -1,14 +1,15 @@
 /**
  * NATIVE FACE DETECTION SERVICE
- * Real-time face detection and landmark tracking
+ * Real-time face detection using react-native-vision-camera + MLKit
  *
- * NOTE: expo-face-detector was removed from Expo SDK 51+.
- * This module provides stub implementations that can be replaced with:
- * - react-native-vision-camera frame processors
- * - Firebase ML Kit
- * - MediaPipe face detection
+ * Replaces the old expo-face-detector stub with real face detection via
+ * react-native-vision-camera-face-detector (Google MLKit under the hood).
  *
- * PRODUCTION UPGRADE: Integrate a face detection library above.
+ * Architecture:
+ *   - VisionCamera provides the camera feed + frame processor API
+ *   - react-native-vision-camera-face-detector wraps MLKit Face Detection
+ *   - This module converts MLKit results to our internal DetectedFace format
+ *   - The useFaceDetection hook wires this into React state
  */
 
 import {
@@ -17,233 +18,167 @@ import {
   FaceLandmarks,
   Point,
 } from "@/types/camera";
-
-
 import { createLogger } from "@/utils/log";
+
 const logger = createLogger("services/camera/nativeFaceDetection");
 
-interface RawDetectedFace {
-  faceID?: number;
-  bounds?: {
-    origin?: { x?: number; y?: number };
-    size?: { width?: number; height?: number };
+// ─── Types from react-native-vision-camera-face-detector ─────────────────────
+// Defined locally to avoid import issues on web/non-native platforms.
+
+export interface MLKitFace {
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
   };
-  landmarks?: RawDetectedLandmark[];
-  rollAngle?: number;
-  yawAngle?: number;
-  isLeftEyeOpen?: boolean;
-  isRightEyeOpen?: boolean;
+  pitchAngle: number;
+  rollAngle: number;
+  yawAngle: number;
+  smilingProbability: number;
+  leftEyeOpenProbability: number;
+  rightEyeOpenProbability: number;
+  trackingId?: number;
+  landmarks?: MLKitLandmark[];
+  contours?: MLKitContour[];
 }
 
-interface RawDetectedLandmark {
-  type?: string;
-  position?: { x?: number; y?: number };
+export interface MLKitLandmark {
+  type: string;
+  position: { x: number; y: number };
 }
 
-interface RawFaceDetectionResult {
-  faces: RawDetectedFace[];
+export interface MLKitContour {
+  type: string;
+  points: Array<{ x: number; y: number }>;
 }
-// Stub constants matching the old expo-face-detector API
-const FaceDetector = {
-  FaceDetectorMode: { fast: 1, accurate: 2 },
-  FaceDetectorLandmarks: {
-    none: 0,
-    all: 1,
-    leftEye: "leftEye",
-    rightEye: "rightEye",
-    leftEar: "leftEar",
-    rightEar: "rightEar",
-    mouthBottom: "mouthBottom",
-    mouthLeft: "mouthLeft",
-    mouthRight: "mouthRight",
-    noseBase: "noseBase",
-  },
-  FaceDetectorClassifications: { none: 0, all: 1 },
-  setDetectionMode: async (_mode: number) => {},
-  setLandmarkDetectionMode: async (_mode: number) => {},
-  setClassifications: async (_mode: number) => {},
-  detectFaces: async (
-    _uri: string,
-    _options?: unknown,
-  ): Promise<RawFaceDetectionResult> => ({
-    faces: [],
-  }),
-};
 
-/**
- * Face detection mode
- * Trading off speed vs accuracy
- */
+// ─── Face Detection Mode ─────────────────────────────────────────────────────
+
 export enum FaceDetectionMode {
   FAST = 1,
   ACCURATE = 2,
 }
 
-/**
- * Landmarks that can be detected on a face
- */
-export enum FaceLandmarkType {
-  LEFT_EYE = "left_eye",
-  RIGHT_EYE = "right_eye",
-  LEFT_EAR = "left_ear",
-  RIGHT_EAR = "right_ear",
-  MOUTH_BOTTOM = "mouth_bottom",
-  MOUTH_LEFT = "mouth_left",
-  MOUTH_RIGHT = "mouth_right",
-  NOSE_BASE = "nose_base",
+// ─── Configuration ───────────────────────────────────────────────────────────
+
+export interface FaceDetectionSettings {
+  mode: FaceDetectionMode;
+  minFaceSize: number;
+  minConfidence: number;
+  landmarkDetection: boolean;
+  expressionDetection: boolean;
+  performanceMonitoring: boolean;
 }
 
-/**
- * Initialize face detection
- * Call once on app startup
- */
+export const DEFAULT_REALTIME_SETTINGS: FaceDetectionSettings = {
+  mode: FaceDetectionMode.FAST,
+  minFaceSize: 30,
+  minConfidence: 0.5,
+  landmarkDetection: true,
+  expressionDetection: true,
+  performanceMonitoring: false,
+};
+
+export const DEFAULT_IMAGE_SETTINGS: FaceDetectionSettings = {
+  mode: FaceDetectionMode.ACCURATE,
+  minFaceSize: 50,
+  minConfidence: 0.8,
+  landmarkDetection: true,
+  expressionDetection: true,
+  performanceMonitoring: false,
+};
+
+// ─── Current settings ────────────────────────────────────────────────────────
+
+let currentSettings: FaceDetectionSettings = { ...DEFAULT_REALTIME_SETTINGS };
+
+export function getDetectionSettings(): FaceDetectionSettings {
+  return { ...currentSettings };
+}
+
+export async function updateDetectionSettings(
+  settings: Partial<FaceDetectionSettings>,
+): Promise<void> {
+  currentSettings = { ...currentSettings, ...settings };
+  logger.info("[Native Face Detection] Settings updated");
+}
+
+// ─── Initialization ──────────────────────────────────────────────────────────
+
 export async function initializeFaceDetection(
   mode: FaceDetectionMode = FaceDetectionMode.FAST,
 ): Promise<void> {
   try {
+    currentSettings.mode = mode;
     logger.info(
-      `[Native Face Detection] Initializing face detection (${mode === FaceDetectionMode.FAST ? "FAST" : "ACCURATE"} mode)`,
+      `[Native Face Detection] Initialized (${mode === FaceDetectionMode.FAST ? "FAST" : "ACCURATE"} mode)`,
     );
-
-    // Configure face detector
-    await FaceDetector.setDetectionMode(mode);
-    await FaceDetector.setLandmarkDetectionMode(
-      FaceDetector.FaceDetectorLandmarks.all,
+    logger.info(
+      "[Native Face Detection] Using react-native-vision-camera-face-detector (MLKit)",
     );
-    await FaceDetector.setClassifications(
-      FaceDetector.FaceDetectorClassifications.all,
-    );
-
-    logger.info("[Native Face Detection] Face detection initialized");
   } catch (error) {
-    logger.error(
-      "[Native Face Detection] Failed to initialize face detection:",
-      error,
-    );
+    logger.error("[Native Face Detection] Failed to initialize:", error);
     throw error;
   }
 }
 
-/**
- * Detect faces in an image URI
- * Returns coordinates, landmarks, and expression data
- */
-export async function detectFacesInImage(
-  imageUri: string,
-): Promise<FaceDetectionResult> {
-  try {
-    logger.info("[Native Face Detection] Detecting faces in image");
-
-    // Detect faces using expo-face-detector
-    const result = await FaceDetector.detectFaces(imageUri, {
-      mode: FaceDetector.FaceDetectorMode.accurate,
-      detectLandmarks: FaceDetector.FaceDetectorLandmarks.all,
-      runClassifications: FaceDetector.FaceDetectorClassifications.all,
-    });
-
-    // Convert to internal format
-    const detectedFaces = result.faces
-      .filter((face) => {
-        const width = face.bounds?.size?.width ?? 0;
-        const height = face.bounds?.size?.height ?? 0;
-        return width > 50 && height > 50;
-      }) // Filter small faces
-      .map((face, index) => convertToDetectedFace(face, index));
-
-    logger.info(
-      `[Native Face Detection] Detected ${detectedFaces.length} faces`,
-    );
-
-    return {
-      faces: detectedFaces,
-      timestamp: Date.now(),
-    };
-  } catch (error) {
-    logger.error("[Native Face Detection] Face detection failed:", error);
-    return {
-      faces: [],
-      timestamp: Date.now(),
-    };
-  }
-}
+// ─── Core Conversion: MLKit → Internal Format ───────────────────────────────
 
 /**
- * Real-time face detection from camera frame
- * Optimized for 30 FPS performance
+ * Convert an array of MLKit Face results into our internal FaceDetectionResult.
+ * Called from the useFaceDetection hook after each frame processor invocation.
  */
-export async function detectFacesInFrame(
-  frameData: any,
-): Promise<FaceDetectionResult> {
-  try {
-    // For real-time camera detection with expo-face-detector,
-    // we need to use the Camera component's onFacesDetected callback
-    // This function is called within that callback
-
-    // The frameData parameter would contain the detected faces from the camera
-    // Return them in our standard format
-
-    if (!frameData || !frameData.faces) {
-      return {
-        faces: [],
-        timestamp: Date.now(),
-      };
-    }
-
-    const detectedFaces = frameData.faces
-      .filter(
-        (face: any) =>
-          face.bounds.size.width > 30 && face.bounds.size.height > 30, // Lower threshold for real-time
-      )
-      .map((face: any, index: number) => convertToDetectedFace(face, index));
-
-    return {
-      faces: detectedFaces,
-      timestamp: Date.now(),
-    };
-  } catch (error) {
-    logger.error(
-      "[Native Face Detection] Real-time face detection failed:",
-      error,
-    );
-    return {
-      faces: [],
-      timestamp: Date.now(),
-    };
-  }
-}
-
-/**
- * Convert expo-face-detector face to our format
- */
-function convertToDetectedFace(face: RawDetectedFace, index: number): DetectedFace {
-  const landmarks = extractLandmarks(face);
+export function convertMLKitFaces(
+  mlkitFaces: MLKitFace[],
+): FaceDetectionResult {
+  const faces = mlkitFaces
+    .filter((face) => {
+      const { width, height } = face.bounds;
+      return (
+        width > currentSettings.minFaceSize &&
+        height > currentSettings.minFaceSize
+      );
+    })
+    .map((face, index) => convertSingleFace(face, index));
 
   return {
-    faceId: face.faceID ?? index,
-    bounds: {
-      x: face.bounds?.origin?.x ?? 0,
-      y: face.bounds?.origin?.y ?? 0,
-      width: face.bounds?.size?.width ?? 0,
-      height: face.bounds?.size?.height ?? 0,
-    },
-    landmarks,
-    eulerAngleX: face.rollAngle || 0,
-    eulerAngleY: face.yawAngle || 0,
-    eulerAngleZ: 0,
-    leftEyeOpenProbability: face.isLeftEyeOpen ? 1 : 0,
-    rightEyeOpenProbability: face.isRightEyeOpen ? 1 : 0,
-    smilingProbability: calculateSmileProbability(face),
-    trackingId: face.faceID ?? index,
+    faces,
+    timestamp: Date.now(),
   };
 }
 
 /**
- * Extract facial landmarks from detected face
+ * Convert a single MLKit face to our DetectedFace format.
  */
-function extractLandmarks(face: RawDetectedFace): FaceLandmarks {
+function convertSingleFace(face: MLKitFace, index: number): DetectedFace {
+  const landmarks = extractLandmarks(face);
+
+  return {
+    faceId: face.trackingId ?? index,
+    bounds: {
+      x: face.bounds.x,
+      y: face.bounds.y,
+      width: face.bounds.width,
+      height: face.bounds.height,
+    },
+    landmarks,
+    eulerAngleX: face.pitchAngle ?? 0,
+    eulerAngleY: face.yawAngle ?? 0,
+    eulerAngleZ: face.rollAngle ?? 0,
+    leftEyeOpenProbability: face.leftEyeOpenProbability ?? 0.5,
+    rightEyeOpenProbability: face.rightEyeOpenProbability ?? 0.5,
+    smilingProbability: face.smilingProbability ?? 0,
+    trackingId: face.trackingId ?? index,
+  };
+}
+
+/**
+ * Extract facial landmarks from MLKit face data.
+ */
+function extractLandmarks(face: MLKitFace): FaceLandmarks {
   const defaultPoint: Point = { x: 0, y: 0 };
 
-  // Initialize with defaults for all required fields
   const landmarks: FaceLandmarks = {
     leftEye: defaultPoint,
     rightEye: defaultPoint,
@@ -258,70 +193,150 @@ function extractLandmarks(face: RawDetectedFace): FaceLandmarks {
   };
 
   if (!face.landmarks || face.landmarks.length === 0) {
-    return landmarks;
+    return estimateLandmarksFromBounds(face.bounds);
   }
 
-  // Map detected landmarks to our format
-  face.landmarks.forEach((landmark: RawDetectedLandmark) => {
-    const point: Point = {
-      x: landmark.position?.x ?? 0,
-      y: landmark.position?.y ?? 0,
-    };
+  for (const landmark of face.landmarks) {
+    const point: Point = { x: landmark.position.x, y: landmark.position.y };
 
     switch (landmark.type) {
-      case FaceDetector.FaceDetectorLandmarks.leftEye:
+      case "LEFT_EYE":
         landmarks.leftEye = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.rightEye:
+      case "RIGHT_EYE":
         landmarks.rightEye = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.leftEar:
+      case "LEFT_EAR":
         landmarks.leftEar = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.rightEar:
+      case "RIGHT_EAR":
         landmarks.rightEar = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.mouthBottom:
-        landmarks.mouthBottom = point;
+      case "LEFT_CHEEK":
+        landmarks.leftCheek = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.mouthLeft:
+      case "RIGHT_CHEEK":
+        landmarks.rightCheek = point;
+        break;
+      case "MOUTH_LEFT":
         landmarks.leftMouth = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.mouthRight:
+      case "MOUTH_RIGHT":
         landmarks.rightMouth = point;
         break;
-      case FaceDetector.FaceDetectorLandmarks.noseBase:
+      case "MOUTH_BOTTOM":
+        landmarks.mouthBottom = point;
+        break;
+      case "NOSE_BASE":
         landmarks.noseBase = point;
         break;
     }
-  });
+  }
 
+  fillMissingLandmarks(landmarks, face.bounds);
   return landmarks;
 }
 
 /**
- * Calculate smile probability from facial expressions
+ * Estimate landmark positions from bounding box (average face proportions).
  */
-function calculateSmileProbability(face: any): number {
-  // expo-face-detector doesn't provide direct smile detection
-  // Estimate based on mouth position and shape
-  // This is a placeholder - would need ML Kit for accurate detection
+function estimateLandmarksFromBounds(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): FaceLandmarks {
+  const cx = bounds.x + bounds.width / 2;
+  const cy = bounds.y + bounds.height / 2;
+  const w = bounds.width;
+  const h = bounds.height;
 
-  // Higher value if mouth is open/smiling
-  const mouthOpen = face.bounds ? 0.5 : 0;
-  return Math.min(1, mouthOpen + 0.3);
+  return {
+    leftEye: { x: cx - w * 0.18, y: cy - h * 0.12 },
+    rightEye: { x: cx + w * 0.18, y: cy - h * 0.12 },
+    leftEar: { x: cx - w * 0.45, y: cy - h * 0.05 },
+    rightEar: { x: cx + w * 0.45, y: cy - h * 0.05 },
+    leftCheek: { x: cx - w * 0.28, y: cy + h * 0.08 },
+    rightCheek: { x: cx + w * 0.28, y: cy + h * 0.08 },
+    leftMouth: { x: cx - w * 0.15, y: cy + h * 0.25 },
+    rightMouth: { x: cx + w * 0.15, y: cy + h * 0.25 },
+    mouthBottom: { x: cx, y: cy + h * 0.32 },
+    noseBase: { x: cx, y: cy + h * 0.05 },
+  };
 }
 
 /**
- * Get face bounds with margin for effect positioning
- * Used for accessory placement
+ * Fill in any landmarks that are still at (0,0) with estimates.
  */
+function fillMissingLandmarks(
+  landmarks: FaceLandmarks,
+  bounds: { x: number; y: number; width: number; height: number },
+): void {
+  const estimated = estimateLandmarksFromBounds(bounds);
+  const keys = Object.keys(landmarks) as Array<keyof FaceLandmarks>;
+
+  for (const key of keys) {
+    if (landmarks[key].x === 0 && landmarks[key].y === 0) {
+      landmarks[key] = estimated[key];
+    }
+  }
+}
+
+// ─── Legacy API Compatibility ────────────────────────────────────────────────
+
+/**
+ * Detect faces from frame data (legacy callback-based API).
+ */
+export async function detectFacesInFrame(
+  frameData: any,
+): Promise<FaceDetectionResult> {
+  if (!frameData || !frameData.faces) {
+    return { faces: [], timestamp: Date.now() };
+  }
+  return convertMLKitFaces(frameData.faces);
+}
+
+/**
+ * Detect faces in a static image.
+ */
+export async function detectFacesInImage(
+  imageUri: string,
+): Promise<FaceDetectionResult> {
+  try {
+    logger.info("[Native Face Detection] Detecting faces in static image");
+
+    const { detectFaces } =
+      await import("react-native-vision-camera-face-detector");
+
+    const faces = await detectFaces({
+      image: imageUri,
+      options: {
+        performanceMode:
+          currentSettings.mode === FaceDetectionMode.FAST ? "fast" : "accurate",
+        landmarkMode: currentSettings.landmarkDetection ? "all" : "none",
+        classificationMode: currentSettings.expressionDetection
+          ? "all"
+          : "none",
+      },
+    });
+
+    return convertMLKitFaces(faces as unknown as MLKitFace[]);
+  } catch (error) {
+    logger.warn(
+      "[Native Face Detection] Static image detection failed:",
+      error,
+    );
+    return { faces: [], timestamp: Date.now() };
+  }
+}
+
+// ─── Utility Functions ───────────────────────────────────────────────────────
+
 export function getFaceEffectBounds(
   face: DetectedFace,
-  marginPercent: number = 20, // 20% margin
+  marginPercent: number = 20,
 ): { x: number; y: number; width: number; height: number } {
   const margin = (face.bounds.width * marginPercent) / 100;
-
   return {
     x: face.bounds.x - margin / 2,
     y: face.bounds.y - margin / 2,
@@ -330,194 +345,86 @@ export function getFaceEffectBounds(
   };
 }
 
-/**
- * Check if face is looking forward (suitable for masks)
- */
 export function isFaceLookingForward(face: DetectedFace): boolean {
-  const maxTilt = 20; // degrees
-  return Math.abs(face.eulerAngleX) < maxTilt &&
-    Math.abs(face.eulerAngleY) < maxTilt
-    ? true
-    : false;
+  return Math.abs(face.eulerAngleX) < 20 && Math.abs(face.eulerAngleY) < 20;
 }
 
-/**
- * Check if face is looking left
- */
 export function isFaceLookingLeft(face: DetectedFace): boolean {
-  return face.eulerAngleY > 20; // degrees
+  return face.eulerAngleY > 20;
 }
 
-/**
- * Check if face is looking right
- */
 export function isFaceLookingRight(face: DetectedFace): boolean {
-  return face.eulerAngleY < -20; // degrees
+  return face.eulerAngleY < -20;
 }
 
-/**
- * Check if face is looking up
- */
 export function isFaceLookingUp(face: DetectedFace): boolean {
-  return face.eulerAngleX < -20; // degrees
+  return face.eulerAngleX < -20;
 }
 
-/**
- * Check if face is looking down
- */
 export function isFaceLookingDown(face: DetectedFace): boolean {
-  return face.eulerAngleX > 20; // degrees
+  return face.eulerAngleX > 20;
 }
 
-/**
- * Check if face is smiling
- */
 export function isFaceSmiling(face: DetectedFace): boolean {
   return face.smilingProbability > 0.5;
 }
 
-/**
- * Check if both eyes are open
- */
 export function areBothEyesOpen(face: DetectedFace): boolean {
-  return face.leftEyeOpenProbability > 0.5 && face.rightEyeOpenProbability > 0.5
-    ? true
-    : false;
+  return (
+    face.leftEyeOpenProbability > 0.5 && face.rightEyeOpenProbability > 0.5
+  );
 }
 
-/**
- * Check if left eye is open
- */
 export function isLeftEyeOpen(face: DetectedFace): boolean {
   return face.leftEyeOpenProbability > 0.5;
 }
 
-/**
- * Check if right eye is open
- */
 export function isRightEyeOpen(face: DetectedFace): boolean {
   return face.rightEyeOpenProbability > 0.5;
 }
 
-/**
- * Get face expression (enum-like string)
- */
 export function getFaceExpression(
   face: DetectedFace,
 ): "neutral" | "smiling" | "surprised" | "sad" {
-  if (face.smilingProbability > 0.7) {
-    return "smiling";
-  }
-  if (face.smilingProbability < 0.3) {
-    return "sad";
-  }
+  if (face.smilingProbability > 0.7) return "smiling";
+  if (face.smilingProbability < 0.3) return "sad";
   return "neutral";
 }
 
-/**
- * Get rotation vector for 3D effect positioning
- */
 export function getFace3DRotation(face: DetectedFace): {
   x: number;
   y: number;
   z: number;
 } {
   return {
-    x: face.eulerAngleX / 45, // Normalize to -1 to 1 range
+    x: face.eulerAngleX / 45,
     y: face.eulerAngleY / 45,
-    z: 0,
+    z: face.eulerAngleZ / 45,
   };
 }
 
-/**
- * Calculate distance between two facial landmarks
- */
-export function getLandmarkDistance(
-  landmark1: Point,
-  landmark2: Point,
-): number {
-  const dx = landmark2.x - landmark1.x;
-  const dy = landmark2.y - landmark1.y;
+export function getLandmarkDistance(p1: Point, p2: Point): number {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/**
- * Get eye aspect ratio (for blink detection)
- * Values close to 0 indicate blink, > 0.1 indicates open eye
- */
 export function getEyeAspectRatio(
   face: DetectedFace,
   eye: "left" | "right",
 ): number {
-  const landmarks = face.landmarks;
-  if (!landmarks) {
-    return face.leftEyeOpenProbability; // Fallback
-  }
-
-  // This would require eye corner landmarks to calculate properly
-  // For now, estimate from eye open probability
   return eye === "left"
     ? face.leftEyeOpenProbability
     : face.rightEyeOpenProbability;
 }
 
-/**
- * Configure face detection settings
- */
-export interface FaceDetectionSettings {
-  mode: FaceDetectionMode;
-  minFaceSize: number; // Minimum face bounding box size in pixels
-  minConfidence: number; // Minimum confidence threshold (0-1)
-  landmarkDetection: boolean;
-  expressionDetection: boolean;
-  performanceMonitoring: boolean;
-}
-
-/**
- * Default settings for real-time detection
- */
-export const DEFAULT_REALTIME_SETTINGS: FaceDetectionSettings = {
-  mode: FaceDetectionMode.FAST,
-  minFaceSize: 30,
-  minConfidence: 0.7,
-  landmarkDetection: true,
-  expressionDetection: true,
-  performanceMonitoring: false,
-};
-
-/**
- * Default settings for image-based detection
- */
-export const DEFAULT_IMAGE_SETTINGS: FaceDetectionSettings = {
-  mode: FaceDetectionMode.ACCURATE,
-  minFaceSize: 50,
-  minConfidence: 0.8,
-  landmarkDetection: true,
-  expressionDetection: true,
-  performanceMonitoring: false,
-};
-
-/**
- * Get current face detection settings
- */
-export function getDetectionSettings(): FaceDetectionSettings {
-  return DEFAULT_REALTIME_SETTINGS;
-}
-
-/**
- * Update face detection settings
- */
-export async function updateDetectionSettings(
-  settings: Partial<FaceDetectionSettings>,
-): Promise<void> {
-  try {
-    if (settings.mode !== undefined) {
-      await FaceDetector.setDetectionMode(settings.mode);
-    }
-
-    logger.info("[Native Face Detection] Settings updated");
-  } catch (error) {
-    logger.error("[Native Face Detection] Failed to update settings:", error);
-    throw error;
-  }
+export enum FaceLandmarkType {
+  LEFT_EYE = "left_eye",
+  RIGHT_EYE = "right_eye",
+  LEFT_EAR = "left_ear",
+  RIGHT_EAR = "right_ear",
+  MOUTH_BOTTOM = "mouth_bottom",
+  MOUTH_LEFT = "mouth_left",
+  MOUTH_RIGHT = "mouth_right",
+  NOSE_BASE = "nose_base",
 }

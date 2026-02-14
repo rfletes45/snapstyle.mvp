@@ -974,13 +974,8 @@ describe("Phase 3 Cross-Game Integration", () => {
   });
 
   it("should have matching game type keys", () => {
-    const GAME_TYPE_KEYS = [
-      "chess_game",
-      "checkers_game",
-      "crazy_eights_game",
-      "war_game",
-    ];
-    expect(GAME_TYPE_KEYS.length).toBe(4);
+    const GAME_TYPE_KEYS = ["chess_game", "checkers_game", "crazy_eights_game"];
+    expect(GAME_TYPE_KEYS.length).toBe(3);
     // Each ends with _game
     for (const key of GAME_TYPE_KEYS) {
       expect(key.endsWith("_game")).toBe(true);

@@ -12,6 +12,7 @@ import { EmptyState, LoadingState } from "@/components/ui";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
 import { createGroup } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
+import { useAppTheme } from "@/store/ThemeContext";
 import { Friend, GROUP_LIMITS, User } from "@/types/models";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import React, { useCallback, useEffect, useState } from "react";
@@ -36,7 +37,6 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatCreateScreen");
 interface FriendWithProfile extends Friend {
@@ -55,6 +55,7 @@ interface SelectableFriend {
 
 export default function GroupChatCreateScreen({ navigation }: any) {
   const theme = useTheme();
+  const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
@@ -193,7 +194,17 @@ export default function GroupChatCreateScreen({ navigation }: any) {
   // Render friend item
   const renderFriend = ({ item }: { item: SelectableFriend }) => (
     <TouchableOpacity
-      style={[styles.friendItem, item.selected && styles.friendItemSelected]}
+      style={[
+        styles.friendItem,
+        { backgroundColor: colors.surface },
+        item.selected && [
+          styles.friendItemSelected,
+          {
+            backgroundColor: colors.primaryContainer,
+            borderColor: colors.primary,
+          },
+        ],
+      ]}
       onPress={() => toggleFriend(item.uid)}
       activeOpacity={0.7}
     >
@@ -205,8 +216,14 @@ export default function GroupChatCreateScreen({ navigation }: any) {
           size={40}
         />
         <View style={styles.friendInfo}>
-          <Text style={styles.friendName}>{item.displayName}</Text>
-          <Text style={styles.friendUsername}>@{item.username}</Text>
+          <Text style={[styles.friendName, { color: colors.text }]}>
+            {item.displayName}
+          </Text>
+          <Text
+            style={[styles.friendUsername, { color: colors.textSecondary }]}
+          >
+            @{item.username}
+          </Text>
         </View>
       </View>
       <Checkbox
@@ -219,8 +236,11 @@ export default function GroupChatCreateScreen({ navigation }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["bottom"]}>
-        <Appbar.Header style={styles.header}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={["bottom"]}
+      >
+        <Appbar.Header style={{ backgroundColor: colors.background }}>
           <Appbar.BackAction onPress={() => navigation.goBack()} />
           <Appbar.Content title="Create Group" />
         </Appbar.Header>
@@ -230,8 +250,11 @@ export default function GroupChatCreateScreen({ navigation }: any) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <Appbar.Header style={styles.header}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["bottom"]}
+    >
+      <Appbar.Header style={{ backgroundColor: colors.background }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Create Group" />
       </Appbar.Header>
@@ -242,19 +265,21 @@ export default function GroupChatCreateScreen({ navigation }: any) {
       >
         {/* Group Name Input */}
         <View style={styles.nameSection}>
-          <Text style={styles.sectionLabel}>Group Name</Text>
+          <Text style={[styles.sectionLabel, { color: colors.text }]}>
+            Group Name
+          </Text>
           <TextInput
             mode="outlined"
             placeholder="Enter group name..."
             value={groupName}
             onChangeText={setGroupName}
             maxLength={GROUP_LIMITS.MAX_NAME_LENGTH}
-            style={styles.nameInput}
+            style={[styles.nameInput, { backgroundColor: colors.surface }]}
             outlineColor={theme.colors.outline}
             activeOutlineColor={theme.colors.primary}
             textColor={theme.colors.onSurface}
           />
-          <Text style={styles.charCount}>
+          <Text style={[styles.charCount, { color: colors.textSecondary }]}>
             {groupName.length}/{GROUP_LIMITS.MAX_NAME_LENGTH}
           </Text>
         </View>
@@ -262,16 +287,16 @@ export default function GroupChatCreateScreen({ navigation }: any) {
         {/* Member Selection */}
         <View style={styles.membersSection}>
           <View style={styles.memberHeader}>
-            <Text style={styles.sectionLabel}>
+            <Text style={[styles.sectionLabel, { color: colors.text }]}>
               Select Members ({selectedCount} selected)
             </Text>
-            <Text style={styles.memberLimit}>
+            <Text style={[styles.memberLimit, { color: colors.textSecondary }]}>
               {totalMemberCount}/{GROUP_LIMITS.MAX_MEMBERS}
             </Text>
           </View>
 
           {totalMemberCount < GROUP_LIMITS.MIN_MEMBERS && (
-            <Text style={styles.warningText}>
+            <Text style={[styles.warningText, { color: colors.warning }]}>
               ⚠️ Groups need at least {GROUP_LIMITS.MIN_MEMBERS} members
               (including you)
             </Text>
@@ -281,9 +306,9 @@ export default function GroupChatCreateScreen({ navigation }: any) {
             placeholder="Search friends..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            style={styles.searchbar}
-            inputStyle={styles.searchInput}
-            iconColor="#888"
+            style={[styles.searchbar, { backgroundColor: colors.surface }]}
+            inputStyle={{ color: colors.text }}
+            iconColor={colors.textSecondary}
           />
 
           {friends.length === 0 ? (
@@ -341,10 +366,6 @@ export default function GroupChatCreateScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
-  },
-  header: {
-    backgroundColor: "#000",
   },
   content: {
     flex: 1,
@@ -354,16 +375,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sectionLabel: {
-    color: "#FFF",
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 8,
   },
-  nameInput: {
-    backgroundColor: "#1A1A1A",
-  },
+  nameInput: {},
   charCount: {
-    color: "#888",
     fontSize: 12,
     textAlign: "right",
     marginTop: 4,
@@ -378,20 +395,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   memberLimit: {
-    color: "#888",
     fontSize: 14,
   },
   warningText: {
-    color: "#FF9800",
     fontSize: 12,
     marginBottom: 12,
   },
   searchbar: {
-    backgroundColor: "#1A1A1A",
     marginBottom: 12,
-  },
-  searchInput: {
-    color: "#FFF",
   },
   friendsList: {
     flex: 1,
@@ -403,16 +414,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#1A1A1A",
     borderRadius: 12,
     overflow: "visible" as const,
     padding: 12,
     marginBottom: 8,
   },
   friendItemSelected: {
-    backgroundColor: "rgba(138, 109, 240, 0.2)",
     borderWidth: 1,
-    borderColor: "#8a6df0",
   },
   friendLeft: {
     flexDirection: "row",
@@ -423,12 +431,10 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   friendName: {
-    color: "#FFF",
     fontSize: 16,
     fontWeight: "500",
   },
   friendUsername: {
-    color: "#888",
     fontSize: 13,
   },
   footer: {
@@ -442,7 +448,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  snackbar: {
-    backgroundColor: "#333",
-  },
+  snackbar: {},
 });

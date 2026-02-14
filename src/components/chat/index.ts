@@ -135,6 +135,15 @@ export type { ChatGameInvitesProps } from "./ChatGameInvites";
 // Typing Indicator
 export { TypingIndicator } from "./TypingIndicator";
 
+// Network Banner (offline/online status)
+export { NetworkBanner } from "./NetworkBanner";
+
+// Reaction Detail Sheet (who reacted with each emoji)
+export { ReactionDetailSheet } from "./ReactionDetailSheet";
+
+// Seen By Sheet (group read receipts)
+export { SeenBySheet } from "./SeenBySheet";
+
 // Duck Feature
 export { default as DuckBubble } from "./DuckBubble";
 export { DUCK_BG, DUCK_FG, default as DuckIcon } from "./DuckIcon";

@@ -9,7 +9,7 @@
 
 ## Mission
 
-You are performing a **complete, exhaustive audit and rewrite** of the games system in a production React Native + Expo social app. There are **32 game screens**, **25 Colyseus server rooms**, **6 game logic services**, **13+ game hooks**, and **14 spectator renderers**. Many games were added rapidly and have:
+You are performing a **complete, exhaustive audit and rewrite** of the games system in a production React Native + Expo social app. There are **21 game screens**, **22 Colyseus server rooms**, **4 game logic services**, **15 game hooks**, and **10 spectator renderers**. Many games were added rapidly and have:
 
 - **Visual roughness** — inconsistent styling, missing animations, poor color usage
 - **Logical bugs** — game loops that don't clean up, physics edge cases, incorrect win detection
@@ -85,38 +85,29 @@ The project already has a Skia graphics library at `src/components/games/graphic
 
 ## Current Game Inventory
 
-### 32 Game Screens (`src/screens/games/`)
+### 21 Game Screens (`src/screens/games/`)
 
 **Single-Player — Quick Play:**
 | Game | File | Lines | Rendering | Has BackHandler | Has Haptics | Has Spectator | Has Cleanup |
 |---|---|---|---|---|---|---|---|
 | Reaction Tap | ReactionTapGameScreen.tsx | 739 | Skia | ❌ | ❌ | ✅ | ✅ |
 | Timed Tap | TimedTapGameScreen.tsx | 840 | Skia | ❌ | ❌ | ✅ | ✅ |
-| Tap Tap | TapTapGameScreen.tsx | 579 | Skia | ❌ | ❌ | ❌ | ✅ |
 | Bounce Blitz | BounceBlitzGameScreen.tsx | 1438 | Skia | ✅ | ❌ | ✅ | ✅ |
-| Snake | SnakeMasterGameScreen.tsx | 872 | Skia | ✅ | ✅ | ✅ | ✅ |
 | Pong (vs AI) | PongGameScreen.tsx | 989 | Skia | ✅ | ❌ | ✅ | ✅ |
 | Brick Breaker | BrickBreakerGameScreen.tsx | 1340 | Skia | ✅ | ✅ | ✅ | ✅ |
-| Slice | SliceGameScreen.tsx | 638 | Skia | ❌ | ❌ | ❌ | ✅ |
-| Target Master | TargetMasterGameScreen.tsx | 1311 | Skia | ❌ | ❌ | ❌ | ✅ |
 
 **Single-Player — Puzzle:**
 | Game | File | Lines | Rendering | Has BackHandler | Has Haptics | Has Spectator | Has Cleanup |
 |---|---|---|---|---|---|---|---|
 | 2048 | Play2048GameScreen.tsx | 1170 | Skia | ✅ | ✅ | ✅ | ❌ |
-| Memory | MemoryMasterGameScreen.tsx | 1000 | Skia | ✅ | ❌ | ✅ | ✅ |
-| Tile Slide | TileSlideGameScreen.tsx | 964 | Skia | ✅ | ✅ | ✅ | ✅ |
 | Minesweeper | MinesweeperGameScreen.tsx | 1183 | Skia | ✅ | ❌ | ✅ | ✅ |
-| Number Master | NumberMasterGameScreen.tsx | 1419 | Skia | ✅ | ❌ | ✅ | ✅ |
 | Lights Out | LightsOutGameScreen.tsx | 826 | Skia | ✅ | ❌ | ✅ | ❌ |
-| Match | MatchGameScreen.tsx | 607 | Skia | ❌ | ❌ | ❌ | ❌ |
 
 **Single-Player — Daily:**
 | Game | File | Lines | Rendering | Has BackHandler | Has Haptics | Has Spectator | Has Cleanup |
 |---|---|---|---|---|---|---|---|
 | Word Master | WordMasterGameScreen.tsx | 2112 | Skia | ✅ | ❌ | ✅ | ✅ |
 | Crossword | CrosswordGameScreen.tsx | 1143 | Skia | ❌ | ❌ | ❌ | ✅ |
-| Words | WordsGameScreen.tsx | 1169 | Skia | ❌ | ❌ | ❌ | ❌ |
 
 **Multiplayer — Turn-Based:**
 | Game | File | Lines | Rendering | Has BackHandler | Has Haptics | Has GameCompletion | Has Cleanup |
@@ -128,7 +119,6 @@ The project already has a Skia graphics library at `src/components/games/graphic
 | Crazy Eights | CrazyEightsGameScreen.tsx | 1965 | Skia | ❌ | ✅ | ✅ | ✅ |
 | Gomoku | GomokuMasterGameScreen.tsx | 1037 | Skia | ❌ | ❌ | ❌ | ❌ |
 | Reversi | ReversiGameScreen.tsx | 845 | Skia | ❌ | ❌ | ❌ | ✅ |
-| War | WarGameScreen.tsx | 705 | Skia | ❌ | ❌ | ❌ | ❌ |
 | Dot Match | DotMatchGameScreen.tsx | 1165 | Skia | ❌ | ❌ | ❌ | ❌ |
 | Hex | HexGameScreen.tsx | 722 | Skia | ❌ | ❌ | ❌ | ❌ |
 
@@ -137,11 +127,10 @@ The project already has a Skia graphics library at `src/components/games/graphic
 |---|---|---|---|---|---|---|---|
 | 8-Ball Pool | PoolGameScreen.tsx | 1217 | Skia | ❌ | ❌ | ❌ | ✅ |
 | Air Hockey | AirHockeyGameScreen.tsx | 917 | Skia | ❌ | ❌ | ❌ | ✅ |
-| Race | RaceGameScreen.tsx | 629 | Skia | ❌ | ❌ | ❌ | ✅ |
 
 ---
 
-### 25 Colyseus Server Rooms (`colyseus-server/src/rooms/`)
+### 22 Colyseus Server Rooms (`colyseus-server/src/rooms/`)
 
 **Base rooms** (abstract, extended by game rooms):
 
@@ -160,7 +149,6 @@ The project already has a Skia graphics library at `src/components/games/graphic
 | CheckersRoom | TurnBasedRoom | 336 | Checkers |
 | ChessRoom | TurnBasedRoom | 795 | Chess |
 | CrazyEightsRoom | CardGameRoom | 236 | Crazy Eights |
-| WarRoom | CardGameRoom | 241 | War |
 | ReactionRoom | ScoreRaceRoom | 309 | Reaction Tap |
 | TimedTapRoom | ScoreRaceRoom | 13 | Timed Tap |
 | DotMatchRoom | ScoreRaceRoom | 13 | Dot Match |
@@ -169,8 +157,6 @@ The project already has a Skia graphics library at `src/components/games/graphic
 | PoolRoom | PhysicsRoom | 459 | Pool |
 | BounceBlitzRoom | PhysicsRoom | 257 | Bounce Blitz |
 | BrickBreakerRoom | PhysicsRoom | 289 | Brick Breaker |
-| SnakeRoom | PhysicsRoom | 456 | Snake |
-| RaceRoom | PhysicsRoom | 305 | Race |
 | CrosswordRoom | (custom) | 568 | Crossword |
 | WordMasterRoom | (custom) | 926 | Word Master |
 | SpectatorRoom | (custom) | 203 | SP spectating |
@@ -181,24 +167,21 @@ The project already has a Skia graphics library at `src/components/games/graphic
 
 | Hook                       | Purpose                                               | Used By                                                  |
 | -------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
-| `useMultiplayerGame`       | Score race multiplayer (quick-play games)             | BounceBlitz, Pong, ReactionTap, TimedTap, Snake, etc.    |
+| `useMultiplayerGame`       | Score race multiplayer (quick-play games)             | BounceBlitz, Pong, ReactionTap, TimedTap, etc.           |
 | `useTurnBasedGame`         | Turn-based multiplayer                                | Chess, Checkers, TicTacToe, ConnectFour, Gomoku, Reversi |
-| `useCardGame`              | Card game multiplayer (hidden hands)                  | CrazyEights, War                                         |
+| `useCardGame`              | Card game multiplayer (hidden hands)                  | CrazyEights                                              |
 | `usePhysicsGame`           | Physics-based multiplayer (server-authoritative)      | Pong, AirHockey                                          |
 | `useScoreRace`             | Core score race logic (wrapped by useMultiplayerGame) | Internal                                                 |
 | `useGameConnection`        | Invite → transport resolver (Colyseus vs Firestore)   | All multiplayer games                                    |
-| `useGameBackHandler`       | Android back button in-game                           | Only 11/32 games ❌                                      |
-| `useGameHaptics`           | Haptic feedback helpers                               | Only 6/32 games ❌                                       |
-| `useGameCompletion`        | Achievement + navigation on game end                  | Only 4/32 games ❌                                       |
+| `useGameBackHandler`       | Android back button in-game                           | Only 7/21 games ❌                                       |
+| `useGameHaptics`           | Haptic feedback helpers                               | Only 4/21 games ❌                                       |
+| `useGameCompletion`        | Achievement + navigation on game end                  | Only 4/21 games ❌                                       |
 | `useGameNavigation`        | Smart back navigation (respects entry point)          | Via useGameCompletion                                    |
-| `useSpectator`             | SP host / SP spectator / MP spectator modes           | Only 14/32 games ❌                                      |
+| `useSpectator`             | SP host / SP spectator / MP spectator modes           | Only 10/21 games ❌                                      |
 | `useColyseus`              | Raw Colyseus room connection                          | Internal                                                 |
 | `useColyseusAppState`      | Reconnect on app foreground                           | Internal                                                 |
-| `useSnakeMultiplayer`      | Snake-specific multiplayer                            | SnakeMaster                                              |
 | `useCrosswordMultiplayer`  | Crossword-specific multiplayer                        | Crossword                                                |
 | `useWordMasterMultiplayer` | WordMaster-specific multiplayer                       | WordMaster                                               |
-| `useRaceMultiplayer`       | Race-specific multiplayer                             | Race                                                     |
-| `useWordsGame`             | Words game state management                           | Words                                                    |
 
 ---
 
@@ -206,7 +189,7 @@ The project already has a Skia graphics library at `src/components/games/graphic
 
 | Component                | Purpose                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------- | ----------------------- |
-| `GameOverModal`          | Universal game-over dialog with stats, rematch, share                                 | Only used by 8/32 games |
+| `GameOverModal`          | Universal game-over dialog with stats, rematch, share                                 | Only used by 8/21 games |
 | `GamePickerModal`        | Game selection from chat (creates invites)                                            |
 | `GameErrorBoundary`      | Crash recovery wrapper                                                                |
 | `MultiplayerOverlay`     | Score race HUD (scores, timer, countdown)                                             |
@@ -225,9 +208,9 @@ The project already has a Skia graphics library at `src/components/games/graphic
 
 ### Spectator Renderers (`src/components/games/spectator-renderers/`)
 
-14 renderers exist for: BounceBlitz, BrickBreaker, LightsOut, MemoryMaster, Minesweeper, NumberMaster, Play2048, Pong, ReactionTap, Snake, TileSlide, TimedTap, WordMaster.
+10 renderers exist for: BounceBlitz, BrickBreaker, LightsOut, Minesweeper, Play2048, Pong, ReactionTap, TimedTap, WordMaster.
 
-**Missing spectator renderers** for: Crossword, AirHockey, Pool, Chess, Checkers, CrazyEights, War, ConnectFour, TicTacToe, Gomoku, Reversi, Hex, DotMatch, Match, Slice, TargetMaster, TapTap, Words, Race.
+**Missing spectator renderers** for: Crossword, AirHockey, Pool, Chess, Checkers, CrazyEights, ConnectFour, TicTacToe, Gomoku, Reversi, Hex, DotMatch.
 
 ---
 
@@ -273,21 +256,21 @@ export default function XxxGameScreen({ navigation, route }) {
 
 ### Task
 
-For **every single game screen** (all 32):
+For **every single game screen** (all 21):
 
 1. **Read the entire file** — understand its game logic, rendering, and integration points
 2. **Restructure to match the template** — move game logic into proper sections
 3. **Add missing standard hooks**:
-   - `useGameBackHandler` — MISSING from 21 games. Add it to ALL 32.
-   - `useGameHaptics` — MISSING from 26 games. Add appropriate haptic events to ALL 32:
+   - `useGameBackHandler` — MISSING from 14 games. Add it to ALL 21.
+   - `useGameHaptics` — MISSING from 17 games. Add appropriate haptic events to ALL 21:
      - `haptics.light()` on piece placement / valid move
      - `haptics.medium()` on score increment / level up
      - `haptics.heavy()` on game over / win
      - `haptics.error()` on invalid move / lose life
-   - `useGameCompletion` — MISSING from 28 games. Add to ALL multiplayer games (turn-based) and consider for single-player games.
+   - `useGameCompletion` — MISSING from 17 games. Add to ALL multiplayer games (turn-based) and consider for single-player games.
 4. **Add error boundary wrapping** — every game screen export should be wrapped with `GameErrorBoundary`
 5. **Verify cleanup**: Every `useEffect` with `requestAnimationFrame`, `setInterval`, `setTimeout`, or subscription MUST return a cleanup function. Games with **NO CLEANUP** that need it:
-   - CheckersGameScreen, ConnectFourGameScreen, DotMatchGameScreen, GomokuMasterGameScreen, HexGameScreen, LightsOutGameScreen, MatchGameScreen, Play2048GameScreen, TicTacToeGameScreen, WarGameScreen, WordsGameScreen
+   - CheckersGameScreen, ConnectFourGameScreen, DotMatchGameScreen, GomokuMasterGameScreen, HexGameScreen, LightsOutGameScreen, Play2048GameScreen, TicTacToeGameScreen
 
 ---
 
@@ -320,7 +303,7 @@ For **every game screen**:
    - Lives display with heart icons and shake animation on life loss
 
 4. **Game over** — Must have:
-   - Use `GameOverModal` consistently across ALL games (currently only 8/32 use it)
+   - Use `GameOverModal` consistently across ALL games (currently only 8/21 use it)
    - Confetti/particle celebration on win
    - Sad/shake animation on lose
    - Stats display (moves, time, score, personal best comparison)
@@ -343,10 +326,7 @@ Check each of these closely and rewrite their rendering if they look rough:
 - **PoolGameScreen** — Pool table needs felt-green gradient, balls need 3D-looking sphere rendering with Skia radial gradients, number rendering on balls
 - **ConnectFourGameScreen** — Board should look like physical Connect Four with depth/shadows on holes
 - **DotMatchGameScreen** — Grid should have polished dot rendering, line drawing should be animated
-- **WarGameScreen** — Card rendering needs proper playing card look with suits, face cards, shadows
 - **HexGameScreen** — Hexagonal grid needs polished hex rendering with proper fills
-- **RaceGameScreen** — Typing race needs a polished, racing-themed UI
-- **WordsGameScreen** — Word grid needs polished tile rendering (like Scrabble tiles)
 
 ---
 
@@ -377,7 +357,6 @@ For **every game**, verify the correctness of:
    - Air Hockey: puck must respect table boundaries, goals must be properly detected
    - Pool: ball-ball and ball-cushion collisions, pocketing, cue ball scratch handling
    - Bounce Blitz: ball splitting, block damage, gravity
-   - Snake: self-collision, wall collision, food spawning not on snake body
 
 4. **Timer correctness**:
    - All timers must pause when app goes to background (`AppState` listener)
@@ -395,8 +374,6 @@ For **every game**, verify the correctness of:
    - `crazyEightsLogic.ts` — Verify crazy eight wildcard suit selection, draw pile reshuffling, UNO-like rules
    - `brickBreakerLogic.ts` — Verify level generation, power-up spawning, ball physics, brick destruction
    - `snap2048Logic.ts` — Verify merge logic, scoring, move validation
-   - `snapSnakeLogic.ts` — Verify growth, collision detection, food spawning
-   - `tileSlideLogic.ts` — Verify solvability of generated puzzles, move validation, win detection
 
 ---
 
@@ -441,7 +418,7 @@ The game invite system (`src/services/gameInvites.ts`, 1,737 lines) supports cre
    - Spectator link works — recipient taps → navigates to SpectatorViewScreen
 
 6. **Missing games that should support invites but might not**:
-   - Match, Slice, TargetMaster, TapTap, Words, Crossword — verify these have invite integration or are properly marked as single-player-only
+   - Crossword — verify it has invite integration or is properly marked as single-player-only
 
 ---
 
@@ -454,11 +431,11 @@ The spectator system has two modes:
 1. **Single-player spectating** — Host creates a SpectatorRoom, pushes state; spectators view via SpectatorViewScreen
 2. **Multiplayer spectating** — Spectator joins the game room with `{ spectator: true }`
 
-Only 14/32 games currently integrate with the spectator system.
+Only 10/21 games currently integrate with the spectator system.
 
 ### Task
 
-1. **For every single-player game** (all 13 single-player games):
+1. **For every single-player game** (all 10 single-player games):
    - Add `useSpectator({ mode: "sp-host", gameType })` hook
    - Call `spectator.updateGameState(serializedState)` on every state change
    - Call `spectator.startHosting()` when game starts
@@ -466,7 +443,7 @@ Only 14/32 games currently integrate with the spectator system.
    - Render `<SpectatorOverlay>` showing viewer count
    - Wire up the "Invite to Watch" flow
 
-2. **For every multiplayer game** (all 19 multiplayer games):
+2. **For every multiplayer game** (all 11 multiplayer games):
    - The Colyseus base rooms already support spectators (join with `{ spectator: true }`)
    - Ensure the game screen renders `<SpectatorBanner>` when `isSpectator` is true
    - Ensure game controls are disabled for spectators
@@ -512,7 +489,6 @@ There are 4 multiplayer hook families. They should all follow identical patterns
    - Private hand management (received via targeted message, NOT in room state)
    - Actions: playCard, drawCard, pass, resign
    - Suit selection for wild cards (Crazy Eights)
-   - War resolution flow
 
 4. **Audit `usePhysicsGame`**:
    - Server-authoritative physics — client sends input, server sends ball/paddle state
@@ -527,7 +503,7 @@ There are 4 multiplayer hook families. They should all follow identical patterns
    - Provide consistent loading/error/phase states to game screens
    - Have consistent return type shapes
 
-6. **Game-specific multiplayer hooks** (`useSnakeMultiplayer`, `useCrosswordMultiplayer`, `useWordMasterMultiplayer`, `useRaceMultiplayer`):
+6. **Game-specific multiplayer hooks** (`useCrosswordMultiplayer`, `useWordMasterMultiplayer`):
    - Verify they properly extend or wrap the generic hooks
    - Check for duplicated logic that should be in the base hooks
 
@@ -568,7 +544,7 @@ There are 4 multiplayer hook families. They should all follow identical patterns
 
 ### Problem
 
-Only 8/32 games use the shared `GameOverModal`. Others have ad-hoc game-over UIs or `Alert.alert()` calls. The game-over experience should be consistent and polished.
+Only 8/21 games use the shared `GameOverModal`. Others have ad-hoc game-over UIs or `Alert.alert()` calls. The game-over experience should be consistent and polished.
 
 ### Task
 
@@ -610,7 +586,7 @@ Some games use legacy `PanResponder` (from RN Animated), others use modern `Gest
 
 2. **Standardize touch input patterns**:
    - Board games (Chess, Checkers, etc.): Tap to select, tap to place. Use `Gesture.Tap()`
-   - Swipe games (2048, Snake): Use `Gesture.Fling()` with directional detection
+   - Swipe games (2048): Use `Gesture.Fling()` with directional detection
    - Drag games (Pong, AirHockey, Pool): Use `Gesture.Pan()` with `onUpdate`
    - Tap games (Reaction, Timed, Minesweeper): Use `Pressable` or `Gesture.Tap()`
 
@@ -683,7 +659,7 @@ Some games use legacy `PanResponder` (from RN Animated), others use modern `Gest
 3. **For the Colyseus server**: `cd colyseus-server && npx tsc --noEmit`
 4. **Never break types** — zero TypeScript errors after every section
 5. **Never break gameplay** — all changes must be behavior-preserving unless fixing a bug
-6. **Be thorough** — if a section says "every game", check every single one of the 32 games
+6. **Be thorough** — if a section says "every game", check every single one of the 21 games
 7. **Make it beautiful** — when in doubt, add a gradient, a shadow, or a spring animation
 8. **Run until done** — complete all 12 sections before stopping
 
@@ -695,15 +671,15 @@ After completing all sections:
 
 - [ ] `npx tsc --noEmit` — zero errors (client)
 - [ ] `cd colyseus-server && npx tsc --noEmit` — zero errors (server)
-- [ ] All 32 game screens use `useGameBackHandler`
-- [ ] All 32 game screens use `useGameHaptics` with appropriate events
-- [ ] All 32 game screens use `GameOverModal` for game-over
-- [ ] All 32 game screens have cleanup in every `useEffect` that creates timers/subscriptions
-- [ ] All 32 game screens have `GameErrorBoundary` wrapping
-- [ ] All 32 game screens properly support dark AND light theme
-- [ ] All 19 multiplayer games handle invite flow via `useGameConnection`
-- [ ] All 13 single-player games have spectator hosting via `useSpectator`
-- [ ] All 19 multiplayer games have spectator viewing support
+- [ ] All 21 game screens use `useGameBackHandler`
+- [ ] All 21 game screens use `useGameHaptics` with appropriate events
+- [ ] All 21 game screens use `GameOverModal` for game-over
+- [ ] All 21 game screens have cleanup in every `useEffect` that creates timers/subscriptions
+- [ ] All 21 game screens have `GameErrorBoundary` wrapping
+- [ ] All 21 game screens properly support dark AND light theme
+- [ ] All 11 multiplayer games handle invite flow via `useGameConnection`
+- [ ] All 10 single-player games have spectator hosting via `useSpectator`
+- [ ] All 11 multiplayer games have spectator viewing support
 - [ ] No `PanResponder` usage remains — all migrated to `GestureDetector`
 - [ ] No `console.log/warn/error` — all use `createLogger()`
 - [ ] No `as any` in game screens or hooks
