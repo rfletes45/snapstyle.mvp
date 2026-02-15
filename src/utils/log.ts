@@ -87,6 +87,8 @@ const SENSITIVE_KEYS = [
   "session_token",
 ];
 
+const SENSITIVE_KEY_PATTERNS = SENSITIVE_KEYS.map((key) => key.toLowerCase());
+
 /**
  * Sanitize an object to remove sensitive data before logging
  */
@@ -114,7 +116,15 @@ function sanitize(obj: unknown): unknown {
   const sanitized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     const lowerKey = key.toLowerCase();
-    if (SENSITIVE_KEYS.some((sensitive) => lowerKey.includes(sensitive))) {
+    let isSensitive = false;
+    for (const pattern of SENSITIVE_KEY_PATTERNS) {
+      if (lowerKey.includes(pattern)) {
+        isSensitive = true;
+        break;
+      }
+    }
+
+    if (isSensitive) {
       sanitized[key] = "[REDACTED]";
     } else if (typeof value === "object" && value !== null) {
       sanitized[key] = sanitize(value);
