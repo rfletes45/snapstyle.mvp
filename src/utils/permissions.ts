@@ -83,20 +83,12 @@ export async function requestMicrophonePermission(): Promise<boolean> {
  * Required for: Accessing saved photos/videos, saving snaps
  */
 export async function requestPhotoLibraryPermission(): Promise<boolean> {
-  try {
-    logger.info("[Permissions] Requesting photo library permission");
+  logger.info("[Permissions] Requesting photo library permission");
 
-    // expo-media-library is not installed; return true as placeholder
-    // NOTE: Install expo-media-library for production
-    logger.info("[Permissions] Photo library permission granted (placeholder)");
-    return true;
-  } catch (error) {
-    logger.error(
-      "[Permissions] Failed to request photo library permission:",
-      error,
-    );
-    return false;
-  }
+  // expo-media-library is not installed; return true as placeholder
+  // NOTE: Install expo-media-library for production
+  logger.info("[Permissions] Photo library permission granted (placeholder)");
+  return true;
 }
 
 /**
@@ -203,16 +195,8 @@ export async function hasMicrophonePermission(): Promise<boolean> {
  * Check if photo library permission is granted
  */
 export async function hasPhotoLibraryPermission(): Promise<boolean> {
-  try {
-    // expo-media-library is not installed; return true as placeholder
-    return true;
-  } catch (error) {
-    logger.error(
-      "[Permissions] Failed to check photo library permission:",
-      error,
-    );
-    return false;
-  }
+  // expo-media-library is not installed; return true as placeholder
+  return true;
 }
 
 /**

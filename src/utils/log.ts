@@ -54,15 +54,6 @@ const LOG_LEVEL_EMOJI: Record<LogLevel, string> = {
   error: "❌",
 };
 
-const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
-  debug: "\x1b[36m", // Cyan
-  info: "\x1b[34m", // Blue
-  warn: "\x1b[33m", // Yellow
-  error: "\x1b[31m", // Red
-};
-
-const RESET_COLOR = "\x1b[0m";
-
 // Default config based on environment
 const defaultConfig: LogConfig = {
   minLevel: __DEV__ ? "debug" : "warn",
