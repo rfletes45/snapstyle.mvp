@@ -94,7 +94,7 @@ const REASON_DISPLAY: Record<
 
 interface RecommendationCardProps {
   recommendation: GameRecommendation;
-  onPress: () => void;
+  onPress: (gameType: ExtendedGameType) => void;
 }
 
 function RecommendationCard({
@@ -118,8 +118,8 @@ function RecommendationCard({
 
   const handlePress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  }, [onPress]);
+    onPress(recommendation.gameType);
+  }, [onPress, recommendation.gameType]);
 
   const { metadata, reason, reasonEmoji } = recommendation;
 
@@ -184,7 +184,7 @@ export function GameRecommendations({
   onGamePress,
   testID,
 }: GameRecommendationsProps) {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
 
   const [recommendations, setRecommendations] = useState<GameRecommendation[]>(
@@ -197,6 +197,7 @@ export function GameRecommendations({
     const generateRecommendations = async () => {
       try {
         const recs: GameRecommendation[] = [];
+        const includedGameIds = new Set<ExtendedGameType>();
 
         // Get all available games
         const availableGames = Object.values(GAME_METADATA).filter(
@@ -213,6 +214,7 @@ export function GameRecommendations({
             reasonEmoji: REASON_DISPLAY.new_game.emoji,
             priority: 100,
           });
+          includedGameIds.add(game.id);
         });
 
         // Rule 2: Multiplayer games for engagement
@@ -227,16 +229,15 @@ export function GameRecommendations({
             reasonEmoji: REASON_DISPLAY.friends_playing.emoji,
             priority: 80,
           });
+          includedGameIds.add(game.id);
         });
 
         // Rule 3: Popular games (trending)
         const popularGames = availableGames.filter(
-          (g) =>
-            ["play_2048", "word_master"].includes(g.id) &&
-            !newGames.includes(g),
+          (g) => ["play_2048", "word_master"].includes(g.id),
         );
         popularGames.forEach((game) => {
-          if (!recs.find((r) => r.gameType === game.id)) {
+          if (!includedGameIds.has(game.id)) {
             recs.push({
               gameType: game.id,
               metadata: game,
@@ -244,13 +245,13 @@ export function GameRecommendations({
               reasonEmoji: REASON_DISPLAY.popular.emoji,
               priority: 60,
             });
+            includedGameIds.add(game.id);
           }
         });
 
         // Rule 4: Try something new (random from less played categories)
         const puzzleGames = availableGames.filter(
-          (g) =>
-            g.category === "puzzle" && !recs.find((r) => r.gameType === g.id),
+          (g) => g.category === "puzzle" && !includedGameIds.has(g.id),
         );
         if (puzzleGames.length > 0) {
           const randomPuzzle =
@@ -262,6 +263,7 @@ export function GameRecommendations({
             reasonEmoji: REASON_DISPLAY.try_something_new.emoji,
             priority: 40,
           });
+          includedGameIds.add(randomPuzzle.id);
         }
 
         // Sort by priority and limit
@@ -286,10 +288,7 @@ export function GameRecommendations({
 
   const renderItem = useCallback(
     ({ item }: { item: GameRecommendation }) => (
-      <RecommendationCard
-        recommendation={item}
-        onPress={() => handleGamePress(item.gameType)}
-      />
+      <RecommendationCard recommendation={item} onPress={handleGamePress} />
     ),
     [handleGamePress],
   );
