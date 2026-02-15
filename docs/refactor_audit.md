@@ -97,16 +97,75 @@ Other package commands discovered:
 
 ## 5) What was fixed
 
-_To be filled during change phases._
+### 5.1 Dead code / unreachable path cleanup
+
+1) `src/utils/log.ts`
+- Removed confirmed-unused constants:
+  - `LOG_LEVEL_COLORS`
+  - `RESET_COLOR`
+- Rationale: symbols were never referenced in module/runtime.
+- Risk: **Low** (no call-site or output-path dependency).
+
+2) `src/utils/permissions.ts`
+- Removed unreachable `catch` branches from placeholder photo-library helpers:
+  - `requestPhotoLibraryPermission`
+  - `hasPhotoLibraryPermission`
+- Rationale: code path contained no throwing operations and always returned `true`; lint flagged unreachable branch.
+- Risk: **Low** (same functional return values for all reachable paths).
+
+### 5.2 Dedupe + rendering/runtime efficiency
+
+1) `src/screens/games/components/GameRecommendations.tsx`
+- Replaced repeated `recs.find(...)` membership checks with `Set<ExtendedGameType>` tracking.
+- Reused stable game-press callback across cards by passing game type from `RecommendationCard` instead of creating a new inline closure per row render.
+- Removed unused parent `isDark` destructure.
+- Rationale: avoids avoidable repeated linear scans and per-item closure churn during recommendation regeneration/render.
+- Risk: **Low** (same recommendation rules and displayed output).
+
+### 5.3 Performance fix (hot utility path)
+
+1) `src/utils/log.ts`
+- Added one-time normalized `SENSITIVE_KEY_PATTERNS` and switched per-key sensitive matching from `Array.some` callback allocation to loop with early break.
+- Rationale: this path runs for every logged object key; reduces callback allocations and repeated normalization work.
+- Risk: **Low** (same sanitization intent, with stronger case-insensitive matching).
 
 ## 6) What was not fixed (and why)
 
-_To be filled during change phases._
+- Root parse/lint/test failures not introduced by this refactor were left unchanged (baseline instability):
+  - `src/screens/friends/FriendsScreen.tsx` TS parse error
+  - Root Jest ESM transform issues involving Expo packages
+  - Existing performance regression tests failing in `__tests__/performance/gamePerformance.test.ts`
+- Large-scale lint warning cleanup across game screens was deferred because many warnings involve hook dependency semantics and gameplay-state timing risks.
+- Unused dependency removal was deferred due multi-app workspace coupling (root app + embedded clients + server tooling) and high false-positive risk without lockstep runtime tracing.
+
+### Recommended next actions
+
+1) Stabilize root test infrastructure (Jest Expo ESM handling) before broader refactors.
+2) Profile pool/chess perf tests and optimize simulation hotspots in targeted engine modules.
+3) Run dependency-prune pass per package (`depcheck`/manual) with runtime smoke test per app/server.
+4) Tackle lint debt in small game-by-game batches with snapshot/gameplay verification gates.
 
 ## 7) Verification results (post-change)
 
-_To be filled after edits._
+### Root app
+
+- `npm run lint` → **FAIL** (pre-existing), but count improved from **695** to **691** total issues.
+- `npm run type-check` → **FAIL** (same pre-existing parse error in `src/screens/friends/FriendsScreen.tsx`).
+- `npm test -- --runInBand` → **FAIL** (same suite-level failures; totals unchanged at 12 failed / 17 passed).
+
+### Focused checks for touched areas
+
+- `npx eslint src/utils/log.ts src/utils/permissions.ts src/screens/games/components/GameRecommendations.tsx` → **PASS** (no emitted violations).
+- `client`: `npm run typecheck` → **PASS**
+- `client`: `npm run build` → **PASS**
 
 ## 8) Summary metrics
 
-_To be filled after final pass._
+- Approx files touched by this audit pass: **3 code files** + **1 report file**.
+- Approx net code reduction: **~35 lines removed** (plus targeted replacements/optimizations).
+- Unused deps removed: **0** (deferred for dedicated dependency-trace pass).
+- Notable improvements:
+  - Removed confirmed dead/unreachable code paths.
+  - Recommendation generation now uses set-based dedupe (avoids repeated linear membership checks).
+  - Recommendation list rendering avoids per-item inline press closure creation.
+  - Logger sanitization hot path now performs normalized/early-break sensitive-key checks.
