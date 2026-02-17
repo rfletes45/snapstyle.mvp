@@ -1,0 +1,44 @@
+{
+  "id": "H20",
+  "name": "Double Lake",
+  "difficulty": 4,
+  "par": 3,
+  "maxStrokes": 8,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 15, "y": 30 },
+  "cup": { "x": 85, "y": 30 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [
+    {
+      "id": "water_1",
+      "type": "water",
+      "poly": [
+        { "x": 25, "y": 10 },
+        { "x": 42, "y": 10 },
+        { "x": 42, "y": 28 },
+        { "x": 25, "y": 28 }
+      ]
+    },
+    {
+      "id": "water_2",
+      "type": "water",
+      "poly": [
+        { "x": 55, "y": 32 },
+        { "x": 75, "y": 32 },
+        { "x": 75, "y": 50 },
+        { "x": 55, "y": 50 }
+      ]
+    }
+  ],
+  "obstacles": [],
+  "slopes": []
+}

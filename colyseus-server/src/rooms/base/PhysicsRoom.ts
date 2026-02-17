@@ -1,32 +1,33 @@
-﻿import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
+import { createServerLogger } from "../../utils/logger";
 const log = createServerLogger("PhysicsRoom");
 
 /**
- * PhysicsRoom â€” Abstract base for all Tier 1 real-time physics games
+ * PhysicsRoom — Abstract base for all Tier 1 real-time physics games
  *
  * Pattern: Server-authoritative physics simulation at 60fps, state sync at
  * ~30fps (patchRate 33ms). Both players send input messages; the server
  * applies them, runs physics, and broadcasts delta-compressed state patches.
  *
  * Lifecycle:
- * 1. Both players join â†’ "waiting"
- * 2. Both send "ready" â†’ "countdown" (3 seconds)
- * 3. Countdown expires â†’ "playing" (simulation starts)
- * 4. Win condition reached â†’ "finished"
- * 5. On dispose â†’ persistGameResult() if game completed
+ * 1. Both players join → "waiting"
+ * 2. Both send "ready" → "countdown" (3 seconds)
+ * 3. Countdown expires → "playing" (simulation starts)
+ * 4. Win condition reached → "finished"
+ * 5. On dispose → persistGameResult() if game completed
  *
  * Subclasses must implement:
  *   - gameTypeKey          (string identifying the game)
  *   - scoreToWin           (points needed to win, 0 = time-based)
  *   - gameDuration         (seconds, 0 = unlimited / score-only)
  *   - initializeGame()     (set up initial positions, ball, etc.)
- *   - updatePhysics(dt)    (per-tick physics â€” collision, movement)
+ *   - updatePhysics(dt)    (per-tick physics — collision, movement)
  *   - handleInput(client, input) (process player input)
  *   - resetAfterScore()    (reset ball/positions after a point)
  *
- * Used by: PongRoom, AirHockeyRoom (Phase 4)
+ * Used by: PongRoom (Phase 4)
  *
- * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md Â§7.1
+ * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §7.1
  */
 
 import { Client, Room } from "colyseus";
@@ -34,7 +35,20 @@ import { BaseGameState } from "../../schemas/common";
 import { Paddle, PhysicsPlayer, PhysicsState } from "../../schemas/physics";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
-import { persistGameResult } from "../../services/persistence";
+import {
+  deleteGameAndInvite,
+  markGameVacant,
+  persistGameResult,
+} from "../../services/persistence";
+import { checkProtocolVersion } from "../../utils/protocol";
+import {
+  MessageRateLimiter,
+  PHYSICS_RATE_LIMITS,
+} from "../../utils/rateLimiter";
+import {
+  createStuckRoomWatchdog,
+  type StuckRoomWatchdog,
+} from "../../utils/stuckRoomWatchdog";
 
 // =============================================================================
 // Input Payload
@@ -58,7 +72,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
   patchRate = 33; // ~30fps state sync
   autoDispose = true;
 
-  /** Game type key â€” must match client-side GAME_REGISTRY */
+  /** Game type key — must match client-side GAME_REGISTRY */
   protected abstract readonly gameTypeKey: string;
 
   /** Points needed to win (0 = time-based) */
@@ -73,13 +87,22 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
   /** Track spectator session IDs for fast lookup */
   private spectatorSessionIds = new Set<string>();
 
+  /** Scoped logger with room-level context */
+  protected roomLog: ServerLogger = log;
+
+  /** Message rate limiter to prevent input spam */
+  private rateLimiter = new MessageRateLimiter(PHYSICS_RATE_LIMITS);
+
+  /** Stuck-room watchdog — logs if room never reaches playing */
+  private stuckWatchdog: StuckRoomWatchdog | null = null;
+
   /** Check if a session is a spectator */
   protected isSpectator(sessionId: string): boolean {
     return this.spectatorSessionIds.has(sessionId);
   }
 
   // ===========================================================================
-  // Abstract Methods â€” Subclasses MUST implement
+  // Abstract Methods — Subclasses MUST implement
   // ===========================================================================
 
   /** Set up initial game objects (ball, paddles, field) */
@@ -95,7 +118,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
   protected abstract resetAfterScore(): void;
 
   // ===========================================================================
-  // Lifecycle â€” onAuth
+  // Lifecycle — onAuth
   // ===========================================================================
 
   async onAuth(
@@ -103,18 +126,46 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // -- Protocol version gate ---------------------------------------------
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: this.gameTypeKey,
+      });
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
+
+    log.info("Auth success", {
+      uid: decoded.uid,
+      sessionId: client.sessionId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options?.firestoreGameId,
+      traceId: options?.traceId,
+      protocolVersion: proto.clientVersion,
+      platform: options?.buildInfo?.platform,
+    });
+
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
+      traceId: options?.traceId,
     };
   }
 
   // ===========================================================================
-  // Lifecycle â€” onCreate
+  // Lifecycle — onCreate
   // ===========================================================================
 
   onCreate(options: Record<string, any>): void {
@@ -126,9 +177,24 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     this.state.seed = Math.floor(Math.random() * 2147483647);
     this.state.phase = "waiting";
 
+    if (options.firestoreGameId) {
+      (this.state as any).firestoreGameId = options.firestoreGameId;
+    }
+
+    // Build scoped logger with room-level correlation context
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options.firestoreGameId || undefined,
+      traceId: options.traceId || undefined,
+    });
+
     this.initializeGame();
 
-    log.info(`[${this.gameTypeKey}] Room created: ${this.roomId}`);
+    // Start stuck-room watchdog (logs if room never reaches playing)
+    this.stuckWatchdog = createStuckRoomWatchdog(this as any, this.roomLog);
+
+    this.roomLog.info(`Room created`);
   }
 
   // ===========================================================================
@@ -141,9 +207,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       const player = this.state.players.get(client.sessionId);
       if (player) {
         player.ready = true;
-        log.info(
-          `[${this.gameTypeKey}] Player ready: ${player.displayName}`,
-        );
+        this.roomLog.info(`Player ready: ${player.displayName}`);
         this.checkAllReady();
       }
     },
@@ -151,6 +215,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     input: (client: Client, payload: InputPayload) => {
       if (this.isSpectator(client.sessionId)) return;
       if (this.state.phase !== "playing") return;
+      if (this.rateLimiter.isRateLimited(client.sessionId, "input")) return;
       this.handleInput(client, payload);
     },
 
@@ -171,9 +236,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     },
 
     app_state: (client: Client, payload: { state: string }) => {
-      log.info(
-        `[${this.gameTypeKey}] App state: ${client.sessionId} â†’ ${payload.state}`,
-      );
+      this.roomLog.info(`App state: ${client.sessionId} → ${payload.state}`);
     },
   };
 
@@ -182,7 +245,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
   // ===========================================================================
 
   onJoin(client: Client, _options: Record<string, any>, auth: any): void {
-    // â”€â”€â”€ Spectator join â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator join ─────────────────────────────────────────────────
     if (_options.spectator === true) {
       const spectator = new SpectatorEntry();
       spectator.uid = auth.uid;
@@ -193,8 +256,8 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       this.state.spectators.set(client.sessionId, spectator);
       this.state.spectatorCount++;
       this.spectatorSessionIds.add(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -225,8 +288,8 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       fieldHeight: this.state.fieldHeight,
     });
 
-    log.info(
-      `[${this.gameTypeKey}] Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.players.size}/${this.maxClients}]`,
+    this.roomLog.info(
+      `Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.players.size}/${this.maxClients}]`,
     );
 
     if (this.state.players.size >= 2) {
@@ -249,7 +312,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       10,
     );
     this.allowReconnection(client, timeout);
-    log.info(`[${this.gameTypeKey}] Player dropped: ${client.sessionId}`);
+    this.roomLog.info(`Player dropped: ${client.sessionId}`);
   }
 
   onReconnect(client: Client): void {
@@ -261,19 +324,17 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       { sessionId: client.sessionId },
       { except: client },
     );
-    log.info(
-      `[${this.gameTypeKey}] Player reconnected: ${client.sessionId}`,
-    );
+    this.roomLog.info(`Player reconnected: ${client.sessionId}`);
   }
 
   onLeave(client: Client, code: number): void {
-    // â”€â”€â”€ Spectator leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator leave ────────────────────────────────────────────────
     if (this.spectatorSessionIds.has(client.sessionId)) {
       this.state.spectators.delete(client.sessionId);
       this.state.spectatorCount = Math.max(0, this.state.spectatorCount - 1);
       this.spectatorSessionIds.delete(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator left (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator left (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -287,16 +348,43 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     }
     this.state.players.delete(client.sessionId);
     this.state.paddles.delete(client.sessionId);
-    log.info(
-      `[${this.gameTypeKey}] Player left: ${client.sessionId} (code: ${code})`,
-    );
+    this.roomLog.info(`Player left: ${client.sessionId} (code: ${code})`);
   }
 
   async onDispose(): Promise<void> {
+    this.rateLimiter.dispose();
+    this.stuckWatchdog?.dispose();
+    const firestoreGameId =
+      (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
+
     if (this.state.phase === "finished" && this.state.winnerId) {
-      await persistGameResult(this.state as unknown as BaseGameState, this.state.elapsed);
+      // Game resolved � persist results, then delete game + invite
+      await persistGameResult(
+        this.state as unknown as BaseGameState,
+        this.state.elapsed,
+      );
+      await deleteGameAndInvite(firestoreGameId);
+      this.roomLog.info(
+        `Game completed, persisted, and cleaned up: ${this.roomId}`,
+      );
+    } else if (this.state.phase === "playing") {
+      // Ongoing non-turn-based game � mark as vacant for 10-minute cleanup
+      await markGameVacant(firestoreGameId, this.gameTypeKey, false);
+      this.roomLog.info(
+        `Ongoing game marked vacant (10-min TTL): ${this.roomId}`,
+      );
+    } else if (
+      this.state.phase === "waiting" ||
+      this.state.phase === "countdown"
+    ) {
+      // PRE-START ABANDONMENT: delete immediately
+      await deleteGameAndInvite(firestoreGameId);
+      this.roomLog.info(
+        `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
+      );
+    } else {
+      this.roomLog.info(`Room disposed: ${this.roomId}`);
     }
-    log.info(`[${this.gameTypeKey}] Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -315,7 +403,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
   private startCountdown(): void {
     this.state.phase = "countdown";
     this.state.countdown = 3;
-    log.info(`[${this.gameTypeKey}] Countdown started`);
+    this.roomLog.info(`Countdown started`);
     const interval = this.clock.setInterval(() => {
       this.state.countdown--;
       if (this.state.countdown <= 0) {
@@ -329,6 +417,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     this.state.phase = "playing";
     this.state.timerRunning = true;
     this.gameStartTime = Date.now();
+    this.stuckWatchdog?.markPlaying();
 
     if (this.gameDuration > 0) {
       this.state.remaining = this.gameDuration * 1000;
@@ -354,7 +443,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       this.updatePhysics(dt);
     }, 16.6); // ~60fps
 
-    log.info(`[${this.gameTypeKey}] Game started!`);
+    this.roomLog.info(`Game started!`);
   }
 
   // ===========================================================================
@@ -401,12 +490,10 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       gameDurationMs: this.state.elapsed,
     });
 
-    log.info(
-      `[${this.gameTypeKey}] Game over! Winner: ${winnerId} (${reason})`,
-    );
+    this.roomLog.info(`Game over! Winner: ${winnerId} (${reason})`);
   }
 
-  /** End game by timeout â€” highest score wins */
+  /** End game by timeout — highest score wins */
   private endGameByTimeout(): void {
     const players = Array.from(this.state.players.values()) as PhysicsPlayer[];
     if (players.length < 2) return;
@@ -456,8 +543,6 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     this.gameStartTime = 0;
     this.initializeGame();
     this.unlock();
-    log.info(`[${this.gameTypeKey}] Room reset for rematch`);
+    this.roomLog.info(`Room reset for rematch`);
   }
 }
-
-

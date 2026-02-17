@@ -1,0 +1,51 @@
+{
+  "id": "toybox_8",
+  "packId": "toybox",
+  "name": "Jelly Bounce",
+  "par": 3,
+  "maxStrokes": 10,
+  "bounds": { "width": 400, "height": 850 },
+  "tee": { "x": 200, "y": 750 },
+  "cup": { "x": 200, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 350, "y": 0 },
+      { "x": 350, "y": 850 },
+      { "x": 50, "y": 850 }
+    ]
+  ],
+  "surfaces": [
+    {
+      "id": "ice_t8",
+      "type": "ice",
+      "frictionMul": 0.12,
+      "poly": [
+        { "x": 80, "y": 200 },
+        { "x": 320, "y": 200 },
+        { "x": 320, "y": 340 },
+        { "x": 80, "y": 340 }
+      ]
+    }
+  ],
+  "hazards": [],
+  "obstacles": [
+    {
+      "id": "bumper_t8a",
+      "type": "bumper",
+      "position": { "x": 130, "y": 500 },
+      "size": { "width": 30, "height": 30 },
+      "radius": 20,
+      "restitution": 1.6
+    },
+    {
+      "id": "bumper_t8b",
+      "type": "bumper",
+      "position": { "x": 270, "y": 500 },
+      "size": { "width": 30, "height": 30 },
+      "radius": 20,
+      "restitution": 1.6
+    }
+  ]
+}

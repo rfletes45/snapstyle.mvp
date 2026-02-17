@@ -15,26 +15,6 @@ import {
   isStalemate,
   parseFEN,
 } from "@/services/gameValidation/chessValidator";
-import {
-  createInitialBalls,
-  createTable,
-  PoolBall,
-  simulateShot,
-} from "@/services/games/poolEngine";
-
-// Screen width constant for tests
-const SCREEN_WIDTH = 800;
-const PERF_POOL_TABLE = createTable(800, 400);
-
-const createPoolBall = (id: number, x: number, y: number): PoolBall => ({
-  id,
-  x,
-  y,
-  vx: 0,
-  vy: 0,
-  spin: { x: 0, y: 0 },
-  pocketed: false,
-});
 
 // Performance measurement utilities
 const measureExecutionTime = (
@@ -84,81 +64,6 @@ const simulateGameLoop = (
 };
 
 describe("Game Performance", () => {
-  describe("Pool Physics Performance", () => {
-    it("should complete single frame physics in under 16ms", () => {
-      const table = createTable(800, 400);
-      const balls = createInitialBalls(table);
-
-      const result = measureExecutionTime(() => {
-        simulateShot(balls, { angle: 0, power: 0.72, english: { x: 0, y: 0 } }, table);
-      }, 100);
-
-      expect(result.average).toBeLessThan(16);
-    });
-
-    it("should handle collision-heavy scenarios efficiently", () => {
-      // Create balls very close together to force many collisions
-      const table = createTable(800, 400);
-      const balls = createInitialBalls(table).map((ball, index) => ({
-        ...ball,
-        x: 300 + (index % 4) * table.ballRadius * 2.1,
-        y: 120 + Math.floor(index / 4) * table.ballRadius * 2.1,
-      }));
-
-      const result = measureExecutionTime(() => {
-        simulateShot(
-          balls,
-          { angle: Math.PI / 4, power: 0.86, english: { x: 0.15, y: -0.2 } },
-          table,
-        );
-      }, 50);
-
-      // Even with many collisions, should complete reasonably fast
-      expect(result.average).toBeLessThan(50);
-    });
-
-    it("should scale linearly with ball count", () => {
-      const table = createTable(800, 400);
-      const createBallSet = (count: number): PoolBall[] => {
-        const balls: PoolBall[] = [];
-        for (let i = 0; i < count; i++) {
-          balls.push(
-            {
-              id: i,
-              x: 100 + (i % 8) * 32,
-              y: 80 + Math.floor(i / 8) * 32,
-              vx: 0,
-              vy: 0,
-              spin: { x: 0, y: 0 },
-              pocketed: false,
-            },
-          );
-        }
-        return balls;
-      };
-
-      const time8 = measureExecutionTime(() => {
-        simulateShot(
-          createBallSet(8),
-          { angle: 0, power: 0.5, english: { x: 0, y: 0 } },
-          table,
-        );
-      }, 50);
-
-      const time16 = measureExecutionTime(() => {
-        simulateShot(
-          createBallSet(16),
-          { angle: 0, power: 0.5, english: { x: 0, y: 0 } },
-          table,
-        );
-      }, 50);
-
-      // Time should not increase more than 4x for double the balls
-      // (collision checks are O(n²), but should be optimized)
-      expect(time16.average).toBeLessThan(time8.average * 5);
-    });
-  });
-
   describe("Chess Validation Performance", () => {
     const startingFEN =
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -246,31 +151,6 @@ describe("Game Performance", () => {
     });
   });
 
-  describe("Memory Efficiency", () => {
-    it("should efficiently reuse objects in pool physics", () => {
-      const balls: PoolBall[] = [];
-      for (let i = 0; i < 16; i++) {
-        balls.push(createPoolBall(i, 100 + i * 30, 200));
-      }
-
-      // Simulate many shots
-      for (let shot = 0; shot < 100; shot++) {
-        simulateShot(
-          balls,
-          {
-            angle: (shot * 10 * Math.PI) / 180,
-            power: 0.6,
-            english: { x: 0, y: 0 },
-          },
-          PERF_POOL_TABLE,
-        );
-      }
-
-      // All balls should still exist
-      expect(balls.length).toBe(16);
-    });
-  });
-
   describe("Load Time Simulation", () => {
     it("should parse starting chess position quickly", () => {
       const startingFEN =
@@ -281,46 +161,9 @@ describe("Game Performance", () => {
 
       expect(result.average).toBeLessThan(1);
     });
-
-    it("should create pool table state quickly", () => {
-      const result = measureExecutionTime(() => {
-        const balls: PoolBall[] = [];
-        for (let i = 0; i < 16; i++) {
-          balls.push(createPoolBall(i, 100 + i * 30, 200));
-        }
-
-        return {
-          balls,
-          table: PERF_POOL_TABLE,
-        };
-      }, 1000);
-
-      expect(result.average).toBeLessThan(1);
-    });
   });
 
   describe("Stress Tests", () => {
-    it("should handle simultaneous pool ball movements", () => {
-      const balls: PoolBall[] = [];
-      for (let i = 0; i < 16; i++) {
-        const ball = createPoolBall(i, 400, 200);
-        // All balls moving in different directions
-        ball.vx = Math.cos((i * Math.PI * 2) / 16) * 80;
-        ball.vy = Math.sin((i * Math.PI * 2) / 16) * 80;
-        balls.push(ball);
-      }
-
-      const result = measureExecutionTime(() => {
-        simulateShot(
-          balls,
-          { angle: 0, power: 0.01, english: { x: 0, y: 0 } },
-          PERF_POOL_TABLE,
-        );
-      }, 100);
-
-      expect(result.average).toBeLessThan(20);
-    });
-
     it("should handle long chess games efficiently", () => {
       // Simulate validating moves throughout a long game
       const positions = [
@@ -351,28 +194,10 @@ describe("Performance Regression Tests", () => {
   // These tests set baselines that future changes should not exceed
 
   const performanceBaselines = {
-    poolSimulation: 15, // ms
     chessMoveLegal: 1, // ms
     chessCheckmate: 5, // ms
     fenParsing: 0.5, // ms
   };
-
-  it("should not regress pool simulation performance", () => {
-    const balls: PoolBall[] = [];
-    for (let i = 0; i < 16; i++) {
-      balls.push(createPoolBall(i, 100 + i * 30, 200));
-    }
-
-    const result = measureExecutionTime(() => {
-      simulateShot(
-        balls,
-        { angle: Math.PI / 4, power: 0.7, english: { x: 0.1, y: -0.1 } },
-        PERF_POOL_TABLE,
-      );
-    }, 50);
-
-    expect(result.average).toBeLessThan(performanceBaselines.poolSimulation);
-  });
 
   it("should not regress chess move validation performance", () => {
     const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

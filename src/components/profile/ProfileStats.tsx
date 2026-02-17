@@ -4,7 +4,7 @@
  * Displays user statistics in a grid layout.
  */
 
-import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileStats as ProfileStatsType } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
@@ -31,7 +31,7 @@ const StatItem = memo(function StatItem({
   label,
   color,
 }: StatItemProps) {
-  const colors = useProfileThemeColors();
+  const colors = useColors();
 
   return (
     <View style={styles.statItem}>
@@ -51,7 +51,7 @@ const StatItem = memo(function StatItem({
 });
 
 function ProfileStatsBase({ stats, expanded = false }: ProfileStatsProps) {
-  const colors = useProfileThemeColors();
+  const colors = useColors();
 
   const primaryStats = [
     { icon: "gamepad-variant", value: stats.gamesPlayed, label: "Games" },

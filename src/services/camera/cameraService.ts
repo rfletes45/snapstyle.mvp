@@ -1,28 +1,52 @@
 /**
  * CAMERA SERVICE
  * Handles photo capture, video recording, compression, and permissions.
- * Uses expo-camera for cross-platform camera access and permission handling.
+ * Uses react-native-vision-camera for native camera access and permission handling.
  */
 
+import { USE_VISION_CAMERA } from "@/constants/featureFlags";
 import {
   CameraPermissions,
   CameraSettings,
   CapturedMedia,
   PermissionStatus,
 } from "@/types/camera";
-import { Camera, type CameraView } from "expo-camera";
+import { Camera as ExpoCamera } from "expo-camera";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/camera/cameraService");
 
+// ---------------------------------------------------------------------------
+// VisionCamera – loaded dynamically so it doesn't crash inside Expo Go
+// ---------------------------------------------------------------------------
+let VisionCamera: any = null;
+if (USE_VISION_CAMERA) {
+  try {
+    VisionCamera = require("react-native-vision-camera").Camera;
+  } catch {
+    logger.warn(
+      "[Camera Service] VisionCamera unavailable – falling back to expo-camera",
+    );
+  }
+}
+
 /**
- * Map expo-camera permission status string to our PermissionStatus type.
+ * Map VisionCamera permission status to our PermissionStatus type.
+ * VisionCamera status: 'granted' | 'not-determined' | 'denied' | 'restricted'
+ * VisionCamera request result: 'granted' | 'denied'
  */
-function mapExpoStatus(
-  status: "granted" | "denied" | "undetermined" | string,
-): PermissionStatus {
+function mapVCStatus(status: string): PermissionStatus {
+  if (status === "granted") return "granted";
+  if (status === "denied" || status === "restricted") return "denied";
+  return "undetermined";
+}
+
+/**
+ * Map expo-camera / expo-media-library status string to our PermissionStatus.
+ */
+function mapExpoStatus(status: string): PermissionStatus {
   if (status === "granted") return "granted";
   if (status === "denied") return "denied";
   return "undetermined";
@@ -36,14 +60,23 @@ function mapExpoStatus(
 
 /**
  * Request camera permission from user.
- * Uses expo-camera's `Camera.requestCameraPermissionsAsync()`.
+ * Routes through VisionCamera or expo-camera depending on USE_VISION_CAMERA.
  */
 export async function requestCameraPermission(): Promise<boolean> {
   try {
-    const { status } = await Camera.requestCameraPermissionsAsync();
+    if (VisionCamera) {
+      const result = await VisionCamera.requestCameraPermission();
+      const granted = result === "granted";
+      logger.info(
+        `[Camera Service] Camera permission (VC) ${granted ? "granted" : "denied"}`,
+      );
+      return granted;
+    }
+    // expo-camera path
+    const { status } = await ExpoCamera.requestCameraPermissionsAsync();
     const granted = status === "granted";
     logger.info(
-      `[Camera Service] Camera permission ${granted ? "granted" : "denied"}`,
+      `[Camera Service] Camera permission (expo) ${granted ? "granted" : "denied"}`,
     );
     return granted;
   } catch (error) {
@@ -57,14 +90,23 @@ export async function requestCameraPermission(): Promise<boolean> {
 
 /**
  * Request microphone permission for audio recording.
- * Uses expo-camera's `Camera.requestMicrophonePermissionsAsync()`.
+ * Routes through VisionCamera or expo-camera depending on USE_VISION_CAMERA.
  */
 export async function requestMicrophonePermission(): Promise<boolean> {
   try {
-    const { status } = await Camera.requestMicrophonePermissionsAsync();
+    if (VisionCamera) {
+      const result = await VisionCamera.requestMicrophonePermission();
+      const granted = result === "granted";
+      logger.info(
+        `[Camera Service] Microphone permission (VC) ${granted ? "granted" : "denied"}`,
+      );
+      return granted;
+    }
+    // expo-camera path
+    const { status } = await ExpoCamera.requestMicrophonePermissionsAsync();
     const granted = status === "granted";
     logger.info(
-      `[Camera Service] Microphone permission ${granted ? "granted" : "denied"}`,
+      `[Camera Service] Microphone permission (expo) ${granted ? "granted" : "denied"}`,
     );
     return granted;
   } catch (error) {
@@ -81,7 +123,11 @@ export async function requestMicrophonePermission(): Promise<boolean> {
  */
 export async function getCameraPermissionStatus(): Promise<PermissionStatus> {
   try {
-    const { status } = await Camera.getCameraPermissionsAsync();
+    if (VisionCamera) {
+      const status = VisionCamera.getCameraPermissionStatus();
+      return mapVCStatus(status);
+    }
+    const { status } = await ExpoCamera.getCameraPermissionsAsync();
     return mapExpoStatus(status);
   } catch (error) {
     logger.error("[Camera Service] Failed to check camera permission:", error);
@@ -105,7 +151,11 @@ export async function getAllPermissionsStatus(): Promise<CameraPermissions> {
  */
 export async function getMicrophonePermissionStatus(): Promise<PermissionStatus> {
   try {
-    const { status } = await Camera.getMicrophonePermissionsAsync();
+    if (VisionCamera) {
+      const status = VisionCamera.getMicrophonePermissionStatus();
+      return mapVCStatus(status);
+    }
+    const { status } = await ExpoCamera.getMicrophonePermissionsAsync();
     return mapExpoStatus(status);
   } catch (error) {
     logger.error(
@@ -152,7 +202,7 @@ export async function getPhotoLibraryPermissionStatus(): Promise<PermissionStatu
  * Target: < 100ms from tap to capture
  */
 export async function capturePhoto(
-  cameraRef: CameraView | null,
+  cameraRef: any,
   settings: CameraSettings,
 ): Promise<CapturedMedia> {
   if (!cameraRef) {
@@ -168,10 +218,15 @@ export async function capturePhoto(
     }
 
     // Capture photo – use 0.85 quality for speed (final compression at export)
+    // For front camera: disable skipProcessing so the camera applies the
+    // mirror correction automatically, matching the mirrored live preview.
+    // For back camera: keep skipProcessing for speed.
+    const isFrontCamera = settings.facing === "front";
     const photo = await cameraRef.takePictureAsync({
       quality: 0.85,
       base64: false,
-      skipProcessing: true,
+      skipProcessing: !isFrontCamera,
+      mirror: isFrontCamera,
     });
 
     const captureTime = Date.now() - startTime;
@@ -210,16 +265,16 @@ export async function capturePhoto(
  * Start video recording.
  * Target: < 200ms from long-press to recording start.
  *
- * expo-camera CameraView.recordAsync() returns a Promise that resolves with
- * `{ uri }` when recording is stopped.  We store this promise externally so
- * stopVideoRecording can await it.
+ * The camera ref implements recordAsync() which returns a Promise that
+ * resolves with `{ uri }` when recording is stopped.  We store this promise
+ * externally so stopVideoRecording can await it.
  */
 
 /** Module-level store for the in-flight recording promise. */
 let _activeRecordingPromise: Promise<{ uri: string }> | null = null;
 
 export async function startVideoRecording(
-  cameraRef: CameraView | null,
+  cameraRef: any,
   settings: CameraSettings,
 ): Promise<void> {
   if (!cameraRef) {
@@ -232,7 +287,7 @@ export async function startVideoRecording(
     // recordAsync returns a promise that resolves when recording stops
     _activeRecordingPromise = (cameraRef as any).recordAsync({
       maxDuration,
-      // expo-camera v14+ uses 'mute' rather than separate audio settings
+      // 'mute' controls whether audio is recorded
       mute: false,
     });
 
@@ -248,7 +303,7 @@ export async function startVideoRecording(
  * Stop video recording and return captured media.
  */
 export async function stopVideoRecording(
-  cameraRef: CameraView | null,
+  cameraRef: any,
 ): Promise<CapturedMedia> {
   if (!cameraRef) {
     throw new Error("Camera reference not initialized");
@@ -292,20 +347,18 @@ export async function stopVideoRecording(
 /**
  * Pause video recording (if supported by the device).
  */
-export async function pauseVideoRecording(
-  cameraRef: CameraView | null,
-): Promise<void> {
+export async function pauseVideoRecording(cameraRef: any): Promise<void> {
   if (!cameraRef) {
     throw new Error("Camera reference not initialized");
   }
 
   try {
-    // expo-camera CameraView does not support pause/resume natively.
-    // This is a no-op placeholder; a future native module or expo-av
-    // recording pipeline could enable this.
-    logger.info(
-      "[Camera Service] Pause requested (not supported by expo-camera CameraView)",
-    );
+    if (typeof cameraRef.pauseRecording === "function") {
+      await cameraRef.pauseRecording();
+      logger.info("[Camera Service] Recording paused");
+    } else {
+      logger.info("[Camera Service] Pause not supported by this camera ref");
+    }
   } catch (error) {
     logger.error("[Camera Service] Failed to pause recording:", error);
     throw error;
@@ -315,18 +368,18 @@ export async function pauseVideoRecording(
 /**
  * Resume video recording (if supported by the device).
  */
-export async function resumeVideoRecording(
-  cameraRef: CameraView | null,
-): Promise<void> {
+export async function resumeVideoRecording(cameraRef: any): Promise<void> {
   if (!cameraRef) {
     throw new Error("Camera reference not initialized");
   }
 
   try {
-    // expo-camera CameraView does not support pause/resume natively.
-    logger.info(
-      "[Camera Service] Resume requested (not supported by expo-camera CameraView)",
-    );
+    if (typeof cameraRef.resumeRecording === "function") {
+      await cameraRef.resumeRecording();
+      logger.info("[Camera Service] Recording resumed");
+    } else {
+      logger.info("[Camera Service] Resume not supported by this camera ref");
+    }
   } catch (error) {
     logger.error("[Camera Service] Failed to resume recording:", error);
     throw error;

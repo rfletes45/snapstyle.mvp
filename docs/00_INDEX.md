@@ -10,6 +10,7 @@
 
 | Question                            | Document                                                     | Section                |
 | ----------------------------------- | ------------------------------------------------------------ | ---------------------- |
+| Where should an AI start?           | [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md)                   | Suggested Read Order   |
 | How do I run the app?               | [README.md](../README.md)                                    | Quick Start            |
 | What's the app structure?           | [01_ARCHITECTURE.md](01_ARCHITECTURE.md)                     | Folder Structure       |
 | How does local storage work?        | [01_ARCHITECTURE.md](01_ARCHITECTURE.md)                     | Local Storage Layer    |
@@ -39,15 +40,16 @@
 
 ### Core Documentation
 
-| File                                     | Purpose                                                    | When to Read           |
-| ---------------------------------------- | ---------------------------------------------------------- | ---------------------- |
-| [README.md](../README.md)                | Project overview, quick start, commands                    | First time setup       |
-| [01_ARCHITECTURE.md](01_ARCHITECTURE.md) | App structure, local storage, navigation, services         | Understanding codebase |
-| [02_FIREBASE.md](02_FIREBASE.md)         | Firestore schema, security rules, Cloud Functions, indexes | Backend changes        |
-| [03_CHAT_V2.md](03_CHAT_V2.md)           | Unified chat system, message grouping, composer, keyboard  | Chat feature work      |
-| [04_TESTING.md](04_TESTING.md)           | Security test matrix, QA procedures                        | Before deploying       |
-| [05_RUNBOOK.md](05_RUNBOOK.md)           | Common issues, debugging, deployment                       | When things break      |
-| [06_GAMES.md](06_GAMES.md)               | Games system: architecture, types, services, testing       | Games feature work     |
+| File                                       | Purpose                                                    | When to Read           |
+| ------------------------------------------ | ---------------------------------------------------------- | ---------------------- |
+| [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md) | AI-focused architecture and implementation handoff         | First context pass     |
+| [README.md](../README.md)                  | Project overview, quick start, commands                    | First time setup       |
+| [01_ARCHITECTURE.md](01_ARCHITECTURE.md)   | App structure, local storage, navigation, services         | Understanding codebase |
+| [02_FIREBASE.md](02_FIREBASE.md)           | Firestore schema, security rules, Cloud Functions, indexes | Backend changes        |
+| [03_CHAT_V2.md](03_CHAT_V2.md)             | Unified chat system, message grouping, composer, keyboard  | Chat feature work      |
+| [04_TESTING.md](04_TESTING.md)             | Security test matrix, QA procedures                        | Before deploying       |
+| [05_RUNBOOK.md](05_RUNBOOK.md)             | Common issues, debugging, deployment                       | When things break      |
+| [06_GAMES.md](06_GAMES.md)                 | Games system: architecture, types, services, testing       | Games feature work     |
 
 ### Reference & History
 

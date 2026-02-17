@@ -1,0 +1,56 @@
+{
+  "id": "H26",
+  "name": "Triple Spinner",
+  "difficulty": 5,
+  "par": 4,
+  "maxStrokes": 10,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 15, "y": 30 },
+  "cup": { "x": 85, "y": 30 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 5 },
+      { "x": 90, "y": 5 },
+      { "x": 90, "y": 55 },
+      { "x": 10, "y": 55 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [
+    {
+      "id": "water_1",
+      "type": "water",
+      "poly": [
+        { "x": 42, "y": 6 },
+        { "x": 58, "y": 6 },
+        { "x": 58, "y": 18 },
+        { "x": 42, "y": 18 }
+      ]
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "spinner_1",
+      "type": "spinner",
+      "position": { "x": 30, "y": 30 },
+      "size": { "width": 4, "height": 22 },
+      "speed": 1.5
+    },
+    {
+      "id": "spinner_2",
+      "type": "spinner",
+      "position": { "x": 50, "y": 30 },
+      "size": { "width": 4, "height": 22 },
+      "speed": -2.0
+    },
+    {
+      "id": "spinner_3",
+      "type": "spinner",
+      "position": { "x": 70, "y": 30 },
+      "size": { "width": 4, "height": 22 },
+      "speed": 1.5
+    }
+  ],
+  "slopes": []
+}

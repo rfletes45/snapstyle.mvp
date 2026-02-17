@@ -1,16 +1,23 @@
 /**
- * SpectatorViewScreen — Dedicated screen for watching single-player games
+ * SpectatorViewScreen — Unified screen for watching any game
  *
- * Connects to a SpectatorRoom via Colyseus and displays the host's game
- * state in real-time. Shows score, level, lives, and the serialized game
- * state from the host.
+ * Acts as the single entry point for both:
+ *  - Single-player spectating (SpectatorRoom via `sp-spectator` mode)
+ *  - Multiplayer spectating (game room with `spectator: true`)
+ *
+ * The `spectatorMode` route param selects the connection strategy:
+ *  - "sp"  (default) → joins a SpectatorRoom by `roomId`
+ *  - "multiplayer"    → joins a game room by `roomName` + `firestoreGameId`
  *
  * Route params:
- *   roomId    — Colyseus room ID of the SpectatorRoom
- *   gameType  — Game type key (for display purposes)
- *   hostName  — Display name of the host (optional)
+ *   roomId          — SpectatorRoom ID (sp mode)
+ *   roomName        — Colyseus room name (multiplayer mode)
+ *   firestoreGameId — Game doc ID (multiplayer mode)
+ *   spectatorMode   — "sp" | "multiplayer" (default: "sp")
+ *   gameType        — Game type key (for display)
+ *   hostName        — Display name of the host (optional)
  *
- * @see docs/SPECTATOR_SYSTEM_PLAN.md §4.4
+ * @see docs/06_GAMES.md (Spectator System)
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -27,9 +34,32 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorGameRenderer } from "@/components/games/spectator-renderers";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useSpectator } from "@/hooks/useSpectator";
 import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
-import { BorderRadius, Spacing } from "@/constants/theme";
+
+// =============================================================================
+// Route param types
+// =============================================================================
+
+export type SpectatorViewRouteParams = {
+  /** SpectatorRoom ID (sp mode) */
+  roomId?: string;
+  /** Colyseus room name (multiplayer mode) */
+  roomName?: string;
+  /** Firestore game ID (multiplayer mode) */
+  firestoreGameId?: string;
+  /** Which spectator mode to use */
+  spectatorMode?: "sp" | "multiplayer";
+  /** Game type for display */
+  gameType?: string;
+  /** Host display name */
+  hostName?: string;
+  /** Invite interaction mode */
+  inviteMode?: "spectate" | "boost" | "expedition";
+  /** Boost session end timestamp */
+  boostSessionEndsAt?: number;
+};
 
 // =============================================================================
 // Component
@@ -47,11 +77,29 @@ export default function SpectatorViewScreen({
   const [nowMs, setNowMs] = useState(Date.now());
   const {
     roomId,
+    roomName,
+    firestoreGameId,
+    spectatorMode = "sp",
     gameType,
     hostName: routeHostName,
     inviteMode,
     boostSessionEndsAt: routeBoostSessionEndsAt = 0,
-  } = route.params ?? {};
+  } = (route.params ?? {}) as SpectatorViewRouteParams;
+
+  // ── Select the hook mode based on spectatorMode route param ───────────
+
+  const isMultiplayerMode = spectatorMode === "multiplayer";
+
+  const spectatorParams = isMultiplayerMode
+    ? {
+        mode: "multiplayer-spectator-standalone" as const,
+        roomName: roomName ?? "",
+        firestoreGameId: firestoreGameId ?? "",
+      }
+    : {
+        mode: "sp-spectator" as const,
+        roomId: roomId ?? "",
+      };
 
   const {
     connected,
@@ -71,14 +119,11 @@ export default function SpectatorViewScreen({
     leaveSpectator,
     sendHelperBoost,
     sendCheer,
-  } = useSpectator({
-    mode: "sp-spectator",
-    roomId,
-  });
+  } = useSpectator(spectatorParams);
 
   const displayHostName = hostName || routeHostName || "Host";
   const gameName =
-    GAME_METADATA[gameType as ExtendedGameType]?.name || gameType;
+    GAME_METADATA[gameType as ExtendedGameType]?.name || gameType || "Game";
   const effectiveBoostSessionEndsAt = Math.max(
     boostSessionEndsAt,
     Number(routeBoostSessionEndsAt || 0),
@@ -138,7 +183,7 @@ export default function SpectatorViewScreen({
             variant="bodyLarge"
             style={[styles.statusText, { color: theme.colors.onBackground }]}
           >
-            Connecting to spectator room...
+            Connecting to game...
           </Text>
         </View>
       </SafeAreaView>
@@ -247,40 +292,43 @@ export default function SpectatorViewScreen({
               marginTop: Spacing.xs,
             }}
           >
-            Watching {displayHostName} play
+            Watching {displayHostName}
+            {isMultiplayerMode ? " (multiplayer)" : ""} play
           </Text>
         </Surface>
 
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          <StatCard
-            icon="star"
-            label="Score"
-            value={currentScore.toString()}
-            color={theme.colors.primary}
-            theme={theme}
-          />
-          <StatCard
-            icon="layers"
-            label="Level"
-            value={currentLevel.toString()}
-            color={theme.colors.tertiary}
-            theme={theme}
-          />
-          <StatCard
-            icon="heart"
-            label="Lives"
-            value={lives.toString()}
-            color={theme.colors.error}
-            theme={theme}
-          />
-        </View>
+        {/* Stats Row — only shown for SP spectating (host pushes these) */}
+        {!isMultiplayerMode && (
+          <View style={styles.statsRow}>
+            <StatCard
+              icon="star"
+              label="Score"
+              value={currentScore.toString()}
+              color={theme.colors.primary}
+              theme={theme}
+            />
+            <StatCard
+              icon="layers"
+              label="Level"
+              value={currentLevel.toString()}
+              color={theme.colors.tertiary}
+              theme={theme}
+            />
+            <StatCard
+              icon="heart"
+              label="Lives"
+              value={lives.toString()}
+              color={theme.colors.error}
+              theme={theme}
+            />
+          </View>
+        )}
 
-        {/* Live Game View */}
-        {gameState && phase !== "waiting" && (
+        {/* Live Game View — SP only (multiplayer state syncs via patches) */}
+        {!isMultiplayerMode && gameState && phase !== "waiting" && (
           <View style={styles.gameRendererContainer}>
             <SpectatorGameRenderer
-              gameType={gameType}
+              gameType={gameType ?? ""}
               gameState={gameState}
               width={screenWidth - Spacing.md * 2}
               score={currentScore}
@@ -357,7 +405,12 @@ export default function SpectatorViewScreen({
                   </Button>
                 </>
               )}
-              <Button mode="outlined" compact onPress={handleCheer} icon="emoticon-happy-outline">
+              <Button
+                mode="outlined"
+                compact
+                onPress={handleCheer}
+                icon="emoticon-happy-outline"
+              >
                 Cheer
               </Button>
             </View>
@@ -428,6 +481,51 @@ export default function SpectatorViewScreen({
             </Text>
           </View>
         )}
+
+        {/* Multiplayer countdown / playing phase indicator */}
+        {isMultiplayerMode && phase === "countdown" && (
+          <View style={styles.centered}>
+            <MaterialCommunityIcons
+              name="timer-sand"
+              size={48}
+              color={theme.colors.primary}
+            />
+            <Text
+              variant="bodyLarge"
+              style={[
+                styles.statusText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
+              Game starting soon...
+            </Text>
+          </View>
+        )}
+
+        {isMultiplayerMode && phase === "playing" && (
+          <Surface style={styles.infoCard} elevation={1}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="broadcast"
+                size={20}
+                color={theme.colors.primary}
+              />
+              <Text
+                variant="bodyLarge"
+                style={{ color: theme.colors.primary, fontWeight: "600" }}
+              >
+                LIVE — Game in progress
+              </Text>
+            </View>
+          </Surface>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -452,7 +550,11 @@ function StatCard({
 }) {
   return (
     <Surface style={styles.statCard} elevation={1}>
-      <MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={24} color={color} />
+      <MaterialCommunityIcons
+        name={icon as keyof typeof MaterialCommunityIcons.glyphMap}
+        size={24}
+        color={color}
+      />
       <Text
         variant="headlineSmall"
         style={{ color: theme.colors.onSurface, fontWeight: "700" }}

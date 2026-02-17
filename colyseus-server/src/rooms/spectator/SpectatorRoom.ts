@@ -23,6 +23,7 @@ const log = createServerLogger("SpectatorRoom");
 import { Client, Room } from "colyseus";
 import { SpectatorEntry, SpectatorRoomState } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
+import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
 // SpectatorRoom
@@ -31,8 +32,8 @@ import { verifyFirebaseToken } from "../../services/firebase";
 // Intentionally standalone room: spectator host/observer lifecycle is distinct
 // from gameplay room abstractions.
 export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
-  maxClients = 11; // 1 host + 10 spectators
-  patchRate = 100; // 10fps state sync
+  maxClients = 51; // 1 host + 50 spectators (soft cap via maxSpectators)
+  patchRate = 100; // 10fps state sync (base)
   autoDispose = true;
 
   /** Session ID of the host (the player being watched) */
@@ -50,6 +51,26 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
 
   private readonly maxHelperEnergy = 6;
 
+  // ── Throttling ──────────────────────────────────────────────────────
+  /**
+   * Minimum interval (ms) between gameStateJson updates being applied.
+   * Scalar fields (score, level, lives) always pass through immediately.
+   */
+  private gameStateJsonMinIntervalMs = 500;
+  /** Timestamp of the last applied gameStateJson update */
+  private lastGameStateJsonAt = 0;
+  /** Counter of dropped gameStateJson updates (for diagnostics) */
+  private droppedGameStateUpdates = 0;
+
+  // ── Adaptive load shedding ──────────────────────────────────────────
+  /** Spectator count thresholds for adaptive patchRate */
+  private static readonly LOAD_TIERS = [
+    { maxSpectators: 5, patchRate: 100 }, // ≤5: 10 fps
+    { maxSpectators: 15, patchRate: 150 }, // 6-15: ~7 fps
+    { maxSpectators: 30, patchRate: 250 }, // 16-30: 4 fps
+    { maxSpectators: Infinity, patchRate: 500 }, // 31+: 2 fps
+  ] as const;
+
   // ===========================================================================
   // Auth
   // ===========================================================================
@@ -59,13 +80,25 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // ── Protocol version gate ─────────────────────────────────────────────
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
     };
   }
 
@@ -77,7 +110,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     this.setState(new SpectatorRoomState());
     this.state.gameType = options.gameType || "";
     this.state.phase = "waiting";
-    this.state.maxSpectators = options.maxSpectators || 10;
+    this.state.maxSpectators = options.maxSpectators || 50;
 
     log.info(
       `[SpectatorRoom] Room created: ${this.roomId} (game: ${this.state.gameType})`,
@@ -119,15 +152,17 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
         expeditionBossHp?: number;
         expeditionBossMaxHp?: number;
         crewSummaryJson?: string;
-        deltaEvents?: Array<{ type: string; payload?: Record<string, unknown>; at?: number }>;
+        deltaEvents?: Array<{
+          type: string;
+          payload?: Record<string, unknown>;
+          at?: number;
+        }>;
       },
     ) => {
       if (client.sessionId !== this.hostSessionId) return;
       if (this.state.phase !== "active") return;
 
-      if (payload.gameStateJson !== undefined) {
-        this.state.gameStateJson = payload.gameStateJson;
-      }
+      // ── Scalar fields always pass through immediately ─────────────
       if (payload.currentScore !== undefined) {
         this.state.currentScore = payload.currentScore;
       }
@@ -139,6 +174,17 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       }
       if (payload.sessionMode) {
         this.state.sessionMode = payload.sessionMode;
+      }
+
+      // ── Throttle gameStateJson (expensive, large payload) ─────────
+      const now = Date.now();
+      if (payload.gameStateJson !== undefined) {
+        if (now - this.lastGameStateJsonAt >= this.gameStateJsonMinIntervalMs) {
+          this.state.gameStateJson = payload.gameStateJson;
+          this.lastGameStateJsonAt = now;
+        } else {
+          this.droppedGameStateUpdates++;
+        }
       }
       if (payload.activeMineId !== undefined) {
         this.state.activeMineId = payload.activeMineId;
@@ -158,7 +204,10 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       if (payload.crewSummaryJson !== undefined) {
         this.state.crewSummaryJson = payload.crewSummaryJson;
       }
-      if (Array.isArray(payload.deltaEvents) && payload.deltaEvents.length > 0) {
+      if (
+        Array.isArray(payload.deltaEvents) &&
+        payload.deltaEvents.length > 0
+      ) {
         payload.deltaEvents.slice(0, 12).forEach((event) => {
           this.broadcast("spectator_delta", {
             type: event.type || "event",
@@ -175,11 +224,20 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
             this.state.activeMineId = parsed.activeMineId;
           }
           if (parsed?.bossVein) {
-            this.state.bossHp = Math.max(0, Math.floor(parsed.bossVein.hp || 0));
-            this.state.bossMaxHp = Math.max(0, Math.floor(parsed.bossVein.maxHp || 0));
+            this.state.bossHp = Math.max(
+              0,
+              Math.floor(parsed.bossVein.hp || 0),
+            );
+            this.state.bossMaxHp = Math.max(
+              0,
+              Math.floor(parsed.bossVein.maxHp || 0),
+            );
           }
           if (parsed?.expedition) {
-            this.state.expeditionBossHp = Math.max(0, Math.floor(parsed.expedition.bossHp || 0));
+            this.state.expeditionBossHp = Math.max(
+              0,
+              Math.floor(parsed.expedition.bossHp || 0),
+            );
             this.state.expeditionBossMaxHp = Math.max(
               0,
               Math.floor(parsed.expedition.bossMaxHp || 0),
@@ -196,7 +254,11 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
 
     delta_event: (
       client: Client,
-      payload?: { type?: string; payload?: Record<string, unknown>; at?: number },
+      payload?: {
+        type?: string;
+        payload?: Record<string, unknown>;
+        at?: number;
+      },
     ) => {
       if (client.sessionId !== this.hostSessionId) return;
       this.broadcast("spectator_delta", {
@@ -214,7 +276,10 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       payload?: { durationMs?: number },
     ) => {
       if (client.sessionId !== this.hostSessionId) return;
-      const durationMs = Math.max(30_000, Math.min(180_000, payload?.durationMs || 90_000));
+      const durationMs = Math.max(
+        30_000,
+        Math.min(180_000, payload?.durationMs || 90_000),
+      );
       this.state.boostSessionEndsAt = Date.now() + durationMs;
 
       // Refresh helper energy for all currently connected spectators.
@@ -300,7 +365,8 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
      */
     helper_energy_sync: (client: Client) => {
       if (!this.spectatorSessionIds.has(client.sessionId)) return;
-      const remaining = this.helperEnergy.get(client.sessionId) ?? this.maxHelperEnergy;
+      const remaining =
+        this.helperEnergy.get(client.sessionId) ?? this.maxHelperEnergy;
       client.send("helper_energy", {
         remaining,
         max: this.maxHelperEnergy,
@@ -310,10 +376,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     /**
      * Lightweight spectator reaction forwarded to host and viewers.
      */
-    cheer: (
-      client: Client,
-      payload?: { emoji?: string },
-    ) => {
+    cheer: (client: Client, payload?: { emoji?: string }) => {
       if (!this.spectatorSessionIds.has(client.sessionId)) return;
       const now = Date.now();
       const lastCheerAt = this.cheerActionAt.get(client.sessionId) || 0;
@@ -383,10 +446,12 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     this.helperActionAt.set(client.sessionId, 0);
     this.cheerActionAt.set(client.sessionId, 0);
 
+    // Adapt patchRate based on spectator load
+    this.adjustPatchRate();
+
     log.info(
       `[SpectatorRoom] Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
     );
-
   }
 
   async onLeave(client: Client, code?: number): Promise<void> {
@@ -419,6 +484,10 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       this.helperEnergy.delete(client.sessionId);
       this.helperActionAt.delete(client.sessionId);
       this.cheerActionAt.delete(client.sessionId);
+
+      // Adapt patchRate based on spectator load
+      this.adjustPatchRate();
+
       log.info(
         `[SpectatorRoom] Spectator left (${this.state.spectatorCount} watching)`,
       );
@@ -426,8 +495,39 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
   }
 
   async onDispose(): Promise<void> {
-    log.info(`[SpectatorRoom] Room disposed: ${this.roomId}`);
+    if (this.droppedGameStateUpdates > 0) {
+      log.info(
+        `[SpectatorRoom] Room disposed: ${this.roomId} (dropped ${this.droppedGameStateUpdates} gameStateJson updates)`,
+      );
+    } else {
+      log.info(`[SpectatorRoom] Room disposed: ${this.roomId}`);
+    }
+  }
+
+  // ===========================================================================
+  // Adaptive Load Shedding
+  // ===========================================================================
+
+  /**
+   * Adjust patchRate and gameStateJson throttle interval based on
+   * how many spectators are connected. More spectators → slower updates
+   * to reduce total bandwidth.
+   */
+  private adjustPatchRate(): void {
+    const count = this.state.spectatorCount;
+    for (const tier of SpectatorRoom.LOAD_TIERS) {
+      if (count <= tier.maxSpectators) {
+        if (this.patchRate !== tier.patchRate) {
+          log.info(
+            `[SpectatorRoom] Adjusting patchRate: ${this.patchRate} → ${tier.patchRate} (${count} spectators)`,
+          );
+          this.setPatchRate(tier.patchRate);
+        }
+        break;
+      }
+    }
+
+    // Also widen the gameStateJson throttle for high counts
+    this.gameStateJsonMinIntervalMs = count > 15 ? 1000 : count > 5 ? 750 : 500;
   }
 }
-
-

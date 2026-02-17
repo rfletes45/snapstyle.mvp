@@ -19,6 +19,7 @@ import {
   GameCompletionContext,
 } from "@/services/achievementTriggers";
 import { calculateUserStats } from "@/services/gameHistory";
+import { completeGameInvite } from "@/services/gameInvites";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import {
@@ -32,7 +33,6 @@ import {
   useGameNavigation,
   UseGameNavigationOptions,
 } from "./useGameNavigation";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useGameCompletion");
@@ -303,6 +303,24 @@ export function useGameCompletion(
           logger.error("[useGameCompletion] Achievement check failed:", error);
         }
 
+        // ── Invite completion propagation ────────────────────────────
+        // If this game originated from an invite, mark it completed.
+        if (match.inviteId) {
+          try {
+            await completeGameInvite(
+              match.inviteId,
+              match.winnerId,
+              match.endReason,
+            );
+          } catch (inviteErr) {
+            // Non-critical — don't fail the completion flow
+            logger.warn(
+              "[useGameCompletion] Failed to propagate completion to invite:",
+              inviteErr,
+            );
+          }
+        }
+
         // Build result
         const result: GameCompletionResult = {
           isWinner,
@@ -325,10 +343,7 @@ export function useGameCompletion(
 
         return result;
       } catch (error) {
-        logger.error(
-          "[useGameCompletion] Error processing completion:",
-          error,
-        );
+        logger.error("[useGameCompletion] Error processing completion:", error);
         return defaultResult;
       } finally {
         setIsProcessing(false);

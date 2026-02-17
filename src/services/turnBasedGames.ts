@@ -60,7 +60,6 @@ import {
 } from "@/types/turnBased";
 import { getFirestoreInstance } from "./firebase";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/turnBasedGames");
 // =============================================================================
@@ -356,6 +355,7 @@ export async function createMatch(
   config: TurnBasedMatchConfig,
   context?: CreateMatchOptions["context"],
   inviteId?: string,
+  traceId?: string,
 ): Promise<string> {
   try {
     const gameState = createInitialGameState(
@@ -407,6 +407,11 @@ export async function createMatch(
     // Add invite ID if provided (for invite status updates on game completion)
     if (inviteId) {
       match.inviteId = inviteId;
+    }
+
+    // Add trace ID if provided (for end-to-end correlation in logs)
+    if (traceId) {
+      match.traceId = traceId;
     }
 
     const docRef = await addDoc(

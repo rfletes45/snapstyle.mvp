@@ -19,7 +19,12 @@ import { submitReport } from "@/services/reporting";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useUser } from "@/store/UserContext";
-import { AvatarConfig, Friend, FriendRequest, ReportReason } from "@/types/models";
+import {
+  AvatarConfig,
+  Friend,
+  FriendRequest,
+  ReportReason,
+} from "@/types/models";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   collection,
@@ -29,7 +34,14 @@ import {
   where,
 } from "firebase/firestore";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import {
   Button,
   Card,
@@ -362,61 +374,73 @@ export default function FriendsScreen({ navigation }: any) {
     }
   }, [uid, addFriendUsername, loadData]);
 
-  const handleAcceptRequest = useCallback(async (requestId: string) => {
-    try {
-      await acceptFriendRequest(requestId);
-      Alert.alert("Success", "Connection request accepted!");
-      await loadData();
-    } catch {
-      Alert.alert("Error", "Failed to accept request");
-    }
-  }, [loadData]);
+  const handleAcceptRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await acceptFriendRequest(requestId);
+        Alert.alert("Success", "Connection request accepted!");
+        await loadData();
+      } catch {
+        Alert.alert("Error", "Failed to accept request");
+      }
+    },
+    [loadData],
+  );
 
-  const handleDeclineRequest = useCallback(async (requestId: string) => {
-    try {
-      await declineFriendRequest(requestId);
-      Alert.alert("Success", "Connection request declined");
-      await loadData();
-    } catch {
-      Alert.alert("Error", "Failed to decline request");
-    }
-  }, [loadData]);
+  const handleDeclineRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await declineFriendRequest(requestId);
+        Alert.alert("Success", "Connection request declined");
+        await loadData();
+      } catch {
+        Alert.alert("Error", "Failed to decline request");
+      }
+    },
+    [loadData],
+  );
 
-  const handleCancelRequest = useCallback(async (requestId: string) => {
-    try {
-      await cancelFriendRequest(requestId);
-      Alert.alert("Success", "Connection request canceled");
-      await loadData();
-    } catch {
-      Alert.alert("Error", "Failed to cancel request");
-    }
-  }, [loadData]);
+  const handleCancelRequest = useCallback(
+    async (requestId: string) => {
+      try {
+        await cancelFriendRequest(requestId);
+        Alert.alert("Success", "Connection request canceled");
+        await loadData();
+      } catch {
+        Alert.alert("Error", "Failed to cancel request");
+      }
+    },
+    [loadData],
+  );
 
-  const handleRemoveFriend = useCallback(async (friendUid: string) => {
-    if (!uid) return;
+  const handleRemoveFriend = useCallback(
+    async (friendUid: string) => {
+      if (!uid) return;
 
-    // Confirm removal using Alert (works on both native and web)
-    Alert.alert(
-      "Remove Connection",
-      "Are you sure you want to remove this connection?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await removeFriend(uid, friendUid);
-              await loadData();
-              Alert.alert("Success", "Connection removed");
-            } catch {
-              Alert.alert("Error", "Failed to remove connection");
-            }
+      // Confirm removal using Alert (works on both native and web)
+      Alert.alert(
+        "Remove Connection",
+        "Are you sure you want to remove this connection?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await removeFriend(uid, friendUid);
+                await loadData();
+                Alert.alert("Success", "Connection removed");
+              } catch {
+                Alert.alert("Error", "Failed to remove connection");
+              }
+            },
           },
-        },
-      ],
-    );
-  }, [uid, loadData]);
+        ],
+      );
+    },
+    [uid, loadData],
+  );
 
   // Block/Report handlers
   const handleOpenMenu = useCallback((userId: string) => {
@@ -578,309 +602,289 @@ export default function FriendsScreen({ navigation }: any) {
         }
       >
         <View>
-            {/* Received Requests Section */}
-            {filteredReceivedRequests.length > 0 && (
-              <View style={styles.section}>
-                <Text
-                  variant="titleMedium"
+          {/* Received Requests Section */}
+          {filteredReceivedRequests.length > 0 && (
+            <View style={styles.section}>
+              <Text
+                variant="titleMedium"
+                style={[styles.sectionTitle, { color: theme.colors.onSurface }]}
+              >
+                Connection Requests ({filteredReceivedRequests.length})
+              </Text>
+              {filteredReceivedRequests.map((request) => (
+                <Card
+                  key={request.id}
                   style={[
-                    styles.sectionTitle,
-                    { color: theme.colors.onSurface },
+                    styles.requestCard,
+                    {
+                      backgroundColor: theme.colors.tertiaryContainer,
+                      borderLeftColor: theme.colors.tertiary,
+                    },
                   ]}
                 >
-                  Connection Requests ({filteredReceivedRequests.length})
-                </Text>
-                {filteredReceivedRequests.map((request) => (
+                  <Card.Content style={styles.cardContent}>
+                    <View style={styles.requestHeader}>
+                      <ProfilePictureWithDecoration
+                        pictureUrl={request.otherUserProfile?.profilePictureUrl}
+                        name={request.otherUserProfile?.displayName || "?"}
+                        decorationId={request.otherUserProfile?.decorationId}
+                        size={44}
+                      />
+                      <View style={styles.requestInfo}>
+                        <Text
+                          variant="bodyMedium"
+                          style={[
+                            styles.requestUsername,
+                            { color: theme.colors.onSurface },
+                          ]}
+                        >
+                          {request.otherUserProfile?.username || "Loading..."}
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={[
+                            styles.requestSubtitle,
+                            { color: theme.colors.onSurfaceVariant },
+                          ]}
+                        >
+                          Connection Request
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.requestActions}>
+                      <Button
+                        mode="contained"
+                        onPress={() => handleAcceptRequest(request.id)}
+                        style={styles.acceptButton}
+                        labelStyle={styles.buttonLabel}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        mode="outlined"
+                        onPress={() => handleDeclineRequest(request.id)}
+                        style={styles.declineButton}
+                        labelStyle={styles.buttonLabel}
+                      >
+                        Decline
+                      </Button>
+                    </View>
+                  </Card.Content>
+                </Card>
+              ))}
+            </View>
+          )}
+
+          {/* Connections List Section */}
+          {filteredFriends.length > 0 ? (
+            <View style={styles.section}>
+              <Text
+                variant="titleMedium"
+                style={[styles.sectionTitle, { color: theme.colors.onSurface }]}
+              >
+                Connections ({filteredFriends.length})
+              </Text>
+              {filteredFriends.map((friend) => {
+                const friendUid = friend.users.find((u) => u !== uid);
+                const streakCount = friend.streakCount || 0;
+
+                return (
                   <Card
-                    key={request.id}
+                    key={friend.id}
                     style={[
-                      styles.requestCard,
+                      styles.friendCard,
                       {
-                        backgroundColor: theme.colors.tertiaryContainer,
-                        borderLeftColor: theme.colors.tertiary,
+                        backgroundColor: theme.colors.secondaryContainer,
+                        borderLeftColor: theme.colors.primary,
                       },
                     ]}
                   >
                     <Card.Content style={styles.cardContent}>
-                      <View style={styles.requestHeader}>
-                        <ProfilePictureWithDecoration
-                          pictureUrl={
-                            request.otherUserProfile?.profilePictureUrl
-                          }
-                          name={request.otherUserProfile?.displayName || "?"}
-                          decorationId={request.otherUserProfile?.decorationId}
-                          size={44}
-                        />
-                        <View style={styles.requestInfo}>
-                          <Text
-                            variant="bodyMedium"
-                            style={[
-                              styles.requestUsername,
-                              { color: theme.colors.onSurface },
-                            ]}
-                          >
-                            {request.otherUserProfile?.username || "Loading..."}
-                          </Text>
-                          <Text
-                            variant="bodySmall"
-                            style={[
-                              styles.requestSubtitle,
-                              { color: theme.colors.onSurfaceVariant },
-                            ]}
-                          >
-                            Connection Request
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.requestActions}>
-                        <Button
-                          mode="contained"
-                          onPress={() => handleAcceptRequest(request.id)}
-                          style={styles.acceptButton}
-                          labelStyle={styles.buttonLabel}
-                        >
-                          Accept
-                        </Button>
-                        <Button
-                          mode="outlined"
-                          onPress={() => handleDeclineRequest(request.id)}
-                          style={styles.declineButton}
-                          labelStyle={styles.buttonLabel}
-                        >
-                          Decline
-                        </Button>
-                      </View>
-                    </Card.Content>
-                  </Card>
-                ))}
-              </View>
-            )}
-
-            {/* Connections List Section */}
-            {filteredFriends.length > 0 ? (
-              <View style={styles.section}>
-                <Text
-                  variant="titleMedium"
-                  style={[
-                    styles.sectionTitle,
-                    { color: theme.colors.onSurface },
-                  ]}
-                >
-                  Connections ({filteredFriends.length})
-                </Text>
-                {filteredFriends.map((friend) => {
-                  const friendUid = friend.users.find((u) => u !== uid);
-                  const streakCount = friend.streakCount || 0;
-
-                  return (
-                    <Card
-                      key={friend.id}
-                      style={[
-                        styles.friendCard,
-                        {
-                          backgroundColor: theme.colors.secondaryContainer,
-                          borderLeftColor: theme.colors.primary,
-                        },
-                      ]}
-                    >
-                      <Card.Content style={styles.cardContent}>
-                        <View style={styles.friendHeader}>
-                          <View style={styles.friendInfo}>
-                            <ProfilePictureWithDecoration
-                              pictureUrl={
-                                friend.otherUserProfile?.profilePictureUrl
-                              }
-                              name={friend.otherUserProfile?.displayName || "?"}
-                              decorationId={
-                                friend.otherUserProfile?.decorationId
-                              }
-                              size={44}
-                            />
-                            <View style={styles.nameContainer}>
-                              <Text
-                                variant="bodyMedium"
-                                style={[
-                                  styles.friendName,
-                                  { color: theme.colors.onSurface },
-                                ]}
-                              >
-                                {friend.otherUserProfile?.username ||
-                                  "Loading..."}
-                              </Text>
-                              {streakCount > 0 && (
-                                <Chip
-                                  style={[
-                                    styles.streakChip,
-                                    { backgroundColor: theme.colors.error },
-                                  ]}
-                                  textStyle={[
-                                    styles.streakText,
-                                    { color: theme.colors.onError },
-                                  ]}
-                                  icon="fire"
-                                  compact
-                                >
-                                  {streakCount}
-                                </Chip>
-                              )}
-                            </View>
-                          </View>
-                          <View style={styles.buttonGroup}>
-                            <Button
-                              mode="contained"
-                              onPress={() => {
-                                if (friendUid) {
-                                  navigation.navigate("Chats", {
-                                    screen: "ChatDetail",
-                                    params: { friendUid },
-                                  });
-                                }
-                              }}
-                              compact
-                              style={styles.messageButton}
-                            >
-                              Message
-                            </Button>
-                            <Menu
-                              visible={menuVisible === friendUid}
-                              onDismiss={handleCloseMenu}
-                              anchor={
-                                <IconButton
-                                  icon="dots-vertical"
-                                  size={24}
-                                  onPress={() =>
-                                    friendUid && handleOpenMenu(friendUid)
-                                  }
-                                />
-                              }
-                              contentStyle={{
-                                backgroundColor: theme.colors.surface,
-                              }}
-                            >
-                              <Menu.Item
-                                onPress={() => {
-                                  if (friendUid) {
-                                    handleRemoveFriend(friendUid);
-                                    handleCloseMenu();
-                                  }
-                                }}
-                                title="Remove Connection"
-                                leadingIcon="account-remove"
-                              />
-                              <Menu.Item
-                                onPress={() => {
-                                  if (friendUid) {
-                                    handleBlockPress(
-                                      friendUid,
-                                      friend.otherUserProfile?.username ||
-                                        "User",
-                                    );
-                                  }
-                                }}
-                                title="Block User"
-                                leadingIcon="block-helper"
-                              />
-                              <Menu.Item
-                                onPress={() => {
-                                  if (friendUid) {
-                                    handleReportPress(
-                                      friendUid,
-                                      friend.otherUserProfile?.username ||
-                                        "User",
-                                    );
-                                  }
-                                }}
-                                title="Report User"
-                                leadingIcon="flag"
-                              />
-                            </Menu>
-                          </View>
-                        </View>
-                      </Card.Content>
-                    </Card>
-                  );
-                })}
-              </View>
-            ) : (
-              <EmptyState
-                icon="account-group-outline"
-                title="No connections yet"
-                subtitle="Connect with others to start chatting and build rituals together!"
-                actionLabel="Add Connection"
-                onAction={() => setAddFriendModalVisible(true)}
-              />
-            )}
-
-            {/* Sent Requests Section */}
-            {filteredSentRequests.length > 0 && (
-              <View style={styles.section}>
-                <Text
-                  variant="titleMedium"
-                  style={[
-                    styles.sectionTitle,
-                    { color: theme.colors.onSurface },
-                  ]}
-                >
-                  Sent Requests ({filteredSentRequests.length})
-                </Text>
-                {filteredSentRequests.map((request) => (
-                  <Card
-                    key={request.id}
-                    style={[
-                      styles.sentRequestCard,
-                      { backgroundColor: theme.colors.surfaceVariant },
-                    ]}
-                  >
-                    <Card.Content style={styles.cardContent}>
-                      <View style={styles.sentRequestHeader}>
-                        <ProfilePictureWithDecoration
-                          pictureUrl={
-                            request.otherUserProfile?.profilePictureUrl
-                          }
-                          name={request.otherUserProfile?.displayName || "?"}
-                          decorationId={request.otherUserProfile?.decorationId}
-                          size={44}
-                        />
-                        <View style={styles.sentRequestInfo}>
-                          <View
-                            style={styles.sentRequestRow}
-                          >
+                      <View style={styles.friendHeader}>
+                        <View style={styles.friendInfo}>
+                          <ProfilePictureWithDecoration
+                            pictureUrl={
+                              friend.otherUserProfile?.profilePictureUrl
+                            }
+                            name={friend.otherUserProfile?.displayName || "?"}
+                            decorationId={friend.otherUserProfile?.decorationId}
+                            size={44}
+                          />
+                          <View style={styles.nameContainer}>
                             <Text
-                              variant="bodySmall"
+                              variant="bodyMedium"
                               style={[
-                                styles.sentRequestText,
+                                styles.friendName,
                                 { color: theme.colors.onSurface },
                               ]}
                             >
-                              {request.otherUserUsername || "Loading..."}
+                              {friend.otherUserProfile?.username ||
+                                "Loading..."}
                             </Text>
-                            <Text style={styles.pendingEmoji}>⏳</Text>
+                            {streakCount > 0 && (
+                              <Chip
+                                style={[
+                                  styles.streakChip,
+                                  { backgroundColor: theme.colors.error },
+                                ]}
+                                textStyle={[
+                                  styles.streakText,
+                                  { color: theme.colors.onError },
+                                ]}
+                                icon="fire"
+                                compact
+                              >
+                                {streakCount}
+                              </Chip>
+                            )}
                           </View>
-                          <Text
-                            variant="labelSmall"
-                            style={[
-                              styles.sentRequestSubtext,
-                              { color: theme.colors.onSurfaceVariant },
-                            ]}
-                          >
-                            Pending Request
-                          </Text>
                         </View>
-                        <Button
-                          mode="text"
-                          onPress={() => handleCancelRequest(request.id)}
-                          compact
-                        >
-                          Cancel
-                        </Button>
+                        <View style={styles.buttonGroup}>
+                          <Button
+                            mode="contained"
+                            onPress={() => {
+                              if (friendUid) {
+                                navigation.navigate("Chats", {
+                                  screen: "ChatDetail",
+                                  params: { friendUid },
+                                });
+                              }
+                            }}
+                            compact
+                            style={styles.messageButton}
+                          >
+                            Message
+                          </Button>
+                          <Menu
+                            visible={menuVisible === friendUid}
+                            onDismiss={handleCloseMenu}
+                            anchor={
+                              <IconButton
+                                icon="dots-vertical"
+                                size={24}
+                                onPress={() =>
+                                  friendUid && handleOpenMenu(friendUid)
+                                }
+                              />
+                            }
+                            contentStyle={{
+                              backgroundColor: theme.colors.surface,
+                            }}
+                          >
+                            <Menu.Item
+                              onPress={() => {
+                                if (friendUid) {
+                                  handleRemoveFriend(friendUid);
+                                  handleCloseMenu();
+                                }
+                              }}
+                              title="Remove Connection"
+                              leadingIcon="account-remove"
+                            />
+                            <Menu.Item
+                              onPress={() => {
+                                if (friendUid) {
+                                  handleBlockPress(
+                                    friendUid,
+                                    friend.otherUserProfile?.username || "User",
+                                  );
+                                }
+                              }}
+                              title="Block User"
+                              leadingIcon="block-helper"
+                            />
+                            <Menu.Item
+                              onPress={() => {
+                                if (friendUid) {
+                                  handleReportPress(
+                                    friendUid,
+                                    friend.otherUserProfile?.username || "User",
+                                  );
+                                }
+                              }}
+                              title="Report User"
+                              leadingIcon="flag"
+                            />
+                          </Menu>
+                        </View>
                       </View>
                     </Card.Content>
                   </Card>
-                ))}
-              </View>
-            )}
-          </View>
-        }
+                );
+              })}
+            </View>
+          ) : (
+            <EmptyState
+              icon="account-group-outline"
+              title="No connections yet"
+              subtitle="Connect with others to start chatting and build rituals together!"
+              actionLabel="Add Connection"
+              onAction={() => setAddFriendModalVisible(true)}
+            />
+          )}
+
+          {/* Sent Requests Section */}
+          {filteredSentRequests.length > 0 && (
+            <View style={styles.section}>
+              <Text
+                variant="titleMedium"
+                style={[styles.sectionTitle, { color: theme.colors.onSurface }]}
+              >
+                Sent Requests ({filteredSentRequests.length})
+              </Text>
+              {filteredSentRequests.map((request) => (
+                <Card
+                  key={request.id}
+                  style={[
+                    styles.sentRequestCard,
+                    { backgroundColor: theme.colors.surfaceVariant },
+                  ]}
+                >
+                  <Card.Content style={styles.cardContent}>
+                    <View style={styles.sentRequestHeader}>
+                      <ProfilePictureWithDecoration
+                        pictureUrl={request.otherUserProfile?.profilePictureUrl}
+                        name={request.otherUserProfile?.displayName || "?"}
+                        decorationId={request.otherUserProfile?.decorationId}
+                        size={44}
+                      />
+                      <View style={styles.sentRequestInfo}>
+                        <View style={styles.sentRequestRow}>
+                          <Text
+                            variant="bodySmall"
+                            style={[
+                              styles.sentRequestText,
+                              { color: theme.colors.onSurface },
+                            ]}
+                          >
+                            {request.otherUserUsername || "Loading..."}
+                          </Text>
+                          <Text style={styles.pendingEmoji}>⏳</Text>
+                        </View>
+                        <Text
+                          variant="labelSmall"
+                          style={[
+                            styles.sentRequestSubtext,
+                            { color: theme.colors.onSurfaceVariant },
+                          ]}
+                        >
+                          Pending Request
+                        </Text>
+                      </View>
+                      <Button
+                        mode="text"
+                        onPress={() => handleCancelRequest(request.id)}
+                        compact
+                      >
+                        Cancel
+                      </Button>
+                    </View>
+                  </Card.Content>
+                </Card>
+              ))}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* Add Connection Modal */}

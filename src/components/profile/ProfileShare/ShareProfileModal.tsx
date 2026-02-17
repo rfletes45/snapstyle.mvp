@@ -20,23 +20,20 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  ActivityIndicator,
-  IconButton,
-  Text,
-  useTheme,
-} from "react-native-paper";
+import { ActivityIndicator, IconButton, Text } from "react-native-paper";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { generateProfileShare } from "@/services/profileService";
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileShareData } from "@/types/userProfile";
 import * as haptics from "@/utils/haptics";
 
-
 import { createLogger } from "@/utils/log";
-const logger = createLogger("components/profile/ProfileShare/ShareProfileModal");
+const logger = createLogger(
+  "components/profile/ProfileShare/ShareProfileModal",
+);
 // =============================================================================
 // Types
 // =============================================================================
@@ -75,11 +72,11 @@ function ShareOption({
   onPress,
   loading,
 }: ShareOptionProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surfaceVariant: theme.colors.surfaceVariant,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    surfaceVariant: profileColors.surfaceVariant,
   };
 
   return (
@@ -130,16 +127,16 @@ function ShareProfileModalBase({
   onClose,
   onShowQRCode,
 }: ShareProfileModalProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const insets = useSafeAreaInsets();
 
   const colors = {
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    primary: theme.colors.primary,
-    surfaceVariant: theme.colors.surfaceVariant,
+    background: profileColors.background,
+    surface: profileColors.surface,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    primary: profileColors.primary,
+    surfaceVariant: profileColors.surfaceVariant,
     success: "#22C55E",
   };
 

@@ -32,7 +32,6 @@ type TurnBasedGameType =
   | "checkers"
   | "tic_tac_toe"
   | "crazy_eights"
-  | "8ball_pool"
   | "snap_reversi"
   | "snap_war";
 type GameStatus = "invited" | "active" | "completed" | "abandoned";
@@ -263,15 +262,6 @@ function getInitialGameState(gameType: TurnBasedGameType): any {
         discardPile: [],
         player1Hand: [],
         player2Hand: [],
-      };
-
-    case "8ball_pool":
-      return {
-        balls: getInitialPoolBalls(),
-        phase: "break",
-        player1Assignment: null,
-        cueBallInHand: false,
-        consecutiveFouls: { player1: 0, player2: 0 },
       };
 
     // Phase 3 turn-based games
@@ -1547,7 +1537,6 @@ export const processMatchmakingQueue = functions.pubsub
       "checkers",
       "tic_tac_toe",
       "crazy_eights",
-      "8ball_pool",
     ];
 
     for (const gameType of gameTypes) {
@@ -1754,25 +1743,34 @@ export const expireGameInvites = functions.pubsub
   .schedule("every day 00:00")
   .onRun(async () => {
     const now = Timestamp.now();
+    // Expire any invite still waiting for players, not just "pending"
+    const EXPIRABLE_STATUSES = ["pending", "filling", "ready"];
+    let totalExpired = 0;
 
-    const snapshot = await db
-      .collection("GameInvites")
-      .where("status", "==", "pending")
-      .where("expiresAt", "<", now)
-      .get();
+    for (const status of EXPIRABLE_STATUSES) {
+      const snapshot = await db
+        .collection("GameInvites")
+        .where("status", "==", status)
+        .where("expiresAt", "<", now)
+        .limit(500)
+        .get();
 
-    const batch = db.batch();
+      if (!snapshot.empty) {
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => {
+          batch.update(doc.ref, {
+            status: "expired",
+            updatedAt: now,
+          });
+        });
+        await batch.commit();
+        totalExpired += snapshot.size;
+      }
+    }
 
-    snapshot.docs.forEach((doc) => {
-      batch.update(doc.ref, {
-        status: "expired",
-        updatedAt: now,
-      });
-    });
-
-    await batch.commit();
-
-    functions.logger.info("Expired game invites", { count: snapshot.size });
+    if (totalExpired > 0) {
+      functions.logger.info("Expired game invites", { count: totalExpired });
+    }
 
     return null;
   });
@@ -1894,7 +1892,13 @@ export const cleanupResolvedInvites = functions.pubsub
   .schedule("every day 02:30")
   .onRun(async () => {
     const cutoff = Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const TERMINAL_STATUSES = ["accepted", "declined", "cancelled", "expired"];
+    const TERMINAL_STATUSES = [
+      "accepted",
+      "declined",
+      "cancelled",
+      "expired",
+      "completed",
+    ];
     let totalDeleted = 0;
 
     const snapshot = await db
@@ -1914,6 +1918,101 @@ export const cleanupResolvedInvites = functions.pubsub
     if (totalDeleted > 0) {
       functions.logger.info("Cleaned up resolved invites", {
         count: totalDeleted,
+      });
+    }
+
+    return null;
+  });
+
+/**
+ * Clean up stale "active" or "starting" invites whose game has finished.
+ *
+ * This is a safety net: normally the client propagates game completion back
+ * to the invite via `completeGameInvite()`.  If the client crashes or the
+ * user force-quits, this function catches orphaned active invites.
+ * Runs daily at 02:45 (between cleanupResolvedInvites and matchmaking).
+ */
+export const cleanupStaleActiveInvites = functions.pubsub
+  .schedule("every day 02:45")
+  .onRun(async () => {
+    const STALE_STATUSES = ["active", "starting"];
+    let totalFixed = 0;
+
+    for (const status of STALE_STATUSES) {
+      const snapshot = await db
+        .collection("GameInvites")
+        .where("status", "==", status)
+        .limit(500)
+        .get();
+
+      for (const inviteDoc of snapshot.docs) {
+        const invite = inviteDoc.data() as UniversalGameInvite;
+
+        // "starting" invites older than 5 minutes are stuck — roll back to ready
+        if (
+          status === "starting" &&
+          Date.now() - invite.updatedAt > 5 * 60 * 1000
+        ) {
+          await inviteDoc.ref.update({
+            status: "ready",
+            updatedAt: Timestamp.now(),
+          });
+          totalFixed++;
+          continue;
+        }
+
+        // "active" invites — check if the game has actually finished
+        if (status === "active" && invite.gameId) {
+          try {
+            const gameDoc = await db
+              .collection("TurnBasedGames")
+              .doc(invite.gameId)
+              .get();
+
+            if (!gameDoc.exists) {
+              // Game doc deleted — mark invite completed
+              await inviteDoc.ref.update({
+                status: "completed",
+                completedAt: Date.now(),
+                winReason: "game_not_found",
+                updatedAt: Timestamp.now(),
+              });
+              totalFixed++;
+              continue;
+            }
+
+            const game = gameDoc.data();
+            const terminalGameStatuses = [
+              "completed",
+              "resigned",
+              "draw",
+              "timeout",
+              "abandoned",
+            ];
+
+            if (game && terminalGameStatuses.includes(game.status)) {
+              await inviteDoc.ref.update({
+                status: "completed",
+                completedAt: Date.now(),
+                winnerId: game.winner?.playerId || null,
+                winReason: game.winner?.reason || game.status,
+                updatedAt: Timestamp.now(),
+              });
+              totalFixed++;
+            }
+          } catch (err) {
+            functions.logger.warn(
+              `Failed to check game for stale invite ${invite.id}`,
+              err,
+            );
+          }
+        }
+      }
+    }
+
+    if (totalFixed > 0) {
+      functions.logger.info("Cleaned up stale active invites", {
+        count: totalFixed,
       });
     }
 
@@ -1953,6 +2052,85 @@ export const cleanupStaleMatchmakingEntries = functions.pubsub
 
     if (totalDeleted > 0) {
       functions.logger.info("Cleaned up stale matchmaking entries", {
+        count: totalDeleted,
+      });
+    }
+
+    return null;
+  });
+
+/**
+ * Clean up vacant multiplayer games after their grace period expires.
+ *
+ * When all players disconnect from a Colyseus room, the server marks the
+ * corresponding Firestore doc as "vacant" with a vacantSince timestamp.
+ *
+ * Deletion windows:
+ *   - Non-turn-based (physics/score-race): 10 minutes
+ *   - Turn-based: 2 days
+ *
+ * Runs every 5 minutes. Deletes from ColyseusGameState, TurnBasedGames,
+ * RealtimeGameSessions, and the associated GameInvite (if linked).
+ */
+export const cleanupVacantGames = functions.pubsub
+  .schedule("every 5 minutes")
+  .onRun(async () => {
+    const now = Date.now();
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+    let totalDeleted = 0;
+
+    const snapshot = await db
+      .collection("ColyseusGameState")
+      .where("status", "==", "vacant")
+      .limit(500)
+      .get();
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const vacantSince = data.vacantSince?.toMillis?.() ?? 0;
+      if (!vacantSince) continue;
+
+      const elapsed = now - vacantSince;
+      const isTurnBased = data.isTurnBased === true;
+      const threshold = isTurnBased ? TWO_DAYS_MS : TEN_MINUTES_MS;
+
+      if (elapsed < threshold) continue;
+
+      // Grace period expired — delete across all related collections
+      const gameId = doc.id;
+      const batch = db.batch();
+
+      batch.delete(doc.ref);
+
+      const tbDoc = await db.collection("TurnBasedGames").doc(gameId).get();
+      if (tbDoc.exists) batch.delete(tbDoc.ref);
+
+      const rtDoc = await db
+        .collection("RealtimeGameSessions")
+        .doc(gameId)
+        .get();
+      if (rtDoc.exists) batch.delete(rtDoc.ref);
+
+      // Find and delete the linked invite (if any)
+      if (data.inviteId) {
+        const inviteDoc = await db
+          .collection("GameInvites")
+          .doc(data.inviteId)
+          .get();
+        if (inviteDoc.exists) batch.delete(inviteDoc.ref);
+      }
+
+      await batch.commit();
+      totalDeleted++;
+    }
+
+    if (totalDeleted > 0) {
+      functions.logger.info("Cleaned up vacant games", {
         count: totalDeleted,
       });
     }

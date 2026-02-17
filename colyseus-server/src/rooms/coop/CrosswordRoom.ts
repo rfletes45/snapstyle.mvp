@@ -29,6 +29,7 @@ import {
 } from "../../schemas/draw";
 import { verifyFirebaseToken } from "../../services/firebase";
 import { persistGameResult } from "../../services/persistence";
+import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
 // Puzzle Data (mirrors client-side CrosswordGameScreen puzzles)
@@ -222,13 +223,25 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // ── Protocol version gate ─────────────────────────────────────────────
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
     };
   }
 
@@ -275,9 +288,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       this.state.clues.push(clue);
     }
 
-    log.info(
-      `[crossword] Room created: ${this.roomId} (puzzle: ${puzzleIdx})`,
-    );
+    log.info(`[crossword] Room created: ${this.roomId} (puzzle: ${puzzleIdx})`);
   }
 
   // ===========================================================================
@@ -482,7 +493,10 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
 
   async onDispose(): Promise<void> {
     if (this.state.phase === "finished") {
-      await persistGameResult(this.state as unknown as BaseGameState, this.state.elapsed);
+      await persistGameResult(
+        this.state as unknown as BaseGameState,
+        this.state.elapsed,
+      );
     }
     log.info(`[crossword] Room disposed: ${this.roomId}`);
   }
@@ -649,5 +663,3 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
     log.info(`[crossword] Room reset for rematch (puzzle: ${newPuzzleIdx})`);
   }
 }
-
-

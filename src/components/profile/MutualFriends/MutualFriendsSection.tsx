@@ -16,12 +16,13 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 import Animated, { FadeInRight } from "react-native-reanimated";
 
 import Avatar from "@/components/Avatar";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import type { MutualFriendInfo } from "@/types/userProfile";
 
 // =============================================================================
@@ -55,15 +56,7 @@ function MutualFriendsSectionBase({
   style,
   testID,
 }: MutualFriendsSectionProps) {
-  const theme = useTheme();
-
-  const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-  };
+  const colors = useColors();
 
   if (friends.length === 0) {
     return null;

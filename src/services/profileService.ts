@@ -337,9 +337,14 @@ export async function getMutualFriends(
 ): Promise<MutualFriendInfo[]> {
   try {
     // Get both users' friends lists
+    // Note: getFriends(targetUserId) may fail due to Firestore security rules
+    // (read rule requires auth user to be in the Friend doc's users array).
+    // We catch that gracefully and return empty mutual friends in that case.
     const [currentUserFriends, targetUserFriends] = await Promise.all([
       getFriends(currentUserId),
-      getFriends(targetUserId),
+      getFriends(targetUserId).catch(
+        () => [] as Awaited<ReturnType<typeof getFriends>>,
+      ),
     ]);
 
     // Extract friend user IDs

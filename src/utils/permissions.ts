@@ -4,12 +4,24 @@
  * Supports both iOS and Android
  */
 
-import { Camera } from "expo-camera";
+import { USE_VISION_CAMERA } from "@/constants/featureFlags";
+import { Camera as ExpoCamera } from "expo-camera";
 import * as Notifications from "expo-notifications";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("utils/permissions");
+
+// ---------------------------------------------------------------------------
+// VisionCamera – loaded dynamically so it doesn't crash inside Expo Go
+// ---------------------------------------------------------------------------
+let VCCamera: any = null;
+if (USE_VISION_CAMERA) {
+  try {
+    VCCamera = require("react-native-vision-camera").Camera;
+  } catch {
+    logger.warn("[Permissions] VisionCamera unavailable – using expo-camera");
+  }
+}
 /**
  * Permission types for picture features
  */
@@ -37,15 +49,21 @@ export async function requestCameraPermission(): Promise<boolean> {
   try {
     logger.info("[Permissions] Requesting camera permission");
 
-    const { status } = await Camera.requestCameraPermissionsAsync();
-
-    if (status === "granted") {
-      logger.info("[Permissions] Camera permission granted");
-      return true;
-    } else {
-      logger.warn("[Permissions] Camera permission denied");
-      return false;
+    if (VCCamera) {
+      const result = await VCCamera.requestCameraPermission();
+      const granted = result === "granted";
+      logger.info(
+        `[Permissions] Camera permission (VC) ${granted ? "granted" : "denied"}`,
+      );
+      return granted;
     }
+    // expo-camera path
+    const { status } = await ExpoCamera.requestCameraPermissionsAsync();
+    const granted = status === "granted";
+    logger.info(
+      `[Permissions] Camera permission (expo) ${granted ? "granted" : "denied"}`,
+    );
+    return granted;
   } catch (error) {
     logger.error("[Permissions] Failed to request camera permission:", error);
     return false;
@@ -60,15 +78,21 @@ export async function requestMicrophonePermission(): Promise<boolean> {
   try {
     logger.info("[Permissions] Requesting microphone permission");
 
-    const { status } = await Camera.requestMicrophonePermissionsAsync();
-
-    if (status === "granted") {
-      logger.info("[Permissions] Microphone permission granted");
-      return true;
-    } else {
-      logger.warn("[Permissions] Microphone permission denied");
-      return false;
+    if (VCCamera) {
+      const result = await VCCamera.requestMicrophonePermission();
+      const granted = result === "granted";
+      logger.info(
+        `[Permissions] Microphone permission (VC) ${granted ? "granted" : "denied"}`,
+      );
+      return granted;
     }
+    // expo-camera path
+    const { status } = await ExpoCamera.requestMicrophonePermissionsAsync();
+    const granted = status === "granted";
+    logger.info(
+      `[Permissions] Microphone permission (expo) ${granted ? "granted" : "denied"}`,
+    );
+    return granted;
   } catch (error) {
     logger.error(
       "[Permissions] Failed to request microphone permission:",
@@ -167,7 +191,11 @@ export async function requestAllSnapPermissions(): Promise<{
  */
 export async function hasCameraPermission(): Promise<boolean> {
   try {
-    const { status } = await Camera.getCameraPermissionsAsync();
+    if (VCCamera) {
+      const status = VCCamera.getCameraPermissionStatus();
+      return status === "granted";
+    }
+    const { status } = await ExpoCamera.getCameraPermissionsAsync();
     return status === "granted";
   } catch (error) {
     logger.error("[Permissions] Failed to check camera permission:", error);
@@ -180,13 +208,14 @@ export async function hasCameraPermission(): Promise<boolean> {
  */
 export async function hasMicrophonePermission(): Promise<boolean> {
   try {
-    const { status } = await Camera.getMicrophonePermissionsAsync();
+    if (VCCamera) {
+      const status = VCCamera.getMicrophonePermissionStatus();
+      return status === "granted";
+    }
+    const { status } = await ExpoCamera.getMicrophonePermissionsAsync();
     return status === "granted";
   } catch (error) {
-    logger.error(
-      "[Permissions] Failed to check microphone permission:",
-      error,
-    );
+    logger.error("[Permissions] Failed to check microphone permission:", error);
     return false;
   }
 }

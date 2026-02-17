@@ -14,7 +14,7 @@
  *   } = useWordMasterMultiplayer({ gameType: "word_master_game" });
  */
 
-import { Room } from "@colyseus/sdk";
+import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useColyseus, UseColyseusOptions } from "./useColyseus";
 import { useColyseusAppState } from "./useColyseusAppState";

@@ -1253,25 +1253,6 @@ export function canCallUser(
 }
 
 /**
- * Check if current user can send game invite to target
- */
-export function canSendGameInvite(
-  targetPrivacy: ProfilePrivacySettings,
-  relationship: ProfileRelationship,
-): boolean {
-  if (relationship.type === "blocked_by_you") return false;
-  if (relationship.type === "blocked_by_them") return false;
-
-  if (targetPrivacy.allowGameInvites === "everyone") return true;
-  if (
-    targetPrivacy.allowGameInvites === "friends" &&
-    relationship.type === "friend"
-  )
-    return true;
-  return false;
-}
-
-/**
  * Check if status is expired
  */
 export function isStatusExpired(status: ProfileStatus | null): boolean {

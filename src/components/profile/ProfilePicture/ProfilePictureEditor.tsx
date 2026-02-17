@@ -13,6 +13,7 @@ import {
   removeProfilePicture,
   uploadProfilePicture,
 } from "@/services/profileService";
+import { useColors } from "@/store/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useState } from "react";
@@ -25,13 +26,13 @@ import {
   Text,
   View,
 } from "react-native";
-import { useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProfilePictureWithDecoration } from "./ProfilePictureWithDecoration";
 
-
 import { createLogger } from "@/utils/log";
-const logger = createLogger("components/profile/ProfilePicture/ProfilePictureEditor");
+const logger = createLogger(
+  "components/profile/ProfilePicture/ProfilePictureEditor",
+);
 export interface ProfilePictureEditorProps {
   /** Whether the modal is visible */
   visible: boolean;
@@ -67,18 +68,18 @@ export function ProfilePictureEditor({
   onPictureRemoved,
   onDecorationPress,
 }: ProfilePictureEditorProps) {
-  const theme = useTheme();
-  // Map MD3 colors to simpler names for convenience
+  const profileColors = useColors();
+  // Map profile theme colors to simpler names for convenience
   const colors = {
-    primary: theme.colors.primary,
-    secondary: theme.colors.secondary,
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    border: theme.colors.outline,
-    error: theme.colors.error,
+    primary: profileColors.primary,
+    secondary: profileColors.secondary,
+    background: profileColors.background,
+    surface: profileColors.surface,
+    surfaceVariant: profileColors.surfaceVariant,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    border: profileColors.outline,
+    error: profileColors.error,
   };
   const insets = useSafeAreaInsets();
   const [isLoading, setIsLoading] = useState(false);

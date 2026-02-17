@@ -28,14 +28,15 @@ const log = createServerLogger("IncrementalRoom");
  */
 
 import { Client, Room } from "colyseus";
-import { Player, BaseGameState } from "../../schemas/common";
+import { BaseGameState, Player } from "../../schemas/common";
 import { SpectatorEntry } from "../../schemas/spectator";
-import { verifyFirebaseToken } from "../../services/firebase";
 import {
-  saveSnapshot,
-  loadSnapshot,
   deleteSnapshot,
+  loadSnapshot,
+  saveSnapshot,
 } from "../../services/coldStorage";
+import { verifyFirebaseToken } from "../../services/firebase";
+import { checkProtocolVersion } from "../../utils/protocol";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -117,10 +118,7 @@ export abstract class IncrementalRoom<
   protected abstract hydrateSnapshot(data: Record<string, unknown>): void;
 
   /** Optional hook: called when a player joins (not spectator). */
-  protected onPlayerJoined?(
-    sessionId: string,
-    auth: IncrementalAuth,
-  ): void;
+  protected onPlayerJoined?(sessionId: string, auth: IncrementalAuth): void;
 
   /** Optional hook: called when a player leaves (not spectator). */
   protected onPlayerLeft?(sessionId: string): void;
@@ -142,7 +140,17 @@ export abstract class IncrementalRoom<
   // ── Auth ─────────────────────────────────────────────────
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async onAuth(_client: Client, options: any, context: any): Promise<IncrementalAuth> {
+  async onAuth(
+    _client: Client,
+    options: any,
+    context: any,
+  ): Promise<IncrementalAuth> {
+    // ── Protocol version gate ─────────────────────────────────────────────
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      throw new Error(proto.reason);
+    }
+
     const token = context?.token || options?.token || "";
     const decoded = await verifyFirebaseToken(token);
     return {
@@ -156,7 +164,10 @@ export abstract class IncrementalRoom<
 
   onCreate(options: Record<string, unknown>): void {
     // Store persistence key (firestoreGameId) for cold storage
-    if (typeof options.firestoreGameId === "string" && options.firestoreGameId) {
+    if (
+      typeof options.firestoreGameId === "string" &&
+      options.firestoreGameId
+    ) {
       this.persistenceKey = options.firestoreGameId;
     }
 
@@ -203,11 +214,16 @@ export abstract class IncrementalRoom<
       }
     });
 
-    this.onMessage("app_state", (_client: Client, payload: Record<string, unknown>) => {
-      log.debug("app_state", payload);
-    });
+    this.onMessage(
+      "app_state",
+      (_client: Client, payload: Record<string, unknown>) => {
+        log.debug("app_state", payload);
+      },
+    );
 
-    log.info(`Room ${this.roomId} created (type=${this.gameTypeKey}, hz=${this.simHz})`);
+    log.info(
+      `Room ${this.roomId} created (type=${this.gameTypeKey}, hz=${this.simHz})`,
+    );
   }
 
   // ── Join ─────────────────────────────────────────────────
@@ -239,13 +255,17 @@ export abstract class IncrementalRoom<
       (this as any).broadcast("spectator_count", {
         count: state.spectatorCount,
       });
-      log.info(`Spectator ${authInfo.displayName} joined (session=${client.sessionId})`);
+      log.info(
+        `Spectator ${authInfo.displayName} joined (session=${client.sessionId})`,
+      );
       return;
     }
 
     // ── Player path ──
     if (this.playerSessionIds.size >= this.maxActivePlayers) {
-      log.warn(`Player slots full — demoting ${authInfo.displayName} to spectator`);
+      log.warn(
+        `Player slots full — demoting ${authInfo.displayName} to spectator`,
+      );
       joinOpts.spectator = true;
       this.onJoin(client, joinOpts, authInfo);
       return;
@@ -424,8 +444,9 @@ export abstract class IncrementalRoom<
     // Persist snapshot to cold storage on dispose
     if (this.persistenceKey) {
       const snapshot = this.serializeSnapshot();
-      const tick =
-        (snapshot as Record<string, unknown>).tick as number | undefined;
+      const tick = (snapshot as Record<string, unknown>).tick as
+        | number
+        | undefined;
       await saveSnapshot(
         this.persistenceKey,
         this.gameTypeKey,
@@ -478,9 +499,7 @@ export abstract class IncrementalRoom<
     this.clearIdleTimer();
     this.idleTimerHandle = setTimeout(() => {
       if (this.playerSessionIds.size === 0) {
-        log.info(
-          `Idle timeout reached for room ${this.roomId} — disposing`,
-        );
+        log.info(`Idle timeout reached for room ${this.roomId} — disposing`);
         this.disconnect();
       }
     }, this.idleTimeoutMs);

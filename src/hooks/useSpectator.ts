@@ -46,9 +46,13 @@
  * @see docs/SPECTATOR_SYSTEM_PLAN.md §4.1
  */
 
-import { Room } from "@colyseus/sdk";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { SentInviteRef, updateAllSpectatorInvites } from "@/services/games";
+import {
+  createSpectatorSession,
+  finishSpectatorSession,
+} from "@/services/spectatorSessions";
+import type { Room } from "@colyseus/sdk";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // =============================================================================
 // Types
@@ -113,10 +117,27 @@ interface SpSpectatorParams {
   roomId: string;
 }
 
+/**
+ * Standalone multiplayer spectator — SpectatorViewScreen creates and
+ * manages its own Colyseus game room connection with `{ spectator: true }`.
+ *
+ * Unlike `multiplayer-spectator` (which requires the caller to pass an
+ * existing room), this mode joins the game room by name/firestoreGameId
+ * and maps the game state onto the unified `UseSpectatorReturn` shape.
+ */
+interface MultiplayerSpectatorStandaloneParams {
+  mode: "multiplayer-spectator-standalone";
+  /** Colyseus room name (resolved via resolveColyseusRoomName) */
+  roomName: string;
+  /** Firestore game ID to join (filterBy match) */
+  firestoreGameId: string;
+}
+
 export type UseSpectatorParams =
   | MultiplayerSpectatorParams
   | SpHostParams
-  | SpSpectatorParams;
+  | SpSpectatorParams
+  | MultiplayerSpectatorStandaloneParams;
 
 export interface UseSpectatorReturn {
   /** Whether the current user is spectating (not playing) */
@@ -193,7 +214,11 @@ export interface UseSpectatorReturn {
       expeditionBossHp?: number;
       expeditionBossMaxHp?: number;
       crewSummaryJson?: string;
-      deltaEvents?: Array<{ type: string; payload?: Record<string, unknown>; at?: number }>;
+      deltaEvents?: Array<{
+        type: string;
+        payload?: Record<string, unknown>;
+        at?: number;
+      }>;
     },
   ) => void;
 
@@ -227,6 +252,8 @@ export function useSpectator(params: UseSpectatorParams): UseSpectatorReturn {
   switch (params.mode) {
     case "multiplayer-spectator":
       return useMultiplayerSpectator(params);
+    case "multiplayer-spectator-standalone":
+      return useMultiplayerSpectatorStandalone(params);
     case "sp-host":
       return useSpHost(params);
     case "sp-spectator":
@@ -300,6 +327,139 @@ function useMultiplayerSpectator(
 }
 
 // =============================================================================
+// Mode 1b: Standalone Multiplayer Spectator
+// =============================================================================
+
+/**
+ * Joins a game room with `{ spectator: true }` and maps the room's
+ * BaseGameState onto the unified `UseSpectatorReturn` interface.
+ *
+ * This powers the unified SpectatorViewScreen — the spectator no longer
+ * needs to know they're watching a multiplayer game vs a single-player
+ * SpectatorRoom; the UI is identical.
+ */
+function useMultiplayerSpectatorStandalone(
+  params: MultiplayerSpectatorStandaloneParams,
+): UseSpectatorReturn {
+  const { roomName, firestoreGameId } = params;
+
+  const [room, setRoom] = useState<Room | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [spectatorCount, setSpectatorCount] = useState(0);
+  const [spectators, setSpectators] = useState<SpectatorInfo[]>([]);
+  const [phase, setPhase] = useState("waiting");
+  const [gameType, setGameType] = useState("");
+
+  const roomRef = useRef<Room | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const connect = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = await getFirebaseToken();
+        const client = getColyseusClient();
+        const newRoom = await client.joinOrCreate(roomName, {
+          firestoreGameId,
+          spectator: true,
+          token,
+        });
+
+        if (!mountedRef.current) {
+          newRoom.leave().catch(() => {});
+          return;
+        }
+
+        roomRef.current = newRoom;
+        setRoom(newRoom);
+        setConnected(true);
+        setLoading(false);
+
+        newRoom.onStateChange((newState: any) => {
+          if (!mountedRef.current) return;
+          setSpectatorCount(newState.spectatorCount ?? 0);
+          setSpectators(extractSpectators(newState));
+          setPhase(newState.phase ?? "");
+          setGameType(newState.gameType ?? "");
+        });
+
+        newRoom.onLeave(() => {
+          if (!mountedRef.current) return;
+          setConnected(false);
+          roomRef.current = null;
+          setRoom(null);
+        });
+      } catch (err: any) {
+        if (mountedRef.current) {
+          setError(err.message || "Failed to join game as spectator");
+          setLoading(false);
+        }
+      }
+    };
+
+    connect();
+
+    return () => {
+      mountedRef.current = false;
+      if (roomRef.current) {
+        roomRef.current.leave().catch(() => {});
+        roomRef.current = null;
+      }
+    };
+  }, [roomName, firestoreGameId]);
+
+  const leaveSpectator = useCallback(async () => {
+    if (roomRef.current) {
+      try {
+        await roomRef.current.leave();
+      } catch {
+        // Already left
+      }
+    }
+    if (mountedRef.current) {
+      setConnected(false);
+      roomRef.current = null;
+      setRoom(null);
+    }
+  }, []);
+
+  return {
+    isSpectator: true,
+    spectatorCount,
+    spectators,
+    connected,
+    loading,
+    error,
+    // Multiplayer game state comes via Colyseus schema patches directly
+    // — no gameStateJson needed. The caller reads room.state.
+    gameState: null,
+    currentScore: 0,
+    currentLevel: 1,
+    lives: 3,
+    hostName: "",
+    gameType,
+    phase,
+    boostSessionEndsAt: 0,
+    helperEnergyRemaining: 0,
+    helperEnergyMax: 0,
+    leaveSpectator,
+    startHosting: async () => null,
+    updateGameState: () => {},
+    endHosting: async () => {},
+    startBoostSession: () => {},
+    spectatorRoomId: null,
+    registerInviteMessage: () => {},
+    sendHelperBoost: () => {},
+    sendCheer: () => {},
+  };
+}
+
+// =============================================================================
 // Mode 2: SP Host
 // =============================================================================
 
@@ -315,9 +475,7 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
   const [boostSessionEndsAt, setBoostSessionEndsAt] = useState(0);
   const roomRef = useRef<Room | null>(null);
   const mountedRef = useRef(true);
-  const onHelperBoostRef = useRef<SpHostParams["onHelperBoost"]>(
-    onHelperBoost,
-  );
+  const onHelperBoostRef = useRef<SpHostParams["onHelperBoost"]>(onHelperBoost);
   const onCheerRef = useRef<SpHostParams["onCheer"]>(onCheer);
 
   // Track sent invite message refs so we can update them when the game ends
@@ -409,6 +567,15 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
       // Tell the room we're starting
       newRoom.send("start_hosting");
 
+      // Write SpectatorSessions/{roomId} doc so chat bubbles can read status
+      const user = getAuth().currentUser;
+      createSpectatorSession(
+        newRoom.roomId,
+        gameType,
+        user?.uid ?? "",
+        user?.displayName ?? "Host",
+      ).catch(() => {}); // fire-and-forget
+
       return newRoom.roomId;
     } catch (err: any) {
       if (mountedRef.current) {
@@ -433,7 +600,11 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
         expeditionBossHp?: number;
         expeditionBossMaxHp?: number;
         crewSummaryJson?: string;
-        deltaEvents?: Array<{ type: string; payload?: Record<string, unknown>; at?: number }>;
+        deltaEvents?: Array<{
+          type: string;
+          payload?: Record<string, unknown>;
+          at?: number;
+        }>;
       },
     ) => {
       if (!roomRef.current) return;
@@ -441,7 +612,8 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
       if (level !== undefined) payload.currentLevel = level;
       if (remainingLives !== undefined) payload.lives = remainingLives;
       if (extras?.sessionMode) payload.sessionMode = extras.sessionMode;
-      if (extras?.activeMineId !== undefined) payload.activeMineId = extras.activeMineId;
+      if (extras?.activeMineId !== undefined)
+        payload.activeMineId = extras.activeMineId;
       if (extras?.bossHp !== undefined) payload.bossHp = extras.bossHp;
       if (extras?.bossMaxHp !== undefined) payload.bossMaxHp = extras.bossMaxHp;
       if (extras?.expeditionBossHp !== undefined) {
@@ -463,6 +635,11 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
 
   const endHosting = useCallback(
     async (finalScore?: number) => {
+      // Update SpectatorSessions doc so chat bubbles show "finished"
+      if (roomId) {
+        finishSpectatorSession(roomId, finalScore ?? 0).catch(() => {});
+      }
+
       // Update all sent spectator invite messages to show "finished" state
       // Do this BEFORE checking room — invite updates are Firestore ops and
       // should succeed even if the Colyseus room has already disconnected.
@@ -495,7 +672,7 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
         setRoom(null);
       }
     },
-    [gameType],
+    [gameType, roomId],
   );
 
   const leaveSpectator = useCallback(async () => {
@@ -746,10 +923,10 @@ function extractSpectators(state: any): SpectatorInfo[] {
   }
 }
 
+import { COLYSEUS_SERVER_URL } from "@/config/colyseus";
+import "@/shims/colyseus-sdk"; // Must be before @colyseus/sdk
 import { Client } from "@colyseus/sdk";
 import { getAuth } from "firebase/auth";
-import { COLYSEUS_SERVER_URL } from "@/config/colyseus";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useSpectator");

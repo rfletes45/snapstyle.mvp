@@ -173,54 +173,6 @@ export const GAME_PALETTES = {
     },
   },
 
-  /** Pool/Billiards color scheme */
-  pool: {
-    felt: {
-      light: "#0A5F38",
-      dark: "#0A4F28",
-    },
-    feltTexture: {
-      light: "#0C6F48",
-      dark: "#0C5F38",
-    },
-    rail: {
-      light: "#5D3FD3",
-      dark: "#4D2FC3",
-    },
-    railHighlight: {
-      light: "#7D5FE3",
-      dark: "#6D4FD3",
-    },
-    cueBall: {
-      light: "#FFFFF0",
-      dark: "#FFFFF0",
-    },
-    solidBall: {
-      light: "#FFD700",
-      dark: "#FFE720",
-    },
-    stripeBall: {
-      light: "#E74C3C",
-      dark: "#F75C4C",
-    },
-    eightBall: {
-      light: "#1A1A1A",
-      dark: "#0A0A0A",
-    },
-    pocket: {
-      light: "#0D0D0D",
-      dark: "#050505",
-    },
-    cue: {
-      light: "#DEB887",
-      dark: "#CDA877",
-    },
-    aimLine: {
-      light: "rgba(255, 255, 255, 0.6)",
-      dark: "rgba(255, 255, 255, 0.5)",
-    },
-  },
-
   /** Tic-Tac-Toe color scheme */
   ticTacToe: {
     grid: {

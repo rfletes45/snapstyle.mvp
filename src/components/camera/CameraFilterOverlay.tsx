@@ -1,23 +1,22 @@
 /**
  * CAMERA FILTER OVERLAY (Skia-Powered)
  *
- * Renders a cinematic blend-color layer on top of the live camera preview
- * using @shopify/react-native-skia's Canvas + Fill + BlendColor.
+ * Renders a colour-grading layer on top of the live camera preview using
+ * @shopify/react-native-skia's Canvas + Fill + BlendColor.
  *
- * Why Skia instead of a plain translucent View?
- *   - Proper blend modes (softLight, overlay, multiply) produce cinema-grade
- *     tinting that interacts with the underlying brightness/colour, not just
- *     an alpha-blended flat colour.
- *   - GPU-accelerated — zero CPU overhead.
- *   - Same tech stack as the editor filter (Phase 1: SkiaFilteredImage).
+ * KEY DESIGN: The overlay colour is now **derived from the actual Skia
+ * ColorMatrix** used in the editor (SkiaFilteredImage). We apply the matrix
+ * to reference sample pixels and compute the resulting tint, so the live
+ * preview always reflects the same colour transform the editor will apply.
  *
- * We still cannot apply a pixel-level color matrix to the live camera stream
- * (CameraView is a native texture), but Skia blend modes produce dramatically
- * better results than plain rgba overlays.
+ * This is still an approximation (a flat colour overlay ≠ per-pixel matrix
+ * transform) but it is now *mathematically grounded* in the same pipeline
+ * rather than being a parallel hand-tuned heuristic.
  *
  * Falls back to a plain View on Skia import failure (e.g. web).
  */
 
+import { filterConfigToColorMatrix } from "@/services/camera/filterService";
 import type { FilterConfig } from "@/types/camera";
 import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
@@ -39,14 +38,50 @@ interface Props {
   intensity?: number;
 }
 
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/** Identity matrix (no-op) for a 4×5 color matrix. */
+const IDENTITY = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0];
+
 /**
- * Pick the best Skia blend mode for a filter's characteristics.
- *
- * - softLight: warm/sepia/vintage filters — lightens lights, darkens darks
- * - overlay: high-contrast filters — stronger colour grading
- * - multiply: dark/moody filters — deepens shadows
- * - screen: bright/dreamy filters — lifts everything
- * - colorBurn: for invert/sketch — dramatic darkening
+ * Interpolate a color matrix toward identity by `t` (0 = identity, 1 = full).
+ * Same function used in SkiaFilteredImage for the intensity slider.
+ */
+function lerpMatrix(matrix: number[], t: number): number[] {
+  if (t >= 1) return matrix;
+  if (t <= 0) return IDENTITY;
+  return matrix.map((v, i) => IDENTITY[i] + (v - IDENTITY[i]) * t);
+}
+
+/**
+ * Apply a 4×5 color matrix to an [R, G, B, A] pixel (all values 0–1).
+ * Returns the transformed [R, G, B, A].
+ */
+function applyMatrix(
+  m: number[],
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+): [number, number, number, number] {
+  return [
+    Math.max(0, Math.min(1, m[0] * r + m[1] * g + m[2] * b + m[3] * a + m[4])),
+    Math.max(0, Math.min(1, m[5] * r + m[6] * g + m[7] * b + m[8] * a + m[9])),
+    Math.max(
+      0,
+      Math.min(1, m[10] * r + m[11] * g + m[12] * b + m[13] * a + m[14]),
+    ),
+    Math.max(
+      0,
+      Math.min(1, m[15] * r + m[16] * g + m[17] * b + m[18] * a + m[19]),
+    ),
+  ];
+}
+
+/**
+ * Pick the Skia blend mode that best represents the filter's character.
  */
 function pickBlendMode(filter: FilterConfig): string {
   const { brightness, contrast, saturation, sepia = 0, invert = 0 } = filter;
@@ -57,163 +92,103 @@ function pickBlendMode(filter: FilterConfig): string {
   if (brightness < -0.2) return "multiply";
   if (brightness > 0.2) return "screen";
   if (saturation < 0.5) return "saturation";
-  return "softLight"; // default — most natural-looking
+  return "softLight";
 }
 
 /**
- * Convert a FilterConfig into a translucent overlay colour.
+ * Derive the overlay tint from the actual ColorMatrix that SkiaFilteredImage
+ * will apply in the editor.
  *
- * The idea:
- *  - Hue   → rotate around HSL wheel to pick the tint colour
- *  - Saturation < 1  → desaturate by mixing toward gray
- *  - Sepia → blend toward warm brown
- *  - Brightness → lighten or darken by mixing toward white/black
- *  - Contrast → slightly darken to hint at stronger blacks
- *  - Invert → blue-ish/cyan to hint at inversion
+ * Method:
+ *  1. Build the same 4×5 color matrix the editor uses.
+ *  2. Apply it (with intensity lerp) to 3 reference pixels:
+ *     - dark   (0.25, 0.25, 0.25)
+ *     - mid    (0.50, 0.50, 0.50)
+ *     - bright (0.75, 0.75, 0.75)
+ *  3. Compute the average colour shift from the original neutral gray.
+ *  4. The shift becomes the overlay tint colour; the magnitude becomes alpha.
  *
- * The overlay is always quite transparent (opacity 0.10 – 0.35) so the camera
- * feed is visible underneath.
- *
- * Exported so CameraScreen's editor can reuse the same logic for its
- * post-capture filter overlay, avoiding the previous copy-paste duplication.
+ * This means any change to the filter definitions or matrix math in
+ * filterService automatically propagates here — no more hand-tuned
+ * coefficients drifting out of sync.
  */
 export function filterToOverlayColor(
   filter: FilterConfig,
   intensity: number,
 ): string | null {
-  // Gather adjustments
-  const {
-    brightness,
-    contrast,
-    saturation,
-    hue,
-    sepia = 0,
-    invert = 0,
-  } = filter;
+  // Build the full matrix and lerp toward identity by intensity
+  const fullMatrix = filterConfigToColorMatrix(filter);
+  const m = lerpMatrix(fullMatrix, intensity);
 
-  // If filter is essentially identity, skip
-  const isIdentity =
-    brightness === 0 &&
-    contrast === 1 &&
-    saturation === 1 &&
-    hue === 0 &&
-    sepia === 0 &&
-    invert === 0;
+  // Check if the lerped matrix is essentially identity
+  let isIdentity = true;
+  for (let i = 0; i < 20; i++) {
+    if (Math.abs(m[i] - IDENTITY[i]) > 0.001) {
+      isIdentity = false;
+      break;
+    }
+  }
   if (isIdentity) return null;
 
-  // Start with hue-derived colour
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let a = 0; // opacity will be built up
+  // Sample 3 neutral reference grays through the matrix
+  const samples: [number, number, number][] = [
+    [0.25, 0.25, 0.25], // shadows
+    [0.5, 0.5, 0.5], // midtones
+    [0.75, 0.75, 0.75], // highlights
+  ];
 
-  // ── Hue tint ───────────────────────────────────────────────────────────
-  if (hue > 0) {
-    // Convert hue (degrees) to RGB on the colour wheel at full saturation
-    const h = (hue % 360) / 60;
-    const x = 1 - Math.abs((h % 2) - 1);
-    if (h < 1) {
-      r = 1;
-      g = x;
-      b = 0;
-    } else if (h < 2) {
-      r = x;
-      g = 1;
-      b = 0;
-    } else if (h < 3) {
-      r = 0;
-      g = 1;
-      b = x;
-    } else if (h < 4) {
-      r = 0;
-      g = x;
-      b = 1;
-    } else if (h < 5) {
-      r = x;
-      g = 0;
-      b = 1;
-    } else {
-      r = 1;
-      g = 0;
-      b = x;
-    }
-    a += 0.18; // Stronger than before — blend modes handle it better
+  let totalDr = 0;
+  let totalDg = 0;
+  let totalDb = 0;
+
+  // Also track the average output colour for the tint
+  let avgR = 0;
+  let avgG = 0;
+  let avgB = 0;
+
+  for (const [sr, sg, sb] of samples) {
+    const [outR, outG, outB] = applyMatrix(m, sr, sg, sb, 1);
+    totalDr += Math.abs(outR - sr);
+    totalDg += Math.abs(outG - sg);
+    totalDb += Math.abs(outB - sb);
+    avgR += outR;
+    avgG += outG;
+    avgB += outB;
   }
 
-  // ── Sepia ──────────────────────────────────────────────────────────────
-  if (sepia > 0) {
-    const sw = sepia * 0.7;
-    r = r * (1 - sw) + 0.82 * sw; // warm brown
-    g = g * (1 - sw) + 0.62 * sw;
-    b = b * (1 - sw) + 0.38 * sw;
-    a += sepia * 0.25;
-  }
+  const n = samples.length;
+  totalDr /= n;
+  totalDg /= n;
+  totalDb /= n;
+  avgR /= n;
+  avgG /= n;
+  avgB /= n;
 
-  // ── Desaturation → gray overlay ────────────────────────────────────────
-  if (saturation < 1) {
-    const desat = 1 - saturation;
-    const gray = 0.5;
-    r = r * saturation + gray * desat;
-    g = g * saturation + gray * desat;
-    b = b * saturation + gray * desat;
-    a += desat * 0.3;
-  } else if (saturation > 1) {
-    a += (saturation - 1) * 0.08;
-  }
+  // The magnitude of colour shift determines overlay opacity
+  const shiftMagnitude = Math.sqrt(
+    totalDr * totalDr + totalDg * totalDg + totalDb * totalDb,
+  );
 
-  // ── Brightness ─────────────────────────────────────────────────────────
-  if (brightness > 0) {
-    r = r + (1 - r) * brightness * 0.5;
-    g = g + (1 - g) * brightness * 0.5;
-    b = b + (1 - b) * brightness * 0.5;
-    a += brightness * 0.12;
-  } else if (brightness < 0) {
-    const dark = -brightness;
-    r *= 1 - dark * 0.6;
-    g *= 1 - dark * 0.6;
-    b *= 1 - dark * 0.6;
-    a += dark * 0.2;
-  }
+  // Scale opacity: small shifts → subtle overlay, big shifts → stronger
+  // The sqrt scaling compresses the range so moderate filters still show clearly
+  let alpha = Math.sqrt(shiftMagnitude) * 0.85;
+  alpha = Math.min(0.6, Math.max(0, alpha));
 
-  // ── Contrast ───────────────────────────────────────────────────────────
-  if (contrast > 1) {
-    a += (contrast - 1) * 0.06;
-  } else if (contrast < 1) {
-    r = r * 0.7 + 0.5 * 0.3;
-    g = g * 0.7 + 0.5 * 0.3;
-    b = b * 0.7 + 0.5 * 0.3;
-    a += (1 - contrast) * 0.1;
-  }
+  if (alpha < 0.01) return null;
 
-  // ── Invert ─────────────────────────────────────────────────────────────
-  if (invert === 1) {
-    r = 0.3;
-    g = 0.6;
-    b = 0.8;
-    a += 0.25;
-  }
+  // Use the average output colour as the tint (this is what the image will
+  // tend toward after the matrix is applied)
+  const ri = Math.round(Math.min(1, Math.max(0, avgR)) * 255);
+  const gi = Math.round(Math.min(1, Math.max(0, avgG)) * 255);
+  const bi = Math.round(Math.min(1, Math.max(0, avgB)) * 255);
 
-  // Clamp opacity — higher cap now because blend modes are more forgiving
-  a = Math.min(0.55, Math.max(0, a)) * intensity;
-
-  if (a < 0.01) return null;
-
-  const ri = Math.round(Math.min(1, Math.max(0, r)) * 255);
-  const gi = Math.round(Math.min(1, Math.max(0, g)) * 255);
-  const bi = Math.round(Math.min(1, Math.max(0, b)) * 255);
-
-  return `rgba(${ri}, ${gi}, ${bi}, ${a.toFixed(2)})`;
+  return `rgba(${ri}, ${gi}, ${bi}, ${alpha.toFixed(3)})`;
 }
 
-/**
- * Skia-powered live camera filter overlay.
- *
- * Uses a Skia Canvas with a Fill + BlendColor for cinema-grade colour grading
- * that properly interacts with the underlying camera feed's brightness and
- * colour distribution (softLight, overlay, multiply, etc.).
- *
- * Falls back to a plain View overlay if Skia is unavailable.
- */
+// =============================================================================
+// Component
+// =============================================================================
+
 const CameraFilterOverlay: React.FC<Props> = React.memo(
   ({ filter, intensity = 1 }) => {
     const overlayColor = useMemo(() => {
@@ -239,7 +214,7 @@ const CameraFilterOverlay: React.FC<Props> = React.memo(
       );
     }
 
-    // Fallback: plain View overlay (same as before)
+    // Fallback: plain View overlay
     return (
       <View
         style={[styles.overlay, { backgroundColor: overlayColor }]}

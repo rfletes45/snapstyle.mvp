@@ -293,9 +293,7 @@ export async function cleanupExpiredGameStates(
     snapshot.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
 
-    log.info(
-      `[Persistence] Cleaned up ${snapshot.size} expired game states`,
-    );
+    log.info(`[Persistence] Cleaned up ${snapshot.size} expired game states`);
     return snapshot.size;
   } catch (error) {
     log.error("[Persistence] Cleanup failed:", error);
@@ -303,4 +301,134 @@ export async function cleanupExpiredGameStates(
   }
 }
 
+// =============================================================================
+// Game + Invite Deletion (Vacancy / Pre-Start Abandonment / Resolution)
+// =============================================================================
 
+/**
+ * Delete a game session and its associated invite from Firestore.
+ *
+ * Used when:
+ * - All players leave before the game officially starts (pre-start abandonment)
+ * - A vacancy timer expires (non-turn-based: 10min, turn-based: 2 days)
+ * - A game resolves (win/loss/resign) — after results are persisted
+ *
+ * @param firestoreGameId - The game ID (used in TurnBasedGames, ColyseusGameState)
+ * @param inviteId - The invite ID in GameInvites collection (optional)
+ */
+export async function deleteGameAndInvite(
+  firestoreGameId: string,
+  inviteId?: string,
+): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const batch = db.batch();
+
+  try {
+    // Delete ColyseusGameState snapshot (if exists)
+    const colyseusRef = db.collection("ColyseusGameState").doc(firestoreGameId);
+    const colyseusDoc = await colyseusRef.get();
+    if (colyseusDoc.exists) {
+      batch.delete(colyseusRef);
+    }
+
+    // Delete TurnBasedGames record (if exists); auto-discover inviteId
+    const tbRef = db.collection("TurnBasedGames").doc(firestoreGameId);
+    const tbDoc = await tbRef.get();
+    if (tbDoc.exists) {
+      // Auto-discover inviteId from the game doc if not explicitly provided
+      if (!inviteId) {
+        inviteId = tbDoc.data()?.inviteId;
+      }
+      batch.delete(tbRef);
+    }
+
+    // Delete RealtimeGameSessions record (if exists)
+    const rtRef = db.collection("RealtimeGameSessions").doc(firestoreGameId);
+    const rtDoc = await rtRef.get();
+    if (rtDoc.exists) {
+      batch.delete(rtRef);
+    }
+
+    // Mark the associated invite as completed so it disappears from chat
+    if (inviteId) {
+      const inviteRef = db.collection("GameInvites").doc(inviteId);
+      const inviteDoc = await inviteRef.get();
+      if (inviteDoc.exists) {
+        batch.update(inviteRef, {
+          status: "completed",
+          completedAt: FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    await batch.commit();
+    log.info(
+      `[Persistence] Deleted game ${firestoreGameId}${inviteId ? ` + completed invite ${inviteId}` : ""}`,
+    );
+  } catch (error) {
+    log.error("[Persistence] deleteGameAndInvite failed:", error);
+  }
+}
+
+/**
+ * Mark a game as vacant in Firestore (for vacancy timer tracking).
+ *
+ * Sets `vacantSince` to the current server timestamp so the scheduled
+ * Cloud Function can pick it up for deletion after the appropriate window.
+ *
+ * @param firestoreGameId - The game ID
+ * @param gameType - The game type key
+ * @param isTurnBased - Whether the game is turn-based (2-day window vs 10-min)
+ */
+export async function markGameVacant(
+  firestoreGameId: string,
+  gameType: string,
+  isTurnBased: boolean,
+): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    const ref = db.collection("ColyseusGameState").doc(firestoreGameId);
+    await ref.set(
+      {
+        vacantSince: FieldValue.serverTimestamp(),
+        gameType,
+        isTurnBased,
+        status: "vacant",
+        lastActiveAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    log.info(`[Persistence] Marked game ${firestoreGameId} as vacant`);
+  } catch (error) {
+    log.error("[Persistence] markGameVacant failed:", error);
+  }
+}
+
+/**
+ * Clear the vacancy marker when a player rejoins a game.
+ *
+ * @param firestoreGameId - The game ID
+ */
+export async function clearGameVacancy(firestoreGameId: string): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    const ref = db.collection("ColyseusGameState").doc(firestoreGameId);
+    const doc = await ref.get();
+    if (doc.exists && doc.data()?.status === "vacant") {
+      await ref.update({
+        vacantSince: FieldValue.delete(),
+        status: "active",
+        lastActiveAt: FieldValue.serverTimestamp(),
+      });
+      log.info(`[Persistence] Cleared vacancy for game ${firestoreGameId}`);
+    }
+  } catch (error) {
+    log.error("[Persistence] clearGameVacancy failed:", error);
+  }
+}

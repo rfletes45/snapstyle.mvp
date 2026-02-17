@@ -1,0 +1,56 @@
+{
+  "id": "garden_9",
+  "packId": "garden",
+  "name": "Garden Finale",
+  "par": 4,
+  "maxStrokes": 12,
+  "bounds": { "width": 500, "height": 1000 },
+  "tee": { "x": 250, "y": 900 },
+  "cup": { "x": 250, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 450, "y": 0 },
+      { "x": 450, "y": 1000 },
+      { "x": 50, "y": 1000 }
+    ]
+  ],
+  "surfaces": [
+    {
+      "id": "sand_g9",
+      "type": "sand",
+      "frictionMul": 2.5,
+      "poly": [
+        { "x": 300, "y": 550 },
+        { "x": 420, "y": 550 },
+        { "x": 420, "y": 680 },
+        { "x": 300, "y": 680 }
+      ]
+    }
+  ],
+  "hazards": [
+    {
+      "id": "water_g9",
+      "type": "water",
+      "penalty": 1,
+      "poly": [
+        { "x": 100, "y": 350 },
+        { "x": 250, "y": 350 },
+        { "x": 250, "y": 450 },
+        { "x": 100, "y": 450 }
+      ]
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "gate_g9",
+      "type": "moving_gate",
+      "position": { "x": 250, "y": 750 },
+      "size": { "width": 100, "height": 14 },
+      "speed": 0.9,
+      "pointA": { "x": 100, "y": 750 },
+      "pointB": { "x": 400, "y": 750 }
+    }
+  ]
+}

@@ -17,6 +17,23 @@
  * Uses CameraContext for state (no Redux).
  */
 
+import DrawingCanvas, {
+  type DrawnPath,
+} from "@/components/camera/DrawingCanvas";
+import PollCreator from "@/components/camera/PollCreator";
+import SkiaFilteredImage from "@/components/camera/SkiaFilteredImage";
+import { FILTER_LIBRARY } from "@/services/camera/filterService";
+import { useEditorState, useSnapState } from "@/store/CameraContext";
+import type {
+  CapturedMedia,
+  FilterConfig,
+  OverlayElement,
+  PollElement,
+  Snap,
+  StickerElement,
+  TextElement,
+} from "@/types/camera";
+import { generateUUID } from "@/utils/uuid";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -39,24 +56,7 @@ import {
   View,
 } from "react-native";
 import ViewShot, { captureRef } from "react-native-view-shot";
-import DrawingCanvas, {
-  type DrawnPath,
-} from "@/components/camera/DrawingCanvas";
-import PollCreator from "@/components/camera/PollCreator";
-import { FILTER_LIBRARY } from "@/services/camera/filterService";
-import { useEditorState, useSnapState } from "@/store/CameraContext";
-import type {
-  CapturedMedia,
-  FilterConfig,
-  OverlayElement,
-  PollElement,
-  Snap,
-  StickerElement,
-  TextElement,
-} from "@/types/camera";
-import { generateUUID } from "@/utils/uuid";
 import type { CameraMode } from "./CameraScreen";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/camera/EditorScreen");
@@ -211,6 +211,18 @@ const EditorScreen: React.FC = () => {
 
   // Rotation (multiples of 90)
   const [rotation, setRotation] = useState(0);
+
+  // Preview layout dimensions (measured via onLayout)
+  const [previewLayout, setPreviewLayout] = useState({
+    width: SCREEN_W,
+    height: SCREEN_H,
+  });
+  const handlePreviewLayout = useCallback((e: any) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width > 0 && height > 0) {
+      setPreviewLayout({ width, height });
+    }
+  }, []);
 
   // Draggable overlay element positions (local overrides for positioning)
   const [elementPositions, setElementPositions] = useState<
@@ -425,92 +437,11 @@ const EditorScreen: React.FC = () => {
     navigation.goBack();
   }, [navigation]);
 
-  // -- Computed filter overlay colour -----------------------------------------
-  const filterOverlayColor = useMemo(() => {
+  // -- Computed editor filter (resolved FilterConfig for SkiaFilteredImage) ---
+  const editorFilter = useMemo((): FilterConfig | null => {
     if (selectedFilterId === "none") return null;
-    const f = ALL_FILTERS.find((ff) => ff.id === selectedFilterId);
-    if (!f) return null;
-
-    const { brightness, contrast, saturation, hue, sepia = 0, invert = 0 } = f;
-    const isIdentity =
-      brightness === 0 &&
-      contrast === 1 &&
-      saturation === 1 &&
-      hue === 0 &&
-      sepia === 0 &&
-      invert === 0;
-    if (isIdentity) return null;
-
-    let r = 0,
-      g = 0,
-      b = 0,
-      a = 0;
-
-    if (hue > 0) {
-      const h = (hue % 360) / 60;
-      const x = 1 - Math.abs((h % 2) - 1);
-      if (h < 1) {
-        r = 1;
-        g = x;
-      } else if (h < 2) {
-        r = x;
-        g = 1;
-      } else if (h < 3) {
-        g = 1;
-        b = x;
-      } else if (h < 4) {
-        g = x;
-        b = 1;
-      } else if (h < 5) {
-        r = x;
-        b = 1;
-      } else {
-        r = 1;
-        b = x;
-      }
-      a += 0.12;
-    }
-    if (sepia > 0) {
-      const sw = sepia * 0.6;
-      r = r * (1 - sw) + 0.76 * sw;
-      g = g * (1 - sw) + 0.58 * sw;
-      b = b * (1 - sw) + 0.36 * sw;
-      a += sepia * 0.18;
-    }
-    if (saturation < 1) {
-      const d = 1 - saturation;
-      r = r * saturation + 0.5 * d;
-      g = g * saturation + 0.5 * d;
-      b = b * saturation + 0.5 * d;
-      a += d * 0.25;
-    }
-    if (brightness > 0) {
-      r += (1 - r) * brightness * 0.5;
-      g += (1 - g) * brightness * 0.5;
-      b += (1 - b) * brightness * 0.5;
-      a += brightness * 0.08;
-    } else if (brightness < 0) {
-      const dk = -brightness;
-      r *= 1 - dk * 0.6;
-      g *= 1 - dk * 0.6;
-      b *= 1 - dk * 0.6;
-      a += dk * 0.15;
-    }
-    if (contrast > 1) a += (contrast - 1) * 0.04;
-    if (invert === 1) {
-      r = 0.3;
-      g = 0.6;
-      b = 0.8;
-      a += 0.2;
-    }
-
-    a = Math.min(0.4, Math.max(0, a)) * filterIntensity;
-    if (a < 0.01) return null;
-    const ri = Math.round(Math.min(1, Math.max(0, r)) * 255);
-    const gi = Math.round(Math.min(1, Math.max(0, g)) * 255);
-    const bi = Math.round(Math.min(1, Math.max(0, b)) * 255);
-    return "rgba(" + ri + ", " + gi + ", " + bi + ", " + a.toFixed(2) + ")";
-  }, [selectedFilterId, filterIntensity]);
+    return ALL_FILTERS.find((ff) => ff.id === selectedFilterId) ?? null;
+  }, [selectedFilterId]);
 
   // -- Render overlay elements ------------------------------------------------
   const renderOverlayElement = useCallback(
@@ -674,26 +605,18 @@ const EditorScreen: React.FC = () => {
         ref={editorViewShotRef}
         options={{ format: "jpg", quality: 0.9 }}
         style={styles.previewContainer}
+        onLayout={handlePreviewLayout}
       >
-        <Image
-          source={{ uri: snap.uri }}
-          style={[
-            styles.preview,
-            { transform: [{ rotate: rotation + "deg" }] },
-          ]}
-          resizeMode="contain"
+        {/* Skia-rendered image with real GPU filter (pixel-accurate) */}
+        <SkiaFilteredImage
+          uri={snap.uri}
+          filter={editorFilter}
+          intensity={filterIntensity}
+          width={previewLayout.width}
+          height={previewLayout.height}
+          rotation={rotation}
+          style={StyleSheet.absoluteFill}
         />
-
-        {/* Filter colour overlay */}
-        {filterOverlayColor && (
-          <View
-            style={[
-              styles.filterOverlay,
-              { backgroundColor: filterOverlayColor },
-            ]}
-            pointerEvents="none"
-          />
-        )}
 
         {/* Drawing canvas */}
         <DrawingCanvas
@@ -1180,12 +1103,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#111",
     overflow: "hidden",
-  },
-  preview: { flex: 1, width: "100%" },
-
-  filterOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
   },
 
   // Top bar

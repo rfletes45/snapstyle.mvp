@@ -1,0 +1,34 @@
+{
+  "id": "H03",
+  "name": "Water Crossing",
+  "difficulty": 2,
+  "par": 3,
+  "maxStrokes": 8,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 50, "y": 52 },
+  "cup": { "x": 50, "y": 8 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [
+    {
+      "id": "water_1",
+      "type": "water",
+      "penalty": 1,
+      "poly": [
+        { "x": 10, "y": 25 },
+        { "x": 90, "y": 25 },
+        { "x": 90, "y": 35 },
+        { "x": 10, "y": 35 }
+      ]
+    }
+  ],
+  "obstacles": []
+}

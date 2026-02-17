@@ -11,10 +11,11 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
-import { Surface, Text, useTheme } from "react-native-paper";
+import { Surface, Text } from "react-native-paper";
 import Animated, { FadeIn, FadeInRight, Layout } from "react-native-reanimated";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import type { ProfileGameScore } from "@/types/userProfile";
 
@@ -113,7 +114,7 @@ const ScoreCard = memo(function ScoreCard({
   compact = false,
   index,
 }: ScoreCardProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   const comparison = useMemo(() => {
     if (viewerScore === undefined) return null;
@@ -142,7 +143,7 @@ const ScoreCard = memo(function ScoreCard({
           style={[
             styles.scoreCard,
             compact && styles.scoreCardCompact,
-            { backgroundColor: theme.colors.surfaceVariant },
+            { backgroundColor: colors.surfaceVariant },
           ]}
           elevation={1}
         >
@@ -161,17 +162,14 @@ const ScoreCard = memo(function ScoreCard({
           {/* Game Info */}
           <View style={styles.gameInfo}>
             <Text
-              style={[styles.gameName, { color: theme.colors.onSurface }]}
+              style={[styles.gameName, { color: colors.text }]}
               numberOfLines={1}
             >
               {score.gameName || getGameName(score.gameId)}
             </Text>
             {!compact && (
               <Text
-                style={[
-                  styles.achievedDate,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
+                style={[styles.achievedDate, { color: colors.textSecondary }]}
               >
                 {formatDate(score.achievedAt)}
               </Text>
@@ -180,7 +178,7 @@ const ScoreCard = memo(function ScoreCard({
 
           {/* Score */}
           <View style={styles.scoreContainer}>
-            <Text style={[styles.scoreValue, { color: theme.colors.primary }]}>
+            <Text style={[styles.scoreValue, { color: colors.primary }]}>
               {formatScore(score.score)}
             </Text>
 
@@ -215,7 +213,7 @@ const ScoreCard = memo(function ScoreCard({
                   <Text
                     style={[
                       styles.comparisonText,
-                      { color: theme.colors.onSurfaceVariant },
+                      { color: colors.textSecondary },
                     ]}
                   >
                     Tied!
@@ -243,35 +241,29 @@ const EmptyState = memo(function EmptyState({
   isOwnProfile,
   onEditPress,
 }: EmptyStateProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <Animated.View entering={FadeIn} style={styles.emptyState}>
       <MaterialCommunityIcons
         name="gamepad-variant-outline"
         size={48}
-        color={theme.colors.onSurfaceVariant}
+        color={colors.textSecondary}
       />
-      <Text
-        style={[styles.emptyTitle, { color: theme.colors.onSurfaceVariant }]}
-      >
+      <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
         {isOwnProfile ? "No Games Played Yet" : "No Scores to Show"}
       </Text>
-      <Text
-        style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}
-      >
+      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
         {isOwnProfile
           ? "Play some games to show off your high scores!"
           : "This user hasn't shared any game scores."}
       </Text>
       {isOwnProfile && onEditPress && (
         <TouchableOpacity
-          style={[styles.editButton, { backgroundColor: theme.colors.primary }]}
+          style={[styles.editButton, { backgroundColor: colors.primary }]}
           onPress={onEditPress}
         >
-          <Text style={{ color: theme.colors.onPrimary }}>
-            Configure Display
-          </Text>
+          <Text style={{ color: colors.text }}>Configure Display</Text>
         </TouchableOpacity>
       )}
     </Animated.View>
@@ -293,7 +285,7 @@ export const GameScoresDisplay = memo(function GameScoresDisplay({
   maxScores = 5,
   testID,
 }: GameScoresDisplayProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   // Create viewer scores map for quick lookup
   const viewerScoresMap = useMemo(() => {
@@ -330,9 +322,9 @@ export const GameScoresDisplay = memo(function GameScoresDisplay({
           <MaterialCommunityIcons
             name="trophy"
             size={20}
-            color={theme.colors.primary}
+            color={colors.primary}
           />
-          <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
             Top Scores
           </Text>
         </View>
@@ -341,7 +333,7 @@ export const GameScoresDisplay = memo(function GameScoresDisplay({
             <MaterialCommunityIcons
               name="pencil"
               size={18}
-              color={theme.colors.primary}
+              color={colors.primary}
             />
           </TouchableOpacity>
         )}
@@ -372,12 +364,7 @@ export const GameScoresDisplay = memo(function GameScoresDisplay({
       {/* Comparison Legend (when viewing others) */}
       {viewerScores && viewerScores.length > 0 && !compact && (
         <View style={styles.legend}>
-          <Text
-            style={[
-              styles.legendText,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
+          <Text style={[styles.legendText, { color: colors.textSecondary }]}>
             Compared to your scores
           </Text>
         </View>

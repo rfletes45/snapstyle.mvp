@@ -1,0 +1,32 @@
+{
+  "id": "toybox_6",
+  "packId": "toybox",
+  "name": "Drawbridge",
+  "par": 3,
+  "maxStrokes": 10,
+  "bounds": { "width": 400, "height": 900 },
+  "tee": { "x": 200, "y": 800 },
+  "cup": { "x": 200, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 350, "y": 0 },
+      { "x": 350, "y": 900 },
+      { "x": 50, "y": 900 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": [
+    {
+      "id": "gate_t6",
+      "type": "moving_gate",
+      "position": { "x": 200, "y": 450 },
+      "size": { "width": 90, "height": 14 },
+      "speed": 0.8,
+      "pointA": { "x": 80, "y": 450 },
+      "pointB": { "x": 320, "y": 450 }
+    }
+  ]
+}

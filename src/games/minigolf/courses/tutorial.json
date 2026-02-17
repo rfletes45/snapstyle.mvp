@@ -1,0 +1,177 @@
+{
+  "packId": "tutorial",
+  "name": "Tutorial",
+  "holes": [
+    {
+      "id": "tutorial_1",
+      "packId": "tutorial",
+      "name": "First Putt",
+      "par": 1,
+      "maxStrokes": 6,
+      "bounds": {
+        "width": 300,
+        "height": 600
+      },
+      "tee": {
+        "x": 150,
+        "y": 500
+      },
+      "cup": {
+        "x": 150,
+        "y": 100
+      },
+      "cupRadius": 20,
+      "walls": [
+        [
+          {
+            "x": 50,
+            "y": 0
+          },
+          {
+            "x": 250,
+            "y": 0
+          },
+          {
+            "x": 250,
+            "y": 600
+          },
+          {
+            "x": 50,
+            "y": 600
+          }
+        ]
+      ],
+      "surfaces": [],
+      "hazards": [],
+      "obstacles": []
+    },
+    {
+      "id": "tutorial_2",
+      "packId": "tutorial",
+      "name": "Gentle Bend",
+      "par": 2,
+      "maxStrokes": 8,
+      "bounds": {
+        "width": 500,
+        "height": 600
+      },
+      "tee": {
+        "x": 400,
+        "y": 500
+      },
+      "cup": {
+        "x": 120,
+        "y": 100
+      },
+      "cupRadius": 20,
+      "walls": [
+        [
+          {
+            "x": 250,
+            "y": 0
+          },
+          {
+            "x": 450,
+            "y": 0
+          },
+          {
+            "x": 450,
+            "y": 350
+          },
+          {
+            "x": 250,
+            "y": 350
+          }
+        ],
+        [
+          {
+            "x": 50,
+            "y": 0
+          },
+          {
+            "x": 200,
+            "y": 0
+          },
+          {
+            "x": 200,
+            "y": 600
+          },
+          {
+            "x": 50,
+            "y": 600
+          }
+        ]
+      ],
+      "surfaces": [],
+      "hazards": [],
+      "obstacles": []
+    },
+    {
+      "id": "tutorial_3",
+      "packId": "tutorial",
+      "name": "Sand Trap Intro",
+      "par": 2,
+      "maxStrokes": 8,
+      "bounds": {
+        "width": 300,
+        "height": 700
+      },
+      "tee": {
+        "x": 150,
+        "y": 600
+      },
+      "cup": {
+        "x": 150,
+        "y": 100
+      },
+      "cupRadius": 20,
+      "walls": [
+        [
+          {
+            "x": 50,
+            "y": 0
+          },
+          {
+            "x": 250,
+            "y": 0
+          },
+          {
+            "x": 250,
+            "y": 700
+          },
+          {
+            "x": 50,
+            "y": 700
+          }
+        ]
+      ],
+      "surfaces": [
+        {
+          "id": "sand_t3",
+          "type": "sand",
+          "frictionMul": 3,
+          "poly": [
+            {
+              "x": 80,
+              "y": 300
+            },
+            {
+              "x": 220,
+              "y": 300
+            },
+            {
+              "x": 220,
+              "y": 420
+            },
+            {
+              "x": 80,
+              "y": 420
+            }
+          ]
+        }
+      ],
+      "hazards": [],
+      "obstacles": []
+    }
+  ]
+}

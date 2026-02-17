@@ -12,7 +12,7 @@ import {
   Achievement,
   AchievementDefinition,
   AchievementType,
-  GameType,
+  ExtendedGameType,
 } from "@/types/models";
 import {
   collection,
@@ -25,7 +25,6 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/achievements");
@@ -331,7 +330,7 @@ export async function grantAchievement(
  */
 export async function checkGameAchievements(
   userId: string,
-  gameId: GameType,
+  gameId: ExtendedGameType,
   score: number,
   totalGamesPlayed: number,
 ): Promise<AchievementType[]> {
@@ -354,23 +353,6 @@ export async function checkGameAchievements(
     if (totalGamesPlayed >= 50) {
       const success = await grantAchievement(userId, "game_50_sessions");
       if (success) granted.push("game_50_sessions");
-    }
-
-    // Game-specific achievements
-    if (gameId === "reaction_tap" && score < 200) {
-      const success = await grantAchievement(userId, "game_reaction_master", {
-        score,
-        gameId,
-      });
-      if (success) granted.push("game_reaction_master");
-    }
-
-    if (gameId === "timed_tap" && score >= 100) {
-      const success = await grantAchievement(userId, "game_speed_demon", {
-        score,
-        gameId,
-      });
-      if (success) granted.push("game_speed_demon");
     }
 
     return granted;

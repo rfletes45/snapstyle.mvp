@@ -66,7 +66,6 @@ describe("Colyseus config helpers", () => {
 
     it("returns true for physics games when all flags enabled", () => {
       expect(shouldUseColyseus("pong_game")).toBe(true);
-      expect(shouldUseColyseus("air_hockey_game")).toBe(true);
       expect(shouldUseColyseus("bounce_blitz_game")).toBe(true);
       expect(shouldUseColyseus("brick_breaker_game")).toBe(true);
     });
@@ -74,20 +73,17 @@ describe("Colyseus config helpers", () => {
     it("returns false for physics games when PHYSICS_ENABLED is off", () => {
       COLYSEUS_FEATURES.PHYSICS_ENABLED = false;
       expect(shouldUseColyseus("pong_game")).toBe(false);
-      expect(shouldUseColyseus("air_hockey_game")).toBe(false);
     });
 
     // ─── Quick-Play Games ─────────────────────────────────────────────
 
     it("returns true for quick-play games when all flags enabled", () => {
-      expect(shouldUseColyseus("reaction_tap_game")).toBe(true);
       expect(shouldUseColyseus("dot_match_game")).toBe(true);
-      expect(shouldUseColyseus("timed_tap_game")).toBe(true);
     });
 
     it("returns false for quick-play games when QUICKPLAY_ENABLED is off", () => {
       COLYSEUS_FEATURES.QUICKPLAY_ENABLED = false;
-      expect(shouldUseColyseus("reaction_tap_game")).toBe(false);
+      expect(shouldUseColyseus("dot_match_game")).toBe(false);
     });
 
     // ─── Turn-Based Games ─────────────────────────────────────────────
@@ -136,7 +132,6 @@ describe("Colyseus config helpers", () => {
     it("returns false for all games when master COLYSEUS_ENABLED is off", () => {
       COLYSEUS_FEATURES.COLYSEUS_ENABLED = false;
       expect(shouldUseColyseus("pong_game")).toBe(false);
-      expect(shouldUseColyseus("reaction_tap_game")).toBe(false);
       expect(shouldUseColyseus("chess_game")).toBe(false);
       expect(shouldUseColyseus("word_master_game")).toBe(false);
       expect(shouldUseColyseus("tic_tac_toe_game")).toBe(false);
@@ -158,7 +153,7 @@ describe("Colyseus config helpers", () => {
   describe("getGameCategory", () => {
     it("returns correct category for each game tier", () => {
       expect(getGameCategory("pong_game")).toBe("physics");
-      expect(getGameCategory("reaction_tap_game")).toBe("quickplay");
+      expect(getGameCategory("dot_match_game")).toBe("quickplay");
       expect(getGameCategory("tic_tac_toe_game")).toBe("turnbased");
       expect(getGameCategory("chess_game")).toBe("complex");
       expect(getGameCategory("word_master_game")).toBe("coop");
@@ -209,11 +204,8 @@ describe("Colyseus config helpers", () => {
     it("all flags enabled, all game types route to colyseus", () => {
       const allGameTypes = [
         "pong_game",
-        "air_hockey_game",
         "bounce_blitz_game",
         "brick_breaker_game",
-        "reaction_tap_game",
-        "timed_tap_game",
         "dot_match_game",
         "tic_tac_toe_game",
         "connect_four_game",

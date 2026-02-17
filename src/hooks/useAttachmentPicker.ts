@@ -54,6 +54,17 @@ export interface UseAttachmentPickerOptions {
   allowedTypes?: AttachmentKind[];
   /** Callback when attachments change */
   onAttachmentsChange?: (attachments: LocalAttachment[]) => void;
+  /**
+   * When provided, in-app camera captures are passed directly to this callback
+   * instead of being added to the attachment tray. Gallery picks are unaffected
+   * unless onGalleryPick is also set.
+   */
+  onCameraCapture?: (imageUri: string) => void;
+  /**
+   * When provided, gallery-selected images are passed directly to this callback
+   * instead of being added to the attachment tray — enabling immediate send.
+   */
+  onGalleryPick?: (imageUris: string[]) => void;
   /** Route params from navigation (to receive captured image from Camera) */
   routeParams?: Record<string, any>;
   /** The route name for the calling screen (used to return from Camera) */
@@ -114,6 +125,8 @@ export function useAttachmentPicker(
     maxFileSize = DEFAULT_MAX_FILE_SIZE,
     allowedTypes = DEFAULT_ALLOWED_TYPES,
     onAttachmentsChange,
+    onCameraCapture,
+    onGalleryPick,
     routeParams,
     returnRoute,
     returnData,
@@ -136,16 +149,20 @@ export function useAttachmentPicker(
 
   useEffect(() => {
     if (routeParams?.capturedImageUri) {
-      log.debug(
-        "Received captured image from Camera:",
-        routeParams.capturedImageUri,
-      );
+      const uri = routeParams.capturedImageUri;
+      log.debug("Received captured image from Camera:", uri);
+
+      // When onCameraCapture is provided, bypass the attachment tray and
+      // hand the image directly to the caller (e.g. for immediate send).
+      if (onCameraCapture) {
+        onCameraCapture(uri);
+        return;
+      }
+
+      // Default: add to multi-image attachment tray
       (async () => {
         try {
-          const attachment = await createLocalAttachment(
-            routeParams.capturedImageUri,
-            "image",
-          );
+          const attachment = await createLocalAttachment(uri, "image");
           if (attachment) {
             updateAttachments([...attachments, attachment]);
           }
@@ -271,7 +288,15 @@ export function useAttachmentPicker(
 
       log.debug(`Selected ${result.assets.length} images from gallery`);
 
-      // Create local attachments
+      // When onGalleryPick is provided, bypass the attachment tray and
+      // hand the URIs directly to the caller (e.g. for immediate send).
+      if (onGalleryPick) {
+        const uris = result.assets.map((a) => a.uri);
+        onGalleryPick(uris);
+        return;
+      }
+
+      // Default: add to multi-image attachment tray
       const newAttachments: LocalAttachment[] = [];
       for (const asset of result.assets) {
         const attachment = await createLocalAttachment(asset.uri, "image");

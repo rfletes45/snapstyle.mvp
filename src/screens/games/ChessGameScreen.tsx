@@ -17,14 +17,6 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import Animated, {
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from "react-native-reanimated";
 import {
   Alert,
   Dimensions,
@@ -34,9 +26,20 @@ import {
   View,
 } from "react-native";
 import { Button, Modal, Portal, Text } from "react-native-paper";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import FriendPickerModal from "@/components/FriendPickerModal";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
@@ -53,12 +56,12 @@ import {
 import { SkiaCellHighlight } from "@/components/games/graphics/SkiaCellHighlight";
 import { SkiaChessPieces } from "@/components/games/graphics/SkiaChessPieces";
 import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
-import { sendGameInvite } from "@/services/gameInvites";
 import {
   createChessMove,
   createInitialChessState,
@@ -68,6 +71,7 @@ import {
   makeMove,
   requiresPromotion,
 } from "@/services/games/chessLogic";
+import { getGroupMembers } from "@/services/groups";
 import {
   endMatch,
   resignMatch,
@@ -88,12 +92,12 @@ import {
   ChessPosition,
   createInitialChessBoard,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
-
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
+import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/ChessGameScreen");
 // =============================================================================
 // Constants
@@ -133,7 +137,7 @@ interface ChessGameScreenProps {
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "colyseus" | "waiting";
+type GameMode = "menu" | "lobby" | "local" | "online" | "colyseus" | "waiting";
 
 // =============================================================================
 // Piece Component
@@ -419,11 +423,16 @@ function CapturedPiecesDisplay({ pieces, color }: CapturedPiecesProps) {
 // Main Component
 // =============================================================================
 
-function ChessGameScreen({
-  navigation,
-  route,
-}: ChessGameScreenProps) {
-  useGameBackHandler({ gameType: "chess", isGameOver: false });
+function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
+  const initialMode: GameMode = route.params?.inviteId ? "lobby" : "menu";
+  const [gameMode, setGameMode] = useState<GameMode>(initialMode);
+  useGameBackHandler({
+    gameType: "chess",
+    isGameOver: false,
+    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
+    isInLobby: gameMode === "lobby",
+    entryPoint: route.params?.entryPoint,
+  });
 
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
@@ -460,7 +469,6 @@ function ChessGameScreen({
   });
 
   // Game state
-  const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [gameState, setGameState] = useState<ChessGameState>(() =>
     createInitialChessState("player1", "player2"),
   );
@@ -502,8 +510,30 @@ function ChessGameScreen({
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
-  // Colyseus multiplayer hook
+  // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("chess_game");
+
+  // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
+  const lobbyController = useGameLobbyController({
+    gameType: "chess",
+    inviteId: route.params?.inviteId,
+    entryPoint: route.params?.entryPoint,
+    isTurnBased: true,
+    onGameReady: (gameId: string) => {
+      logger.info(`[Chess] Lobby ready, gameId=${gameId}`);
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+    },
+    onLeaveLobby: () => {
+      setGameMode("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
+  });
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
     room: mp.room,
@@ -539,11 +569,27 @@ function ChessGameScreen({
   const effectiveBoard: ChessBoard =
     gameMode === "colyseus" && colyseusBoard ? colyseusBoard : gameState.board;
 
+  // Surface Colyseus connection errors so players know something failed
+  useEffect(() => {
+    if (mp.error && gameMode === "colyseus") {
+      logger.error(`[Chess] Colyseus error: ${mp.error}`);
+      Alert.alert(
+        "Connection Error",
+        `Failed to connect to game server: ${mp.error}`,
+        [{ text: "OK", onPress: () => setGameMode("menu") }],
+      );
+    }
+  }, [mp.error, gameMode]);
+
   // ==========================================================================
   // Online Game Subscription
   // ==========================================================================
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow — the Colyseus room
+    // manages game state; subscribing here would hit a non-existent or
+    // inaccessible TurnBasedGames doc and throw a permission error.
+    if (route.params?.inviteId) return;
     if (!matchId) return;
 
     logger.info(`[Chess] Setting up subscription for matchId: ${matchId}`);
@@ -608,7 +654,9 @@ function ChessGameScreen({
         haptics.gameOverPattern(didWin);
 
         // Phase 7: Check achievements on game completion
-        handleGameCompletion(typedMatch as Parameters<typeof handleGameCompletion>[0]).then((result) => {
+        handleGameCompletion(
+          typedMatch as Parameters<typeof handleGameCompletion>[0],
+        ).then((result) => {
           if (result.achievementsAwarded.length > 0) {
             logger.info(
               "[Chess] Game complete, achievements:",
@@ -629,6 +677,8 @@ function ChessGameScreen({
   );
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route.params?.inviteId) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameMode("colyseus");
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
@@ -636,7 +686,7 @@ function ChessGameScreen({
       setGameMode("online");
       setMatchId(firestoreGameId);
     }
-  }, [resolvedMode, firestoreGameId]);
+  }, [resolvedMode, firestoreGameId, route.params?.inviteId]);
 
   // ==========================================================================
   // Game Logic
@@ -969,42 +1019,50 @@ function ChessGameScreen({
   }, [gameMode, mp.isMultiplayer, mp.myPlayerIndex]);
 
   const handleInviteFriend = () => {
-    setShowFriendPicker(true);
+    setGameMode("lobby");
   };
 
-  const handleSelectFriend = async (friend: {
-    friendUid: string;
-    displayName: string;
-  }) => {
+  const handleSelectInviteFriend = async (friend: FriendItem) => {
     setShowFriendPicker(false);
     if (!currentFirebaseUser || !userProfile) return;
 
     setLoading(true);
     try {
-      await sendGameInvite(
-        currentFirebaseUser.uid,
-        userProfile.displayName || "Player",
-        userProfile.avatarConfig
-          ? JSON.stringify(userProfile.avatarConfig)
-          : undefined,
-        {
-          gameType: "chess",
-          recipientId: friend.friendUid,
-          recipientName: friend.displayName,
-          settings: {
-            isRated: false,
-            chatEnabled: false,
-          },
-        },
+      await lobbyController.lobby.sendFriendInvite(
+        friend.friendUid,
+        friend.displayName || friend.username,
+        undefined,
       );
-
-      Alert.alert(
-        "Invite Sent!",
-        `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
-      );
-    } catch (error) {
+    } catch (error: any) {
       logger.error("[Chess] Error sending invite:", error);
-      Alert.alert("Error", "Failed to send game invite. Please try again.");
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to send game invite. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectInviteGroup = async (group: GroupItem) => {
+    setShowFriendPicker(false);
+    if (!currentFirebaseUser || !userProfile) return;
+
+    setLoading(true);
+    try {
+      const members = await getGroupMembers(group.groupId);
+      const memberIds = members.map((m) => m.uid);
+      await lobbyController.lobby.sendGroupInvite(
+        group.groupId,
+        group.name,
+        memberIds,
+      );
+    } catch (error: any) {
+      logger.error("[Chess] Error sending group invite:", error);
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to send group game invite. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -1157,6 +1215,41 @@ function ChessGameScreen({
   };
 
   // ==========================================================================
+  // Lobby Screen (universal overlay)
+  // ==========================================================================
+
+  if (gameMode === "lobby") {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <MultiplayerLobbyOverlay
+          controller={lobbyController}
+          gameTitle="Chess"
+          gameIcon="♟️"
+          onInvitePress={() => setShowFriendPicker(true)}
+          onLeave={() => {
+            lobbyController.lobby.leaveLobby();
+            setGameMode("menu");
+          }}
+          showReadyButton={false}
+        >
+          {/* Children rendered when phase transitions to "playing" */}
+          <View style={{ flex: 1 }} />
+        </MultiplayerLobbyOverlay>
+
+        <InvitePickerModal
+          visible={showFriendPicker}
+          onDismiss={() => setShowFriendPicker(false)}
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
+          currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
+        />
+      </SafeAreaView>
+    );
+  }
+
   // Menu Screen
   // ==========================================================================
 
@@ -1204,12 +1297,13 @@ function ChessGameScreen({
           </View>
         </View>
 
-        <FriendPickerModal
+        <InvitePickerModal
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
-          onSelectFriend={handleSelectFriend}
-          title="Challenge a Friend"
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
           currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
         />
       </SafeAreaView>
     );
@@ -1532,12 +1626,13 @@ function ChessGameScreen({
         </>
       )}
 
-      <FriendPickerModal
+      <InvitePickerModal
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
-        onSelectFriend={handleSelectFriend}
-        title="Challenge a Friend"
+        onSelectFriend={handleSelectInviteFriend}
+        onSelectGroup={handleSelectInviteGroup}
         currentUserId={currentFirebaseUser?.uid || ""}
+        title="Challenge a Friend"
       />
     </SafeAreaView>
   );

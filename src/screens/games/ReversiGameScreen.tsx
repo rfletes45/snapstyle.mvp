@@ -11,9 +11,12 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { SkiaCellHighlight, SkiaGameBoard } from "@/components/games/graphics";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
-import { SkiaCellHighlight, SkiaGameBoard } from "@/components/games/graphics";
 import {
   DrawOfferDialog,
   GameActionBar,
@@ -24,16 +27,24 @@ import {
   TurnBasedWaitingOverlay,
   TurnIndicatorBar,
 } from "@/components/games/TurnBasedOverlay";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
-import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
   PersonalBest,
   recordGameSession,
   sendScorecard,
 } from "@/services/games";
+import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
@@ -55,11 +66,6 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -76,7 +82,7 @@ const GAME_TYPE = "reversi_game";
 type CellState = 0 | 1 | 2; // 0=empty, 1=black, 2=white
 type Board = CellState[][];
 type GameMode = "local" | "ai" | "online";
-type ScreenState = "menu" | "playing" | "result";
+type ScreenState = "menu" | "lobby" | "playing" | "result";
 
 const DIRECTIONS = [
   [-1, -1],
@@ -211,7 +217,13 @@ function ReversiGameScreen({
 }) {
   const __codexGameCompletion = useGameCompletion({ gameType: "reversi" });
   void __codexGameCompletion;
-  useGameBackHandler({ gameType: "reversi", isGameOver: false });
+  const [gameMode, setGameMode] = useState<GameMode>("ai");
+  useGameBackHandler({
+    gameType: "reversi",
+    isGameOver: false,
+    isMultiplayer: gameMode === "online",
+    entryPoint: route?.params?.entryPoint,
+  });
   const __codexGameHaptics = useGameHaptics();
   void __codexGameHaptics;
   const __codexGameOverModal = (
@@ -224,8 +236,9 @@ function ReversiGameScreen({
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
 
-  const [screenState, setScreenState] = useState<ScreenState>("menu");
-  const [gameMode, setGameMode] = useState<GameMode>("ai");
+  const [screenState, setScreenState] = useState<ScreenState>(
+    route?.params?.inviteId ? "lobby" : "menu",
+  );
   const [board, setBoard] = useState<Board>(createBoard());
   const [currentPlayer, setCurrentPlayer] = useState<CellState>(1);
   const [validMoves, setValidMoves] = useState<Set<string>>(new Set());
@@ -238,9 +251,31 @@ function ReversiGameScreen({
   const [isSending, setIsSending] = useState(false);
   const [lastMove, setLastMove] = useState<[number, number] | null>(null);
 
-  // Colyseus multiplayer hook
-  const mp = useTurnBasedGame("reversi_game");
+  // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const isSpectator = route?.params?.spectatorMode === true;
+  const mp = useTurnBasedGame("reversi_game");
+
+  // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
+  const lobbyController = useGameLobbyController({
+    gameType: "reversi",
+    inviteId: route?.params?.inviteId,
+    entryPoint: route?.params?.entryPoint,
+    isTurnBased: true,
+    onGameReady: (gameId: string) => {
+      setGameMode("online");
+      setScreenState("playing");
+      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+    },
+    onLeaveLobby: () => {
+      setScreenState("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
+  });
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
     room: mp.room,
@@ -250,6 +285,56 @@ function ReversiGameScreen({
   const [showResignConfirm, setShowResignConfirm] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
 
+  const handleSelectInviteFriend = useCallback(
+    async (friend: FriendItem) => {
+      if (!currentFirebaseUser) return;
+      try {
+        await lobbyController.lobby.sendFriendInvite(
+          friend.friendUid,
+          friend.displayName || "Friend",
+          undefined,
+        );
+        showSuccess("Invite sent!");
+      } catch {
+        showError("Failed to send invite");
+      }
+      setShowInviteModal(false);
+    },
+    [
+      currentFirebaseUser,
+      profile,
+      showSuccess,
+      showError,
+      lobbyController.lobby,
+    ],
+  );
+
+  const handleSelectInviteGroup = useCallback(
+    async (group: GroupItem) => {
+      if (!currentFirebaseUser) return;
+      try {
+        const members = await getGroupMembers(group.groupId);
+        const memberIds = members.map((m) => m.uid);
+        await lobbyController.lobby.sendGroupInvite(
+          group.groupId,
+          group.name,
+          memberIds,
+        );
+        showSuccess(`Invite sent to ${group.name}!`);
+      } catch {
+        showError("Failed to send group invite");
+      }
+      setShowInviteModal(false);
+    },
+    [
+      currentFirebaseUser,
+      profile,
+      showSuccess,
+      showError,
+      lobbyController.lobby,
+    ],
+  );
+
   // Handle incoming match from route params (invite flow)
   const { resolvedMode, firestoreGameId } = useGameConnection(
     "reversi_game",
@@ -257,10 +342,12 @@ function ReversiGameScreen({
   );
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route?.params?.inviteId) return;
     if (resolvedMode && firestoreGameId) {
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
     }
-  }, [resolvedMode, firestoreGameId, isSpectator]);
+  }, [resolvedMode, firestoreGameId, isSpectator, route?.params?.inviteId]);
 
   // Derive Colyseus board as 2D array for rendering
   const colyseusBoard: Board | null =
@@ -445,6 +532,24 @@ function ReversiGameScreen({
         <View style={{ width: 40 }} />
       </View>
 
+      {screenState === "lobby" && (
+        <View style={{ flex: 1 }}>
+          <MultiplayerLobbyOverlay
+            controller={lobbyController}
+            gameTitle="Reversi"
+            gameIcon="⚪"
+            onInvitePress={() => setShowInviteModal(true)}
+            onLeave={() => {
+              lobbyController.lobby.leaveLobby();
+              setScreenState("menu");
+            }}
+            showReadyButton={false}
+          >
+            <View style={{ flex: 1 }} />
+          </MultiplayerLobbyOverlay>
+        </View>
+      )}
+
       {screenState === "menu" && (
         <View style={styles.menuContainer}>
           <Text style={[styles.menuTitle, { color: colors.text }]}>
@@ -506,7 +611,7 @@ function ReversiGameScreen({
           {mp.isAvailable && (
             <Button
               mode="contained-tonal"
-              onPress={() => setShowInviteModal(true)}
+              onPress={() => setScreenState("lobby")}
               icon="account-plus"
               style={{ marginTop: 12 }}
             >
@@ -709,30 +814,11 @@ function ReversiGameScreen({
         title="Send Score To"
       />
 
-      <FriendPickerModal
+      <InvitePickerModal
         visible={showInviteModal}
         onDismiss={() => setShowInviteModal(false)}
-        onSelectFriend={async (friend) => {
-          if (!currentFirebaseUser) return;
-          try {
-            await sendGameInvite(
-              currentFirebaseUser.uid,
-              profile?.displayName || "Player",
-              profile?.avatarConfig
-                ? JSON.stringify(profile.avatarConfig)
-                : undefined,
-              {
-                gameType: GAME_TYPE,
-                recipientId: friend.friendUid,
-                recipientName: friend.displayName || "Friend",
-              },
-            );
-            showSuccess("Invite sent!");
-          } catch {
-            showError("Failed to send invite");
-          }
-          setShowInviteModal(false);
-        }}
+        onSelectFriend={handleSelectInviteFriend}
+        onSelectGroup={handleSelectInviteGroup}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Challenge a Friend"
       />
@@ -770,20 +856,20 @@ function ReversiGameScreen({
         mp.isMultiplayer &&
         mp.phase === "playing" &&
         !isSpectator && (
-        <GameActionBar
-          onResign={() => setShowResignConfirm(true)}
-          onOfferDraw={mp.offerDraw}
-          isMyTurn={mp.isMyTurn}
-          drawPending={mp.drawPending}
-          colors={{
-            primary: colors.primary,
-            background: colors.background,
-            surface: colors.surface,
-            text: colors.text,
-            textSecondary: colors.textSecondary,
-            border: colors.border,
-          }}
-        />
+          <GameActionBar
+            onResign={() => setShowResignConfirm(true)}
+            onOfferDraw={mp.offerDraw}
+            isMyTurn={mp.isMyTurn}
+            drawPending={mp.drawPending}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+          />
         )}
 
       {/* Colyseus Multiplayer Overlays */}

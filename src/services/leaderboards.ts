@@ -7,10 +7,10 @@
  * - Leaderboard entry updates (via Cloud Function preferred)
  */
 
+import { EXTENDED_GAME_SCORE_LIMITS, ExtendedGameType } from "@/types/games";
 import {
   AvatarConfig,
   Friend,
-  GameType,
   getCurrentWeekKey,
   LeaderboardEntry,
   WeekKey,
@@ -29,7 +29,6 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 import { getFriends } from "./friends";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/leaderboards");
@@ -60,7 +59,7 @@ function toMillis(value: unknown): number | undefined {
 export interface LeaderboardResult {
   entries: LeaderboardEntry[];
   weekKey: WeekKey;
-  gameId: GameType;
+  gameId: string;
   userRank?: number;
   userEntry?: LeaderboardEntry;
 }
@@ -73,7 +72,7 @@ export interface LeaderboardResult {
  * Get the collection path for a leaderboard
  * Format: Leaderboards/{gameId}_{weekKey}/Entries
  */
-function getLeaderboardPath(gameId: GameType, weekKey: WeekKey): string {
+function getLeaderboardPath(gameId: string, weekKey: WeekKey): string {
   return `Leaderboards/${gameId}_${weekKey}`;
 }
 
@@ -86,7 +85,7 @@ function getLeaderboardPath(gameId: GameType, weekKey: WeekKey): string {
  * Returns top 100 entries sorted by score
  */
 export async function getWeeklyLeaderboard(
-  gameId: GameType,
+  gameId: string,
   weekKey?: WeekKey,
 ): Promise<LeaderboardResult> {
   const db = getFirestoreInstance();
@@ -96,9 +95,9 @@ export async function getWeeklyLeaderboard(
   try {
     const entriesRef = collection(db, leaderboardPath, "Entries");
 
-    // For reaction_tap, lower is better (ascending)
-    // For timed_tap, higher is better (descending)
-    const sortDirection = gameId === "reaction_tap" ? "asc" : "desc";
+    // Use score direction from game metadata
+    const limits = EXTENDED_GAME_SCORE_LIMITS[gameId as ExtendedGameType];
+    const sortDirection = limits?.scoreDirection === "lower" ? "asc" : "desc";
 
     const q = query(
       entriesRef,
@@ -141,7 +140,7 @@ export async function getWeeklyLeaderboard(
  */
 export async function getFriendsLeaderboard(
   userId: string,
-  gameId: GameType,
+  gameId: string,
   weekKey?: WeekKey,
 ): Promise<LeaderboardResult> {
   const db = getFirestoreInstance();
@@ -191,7 +190,8 @@ export async function getFriendsLeaderboard(
     }
 
     // Sort entries by score
-    const sortDirection = gameId === "reaction_tap" ? 1 : -1; // 1 for asc, -1 for desc
+    const limits2 = EXTENDED_GAME_SCORE_LIMITS[gameId as ExtendedGameType];
+    const sortDirection = limits2?.scoreDirection === "lower" ? 1 : -1;
     entries.sort((a, b) => (a.score - b.score) * sortDirection);
 
     // Add ranks
@@ -231,7 +231,7 @@ export async function getFriendsLeaderboard(
  */
 export async function getUserRank(
   userId: string,
-  gameId: GameType,
+  gameId: string,
   weekKey?: WeekKey,
 ): Promise<{ rank: number; entry: LeaderboardEntry } | null> {
   const db = getFirestoreInstance();
@@ -253,8 +253,9 @@ export async function getUserRank(
     // Count how many entries have a better score
     const entriesRef = collection(db, leaderboardPath, "Entries");
     let betterScoresQuery;
+    const limits3 = EXTENDED_GAME_SCORE_LIMITS[gameId as ExtendedGameType];
 
-    if (gameId === "reaction_tap") {
+    if (limits3?.scoreDirection === "lower") {
       // Lower is better - count entries with lower scores
       betterScoresQuery = query(entriesRef, where("score", "<", userScore));
     } else {
@@ -295,7 +296,7 @@ export async function getUserRank(
  */
 export async function updateLeaderboardEntry(
   userId: string,
-  gameId: GameType,
+  gameId: string,
   score: number,
   displayName: string,
   avatarConfig: AvatarConfig,
@@ -311,8 +312,9 @@ export async function updateLeaderboardEntry(
     // Check if we should update (better score)
     if (existingEntry.exists()) {
       const existingScore = existingEntry.data().score;
+      const limits4 = EXTENDED_GAME_SCORE_LIMITS[gameId as ExtendedGameType];
       const isBetter =
-        gameId === "reaction_tap"
+        limits4?.scoreDirection === "lower"
           ? score < existingScore // Lower is better
           : score > existingScore; // Higher is better
 

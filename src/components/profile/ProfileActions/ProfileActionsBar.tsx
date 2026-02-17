@@ -10,8 +10,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View, ViewStyle } from "react-native";
-import { Button, useTheme } from "react-native-paper";
+import { Button } from "react-native-paper";
 
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileRelationship } from "@/types/userProfile";
 
 // =============================================================================
@@ -66,16 +67,7 @@ function ProfileActionsBarBase({
   onMoreOptions,
   style,
 }: ProfileActionsBarProps) {
-  const theme = useTheme();
-  const colors = {
-    primary: theme.colors.primary,
-    secondary: theme.colors.secondary,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    error: theme.colors.error,
-  };
+  const colors = useColors();
 
   // Render based on relationship type
   switch (relationship.type) {

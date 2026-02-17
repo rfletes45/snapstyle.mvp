@@ -239,7 +239,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to send messages");
     }
     const senderId = context.auth.uid;
-    const { conversationId, scope, kind, text, replyTo, mentionUids, attachments, clientId, messageId, createdAt, } = data;
+    const { conversationId, scope, kind, text, replyTo, mentionUids, mentionSpans, attachments, clientId, messageId, createdAt, } = data;
     console.log(`[sendMessageV2] Request from ${senderId.substring(0, 8)}:`, sanitizeForLog({ conversationId, scope, kind, messageId }));
     // 2. Validate required fields
     if (!isValidString(conversationId, 1, 100)) {
@@ -248,7 +248,15 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (!["dm", "group"].includes(scope)) {
         throw new functions.https.HttpsError("invalid-argument", "Scope must be 'dm' or 'group'");
     }
-    if (!["text", "media", "voice", "file", "system", "scorecard"].includes(kind)) {
+    if (![
+        "text",
+        "media",
+        "voice",
+        "file",
+        "system",
+        "scorecard",
+        "game_invite",
+    ].includes(kind)) {
         throw new functions.https.HttpsError("invalid-argument", "Invalid message kind");
     }
     if (!isValidString(clientId, 1, 100)) {
@@ -330,6 +338,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         media: "image",
         voice: "voice",
         scorecard: "scorecard",
+        game_invite: "scorecard",
         system: "system",
         file: "text", // files shown as text in legacy
     };
@@ -359,6 +368,9 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (mentionUids && mentionUids.length > 0) {
         messageData.mentionUids = mentionUids;
     }
+    if (mentionSpans && mentionSpans.length > 0) {
+        messageData.mentionSpans = mentionSpans;
+    }
     if (attachments && attachments.length > 0) {
         messageData.attachments = attachments;
     }
@@ -380,14 +392,23 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         ? db.collection("Chats").doc(conversationId)
         : db.collection("Groups").doc(conversationId);
     try {
-        await conversationRef.update({
+        const conversationUpdate = {
             lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
             lastMessageId: messageId,
-            lastMessageText: previewText, // Match field name used by ChatListScreen
+            lastMessageText: previewText,
             lastMessageKind: kind,
             lastMessageSenderId: senderId,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        // Store mention UIDs on conversation doc for in-app notification routing
+        if (mentionUids && mentionUids.length > 0) {
+            conversationUpdate.lastMentionUids = mentionUids;
+        }
+        else {
+            conversationUpdate.lastMentionUids =
+                admin.firestore.FieldValue.delete();
+        }
+        await conversationRef.update(conversationUpdate);
     }
     catch (updateError) {
         // Log but don't fail - preview is not critical
@@ -430,6 +451,22 @@ function getPreviewText(kind, text, attachments) {
         return "📎 File";
     if (kind === "system")
         return text || "System message";
+    if (kind === "scorecard") {
+        try {
+            const data = JSON.parse(text || "");
+            if (data.type === "spectator_invite") {
+                return data.finished
+                    ? `🏆 Game ended — ${data.gameName || "Game"}`
+                    : `👁️ Watch me play ${data.gameName || "a game"}!`;
+            }
+            return `🎮 ${data.playerName || "Someone"} scored ${data.score ?? 0}`;
+        }
+        catch {
+            return "🎮 Game result";
+        }
+    }
+    if (kind === "game_invite")
+        return "🎮 Game invite";
     return text || "";
 }
 // =============================================================================

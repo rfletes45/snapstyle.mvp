@@ -65,20 +65,6 @@ export { ProfileStats } from "./ProfileStats";
 export type { ProfileStatsProps } from "./ProfileStats";
 
 // =============================================================================
-// Phase 4 - Profile Theme Components
-// =============================================================================
-export {
-  ProfileBackground,
-  ProfileThemePicker,
-  ThemePreview,
-} from "./ProfileTheme";
-export type {
-  ProfileBackgroundProps,
-  ProfileThemePickerProps,
-  ThemePreviewProps,
-} from "./ProfileTheme";
-
-// =============================================================================
 // Phase 5 - Game Scores Components
 // =============================================================================
 export {
@@ -103,7 +89,6 @@ export {
   ProfileBioSkeleton,
   ProfileHeaderSkeleton,
   SkeletonBox,
-  ThemePreviewSkeleton,
 } from "./ProfileSkeletons";
 
 // =============================================================================

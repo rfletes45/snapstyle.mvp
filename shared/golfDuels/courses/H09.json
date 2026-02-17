@@ -1,0 +1,42 @@
+{
+  "id": "H09",
+  "name": "Portal Skip",
+  "difficulty": 3,
+  "par": 2,
+  "maxStrokes": 8,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 20, "y": 52 },
+  "cup": { "x": 80, "y": 8 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 5, "y": 0 },
+      { "x": 45, "y": 0 },
+      { "x": 45, "y": 60 },
+      { "x": 5, "y": 60 }
+    ],
+    [
+      { "x": 55, "y": 0 },
+      { "x": 95, "y": 0 },
+      { "x": 95, "y": 60 },
+      { "x": 55, "y": 60 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": [],
+  "portals": [
+    {
+      "id": "portal_a",
+      "position": { "x": 20, "y": 15 },
+      "radius": 3,
+      "targetId": "portal_b"
+    },
+    {
+      "id": "portal_b",
+      "position": { "x": 80, "y": 45 },
+      "radius": 3,
+      "targetId": "portal_a"
+    }
+  ]
+}

@@ -25,12 +25,12 @@ import {
   Divider,
   RadioButton,
   Text,
-  useTheme,
 } from "react-native-paper";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 
 // =============================================================================
@@ -93,18 +93,9 @@ export const MuteOptionsModal = memo(function MuteOptionsModal({
   onClose,
   loading = false,
 }: MuteOptionsModalProps) {
-  const theme = useTheme();
+  const colors = useColors();
   const insets = useSafeAreaInsets();
-
-  const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-    warning: "#FFA000",
-    error: theme.colors.error,
-  };
+  const warning = "#FFA000";
 
   // State
   const [selectedDuration, setSelectedDuration] = useState<number | null>(
@@ -180,7 +171,7 @@ export const MuteOptionsModal = memo(function MuteOptionsModal({
                 <MaterialCommunityIcons
                   name="bell-off"
                   size={32}
-                  color={colors.warning}
+                  color={warning}
                 />
                 <Text style={[styles.title, { color: colors.text }]}>
                   {isCurrentlyMuted ? "Mute Settings" : "Mute"} @{username}

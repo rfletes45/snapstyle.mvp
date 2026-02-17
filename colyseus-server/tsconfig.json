@@ -16,6 +16,10 @@
     "sourceMap": true,
     "moduleResolution": "node"
   },
-  "include": ["src/**/*", "../packages/golf-duels-shared/src/**/*"],
+  "include": [
+    "src/**/*",
+    "../packages/golf-duels-shared/src/**/*",
+    "../shared/golfDuels/**/*"
+  ],
   "exclude": ["node_modules", "dist", "tests"]
 }

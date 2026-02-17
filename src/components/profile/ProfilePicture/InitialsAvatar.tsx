@@ -9,7 +9,6 @@
 
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View, ViewStyle } from "react-native";
-import { useTheme } from "react-native-paper";
 
 export interface InitialsAvatarProps {
   /** User's display name or username */
@@ -90,8 +89,6 @@ export function InitialsAvatar({
   backgroundColor,
   style,
 }: InitialsAvatarProps) {
-  const { colors } = useTheme();
-
   const initials = useMemo(() => getInitials(name), [name]);
   const bgColor = useMemo(
     () => backgroundColor || stringToColor(name),

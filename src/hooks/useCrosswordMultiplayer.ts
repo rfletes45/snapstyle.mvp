@@ -15,7 +15,7 @@
  *   } = useCrosswordMultiplayer({ gameType: "crossword_puzzle_game" });
  */
 
-import { Room } from "@colyseus/sdk";
+import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useColyseus, UseColyseusOptions } from "./useColyseus";
 import { useColyseusAppState } from "./useColyseusAppState";
@@ -187,14 +187,14 @@ export function useCrosswordMultiplayer(
         ? state.grid
         : Object.values(state.grid || {});
 
-        const newGrid: GridCellState[][] = [];
-        for (let r = 0; r < sz; r++) {
-          const row: GridCellState[] = [];
-          for (let c = 0; c < sz; c++) {
-            const cell = flatGrid[r * sz + c] as CrosswordGridCellState;
-            row.push({
-              letter: cell?.letter || "",
-              blocked: cell?.blocked || false,
+      const newGrid: GridCellState[][] = [];
+      for (let r = 0; r < sz; r++) {
+        const row: GridCellState[] = [];
+        for (let c = 0; c < sz; c++) {
+          const cell = flatGrid[r * sz + c] as CrosswordGridCellState;
+          row.push({
+            letter: cell?.letter || "",
+            blocked: cell?.blocked || false,
             correct: cell?.correct || false,
             placedBy: cell?.placedBy || "",
           });

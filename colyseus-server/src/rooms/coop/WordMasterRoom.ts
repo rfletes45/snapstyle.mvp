@@ -31,6 +31,7 @@ import {
 } from "../../schemas/draw";
 import { verifyFirebaseToken } from "../../services/firebase";
 import { persistGameResult } from "../../services/persistence";
+import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
 // Constants
@@ -650,13 +651,25 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // ── Protocol version gate ─────────────────────────────────────────────
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
     };
   }
 
@@ -850,7 +863,10 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
 
   async onDispose(): Promise<void> {
     if (this.state.phase === "finished") {
-      await persistGameResult(this.state as unknown as BaseGameState, this.state.elapsed);
+      await persistGameResult(
+        this.state as unknown as BaseGameState,
+        this.state.elapsed,
+      );
     }
     log.info(`[word_master] Room disposed: ${this.roomId}`);
   }
@@ -998,5 +1014,3 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
     log.info(`[word_master] Room reset for rematch`);
   }
 }
-
-

@@ -2,14 +2,16 @@
  * Games Type Definitions
  *
  * This file contains all type definitions for the games expansion including:
- * - Single-player game types (Bounce Blitz, Snake, etc.)
+ * - Single-player game types (Bounce Blitz, Pong, etc.)
  * - Turn-based multiplayer types (Chess, Checkers, Crazy Eights)
- * - Real-time multiplayer types (8-Ball Pool)
+ * - Real-time multiplayer types (Starforge, Sketch Party)
  * - Game metadata and configuration
  *
  * @see docs/06_GAMES_RESEARCH.md for physics research
  * @see docs/PROMPT_GAMES_EXPANSION.md for full implementation plan
  */
+
+import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 
 // =============================================================================
 // Game Type Unions
@@ -22,8 +24,6 @@ export type SinglePlayerGameType =
   | "bounce_blitz" // Ballz-style
   | "play_2048" // 2048 puzzle
   | "word_master" // Daily word puzzle (Wordle-style)
-  | "reaction_tap" // Existing - tap when green
-  | "timed_tap" // Existing - tap count in 10s
   | "brick_breaker" // Classic Breakout/Arkanoid
   | "minesweeper_classic" // Classic Minesweeper
   | "lights_out" // Lights Out puzzle
@@ -46,12 +46,10 @@ export type TurnBasedGameType =
  * Real-time multiplayer games (simulated turn-based for pool)
  */
 export type RealTimeGameType =
-  | "8ball_pool"
-  | "air_hockey"
   | "crossword_puzzle" // Daily mini crossword
-  | "golf_duels" // Multiplayer mini-golf
-  | "tropical_fishing" // Tropical island fishing
-  | "starforge_game"; // Starforge incremental
+  | "starforge_game" // Starforge incremental
+  | "sketch_party_game" // Sketch Party (skribbl-style)
+  | "minigolf_duels"; // Mini-Golf Duels
 
 /**
  * All game types combined
@@ -96,34 +94,6 @@ export interface GameMetadata {
  */
 export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   // Single-player: Quick Play
-  reaction_tap: {
-    id: "reaction_tap",
-    name: "Reaction Tap",
-    shortName: "Reaction",
-    description: "Wait for green, tap as fast as possible!",
-    icon: "⚡",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-  },
-  timed_tap: {
-    id: "timed_tap",
-    name: "Timed Tap",
-    shortName: "Timed",
-    description: "Tap as many times as you can in 10 seconds!",
-    icon: "⏱️",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-  },
   bounce_blitz: {
     id: "bounce_blitz",
     name: "Bounce Blitz",
@@ -369,50 +339,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isNew: true,
   },
 
-  // Multiplayer: Real-time (simulated)
-  "8ball_pool": {
-    id: "8ball_pool",
-    name: "8-Ball Pool",
-    shortName: "Pool",
-    description: "Sink your balls and the 8-ball to win!",
-    icon: "🎱",
-    category: "multiplayer",
-    minPlayers: 2,
-    maxPlayers: 2,
-    isMultiplayer: true,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-  },
-  air_hockey: {
-    id: "air_hockey",
-    name: "Air Hockey",
-    shortName: "Hockey",
-    description: "Score goals against your opponent!",
-    icon: "🏒",
-    category: "multiplayer",
-    minPlayers: 2,
-    maxPlayers: 2,
-    isMultiplayer: true,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-  },
-  tropical_fishing: {
-    id: "tropical_fishing",
-    name: "Tropical Fishing",
-    shortName: "Fishing",
-    description: "Explore islands, catch rare fish, and party up with friends.",
-    icon: "🎣",
-    category: "multiplayer",
-    minPlayers: 2,
-    maxPlayers: 10,
-    isMultiplayer: true,
-    hasLeaderboard: false,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-  },
+  // Multiplayer: Real-time
   starforge_game: {
     id: "starforge_game",
     name: "Starforge",
@@ -429,19 +356,36 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isAvailable: true,
     isNew: true,
   },
-  golf_duels: {
-    id: "golf_duels",
-    name: "Golf Duels",
+  sketch_party_game: {
+    id: "sketch_party_game",
+    name: "Sketch Party",
+    shortName: "Sketch",
+    description: "Draw the word. Guess fast. Score points.",
+    icon: "🎨",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 10,
+    isMultiplayer: true,
+    hasLeaderboard: false,
+    hasAchievements: false,
+    isAvailable: true, // Gated by PARTY_ENABLED at runtime via featureFlags
+    isNew: true,
+    comingSoon: false,
+  },
+  minigolf_duels: {
+    id: "minigolf_duels",
+    name: "Mini-Golf Duels",
     shortName: "Golf",
-    description: "1v1 mini-golf — aim, shoot, and sink it in fewer strokes!",
+    description:
+      "Sink the putt. Beat your rival across 9 holes of tricky mini-golf.",
     icon: "⛳",
     category: "multiplayer",
     minPlayers: 2,
     maxPlayers: 2,
     isMultiplayer: true,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
+    hasLeaderboard: false,
+    hasAchievements: false,
+    isAvailable: COLYSEUS_FEATURES.PHYSICS_ENABLED,
     isNew: true,
   },
 };
@@ -465,20 +409,7 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
   ExtendedGameType,
   GameScoreLimits
 > = {
-  // Existing games
-  reaction_tap: {
-    minScore: 100,
-    maxScore: 2000,
-    scoreDirection: "lower", // Lower ms is better
-  },
-  timed_tap: {
-    minScore: 1,
-    maxScore: 200,
-    maxDuration: 10000,
-    scoreDirection: "higher", // More taps is better
-  },
-
-  // New single-player games
+  // Single-player games
   bounce_blitz: {
     minScore: 0,
     maxScore: 999999,
@@ -546,21 +477,6 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 9999,
     scoreDirection: "higher", // Wins
   },
-  "8ball_pool": {
-    minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher",
-  },
-  air_hockey: {
-    minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher",
-  },
-  tropical_fishing: {
-    minScore: 0,
-    maxScore: 999999,
-    scoreDirection: "higher",
-  },
 
   pong_game: {
     minScore: 0,
@@ -584,10 +500,15 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999999999,
     scoreDirection: "higher", // Total flux earned
   },
-  golf_duels: {
+  sketch_party_game: {
     minScore: 0,
-    maxScore: 9999,
-    scoreDirection: "higher", // Wins
+    maxScore: 99999,
+    scoreDirection: "higher", // Points accumulated
+  },
+  minigolf_duels: {
+    minScore: 0,
+    maxScore: 999,
+    scoreDirection: "lower", // Fewer total strokes is better
   },
 };
 
@@ -637,10 +558,6 @@ export function getGameMetadata(type: ExtendedGameType): GameMetadata {
  */
 export function formatGameScore(type: ExtendedGameType, score: number): string {
   switch (type) {
-    case "reaction_tap":
-      return `${score}ms`;
-    case "timed_tap":
-      return `${score} taps`;
     case "bounce_blitz":
     case "play_2048":
     case "brick_breaker":
@@ -655,8 +572,6 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return `${score} boxes`;
     case "crossword_puzzle":
       return `${score}s`;
-    case "tropical_fishing":
-      return `${score} fish`;
     case "starforge_game":
       return `${(score / 1000).toFixed(1)} flux`;
     case "pong_game":
@@ -664,15 +579,14 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     // Multiplayer games
     case "chess":
     case "checkers":
-    case "8ball_pool":
     case "tic_tac_toe":
     case "crazy_eights":
-    case "air_hockey":
     case "connect_four":
     case "gomoku_master":
     case "reversi_game":
-    case "golf_duels":
       return `${score} wins`;
+    case "sketch_party_game":
+      return `${score.toLocaleString()} pts`;
     default:
       return score.toString();
   }

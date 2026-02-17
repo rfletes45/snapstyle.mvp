@@ -130,12 +130,6 @@ const TABS: ShopTab[] = [
         icon: "flag-variant",
         slots: ["profile_banner"],
       },
-      {
-        key: "themes",
-        label: "Themes",
-        icon: "palette",
-        slots: ["profile_theme"],
-      },
     ],
   },
   {

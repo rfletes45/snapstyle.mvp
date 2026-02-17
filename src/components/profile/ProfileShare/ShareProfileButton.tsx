@@ -10,9 +10,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useState } from "react";
 import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
-import { IconButton, Text, useTheme } from "react-native-paper";
+import { IconButton, Text } from "react-native-paper";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 
 import { QRCodeModal } from "./QRCodeModal";
@@ -49,14 +50,7 @@ function ShareProfileButtonBase({
   style,
   disabled = false,
 }: ShareProfileButtonProps) {
-  const theme = useTheme();
-
-  const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    primary: theme.colors.primary,
-    surfaceVariant: theme.colors.surfaceVariant,
-  };
+  const colors = useColors();
 
   // State
   const [shareModalVisible, setShareModalVisible] = useState(false);

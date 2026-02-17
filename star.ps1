@@ -1,6 +1,4 @@
 param(
-  [switch]$SkipFishingBuild,
-  [switch]$RebuildFishing,
   [switch]$NoExpoClear
 )
 
@@ -12,6 +10,4 @@ if (-not (Test-Path $startScript)) {
 }
 
 & $startScript `
-  -SkipFishingBuild:$SkipFishingBuild `
-  -RebuildFishing:$RebuildFishing `
   -NoExpoClear:$NoExpoClear

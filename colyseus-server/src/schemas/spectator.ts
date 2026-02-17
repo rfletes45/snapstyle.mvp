@@ -92,8 +92,8 @@ export class SpectatorRoomState extends Schema {
   /** Number of connected spectators */
   @type("uint8") spectatorCount: number = 0;
 
-  /** Maximum spectators allowed */
-  @type("uint8") maxSpectators: number = 10;
+  /** Maximum spectators allowed (soft cap — room maxClients is higher) */
+  @type("uint8") maxSpectators: number = 50;
 
   /**
    * Epoch ms when the current helper/boost session ends.

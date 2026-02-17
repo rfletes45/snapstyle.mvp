@@ -12,7 +12,6 @@ import { Text } from "react-native-paper";
 
 import type { SpectatorRendererProps } from "./types";
 
-import { AirHockeySpectatorRenderer } from "./AirHockeySpectatorRenderer";
 import { BounceBlitzSpectatorRenderer } from "./BounceBlitzSpectatorRenderer";
 import { BrickBreakerSpectatorRenderer } from "./BrickBreakerSpectatorRenderer";
 import { CheckersSpectatorRenderer } from "./CheckersSpectatorRenderer";
@@ -21,25 +20,19 @@ import { ConnectFourSpectatorRenderer } from "./ConnectFourSpectatorRenderer";
 import { CrazyEightsSpectatorRenderer } from "./CrazyEightsSpectatorRenderer";
 import { CrosswordSpectatorRenderer } from "./CrosswordSpectatorRenderer";
 import { DotMatchSpectatorRenderer } from "./DotMatchSpectatorRenderer";
-import { GolfDuelsSpectatorRenderer } from "./GolfDuelsSpectatorRenderer";
 import { GomokuSpectatorRenderer } from "./GomokuSpectatorRenderer";
 import { HexSpectatorRenderer } from "./HexSpectatorRenderer";
 import { LightsOutSpectatorRenderer } from "./LightsOutSpectatorRenderer";
 import { MinesweeperSpectatorRenderer } from "./MinesweeperSpectatorRenderer";
 import { Play2048SpectatorRenderer } from "./Play2048SpectatorRenderer";
 import { PongSpectatorRenderer } from "./PongSpectatorRenderer";
-import { PoolSpectatorRenderer } from "./PoolSpectatorRenderer";
-import { ReactionTapSpectatorRenderer } from "./ReactionTapSpectatorRenderer";
 import { ReversiSpectatorRenderer } from "./ReversiSpectatorRenderer";
 import { TicTacToeSpectatorRenderer } from "./TicTacToeSpectatorRenderer";
-import { TimedTapSpectatorRenderer } from "./TimedTapSpectatorRenderer";
 import { WordMasterSpectatorRenderer } from "./WordMasterSpectatorRenderer";
 
 // ─── Renderer map ───────────────────────────────────────────────────────
 
 const RENDERERS: Record<string, React.ComponentType<SpectatorRendererProps>> = {
-  "8ball_pool": PoolSpectatorRenderer,
-  air_hockey: AirHockeySpectatorRenderer,
   brick_breaker: BrickBreakerSpectatorRenderer,
   checkers: CheckersSpectatorRenderer,
   chess: ChessSpectatorRenderer,
@@ -47,7 +40,6 @@ const RENDERERS: Record<string, React.ComponentType<SpectatorRendererProps>> = {
   crazy_eights: CrazyEightsSpectatorRenderer,
   crossword_puzzle: CrosswordSpectatorRenderer,
   dot_match: DotMatchSpectatorRenderer,
-  golf_duels: GolfDuelsSpectatorRenderer,
   gomoku_master: GomokuSpectatorRenderer,
   hex: HexSpectatorRenderer,
   reversi_game: ReversiSpectatorRenderer,
@@ -57,8 +49,6 @@ const RENDERERS: Record<string, React.ComponentType<SpectatorRendererProps>> = {
   word_master: WordMasterSpectatorRenderer,
   lights_out: LightsOutSpectatorRenderer,
   minesweeper_classic: MinesweeperSpectatorRenderer,
-  timed_tap: TimedTapSpectatorRenderer,
-  reaction_tap: ReactionTapSpectatorRenderer,
   bounce_blitz: BounceBlitzSpectatorRenderer,
 };
 

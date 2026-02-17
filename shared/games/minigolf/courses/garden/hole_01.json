@@ -1,0 +1,22 @@
+{
+  "id": "garden_1",
+  "packId": "garden",
+  "name": "Garden Path",
+  "par": 2,
+  "maxStrokes": 8,
+  "bounds": { "width": 300, "height": 700 },
+  "tee": { "x": 150, "y": 600 },
+  "cup": { "x": 150, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 250, "y": 0 },
+      { "x": 250, "y": 700 },
+      { "x": 50, "y": 700 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": []
+}

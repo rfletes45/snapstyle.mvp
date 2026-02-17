@@ -1,0 +1,51 @@
+{
+  "id": "H18",
+  "name": "Slope & Sand",
+  "difficulty": 4,
+  "par": 3,
+  "maxStrokes": 8,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 15, "y": 50 },
+  "cup": { "x": 85, "y": 10 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ],
+    [
+      { "x": 50, "y": 20 },
+      { "x": 50, "y": 60 }
+    ]
+  ],
+  "surfaces": [
+    {
+      "id": "sand_1",
+      "type": "sand",
+      "poly": [
+        { "x": 55, "y": 5 },
+        { "x": 80, "y": 5 },
+        { "x": 80, "y": 20 },
+        { "x": 55, "y": 20 }
+      ],
+      "frictionMul": 3.5
+    }
+  ],
+  "hazards": [],
+  "obstacles": [],
+  "slopes": [
+    {
+      "id": "slope_1",
+      "poly": [
+        { "x": 15, "y": 15 },
+        { "x": 45, "y": 15 },
+        { "x": 45, "y": 45 },
+        { "x": 15, "y": 45 }
+      ],
+      "direction": { "x": 0, "y": -1 },
+      "strength": 0.25
+    }
+  ]
+}

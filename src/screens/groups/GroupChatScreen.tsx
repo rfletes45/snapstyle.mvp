@@ -138,7 +138,12 @@ const getGroupCallService = () => {
 // Game Picker
 import { GamePickerModal } from "@/components/games/GamePickerModal";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
-import { ExtendedGameType } from "@/types/games";
+import {
+  ExtendedGameType,
+  formatGameScore,
+  GAME_METADATA,
+} from "@/types/games";
+import type { UniversalGameInvite } from "@/types/turnBased";
 
 // Types
 import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
@@ -299,6 +304,55 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Attachment & Voice Hooks
   // ==========================================================================
 
+  // Send an in-app camera capture directly as a media message (skip tray).
+  const handleDirectCameraSend = useCallback(
+    async (imageUri: string) => {
+      if (!uid || screen.sending) return;
+      try {
+        const id = `cam_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        await screen.chat.sendMessage("", {
+          kind: "media",
+          attachments: [
+            {
+              id,
+              uri: imageUri,
+              kind: "image",
+              mime: "image/jpeg",
+            },
+          ],
+        });
+      } catch (error: any) {
+        setSnackbar({
+          visible: true,
+          message: error.message || "Failed to send photo",
+        });
+      }
+    },
+    [uid, screen.chat, screen.sending],
+  );
+
+  // Send gallery-selected images directly as media messages (skip tray).
+  const handleDirectGallerySend = useCallback(
+    async (imageUris: string[]) => {
+      if (!uid || screen.sending) return;
+      for (const uri of imageUris) {
+        try {
+          const id = `gal_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+          await screen.chat.sendMessage("", {
+            kind: "media",
+            attachments: [{ id, uri, kind: "image", mime: "image/jpeg" }],
+          });
+        } catch (error: any) {
+          setSnackbar({
+            visible: true,
+            message: error.message || "Failed to send photo",
+          });
+        }
+      }
+    },
+    [uid, screen.chat, screen.sending],
+  );
+
   const attachmentPicker = useAttachmentPicker({
     maxAttachments: 10,
     maxFileSize: 10 * 1024 * 1024,
@@ -306,6 +360,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     routeParams: route.params as Record<string, any>,
     returnRoute: "GroupChat",
     returnData: { groupId, groupName: initialGroupName },
+    onCameraCapture: handleDirectCameraSend,
+    onGalleryPick: handleDirectGallerySend,
   });
 
   const voiceRecorder = useVoiceRecorder({
@@ -637,6 +693,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
+  // Guard to prevent duplicate navigation to the same game/invite
+  const navigatedInvitesRef = useRef<Set<string>>(new Set());
+
   const handleNavigateToGame = useCallback(
     (
       gameId: string,
@@ -646,6 +705,17 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         spectatorMode?: boolean;
       },
     ) => {
+      // De-duplicate: if we already navigated for this inviteId, skip
+      if (options?.inviteId) {
+        if (navigatedInvitesRef.current.has(options.inviteId)) {
+          logger.info(
+            `[GroupChatScreen] Skipping duplicate navigation for invite ${options.inviteId}`,
+          );
+          return;
+        }
+        navigatedInvitesRef.current.add(options.inviteId);
+      }
+
       const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
       if (screen) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -654,7 +724,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           params: {
             screen,
             params: {
-              matchId: gameId,
+              matchId: gameId || undefined,
               inviteId: options?.inviteId,
               spectatorMode: options?.spectatorMode,
               entryPoint: "chat",
@@ -712,6 +782,18 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       }
     },
     [navigation, groupId],
+  );
+
+  // Handle multiplayer invite creation — navigate host into the game's
+  // built-in lobby immediately so they aren't stranded in chat.
+  const handleInviteCreated = useCallback(
+    (invite: UniversalGameInvite) => {
+      if (!invite?.id || !invite?.gameType) return;
+      handleNavigateToGame(invite.gameId || "", invite.gameType, {
+        inviteId: invite.id,
+      });
+    },
+    [handleNavigateToGame],
   );
 
   // Compute eligible user IDs from group members
@@ -1177,9 +1259,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                               },
                             ]}
                           >
-                            {item.scorecard.gameId === "reaction_tap"
-                              ? "Reaction Tap"
-                              : "Timed Tap"}
+                            {GAME_METADATA[
+                              item.scorecard.gameId as ExtendedGameType
+                            ]?.name ?? item.scorecard.gameId}
                           </Text>
                           <Text
                             style={[
@@ -1191,9 +1273,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                               },
                             ]}
                           >
-                            {item.scorecard.gameId === "reaction_tap"
-                              ? `${item.scorecard.score}ms`
-                              : `${item.scorecard.score} taps`}
+                            {formatGameScore(
+                              item.scorecard.gameId as ExtendedGameType,
+                              item.scorecard.score,
+                            )}
                           </Text>
                         </View>
                       ) : (
@@ -1574,7 +1657,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         conversationName={group?.name}
         eligibleUserIds={groupMemberIds}
         onSinglePlayerGame={handleSinglePlayerGame}
-        onInviteCreated={NOOP}
+        onInviteCreated={handleInviteCreated}
         onError={(error) => Alert.alert("Error", error)}
       />
     </>

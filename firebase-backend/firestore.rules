@@ -353,13 +353,13 @@ service cloud.firestore {
       // Stores per-game high score records: Users/{uid}/GameHighScores/{gameType}
       // --------------------------------------------------------
       match /GameHighScores/{gameType} {
-        // User can read their own high scores
-        allow read: if isAuth() && isOwner(uid);
+        // Any authenticated user can read high scores (needed for score comparison)
+        allow read: if isAuth();
         
         // User can create/update their own high scores with validation
         allow create, update: if isAuth() && isOwner(uid) &&
           // gameType must be valid single-player game
-          gameType in ['bounce_blitz', 'clicker_mine', 'helix_drop', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'] &&
+          gameType in ['bounce_blitz', 'clicker_mine', 'helix_drop', 'play_2048', 'snake_master', 'memory_master', 'word_master', 'tile_slide', 'brick_breaker'] &&
           // Must have required fields
           request.resource.data.gameType == gameType &&
           request.resource.data.highScore is number &&
@@ -935,7 +935,7 @@ service cloud.firestore {
                                 request.auth.uid == playerId &&
                                 request.resource.data.playerId == playerId &&
                                 request.resource.data.score >= 0 &&
-                                leaderboardId in ['word_master', 'bounce_blitz', 'clicker_mine', 'helix_drop', 'tic_tac_toe', 'play_2048', 'snake_master', 'memory_master', 'reaction_tap', 'timed_tap', 'tile_slide', 'brick_breaker'];
+                                leaderboardId in ['word_master', 'bounce_blitz', 'clicker_mine', 'helix_drop', 'tic_tac_toe', 'play_2048', 'snake_master', 'memory_master', 'tile_slide', 'brick_breaker'];
         
         // No deletes from client
         allow delete: if false;
@@ -1649,10 +1649,9 @@ service cloud.firestore {
          request.resource.data.get('claimedSlots', []).size() >
            resource.data.get('claimedSlots', []).size()) ||
 
-        // UNCLAIM SLOT: User leaving (not host) - allowed in pending, filling, or ready
+        // UNCLAIM SLOT: User leaving (not host, or host in group context with migration)
         (canAccessInvite() &&
          resource.data.status in ['pending', 'filling', 'ready'] &&
-         resource.data.get('claimedSlots', [])[0].playerId != request.auth.uid &&
          request.resource.data.get('claimedSlots', []).size() <
            resource.data.get('claimedSlots', []).size()) ||
 
@@ -1671,10 +1670,20 @@ service cloud.firestore {
          resource.data.status == 'ready' &&
          request.resource.data.status in ['pending', 'filling']) ||
 
-        // START GAME: Host starting game (changes to active)
+        // START GAME: Host starting game (changes to starting, then active)
         (resource.data.senderId == request.auth.uid &&
          resource.data.status in ['pending', 'filling', 'ready'] &&
+         request.resource.data.status in ['starting', 'active']) ||
+
+        // STARTING → ACTIVE: Host promoting after match creation
+        (resource.data.senderId == request.auth.uid &&
+         resource.data.status == 'starting' &&
          request.resource.data.status == 'active') ||
+
+        // STARTING → READY: Rollback if match creation fails
+        (resource.data.senderId == request.auth.uid &&
+         resource.data.status == 'starting' &&
+         request.resource.data.status == 'ready') ||
 
         // DECLINE: Specific recipient declining
         (resource.data.get('targetType', 'specific') == 'specific' &&
@@ -1699,20 +1708,10 @@ service cloud.firestore {
          request.resource.data.get('spectators', []).size() <
            resource.data.get('spectators', []).size()) ||
 
-        // LEGACY: Old accept/decline behavior
-        (resource.data.get('recipientId', '') == request.auth.uid &&
-         resource.data.status == 'pending' &&
-         request.resource.data.status in ['accepted', 'declined']) ||
-
-        // LEGACY: Old cancel behavior
-        (resource.data.senderId == request.auth.uid &&
-         resource.data.status == 'pending' &&
-         request.resource.data.status == 'cancelled') ||
-
-        // COMPLETE: Participants can mark active invite as completed (cleanup)
+        // COMPLETE: Participants can mark active/starting invite as completed (cleanup)
         // This allows client-side cleanup when game has finished
         (canAccessInvite() &&
-         resource.data.status == 'active' &&
+         resource.data.status in ['active', 'starting'] &&
          request.resource.data.status == 'completed')
       );
 
@@ -1782,7 +1781,7 @@ service cloud.firestore {
       allow create: if isAuth() &&
                       request.resource.data.playerId == request.auth.uid &&
                       request.resource.data.status == 'searching' &&
-                      request.resource.data.gameType in ['chess', 'checkers', 'tic_tac_toe', 'crazy_eights', '8ball_pool'] &&
+                      request.resource.data.gameType in ['chess', 'checkers', 'tic_tac_toe', 'crazy_eights'] &&
                       request.resource.data.createdAt is timestamp &&
                       request.resource.data.rating is number;
       
@@ -2174,24 +2173,6 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // GOLF DUELS MATCHES COLLECTION (Segment 4)
-    // Stores detailed match records for Golf Duels games.
-    // Written exclusively by the Colyseus server via Admin SDK.
-    // Players can read matches they participated in.
-    // ============================================================
-    match /GolfDuelsMatches/{matchId} {
-      // Read: participants can read their own match records
-      allow read: if isAuth() &&
-        (resource.data.p1Uid == request.auth.uid ||
-         resource.data.p2Uid == request.auth.uid);
-
-      // Write: server-only via Admin SDK
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
-    }
-
-    // ============================================================
     // REALTIME GAME SESSIONS COLLECTION
     // Stores completed real-time (Colyseus) game records.
     // Written by the Colyseus server via Admin SDK.
@@ -2204,6 +2185,53 @@ service cloud.firestore {
 
       // Write: server-only via Admin SDK
       allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ============================================================
+    // SPECTATOR SESSIONS COLLECTION (Segment 8)
+    // Tracks live spectator session status. The host creates the
+    // doc when starting hosting, and updates it when the game ends.
+    // Spectators read to check if the stream is still live.
+    // ============================================================
+    match /SpectatorSessions/{roomId} {
+      // Read: any authenticated user (spectator invite links are shared)
+      allow read: if isAuth();
+
+      // Create: host creates session (hostUid must match auth)
+      allow create: if isAuth() &&
+        request.resource.data.hostUid == request.auth.uid &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.roomId is string &&
+        request.resource.data.gameType is string;
+
+      // Update: host can finish session
+      allow update: if isAuth() &&
+        resource.data.hostUid == request.auth.uid &&
+        request.resource.data.hostUid == resource.data.hostUid &&
+        request.resource.data.status in ['active', 'finished'];
+
+      // Delete: host only
+      allow delete: if isAuth() && resource.data.hostUid == request.auth.uid;
+    }
+
+    // ============================================================
+    // BUG REPORTS COLLECTION (Segment 7)
+    // Game bug reports submitted from the client Debug HUD or
+    // recovery actions. Authenticated users can create their own.
+    // ============================================================
+    match /BugReports/{reportId} {
+      // Read: only the reporter can read back their own reports
+      allow read: if isAuth() &&
+        resource.data.uid == request.auth.uid;
+
+      // Create: authenticated users can submit reports
+      allow create: if isAuth() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'new';
+
+      // No update/delete from client
       allow update: if false;
       allow delete: if false;
     }

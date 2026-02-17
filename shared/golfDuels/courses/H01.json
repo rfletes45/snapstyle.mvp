@@ -1,0 +1,22 @@
+{
+  "id": "H01",
+  "name": "Straight Shot",
+  "difficulty": 1,
+  "par": 2,
+  "maxStrokes": 6,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 50, "y": 52 },
+  "cup": { "x": 50, "y": 8 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": []
+}

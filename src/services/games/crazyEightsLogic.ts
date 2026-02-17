@@ -332,10 +332,11 @@ function validatePass(
   const playerHand = hands[playerId];
 
   // Can only pass if:
-  // 1. Deck is empty, or
+  // 1. Deck is empty AND discard can't be reshuffled, or
   // 2. Player has drawn at least once this turn
-  if (deck.length > 0 && state.drawCount === 0) {
-    return { valid: false, error: "Must draw first if deck has cards" };
+  const canReshuffle = state.discardPile.length > 1;
+  if ((deck.length > 0 || canReshuffle) && state.drawCount === 0) {
+    return { valid: false, error: "Must draw first if cards are available" };
   }
 
   // Check if player has any playable cards

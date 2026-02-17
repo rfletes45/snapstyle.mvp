@@ -4,7 +4,7 @@
  * Two modes in ONE screen, driven by `capturedMedia` state:
  *
  * A) capturedMedia === null  ->  CAMERA MODE
- *    Live CameraView, pinch-to-zoom, filter carousel, capture button, etc.
+ *    Live VisionCamera, pinch-to-zoom, filter carousel, capture button, etc.
  *
  * B) capturedMedia !== null  ->  EDITOR MODE
  *    Frozen Image replaces camera feed.  Full editing toolbar appears
@@ -29,6 +29,7 @@ import SkiaFilteredImage, {
   SkiaFilterThumbnail,
   type SkiaFilteredImageRef,
 } from "@/components/camera/SkiaFilteredImage";
+import { USE_VISION_CAMERA } from "@/constants/featureFlags";
 import {
   useCamera,
   useCameraPermissions,
@@ -57,7 +58,6 @@ import { generateUUID } from "@/utils/uuid";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { CameraView } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import React, {
   useCallback,
@@ -95,15 +95,44 @@ import ViewShot, { captureRef } from "react-native-view-shot";
 
 import { createLogger } from "@/utils/log";
 
-// VisionCamera — loaded for AR face-effect mode
+// ---------------------------------------------------------------------------
+// Dynamic camera imports – gated by USE_VISION_CAMERA feature flag
+// ---------------------------------------------------------------------------
+
+// LiveFilterCamera (VisionCamera + Skia frame processor)
+let LiveFilterCamera: any = null;
+if (USE_VISION_CAMERA) {
+  try {
+    LiveFilterCamera =
+      require("@/components/camera/LiveFilterCamera").LiveFilterCamera;
+  } catch {
+    // LiveFilterCamera unavailable
+  }
+}
+
+// expo-camera CameraView – used when VisionCamera is disabled or unavailable
+let CameraView: any = null;
+if (!USE_VISION_CAMERA) {
+  try {
+    CameraView = require("expo-camera").CameraView;
+  } catch {
+    // expo-camera unavailable
+  }
+}
+
+// VisionCamera raw Camera class — loaded for AR face-effect mode
 let VisionCamera: any = null;
 let useCameraDevice: any = null;
-try {
-  const vc = require("react-native-vision-camera");
-  VisionCamera = vc.Camera;
-  useCameraDevice = vc.useCameraDevice;
-} catch {
-  // VisionCamera unavailable — AR effects will be disabled
+let visionCameraAvailable = false;
+if (USE_VISION_CAMERA) {
+  try {
+    const vc = require("react-native-vision-camera");
+    VisionCamera = vc.Camera;
+    useCameraDevice = vc.useCameraDevice;
+    visionCameraAvailable = true;
+  } catch {
+    // VisionCamera unavailable (Expo Go)
+  }
 }
 
 const logger = createLogger("screens/camera/CameraScreen");
@@ -413,6 +442,71 @@ const CameraScreen: React.FC = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
+  // Preview frame for live filter thumbnails
+  // Captured silently from the camera so the carousel can show accurate Skia-
+  // filtered previews of what each filter will actually look like.
+  const [previewFrameUri, setPreviewFrameUri] = useState<string | null>(null);
+
+  // Temporarily suppress flash while capturing the silent preview frame so the
+  // user is never blinded by a flash they didn't trigger.
+  const [flashSuppressed, setFlashSuppressed] = useState(false);
+
+  // One-shot preview capture when the camera first becomes ready (and on
+  // facing change).  Flash is forced off for the duration of the capture.
+  // We intentionally avoid periodic re-capture — one frame is enough for the
+  // filter carousel thumbnails and avoids repeated shutter / flash artefacts.
+  useEffect(() => {
+    if (!cameraReady || capturedMedia !== null) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const capture = async () => {
+      // Force flash off before taking the silent preview picture
+      if (settings.flashMode !== "off") {
+        setFlashSuppressed(true);
+        // Give the native camera enough time to apply flash='off'
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      if (cancelled || !cameraRef.current) {
+        setFlashSuppressed(false);
+        return;
+      }
+      try {
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.1, // Very low quality — just for thumbnails
+          base64: false,
+          skipProcessing: true,
+          flash: "off", // Explicit no-flash — honoured by LiveFilterCamera adapter
+        });
+        if (!cancelled && photo?.uri) {
+          setPreviewFrameUri(photo.uri);
+        }
+      } catch {
+        // Silently fail — preview frame is non-critical
+      } finally {
+        if (!cancelled) setFlashSuppressed(false);
+      }
+    };
+
+    // Wait for camera to stabilise before the silent capture
+    const timeout = setTimeout(capture, 800);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      setFlashSuppressed(false);
+    };
+    // Re-run when facing changes so thumbnails reflect the new camera
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraReady, capturedMedia, settings.facing]);
+
+  // Reset preview frame when facing changes
+  useEffect(() => {
+    setPreviewFrameUri(null);
+  }, [settings.facing]);
+
   // Video recording timer display (seconds)
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -478,6 +572,23 @@ const CameraScreen: React.FC = () => {
 
   // Save to library success
   const [showSavedBadge, setShowSavedBadge] = useState(false);
+
+  // Measured preview container dimensions (accounts for toolbar/bottom bar)
+  const [previewLayout, setPreviewLayout] = useState<{
+    width: number;
+    height: number;
+  }>({ width: SCREEN_W, height: SCREEN_H });
+
+  const handlePreviewLayout = useCallback(
+    (e: { nativeEvent: { layout: { width: number; height: number } } }) => {
+      const { width, height } = e.nativeEvent.layout;
+      setPreviewLayout((prev) => {
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
+      });
+    },
+    [],
+  );
 
   const isEditorMode = capturedMedia !== null;
 
@@ -778,7 +889,7 @@ const CameraScreen: React.FC = () => {
     }
   }, [handleFlipCamera]);
 
-  // Filter carousel item
+  // Filter carousel item — shows accurate Skia-rendered thumbnails
   const renderFilterItem = useCallback(
     ({ item, index }: { item: FilterConfig; index: number }) => (
       <TouchableOpacity
@@ -792,6 +903,16 @@ const CameraScreen: React.FC = () => {
         }}
         activeOpacity={0.7}
       >
+        {previewFrameUri ? (
+          <SkiaFilterThumbnail
+            uri={previewFrameUri}
+            filter={item}
+            width={56}
+            height={48}
+          />
+        ) : (
+          <View style={styles.filterThumbPlaceholder} />
+        )}
         <Text
           style={[
             styles.filterChipText,
@@ -803,7 +924,7 @@ const CameraScreen: React.FC = () => {
         </Text>
       </TouchableOpacity>
     ),
-    [selectedFilterIndex, triggerHaptic],
+    [selectedFilterIndex, triggerHaptic, previewFrameUri],
   );
   const filterKeyExtractor = useCallback((item: FilterConfig) => item.id, []);
 
@@ -1374,6 +1495,51 @@ const CameraScreen: React.FC = () => {
   }
 
   // ==========================================================================
+  // NO CAMERA BACKEND AVAILABLE
+  // ==========================================================================
+
+  const hasAnyCameraBackend = !!(LiveFilterCamera || CameraView);
+  if (!hasAnyCameraBackend) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        ]}
+      >
+        <View style={styles.permissionContainer}>
+          <View style={styles.permissionIconCircle}>
+            <Ionicons name="alert-circle-outline" size={48} color="#FF4444" />
+          </View>
+          <Text style={styles.permissionTitle}>Camera Unavailable</Text>
+          <Text style={styles.permissionText}>
+            No camera module could be loaded. If you're using Expo Go, set
+            USE_VISION_CAMERA to false in featureFlags.ts. For production
+            builds, ensure react-native-vision-camera is installed.
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons
+              name="refresh-outline"
+              size={20}
+              color="#fff"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.permissionButtonText}>Go Back & Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ==========================================================================
   // RENDER
   // ==========================================================================
 
@@ -1385,7 +1551,7 @@ const CameraScreen: React.FC = () => {
         onHandlerStateChange={onPinchHandlerStateChange}
         enabled={!isEditorMode}
       >
-        <View style={styles.cameraContainer}>
+        <View style={styles.cameraContainer} onLayout={handlePreviewLayout}>
           {isEditorMode && capturedMedia ? (
             /* -- EDITOR: frozen captured image ----------------------------- */
             <ViewShot
@@ -1399,8 +1565,8 @@ const CameraScreen: React.FC = () => {
                 uri={capturedMedia.uri}
                 filter={editorFilter}
                 intensity={filterIntensity}
-                width={SCREEN_W}
-                height={SCREEN_H}
+                width={previewLayout.width}
+                height={previewLayout.height}
                 rotation={rotation}
                 style={StyleSheet.absoluteFill}
               />
@@ -1539,191 +1705,209 @@ const CameraScreen: React.FC = () => {
               )}
             </TouchableOpacity>
           ) : (
-            /* -- CAMERA: live CameraView ---------------------------------- */
+            /* -- CAMERA: live camera feed (VisionCamera or expo-camera) -- */
             <TouchableOpacity
               activeOpacity={1}
               onPress={handleDoubleTapFlip}
               style={{ flex: 1 }}
             >
-              <CameraView
-                ref={cameraRef}
-                style={styles.camera}
-                facing={settings.facing}
-                flash={settings.flashMode}
-                zoom={settings.zoom}
-                exposure={exposureValue}
-                onCameraReady={onCameraReady}
-                onMountError={onCameraError}
-              >
-                {/* Live Filter Overlay (translucent tint) */}
-                <CameraFilterOverlay filter={activeFilter} />
-
-                {/* Brightness Overlay */}
-                {exposureValue !== 0 && (
-                  <View
-                    style={[
-                      styles.brightnessOverlay,
-                      {
-                        backgroundColor:
-                          exposureValue > 0
-                            ? `rgba(255,255,255,${Math.min(0.5, exposureValue * 0.25)})`
-                            : `rgba(0,0,0,${Math.min(0.6, Math.abs(exposureValue) * 0.3)})`,
-                      },
-                    ]}
-                    pointerEvents="none"
-                  />
-                )}
-
-                {/* Grid Overlay */}
-                {showGrid && (
-                  <View style={styles.gridOverlay} pointerEvents="none">
-                    <View
-                      style={[
-                        styles.gridLine,
-                        styles.gridLineV,
-                        { left: "33.33%" },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.gridLine,
-                        styles.gridLineV,
-                        { left: "66.66%" },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.gridLine,
-                        styles.gridLineH,
-                        { top: "33.33%" },
-                      ]}
-                    />
-                    <View
-                      style={[
-                        styles.gridLine,
-                        styles.gridLineH,
-                        { top: "66.66%" },
-                      ]}
-                    />
-                  </View>
-                )}
-
-                {/* Close Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.closeButton,
-                    { top: Math.max(50, insets.top + 8) },
-                  ]}
-                  onPress={() => navigation.goBack()}
+              {/* Camera component — LiveFilterCamera (VisionCamera+Skia) or
+                  CameraView (expo-camera) based on USE_VISION_CAMERA flag */}
+              {LiveFilterCamera ? (
+                <LiveFilterCamera
+                  ref={cameraRef}
+                  facing={settings.facing}
+                  filter={activeFilter}
+                  flashMode={flashSuppressed ? "off" : settings.flashMode}
+                  zoom={settings.zoom}
+                  exposure={exposureValue}
+                  style={styles.camera}
+                  onInitialized={onCameraReady}
+                  onError={onCameraError}
+                />
+              ) : (
+                <CameraView
+                  ref={cameraRef}
+                  style={styles.camera}
+                  facing={settings.facing}
+                  flash={flashSuppressed ? "off" : settings.flashMode}
+                  zoom={settings.zoom}
+                  exposure={exposureValue}
+                  onCameraReady={onCameraReady}
+                  onMountError={onCameraError}
                 >
-                  <Ionicons name="close" size={30} color="#fff" />
-                </TouchableOpacity>
+                  {/* Tint-overlay filter approximation for expo-camera */}
+                  <CameraFilterOverlay filter={activeFilter} />
+                </CameraView>
+              )}
 
-                {/* Top-left toolbar: Timer, Grid, Exposure */}
+              {/* --- Shared camera-mode overlays (render on top of camera) --- */}
+
+              {/* Brightness Overlay */}
+              {exposureValue !== 0 && (
                 <View
                   style={[
-                    styles.topToolbar,
-                    { top: Math.max(50, insets.top + 8) },
+                    styles.brightnessOverlay,
+                    {
+                      backgroundColor:
+                        exposureValue > 0
+                          ? `rgba(255,255,255,${Math.min(0.5, exposureValue * 0.25)})`
+                          : `rgba(0,0,0,${Math.min(0.6, Math.abs(exposureValue) * 0.3)})`,
+                    },
                   ]}
-                >
-                  <TouchableOpacity
-                    style={styles.toolbarButton}
-                    onPress={handleTimerToggle}
-                  >
-                    <Ionicons name="timer-outline" size={24} color="#fff" />
-                    {timerSeconds > 0 && (
-                      <View style={styles.toolbarBadgeContainer}>
-                        <Text style={styles.toolbarBadgeText}>
-                          {timerSeconds}s
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.toolbarButton}
-                    onPress={handleGridToggle}
-                  >
-                    <Ionicons
-                      name={showGrid ? "grid" : "grid-outline"}
-                      size={24}
-                      color={showGrid ? "#FFD700" : "#fff"}
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.toolbarButton}
-                    onPress={() => setShowExposure((v) => !v)}
-                  >
-                    <Ionicons
-                      name="sunny-outline"
-                      size={24}
-                      color={showExposure ? "#FFD700" : "#fff"}
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.toolbarButton}
-                    onPress={handleToggleFaceEffects}
-                  >
-                    <Ionicons
-                      name="happy-outline"
-                      size={24}
-                      color={showFaceEffects ? "#FFD700" : "#fff"}
-                    />
-                  </TouchableOpacity>
+                  pointerEvents="none"
+                />
+              )}
+
+              {/* Grid Overlay */}
+              {showGrid && (
+                <View style={styles.gridOverlay} pointerEvents="none">
+                  <View
+                    style={[
+                      styles.gridLine,
+                      styles.gridLineV,
+                      { left: "33.33%" },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.gridLine,
+                      styles.gridLineV,
+                      { left: "66.66%" },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.gridLine,
+                      styles.gridLineH,
+                      { top: "33.33%" },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.gridLine,
+                      styles.gridLineH,
+                      { top: "66.66%" },
+                    ]}
+                  />
                 </View>
+              )}
 
-                {/* Exposure Slider */}
-                {showExposure && (
-                  <View style={styles.exposureSliderContainer}>
-                    <Ionicons name="sunny" size={16} color="#FFD700" />
-                    <View style={styles.exposureSliderWrapper}>
-                      <Slider
-                        style={styles.exposureSlider}
-                        minimumValue={-2}
-                        maximumValue={2}
-                        value={exposureValue}
-                        onValueChange={handleExposureChange}
-                        minimumTrackTintColor="#FFD700"
-                        maximumTrackTintColor="rgba(255,255,255,0.4)"
-                        thumbTintColor="#fff"
-                        step={0.1}
-                      />
+              {/* Close Button */}
+              <TouchableOpacity
+                style={[
+                  styles.closeButton,
+                  { top: Math.max(50, insets.top + 8) },
+                ]}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="close" size={30} color="#fff" />
+              </TouchableOpacity>
+
+              {/* Top-left toolbar: Timer, Grid, Exposure */}
+              <View
+                style={[
+                  styles.topToolbar,
+                  { top: Math.max(50, insets.top + 8) },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.toolbarButton}
+                  onPress={handleTimerToggle}
+                >
+                  <Ionicons name="timer-outline" size={24} color="#fff" />
+                  {timerSeconds > 0 && (
+                    <View style={styles.toolbarBadgeContainer}>
+                      <Text style={styles.toolbarBadgeText}>
+                        {timerSeconds}s
+                      </Text>
                     </View>
-                    <Ionicons name="moon-outline" size={16} color="#fff" />
-                    {exposureValue !== 0 && (
-                      <TouchableOpacity
-                        onPress={() => {
-                          setExposureValue(0);
-                          setExposure(0);
-                          haptic();
-                        }}
-                        style={styles.exposureResetBtn}
-                      >
-                        <Text style={styles.exposureResetText}>Reset</Text>
-                      </TouchableOpacity>
-                    )}
-                    <Text style={styles.exposureValueText}>
-                      {exposureValue > 0 ? "+" : ""}
-                      {exposureValue.toFixed(1)} EV
-                    </Text>
-                  </View>
-                )}
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.toolbarButton}
+                  onPress={handleGridToggle}
+                >
+                  <Ionicons
+                    name={showGrid ? "grid" : "grid-outline"}
+                    size={24}
+                    color={showGrid ? "#FFD700" : "#fff"}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.toolbarButton}
+                  onPress={() => setShowExposure((v) => !v)}
+                >
+                  <Ionicons
+                    name="sunny-outline"
+                    size={24}
+                    color={showExposure ? "#FFD700" : "#fff"}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.toolbarButton}
+                  onPress={handleToggleFaceEffects}
+                >
+                  <Ionicons
+                    name="happy-outline"
+                    size={24}
+                    color={showFaceEffects ? "#FFD700" : "#fff"}
+                  />
+                </TouchableOpacity>
+              </View>
 
-                {/* Countdown Overlay */}
-                {countdown !== null && (
-                  <View style={styles.countdownOverlay}>
-                    <Text style={styles.countdownText}>{countdown}</Text>
+              {/* Exposure Slider */}
+              {showExposure && (
+                <View style={styles.exposureSliderContainer}>
+                  <Ionicons name="sunny" size={16} color="#FFD700" />
+                  <View style={styles.exposureSliderWrapper}>
+                    <Slider
+                      style={styles.exposureSlider}
+                      minimumValue={-2}
+                      maximumValue={2}
+                      value={exposureValue}
+                      onValueChange={handleExposureChange}
+                      minimumTrackTintColor="#FFD700"
+                      maximumTrackTintColor="rgba(255,255,255,0.4)"
+                      thumbTintColor="#fff"
+                      step={0.1}
+                    />
                   </View>
-                )}
+                  <Ionicons name="moon-outline" size={16} color="#fff" />
+                  {exposureValue !== 0 && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setExposureValue(0);
+                        setExposure(0);
+                        haptic();
+                      }}
+                      style={styles.exposureResetBtn}
+                    >
+                      <Text style={styles.exposureResetText}>Reset</Text>
+                    </TouchableOpacity>
+                  )}
+                  <Text style={styles.exposureValueText}>
+                    {exposureValue > 0 ? "+" : ""}
+                    {exposureValue.toFixed(1)} EV
+                  </Text>
+                </View>
+              )}
 
-                {/* Zoom Level Indicator */}
-                {settings.zoom > 0 && (
-                  <View style={styles.zoomIndicator}>
-                    <Text style={styles.zoomText}>
-                      {(1 + settings.zoom * 7).toFixed(1)}x
-                    </Text>
-                  </View>
-                )}
-              </CameraView>
+              {/* Countdown Overlay */}
+              {countdown !== null && (
+                <View style={styles.countdownOverlay}>
+                  <Text style={styles.countdownText}>{countdown}</Text>
+                </View>
+              )}
+
+              {/* Zoom Level Indicator */}
+              {settings.zoom > 0 && (
+                <View style={styles.zoomIndicator}>
+                  <Text style={styles.zoomText}>
+                    {(1 + settings.zoom * 7).toFixed(1)}x
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
         </View>
@@ -2424,24 +2608,38 @@ const styles = StyleSheet.create({
     bottom: 120,
     left: 0,
     right: 0,
-    height: 50,
+    height: 90,
+    zIndex: 15,
   },
   filterCarouselContent: { paddingHorizontal: 10, alignItems: "center" },
   filterChip: {
     marginRight: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    width: 64,
+    alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.4)",
-    borderRadius: 20,
-    justifyContent: "center",
+    borderRadius: 12,
+    overflow: "hidden",
+    paddingBottom: 4,
   },
   filterChipActive: {
-    backgroundColor: "rgba(0,122,255,0.8)",
+    backgroundColor: "rgba(0,122,255,0.3)",
     borderWidth: 2,
     borderColor: "#007AFF",
   },
-  filterChipText: { color: "#fff", fontSize: 12, fontWeight: "500" },
-  filterChipTextActive: { fontWeight: "700" },
+  filterThumbPlaceholder: {
+    width: 56,
+    height: 48,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 6,
+    margin: 4,
+  },
+  filterChipText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  filterChipTextActive: { fontWeight: "700", color: "#7BBFFF" },
 
   // -- Control Bar (camera mode) ----------------------------------------------
   controlBar: {

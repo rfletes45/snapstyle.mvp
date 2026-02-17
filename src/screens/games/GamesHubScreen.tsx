@@ -31,7 +31,7 @@ import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
 import { isDailyGameCompleted } from "@/services/dailyGamePersistence";
 import {
-  cancelGameInvite,
+  cancelUniversalInvite,
   claimInviteSlot,
   subscribeToPlayPageInvites,
   unclaimInviteSlot,
@@ -119,8 +119,6 @@ const SINGLE_PLAYER_GAME_TYPES = new Set<SinglePlayerGameType>([
   "bounce_blitz",
   "play_2048",
   "word_master",
-  "reaction_tap",
-  "timed_tap",
   "brick_breaker",
   "minesweeper_classic",
   "lights_out",
@@ -165,10 +163,6 @@ function GameCard({
   const formatBestScore = () => {
     if (personalBest === null) return null;
 
-    // Use original games service for legacy games
-    if (gameId === "reaction_tap" || gameId === "timed_tap") {
-      return formatScore(gameId, personalBest);
-    }
     // Use single-player formatting when available, fallback to generic formatter.
     if (isSinglePlayerGameType(gameId)) {
       return formatSinglePlayerScore(gameId, personalBest);
@@ -270,13 +264,12 @@ function RecentGameItem({ session }: { session: UnifiedRecentGame }) {
   const metadata = GAME_METADATA[session.gameType];
 
   // Format score based on game type
-  const formattedScore =
-    session.gameType === "reaction_tap" || session.gameType === "timed_tap"
-      ? formatScore(session.gameType, session.score)
-      : formatSinglePlayerScore(
-          session.gameType as SinglePlayerGameType,
-          session.score,
-        );
+  const formattedScore = isSinglePlayerGameType(session.gameType)
+    ? formatSinglePlayerScore(
+        session.gameType as SinglePlayerGameType,
+        session.score,
+      )
+    : formatScore(session.gameType, session.score);
 
   return (
     <View
@@ -744,9 +737,21 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
       if (!result.success) {
         logger.error("[GamesScreen] Failed to join invite:", result.error);
+        return;
+      }
+
+      // Navigate to the appropriate game screen for Colyseus games
+      const screen = GAME_SCREEN_MAP[invite.gameType as ExtendedGameType];
+      if (screen) {
+        const roomKey = invite.settings?.colyseusRoomKey;
+        navigation.navigate(screen, {
+          inviteId: invite.id,
+          matchId: roomKey || invite.gameId || undefined,
+          entryPoint: "invite_queue",
+        });
       }
     },
-    [currentFirebaseUser],
+    [currentFirebaseUser, navigation],
   );
 
   const handleLeaveUniversalInvite = useCallback(
@@ -769,18 +774,19 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     async (invite: UniversalGameInvite) => {
       if (!currentFirebaseUser) return;
 
-      await cancelGameInvite(invite.id, currentFirebaseUser.uid);
+      await cancelUniversalInvite(invite.id, currentFirebaseUser.uid);
       loadData();
     },
     [currentFirebaseUser, loadData],
   );
 
   const handlePlayUniversalInvite = useCallback(
-    (gameId: string, gameType: string) => {
+    (gameId: string, gameType: string, inviteId?: string) => {
       const screen = GAME_SCREEN_MAP[gameType as ExtendedGameType];
       if (screen) {
         navigation.navigate(screen, {
           matchId: gameId,
+          ...(inviteId ? { inviteId } : {}),
           entryPoint: "play",
         });
       }
@@ -806,20 +812,13 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   // Game categories (memoized to avoid recreating on every render)
   const quickPlayGames = useMemo<ExtendedGameType[]>(
-    () => ["reaction_tap", "timed_tap", "bounce_blitz"],
+    () => ["bounce_blitz"],
     [],
   );
   const puzzleGames = useMemo<ExtendedGameType[]>(() => ["play_2048"], []);
   const dailyGames = useMemo<ExtendedGameType[]>(() => ["word_master"], []);
   const multiplayerGames = useMemo<ExtendedGameType[]>(
-    () => [
-      "tic_tac_toe",
-      "checkers",
-      "chess",
-      "crazy_eights",
-      "tropical_fishing",
-      "golf_duels",
-    ],
+    () => ["tic_tac_toe", "checkers", "chess", "crazy_eights"],
     [],
   );
 

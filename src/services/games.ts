@@ -8,7 +8,12 @@
  * - Sending scorecard messages
  */
 
-import { EXTENDED_GAME_SCORE_LIMITS, ExtendedGameType } from "@/types/games";
+import {
+  EXTENDED_GAME_SCORE_LIMITS,
+  ExtendedGameType,
+  formatGameScore,
+  GAME_METADATA,
+} from "@/types/games";
 import { GameSession } from "@/types/models";
 import { generateId } from "@/utils/ids";
 import {
@@ -93,18 +98,10 @@ export async function recordGameSession(
       return null;
     }
 
-    // For reaction_tap, lower scores are better (faster reaction)
-    // For timed_tap, higher scores are better (more taps)
-    if (result.gameId === "reaction_tap") {
-      if (result.score < limits.minScore || result.score > limits.maxScore) {
-        logger.error("[games] Invalid reaction time:", result.score);
-        return null;
-      }
-    } else if (result.gameId === "timed_tap") {
-      if (result.score < limits.minScore || result.score > limits.maxScore) {
-        logger.error("[games] Invalid tap count:", result.score);
-        return null;
-      }
+    // Validate score within bounds
+    if (result.score < limits.minScore || result.score > limits.maxScore) {
+      logger.error("[games] Invalid score:", result.score);
+      return null;
     }
 
     const sessionId = generateId();
@@ -116,10 +113,6 @@ export async function recordGameSession(
       score: result.score,
       playedAt: now.toMillis(), // Convert to number for return value
       ...(result.duration !== undefined && { duration: result.duration }),
-      ...(result.tapCount !== undefined && { tapCount: result.tapCount }),
-      ...(result.reactionTime !== undefined && {
-        reactionTime: result.reactionTime,
-      }),
     };
 
     const sessionRef = doc(db, "GameSessions", sessionId);
@@ -188,8 +181,7 @@ export async function getRecentGames(
 
 /**
  * Get personal best score for a game
- * For reaction_tap: lowest score (fastest reaction) is best
- * For timed_tap: highest score (most taps) is best
+ * Uses scoreDirection from game metadata to determine sort order
  */
 export async function getPersonalBest(
   playerId: string,
@@ -200,9 +192,9 @@ export async function getPersonalBest(
   try {
     const sessionsRef = collection(db, "GameSessions");
 
-    // For reaction tap, best is lowest (fastest)
-    // For timed tap, best is highest (most taps)
-    const sortDirection = gameId === "reaction_tap" ? "asc" : "desc";
+    // Use score direction from metadata
+    const limits = EXTENDED_GAME_SCORE_LIMITS[gameId as ExtendedGameType];
+    const sortDirection = limits?.scoreDirection === "lower" ? "asc" : "desc";
 
     const q = query(
       sessionsRef,
@@ -236,7 +228,11 @@ export async function getPersonalBest(
 export async function getAllPersonalBests(
   playerId: string,
 ): Promise<PersonalBest[]> {
-  const gameTypes: ExtendedGameType[] = ["reaction_tap", "timed_tap"];
+  const gameTypes: ExtendedGameType[] = [
+    "bounce_blitz",
+    "play_2048",
+    "word_master",
+  ];
   const bests: PersonalBest[] = [];
 
   for (const gameId of gameTypes) {
@@ -260,10 +256,10 @@ export function formatScore(
   gameId: ExtendedGameType | string,
   score: number,
 ): string {
-  if (gameId === "reaction_tap") {
-    return `${score}ms`;
-  } else if (gameId === "timed_tap") {
-    return `${score} taps`;
+  // Use formatGameScore from types if available
+  const metadata = GAME_METADATA[gameId as ExtendedGameType];
+  if (metadata) {
+    return formatGameScore(gameId as ExtendedGameType, score);
   }
   return String(score);
 }
@@ -272,37 +268,25 @@ export function formatScore(
  * Get game display name
  */
 export function getGameDisplayName(gameId: ExtendedGameType | string): string {
-  const names: Record<string, string> = {
-    reaction_tap: "Reaction Time",
-    timed_tap: "Speed Tap",
-    tropical_fishing: "Tropical Fishing",
-  };
-  return names[gameId] || gameId;
+  const metadata = GAME_METADATA[gameId as ExtendedGameType];
+  if (metadata) return metadata.name;
+  return gameId;
 }
 
 /**
  * Get game description
  */
 export function getGameDescription(gameId: ExtendedGameType | string): string {
-  const descriptions: Record<string, string> = {
-    reaction_tap: "Tap as fast as you can when the color changes!",
-    timed_tap: "Tap as many times as you can in 10 seconds!",
-    tropical_fishing:
-      "Explore islands together, catch fish, and sell for party-scaled rewards.",
-  };
-  return descriptions[gameId] || "";
+  const metadata = GAME_METADATA[gameId as ExtendedGameType];
+  if (metadata) return metadata.description;
+  return "";
 }
 
 /**
  * Get game icon
  */
 export function getGameIcon(gameId: ExtendedGameType | string): string {
-  const icons: Record<string, string> = {
-    reaction_tap: "lightning-bolt",
-    timed_tap: "timer-outline",
-    tropical_fishing: "fish",
-  };
-  return icons[gameId] || "gamepad-variant";
+  return "gamepad-variant";
 }
 
 // =============================================================================

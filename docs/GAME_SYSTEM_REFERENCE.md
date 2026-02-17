@@ -70,14 +70,12 @@ These run entirely on the client. No Colyseus room is created unless the player 
 | `bounce_blitz`        | Bounce Blitz  | quick_play |
 | `play_2048`           | 2048          | puzzle     |
 | `word_master`         | Word Master   | daily      |
-| `reaction_tap`        | Reaction Tap  | quick_play |
-| `timed_tap`           | Timed Tap     | quick_play |
 | `brick_breaker`       | Brick Breaker | quick_play |
 | `minesweeper_classic` | Minesweeper   | puzzle     |
 | `lights_out`          | Lights Out    | puzzle     |
 | `pong_game`           | Pong (vs AI)  | quick_play |
 
-**Note:** Some single-player games (reaction_tap, timed_tap, brick_breaker, bounce_blitz) support a **Score Race** multiplayer mode via Colyseus. In this mode both players play simultaneously and compete on score.
+**Note:** Some single-player games (brick_breaker, bounce_blitz) support a **Score Race** multiplayer mode via Colyseus. In this mode both players play simultaneously and compete on score.
 
 ### 2.2 Turn-Based Multiplayer Games (`TurnBasedGameType`)
 
@@ -96,16 +94,14 @@ Players alternate turns. Server validates every move.
 
 ### 2.3 Real-Time Multiplayer Games (`RealTimeGameType`)
 
-Server-authoritative physics or cooperative play.
+Server-authoritative physics, cooperative, or party play.
 
-| Game Type          | Name             | Room Type    | Players |
-| ------------------ | ---------------- | ------------ | ------- |
-| `8ball_pool`       | 8-Ball Pool      | Physics      | 2       |
-| `air_hockey`       | Air Hockey       | Physics      | 2       |
-| `crossword_puzzle` | Crossword        | Coop         | 1       |
-| `golf_duels`       | Golf Duels       | Physics      | 2       |
-| `tropical_fishing` | Tropical Fishing | Physics/Coop | 2–10    |
-| `starforge_game`   | Starforge        | Incremental  | 1–2     |
+| Game Type           | Name            | Room Type   | Players |
+| ------------------- | --------------- | ----------- | ------- |
+| `crossword_puzzle`  | Crossword       | Coop        | 1       |
+| `starforge_game`    | Starforge       | Incremental | 1–2     |
+| `sketch_party_game` | Sketch Party    | Party       | 2–8     |
+| `minigolf_duels`    | Mini Golf Duels | Physics     | 2       |
 
 ### 2.4 Game Categories (UI Grouping)
 
@@ -654,17 +650,13 @@ Low-level hooks for Colyseus connection management and app state (background/for
 
 File: `src/services/gameInvites.ts`
 
-There are **two** invite systems:
+The **Universal Game Invite** system is the sole active invite API:
 
-1. **Legacy Game Invites** (`sendGameInvite`, `acceptGameInvite`, `declineGameInvite`) — Direct 1:1 invites stored in `GameInvites` collection.
-2. **Universal Game Invites** (`sendUniversalInvite`, `claimInviteSlot`, `startGameEarly`) — Slot-based system supporting DM and group contexts.
+- `sendUniversalInvite`, `claimInviteSlot`, `startGameEarly`, `cancelUniversalInvite`, `completeGameInvite`
+- Slot-based system supporting DM (1:1) and group (2–10 player) contexts
+- Atomic Firestore transactions for slot claiming and host controls
 
-**The Universal system is the primary system.** It supports:
-
-- DM invites (2-player, specific target)
-- Group invites (2–10 players, anyone in the group can join)
-- Slot claiming with atomic Firestore transactions
-- Host controls (start early, cancel)
+> **Legacy functions** (`sendGameInvite`, `acceptGameInvite`, `declineGameInvite`, `cancelGameInvite`) are deprecated with zero production callers. They remain in the codebase with `@deprecated` JSDoc annotations and will be removed in a future release.
 
 ### 7.2 Universal Invite Flow
 
@@ -692,16 +684,18 @@ There are **two** invite systems:
 
 ### 7.3 Invite Statuses
 
-| Status      | Meaning                       |
-| ----------- | ----------------------------- |
-| `pending`   | Waiting for players to join   |
-| `filling`   | Some but not all slots filled |
-| `ready`     | All required players joined   |
-| `active`    | Game has started              |
-| `completed` | Game finished                 |
-| `expired`   | Invite timed out              |
-| `cancelled` | Host cancelled                |
-| `declined`  | Recipient declined (legacy)   |
+| Status      | Meaning                                  | Transitions To              |
+| ----------- | ---------------------------------------- | --------------------------- |
+| `pending`   | Waiting for players to join              | filling, cancelled, expired |
+| `filling`   | Some but not all slots filled            | ready, cancelled, expired   |
+| `ready`     | All required players joined              | starting, cancelled         |
+| `starting`  | Host triggered start, game being created | active                      |
+| `active`    | Game has started                         | completed                   |
+| `completed` | Game finished                            | —                           |
+| `expired`   | Invite timed out                         | —                           |
+| `cancelled` | Host cancelled                           | —                           |
+
+> **Removed**: `accepted` and `declined` statuses belonged to the legacy 1:1 system.
 
 ### 7.4 Key Functions
 
@@ -741,6 +735,100 @@ The critical bridge between invites and Colyseus:
 - `GameInviteBadge` — Shows pending invite count badge
 - `GamePickerModal` — Modal to select game type when sending invite
 - `MatchmakingModal` — Shows matchmaking progress
+- `InvitePickerModal` — **Unified** invite picker with Friends / Groups tabs (used by all multiplayer screens)
+- `FriendPickerModal` — Friend picker for **scorecard sharing** only (not game invites)
+- ~~`GroupPickerModal`~~ — Deleted (Segment 9) — zero imports
+
+### 7.7 InvitePickerModal — Unified Invite Picker
+
+File: `src/components/InvitePickerModal.tsx`
+
+A single modal that combines friend invites and group invites into one tabbed interface. Created to replace the pattern of separate `FriendPickerModal` + `GroupPickerModal` imports per game screen.
+
+**Exported types:**
+
+```typescript
+interface FriendItem {
+  friendUid: string;
+  username: string;
+  displayName: string;
+  avatarConfig: any;
+  profilePictureUrl?: string;
+  decorationId?: string;
+}
+
+interface GroupItem {
+  groupId: string;
+  name: string;
+  memberCount: number;
+  avatarUrl?: string;
+}
+```
+
+**Props:**
+
+| Prop             | Type                           | Default         |
+| ---------------- | ------------------------------ | --------------- |
+| `visible`        | `boolean`                      | —               |
+| `onDismiss`      | `() => void`                   | —               |
+| `onSelectFriend` | `(friend: FriendItem) => void` | —               |
+| `onSelectGroup`  | `(group: GroupItem) => void`   | —               |
+| `currentUserId`  | `string`                       | —               |
+| `title`          | `string?`                      | `"Send Invite"` |
+
+**Tabs:** "Friends" (DM invites) and "Groups" (group invites) with shared search bar.
+
+**Usage pattern in game screens:**
+
+```typescript
+const handleSelectInviteFriend = async (friend: FriendItem) => {
+  await sendUniversalInvite({
+    senderId, senderName, gameType,
+    context: "dm",
+    recipientId: friend.friendUid,
+    recipientName: friend.displayName,
+    settings: { isRated: true, chatEnabled: true },
+  });
+};
+
+const handleSelectInviteGroup = async (group: GroupItem) => {
+  const members = await getGroupMembers(group.groupId);
+  await sendUniversalInvite({
+    senderId, senderName, gameType,
+    context: "group",
+    conversationId: group.groupId,
+    conversationName: group.name,
+    eligibleUserIds: members.map(m => m.uid),
+    settings: { isRated: true, chatEnabled: true },
+  });
+};
+
+<InvitePickerModal
+  visible={showInvitePicker}
+  onDismiss={() => setShowInvitePicker(false)}
+  onSelectFriend={handleSelectInviteFriend}
+  onSelectGroup={handleSelectInviteGroup}
+  currentUserId={currentFirebaseUser?.uid || ""}
+  title="Challenge a Friend"
+/>
+```
+
+### 7.8 Invite System Migration Status
+
+> **Migration complete** (Segment 9, 2026-02-17).
+
+All multiplayer game screens use `InvitePickerModal` for game invites and `sendUniversalInvite()` for the invite API. `FriendPickerModal` remains solely for scorecard sharing. `GroupPickerModal` has been deleted.
+
+| Component / Function           | Status                  |
+| ------------------------------ | ----------------------- |
+| `InvitePickerModal`            | Active — all MP screens |
+| `sendUniversalInvite()`        | Active — all MP screens |
+| `FriendPickerModal`            | Active — scorecard only |
+| `GroupPickerModal`             | Deleted                 |
+| `sendGameInvite()` (legacy)    | Deprecated, 0 callers   |
+| `acceptGameInvite()` (legacy)  | Deprecated, 0 callers   |
+| `declineGameInvite()` (legacy) | Deprecated, 0 callers   |
+| `cancelGameInvite()` (legacy)  | Deprecated, 0 callers   |
 
 ---
 
@@ -1018,15 +1106,17 @@ The `shouldUseColyseus(gameType)` function in `src/config/colyseus.ts` maps each
 
 ## 13. Firestore Collections
 
-| Collection             | Purpose                                      | Key Fields                                                         |
-| ---------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| `GameInvites`          | Game invitations (both legacy and universal) | id, gameType, status, claimedSlots, gameId, senderId, recipientId  |
-| `TurnBasedGames`       | Turn-based match records                     | id, gameType, players, gameState, currentTurn, status, winnerId    |
-| `ColyseusGameState`    | Suspended game snapshots (cold storage)      | gameType, board, playersByUid, currentTurnUid, status: "suspended" |
-| `RealtimeGameSessions` | Completed real-time game records             | gameType, players, winnerId, winReason, source: "colyseus"         |
-| `GameSessions`         | Single-player score records                  | gameId, playerId, score, playedAt                                  |
-| `PlayerRatings`        | ELO ratings per game type                    | (for future ranked play)                                           |
-| `MatchmakingQueue`     | Matchmaking queue entries                    | (for future public matchmaking)                                    |
+| Collection             | Purpose                                          | Key Fields                                                            |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| `GameInvites`          | Game invitations (universal system)              | id, gameType, status, claimedSlots, gameId, senderId, eligibleUserIds |
+| `TurnBasedGames`       | Turn-based match records                         | id, gameType, players, gameState, currentTurn, status, winnerId       |
+| `ColyseusGameState`    | Suspended game snapshots (cold storage)          | gameType, board, playersByUid, currentTurnUid, status: "suspended"    |
+| `RealtimeGameSessions` | Completed real-time game records                 | gameType, players, winnerId, winReason, source: "colyseus"            |
+| `GameSessions`         | Single-player score records                      | gameId, playerId, score, playedAt                                     |
+| `SpectatorSessions`    | Spectator session status (replaces msg mutation) | roomId, gameType, hostUid, status: "active"/"finished", finalScore    |
+| `BugReports`           | Game bug reports with context                    | code, message, context (traceId, gameType, roomId), status: "new"     |
+| `PlayerRatings`        | ELO ratings per game type                        | (for future ranked play)                                              |
+| `MatchmakingQueue`     | Matchmaking queue entries                        | (for future public matchmaking)                                       |
 
 ---
 
@@ -1074,23 +1164,25 @@ src/
 │   ├── TicTacToeGameScreen.tsx     # Turn-based game example
 │   ├── BrickBreakerGameScreen.tsx  # Single-player + multiplayer score race example
 │   ├── ChessGameScreen.tsx         # Complex turn-based example
-│   ├── PoolGameScreen.tsx          # Physics game example
 │   ├── SpectatorViewScreen.tsx     # Spectator experience screen
 │   └── [all other game screens]
 │
-├── components/games/
-│   ├── GamePickerModal.tsx         # Game selection for invites
-│   ├── UniversalInviteCard.tsx     # Invite card with join/start buttons
-│   ├── GameInviteBadge.tsx         # Pending invite count badge
-│   ├── GameOverModal.tsx           # Game over overlay
-│   ├── MatchmakingModal.tsx        # Matchmaking progress
-│   ├── MultiplayerOverlay.tsx      # Score race overlay
-│   ├── SpectatorOverlay.tsx        # Spectator viewer UI
-│   ├── SpectatorBanner.tsx         # "X watching" indicator
-│   ├── TurnBasedOverlay.tsx        # Turn-based game UI components
-│   ├── PlayerBar.tsx               # Player name/score bars
-│   ├── PlayerSlots.tsx             # Slot-based invite UI
-│   └── spectator-renderers/        # Game-specific spectator renderers
+├── components/
+│   ├── InvitePickerModal.tsx       # Unified invite picker (Friends + Groups tabs)
+│   ├── FriendPickerModal.tsx       # Shared friend picker (used by invite + scorecard)
+│   └── games/
+│       ├── GamePickerModal.tsx     # Game selection for invites
+│       ├── UniversalInviteCard.tsx # Invite card with join/start buttons
+│       ├── GameInviteBadge.tsx     # Pending invite count badge
+│       ├── GameOverModal.tsx       # Game over overlay
+│       ├── MatchmakingModal.tsx    # Matchmaking progress
+│       ├── MultiplayerOverlay.tsx  # Score race overlay
+│       ├── SpectatorOverlay.tsx    # Spectator viewer UI
+│       ├── SpectatorBanner.tsx     # "X watching" indicator
+│       ├── TurnBasedOverlay.tsx    # Turn-based game UI components
+│       ├── PlayerBar.tsx           # Player name/score bars
+│       ├── PlayerSlots.tsx         # Slot-based invite UI
+│       └── spectator-renderers/    # Game-specific spectator renderers
 ```
 
 ### Colyseus Server
@@ -1114,24 +1206,21 @@ colyseus-server/
 │   │   │   ├── ReversiRoom.ts
 │   │   │   └── CrazyEightsRoom.ts
 │   │   ├── quickplay/
-│   │   │   ├── ReactionRoom.ts
-│   │   │   ├── TimedTapRoom.ts
+│   │   │   ├── BounceBlitzRoom.ts
+│   │   │   ├── BrickBreakerRoom.ts
 │   │   │   └── DotMatchRoom.ts
 │   │   ├── physics/
 │   │   │   ├── PongRoom.ts
-│   │   │   ├── AirHockeyRoom.ts
-│   │   │   ├── BounceBlitzRoom.ts
-│   │   │   ├── BrickBreakerRoom.ts
-│   │   │   ├── GolfDuelsRoom.ts
-│   │   │   └── TropicalFishingRoom.ts
+│   │   │   └── MiniGolfDuelsRoom.ts
 │   │   ├── coop/
 │   │   │   ├── CrosswordRoom.ts
 │   │   │   └── WordMasterRoom.ts
 │   │   ├── incremental/
 │   │   │   └── StarforgeRoom.ts
+│   │   ├── party/
+│   │   │   └── SketchPartyRoom.ts
 │   │   ├── spectator/
 │   │   │   └── SpectatorRoom.ts
-│   │   └── PoolRoom.ts
 │   ├── schemas/
 │   │   ├── common.ts               # Player, BaseGameState, Vec2, GameTimer
 │   │   ├── turnbased.ts            # TurnBasedState, GridCell, MoveRecord
@@ -1139,9 +1228,11 @@ colyseus-server/
 │   │   ├── physics.ts              # PhysicsState, Ball, Paddle
 │   │   ├── spectator.ts            # SpectatorRoomState, SpectatorEntry
 │   │   ├── cards.ts                # Card game schemas
-│   │   ├── tropicalFishing.ts      # Fishing game schemas
+│   │   ├── draw.ts                 # Drawing schemas (Sketch Party)
+│   │   ├── minigolf.ts             # Mini Golf Duels schemas
+│   │   ├── sketchParty.ts          # Sketch Party game schemas
 │   │   ├── starforge.ts            # Starforge game schemas
-│   │   └── golfDuels.ts            # Golf game schemas
+│   │   └── index.ts                # Re-exports
 │   └── services/
 │       ├── firebase.ts             # Firebase Admin SDK init + token verification
 │       ├── persistence.ts          # saveGameState, loadGameState, persistGameResult
@@ -1296,4 +1387,4 @@ Spectators in any room:
 
 ---
 
-_Last updated: 2026-02-14_
+_Last updated: 2026-02-18_

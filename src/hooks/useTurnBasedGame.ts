@@ -24,11 +24,12 @@
 
 import { shouldUseColyseus } from "@/config/colyseus";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
-import { Room } from "@colyseus/sdk";
+import { colyseusService } from "@/services/colyseus";
+import type { GameSessionContext } from "@/types/gameSession";
+import { createLogger } from "@/utils/log";
+import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-
-import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useTurnBasedGame");
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -398,58 +399,90 @@ export function useTurnBasedGame(
 
   // ─── Join / Connect ──────────────────────────────────────────────────
 
+  /** Guard against concurrent / duplicate joinRoom calls */
+  const joiningRef = useRef(false);
+
   const joinRoom = useCallback(
     async (options: Record<string, any> = {}) => {
+      // ── Idempotency guard ──────────────────────────────────────────
+      // If we're already connecting or connected, leave the old room
+      // first to prevent filling a room with duplicate sessions of the
+      // same user (which locks the room and blocks the real opponent).
+      if (joiningRef.current) {
+        logger.warn(
+          "[TurnBased] joinRoom called while already joining — ignoring",
+        );
+        return;
+      }
+      if (roomRef.current) {
+        logger.warn(
+          "[TurnBased] joinRoom called while already in a room — leaving old room first",
+        );
+        try {
+          roomRef.current.leave?.();
+        } catch {
+          /* ignore */
+        }
+        roomRef.current = null;
+        setRoom(null);
+      }
+      joiningRef.current = true;
+
       setIsMultiplayer(true);
       setPhase("connecting");
       setError(null);
 
       try {
-        const { colyseusService } = await import("@/services/colyseus");
-        const { getColyseusRoomName } = await import("@/config/colyseus");
-
-        const roomName = getColyseusRoomName(gameType);
-        if (!roomName) {
-          throw new Error(`No Colyseus room configured for ${gameType}`);
-        }
-
-        // If a roomId is provided (invite flow), join by ID instead of matchmaking
         const { roomId, ...joinOptions } = options;
-        let room;
+        let room: Room;
+
+        logger.info(
+          `[TurnBased] joinRoom: gameType=${gameType}, roomId=${roomId ?? "none"}, firestoreGameId=${joinOptions.firestoreGameId ?? "none"}`,
+        );
+
+        const eventHandlers = {
+          onStateChange: handleStateChange,
+          onError: (code: number, message?: string) => {
+            if (!mountedRef.current) return;
+            setError(`Connection error: ${message ?? "Unknown error"}`);
+            setPhase("idle");
+          },
+          onLeave: (code: number) => {
+            if (!mountedRef.current) return;
+            if (code > 1000) {
+              setError("Disconnected from server");
+            }
+          },
+        };
+
         if (roomId) {
-          room = await colyseusService.joinById(roomId, joinOptions, {
-            onStateChange: handleStateChange,
-            onError: (code: number, message?: string) => {
-              if (!mountedRef.current) return;
-              setError(`Connection error: ${message ?? "Unknown error"}`);
-              setPhase("idle");
-            },
-            onLeave: (code: number) => {
-              if (!mountedRef.current) return;
-              if (code > 1000) {
-                setError("Disconnected from server");
-              }
-            },
-          });
+          // Legacy path: join by explicit room ID
+          room = await colyseusService.joinById(
+            roomId,
+            joinOptions,
+            eventHandlers,
+          );
         } else {
-          room = await colyseusService.joinOrCreate(gameType, joinOptions, {
-            onStateChange: handleStateChange,
-            onError: (code: number, message?: string) => {
-              if (!mountedRef.current) return;
-              setError(`Connection error: ${message ?? "Unknown error"}`);
-              setPhase("idle");
-            },
-            onLeave: (code: number) => {
-              if (!mountedRef.current) return;
-              if (code > 1000) {
-                setError("Disconnected from server");
-              }
-            },
-          });
+          // Canonical path: build GameSessionContext → joinWithContext
+          const ctx: GameSessionContext = {
+            gameType: gameType as any, // screens pass Colyseus keys, resolver normalises
+            entryPoint: "play",
+            mode: "colyseus",
+            ...(joinOptions.firestoreGameId
+              ? { firestoreGameId: joinOptions.firestoreGameId as string }
+              : {}),
+            ...(joinOptions.spectator ? { spectator: true } : {}),
+          };
+          room = await colyseusService.joinWithContext(ctx, eventHandlers);
         }
 
         roomRef.current = room;
         setRoom(room as Room);
+        joiningRef.current = false;
+
+        logger.info(
+          `[TurnBased] Joined room: roomId=${room?.roomId}, sessionId=${room?.sessionId}`,
+        );
 
         if (mountedRef.current) {
           // Don't force "waiting" — the server's first state change will
@@ -479,7 +512,11 @@ export function useTurnBasedGame(
           });
         }
       } catch (err: any) {
+        joiningRef.current = false;
         if (mountedRef.current) {
+          logger.error(
+            `[TurnBased] joinRoom failed: ${err.message}\nStack: ${err.stack}`,
+          );
           setError(err.message || "Failed to connect");
           setPhase("idle");
           setIsMultiplayer(false);
@@ -542,6 +579,7 @@ export function useTurnBasedGame(
   );
 
   const cancelMultiplayer = useCallback(() => {
+    joiningRef.current = false;
     if (roomRef.current) {
       roomRef.current.leave?.();
       roomRef.current = null;
@@ -630,6 +668,7 @@ export function useTurnBasedGame(
 
   useEffect(() => {
     return () => {
+      joiningRef.current = false;
       if (roomRef.current) {
         roomRef.current.leave?.();
         roomRef.current = null;

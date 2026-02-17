@@ -64,6 +64,10 @@ export function messageV2ToWithProfile(
           voiceDurationMs: msg.attachments[0].durationMs ?? 0,
         }
       : {}),
+    // Image attachment URL for media messages
+    ...(type === "image" && msg.attachments?.[0]?.url
+      ? { imageUrl: msg.attachments[0].url }
+      : {}),
   };
 }
 

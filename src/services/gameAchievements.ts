@@ -24,7 +24,6 @@ import { checkAndGrantBadgeForAchievement } from "./badges";
 import { getFirestoreInstance } from "./firebase";
 import { StatsGameType } from "./gameStats";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/gameAchievements");
 // Lazy getter to avoid calling getFirestoreInstance at module load time
@@ -450,53 +449,6 @@ export const GAME_ACHIEVEMENTS: Achievement[] = [
     xpReward: 400,
     hidden: false,
     order: 42,
-  },
-
-  // ===== Pool =====
-  {
-    id: "pool_first_win",
-    name: "Rookie Shooter",
-    description: "Win your first pool game",
-    icon: "🎱",
-    tier: "bronze",
-    category: "multiplayer",
-    trigger: "win_count",
-    gameType: "8ball_pool",
-    threshold: 1,
-    coinReward: 20,
-    xpReward: 40,
-    hidden: false,
-    order: 50,
-  },
-  {
-    id: "pool_wins_10",
-    name: "Pool Shark",
-    description: "Win 10 pool games",
-    icon: "🦈",
-    tier: "silver",
-    category: "multiplayer",
-    trigger: "win_count",
-    gameType: "8ball_pool",
-    threshold: 10,
-    coinReward: 75,
-    xpReward: 150,
-    hidden: false,
-    order: 51,
-  },
-  {
-    id: "pool_perfect",
-    name: "Run the Table",
-    description: "Win without opponent potting any balls",
-    icon: "🏆",
-    tier: "gold",
-    category: "multiplayer",
-    trigger: "perfect",
-    gameType: "8ball_pool",
-    threshold: 1,
-    coinReward: 150,
-    xpReward: 300,
-    hidden: false,
-    order: 52,
   },
 
   // ===== Daily Challenge =====

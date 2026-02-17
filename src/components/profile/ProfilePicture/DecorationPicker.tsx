@@ -11,6 +11,7 @@ import {
   AVATAR_DECORATIONS,
   getDecorationsByCategory,
 } from "@/data/avatarDecorations";
+import { useColors } from "@/store/ThemeContext";
 import type { AvatarDecoration, DecorationCategory } from "@/types/userProfile";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useMemo, useState } from "react";
@@ -23,7 +24,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useTheme } from "react-native-paper";
 
 export interface DecorationPickerProps {
   /** IDs of decorations the user owns */
@@ -184,16 +184,16 @@ export function DecorationPicker({
   itemSize = 100,
   numColumns = 3,
 }: DecorationPickerProps) {
-  const theme = useTheme();
-  // Map MD3 colors to simpler names for convenience
+  const profileColors = useColors();
+  // Map profile theme colors to simpler names for convenience
   const colors = {
-    primary: theme.colors.primary,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    border: theme.colors.outline,
-    error: theme.colors.error,
+    primary: profileColors.primary,
+    surface: profileColors.surface,
+    surfaceVariant: profileColors.surfaceVariant,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    border: profileColors.outline,
+    error: profileColors.error,
   };
   const [selectedCategory, setSelectedCategory] = useState<
     DecorationCategory | "all"

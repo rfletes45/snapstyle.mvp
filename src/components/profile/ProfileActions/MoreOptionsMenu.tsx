@@ -16,9 +16,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Divider, Text, useTheme } from "react-native-paper";
+import { Divider, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileRelationship } from "@/types/userProfile";
 
 // =============================================================================
@@ -58,6 +59,11 @@ interface MenuOptionProps {
   icon: string;
   label: string;
   onPress: () => void;
+  colors: {
+    text: string;
+    textSecondary: string;
+    error: string;
+  };
   destructive?: boolean;
   disabled?: boolean;
 }
@@ -66,16 +72,10 @@ function MenuOption({
   icon,
   label,
   onPress,
+  colors,
   destructive = false,
   disabled = false,
 }: MenuOptionProps) {
-  const theme = useTheme();
-  const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    error: theme.colors.error,
-  };
-
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -118,15 +118,8 @@ function MoreOptionsMenuBase({
   onBlock,
   onReport,
 }: MoreOptionsMenuProps) {
-  const theme = useTheme();
-  const colors = {
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    error: theme.colors.error,
-    overlay: "rgba(0, 0, 0, 0.5)",
-  };
+  const colors = useColors();
+  const overlay = "rgba(0, 0, 0, 0.5)";
   const insets = useSafeAreaInsets();
 
   // Determine available actions based on relationship
@@ -160,7 +153,7 @@ function MoreOptionsMenuBase({
     >
       {/* Backdrop */}
       <Pressable
-        style={[styles.backdrop, { backgroundColor: colors.overlay }]}
+        style={[styles.backdrop, { backgroundColor: overlay }]}
         onPress={onClose}
       >
         <View style={styles.backdropInner} />
@@ -197,6 +190,7 @@ function MoreOptionsMenuBase({
               <MenuOption
                 icon="share-variant"
                 label="Share Profile"
+                colors={colors}
                 onPress={() => handleOptionPress(onShareProfile)}
               />
             )}
@@ -204,6 +198,7 @@ function MoreOptionsMenuBase({
               <MenuOption
                 icon="link"
                 label="Copy Profile Link"
+                colors={colors}
                 onPress={() => handleOptionPress(onCopyLink)}
               />
             )}
@@ -218,6 +213,7 @@ function MoreOptionsMenuBase({
               <MenuOption
                 icon={isMuted ? "bell" : "bell-off"}
                 label={isMuted ? "Unmute" : "Mute"}
+                colors={colors}
                 onPress={() => handleOptionPress(onToggleMute)}
               />
             )}
@@ -225,6 +221,7 @@ function MoreOptionsMenuBase({
               <MenuOption
                 icon="account-remove"
                 label="Remove Friend"
+                colors={colors}
                 onPress={() => handleOptionPress(onRemoveFriend)}
                 destructive
               />
@@ -238,6 +235,7 @@ function MoreOptionsMenuBase({
           <MenuOption
             icon="account-cancel"
             label="Block"
+            colors={colors}
             onPress={() => handleOptionPress(onBlock)}
             destructive
           />
@@ -246,6 +244,7 @@ function MoreOptionsMenuBase({
           <MenuOption
             icon="flag"
             label="Report"
+            colors={colors}
             onPress={() => handleOptionPress(onReport)}
             destructive
           />
@@ -254,7 +253,12 @@ function MoreOptionsMenuBase({
         <Divider style={styles.divider} />
 
         {/* Cancel */}
-        <MenuOption icon="close" label="Cancel" onPress={onClose} />
+        <MenuOption
+          icon="close"
+          label="Cancel"
+          colors={colors}
+          onPress={onClose}
+        />
       </View>
     </Modal>
   );

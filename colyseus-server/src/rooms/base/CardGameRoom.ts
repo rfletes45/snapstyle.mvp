@@ -1,8 +1,9 @@
-﻿import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
+import { createServerLogger } from "../../utils/logger";
 const log = createServerLogger("CardGameRoom");
 
 /**
- * CardGameRoom â€” Abstract base for card games with hidden information
+ * CardGameRoom — Abstract base for card games with hidden information
  *
  * Card games differ from grid games because player hands are PRIVATE.
  * Colyseus state sync broadcasts to ALL clients, so hands are stored
@@ -11,7 +12,7 @@ const log = createServerLogger("CardGameRoom");
  * Shared state (synced to all): top card, hand sizes, current suit, deck size
  * Private state (per-client messages): actual hand cards
  *
- * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md Â§6.4
+ * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §6.4
  */
 
 import { Client, Room } from "colyseus";
@@ -19,10 +20,12 @@ import { CardGameState, CardPlayer, ServerCard } from "../../schemas/cards";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
+  deleteGameAndInvite,
   loadGameState,
   persistGameResult,
   saveGameState,
 } from "../../services/persistence";
+import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
 // Abstract Base
@@ -35,7 +38,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
 
   protected abstract readonly gameTypeKey: string;
 
-  /** Server-side hands â€” NOT synced via state */
+  /** Server-side hands — NOT synced via state */
   protected hands = new Map<string, ServerCard[]>();
 
   /** Server-side deck */
@@ -44,7 +47,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
   /** Server-side discard pile (full history) */
   protected discardPile: ServerCard[] = [];
 
-  /** Map session â†’ uid */
+  /** Map session → uid */
   protected playerUids = new Map<string, string>();
 
   /** Player order for turn management */
@@ -57,12 +60,15 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
   /** Track spectator session IDs */
   private spectatorSessionIds = new Set<string>();
 
+  /** Scoped logger with room-level context */
+  protected roomLog: ServerLogger = log;
+
   /** Check if a session is a spectator */
   protected isSpectator(sessionId: string): boolean {
     return this.spectatorSessionIds.has(sessionId);
   }
 
-  // â”€â”€â”€ Abstract Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Abstract Methods ───────────────────────────────────────────────
 
   /** Set up initial game state (deal cards, etc.) */
   protected abstract initializeGame(options: Record<string, any>): void;
@@ -80,24 +86,52 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
   /** Restore private state from persistence */
   protected abstract restorePrivateState(saved: Record<string, any>): void;
 
-  // â”€â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Auth ───────────────────────────────────────────────────────────
 
   async onAuth(
     client: Client,
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // -- Protocol version gate ---------------------------------------------
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: this.gameTypeKey,
+      });
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
+
+    log.info("Auth success", {
+      uid: decoded.uid,
+      sessionId: client.sessionId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options?.firestoreGameId,
+      traceId: options?.traceId,
+      protocolVersion: proto.clientVersion,
+      platform: options?.buildInfo?.platform,
+    });
+
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
+      traceId: options?.traceId,
     };
   }
 
-  // â”€â”€â”€ onCreate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── onCreate ───────────────────────────────────────────────────────
 
   async onCreate(options: Record<string, any>): Promise<void> {
     this.setState(new CardGameState());
@@ -118,10 +152,10 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     this.state.phase = "waiting";
   }
 
-  // â”€â”€â”€ onJoin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── onJoin ─────────────────────────────────────────────────────────
 
   async onJoin(client: Client, options: any, auth: any): Promise<void> {
-    // â”€â”€â”€ Spectator join â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator join ─────────────────────────────────────────────────
     if (options.spectator === true) {
       const spectator = new SpectatorEntry();
       spectator.uid = auth.uid;
@@ -132,8 +166,8 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       this.state.spectators.set(client.sessionId, spectator);
       this.state.spectatorCount++;
       this.spectatorSessionIds.add(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -151,8 +185,8 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     this.playerUids.set(client.sessionId, auth.uid);
     this.playerOrder.push(client.sessionId);
 
-    log.info(
-      `[${this.gameTypeKey}] Player joined: ${player.displayName} (index ${player.playerIndex})`,
+    this.roomLog.info(
+      `Player joined: ${player.displayName} (index ${player.playerIndex})`,
     );
 
     if (this.state.cardPlayers.size >= 2) {
@@ -167,16 +201,16 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     }
   }
 
-  // â”€â”€â”€ onLeave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── onLeave ────────────────────────────────────────────────────────
 
   async onLeave(client: Client, code?: number): Promise<void> {
-    // â”€â”€â”€ Spectator leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator leave ────────────────────────────────────────────────
     if (this.spectatorSessionIds.has(client.sessionId)) {
       this.state.spectators.delete(client.sessionId);
       this.state.spectatorCount = Math.max(0, this.state.spectatorCount - 1);
       this.spectatorSessionIds.delete(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator left (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator left (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -217,7 +251,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     }
   }
 
-  // â”€â”€â”€ Messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Messages ───────────────────────────────────────────────────────
 
   messages: Record<string, (client: Client, payload?: any) => void> = {
     ready: (client: Client) => {
@@ -279,7 +313,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     },
   };
 
-  // â”€â”€â”€ Shared Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Shared Helpers ─────────────────────────────────────────────────
 
   protected checkAllReady(): void {
     if (this.state.cardPlayers.size < 2) return;
@@ -382,7 +416,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     });
   }
 
-  // â”€â”€â”€ Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Persistence ────────────────────────────────────────────────────
 
   private restoreFromSaved(saved: any): void {
     this.state.phase = saved.phase || "playing";
@@ -406,8 +440,12 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     if (this.state.phase === "finished") {
       try {
         await persistGameResult(this.state, gameDurationMs);
+        // Clean up game docs + mark invite as completed
+        const firestoreGameId =
+          this.state.firestoreGameId || this.state.gameId || this.roomId;
+        await deleteGameAndInvite(firestoreGameId);
       } catch (e) {
-        log.error(`[${this.gameTypeKey}] Failed to persist result:`, e);
+        this.roomLog.error(`Failed to persist result:`, e);
       }
     } else if (this.allPlayersLeft && this.state.phase === "playing") {
       try {
@@ -415,10 +453,8 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
           private: this.serializePrivateState(),
         });
       } catch (e) {
-        log.error(`[${this.gameTypeKey}] Failed to save state:`, e);
+        this.roomLog.error(`Failed to save state:`, e);
       }
     }
   }
 }
-
-

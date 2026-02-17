@@ -12,8 +12,13 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
-import { SpectatorBanner } from "@/components/games/SpectatorBanner";
-import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import {
   CountdownOverlay,
   GameOverOverlay,
@@ -21,16 +26,22 @@ import {
   ReconnectingOverlay,
   WaitingOverlay,
 } from "@/components/games/MultiplayerOverlay";
+import { SpectatorBanner } from "@/components/games/SpectatorBanner";
+import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
 import { useSpectator } from "@/hooks/useSpectator";
-import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
   PersonalBest,
   recordGameSession,
   sendScorecard,
 } from "@/services/games";
+import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
@@ -46,7 +57,13 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Dimensions,
@@ -56,11 +73,6 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -101,8 +113,8 @@ const PLAYER_COLORS = {
 };
 
 type Owner = 0 | 1 | 2; // 0 = unclaimed
-type GameState = "menu" | "playing" | "result";
-type GameMode = "ai" | "local";
+type GameState = "menu" | "lobby" | "playing" | "result";
+type GameMode = "ai" | "local" | "online";
 
 // Horizontal lines: hLines[row][col] — line from dot(row,col) to dot(row,col+1)
 // Vertical lines:   vLines[row][col] — line from dot(row,col) to dot(row+1,col)
@@ -343,7 +355,13 @@ function DotMatchGameScreen({
 }) {
   const __codexGameCompletion = useGameCompletion({ gameType: "dot_match" });
   void __codexGameCompletion;
-  useGameBackHandler({ gameType: "dot_match", isGameOver: false });
+  const [gameMode, setGameMode] = useState<GameMode>("ai");
+  useGameBackHandler({
+    gameType: "dot_match",
+    isGameOver: false,
+    isMultiplayer: gameMode === "online",
+    entryPoint: route?.params?.entryPoint,
+  });
   const __codexGameHaptics = useGameHaptics();
   void __codexGameHaptics;
   const __codexGameOverModal = (
@@ -360,9 +378,39 @@ function DotMatchGameScreen({
     "dot_match_game",
     route?.params?.matchId,
   );
+  // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useMultiplayerGame({
     gameType: "dot_match_game",
     firestoreGameId: firestoreGameId ?? undefined,
+  });
+
+  // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
+  const lobbyController = useGameLobbyController({
+    gameType: "dot_match",
+    inviteId: route?.params?.inviteId,
+    entryPoint: route?.params?.entryPoint,
+    isTurnBased: false,
+    onGameReady: (gameId: string) => {
+      setGameMode("online");
+      setGameState("playing");
+      mp.startMultiplayer({
+        firestoreGameId: gameId,
+        spectator: isSpectator,
+      }).then(() => {
+        if (!isSpectator) {
+          mp.sendReady();
+        }
+      });
+    },
+    onLeaveLobby: () => {
+      setGameState("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
   });
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
@@ -375,13 +423,17 @@ function DotMatchGameScreen({
       : mp.spectatorCount;
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route?.params?.inviteId) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
-      mp.startMultiplayer({ spectator: isSpectator });
+      setGameMode("online");
+      mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
     }
-  }, [resolvedMode, firestoreGameId, isSpectator]);
+  }, [resolvedMode, firestoreGameId, isSpectator, route?.params?.inviteId]);
 
-  const [gameState, setGameState] = useState<GameState>("menu");
-  const [gameMode, setGameMode] = useState<GameMode>("ai");
+  const [gameState, setGameState] = useState<GameState>(
+    route?.params?.inviteId ? "lobby" : "menu",
+  );
   const [board, setBoard] = useState<BoardState>(createEmptyBoard());
   const [currentPlayer, setCurrentPlayer] = useState<1 | 2>(1);
   const [playerScore, setPlayerScore] = useState(0);
@@ -600,39 +652,56 @@ function DotMatchGameScreen({
   const [showInvitePicker, setShowInvitePicker] = useState(false);
 
   const handleInviteFriend = useCallback(() => {
-    setShowInvitePicker(true);
+    setGameState("lobby");
   }, []);
 
   const handleSelectFriendForInvite = useCallback(
-    async (friend: any) => {
+    async (friend: FriendItem) => {
       if (!currentFirebaseUser || !profile) return;
       setShowInvitePicker(false);
       setInviteLoading(true);
       try {
-        await sendGameInvite(
-          currentFirebaseUser.uid,
-          profile.displayName || "Player",
-          profile.avatarConfig
-            ? JSON.stringify(profile.avatarConfig)
-            : undefined,
-          {
-            gameType: "dot_match",
-            recipientId: friend.friendUid,
-            recipientName: friend.displayName || "Friend",
-            settings: { isRated: false, chatEnabled: false },
-          },
-        );
-        Alert.alert(
-          "Invite Sent!",
-          `Game invite sent to ${friend.displayName || "your friend"}. They'll see it on their Play screen!`,
+        await lobbyController.lobby.sendFriendInvite(
+          friend.friendUid,
+          friend.displayName || "Friend",
+          undefined,
         );
       } catch (error: any) {
-        Alert.alert("Error", "Failed to send game invite. Please try again.");
+        Alert.alert(
+          "Error",
+          error?.message || "Failed to send game invite. Please try again.",
+        );
       } finally {
         setInviteLoading(false);
       }
     },
-    [currentFirebaseUser, profile],
+    [currentFirebaseUser, profile, lobbyController.lobby],
+  );
+
+  const handleSelectGroupForInvite = useCallback(
+    async (group: GroupItem) => {
+      if (!currentFirebaseUser || !profile) return;
+      setShowInvitePicker(false);
+      setInviteLoading(true);
+      try {
+        const members = await getGroupMembers(group.groupId);
+        const memberIds = members.map((m) => m.uid);
+        await lobbyController.lobby.sendGroupInvite(
+          group.groupId,
+          group.name,
+          memberIds,
+        );
+      } catch (error: any) {
+        Alert.alert(
+          "Error",
+          error?.message ||
+            "Failed to send group game invite. Please try again.",
+        );
+      } finally {
+        setInviteLoading(false);
+      }
+    },
+    [currentFirebaseUser, profile, lobbyController.lobby],
   );
 
   const resultTitle = useMemo(() => {
@@ -680,7 +749,23 @@ function DotMatchGameScreen({
         <View style={{ width: 32 }} />
       </View>
 
-      {gameState === "menu" ? (
+      {gameState === "lobby" ? (
+        <View style={{ flex: 1 }}>
+          <MultiplayerLobbyOverlay
+            controller={lobbyController}
+            gameTitle="Dot Match"
+            gameIcon="🔵🔴"
+            onInvitePress={() => setShowInvitePicker(true)}
+            onLeave={() => {
+              lobbyController.lobby.leaveLobby();
+              setGameState("menu");
+            }}
+            showReadyButton={false}
+          >
+            <View style={{ flex: 1 }} />
+          </MultiplayerLobbyOverlay>
+        </View>
+      ) : gameState === "menu" ? (
         <View style={styles.menuContent}>
           <Text style={[styles.gameTitle, { color: colors.text }]}>
             🔵🔴 Dots
@@ -770,12 +855,19 @@ function DotMatchGameScreen({
                   ? `Player ${currentPlayer}'s turn`
                   : currentPlayer === 1
                     ? "Your turn"
-                    : "AI thinking..."}
+                    : gameMode === "online"
+                      ? "Bot thinking..."
+                      : "AI thinking..."}
               </Text>
             )}
             <View style={styles.scoreItem}>
               <Text style={[styles.scoreLabel, { color: colors.text }]}>
-                {gameMode === "local" ? "P2" : "AI"}: {aiScore}
+                {gameMode === "local"
+                  ? "P2"
+                  : gameMode === "online"
+                    ? "Bot"
+                    : "AI"}
+                : {aiScore}
               </Text>
               <View
                 style={[styles.scoreDot, { backgroundColor: PLAYER_COLORS[2] }]}
@@ -1078,12 +1170,13 @@ function DotMatchGameScreen({
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Send Scorecard"
       />
-      <FriendPickerModal
+      <InvitePickerModal
         visible={showInvitePicker}
         onDismiss={() => setShowInvitePicker(false)}
         onSelectFriend={handleSelectFriendForInvite}
+        onSelectGroup={handleSelectGroupForInvite}
         currentUserId={currentFirebaseUser?.uid || ""}
-        title="Invite to game Dots"
+        title="Invite to Dot Match"
       />
       <WaitingOverlay
         visible={mp.phase === "waiting"}

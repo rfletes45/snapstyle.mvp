@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Achievement Definitions Data
  *
  * Comprehensive achievement definitions for all games.
@@ -305,7 +305,6 @@ export const BOUNCE_BLITZ_ACHIEVEMENTS: GameAchievementDefinition[] = [
   },
 ];
 
-
 // =============================================================================
 // Play 2048 Achievements
 // =============================================================================
@@ -467,7 +466,6 @@ export const PLAY_2048_ACHIEVEMENTS: GameAchievementDefinition[] = [
     progressTarget: 10,
   },
 ];
-
 
 // =============================================================================
 // Multiplayer General Achievements
@@ -1161,88 +1159,8 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
 ];
 
 // =============================================================================
-// Pool Achievements (Future Phase)
+// Brick Breaker Achievements
 // =============================================================================
-
-export const POOL_ACHIEVEMENTS: GameAchievementDefinition[] = [
-  {
-    id: "pool_first_win",
-    name: "Eight Ball Sunk",
-    description: "Win your first game of 8-Ball",
-    icon: "Ã°Å¸Å½Â±",
-    category: "pool",
-    tier: "bronze",
-    xpReward: TIER_REWARDS.bronze.xp,
-    coinReward: TIER_REWARDS.bronze.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "pool_win", conditions: { count: 1 } },
-    progressType: "instant",
-  },
-  {
-    id: "pool_wins_10",
-    name: "Pool Shark",
-    description: "Win 10 games of 8-Ball",
-    icon: "Ã°Å¸Â¦Ë†",
-    category: "pool",
-    tier: "silver",
-    xpReward: TIER_REWARDS.silver.xp,
-    coinReward: TIER_REWARDS.silver.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "pool_win", conditions: { count: 10 } },
-    progressType: "count",
-    progressTarget: 10,
-  },
-  {
-    id: "pool_wins_50",
-    name: "Pool Master",
-    description: "Win 50 games of 8-Ball",
-    icon: "Ã°Å¸Ââ€ ",
-    category: "pool",
-    tier: "gold",
-    xpReward: TIER_REWARDS.gold.xp,
-    coinReward: TIER_REWARDS.gold.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "pool_win", conditions: { count: 50 } },
-    progressType: "count",
-    progressTarget: 50,
-    unlocks: { type: "badge", itemId: "pool_master_badge" },
-  },
-  {
-    id: "pool_run_out",
-    name: "Run Out",
-    description: "Clear the table without missing",
-    icon: "Ã¢Â­Â",
-    category: "pool",
-    tier: "gold",
-    xpReward: TIER_REWARDS.gold.xp,
-    coinReward: TIER_REWARDS.gold.coins,
-    secret: false,
-    repeatable: false,
-    trigger: { type: "pool_run_out", conditions: {} },
-    progressType: "instant",
-    unlocks: { type: "badge", itemId: "run_out_badge" },
-  },
-  {
-    id: "pool_golden_break",
-    name: "Golden Break",
-    description: "Sink the 8-ball on the break",
-    icon: "Ã°Å¸Å’Å¸",
-    category: "pool",
-    tier: "platinum",
-    xpReward: TIER_REWARDS.platinum.xp,
-    coinReward: TIER_REWARDS.platinum.coins,
-    secret: true,
-    repeatable: false,
-    trigger: { type: "pool_8ball_break", conditions: {} },
-    progressType: "instant",
-    unlocks: { type: "avatar_frame", itemId: "golden_break_frame" },
-  },
-];
-
-
 // =============================================================================
 // Brick Breaker Achievements
 // =============================================================================
@@ -1563,7 +1481,6 @@ export const ALL_GAME_ACHIEVEMENTS: GameAchievementDefinition[] = [
   ...CHECKERS_ACHIEVEMENTS,
   ...CHESS_ACHIEVEMENTS,
   ...CRAZY_EIGHTS_ACHIEVEMENTS,
-  ...POOL_ACHIEVEMENTS,
   ...STREAK_ACHIEVEMENTS,
 ];
 

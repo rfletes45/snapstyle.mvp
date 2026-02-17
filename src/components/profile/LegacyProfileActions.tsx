@@ -4,7 +4,7 @@
  * List of action buttons for profile navigation.
  */
 
-import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileAction } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
@@ -17,7 +17,7 @@ export interface ProfileActionsProps {
 }
 
 function ProfileActionsBase({ actions }: ProfileActionsProps) {
-  const colors = useProfileThemeColors();
+  const colors = useColors();
 
   return (
     <View style={styles.container}>
@@ -45,7 +45,9 @@ function ProfileActionsBase({ actions }: ProfileActionsProps) {
               ]}
             >
               <MaterialCommunityIcons
-                name={action.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                name={
+                  action.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                }
                 size={22}
                 color={action.color || colors.primary}
               />

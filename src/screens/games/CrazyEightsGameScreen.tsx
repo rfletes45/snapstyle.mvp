@@ -23,12 +23,6 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import React, { useEffect, useState } from "react";
-import Animated, {
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
 import {
   Alert,
   Dimensions,
@@ -38,9 +32,18 @@ import {
   View,
 } from "react-native";
 import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import FriendPickerModal from "@/components/FriendPickerModal";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
 import { GameOverModal, GameResult } from "@/components/games/GameOverModal";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
@@ -51,12 +54,12 @@ import {
   TurnBasedReconnectingOverlay,
   TurnBasedWaitingOverlay,
 } from "@/components/games/TurnBasedOverlay";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useCardGame } from "@/hooks/useCardGame";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
-import { sendGameInvite } from "@/services/gameInvites";
 import {
   calculateHandScore,
   createInitialCrazyEightsState,
@@ -67,6 +70,7 @@ import {
   sortHand,
   validateCrazyEightsMove,
 } from "@/services/games/crazyEightsLogic";
+import { getGroupMembers } from "@/services/groups";
 import {
   endMatch,
   resignMatch,
@@ -83,11 +87,12 @@ import {
   CrazyEightsMatch,
   CrazyEightsMove,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
+import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/CrazyEightsGameScreen");
 // =============================================================================
 // Constants
@@ -121,7 +126,7 @@ interface CrazyEightsGameScreenProps {
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "colyseus" | "waiting";
+type GameMode = "menu" | "lobby" | "local" | "online" | "colyseus" | "waiting";
 
 // Extended state to track hands (not stored in Firestore gameState for privacy)
 interface LocalGameState {
@@ -430,7 +435,15 @@ function CrazyEightsGameScreen({
   navigation,
   route,
 }: CrazyEightsGameScreenProps) {
-  useGameBackHandler({ gameType: "crazy_eights", isGameOver: false });
+  const initialMode: GameMode = route.params?.inviteId ? "lobby" : "menu";
+  const [gameMode, setGameMode] = useState<GameMode>(initialMode);
+  useGameBackHandler({
+    gameType: "crazy_eights",
+    isGameOver: false,
+    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
+    isInLobby: gameMode === "lobby",
+    entryPoint: route.params?.entryPoint,
+  });
 
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
@@ -439,8 +452,30 @@ function CrazyEightsGameScreen({
 
   const isSpectator = route.params?.spectatorMode === true;
 
-  // Colyseus multiplayer hook
+  // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useCardGame("crazy_eights_game");
+
+  // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
+  const lobbyController = useGameLobbyController({
+    gameType: "crazy_eights",
+    inviteId: route.params?.inviteId,
+    entryPoint: route.params?.entryPoint,
+    isTurnBased: true,
+    onGameReady: (gameId: string) => {
+      logger.info(`[CrazyEights] Lobby ready, gameId=${gameId}`);
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+    },
+    onLeaveLobby: () => {
+      setGameMode("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
+  });
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
     room: mp.room,
@@ -488,7 +523,6 @@ function CrazyEightsGameScreen({
   });
 
   // Game state
-  const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [gameState, setGameState] = useState<CrazyEightsGameState | null>(null);
   const [localState, setLocalState] = useState<LocalGameState | null>(null);
 
@@ -524,6 +558,8 @@ function CrazyEightsGameScreen({
   // ==========================================================================
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route.params?.inviteId) return;
     if (!matchId) return;
 
     logger.info("[CrazyEights] Setting up subscription for match:", matchId);
@@ -614,6 +650,8 @@ function CrazyEightsGameScreen({
   );
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route.params?.inviteId) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameMode("colyseus");
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
@@ -621,7 +659,7 @@ function CrazyEightsGameScreen({
       setGameMode("online");
       setMatchId(firestoreGameId);
     }
-  }, [resolvedMode, firestoreGameId]);
+  }, [resolvedMode, firestoreGameId, route.params?.inviteId]);
 
   // ==========================================================================
   // Local Game Logic
@@ -1015,42 +1053,50 @@ function CrazyEightsGameScreen({
   };
 
   const handleInviteFriend = () => {
-    setShowFriendPicker(true);
+    setGameMode("lobby");
   };
 
-  const handleSelectFriend = async (friend: {
-    friendUid: string;
-    displayName: string;
-  }) => {
+  const handleSelectInviteFriend = async (friend: FriendItem) => {
     setShowFriendPicker(false);
     if (!currentFirebaseUser || !userProfile) return;
 
     setLoading(true);
     try {
-      await sendGameInvite(
-        currentFirebaseUser.uid,
-        userProfile.displayName || "Player",
-        userProfile.avatarConfig
-          ? JSON.stringify(userProfile.avatarConfig)
-          : undefined,
-        {
-          gameType: "crazy_eights",
-          recipientId: friend.friendUid,
-          recipientName: friend.displayName,
-          settings: {
-            isRated: false,
-            chatEnabled: false,
-          },
-        },
+      await lobbyController.lobby.sendFriendInvite(
+        friend.friendUid,
+        friend.displayName || friend.username,
+        undefined,
       );
-
-      Alert.alert(
-        "Invite Sent!",
-        `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
-      );
-    } catch (error) {
+    } catch (error: any) {
       logger.error("[CrazyEights] Error sending invite:", error);
-      Alert.alert("Error", "Failed to send game invite. Please try again.");
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to send game invite. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectInviteGroup = async (group: GroupItem) => {
+    setShowFriendPicker(false);
+    if (!currentFirebaseUser || !userProfile) return;
+
+    setLoading(true);
+    try {
+      const members = await getGroupMembers(group.groupId);
+      const memberIds = members.map((m) => m.uid);
+      await lobbyController.lobby.sendGroupInvite(
+        group.groupId,
+        group.name,
+        memberIds,
+      );
+    } catch (error: any) {
+      logger.error("[CrazyEights] Error sending group invite:", error);
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to send group game invite. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -1244,6 +1290,42 @@ function CrazyEightsGameScreen({
   };
 
   // ==========================================================================
+  // Lobby Screen
+  // ==========================================================================
+
+  if (gameMode === "lobby") {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <MultiplayerLobbyOverlay
+          controller={lobbyController}
+          gameTitle="Crazy Eights"
+          gameIcon="🃏"
+          onInvitePress={() => setShowFriendPicker(true)}
+          onLeave={() => {
+            lobbyController.lobby.leaveLobby();
+            setGameMode("menu");
+          }}
+          showReadyButton={false}
+        >
+          {/* Children rendered when phase transitions to "playing" */}
+          <View style={{ flex: 1 }} />
+        </MultiplayerLobbyOverlay>
+
+        <InvitePickerModal
+          visible={showFriendPicker}
+          onDismiss={() => setShowFriendPicker(false)}
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
+          currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // ==========================================================================
   // Menu Screen
   // ==========================================================================
 
@@ -1354,12 +1436,13 @@ function CrazyEightsGameScreen({
           </View>
         </View>
 
-        <FriendPickerModal
+        <InvitePickerModal
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
-          onSelectFriend={handleSelectFriend}
-          title="Challenge a Friend"
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
           currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
         />
       </SafeAreaView>
     );
@@ -1403,10 +1486,16 @@ function CrazyEightsGameScreen({
   };
 
   const deckLength = getDeckLength();
-  const canDraw = deckLength > 0;
+  const canDraw =
+    gameMode === "colyseus"
+      ? deckLength > 0 && mp.drawCount === 0
+      : deckLength > 0 && (!gameState || !gameState.hasDrawnThisTurn);
   const canPass =
     gameMode === "colyseus"
-      ? mp.isMyTurn && mp.phase === "playing"
+      ? mp.isMyTurn &&
+        mp.phase === "playing" &&
+        (mp.deckSize === 0 || mp.drawCount > 0) &&
+        playableCards.length === 0
       : gameState &&
         (deckLength === 0 || gameState.drawCount > 0) &&
         !hasPlayableCard(currentHand, gameState);
@@ -1626,9 +1715,7 @@ function CrazyEightsGameScreen({
           {gameMode === "colyseus"
             ? mp.myName || "You"
             : gameMode === "local"
-              ? gameState?.currentTurn === "player1"
-                ? "Player 1"
-                : "Player 2"
+              ? `Player ${gameState?.currentTurn?.replace("player", "") || "1"}`
               : userProfile?.displayName || "You"}
         </Text>
         <HandComponent
@@ -1673,12 +1760,13 @@ function CrazyEightsGameScreen({
           }
         }}
       />
-      <FriendPickerModal
+      <InvitePickerModal
         visible={showFriendPicker}
         onDismiss={() => setShowFriendPicker(false)}
-        onSelectFriend={handleSelectFriend}
-        title="Challenge a Friend"
+        onSelectFriend={handleSelectInviteFriend}
+        onSelectGroup={handleSelectInviteGroup}
         currentUserId={currentFirebaseUser?.uid || ""}
+        title="Challenge a Friend"
       />
       {/* Colyseus Multiplayer Overlays */}
       {gameMode === "colyseus" && (

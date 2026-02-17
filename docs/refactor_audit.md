@@ -37,11 +37,13 @@ This PR performs a safety-first refactor/performance audit focused on proven dea
 ### Build/test command discovery
 
 Root (`package.json`):
+
 - `npm run lint`
 - `npm run type-check`
 - `npm test`
 
 Other package commands discovered:
+
 - `client`: `npm run typecheck`, `npm run build`
 - `colyseus-server`: `npm run lint`, `npm test`, `npm run build`
 - `server`: `npm run build`
@@ -99,14 +101,16 @@ Other package commands discovered:
 
 ### 5.1 Dead code / unreachable path cleanup
 
-1) `src/utils/log.ts`
+1. `src/utils/log.ts`
+
 - Removed confirmed-unused constants:
   - `LOG_LEVEL_COLORS`
   - `RESET_COLOR`
 - Rationale: symbols were never referenced in module/runtime.
 - Risk: **Low** (no call-site or output-path dependency).
 
-2) `src/utils/permissions.ts`
+2. `src/utils/permissions.ts`
+
 - Removed unreachable `catch` branches from placeholder photo-library helpers:
   - `requestPhotoLibraryPermission`
   - `hasPhotoLibraryPermission`
@@ -115,7 +119,8 @@ Other package commands discovered:
 
 ### 5.2 Dedupe + rendering/runtime efficiency
 
-1) `src/screens/games/components/GameRecommendations.tsx`
+1. `src/screens/games/components/GameRecommendations.tsx`
+
 - Replaced repeated `recs.find(...)` membership checks with `Set<ExtendedGameType>` tracking.
 - Reused stable game-press callback across cards by passing game type from `RecommendationCard` instead of creating a new inline closure per row render.
 - Removed unused parent `isDark` destructure.
@@ -124,7 +129,8 @@ Other package commands discovered:
 
 ### 5.3 Performance fix (hot utility path)
 
-1) `src/utils/log.ts`
+1. `src/utils/log.ts`
+
 - Added one-time normalized `SENSITIVE_KEY_PATTERNS` and switched per-key sensitive matching from `Array.some` callback allocation to loop with early break.
 - Rationale: this path runs for every logged object key; reduces callback allocations and repeated normalization work.
 - Risk: **Low** (same sanitization intent, with stronger case-insensitive matching).
@@ -140,10 +146,10 @@ Other package commands discovered:
 
 ### Recommended next actions
 
-1) Stabilize root test infrastructure (Jest Expo ESM handling) before broader refactors.
-2) Profile pool/chess perf tests and optimize simulation hotspots in targeted engine modules.
-3) Run dependency-prune pass per package (`depcheck`/manual) with runtime smoke test per app/server.
-4) Tackle lint debt in small game-by-game batches with snapshot/gameplay verification gates.
+1. Stabilize root test infrastructure (Jest Expo ESM handling) before broader refactors.
+2. Profile pool/chess perf tests and optimize simulation hotspots in targeted engine modules.
+3. Run dependency-prune pass per package (`depcheck`/manual) with runtime smoke test per app/server.
+4. Tackle lint debt in small game-by-game batches with snapshot/gameplay verification gates.
 
 ## 7) Verification results (post-change)
 

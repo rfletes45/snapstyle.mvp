@@ -16,11 +16,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Button, Chip, IconButton, Text, useTheme } from "react-native-paper";
+import { Button, Chip, IconButton, Text } from "react-native-paper";
 import Animated, { FadeIn, ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import type { MoodType, ProfileStatus } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
 
@@ -82,18 +83,18 @@ function StatusPickerBase({
   onClose,
   saving = false,
 }: StatusPickerProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const insets = useSafeAreaInsets();
 
   const colors = {
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    primary: theme.colors.primary,
-    outline: theme.colors.outline,
-    error: theme.colors.error,
+    background: profileColors.background,
+    surface: profileColors.surface,
+    surfaceVariant: profileColors.surfaceVariant,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    primary: profileColors.primary,
+    outline: profileColors.outline,
+    error: profileColors.error,
   };
 
   // State

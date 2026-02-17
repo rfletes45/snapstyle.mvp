@@ -37,6 +37,24 @@ export const PROFILE_THEMES: ProfileTheme[] = [
     previewImagePath: "themes/default_preview.png",
     rarity: "common",
     colors: {
+      background: "#1a1a2e",
+      surface: "#16213e",
+      surfaceVariant: "#0f3460",
+      primary: "#e94560",
+      secondary: "#533483",
+      text: "#EAEAEA",
+      textSecondary: "#A0A0B0",
+    },
+    unlock: { type: "free" },
+    sortOrder: 0,
+  },
+  {
+    id: "classic_light",
+    name: "Classic Light",
+    description: "Clean and bright",
+    previewImagePath: "themes/default_preview.png",
+    rarity: "common",
+    colors: {
       background: "#FFFFFF",
       surface: "#F5F5F5",
       surfaceVariant: "#EEEEEE",
@@ -46,7 +64,7 @@ export const PROFILE_THEMES: ProfileTheme[] = [
       textSecondary: "#757575",
     },
     unlock: { type: "free" },
-    sortOrder: 0,
+    sortOrder: 1,
   },
   {
     id: "catppuccin-latte",
@@ -64,7 +82,7 @@ export const PROFILE_THEMES: ProfileTheme[] = [
       textSecondary: "#6c6f85",
     },
     unlock: { type: "free" },
-    sortOrder: 1,
+    sortOrder: 2,
   },
   {
     id: "catppuccin-mocha",
@@ -82,7 +100,7 @@ export const PROFILE_THEMES: ProfileTheme[] = [
       textSecondary: "#bac2de",
     },
     unlock: { type: "free" },
-    sortOrder: 2,
+    sortOrder: 3,
   },
   {
     id: "dark_mode",
@@ -100,7 +118,7 @@ export const PROFILE_THEMES: ProfileTheme[] = [
       textSecondary: "#B0B0B0",
     },
     unlock: { type: "free" },
-    sortOrder: 3,
+    sortOrder: 4,
   },
   {
     id: "midnight_blue",

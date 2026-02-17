@@ -7,6 +7,7 @@
  * @module components/profile/ProfilePicture/ProfilePicture
  */
 
+import { useColors } from "@/store/ThemeContext";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +16,6 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { useTheme } from "react-native-paper";
 import { InitialsAvatar } from "./InitialsAvatar";
 
 export interface ProfilePictureProps {
@@ -50,7 +50,7 @@ export function ProfilePicture({
   onLoad,
   onError,
 }: ProfilePictureProps) {
-  const { colors } = useTheme();
+  const colors = useColors();
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
 

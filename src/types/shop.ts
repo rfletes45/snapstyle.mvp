@@ -1109,7 +1109,6 @@ export const POINTS_SHOP_TABS: ShopTabConfig[] = [
         icon: "🏳️",
         slots: ["profile_banner"],
       },
-      { key: "themes", label: "Themes", icon: "🎨", slots: ["profile_theme"] },
     ],
   },
   {

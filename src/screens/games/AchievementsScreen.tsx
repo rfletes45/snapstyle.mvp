@@ -10,13 +10,13 @@
  */
 
 import { ErrorState, LoadingState } from "@/components/ui";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import {
   ALL_GAME_ACHIEVEMENTS,
   getAchievementsByCategory as getNewAchievementsByCategory,
 } from "@/data/gameAchievements";
 import { getUserAchievements } from "@/services/achievements";
 import { useAuth } from "@/store/AuthContext";
-import type { PlayStackParamList } from "@/types/navigation/root";
 import {
   AchievementCategory,
   GameAchievementDefinition,
@@ -24,6 +24,7 @@ import {
 } from "@/types/achievements";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import { Achievement } from "@/types/models";
+import type { PlayStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -43,8 +44,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/AchievementsScreen");
@@ -88,7 +87,6 @@ const CATEGORY_TO_TAB: Record<AchievementCategory, AchievementTab> = {
   checkers: "multiplayer",
   tic_tac_toe: "multiplayer",
   crazy_eights: "multiplayer",
-  pool: "multiplayer",
 
   // Miscellaneous tab
   daily: "misc",
@@ -120,9 +118,8 @@ const CATEGORY_CONFIG: Record<
   checkers: { title: "Checkers", icon: "checkerboard", order: 15 },
   tic_tac_toe: { title: "Tic-Tac-Toe", icon: "grid", order: 16 },
   crazy_eights: { title: "Crazy Eights", icon: "cards-playing", order: 17 },
-  pool: { title: "8-Ball Pool", icon: "billiards", order: 18 },
-  daily: { title: "Daily", icon: "calendar-today", order: 19 },
-  seasonal: { title: "Seasonal", icon: "star", order: 20 },
+  daily: { title: "Daily", icon: "calendar-today", order: 18 },
+  seasonal: { title: "Seasonal", icon: "star", order: 19 },
 };
 
 /** Map game IDs to their specific achievement categories */
@@ -134,15 +131,12 @@ const gameIdToCategoryMap: Record<string, AchievementCategory[]> = {
   word_master: ["word_master"],
   brick_breaker: ["brick_breaker"],
   tile_slide: ["tile_slide"],
-  reaction_tap: ["casual_games"],
-  timed_tap: ["casual_games"],
   clicker_mine: ["casual_games"],
   helix_drop: ["casual_games"],
   tic_tac_toe: ["tic_tac_toe"],
   checkers: ["checkers"],
   chess: ["chess"],
   crazy_eights: ["crazy_eights"],
-  "8ball_pool": ["pool"],
 };
 
 // =============================================================================
@@ -368,7 +362,8 @@ export default function AchievementsScreen({ navigation, route }: Props) {
     [userAchievements],
   );
   const earnedMap = useMemo(
-    () => new Map<string, Achievement>(userAchievements.map((a) => [a.type, a])),
+    () =>
+      new Map<string, Achievement>(userAchievements.map((a) => [a.type, a])),
     [userAchievements],
   );
 
@@ -504,7 +499,9 @@ export default function AchievementsScreen({ navigation, route }: Props) {
                 onPress={() => setActiveTab(tab.id)}
               >
                 <MaterialCommunityIcons
-                  name={tab.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                  name={
+                    tab.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                  }
                   size={18}
                   color={
                     isActive

@@ -62,6 +62,8 @@ export interface SkiaFilteredImageProps {
   height: number;
   /** Optional rotation in degrees (0, 90, 180, 270) */
   rotation?: number;
+  /** Mirror the image horizontally (for front-camera selfies) */
+  mirrored?: boolean;
   /** Style override for the container */
   style?: any;
 }
@@ -104,189 +106,212 @@ function lerpColorMatrix(matrix: number[], t: number): number[] {
 const SkiaFilteredImage = forwardRef<
   SkiaFilteredImageRef,
   SkiaFilteredImageProps
->(({ uri, filter, intensity = 1, width, height, rotation = 0, style }, ref) => {
-  const canvasRef = useCanvasRef();
-  const skImage = useImage(uri);
-
-  // Compute the color matrix with intensity lerp
-  const colorMatrix = useMemo(() => {
-    if (!filter || filter.id === "none") return null;
-
-    const fullMatrix = filterConfigToColorMatrix(filter);
-    return lerpColorMatrix(fullMatrix, intensity);
-  }, [filter, intensity]);
-
-  // Compute blur amount (scaled by intensity)
-  const blurAmount = useMemo(() => {
-    if (!filter || filter.id === "none") return 0;
-    return (filter.blur ?? 0) * intensity;
-  }, [filter, intensity]);
-
-  // Vignette strength (scaled by intensity)
-  const vignetteStrength = useMemo(() => {
-    if (!filter || filter.id === "none") return 0;
-    return (filter.vignette ?? 0) * intensity;
-  }, [filter, intensity]);
-
-  // Grain strength (scaled by intensity)
-  const grainStrength = useMemo(() => {
-    if (!filter || filter.id === "none") return 0;
-    return (filter.grain ?? 0) * intensity;
-  }, [filter, intensity]);
-
-  // Fade / lift blacks (scaled by intensity)
-  const fadeAmount = useMemo(() => {
-    if (!filter || filter.id === "none") return 0;
-    return (filter.fade ?? 0) * intensity;
-  }, [filter, intensity]);
-
-  // Temperature shift matrix
-  const temperatureMatrix = useMemo(() => {
-    if (!filter || filter.id === "none") return null;
-    const temp = (filter.temperature ?? 0) * intensity;
-    if (Math.abs(temp) < 0.01) return null;
-    // Warm = boost red, reduce blue; Cool = boost blue, reduce red
-    return [
-      1 + temp * 0.1,
-      0,
-      0,
-      0,
-      temp * 0.03,
-      0,
-      1,
-      0,
-      0,
-      temp * 0.01,
-      0,
-      0,
-      1 - temp * 0.1,
-      0,
-      -temp * 0.03,
-      0,
-      0,
-      0,
-      1,
-      0,
-    ];
-  }, [filter, intensity]);
-
-  // Expose snapshot methods to parent
-  useImperativeHandle(
+>(
+  (
+    {
+      uri,
+      filter,
+      intensity = 1,
+      width,
+      height,
+      rotation = 0,
+      mirrored = false,
+      style,
+    },
     ref,
-    () => ({
-      makeSnapshot: async () => {
-        try {
-          const snapshot = await canvasRef.current?.makeImageSnapshotAsync();
-          return snapshot ?? null;
-        } catch (e) {
-          logger.error("[SkiaFilteredImage] Snapshot failed:", e);
-          return null;
-        }
-      },
-      captureAsJpeg: async (quality = 85) => {
-        try {
-          const snapshot = await canvasRef.current?.makeImageSnapshotAsync();
-          if (!snapshot) return null;
-          const bytes = snapshot.encodeToBytes();
-          return bytes ?? null;
-        } catch (e) {
-          logger.error("[SkiaFilteredImage] JPEG capture failed:", e);
-          return null;
-        }
-      },
-    }),
-    [canvasRef],
-  );
+  ) => {
+    const canvasRef = useCanvasRef();
+    const skImage = useImage(uri);
 
-  if (!skImage) {
-    // Image still loading — render a black placeholder the same size
-    return (
-      <View
-        style={[{ width, height, backgroundColor: "#111" }, style]}
-        pointerEvents="none"
-      />
+    // Compute the color matrix with intensity lerp
+    const colorMatrix = useMemo(() => {
+      if (!filter || filter.id === "none") return null;
+
+      const fullMatrix = filterConfigToColorMatrix(filter);
+      return lerpColorMatrix(fullMatrix, intensity);
+    }, [filter, intensity]);
+
+    // Compute blur amount (scaled by intensity)
+    const blurAmount = useMemo(() => {
+      if (!filter || filter.id === "none") return 0;
+      return (filter.blur ?? 0) * intensity;
+    }, [filter, intensity]);
+
+    // Vignette strength (scaled by intensity)
+    const vignetteStrength = useMemo(() => {
+      if (!filter || filter.id === "none") return 0;
+      return (filter.vignette ?? 0) * intensity;
+    }, [filter, intensity]);
+
+    // Grain strength (scaled by intensity)
+    const grainStrength = useMemo(() => {
+      if (!filter || filter.id === "none") return 0;
+      return (filter.grain ?? 0) * intensity;
+    }, [filter, intensity]);
+
+    // Fade / lift blacks (scaled by intensity)
+    const fadeAmount = useMemo(() => {
+      if (!filter || filter.id === "none") return 0;
+      return (filter.fade ?? 0) * intensity;
+    }, [filter, intensity]);
+
+    // Temperature shift matrix
+    const temperatureMatrix = useMemo(() => {
+      if (!filter || filter.id === "none") return null;
+      const temp = (filter.temperature ?? 0) * intensity;
+      if (Math.abs(temp) < 0.01) return null;
+      // Warm = boost red, reduce blue; Cool = boost blue, reduce red
+      return [
+        1 + temp * 0.1,
+        0,
+        0,
+        0,
+        temp * 0.03,
+        0,
+        1,
+        0,
+        0,
+        temp * 0.01,
+        0,
+        0,
+        1 - temp * 0.1,
+        0,
+        -temp * 0.03,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ];
+    }, [filter, intensity]);
+
+    // Expose snapshot methods to parent
+    useImperativeHandle(
+      ref,
+      () => ({
+        makeSnapshot: async () => {
+          try {
+            const snapshot = await canvasRef.current?.makeImageSnapshotAsync();
+            return snapshot ?? null;
+          } catch (e) {
+            logger.error("[SkiaFilteredImage] Snapshot failed:", e);
+            return null;
+          }
+        },
+        captureAsJpeg: async (quality = 85) => {
+          try {
+            const snapshot = await canvasRef.current?.makeImageSnapshotAsync();
+            if (!snapshot) return null;
+            const bytes = snapshot.encodeToBytes();
+            return bytes ?? null;
+          } catch (e) {
+            logger.error("[SkiaFilteredImage] JPEG capture failed:", e);
+            return null;
+          }
+        },
+      }),
+      [canvasRef],
     );
-  }
 
-  const hasFilter = colorMatrix !== null;
-  const hasBlur = blurAmount > 0.1;
-  const hasVignette = vignetteStrength > 0.01;
-  const hasGrain = grainStrength > 0.01;
-  const hasFade = fadeAmount > 0.01;
-  const hasTemperature = temperatureMatrix !== null;
+    if (!skImage) {
+      // Image still loading — render a black placeholder the same size
+      return (
+        <View
+          style={[{ width, height, backgroundColor: "#111" }, style]}
+          pointerEvents="none"
+        />
+      );
+    }
 
-  return (
-    <Canvas
-      ref={canvasRef}
-      style={[{ width, height }, style]}
-      pointerEvents="none"
-    >
-      {/* Base image with color matrix + blur filters */}
-      <SkiaImage
-        image={skImage}
-        x={0}
-        y={0}
-        width={width}
-        height={height}
-        fit="cover"
+    const hasFilter = colorMatrix !== null;
+    const hasBlur = blurAmount > 0.1;
+    const hasVignette = vignetteStrength > 0.01;
+    const hasGrain = grainStrength > 0.01;
+    const hasFade = fadeAmount > 0.01;
+    const hasTemperature = temperatureMatrix !== null;
+
+    return (
+      <Canvas
+        ref={canvasRef}
+        style={[{ width, height }, style]}
+        pointerEvents="none"
       >
-        {/* Apply color matrix filter if active */}
-        {hasFilter && <ColorMatrix matrix={colorMatrix!} />}
-        {/* Apply temperature shift as a second color matrix */}
-        {hasTemperature && <ColorMatrix matrix={temperatureMatrix!} />}
-        {/* Apply Gaussian blur if the filter specifies it */}
-        {hasBlur && <Blur blur={blurAmount * 3} mode="clamp" />}
-      </SkiaImage>
-
-      {/* Fade / lift blacks: semi-transparent dark-gray overlay */}
-      {hasFade && (
-        <Rect x={0} y={0} width={width} height={height}>
-          <LinearGradient
-            start={vec(0, 0)}
-            end={vec(0, 0)}
-            colors={[
-              `rgba(40, 40, 40, ${fadeAmount * 0.35})`,
-              `rgba(40, 40, 40, ${fadeAmount * 0.35})`,
-            ]}
-          />
-        </Rect>
-      )}
-
-      {/* Vignette: radial gradient from transparent center to dark edges */}
-      {hasVignette && (
-        <Rect x={0} y={0} width={width} height={height}>
-          <RadialGradient
-            c={vec(width / 2, height / 2)}
-            r={Math.max(width, height) * 0.65}
-            colors={["transparent", `rgba(0, 0, 0, ${vignetteStrength * 0.7})`]}
-            positions={[0.4, 1.0]}
-          />
-        </Rect>
-      )}
-
-      {/* Film grain: noise rendered as a pattern of semi-transparent dots */}
-      {hasGrain && (
-        <Group opacity={grainStrength * 0.4} blendMode="overlay">
-          {Array.from({ length: Math.floor(grainStrength * 200) }, (_, i) => {
-            const gx = (i * 7919) % width;
-            const gy = (i * 7907) % height;
-            const size = ((i * 13) % 3) + 1;
-            const bright = i % 2 === 0 ? 255 : 0;
-            return (
-              <Circle
-                key={i}
-                cx={gx}
-                cy={gy}
-                r={size}
-                color={`rgba(${bright}, ${bright}, ${bright}, 0.3)`}
-              />
-            );
-          })}
+        {/* Base image with color matrix + blur filters */}
+        <Group
+          transform={
+            mirrored ? [{ translateX: width }, { scaleX: -1 }] : undefined
+          }
+        >
+          <SkiaImage
+            image={skImage}
+            x={0}
+            y={0}
+            width={width}
+            height={height}
+            fit="cover"
+          >
+            {/* Apply color matrix filter if active */}
+            {hasFilter && <ColorMatrix matrix={colorMatrix!} />}
+            {/* Apply temperature shift as a second color matrix */}
+            {hasTemperature && <ColorMatrix matrix={temperatureMatrix!} />}
+            {/* Apply Gaussian blur if the filter specifies it */}
+            {hasBlur && <Blur blur={blurAmount * 3} mode="clamp" />}
+          </SkiaImage>
         </Group>
-      )}
-    </Canvas>
-  );
-});
+
+        {/* Fade / lift blacks: semi-transparent dark-gray overlay */}
+        {hasFade && (
+          <Rect x={0} y={0} width={width} height={height}>
+            <LinearGradient
+              start={vec(0, 0)}
+              end={vec(0, 0)}
+              colors={[
+                `rgba(40, 40, 40, ${fadeAmount * 0.35})`,
+                `rgba(40, 40, 40, ${fadeAmount * 0.35})`,
+              ]}
+            />
+          </Rect>
+        )}
+
+        {/* Vignette: radial gradient from transparent center to dark edges */}
+        {hasVignette && (
+          <Rect x={0} y={0} width={width} height={height}>
+            <RadialGradient
+              c={vec(width / 2, height / 2)}
+              r={Math.max(width, height) * 0.65}
+              colors={[
+                "transparent",
+                `rgba(0, 0, 0, ${vignetteStrength * 0.7})`,
+              ]}
+              positions={[0.4, 1.0]}
+            />
+          </Rect>
+        )}
+
+        {/* Film grain: noise rendered as a pattern of semi-transparent dots */}
+        {hasGrain && (
+          <Group opacity={grainStrength * 0.4} blendMode="overlay">
+            {Array.from({ length: Math.floor(grainStrength * 200) }, (_, i) => {
+              const gx = (i * 7919) % width;
+              const gy = (i * 7907) % height;
+              const size = ((i * 13) % 3) + 1;
+              const bright = i % 2 === 0 ? 255 : 0;
+              return (
+                <Circle
+                  key={i}
+                  cx={gx}
+                  cy={gy}
+                  r={size}
+                  color={`rgba(${bright}, ${bright}, ${bright}, 0.3)`}
+                />
+              );
+            })}
+          </Group>
+        )}
+      </Canvas>
+    );
+  },
+);
 
 SkiaFilteredImage.displayName = "SkiaFilteredImage";
 
@@ -324,7 +349,7 @@ export const SkiaFilterThumbnail: React.FC<SkiaFilterThumbnailProps> =
     }
 
     return (
-      <Canvas style={{ width, height }}>
+      <Canvas style={{ width, height }} pointerEvents="none">
         <SkiaImage
           image={skImage}
           x={0}

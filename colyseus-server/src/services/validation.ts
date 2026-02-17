@@ -19,7 +19,6 @@ const log = createServerLogger("validation");
 const SCORE_BOUNDS: Record<string, { maxPerSecond: number; maxTotal: number }> =
   {
     reaction: { maxPerSecond: 1, maxTotal: 10 },
-    timed_tap: { maxPerSecond: 20, maxTotal: 999 },
     dot_match: { maxPerSecond: 5, maxTotal: 999 },
   };
 
@@ -76,5 +75,3 @@ export function getScoreBounds(
 ): { maxPerSecond: number; maxTotal: number } | null {
   return SCORE_BOUNDS[gameType] || null;
 }
-
-

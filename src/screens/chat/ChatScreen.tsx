@@ -5,11 +5,14 @@
  * Refactored to use unified abstractions achieving ~400 lines from ~1,700.
  *
  * Extractions Made:
- * - useSnapCapture: Snap/photo capture and upload logic
+ * - useAttachmentPicker: Camera capture + gallery attachment management
  * - DMMessageItem: Message rendering component
  * - messageAdapters: V1↔V2 message conversion utilities
  *
  * Enhanced Features:
+ * - In-app camera captures send directly to chat (via handleDirectCameraSend)
+ * - Gallery picks queue in AttachmentTray for multi-image sends
+ * - DM streak tracking preserved on camera sends
  * - Message highlight animation when navigating to replied messages
  * - Jump-back button after scrolling to a reply target
  */
@@ -39,18 +42,23 @@ import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 
 // Unified chat hooks (UNI-04, UNI-05)
+import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
 import { usePresence } from "@/hooks/usePresence";
 import { useReadReceipts } from "@/hooks/useReadReceipts";
-import { useSnapCapture } from "@/hooks/useSnapCapture";
 import { useTypingStatus } from "@/hooks/useTypingStatus";
 import { useUnifiedChatScreen } from "@/hooks/useUnifiedChatScreen";
 import { useVoiceRecorder, VoiceRecording } from "@/hooks/useVoiceRecorder";
 
+// Services
+import { updateStreakAfterMessage } from "@/services/streakCosmetics";
+
 // Chat components
 import {
+  AttachmentTray,
   ChatComposer,
   ChatGameInvites,
   ChatMessageList,
+  MediaViewerModal,
   MessageActionsSheet,
   TypingIndicator,
 } from "@/components/chat";
@@ -83,6 +91,7 @@ import {
 import { GamePickerModal } from "@/components/games/GamePickerModal";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
 import { ExtendedGameType } from "@/types/games";
+import type { UniversalGameInvite } from "@/types/turnBased";
 
 // Call buttons
 import { CallButtonGroup } from "@/components/calls";
@@ -91,7 +100,7 @@ import { CallButtonGroup } from "@/components/calls";
 import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
 import { playQuack } from "@/services/chat/quackService";
-import type { ReplyToMetadata } from "@/types/messaging";
+import type { AttachmentV2, ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
 import {
   messageV2ToWithProfile,
@@ -187,6 +196,17 @@ export default function ChatScreen({
   const [selectedMessage, setSelectedMessage] =
     useState<MessageWithProfile | null>(null);
 
+  // Media viewer state
+  const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
+  const [viewerAttachments, setViewerAttachments] = useState<AttachmentV2[]>(
+    [],
+  );
+  const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
+  const [viewerSenderName, setViewerSenderName] = useState<
+    string | undefined
+  >();
+  const [viewerTimestamp, setViewerTimestamp] = useState<Date | undefined>();
+
   // Scheduled messages
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
@@ -222,19 +242,117 @@ export default function ChatScreen({
     currentUserName:
       currentFirebaseUser?.displayName || currentFirebaseUser?.email || "User",
     enableVoice: true,
-    enableAttachments: false,
+    enableAttachments: true,
     enableMentions: false,
     enableScheduledMessages: true,
     onSchedulePress: () => setScheduleModalVisible(true),
     debug: DEBUG_CHAT,
   });
 
-  const snap = useSnapCapture({
-    uid,
-    friendUid,
-    chatId,
-    debug: DEBUG_CHAT,
+  // ==========================================================================
+  // Camera & Attachment Hooks (replaces legacy useSnapCapture)
+  // ==========================================================================
+
+  /** Streak milestone messages for DM photo celebrations */
+  const MILESTONE_MESSAGES: Record<number, string> = useMemo(
+    () => ({
+      3: "🔥 3-day streak! You're on fire!\n\nUnlocked: Flame Cap 🔥",
+      7: "🔥 1 week streak! Amazing!\n\nUnlocked: Cool Shades 😎",
+      14: "🔥 2 week streak! Incredible!\n\nUnlocked: Gradient Glow ✨",
+      30: "🔥 30-day streak! One month!\n\nUnlocked: Golden Crown 👑",
+      50: "🔥 50-day streak! Legendary!\n\nUnlocked: Star Glasses 🤩",
+      100: "💯 100-day streak! Champion!\n\nUnlocked: Rainbow Burst 🌈",
+      365: "🏆 365-day streak! One year!\n\nUnlocked: Legendary Halo 😇",
+    }),
+    [],
+  );
+
+  // Send an in-app camera capture directly as a media message (skip tray).
+  const handleDirectCameraSend = useCallback(
+    async (imageUri: string) => {
+      if (!uid || !chatId || screen.sending) return;
+      try {
+        const id = `cam_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        await screen.chat.sendMessage("", {
+          kind: "media",
+          attachments: [
+            {
+              id,
+              uri: imageUri,
+              kind: "image",
+              mime: "image/jpeg",
+            },
+          ],
+        });
+
+        // Update DM streak after successful camera send
+        try {
+          const { newCount, milestoneReached } = await updateStreakAfterMessage(
+            uid,
+            friendUid,
+          );
+          if (milestoneReached) {
+            const message =
+              MILESTONE_MESSAGES[milestoneReached] ||
+              `🎉 ${milestoneReached}-day streak milestone!`;
+            Alert.alert("Streak Milestone! 🎉", message);
+          }
+        } catch (streakErr) {
+          logger.error("❌ [ChatScreen] Streak update failed:", streakErr);
+        }
+      } catch (error: any) {
+        logger.error("❌ [ChatScreen] Camera send error:", error);
+        Alert.alert("Error", error.message || "Failed to send photo");
+      }
+    },
+    [uid, chatId, friendUid, screen.chat, screen.sending, MILESTONE_MESSAGES],
+  );
+
+  // Send gallery-selected images directly as media messages (skip tray).
+  const handleDirectGallerySend = useCallback(
+    async (imageUris: string[]) => {
+      if (!uid || !chatId || screen.sending) return;
+      for (const uri of imageUris) {
+        try {
+          const id = `gal_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+          await screen.chat.sendMessage("", {
+            kind: "media",
+            attachments: [{ id, uri, kind: "image", mime: "image/jpeg" }],
+          });
+        } catch (error: any) {
+          logger.error("❌ [ChatScreen] Gallery send error:", error);
+          Alert.alert("Error", error.message || "Failed to send photo");
+        }
+      }
+
+      // Update DM streak once after all images sent
+      try {
+        const { milestoneReached } = await updateStreakAfterMessage(
+          uid,
+          friendUid,
+        );
+        if (milestoneReached) {
+          const message =
+            MILESTONE_MESSAGES[milestoneReached] ||
+            `🎉 ${milestoneReached}-day streak milestone!`;
+          Alert.alert("Streak Milestone! 🎉", message);
+        }
+      } catch (streakErr) {
+        logger.error("❌ [ChatScreen] Streak update failed:", streakErr);
+      }
+    },
+    [uid, chatId, friendUid, screen.chat, screen.sending, MILESTONE_MESSAGES],
+  );
+
+  const attachmentPicker = useAttachmentPicker({
+    maxAttachments: 10,
+    maxFileSize: 10 * 1024 * 1024,
+    allowedTypes: ["image"],
     routeParams: route.params as Record<string, any>,
+    returnRoute: "ChatDetail",
+    returnData: { friendUid, chatId },
+    onCameraCapture: handleDirectCameraSend,
+    onGalleryPick: handleDirectGallerySend,
   });
 
   // Typing indicator
@@ -544,16 +662,86 @@ export default function ChatScreen({
   );
 
   const handleSendMessage = useCallback(async () => {
-    if (!uid || !chatId || !screen.composer.text.trim()) return;
-    try {
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
-      // Clear typing indicator when sending
-      typing.setTyping(false);
-      await screen.composer.send();
-    } catch (error) {
-      logger.error("❌ [ChatScreen] Send error:", error);
+    const hasText = screen.composer.text.trim().length > 0;
+    const hasAttachments = attachmentPicker.attachments.length > 0;
+
+    if (!uid || !chatId || (!hasText && !hasAttachments) || screen.sending)
+      return;
+
+    const text = screen.composer.text.trim();
+    const currentReplyTo = screen.chat.replyTo;
+
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+    typing.setTyping(false);
+    screen.composer.clearText();
+
+    // Text-only path (no attachments)
+    if (hasText && !hasAttachments) {
+      try {
+        const result = await screen.chat.sendMessage(text, {
+          replyTo: currentReplyTo || undefined,
+        });
+        if (!result.success) {
+          screen.composer.setText(text);
+          Alert.alert("Error", result.error || "Failed to send");
+        }
+      } catch (error: any) {
+        screen.composer.setText(text);
+        logger.error("❌ [ChatScreen] Send error:", error);
+      }
+      return;
     }
-  }, [uid, chatId, screen.composer, typing]);
+
+    // Attachment path (gallery picks via attachment tray)
+    screen.chat.clearReplyTo();
+    try {
+      if (hasAttachments) {
+        const localAttachments = [...attachmentPicker.attachments];
+        attachmentPicker.clearAttachments();
+
+        for (const attachment of localAttachments) {
+          await screen.chat.sendMessage("", {
+            replyTo: currentReplyTo || undefined,
+            kind: "media",
+            attachments: [
+              {
+                id: attachment.id,
+                uri: attachment.uri,
+                kind: attachment.kind,
+                mime: attachment.mime || "image/jpeg",
+              },
+            ],
+          });
+        }
+
+        // Send text separately if present
+        if (hasText) {
+          await screen.chat.sendMessage(text, {
+            replyTo: currentReplyTo || undefined,
+          });
+        }
+      }
+    } catch (error: any) {
+      logger.error("❌ [ChatScreen] Send error:", error);
+      Alert.alert("Error", error.message || "Failed to send");
+    }
+  }, [
+    uid,
+    chatId,
+    screen.composer,
+    screen.chat,
+    screen.sending,
+    typing,
+    attachmentPicker,
+  ]);
+
+  const handleAddAttachment = useCallback(async () => {
+    await attachmentPicker.pickFromGallery();
+  }, [attachmentPicker]);
+
+  const handleCaptureFromCamera = useCallback(async () => {
+    await attachmentPicker.captureFromCamera();
+  }, [attachmentPicker]);
 
   const handleVoiceRecordingComplete = useCallback(
     async (recording: VoiceRecording) => {
@@ -648,6 +836,9 @@ export default function ChatScreen({
     returnIndexRef.current = null;
   }, []);
 
+  // Guard to prevent duplicate navigation to the same game/invite
+  const navigatedInvitesRef = useRef<Set<string>>(new Set());
+
   const handleNavigateToGame = useCallback(
     (
       gameId: string,
@@ -657,6 +848,17 @@ export default function ChatScreen({
         spectatorMode?: boolean;
       },
     ) => {
+      // De-duplicate: if we already navigated for this inviteId, skip
+      if (options?.inviteId) {
+        if (navigatedInvitesRef.current.has(options.inviteId)) {
+          logger.info(
+            `[ChatScreen] Skipping duplicate navigation for invite ${options.inviteId}`,
+          );
+          return;
+        }
+        navigatedInvitesRef.current.add(options.inviteId);
+      }
+
       const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
       if (screen) {
         // Navigate through MainTabs -> Play tab -> specific game screen
@@ -665,7 +867,7 @@ export default function ChatScreen({
           params: {
             screen,
             params: {
-              matchId: gameId,
+              matchId: gameId || undefined,
               inviteId: options?.inviteId,
               spectatorMode: options?.spectatorMode,
               entryPoint: "chat",
@@ -725,10 +927,21 @@ export default function ChatScreen({
     [navigation, chatId],
   );
 
-  // Handle multiplayer invite creation
-  const handleInviteCreated = useCallback(() => {
-    // Invite will appear via ChatGameInvites subscription
-  }, []);
+  // Handle multiplayer invite creation — navigate host into the game's
+  // built-in lobby immediately so they don't wait in chat.
+  const handleInviteCreated = useCallback(
+    (invite: UniversalGameInvite) => {
+      if (!invite?.id || !invite?.gameType) return;
+
+      // Navigate host to the game screen with inviteId so it enters lobby
+      // mode.  The lobby subscribes to the invite and waits for the
+      // opponent.  matchId may be empty at this point (game not yet started).
+      handleNavigateToGame(invite.gameId || "", invite.gameType, {
+        inviteId: invite.id,
+      });
+    },
+    [handleNavigateToGame],
+  );
 
   const handleBlockConfirm = async (reason?: string) => {
     if (!uid) return;
@@ -764,6 +977,26 @@ export default function ChatScreen({
       Alert.alert("Error", error.message || "Failed to submit report");
     }
   };
+
+  const handleOpenMediaViewer = useCallback(
+    (imageUrl: string, senderName: string, timestamp: Date) => {
+      setViewerAttachments([
+        {
+          id: "dm-image",
+          kind: "photo" as any,
+          mime: "image/jpeg",
+          url: imageUrl,
+          path: "",
+          sizeBytes: 0,
+        },
+      ]);
+      setViewerInitialIndex(0);
+      setViewerSenderName(senderName);
+      setViewerTimestamp(timestamp);
+      setMediaViewerVisible(true);
+    },
+    [],
+  );
 
   const handleScheduleMessage = async (scheduledFor: Date) => {
     const text = screen.composer.text.trim();
@@ -811,6 +1044,7 @@ export default function ChatScreen({
         onLongPress={handleMessageLongPress}
         onScrollToMessage={scrollToMessage}
         onRetry={handleRetryMessage}
+        onImagePress={handleOpenMediaViewer}
         isHighlighted={item.id === highlightedMessageId}
         isGrouped={isGroupedMessage(index, item)}
         showTimestamp={shouldShowTimestamp(index, item)}
@@ -824,6 +1058,7 @@ export default function ChatScreen({
       handleMessageLongPress,
       scrollToMessage,
       handleRetryMessage,
+      handleOpenMediaViewer,
       highlightedMessageId,
       isGroupedMessage,
       shouldShowTimestamp,
@@ -832,9 +1067,9 @@ export default function ChatScreen({
 
   const cameraButton = (
     <CameraLongPressButton
-      onShortPress={snap.handleCapturePhoto}
-      onLongPress={snap.showPhotoMenu}
-      disabled={screen.sending || snap.uploadingSnap}
+      onShortPress={handleCaptureFromCamera}
+      onLongPress={handleAddAttachment}
+      disabled={screen.sending || attachmentPicker.isMaxReached}
       size={40}
     />
   );
@@ -844,7 +1079,7 @@ export default function ChatScreen({
       icon="clock-outline"
       size={22}
       onPress={() => setScheduleModalVisible(true)}
-      disabled={screen.sending || snap.uploadingSnap}
+      disabled={screen.sending || attachmentPicker.isUploading}
       style={styles.scheduleButton}
     />
   ) : null;
@@ -933,18 +1168,38 @@ export default function ChatScreen({
           value={screen.composer.text}
           onChangeText={handleTextChange}
           onSend={handleSendMessage}
-          sendDisabled={!screen.canSend || snap.uploadingSnap || showSkeleton}
-          isSending={screen.sending}
+          hasAttachments={attachmentPicker.attachments.length > 0}
+          sendDisabled={
+            showSkeleton ||
+            (!screen.composer.text.trim() &&
+              attachmentPicker.attachments.length === 0) ||
+            screen.sending ||
+            attachmentPicker.isUploading
+          }
+          isSending={screen.sending || attachmentPicker.isUploading}
           placeholder="Message..."
           leftAccessory={cameraButton}
           additionalRightAccessory={scheduleButton}
+          headerContent={
+            attachmentPicker.attachments.length > 0 ? (
+              <AttachmentTray
+                attachments={attachmentPicker.attachments}
+                uploadProgress={attachmentPicker.uploadProgress}
+                onRemove={attachmentPicker.removeAttachment}
+                onAdd={handleAddAttachment}
+                maxAttachments={10}
+              />
+            ) : null
+          }
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
           onDuckPress={handleDuckPress}
           onGamePress={handleGamePress}
           voiceButtonComponent={
-            voiceRecorder.isAvailable && !screen.composer.text.trim() ? (
+            voiceRecorder.isAvailable &&
+            !screen.composer.text.trim() &&
+            attachmentPicker.attachments.length === 0 ? (
               <VoiceRecordButton
                 onRecordingComplete={handleVoiceRecordingComplete}
                 onRecordingCancelled={NOOP}
@@ -1003,6 +1258,15 @@ export default function ChatScreen({
         onSinglePlayerGame={handleSinglePlayerGame}
         onInviteCreated={handleInviteCreated}
         onError={(error) => Alert.alert("Error", error)}
+      />
+
+      <MediaViewerModal
+        visible={mediaViewerVisible}
+        attachments={viewerAttachments}
+        initialIndex={viewerInitialIndex}
+        onClose={() => setMediaViewerVisible(false)}
+        senderName={viewerSenderName}
+        timestamp={viewerTimestamp}
       />
     </>
   );

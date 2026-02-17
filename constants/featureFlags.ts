@@ -46,6 +46,30 @@ const IS_WEB = Platform.OS === "web";
 export const USE_LOCAL_STORAGE = !IS_WEB;
 
 // =============================================================================
+// Camera Backend
+// =============================================================================
+
+/**
+ * Use VisionCamera (react-native-vision-camera) as the camera backend.
+ *
+ * When `true`  → VisionCamera + Skia frame processors (pixel-perfect live
+ *                filter preview, full GPU pipeline).  Requires a custom dev
+ *                client or production build — does NOT work inside Expo Go.
+ *
+ * When `false` → expo-camera CameraView fallback with the simpler
+ *                CameraFilterOverlay tint.  Works inside Expo Go for
+ *                development & testing.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * TODO(launch): flip to `true` and remove expo-camera from package.json
+ *               once we ship via EAS builds only.
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * @default false — safe for Expo Go during development
+ */
+export const USE_VISION_CAMERA = false;
+
+// =============================================================================
 // Daily Games
 // =============================================================================
 
@@ -62,6 +86,13 @@ export const DAILY_GAMES: string[] = ["word_master"];
 // =============================================================================
 // Debug Features
 // =============================================================================
+
+/**
+ * Show Mini-Golf debug overlay with wall segment centers,
+ * corner plugs, cup radius, tee marker, and bounds rectangle.
+ * Dev-only — renders as a transparent overlay on top of the game canvas.
+ */
+export const DEBUG_MINIGOLF_OVERLAY = __DEV__;
 
 /**
  * Log V2 message events to console
@@ -524,7 +555,7 @@ export const THREE_JS_FEATURES = {
  *   Phase 1: Quick-Play (score-race pattern)
  *   Phase 2: Turn-Based (chess, checkers, connect-4)
  *   Phase 3: Complex Turn-Based (Battleship, etc.)
- *   Phase 4: Physics-Based (pool, cart course)
+ *   Phase 4: Physics-Based (pong, cart course)
  *   Phase 5: Co-op (cooperative games)
  */
 export const COLYSEUS_FEATURES = {
@@ -539,7 +570,7 @@ export const COLYSEUS_FEATURES = {
   // Tier Rollout Flags
   // =========================================================================
 
-  /** Quick-play games: ReactionTap, TimedTap, DotMatch */
+  /** Quick-play games: DotMatch */
   QUICKPLAY_ENABLED: true,
 
   /** Turn-based games: TicTacToe, ConnectFour, Gomoku, Reversi (Phase 2 â€” LIVE) */
@@ -548,7 +579,7 @@ export const COLYSEUS_FEATURES = {
   /** Complex turn-based games: Chess, Checkers, CrazyEights */
   COMPLEX_TURNBASED_ENABLED: true,
 
-  /** Physics-based games: Pong, AirHockey, BounceBlitz, BrickBreaker */
+  /** Physics-based games: Pong, BounceBlitz, BrickBreaker */
   PHYSICS_ENABLED: true,
 
   /** Cooperative games: WordMaster, Crossword */
@@ -556,6 +587,9 @@ export const COLYSEUS_FEATURES = {
 
   /** Incremental games: Starforge */
   INCREMENTAL_ENABLED: true,
+
+  /** Party games: Sketch Party */
+  PARTY_ENABLED: true,
 
   // =========================================================================
   // Feature Sub-Flags

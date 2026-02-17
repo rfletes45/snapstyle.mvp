@@ -10,8 +10,6 @@
 import { defineRoom, defineServer, listen } from "colyseus";
 import dotenv from "dotenv";
 import { initializeFirebaseAdmin } from "./services/firebase";
-import { attachFishingClientRoutes } from "./services/fishingClientHost";
-import { attachGolfClientRoutes } from "./services/golfClientHost";
 import { attachStarforgeClientRoutes } from "./services/starforgeClientHost";
 
 // Load environment variables
@@ -24,8 +22,6 @@ initializeFirebaseAdmin();
 // Room Imports — Quick-Play (Phase 1)
 // ---------------------------------------------------------------------------
 import { DotMatchRoom } from "./rooms/quickplay/DotMatchRoom";
-import { ReactionRoom } from "./rooms/quickplay/ReactionRoom";
-import { TimedTapRoom } from "./rooms/quickplay/TimedTapRoom";
 
 // ---------------------------------------------------------------------------
 // Room Imports — Turn-Based (Phase 2)
@@ -45,13 +41,10 @@ import { CrazyEightsRoom } from "./rooms/turnbased/CrazyEightsRoom";
 // ---------------------------------------------------------------------------
 // Room Imports — Physics / Real-Time (Phase 4)
 // ---------------------------------------------------------------------------
-import { AirHockeyRoom } from "./rooms/physics/AirHockeyRoom";
 import { BounceBlitzRoom } from "./rooms/physics/BounceBlitzRoom";
 import { BrickBreakerRoom } from "./rooms/physics/BrickBreakerRoom";
-import { GolfDuelsRoom } from "./rooms/physics/GolfDuelsRoom";
+import { MiniGolfDuelsRoom } from "./rooms/physics/MiniGolfDuelsRoom";
 import { PongRoom } from "./rooms/physics/PongRoom";
-import { TropicalFishingRoom } from "./rooms/physics/TropicalFishingRoom";
-import { PoolRoom } from "./rooms/PoolRoom";
 
 // ---------------------------------------------------------------------------
 // Room Imports — Cooperative / Creative (Phase 5)
@@ -63,6 +56,11 @@ import { WordMasterRoom } from "./rooms/coop/WordMasterRoom";
 // Room Imports — Incremental (Phase 6)
 // ---------------------------------------------------------------------------
 import { StarforgeRoom } from "./rooms/incremental/StarforgeRoom";
+
+// ---------------------------------------------------------------------------
+// Room Imports — Party (Phase 7)
+// ---------------------------------------------------------------------------
+import { SketchPartyRoom } from "./rooms/party/SketchPartyRoom";
 
 // ---------------------------------------------------------------------------
 // Room Imports — Spectator
@@ -82,24 +80,14 @@ const serverConfig = defineServer({
       });
     });
 
-    attachFishingClientRoutes(app, {
-      mountPath: "/fishing",
-    });
-
     attachStarforgeClientRoutes(app, {
       mountPath: "/starforge",
-    });
-
-    attachGolfClientRoutes(app, {
-      mountPath: "/golf",
     });
   },
   rooms: {
     // =====================================================================
     // Tier 4: Quick-Play Score Race — Phase 1 (LIVE)
     // =====================================================================
-    reaction: defineRoom(ReactionRoom).filterBy(["firestoreGameId"]),
-    timed_tap: defineRoom(TimedTapRoom).filterBy(["firestoreGameId"]),
     dot_match: defineRoom(DotMatchRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
@@ -121,12 +109,9 @@ const serverConfig = defineServer({
     // Tier 1: Physics / Real-Time — Phase 4 (LIVE)
     // =====================================================================
     pong: defineRoom(PongRoom).filterBy(["firestoreGameId"]),
-    air_hockey: defineRoom(AirHockeyRoom).filterBy(["firestoreGameId"]),
-    pool: defineRoom(PoolRoom).filterBy(["firestoreGameId"]),
     bounce_blitz: defineRoom(BounceBlitzRoom).filterBy(["firestoreGameId"]),
     brick_breaker: defineRoom(BrickBreakerRoom).filterBy(["firestoreGameId"]),
-    island_room: defineRoom(TropicalFishingRoom).filterBy(["firestoreGameId"]),
-    golf_duels: defineRoom(GolfDuelsRoom).filterBy(["firestoreGameId"]),
+    minigolf_duels: defineRoom(MiniGolfDuelsRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
     // Tier 3: Cooperative / Creative — Phase 5 (LIVE)
@@ -138,6 +123,11 @@ const serverConfig = defineServer({
     // Tier 6: Incremental — Phase 6 (NEW)
     // =====================================================================
     starforge: defineRoom(StarforgeRoom).filterBy(["firestoreGameId"]),
+
+    // =====================================================================
+    // Tier 7: Party — Phase 7 (NEW)
+    // =====================================================================
+    sketch_party: defineRoom(SketchPartyRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
     // Spectator Room — Single-Player Game Spectating

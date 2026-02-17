@@ -12,7 +12,7 @@
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
 import Animated, {
   useAnimatedStyle,
@@ -34,6 +34,7 @@ import { Spacing } from "@/constants/theme";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReplyToMetadata } from "@/types/messaging";
+import { Image } from "react-native";
 
 // Parse scorecard content helper
 function parseScorecardContent(content: string) {
@@ -58,6 +59,8 @@ export interface MessageWithProfile {
   voiceUrl?: string;
   /** Voice message duration in milliseconds */
   voiceDurationMs?: number;
+  /** Image attachment URL (for media messages) */
+  imageUrl?: string;
 }
 
 interface DMMessageItemProps {
@@ -81,6 +84,12 @@ interface DMMessageItemProps {
   onScrollToMessage: (messageId: string) => void;
   /** Callback to retry sending a failed message */
   onRetry: (message: MessageWithProfile) => Promise<void>;
+  /** Callback to open the media viewer for an image message */
+  onImagePress?: (
+    imageUrl: string,
+    senderName: string,
+    timestamp: Date,
+  ) => void;
   /** Whether this message should be highlighted (reply navigation) */
   isHighlighted?: boolean;
   /** Whether this message is grouped with the one above (same sender, close time) */
@@ -99,6 +108,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     onLongPress,
     onScrollToMessage,
     onRetry,
+    onImagePress,
     isHighlighted = false,
     isGrouped = false,
     showTimestamp = true,
@@ -151,19 +161,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         onRetry(message);
         return;
       }
-      if (message.type === "image") {
-        if (isSentByMe) {
-          Alert.alert(
-            "Cannot Open",
-            "You sent this picture. Only the receiver can open it.",
-          );
-          return;
-        }
-        navigation.navigate("SnapViewer", {
-          messageId: message.id,
-          chatId: chatId,
-          storagePath: message.content,
-        });
+      if (message.type === "image" && message.imageUrl && onImagePress) {
+        const senderName = isSentByMe
+          ? "You"
+          : friendProfile?.displayName || friendProfile?.username || "Friend";
+        onImagePress(message.imageUrl, senderName, message.createdAt);
+        return;
       }
       // Handle spectator invite taps
       if (message.type === "scorecard") {
@@ -178,7 +181,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           });
         }
       }
-    }, [message, isSentByMe, chatId, navigation, onRetry]);
+    }, [message, isSentByMe, friendProfile, onImagePress, navigation, onRetry]);
 
     // Render message status indicator
     const renderStatus = () => {
@@ -280,7 +283,17 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       }
 
       if (message.type === "image") {
-        return <Text style={{ fontSize: 24 }}>🔒</Text>;
+        if (message.imageUrl) {
+          return (
+            <Image
+              source={{ uri: message.imageUrl }}
+              style={styles.standaloneImage}
+              resizeMode="cover"
+            />
+          );
+        }
+        // Fallback for old messages without a URL
+        return <Text style={{ fontSize: 14, color: "#999" }}>📷 Photo</Text>;
       }
 
       if (message.type === "scorecard") {
@@ -451,6 +464,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                               },
                             ]),
                       isDuck && { padding: 0, backgroundColor: "transparent" },
+                      message.type === "image" &&
+                        message.imageUrl &&
+                        styles.imageOnlyBubble,
                       message.status === "sending" && styles.sendingBubble,
                       message.status === "failed" && [
                         styles.failedBubble,
@@ -586,5 +602,15 @@ const styles = StyleSheet.create({
   },
   failedMessageContainer: {
     opacity: 0.8,
+  },
+  imageOnlyBubble: {
+    padding: 0,
+    backgroundColor: "transparent",
+    borderRadius: 0,
+  },
+  standaloneImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 16,
   },
 });

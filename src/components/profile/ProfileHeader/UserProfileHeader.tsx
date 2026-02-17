@@ -11,15 +11,16 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View, ViewStyle } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 
+import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { useColors } from "@/store/ThemeContext";
 import type {
   FriendshipDetails,
   ProfileBio,
   ProfileStatus,
 } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
-import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 
 // =============================================================================
 // Types
@@ -106,15 +107,7 @@ function UserProfileHeaderBase({
   onPicturePress,
   style,
 }: UserProfileHeaderProps) {
-  const theme = useTheme();
-  const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-    error: theme.colors.error,
-  };
+  const colors = useColors();
 
   // Check if status is expired
   const isStatusActive =

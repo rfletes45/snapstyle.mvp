@@ -1,0 +1,47 @@
+{
+  "id": "H12",
+  "name": "Sandy Spinner",
+  "difficulty": 3,
+  "par": 3,
+  "maxStrokes": 8,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 15, "y": 50 },
+  "cup": { "x": 85, "y": 10 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ],
+    [
+      { "x": 45, "y": 0 },
+      { "x": 45, "y": 30 }
+    ]
+  ],
+  "surfaces": [
+    {
+      "id": "sand_1",
+      "type": "sand",
+      "poly": [
+        { "x": 50, "y": 15 },
+        { "x": 80, "y": 15 },
+        { "x": 80, "y": 35 },
+        { "x": 50, "y": 35 }
+      ],
+      "frictionMul": 3.5
+    }
+  ],
+  "hazards": [],
+  "obstacles": [
+    {
+      "id": "spinner_1",
+      "type": "spinner",
+      "position": { "x": 65, "y": 45 },
+      "size": { "width": 24, "height": 4 },
+      "speed": 1.2
+    }
+  ],
+  "slopes": []
+}

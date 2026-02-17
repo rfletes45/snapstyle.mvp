@@ -1,0 +1,89 @@
+{
+  "id": "H29",
+  "name": "Everything Hole",
+  "difficulty": 5,
+  "par": 5,
+  "maxStrokes": 10,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 15, "y": 52 },
+  "cup": { "x": 85, "y": 8 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ],
+    [
+      { "x": 35, "y": 20 },
+      { "x": 35, "y": 60 }
+    ],
+    [
+      { "x": 60, "y": 0 },
+      { "x": 60, "y": 40 }
+    ]
+  ],
+  "surfaces": [
+    {
+      "id": "ice_1",
+      "type": "ice",
+      "poly": [
+        { "x": 36, "y": 25 },
+        { "x": 58, "y": 25 },
+        { "x": 58, "y": 45 },
+        { "x": 36, "y": 45 }
+      ],
+      "frictionMul": 0.15
+    }
+  ],
+  "hazards": [
+    {
+      "id": "water_1",
+      "type": "water",
+      "poly": [
+        { "x": 65, "y": 20 },
+        { "x": 80, "y": 20 },
+        { "x": 80, "y": 35 },
+        { "x": 65, "y": 35 }
+      ]
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "bumper_1",
+      "type": "bumper",
+      "position": { "x": 25, "y": 30 },
+      "radius": 3
+    },
+    {
+      "id": "spinner_1",
+      "type": "spinner",
+      "position": { "x": 47, "y": 35 },
+      "size": { "width": 4, "height": 14 },
+      "speed": 1.5
+    },
+    {
+      "id": "gate_1",
+      "type": "moving_gate",
+      "position": { "x": 60, "y": 43 },
+      "size": { "width": 4, "height": 6 },
+      "speed": 1.0
+    }
+  ],
+  "portals": [
+    {
+      "id": "p_a",
+      "position": { "x": 20, "y": 10 },
+      "radius": 3,
+      "targetId": "p_b"
+    },
+    {
+      "id": "p_b",
+      "position": { "x": 75, "y": 50 },
+      "radius": 3,
+      "targetId": "p_a"
+    }
+  ],
+  "slopes": []
+}

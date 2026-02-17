@@ -42,7 +42,6 @@ import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
 import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
 import AchievementsScreen from "@/screens/games/AchievementsScreen";
-import AirHockeyGameScreen from "@/screens/games/AirHockeyGameScreen";
 import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
 import BrickBreakerGameScreen from "@/screens/games/BrickBreakerGameScreen";
 import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
@@ -52,22 +51,19 @@ import CrazyEightsGameScreen from "@/screens/games/CrazyEightsGameScreen";
 import DotMatchGameScreen from "@/screens/games/DotMatchGameScreen";
 import GameHistoryScreen from "@/screens/games/GameHistoryScreen";
 import GamesHubScreen from "@/screens/games/GamesHubScreen";
-import GolfDuelsGameScreen from "@/screens/games/GolfDuelsGameScreen";
 import GomokuMasterGameScreen from "@/screens/games/GomokuMasterGameScreen";
 import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
 import LightsOutGameScreen from "@/screens/games/LightsOutGameScreen";
 import MinesweeperGameScreen from "@/screens/games/MinesweeperGameScreen";
+import MiniGolfDuelsGameScreen from "@/screens/games/MiniGolfDuelsGameScreen";
 import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
-import ReactionTapGameScreen from "@/screens/games/ReactionTapGameScreen";
+import SketchPartyGameScreen from "@/screens/games/SketchPartyGameScreen";
 import StarforgeGameScreen from "@/screens/games/StarforgeGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
-import TimedTapGameScreen from "@/screens/games/TimedTapGameScreen";
-import TropicalFishingGameScreen from "@/screens/games/TropicalFishingGameScreen";
 import WordMasterGameScreen from "@/screens/games/WordMasterGameScreen";
 // Phase 3 game screens
 import CrosswordGameScreen from "@/screens/games/CrosswordGameScreen";
 import PongGameScreen from "@/screens/games/PongGameScreen";
-import PoolGameScreen from "@/screens/games/PoolGameScreen";
 import ReversiGameScreen from "@/screens/games/ReversiGameScreen";
 import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
@@ -143,10 +139,8 @@ const SafeBrickBreakerGame = withErrorBoundary(BrickBreakerGameScreen);
 const SafeCheckersGame = withErrorBoundary(CheckersGameScreen);
 const SafeChessGame = withErrorBoundary(ChessGameScreen);
 const SafeCrazyEightsGame = withErrorBoundary(CrazyEightsGameScreen);
-const SafeReactionTapGame = withErrorBoundary(ReactionTapGameScreen);
 const SafePlay2048Game = withErrorBoundary(Play2048GameScreen);
 const SafeTicTacToeGame = withErrorBoundary(TicTacToeGameScreen);
-const SafeTimedTapGame = withErrorBoundary(TimedTapGameScreen);
 const SafeWordGame = withErrorBoundary(WordMasterGameScreen);
 const SafeFourGame = withErrorBoundary(ConnectFourGameScreen);
 const SafeMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
@@ -154,14 +148,12 @@ const SafeDotsGame = withErrorBoundary(DotMatchGameScreen);
 const SafeLightsGame = withErrorBoundary(LightsOutGameScreen);
 const SafeGomokuGame = withErrorBoundary(GomokuMasterGameScreen);
 // Phase 3 safe wrappers
-const SafeAirHockeyGame = withErrorBoundary(AirHockeyGameScreen);
-const SafePoolGame = withErrorBoundary(PoolGameScreen);
 const SafePongGame = withErrorBoundary(PongGameScreen);
 const SafeReversiGame = withErrorBoundary(ReversiGameScreen);
 const SafeCrosswordGame = withErrorBoundary(CrosswordGameScreen);
-const SafeTropicalFishingGame = withErrorBoundary(TropicalFishingGameScreen);
 const SafeStarforgeGame = withErrorBoundary(StarforgeGameScreen);
-const SafeGolfDuelsGame = withErrorBoundary(GolfDuelsGameScreen);
+const SafeSketchPartyGame = withErrorBoundary(SketchPartyGameScreen);
+const SafeMiniGolfDuelsGame = withErrorBoundary(MiniGolfDuelsGameScreen);
 const SafeGamesHub = withErrorBoundary(GamesHubScreen);
 const SafeLeaderboard = withErrorBoundary(LeaderboardScreen);
 const SafeAchievements = withErrorBoundary(AchievementsScreen);
@@ -178,8 +170,6 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "StoryViewer",
   "CreateStory",
   // Game screens in PlayStack - hide tab bar for immersive gameplay
-  "ReactionTapGame",
-  "TimedTapGame",
   "BounceBlitzGame",
   "WordGame",
   "Play2048Game",
@@ -194,14 +184,11 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "LightsGame",
   "GomokuGame",
   // Phase 3 game screens
-  "AirHockeyGame",
   "PongGame",
   "ReversiGame",
   "CrosswordGame",
-  "PoolGame",
-  "TropicalFishingGame",
   "StarforgeGame",
-  "GolfDuelsGame",
+  "SketchPartyGameScreen",
   "Leaderboard",
   "Achievements",
   "GameHistory",
@@ -384,22 +371,6 @@ function PlayStack() {
         options={{ headerShown: false }}
       />
       <PlayStack_Nav.Screen
-        name="ReactionTapGame"
-        component={SafeReactionTapGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="TimedTapGame"
-        component={SafeTimedTapGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
         name="BounceBlitzGame"
         component={SafeBounceBlitzGame}
         options={{
@@ -509,24 +480,6 @@ function PlayStack() {
       />
       {/* Phase 3 Games */}
       <PlayStack_Nav.Screen
-        name="AirHockeyGame"
-        component={SafeAirHockeyGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="PoolGame"
-        component={SafePoolGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
         name="PongGame"
         component={SafePongGame}
         options={{
@@ -552,15 +505,6 @@ function PlayStack() {
         }}
       />
       <PlayStack_Nav.Screen
-        name="TropicalFishingGame"
-        component={SafeTropicalFishingGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
         name="StarforgeGame"
         component={SafeStarforgeGame}
         options={{
@@ -570,8 +514,17 @@ function PlayStack() {
         }}
       />
       <PlayStack_Nav.Screen
-        name="GolfDuelsGame"
-        component={SafeGolfDuelsGame}
+        name="SketchPartyGameScreen"
+        component={SafeSketchPartyGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <PlayStack_Nav.Screen
+        name="MiniGolfDuelsGame"
+        component={SafeMiniGolfDuelsGame}
         options={{
           headerShown: false,
           presentation: "card",

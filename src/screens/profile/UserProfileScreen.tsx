@@ -24,7 +24,6 @@ import { Alert, ScrollView, Share, StyleSheet, View } from "react-native";
 import {
   ActivityIndicator,
   Button,
-  Divider,
   IconButton,
   Text,
 } from "react-native-paper";
@@ -37,7 +36,6 @@ import {
   GameScoresDisplay,
   MuteOptionsModal,
   MutualFriendsSection,
-  ProfileBackground,
   ScoreComparisonView,
   ShareProfileButton,
 } from "@/components/profile";
@@ -48,17 +46,12 @@ import {
 import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
 import { PROFILE_V2_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
-import {
-  ProfileThemeProvider,
-  useProfileTheme,
-} from "@/contexts/ProfileThemeContext";
 import { useScoreComparison } from "@/hooks/useGameScores";
 import { useAuth } from "@/store/AuthContext";
-import { useAppTheme } from "@/store/ThemeContext";
+import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 
 // Services
-import { getThemeById } from "@/data/profileThemes";
 import { blockUser, unblockUser } from "@/services/blocking";
 import {
   acceptFriendRequest,
@@ -78,19 +71,16 @@ import {
   muteUser,
   unmuteUser,
 } from "@/services/profileService";
-import { getEquippedTheme } from "@/services/profileThemes";
 import { submitReport } from "@/services/reporting";
 
 // Types
 import type { ReportReason } from "@/types/models";
-import type { ProfileTheme } from "@/types/profile";
 import type {
   FriendshipDetails,
   MutualFriendInfo,
   ProfileRelationship,
   UserProfileData,
 } from "@/types/userProfile";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/UserProfileScreen");
@@ -108,23 +98,11 @@ export default function UserProfileScreen({
   route,
   navigation,
 }: UserProfileScreenProps) {
-  const { userId } = route.params as { userId: string };
-  const { currentFirebaseUser } = useAuth();
-  const currentUserId = currentFirebaseUser?.uid;
-
-  return (
-    <ProfileThemeProvider
-      profileUserId={userId}
-      viewerUserId={currentUserId}
-      isOwnProfile={false}
-    >
-      <UserProfileScreenContent route={route} navigation={navigation} />
-    </ProfileThemeProvider>
-  );
+  return <UserProfileScreenContent route={route} navigation={navigation} />;
 }
 
 // =============================================================================
-// Inner Content (wrapped by ProfileThemeProvider)
+// Inner Content
 // =============================================================================
 
 function UserProfileScreenContent({
@@ -133,9 +111,10 @@ function UserProfileScreenContent({
 }: UserProfileScreenProps) {
   const { userId } = route.params as { userId: string };
   const { currentFirebaseUser } = useAuth();
-  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const currentUserId = currentFirebaseUser?.uid;
+
+  const colors = useColors();
 
   // ==========================================================================
   // State
@@ -161,10 +140,6 @@ function UserProfileScreenContent({
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [muteActionLoading, setMuteActionLoading] = useState(false);
 
-  // Theme state
-  const [profileTheme, setProfileTheme] = useState<ProfileTheme | null>(null);
-  const { effectiveTheme, themePreference, viewerTheme } = useProfileTheme();
-
   // Game scores comparison hook
   const {
     ownerScores: profileGameScores,
@@ -175,14 +150,6 @@ function UserProfileScreenContent({
     viewerId: currentUserId || "",
     autoFetch: true,
   });
-
-  // Determine which theme to display based on user preference
-  const displayTheme = useMemo(() => {
-    if (themePreference === "my_theme") {
-      return viewerTheme; // Use the viewer's theme
-    }
-    return profileTheme || viewerTheme; // Use the profile owner's theme or fallback to viewer's
-  }, [themePreference, viewerTheme, profileTheme]);
 
   // ==========================================================================
   // Load Profile Data
@@ -196,19 +163,14 @@ function UserProfileScreenContent({
 
     try {
       // Load all data in parallel
-      const [
-        profileData,
-        relationshipData,
-        mutualFriendsData,
-        mutedStatus,
-        userTheme,
-      ] = await Promise.all([
-        getFullProfileData(userId),
-        getRelationship(currentUserId, userId),
-        getMutualFriends(currentUserId, userId),
-        isUserMuted(currentUserId, userId),
-        getEquippedTheme(userId),
-      ]);
+      // Load profile data on mount
+      const [profileData, relationshipData, mutualFriendsData, mutedStatus] =
+        await Promise.all([
+          getFullProfileData(userId),
+          getRelationship(currentUserId, userId),
+          getMutualFriends(currentUserId, userId),
+          isUserMuted(currentUserId, userId),
+        ]);
 
       if (!profileData) {
         setError("Profile not found");
@@ -221,12 +183,6 @@ function UserProfileScreenContent({
       setMutualFriends(mutualFriendsData);
       setIsMuted(mutedStatus);
 
-      // Convert theme ID to theme object
-      if (userTheme) {
-        const themeObj = getThemeById(userTheme);
-        setProfileTheme(themeObj || null);
-      }
-
       // Load friendship details if friends
       if (relationshipData.type === "friend") {
         const details = await getFriendshipDetailsForUser(
@@ -236,7 +192,7 @@ function UserProfileScreenContent({
         setFriendshipDetails(details);
       }
 
-      // Track profile view (only if not own profile)
+      // Track profile view (fire-and-forget, non-critical)
       if (currentUserId !== userId) {
         incrementProfileViews(userId);
       }
@@ -659,11 +615,15 @@ function UserProfileScreenContent({
         ]}
       >
         <View style={styles.header}>
-          <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
+          <IconButton
+            icon="arrow-left"
+            onPress={() => navigation.goBack()}
+            iconColor={colors.text}
+          />
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.text }]}>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
             Loading profile...
           </Text>
         </View>
@@ -680,7 +640,11 @@ function UserProfileScreenContent({
         ]}
       >
         <View style={styles.header}>
-          <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
+          <IconButton
+            icon="arrow-left"
+            onPress={() => navigation.goBack()}
+            iconColor={colors.text}
+          />
         </View>
         <View style={styles.errorContainer}>
           <MaterialCommunityIcons
@@ -691,7 +655,12 @@ function UserProfileScreenContent({
           <Text style={[styles.errorText, { color: colors.error }]}>
             {error || "Profile not found"}
           </Text>
-          <Button mode="outlined" onPress={() => navigation.goBack()}>
+          <Button
+            mode="outlined"
+            onPress={() => navigation.goBack()}
+            textColor={colors.text}
+            style={{ borderColor: colors.surfaceVariant }}
+          >
             Go Back
           </Button>
         </View>
@@ -709,7 +678,11 @@ function UserProfileScreenContent({
         ]}
       >
         <View style={styles.header}>
-          <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
+          <IconButton
+            icon="arrow-left"
+            onPress={() => navigation.goBack()}
+            iconColor={colors.text}
+          />
         </View>
         <View style={styles.errorContainer}>
           <MaterialCommunityIcons
@@ -720,7 +693,12 @@ function UserProfileScreenContent({
           <Text style={[styles.errorText, { color: colors.textSecondary }]}>
             This profile is not available
           </Text>
-          <Button mode="outlined" onPress={() => navigation.goBack()}>
+          <Button
+            mode="outlined"
+            onPress={() => navigation.goBack()}
+            textColor={colors.text}
+            style={{ borderColor: colors.surfaceVariant }}
+          >
             Go Back
           </Button>
         </View>
@@ -729,199 +707,221 @@ function UserProfileScreenContent({
   }
 
   return (
-    <ProfileBackground theme={displayTheme} style={styles.container}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <IconButton
-          icon="arrow-left"
-          onPress={() => navigation.goBack()}
-          iconColor={colors.text}
-        />
-        <View style={styles.headerRight}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.innerContainer}>
+        {/* Header Bar */}
+        <View style={[styles.header, { paddingTop: insets.top }]}>
           <IconButton
-            icon="dots-vertical"
-            onPress={handleMoreOptions}
+            icon="arrow-left"
+            onPress={() => navigation.goBack()}
             iconColor={colors.text}
+            size={24}
           />
-        </View>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Profile Header with Picture, Name, Bio */}
-        <UserProfileHeader
-          displayName={profile.displayName}
-          username={profile.username}
-          pictureUrl={profile.profilePicture?.url || null}
-          decorationId={profile.avatarDecoration?.decorationId || null}
-          bio={profile.bio}
-          status={profile.status}
-          lastActive={
-            profile.privacy.showLastActive !== "nobody"
-              ? profile.lastActive
-              : null
-          }
-          friendshipDetails={
-            relationship?.type === "friend" ? friendshipDetails : null
-          }
-        />
-
-        {/* Muted indicator */}
-        {isMuted && (
-          <View
-            style={[
-              styles.mutedBadge,
-              { backgroundColor: colors.surfaceVariant },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="bell-off"
-              size={16}
-              color={colors.textSecondary}
+          <View style={styles.headerRight}>
+            <IconButton
+              icon="dots-vertical"
+              onPress={handleMoreOptions}
+              iconColor={colors.text}
+              size={24}
             />
-            <Text style={[styles.mutedText, { color: colors.textSecondary }]}>
-              Muted
-            </Text>
           </View>
-        )}
+        </View>
 
-        <Divider style={styles.divider} />
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Profile Header with Picture, Name, Bio */}
+          <UserProfileHeader
+            displayName={profile.displayName}
+            username={profile.username}
+            pictureUrl={profile.profilePicture?.url || null}
+            decorationId={profile.avatarDecoration?.decorationId || null}
+            bio={profile.bio}
+            status={profile.status}
+            lastActive={
+              profile.privacy.showLastActive !== "nobody"
+                ? profile.lastActive
+                : null
+            }
+            friendshipDetails={
+              relationship?.type === "friend" ? friendshipDetails : null
+            }
+          />
 
-        {/* Game Scores Display */}
-        {profile.gameScores?.enabled !== false &&
-          profile.privacy.showGameScores !== "nobody" && (
+          {/* Muted indicator */}
+          {isMuted && (
+            <View
+              style={[
+                styles.mutedBadge,
+                { backgroundColor: colors.surfaceVariant + "99" },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="bell-off"
+                size={14}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.mutedText, { color: colors.textSecondary }]}>
+                Muted
+              </Text>
+            </View>
+          )}
+
+          <View
+            style={[styles.sectionDivider, { backgroundColor: colors.divider }]}
+          />
+
+          {/* Game Scores Display */}
+          {profile.gameScores?.enabled !== false &&
+            profile.privacy.showGameScores !== "nobody" && (
+              <>
+                {relationship?.type === "friend" ? (
+                  <ScoreComparisonView
+                    ownerScores={profileGameScores}
+                    viewerScores={myGameScores}
+                    ownerName={profile.displayName}
+                    viewerName="You"
+                    testID="user-profile-score-comparison"
+                  />
+                ) : (
+                  <GameScoresDisplay
+                    scores={profileGameScores}
+                    enabled={true}
+                    isOwnProfile={false}
+                    onGamePress={(gameId) => {
+                      navigation.navigate("Games", { gameId });
+                    }}
+                    testID="user-profile-game-scores"
+                  />
+                )}
+                <View
+                  style={[
+                    styles.sectionDivider,
+                    { backgroundColor: colors.divider },
+                  ]}
+                />
+              </>
+            )}
+
+          {/* Friendship Info Card (for friends) */}
+          {relationship?.type === "friend" && friendshipDetails && (
             <>
-              {relationship?.type === "friend" ? (
-                // Show comparison view for friends
-                <ScoreComparisonView
-                  ownerScores={profileGameScores}
-                  viewerScores={myGameScores}
-                  ownerName={profile.displayName}
-                  viewerName="You"
-                  testID="user-profile-score-comparison"
-                />
-              ) : (
-                // Show regular scores for non-friends
-                <GameScoresDisplay
-                  scores={profileGameScores}
-                  enabled={true}
-                  isOwnProfile={false}
-                  onGamePress={(gameId) => {
-                    navigation.navigate("Games", { gameId });
-                  }}
-                  testID="user-profile-game-scores"
-                />
-              )}
-              <Divider style={styles.divider} />
+              <FriendshipInfoCard
+                details={friendshipDetails}
+                testID="user-profile-friendship-info"
+              />
+              <View
+                style={[
+                  styles.sectionDivider,
+                  { backgroundColor: colors.divider },
+                ]}
+              />
             </>
           )}
 
-        {/* Friendship Info Card (for friends) */}
-        {relationship?.type === "friend" && friendshipDetails && (
-          <>
-            <FriendshipInfoCard
-              details={friendshipDetails}
-              testID="user-profile-friendship-info"
-            />
-            <Divider style={styles.divider} />
-          </>
-        )}
+          {/* Mutual Friends */}
+          {mutualFriends.length > 0 && profile.privacy.showMutualFriends && (
+            <>
+              <MutualFriendsSection
+                friends={mutualFriends}
+                onFriendPress={(friendUserId) =>
+                  navigation.push("UserProfile", { userId: friendUserId })
+                }
+                onSeeAllPress={() =>
+                  navigation.navigate("MutualFriendsList", {
+                    userId: currentUserId,
+                    targetUserId: userId,
+                  })
+                }
+                maxDisplay={6}
+                testID="user-profile-mutual-friends"
+              />
+              <View
+                style={[
+                  styles.sectionDivider,
+                  { backgroundColor: colors.divider },
+                ]}
+              />
+            </>
+          )}
 
-        {/* Mutual Friends - Using new component */}
-        {mutualFriends.length > 0 && profile.privacy.showMutualFriends && (
-          <>
-            <MutualFriendsSection
-              friends={mutualFriends}
-              onFriendPress={(friendUserId) =>
-                navigation.push("UserProfile", { userId: friendUserId })
-              }
-              onSeeAllPress={() =>
-                navigation.navigate("MutualFriendsList", {
-                  userId: currentUserId,
-                  targetUserId: userId,
-                })
-              }
-              maxDisplay={6}
-              testID="user-profile-mutual-friends"
-            />
-            <Divider style={styles.divider} />
-          </>
-        )}
+          {/* Share Profile Button */}
+          {PROFILE_V2_FEATURES.PROFILE_SHARING &&
+            profile.privacy.allowProfileSharing && (
+              <ShareProfileButton
+                userId={userId}
+                displayName={profile.displayName}
+                username={profile.username}
+                variant="full"
+                style={styles.shareButton}
+              />
+            )}
 
-        {/* Share Profile Button */}
-        {PROFILE_V2_FEATURES.PROFILE_SHARING &&
-          profile.privacy.allowProfileSharing && (
-            <ShareProfileButton
-              userId={userId}
-              displayName={profile.displayName}
-              username={profile.username}
-              variant="full"
-              style={styles.shareButton}
+          {/* Action Buttons */}
+          {relationship && (
+            <ProfileActionsBar
+              relationship={relationship}
+              isLoading={actionLoading}
+              loadingAction={loadingAction}
+              onAddFriend={handleAddFriend}
+              onCancelRequest={handleCancelRequest}
+              onAcceptRequest={handleAcceptRequest}
+              onDeclineRequest={handleDeclineRequest}
+              onMessage={handleMessage}
+              onCall={handleCall}
+              onRemoveFriend={handleRemoveFriend}
+              onUnblock={handleUnblock}
+              onMoreOptions={handleMoreOptions}
             />
           )}
 
-        {/* Action Buttons - Using ProfileActionsBar */}
-        {relationship && (
-          <ProfileActionsBar
-            relationship={relationship}
-            isLoading={actionLoading}
-            loadingAction={loadingAction}
-            onAddFriend={handleAddFriend}
-            onCancelRequest={handleCancelRequest}
-            onAcceptRequest={handleAcceptRequest}
-            onDeclineRequest={handleDeclineRequest}
-            onMessage={handleMessage}
-            onCall={handleCall}
-            onRemoveFriend={handleRemoveFriend}
-            onUnblock={handleUnblock}
-            onMoreOptions={handleMoreOptions}
-          />
-        )}
-      </ScrollView>
+          {/* Bottom spacing */}
+          <View style={{ height: insets.bottom + 24 }} />
+        </ScrollView>
 
-      {/* More Options Menu */}
-      <MoreOptionsMenu
-        visible={menuVisible}
-        relationship={relationship || { type: "stranger" }}
-        isMuted={isMuted}
-        targetDisplayName={profile.displayName}
-        onClose={() => setMenuVisible(false)}
-        onShareProfile={handleShare}
-        onCopyLink={handleShare}
-        onToggleMute={handleMute}
-        onRemoveFriend={handleRemoveFriend}
-        onBlock={handleBlock}
-        onReport={handleReport}
-      />
+        {/* More Options Menu */}
+        <MoreOptionsMenu
+          visible={menuVisible}
+          relationship={relationship || { type: "stranger" }}
+          isMuted={isMuted}
+          targetDisplayName={profile.displayName}
+          onClose={() => setMenuVisible(false)}
+          onShareProfile={handleShare}
+          onCopyLink={handleShare}
+          onToggleMute={handleMute}
+          onRemoveFriend={handleRemoveFriend}
+          onBlock={handleBlock}
+          onReport={handleReport}
+        />
 
-      {/* Modals */}
-      <BlockUserModal
-        visible={blockModalVisible}
-        username={profile.username}
-        onConfirm={handleConfirmBlock}
-        onCancel={() => setBlockModalVisible(false)}
-      />
+        {/* Modals */}
+        <BlockUserModal
+          visible={blockModalVisible}
+          username={profile.username}
+          onConfirm={handleConfirmBlock}
+          onCancel={() => setBlockModalVisible(false)}
+        />
 
-      <ReportUserModal
-        visible={reportModalVisible}
-        username={profile.username}
-        onSubmit={handleSubmitReport}
-        onCancel={() => setReportModalVisible(false)}
-      />
+        <ReportUserModal
+          visible={reportModalVisible}
+          username={profile.username}
+          onSubmit={handleSubmitReport}
+          onCancel={() => setReportModalVisible(false)}
+        />
 
-      <MuteOptionsModal
-        visible={muteModalVisible}
-        username={profile.username}
-        displayName={profile.displayName}
-        isCurrentlyMuted={isMuted}
-        onConfirm={handleConfirmMute}
-        onUnmute={handleUnmute}
-        onClose={() => setMuteModalVisible(false)}
-        loading={muteActionLoading}
-      />
-    </ProfileBackground>
+        <MuteOptionsModal
+          visible={muteModalVisible}
+          username={profile.username}
+          displayName={profile.displayName}
+          isCurrentlyMuted={isMuted}
+          onConfirm={handleConfirmMute}
+          onUnmute={handleUnmute}
+          onClose={() => setMuteModalVisible(false)}
+          loading={muteActionLoading}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -931,6 +931,9 @@ function UserProfileScreenContent({
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  innerContainer: {
     flex: 1,
   },
   header: {
@@ -950,7 +953,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   loadingText: {
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: "400",
+    letterSpacing: 0.2,
   },
   errorContainer: {
     flex: 1,
@@ -962,6 +967,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     textAlign: "center",
+    fontWeight: "500",
   },
   content: {
     paddingHorizontal: Spacing.lg,
@@ -972,43 +978,36 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 20,
     marginBottom: Spacing.md,
     gap: 6,
   },
   mutedText: {
-    fontSize: 13,
-    fontWeight: "500",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
   },
-  divider: {
-    width: "80%",
-    marginVertical: Spacing.md,
+  sectionDivider: {
+    width: "70%",
+    height: 1,
+    marginVertical: Spacing.lg,
+    borderRadius: 1,
+    alignSelf: "center",
+    opacity: 0.5,
   },
   section: {
     width: "100%",
     marginBottom: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    marginBottom: Spacing.sm,
-  },
-  mutualFriendsScroll: {
-    marginHorizontal: -Spacing.lg,
-    paddingHorizontal: Spacing.lg,
-  },
-  mutualFriendItem: {
-    alignItems: "center",
-    marginRight: Spacing.md,
-    width: 64,
-  },
-  mutualFriendName: {
     fontSize: 11,
-    marginTop: 4,
-    textAlign: "center",
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: Spacing.sm,
   },
   shareButton: {
     width: "100%",

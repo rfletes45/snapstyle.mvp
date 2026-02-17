@@ -4,13 +4,22 @@
  * Displayed similarly to ScorecardBubble but with a "Watch Live" theme
  * instead of a score challenge. Shows the game being played, the host's
  * name, and a call-to-action to watch the game live.
+ *
+ * Status is determined from two sources (in priority order):
+ *  1. The `finished` flag on the invite content (legacy: message mutation)
+ *  2. A `SpectatorSessions/{roomId}` Firestore doc (preferred: no mutation)
  */
 
+import { useColors } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { useColors } from "@/store/ThemeContext";
+
+import {
+  subscribeToSpectatorSession,
+  type SpectatorSessionDoc,
+} from "@/services/spectatorSessions";
 
 // =============================================================================
 // Types
@@ -59,10 +68,6 @@ function getSpectatorGameName(gameId: string): string {
     memory_master_game: "Memory Master",
     word_master: "Word Master",
     word_master_game: "Word Master",
-    reaction_tap: "Reaction Tap",
-    reaction_tap_game: "Reaction Tap",
-    timed_tap: "Speed Tap",
-    timed_tap_game: "Speed Tap",
     brick_breaker: "Brick Breaker",
     brick_breaker_game: "Brick Breaker",
     tile_slide: "Tile Slide",
@@ -93,10 +98,6 @@ function getSpectatorGameIcon(gameId: string): string {
     memory_master_game: "cards",
     word_master: "alphabetical-variant",
     word_master_game: "alphabetical-variant",
-    reaction_tap: "lightning-bolt",
-    reaction_tap_game: "lightning-bolt",
-    timed_tap: "timer-outline",
-    timed_tap_game: "timer-outline",
     brick_breaker: "wall",
     brick_breaker_game: "wall",
     tile_slide: "puzzle",
@@ -123,14 +124,26 @@ export default memo(function SpectatorInviteBubble({
 }: SpectatorInviteBubbleProps) {
   const theme = useTheme();
   const colors = useColors();
-  const { gameId, hostName, finished, finalScore, inviteMode } = invite;
+  const { gameId, hostName, finished, finalScore, inviteMode, roomId } = invite;
   const iconName = getSpectatorGameIcon(
     gameId,
   ) as keyof typeof MaterialCommunityIcons.glyphMap;
   const gameName = invite.gameName || getSpectatorGameName(gameId);
 
-  // When the game is finished, don't allow navigation
-  const isFinished = !!finished;
+  // ── Subscribe to SpectatorSessions doc for live status ──────────────
+  const [sessionDoc, setSessionDoc] = useState<SpectatorSessionDoc | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!roomId || finished) return; // no need if already marked finished
+    const unsub = subscribeToSpectatorSession(roomId, setSessionDoc);
+    return unsub;
+  }, [roomId, finished]);
+
+  // Finished if either the message was mutated OR the session doc says so
+  const isFinished = !!finished || sessionDoc?.status === "finished";
+  const displayFinalScore = finalScore ?? sessionDoc?.finalScore ?? undefined;
+
   const Wrapper = !isFinished && onPress ? TouchableOpacity : View;
   const wrapperProps =
     !isFinished && onPress ? { activeOpacity: 0.7, onPress } : {};
@@ -203,7 +216,7 @@ export default memo(function SpectatorInviteBubble({
           <Text
             style={[styles.finalScoreText, { color: theme.colors.onSurface }]}
           >
-            {finalScore ?? invite.score}
+            {displayFinalScore ?? invite.score}
           </Text>
           <Text style={[styles.finalScoreLabel, { color: colors.textMuted }]}>
             Final Score
@@ -401,4 +414,3 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
 });
-

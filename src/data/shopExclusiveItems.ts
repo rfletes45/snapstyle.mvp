@@ -30,7 +30,6 @@ import type {
 } from "@/types/profile";
 import type { PointsShopItem } from "@/types/shop";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("data/shopExclusiveItems");
 // =============================================================================
@@ -1224,73 +1223,6 @@ const PROFILE_BANNERS: ShopItemTemplate[] = [
 ];
 
 // =============================================================================
-// Profile Themes (6 items)
-// =============================================================================
-
-const PROFILE_THEMES: ShopItemTemplate[] = [
-  {
-    itemId: "shop_theme_midnight",
-    name: "Midnight Theme",
-    description: "Deep purple and blue dark theme",
-    slot: "profile_theme",
-    rarity: "rare",
-    imagePath: "🌙",
-    priceTokens: 600,
-    tags: ["dark", "purple", "elegant"],
-  },
-  {
-    itemId: "shop_theme_sunrise",
-    name: "Sunrise Theme",
-    description: "Warm orange and pink light theme",
-    slot: "profile_theme",
-    rarity: "rare",
-    imagePath: "🌅",
-    priceTokens: 550,
-    tags: ["light", "warm", "cheerful"],
-  },
-  {
-    itemId: "shop_theme_cyber",
-    name: "Cyberpunk Theme",
-    description: "Neon pink and cyan colors",
-    slot: "profile_theme",
-    rarity: "epic",
-    imagePath: "💜",
-    priceTokens: 900,
-    tags: ["cyberpunk", "neon", "futuristic"],
-  },
-  {
-    itemId: "shop_theme_nature",
-    name: "Forest Theme",
-    description: "Earthy greens and browns",
-    slot: "profile_theme",
-    rarity: "rare",
-    imagePath: "🌿",
-    priceTokens: 500,
-    tags: ["nature", "green", "peaceful"],
-  },
-  {
-    itemId: "shop_theme_royal",
-    name: "Royal Theme",
-    description: "Gold and purple luxury colors",
-    slot: "profile_theme",
-    rarity: "epic",
-    imagePath: "👑",
-    priceTokens: 1000,
-    tags: ["royal", "luxury", "gold"],
-  },
-  {
-    itemId: "shop_theme_galaxy",
-    name: "Galaxy Theme",
-    description: "Cosmic space colors with stars",
-    slot: "profile_theme",
-    rarity: "legendary",
-    imagePath: "🌌",
-    priceTokens: 1500,
-    tags: ["galaxy", "cosmic", "premium"],
-  },
-];
-
-// =============================================================================
 // Chat Bubbles (10 items)
 // =============================================================================
 
@@ -1530,7 +1462,6 @@ export const SHOP_EXCLUSIVE_ITEMS: PointsShopItem[] = [
   ...HAND_ACCESSORIES.map((t, i) => templateToItem(t, i + 700)),
   ...PROFILE_FRAMES.map((t, i) => templateToItem(t, i + 800)),
   ...PROFILE_BANNERS.map((t, i) => templateToItem(t, i + 900)),
-  ...PROFILE_THEMES.map((t, i) => templateToItem(t, i + 1000)),
   ...CHAT_BUBBLES.map((t, i) => templateToItem(t, i + 1100)),
   ...NAME_EFFECTS.map((t, i) => templateToItem(t, i + 1200)),
 ];

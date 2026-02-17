@@ -6,12 +6,13 @@
  */
 
 import Avatar from "@/components/Avatar";
+import { useColors } from "@/store/ThemeContext";
 import type { AvatarConfig } from "@/types/models";
 import type { ExtendedAvatarConfig, LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { LevelProgress } from "./LevelProgress";
 
 export interface ProfileHeaderProps {
@@ -37,7 +38,7 @@ function ProfileHeaderBase({
   onEditPress,
   onAvatarPress,
 }: ProfileHeaderProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <View style={styles.container}>
@@ -53,7 +54,7 @@ function ProfileHeaderBase({
           <View
             style={[
               styles.customizeOverlay,
-              { backgroundColor: theme.colors.primary },
+              { backgroundColor: colors.primary },
             ]}
           >
             <MaterialCommunityIcons name="palette" size={16} color="#fff" />
@@ -63,12 +64,10 @@ function ProfileHeaderBase({
 
       {/* User info */}
       <View style={styles.infoContainer}>
-        <Text style={[styles.displayName, { color: theme.colors.onSurface }]}>
+        <Text style={[styles.displayName, { color: colors.text }]}>
           {displayName}
         </Text>
-        <Text
-          style={[styles.username, { color: theme.colors.onSurfaceVariant }]}
-        >
+        <Text style={[styles.username, { color: colors.textSecondary }]}>
           @{username}
         </Text>
 
@@ -76,14 +75,14 @@ function ProfileHeaderBase({
         {onEditPress && (
           <TouchableOpacity
             onPress={onEditPress}
-            style={[styles.editButton, { borderColor: theme.colors.outline }]}
+            style={[styles.editButton, { borderColor: colors.outline }]}
           >
             <MaterialCommunityIcons
               name="pencil"
               size={14}
-              color={theme.colors.primary}
+              color={colors.primary}
             />
-            <Text style={[styles.editText, { color: theme.colors.primary }]}>
+            <Text style={[styles.editText, { color: colors.primary }]}>
               Edit Profile
             </Text>
           </TouchableOpacity>

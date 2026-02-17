@@ -1,0 +1,54 @@
+{
+  "id": "neon_9",
+  "packId": "neon",
+  "name": "Neon Finale",
+  "par": 4,
+  "maxStrokes": 12,
+  "bounds": { "width": 500, "height": 1000 },
+  "tee": { "x": 250, "y": 900 },
+  "cup": { "x": 250, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 450, "y": 0 },
+      { "x": 450, "y": 1000 },
+      { "x": 50, "y": 1000 }
+    ]
+  ],
+  "surfaces": [
+    {
+      "id": "ice_n9",
+      "type": "ice",
+      "frictionMul": 0.2,
+      "poly": [
+        { "x": 80, "y": 200 },
+        { "x": 250, "y": 200 },
+        { "x": 250, "y": 350 },
+        { "x": 80, "y": 350 }
+      ]
+    }
+  ],
+  "hazards": [
+    {
+      "id": "water_n9",
+      "type": "water",
+      "penalty": 1,
+      "poly": [
+        { "x": 280, "y": 500 },
+        { "x": 420, "y": 500 },
+        { "x": 420, "y": 620 },
+        { "x": 280, "y": 620 }
+      ]
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "spinner_n9",
+      "type": "spinner",
+      "position": { "x": 250, "y": 700 },
+      "size": { "width": 120, "height": 12 },
+      "speed": 2.0
+    }
+  ]
+}

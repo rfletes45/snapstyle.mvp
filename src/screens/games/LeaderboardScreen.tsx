@@ -38,15 +38,10 @@ import {
   getPlayerRank as getSinglePlayerRank,
 } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
-import type { PlayStackParamList } from "@/types/navigation/root";
 import { SinglePlayerGameType } from "@/types/games";
-import {
-  GameType,
-  getCurrentWeekKey,
-  LeaderboardEntry,
-  WeekKey,
-} from "@/types/models";
+import { getCurrentWeekKey, LeaderboardEntry, WeekKey } from "@/types/models";
 import { getRatingTier } from "@/types/multiplayerLeaderboard";
+import type { PlayStackParamList } from "@/types/navigation/root";
 import { TurnBasedGameType } from "@/types/turnBased";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -69,18 +64,14 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/LeaderboardScreen");
 type Props = NativeStackScreenProps<PlayStackParamList, "Leaderboard">;
 
 type LeaderboardType = "global" | "friends";
 
-// Extended game type that includes legacy, new single-player, and multiplayer games
-type ExtendedLeaderboardGameType =
-  | GameType
-  | SinglePlayerGameType
-  | TurnBasedGameType;
+// Extended game type that includes single-player, and multiplayer games
+type ExtendedLeaderboardGameType = string;
 
 // Game category for display purposes
 type GameCategory = "legacy" | "single-player" | "multiplayer";
@@ -94,20 +85,7 @@ interface LeaderboardGame {
 
 // Games that have leaderboards
 const LEADERBOARD_GAMES: LeaderboardGame[] = [
-  // Single-player games (legacy)
-  {
-    id: "reaction_tap",
-    name: "Reaction",
-    icon: "lightning-bolt",
-    category: "legacy",
-  },
-  {
-    id: "timed_tap",
-    name: "Speed Tap",
-    icon: "timer-outline",
-    category: "legacy",
-  },
-  // Single-player games (new)
+  // Single-player games
   {
     id: "bounce_blitz",
     name: "Bounce",
@@ -167,7 +145,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
       ({ id }) => id === (routeGameId as ExtendedLeaderboardGameType),
     )
       ? (routeGameId as ExtendedLeaderboardGameType)
-      : "reaction_tap";
+      : "bounce_blitz";
 
   const [gameId, setGameId] =
     useState<ExtendedLeaderboardGameType>(initialGame);
@@ -242,13 +220,9 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
         let data: LeaderboardResult;
 
         if (leaderboardType === "friends") {
-          data = await getFriendsLeaderboard(
-            userId,
-            gameId as GameType,
-            weekKey,
-          );
+          data = await getFriendsLeaderboard(userId, gameId as string, weekKey);
         } else {
-          data = await getWeeklyLeaderboard(gameId as GameType, weekKey);
+          data = await getWeeklyLeaderboard(gameId as string, weekKey);
         }
 
         setResult(data);
@@ -259,7 +233,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
         if (leaderboardType === "global") {
           const rankResult = await getUserRank(
             userId,
-            gameId as GameType,
+            gameId as string,
             weekKey,
           );
           setUserRank(rankResult?.rank || null);
@@ -410,7 +384,7 @@ export default function LeaderboardScreen({ navigation, route }: Props) {
           <View style={styles.scoreContainer}>
             <Text style={[styles.scoreText, { color: theme.colors.primary }]}>
               {isLegacyGame
-                ? formatScore(gameId as GameType, item.score)
+                ? formatScore(gameId as string, item.score)
                 : formatSinglePlayerScore(
                     gameId as SinglePlayerGameType,
                     item.score,

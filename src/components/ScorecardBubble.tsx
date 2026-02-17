@@ -3,13 +3,12 @@
  */
 
 import { formatScore, getGameDisplayName, getGameIcon } from "@/services/games";
-import { GameType } from "@/types/models";
+import { useColors } from "@/store/ThemeContext";
+import { ExtendedGameType } from "@/types/games";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
-import { useColors } from "@/store/ThemeContext";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/ScorecardBubble");
@@ -18,7 +17,7 @@ const logger = createLogger("components/ScorecardBubble");
 // =============================================================================
 
 interface ScorecardData {
-  gameId: GameType;
+  gameId: ExtendedGameType;
   score: number;
   playerName: string;
 }
@@ -45,19 +44,8 @@ export default memo(function ScorecardBubble({
   const gameName = getGameDisplayName(gameId);
   const formattedScore = formatScore(gameId, score);
 
-  // Determine if lower or higher is better for display
-  const isBetterLower = gameId === "reaction_tap";
-  const scoreEmoji = isBetterLower
-    ? score < 200
-      ? "🔥"
-      : score < 300
-        ? "⚡"
-        : "👍"
-    : score > 100
-      ? "🔥"
-      : score > 50
-        ? "⚡"
-        : "👍";
+  // Determine score emoji for display
+  const scoreEmoji = score > 100 ? "🔥" : score > 50 ? "⚡" : "👍";
 
   return (
     <View
@@ -132,7 +120,7 @@ export function parseScorecardContent(content: string): ScorecardData | null {
       data.playerName
     ) {
       return {
-        gameId: data.gameId as GameType,
+        gameId: data.gameId as ExtendedGameType,
         score: data.score,
         playerName: data.playerName,
       };

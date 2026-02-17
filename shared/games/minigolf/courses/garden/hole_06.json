@@ -1,0 +1,43 @@
+{
+  "id": "garden_6",
+  "packId": "garden",
+  "name": "Fountain Plaza",
+  "par": 3,
+  "maxStrokes": 10,
+  "bounds": { "width": 450, "height": 850 },
+  "tee": { "x": 225, "y": 750 },
+  "cup": { "x": 225, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 400, "y": 0 },
+      { "x": 400, "y": 850 },
+      { "x": 50, "y": 850 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [
+    {
+      "id": "water_g6",
+      "type": "water",
+      "penalty": 1,
+      "poly": [
+        { "x": 160, "y": 380 },
+        { "x": 290, "y": 380 },
+        { "x": 290, "y": 500 },
+        { "x": 160, "y": 500 }
+      ]
+    }
+  ],
+  "obstacles": [
+    {
+      "id": "bumper_g6",
+      "type": "bumper",
+      "position": { "x": 225, "y": 260 },
+      "size": { "width": 30, "height": 30 },
+      "radius": 18,
+      "restitution": 1.3
+    }
+  ]
+}

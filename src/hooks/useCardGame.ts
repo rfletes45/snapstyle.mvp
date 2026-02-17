@@ -14,8 +14,10 @@
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §8
  */
 
+import { getColyseusRoomName } from "@/config/colyseus";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
-import { Room } from "@colyseus/sdk";
+import { colyseusService } from "@/services/colyseus";
+import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
@@ -337,9 +339,6 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
       setError(null);
 
       try {
-        const { colyseusService } = await import("@/services/colyseus");
-        const { getColyseusRoomName } = await import("@/config/colyseus");
-
         const roomName = getColyseusRoomName(gameType);
         if (!roomName) {
           throw new Error(`No Colyseus room configured for ${gameType}`);

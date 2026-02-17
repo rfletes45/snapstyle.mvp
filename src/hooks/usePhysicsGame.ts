@@ -20,7 +20,7 @@
  */
 
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
-import { Room } from "@colyseus/sdk";
+import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useColyseus, UseColyseusOptions } from "./useColyseus";
 import { useColyseusAppState } from "./useColyseusAppState";
@@ -194,10 +194,17 @@ export function usePhysicsGame(
   optionsOrGameType: string | UsePhysicsGameOptions,
 ): UsePhysicsGameReturn {
   // Support both old string signature and new options object
-  const { gameType, firestoreGameId, spectator = false } =
-    typeof optionsOrGameType === "string"
-      ? { gameType: optionsOrGameType, firestoreGameId: undefined, spectator: false }
-      : optionsOrGameType;
+  const {
+    gameType,
+    firestoreGameId,
+    spectator = false,
+  } = typeof optionsOrGameType === "string"
+    ? {
+        gameType: optionsOrGameType,
+        firestoreGameId: undefined,
+        spectator: false,
+      }
+    : optionsOrGameType;
 
   // Feature flag check
   const isAvailable =

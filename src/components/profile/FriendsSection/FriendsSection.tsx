@@ -10,14 +10,14 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useEffect, useState } from "react";
 import { FlatList, StyleSheet, TouchableOpacity, View } from "react-native";
-import { Surface, Text, useTheme } from "react-native-paper";
+import { Surface, Text } from "react-native-paper";
 import Animated, { FadeIn, FadeInRight } from "react-native-reanimated";
 
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { Spacing } from "@/constants/theme";
 import { getFriends } from "@/services/friends";
 import { getFullProfileData } from "@/services/profileService";
-
+import { useColors } from "@/store/ThemeContext";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/profile/FriendsSection/FriendsSection");
@@ -57,7 +57,7 @@ const FriendAvatar = memo(function FriendAvatar({
   onPress?: () => void;
   index: number;
 }) {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <Animated.View entering={FadeInRight.delay(index * 60).springify()}>
@@ -73,16 +73,13 @@ const FriendAvatar = memo(function FriendAvatar({
           decorationId={friend.decorationId}
         />
         <Text
-          style={[styles.friendName, { color: theme.colors.onSurface }]}
+          style={[styles.friendName, { color: colors.text }]}
           numberOfLines={1}
         >
           {friend.displayName}
         </Text>
         <Text
-          style={[
-            styles.friendUsername,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
+          style={[styles.friendUsername, { color: colors.textSecondary }]}
           numberOfLines={1}
         >
           @{friend.username}
@@ -102,7 +99,7 @@ export const FriendsSection = memo(function FriendsSection({
   onSeeAllPress,
   onFriendPress,
 }: FriendsSectionProps) {
-  const theme = useTheme();
+  const colors = useColors();
   const [friends, setFriends] = useState<FriendPreview[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -191,37 +188,32 @@ export const FriendsSection = memo(function FriendsSection({
           <MaterialCommunityIcons
             name="account-group"
             size={20}
-            color={theme.colors.primary}
+            color={colors.primary}
           />
-          <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
             Friends
           </Text>
           <Surface
             style={[
               styles.countBadge,
-              { backgroundColor: theme.colors.primaryContainer },
+              { backgroundColor: colors.primary + "20" },
             ]}
             elevation={0}
           >
-            <Text
-              style={[
-                styles.countText,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
+            <Text style={[styles.countText, { color: colors.primary }]}>
               {totalCount}
             </Text>
           </Surface>
         </View>
         {onSeeAllPress && totalCount > maxDisplay && (
           <TouchableOpacity onPress={onSeeAllPress} style={styles.seeAllButton}>
-            <Text style={[styles.seeAllText, { color: theme.colors.primary }]}>
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>
               See All
             </Text>
             <MaterialCommunityIcons
               name="chevron-right"
               size={16}
-              color={theme.colors.primary}
+              color={colors.primary}
             />
           </TouchableOpacity>
         )}

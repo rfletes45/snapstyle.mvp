@@ -12,14 +12,27 @@
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §8
  */
 
-import { Client, Room } from "@colyseus/sdk";
-import { getAuth } from "firebase/auth";
+// Must be imported BEFORE @colyseus/sdk — patches window.location.protocol
+// so the SDK's module-level DEFAULT_ENDPOINT doesn't crash in React Native.
+import "@/shims/colyseus-sdk";
+
 import {
   COLYSEUS_SERVER_URL,
   COLYSEUS_SPECTATOR_ROOM,
   getColyseusRoomName,
+  resolveColyseusRoomName,
 } from "@/config/colyseus";
-
+import { buildJoinOptions } from "@/services/colyseusJoin";
+import { GameErrorCode, createGameError } from "@/types/gameErrors";
+import {
+  GAME_PROTOCOL_VERSION,
+  getClientBuildInfo,
+} from "@/types/gameProtocol";
+import type { GameSessionContext } from "@/types/gameSession";
+import { createTraceId } from "@/utils/trace";
+import type { Room } from "@colyseus/sdk";
+import { Client } from "@colyseus/sdk";
+import { getAuth } from "firebase/auth";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/colyseus");
@@ -61,12 +74,33 @@ export interface ColyseusEventHandlers {
 // =============================================================================
 
 class ColyseusService {
-  private client: Client;
+  private _client: Client | null = null;
   private activeRoom: Room | null = null;
   private eventHandlers: ColyseusEventHandlers = {};
 
+  /**
+   * Lazy-initialised Colyseus Client.
+   *
+   * Deferred to first access so `@colyseus/sdk` module-level code
+   * (DEFAULT_ENDPOINT — `window.location.protocol.replace(...)`) is only
+   * evaluated when the game server is actually needed, not at import time.
+   */
+  private get client(): Client {
+    if (!this._client) {
+      if (!COLYSEUS_SERVER_URL) {
+        throw new Error(
+          "[Colyseus] COLYSEUS_SERVER_URL is not defined. " +
+            "Check src/config/colyseus.ts and ensure the server URL is configured.",
+        );
+      }
+      logger.info(`[Colyseus] Creating Client → URL: ${COLYSEUS_SERVER_URL}`);
+      this._client = new Client(COLYSEUS_SERVER_URL);
+    }
+    return this._client;
+  }
+
   constructor() {
-    this.client = new Client(COLYSEUS_SERVER_URL);
+    // Client initialisation is deferred to first access (see `get client()`).
   }
 
   // ===========================================================================
@@ -109,22 +143,34 @@ class ColyseusService {
     }
 
     const token = await this.getAuthToken();
-    this.eventHandlers = handlers;
+
+    logger.info(
+      `[Colyseus] joinOrCreate → room=${roomName}, firestoreGameId=${options.firestoreGameId ?? "none"}`,
+    );
 
     try {
       const room = await this.client.joinOrCreate(roomName, {
         ...options,
         token,
+        protocolVersion: GAME_PROTOCOL_VERSION,
+        buildInfo: getClientBuildInfo(),
+        traceId: options.traceId || createTraceId("gs"),
       });
 
       this.activeRoom = room;
-      this.setupRoomHandlers(room);
+      this.eventHandlers = handlers;
+      // Pass handlers directly so each room's listeners use their own
+      // handler snapshot — prevents a later joinOrCreate from hijacking
+      // this room's callbacks.
+      this.setupRoomHandlers(room, handlers);
 
       logger.info(`[Colyseus] Joined room: ${roomName} (${room.roomId})`);
 
       return room;
-    } catch (error) {
-      logger.error("[Colyseus] Failed to join room:", error);
+    } catch (error: any) {
+      logger.error(
+        `[Colyseus] Failed to join room: ${error?.message}\nStack: ${error?.stack}`,
+      );
       throw error;
     }
   }
@@ -144,22 +190,27 @@ class ColyseusService {
     handlers: ColyseusEventHandlers = {},
   ): Promise<Room> {
     const token = await this.getAuthToken();
-    this.eventHandlers = handlers;
 
     try {
       const room = await this.client.joinById(roomId, {
         ...options,
         token,
+        protocolVersion: GAME_PROTOCOL_VERSION,
+        buildInfo: getClientBuildInfo(),
+        traceId: options.traceId || createTraceId("gs"),
       });
 
       this.activeRoom = room;
-      this.setupRoomHandlers(room);
+      this.eventHandlers = handlers;
+      this.setupRoomHandlers(room, handlers);
 
       logger.info(`[Colyseus] Joined room by ID: ${roomId}`);
 
       return room;
-    } catch (error) {
-      logger.error("[Colyseus] Failed to join room by ID:", error);
+    } catch (error: any) {
+      logger.error(
+        `[Colyseus] Failed to join room by ID: ${error?.message}\nStack: ${error?.stack}`,
+      );
       throw error;
     }
   }
@@ -222,14 +273,16 @@ class ColyseusService {
         token,
       });
 
-      this.setupRoomHandlers(room);
+      this.setupRoomHandlers(room, handlers);
       logger.info(
         `[Colyseus] Created spectator room: ${room.roomId} (game: ${gameType})`,
       );
 
       return room;
-    } catch (error) {
-      logger.error("[Colyseus] Failed to create spectator room:", error);
+    } catch (error: any) {
+      logger.error(
+        `[Colyseus] Failed to create spectator room: ${error?.message}\nStack: ${error?.stack}`,
+      );
       throw error;
     }
   }
@@ -248,6 +301,72 @@ class ColyseusService {
     return this.joinById(roomId, { spectator: true }, handlers);
   }
 
+  // ===========================================================================
+  // Context-Driven Join (canonical path)
+  // ===========================================================================
+
+  /**
+   * Join or create a room using the canonical GameSessionContext.
+   *
+   * This is the preferred join path — it resolves room names,
+   * builds canonical join options (token, protocolVersion, buildInfo,
+   * traceId), and maps errors to structured GameError objects.
+   *
+   * @param ctx - GameSessionContext from the screen / invite flow
+   * @param handlers - Lifecycle event handlers
+   * @param extras - Additional ad-hoc options (duration, difficulty, etc.)
+   * @returns The joined Room instance
+   * @throws GameError on failure
+   */
+  async joinWithContext(
+    ctx: GameSessionContext,
+    handlers: ColyseusEventHandlers = {},
+    extras: Record<string, unknown> = {},
+  ): Promise<Room> {
+    const roomName = resolveColyseusRoomName(ctx.gameType);
+    const joinOpts = await buildJoinOptions(ctx);
+
+    logger.info(
+      `[Colyseus] joinWithContext → room=${roomName}, traceId=${joinOpts.traceId}, ` +
+        `firestoreGameId=${joinOpts.firestoreGameId ?? "none"}, ` +
+        `spectator=${joinOpts.spectator ?? false}`,
+    );
+
+    try {
+      const room = await this.client.joinOrCreate(roomName, {
+        ...extras,
+        ...joinOpts,
+      });
+
+      this.activeRoom = room;
+      this.eventHandlers = handlers;
+      this.setupRoomHandlers(room, handlers);
+
+      logger.info(
+        `[Colyseus] Joined room: ${roomName} (${room.roomId}), traceId=${joinOpts.traceId}`,
+      );
+
+      return room;
+    } catch (error: any) {
+      logger.error(
+        `[Colyseus] joinWithContext failed: ${error?.message}\n` +
+          `traceId=${joinOpts.traceId}\nStack: ${error?.stack}`,
+      );
+
+      // Map SDK errors to canonical GameError
+      const code = mapJoinError(error);
+      throw createGameError(code, {
+        message: error?.message ?? "Failed to join room",
+        context: {
+          roomName,
+          gameType: ctx.gameType,
+          traceId: joinOpts.traceId,
+          firestoreGameId: ctx.firestoreGameId,
+        },
+      });
+    }
+  }
+
   /**
    * Leave the current room gracefully.
    */
@@ -261,6 +380,25 @@ class ColyseusService {
       this.activeRoom = null;
       this.eventHandlers = {};
     }
+  }
+
+  /**
+   * Fully clear the active session — leave room, null all refs, clear handlers.
+   *
+   * This is the "hard cleanup" used when a user exits a game to ensure
+   * the Play screen doesn't show a stale active session (fixes Bug #2).
+   */
+  async clearActiveSession(): Promise<void> {
+    if (this.activeRoom) {
+      try {
+        await this.activeRoom.leave(true); // consented leave
+      } catch {
+        /* ignore */
+      }
+      this.activeRoom = null;
+    }
+    this.eventHandlers = {};
+    logger.info("[Colyseus] Active session fully cleared");
   }
 
   /**
@@ -295,8 +433,9 @@ class ColyseusService {
    */
   async getLatency(): Promise<number> {
     try {
+      const httpUrl = (COLYSEUS_SERVER_URL || "").replace("ws", "http");
       const start = performance.now();
-      await fetch(COLYSEUS_SERVER_URL.replace("ws", "http") + "/health");
+      await fetch(httpUrl + "/health");
       return Math.round(performance.now() - start);
     } catch {
       return -1; // Server unreachable
@@ -307,7 +446,7 @@ class ColyseusService {
   // Internal Handlers
   // ===========================================================================
 
-  private setupRoomHandlers(room: Room): void {
+  private setupRoomHandlers(room: Room, handlers: ColyseusEventHandlers): void {
     // Store reconnection token for later use
     if (room.reconnectionToken) {
       logger.info(
@@ -315,9 +454,13 @@ class ColyseusService {
       );
     }
 
+    // Use the scoped `handlers` argument — NOT `this.eventHandlers` —
+    // so that a later joinOrCreate (different room) can't hijack these
+    // callbacks.  Each room gets its own frozen snapshot of handlers.
+
     // State changes
     room.onStateChange((newState: any) => {
-      this.eventHandlers.onStateChange?.(newState);
+      handlers.onStateChange?.(newState);
     });
 
     // Connection drop — v0.17 SDK has native onDrop signal
@@ -325,22 +468,51 @@ class ColyseusService {
       logger.warn(
         `[Colyseus] Connection dropped (code ${code}) — signalling reconnection…`,
       );
-      this.eventHandlers.onDrop?.(code, reason);
+      handlers.onDrop?.(code, reason);
     });
 
     // Left room — consented or final leave
     room.onLeave((code: number) => {
       logger.info(`[Colyseus] Left room: ${code}`);
-      this.activeRoom = null;
-      this.eventHandlers.onLeave?.(code);
+      // Only clear activeRoom if it's still THIS room — prevents a
+      // stale room's onLeave from nullifying a newer session.
+      if (this.activeRoom === room) {
+        this.activeRoom = null;
+      }
+      handlers.onLeave?.(code);
     });
 
     // Error
     room.onError((code: number, message?: string) => {
       logger.error(`[Colyseus] Room error: ${code} — ${message}`);
-      this.eventHandlers.onError?.(code, message);
+      handlers.onError?.(code, message);
     });
   }
+}
+
+// =============================================================================
+// Error Mapping
+// =============================================================================
+
+/**
+ * Map a Colyseus SDK error to a GameErrorCode.
+ * Inspects error message for common patterns.
+ */
+function mapJoinError(error: any): GameErrorCode {
+  const msg = (error?.message ?? "").toLowerCase();
+  if (msg.includes("full") || msg.includes("maxclients")) {
+    return GameErrorCode.JOIN_ROOM_FULL;
+  }
+  if (msg.includes("auth") || msg.includes("token")) {
+    return GameErrorCode.AUTH_TOKEN_INVALID;
+  }
+  if (msg.includes("timeout") || msg.includes("timed out")) {
+    return GameErrorCode.JOIN_TIMEOUT;
+  }
+  if (msg.includes("not found") || msg.includes("no available")) {
+    return GameErrorCode.JOIN_ROOM_NOT_FOUND;
+  }
+  return GameErrorCode.JOIN_FAILED;
 }
 
 // =============================================================================

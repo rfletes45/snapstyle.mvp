@@ -1,0 +1,99 @@
+{
+  "version": 2,
+  "packId": "v2_test",
+  "name": "V2 Test Course",
+  "holes": [
+    {
+      "id": "v2_h01",
+      "name": "Straight Shot (V2)",
+      "par": 2,
+      "maxStrokes": 8,
+      "bounds": { "width": 400, "height": 800 },
+      "tee": { "x": 200, "y": 700 },
+      "cup": { "x": 200, "y": 100 },
+      "cupRadius": 18,
+      "walls": [
+        [
+          { "x": 50, "y": 0 },
+          { "x": 350, "y": 0 },
+          { "x": 350, "y": 800 },
+          { "x": 50, "y": 800 }
+        ]
+      ],
+      "surfaces": [],
+      "hazards": [],
+      "obstacles": []
+    },
+    {
+      "id": "v2_h02",
+      "name": "Bumper Alley (V2)",
+      "par": 3,
+      "maxStrokes": 10,
+      "bounds": { "width": 400, "height": 800 },
+      "tee": { "x": 200, "y": 720 },
+      "cup": { "x": 200, "y": 80 },
+      "cupRadius": 18,
+      "walls": [
+        [
+          { "x": 50, "y": 0 },
+          { "x": 350, "y": 0 },
+          { "x": 350, "y": 800 },
+          { "x": 50, "y": 800 }
+        ]
+      ],
+      "surfaces": [],
+      "hazards": [],
+      "obstacles": [
+        {
+          "id": "bumper_1",
+          "type": "bumper",
+          "position": { "x": 150, "y": 400 },
+          "size": { "width": 40, "height": 40 },
+          "radius": 20,
+          "restitution": 1.5
+        },
+        {
+          "id": "bumper_2",
+          "type": "bumper",
+          "position": { "x": 250, "y": 300 },
+          "size": { "width": 40, "height": 40 },
+          "radius": 20,
+          "restitution": 1.5
+        }
+      ]
+    },
+    {
+      "id": "v2_h03",
+      "name": "Sand Trap (V2)",
+      "par": 3,
+      "maxStrokes": 10,
+      "bounds": { "width": 400, "height": 800 },
+      "tee": { "x": 200, "y": 720 },
+      "cup": { "x": 200, "y": 80 },
+      "cupRadius": 18,
+      "walls": [
+        [
+          { "x": 50, "y": 0 },
+          { "x": 350, "y": 0 },
+          { "x": 350, "y": 800 },
+          { "x": 50, "y": 800 }
+        ]
+      ],
+      "surfaces": [
+        {
+          "id": "sand_1",
+          "type": "sand",
+          "frictionMul": 3.0,
+          "poly": [
+            { "x": 100, "y": 350 },
+            { "x": 300, "y": 350 },
+            { "x": 300, "y": 500 },
+            { "x": 100, "y": 500 }
+          ]
+        }
+      ],
+      "hazards": [],
+      "obstacles": []
+    }
+  ]
+}

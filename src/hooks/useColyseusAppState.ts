@@ -8,10 +8,9 @@
  *   useColyseusAppState(room);
  */
 
-import { Room } from "@colyseus/sdk";
+import type { Room } from "@colyseus/sdk";
 import { useEffect, useRef } from "react";
 import { AppState, AppStateStatus } from "react-native";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useColyseusAppState");

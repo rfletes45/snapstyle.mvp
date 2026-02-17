@@ -1,0 +1,22 @@
+{
+  "id": "tutorial_1",
+  "packId": "tutorial",
+  "name": "First Putt",
+  "par": 1,
+  "maxStrokes": 6,
+  "bounds": { "width": 300, "height": 600 },
+  "tee": { "x": 150, "y": 500 },
+  "cup": { "x": 150, "y": 100 },
+  "cupRadius": 20,
+  "walls": [
+    [
+      { "x": 50, "y": 0 },
+      { "x": 250, "y": 0 },
+      { "x": 250, "y": 600 },
+      { "x": 50, "y": 600 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": []
+}

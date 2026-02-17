@@ -45,8 +45,6 @@ interface AchievementContext {
   score?: number;
   isMultiplayer?: boolean;
   isWinner?: boolean;
-  reactionTime?: number;
-  tapCount?: number;
 }
 
 interface GrantedAchievement {
@@ -91,46 +89,6 @@ const TEST_ACHIEVEMENTS: TestAchievementDefinition[] = [
     category: "game",
     rarity: "legendary",
     threshold: 10,
-  },
-
-  // Reaction game achievements
-  {
-    type: "reaction_master",
-    name: "Lightning Reflexes",
-    description: "Achieve a reaction time under 200ms",
-    icon: "lightning-bolt",
-    category: "game",
-    rarity: "epic",
-    threshold: 200,
-  },
-  {
-    type: "reaction_god",
-    name: "Superhuman",
-    description: "Achieve a reaction time under 150ms",
-    icon: "flash",
-    category: "game",
-    rarity: "legendary",
-    threshold: 150,
-  },
-
-  // Timed tap achievements
-  {
-    type: "tap_100",
-    name: "Speed Demon",
-    description: "Tap 100 times in 10 seconds",
-    icon: "fire",
-    category: "game",
-    rarity: "rare",
-    threshold: 100,
-  },
-  {
-    type: "tap_120",
-    name: "Finger Fury",
-    description: "Tap 120 times in 10 seconds",
-    icon: "fire",
-    category: "game",
-    rarity: "epic",
-    threshold: 120,
   },
 ];
 
@@ -205,33 +163,6 @@ async function checkAndGrantAchievements(
     }
     if (context.score !== undefined) {
       stats.gameScores[context.gameType].push(context.score);
-    }
-  }
-
-  // Check reaction achievements
-  if (
-    context.gameType === "reaction_tap" &&
-    context.reactionTime !== undefined
-  ) {
-    if (context.reactionTime <= 200) {
-      const result = grantAchievement(userId, "reaction_master");
-      if (result) granted.push(result);
-    }
-    if (context.reactionTime <= 150) {
-      const result = grantAchievement(userId, "reaction_god");
-      if (result) granted.push(result);
-    }
-  }
-
-  // Check timed tap achievements
-  if (context.gameType === "timed_tap" && context.tapCount !== undefined) {
-    if (context.tapCount >= 100) {
-      const result = grantAchievement(userId, "tap_100");
-      if (result) granted.push(result);
-    }
-    if (context.tapCount >= 120) {
-      const result = grantAchievement(userId, "tap_120");
-      if (result) granted.push(result);
     }
   }
 
@@ -413,105 +344,6 @@ describe("Achievement Triggers", () => {
   });
 
   // ===========================================================================
-  // Reaction Game Achievement Tests
-  // ===========================================================================
-
-  describe("Reaction Game Achievements", () => {
-    it("should grant achievement for fast reaction", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "reaction_tap",
-        reactionTime: 180,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "reaction_master")).toBe(true);
-    });
-
-    it("should grant both achievements for very fast reaction", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "reaction_tap",
-        reactionTime: 140,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "reaction_master")).toBe(true);
-      expect(granted.some((a) => a.id === "reaction_god")).toBe(true);
-    });
-
-    it("should not grant achievement for slow reaction", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "reaction_tap",
-        reactionTime: 300,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "reaction_master")).toBe(false);
-    });
-
-    it("should grant at exactly threshold", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "reaction_tap",
-        reactionTime: 200, // Exactly at threshold
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "reaction_master")).toBe(true);
-    });
-  });
-
-  // ===========================================================================
-  // Timed Tap Achievement Tests
-  // ===========================================================================
-
-  describe("Timed Tap Achievements", () => {
-    it("should grant achievement for 100+ taps", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "timed_tap",
-        tapCount: 105,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "tap_100")).toBe(true);
-      expect(granted.some((a) => a.id === "tap_120")).toBe(false);
-    });
-
-    it("should grant both achievements for 120+ taps", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "timed_tap",
-        tapCount: 125,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.some((a) => a.id === "tap_100")).toBe(true);
-      expect(granted.some((a) => a.id === "tap_120")).toBe(true);
-    });
-
-    it("should not grant achievement for < 100 taps", async () => {
-      const context: AchievementContext = {
-        userId: "user1",
-        gameType: "timed_tap",
-        tapCount: 85,
-      };
-
-      const granted = await checkAndGrantAchievements("user1", context);
-
-      expect(granted.length).toBe(0);
-    });
-  });
-
-  // ===========================================================================
   // Edge Cases
   // ===========================================================================
 
@@ -519,18 +351,20 @@ describe("Achievement Triggers", () => {
     it("should handle multiple users independently", async () => {
       await checkAndGrantAchievements("user1", {
         userId: "user1",
-        gameType: "reaction_tap",
-        reactionTime: 180,
+        gameType: "chess",
+        isMultiplayer: true,
+        isWinner: true,
       });
 
       await checkAndGrantAchievements("user2", {
         userId: "user2",
-        gameType: "reaction_tap",
-        reactionTime: 250,
+        gameType: "chess",
+        isMultiplayer: true,
+        isWinner: false,
       });
 
-      expect(hasAchievement("user1", "reaction_master")).toBe(true);
-      expect(hasAchievement("user2", "reaction_master")).toBe(false);
+      expect(hasAchievement("user1", "mp_first_game")).toBe(true);
+      expect(hasAchievement("user2", "mp_first_game")).toBe(false);
     });
 
     it("should handle missing optional fields", async () => {
@@ -547,13 +381,14 @@ describe("Achievement Triggers", () => {
     it("should track games played across all game types", async () => {
       await checkAndGrantAchievements("user1", {
         userId: "user1",
-        gameType: "reaction_tap",
-        reactionTime: 190,
+        gameType: "chess",
+        isMultiplayer: true,
+        isWinner: true,
       });
 
       await checkAndGrantAchievements("user1", {
         userId: "user1",
-        gameType: "chess",
+        gameType: "checkers",
         isMultiplayer: true,
         isWinner: true,
       });

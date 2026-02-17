@@ -1,21 +1,22 @@
-﻿import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
+import { createServerLogger } from "../../utils/logger";
 const log = createServerLogger("ScoreRaceRoom");
 
 /**
- * ScoreRaceRoom â€” Abstract base for all Tier 4 quick-play games
+ * ScoreRaceRoom — Abstract base for all Tier 4 quick-play games
  *
  * Pattern: Both players play simultaneously, competing on score.
  * The server manages the timer and syncs scores in real-time.
  * Game logic runs client-side; server validates score bounds.
  *
  * Lifecycle:
- * 1. Both players join â†’ "waiting"
- * 2. Both send "ready" â†’ "countdown" (3 seconds)
- * 3. Countdown expires â†’ "playing" (game clock starts)
- * 4. Game duration expires or both finish â†’ "finished"
+ * 1. Both players join → "waiting"
+ * 2. Both send "ready" → "countdown" (3 seconds)
+ * 3. Countdown expires → "playing" (game clock starts)
+ * 4. Game duration expires or both finish → "finished"
  * 5. Winner determined by highest score
  *
- * Used by: Reaction, TimedTap, DotMatch
+ * Used by: DotMatch
  */
 
 import { Client, Room } from "colyseus";
@@ -23,8 +24,21 @@ import { Player } from "../../schemas/common";
 import { ScoreRacePlayer, ScoreRaceState } from "../../schemas/quickplay";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
-import { persistGameResult } from "../../services/persistence";
+import {
+  deleteGameAndInvite,
+  markGameVacant,
+  persistGameResult,
+} from "../../services/persistence";
 import { validateScoreUpdate } from "../../services/validation";
+import { checkProtocolVersion } from "../../utils/protocol";
+import {
+  MessageRateLimiter,
+  SCORE_RACE_RATE_LIMITS,
+} from "../../utils/rateLimiter";
+import {
+  createStuckRoomWatchdog,
+  type StuckRoomWatchdog,
+} from "../../utils/stuckRoomWatchdog";
 
 // =============================================================================
 // Abstract Base
@@ -35,7 +49,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
   patchRate = 100; // 10fps state sync (just scores + timer)
   autoDispose = true;
 
-  /** Game type key â€” must match client-side GAME_REGISTRY */
+  /** Game type key — must match client-side GAME_REGISTRY */
   protected abstract readonly gameTypeKey: string;
 
   /** Default game duration in seconds */
@@ -50,6 +64,15 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
   private gameStartTime: number = 0;
   private spectatorSessionIds = new Set<string>();
 
+  /** Scoped logger with room-level context */
+  protected roomLog: ServerLogger = log;
+
+  /** Message rate limiter to prevent score spam */
+  private rateLimiter = new MessageRateLimiter(SCORE_RACE_RATE_LIMITS);
+
+  /** Stuck-room watchdog — logs if room never reaches playing */
+  private stuckWatchdog: StuckRoomWatchdog | null = null;
+
   protected isSpectator(sessionId: string): boolean {
     return this.spectatorSessionIds.has(sessionId);
   }
@@ -63,13 +86,41 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // -- Protocol version gate ---------------------------------------------
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: this.gameTypeKey,
+      });
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
+
+    log.info("Auth success", {
+      uid: decoded.uid,
+      sessionId: client.sessionId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options?.firestoreGameId,
+      traceId: options?.traceId,
+      protocolVersion: proto.clientVersion,
+      platform: options?.buildInfo?.platform,
+    });
+
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
+      traceId: options?.traceId,
     };
   }
 
@@ -82,9 +133,22 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     this.state.gameId = this.roomId;
     this.state.difficulty = options.difficulty || 1;
 
-    log.info(
-      `[${this.gameTypeKey}] Room created: ${this.roomId} (duration: ${this.state.gameDuration}s)`,
-    );
+    if (options.firestoreGameId) {
+      this.state.firestoreGameId = options.firestoreGameId;
+    }
+
+    // Build scoped logger with room-level correlation context
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options.firestoreGameId || undefined,
+      traceId: options.traceId || undefined,
+    });
+
+    this.roomLog.info(`Room created (duration: ${this.state.gameDuration}s)`);
+
+    // Start stuck-room watchdog (logs if room never reaches playing)
+    this.stuckWatchdog = createStuckRoomWatchdog(this as any, this.roomLog);
   }
 
   // ===========================================================================
@@ -101,9 +165,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       const player = this.state.racePlayers.get(client.sessionId);
       if (player) {
         player.ready = true;
-        log.info(
-          `[${this.gameTypeKey}] Player ready: ${player.displayName}`,
-        );
+        this.roomLog.info(`Player ready: ${player.displayName}`);
         this.checkAllReady();
       }
     },
@@ -115,6 +177,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     score_update: (client: Client, payload: { score: number }) => {
       if (this.isSpectator(client.sessionId)) return;
       if (this.state.phase !== "playing") return;
+      if (this.rateLimiter.isRateLimited(client.sessionId, "score_update"))
+        return;
 
       const player = this.state.racePlayers.get(client.sessionId);
       if (!player || player.finished) return;
@@ -139,6 +203,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     combo_update: (client: Client, payload: { combo: number }) => {
       if (this.isSpectator(client.sessionId)) return;
       if (this.state.phase !== "playing") return;
+      if (this.rateLimiter.isRateLimited(client.sessionId, "combo_update"))
+        return;
       const player = this.state.racePlayers.get(client.sessionId);
       if (player && !player.finished) {
         player.combo = Math.max(0, Math.min(payload.combo, 999));
@@ -203,7 +269,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     },
 
     /**
-     * Rematch accepted â€” reset the room.
+     * Rematch accepted — reset the room.
      */
     rematch_accept: (client: Client) => {
       if (this.isSpectator(client.sessionId)) return;
@@ -215,8 +281,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
      * App state change (background/foreground).
      */
     app_state: (client: Client, payload: { state: string }) => {
-      log.info(
-        `[${this.gameTypeKey}] Player app state: ${client.sessionId} â†’ ${payload.state}`,
+      this.roomLog.info(
+        `Player app state: ${client.sessionId} → ${payload.state}`,
       );
     },
   };
@@ -226,7 +292,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
   // ===========================================================================
 
   onJoin(client: Client, options: Record<string, any>, auth: any): void {
-    // â”€â”€â”€ Spectator join â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator join ─────────────────────────────────────────────────
     if (options.spectator === true) {
       const spectator = new SpectatorEntry();
       spectator.uid = auth.uid;
@@ -237,8 +303,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       this.state.spectators.set(client.sessionId, spectator);
       this.state.spectatorCount++;
       this.spectatorSessionIds.add(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -270,8 +336,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       seed: this.state.seed,
     });
 
-    log.info(
-      `[${this.gameTypeKey}] Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.racePlayers.size}/${this.maxClients}]`,
+    this.roomLog.info(
+      `Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.racePlayers.size}/${this.maxClients}]`,
     );
 
     if (this.state.racePlayers.size >= 2) {
@@ -301,8 +367,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     );
     this.allowReconnection(client, timeout);
 
-    log.info(
-      `[${this.gameTypeKey}] Player dropped: ${client.sessionId} (${timeout}s window)`,
+    this.roomLog.info(
+      `Player dropped: ${client.sessionId} (${timeout}s window)`,
     );
   }
 
@@ -320,19 +386,17 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       { except: client },
     );
 
-    log.info(
-      `[${this.gameTypeKey}] Player reconnected: ${client.sessionId}`,
-    );
+    this.roomLog.info(`Player reconnected: ${client.sessionId}`);
   }
 
   onLeave(client: Client, code: number): void {
-    // â”€â”€â”€ Spectator leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator leave ────────────────────────────────────────────────
     if (this.spectatorSessionIds.has(client.sessionId)) {
       this.state.spectators.delete(client.sessionId);
       this.state.spectatorCount = Math.max(0, this.state.spectatorCount - 1);
       this.spectatorSessionIds.delete(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator left (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator left (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -346,19 +410,41 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       }
     }
 
-    log.info(
-      `[${this.gameTypeKey}] Player left: ${client.sessionId} (code: ${code})`,
-    );
+    this.roomLog.info(`Player left: ${client.sessionId} (code: ${code})`);
   }
 
   async onDispose(): Promise<void> {
-    // Persist result if game was completed
+    this.rateLimiter.dispose();
+    this.stuckWatchdog?.dispose();
+    const firestoreGameId =
+      this.state.firestoreGameId || this.state.gameId || this.roomId;
+
     if (this.state.phase === "finished" && this.state.winnerId) {
+      // Game resolved � persist results, then delete game + invite
       const durationMs = this.state.timer.elapsed;
       await persistGameResult(this.state, durationMs);
+      await deleteGameAndInvite(firestoreGameId);
+      this.roomLog.info(
+        `Game completed, persisted, and cleaned up: ${this.roomId}`,
+      );
+    } else if (this.state.phase === "playing") {
+      // Ongoing non-turn-based game � mark as vacant for 10-minute cleanup
+      await markGameVacant(firestoreGameId, this.gameTypeKey, false);
+      this.roomLog.info(
+        `Ongoing game marked vacant (10-min TTL): ${this.roomId}`,
+      );
+    } else if (
+      this.state.phase === "waiting" ||
+      this.state.phase === "countdown"
+    ) {
+      // PRE-START ABANDONMENT: delete immediately
+      await deleteGameAndInvite(firestoreGameId);
+      this.roomLog.info(
+        `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
+      );
+    } else {
+      this.roomLog.info(`Room disposed: ${this.roomId}`);
     }
-
-    log.info(`[${this.gameTypeKey}] Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -382,7 +468,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     this.state.phase = "countdown";
     this.state.countdown = 3;
 
-    log.info(`[${this.gameTypeKey}] Countdown started`);
+    this.roomLog.info(`Countdown started`);
 
     // 3-second countdown
     const countdownInterval = this.clock.setInterval(() => {
@@ -399,12 +485,11 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     this.state.timer.running = true;
     this.state.timer.remaining = this.state.gameDuration * 1000;
     this.gameStartTime = Date.now();
+    this.stuckWatchdog?.markPlaying();
 
-    log.info(
-      `[${this.gameTypeKey}] Game started! Duration: ${this.state.gameDuration}s`,
-    );
+    this.roomLog.info(`Game started! Duration: ${this.state.gameDuration}s`);
 
-    // Game timer â€” updates elapsed/remaining every 100ms
+    // Game timer — updates elapsed/remaining every 100ms
     this.setSimulationInterval((deltaTime: number) => {
       if (this.state.phase !== "playing") return;
 
@@ -486,8 +571,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       gameDurationMs: this.state.timer.elapsed,
     });
 
-    log.info(
-      `[${this.gameTypeKey}] Game over! Winner: ${this.state.winnerId || "TIE"} | Scores: ${results.map((r) => `${r.displayName}: ${r.score}`).join(", ")}`,
+    this.roomLog.info(
+      `Game over! Winner: ${this.state.winnerId || "TIE"} | Scores: ${results.map((r) => `${r.displayName}: ${r.score}`).join(", ")}`,
     );
   }
 
@@ -516,8 +601,6 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
 
     this.unlock();
 
-    log.info(`[${this.gameTypeKey}] Room reset for rematch`);
+    this.roomLog.info(`Room reset for rematch`);
   }
 }
-
-

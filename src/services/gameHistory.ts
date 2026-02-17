@@ -60,8 +60,6 @@ const SINGLE_PLAYER_GAME_TYPES: SinglePlayerGameType[] = [
   "bounce_blitz",
   "play_2048",
   "word_master",
-  "reaction_tap",
-  "timed_tap",
 ];
 
 /**
@@ -135,11 +133,6 @@ function determineSinglePlayerWin(session: SinglePlayerGameSession): boolean {
     case "bounce_blitz":
     case "play_2048":
       // Score-based games: win if score > 0 (completed at least something)
-      return session.finalScore > 0;
-
-    case "reaction_tap":
-    case "timed_tap":
-      // Tap games: always record as completed, show score
       return session.finalScore > 0;
 
     default:

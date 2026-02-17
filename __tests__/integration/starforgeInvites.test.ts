@@ -16,9 +16,9 @@ import {
 } from "../../src/config/colyseus";
 import { GAME_SCREEN_MAP } from "../../src/config/gameCategories";
 import {
-  GAME_METADATA,
-  GAME_SCORE_LIMITS,
+  EXTENDED_GAME_SCORE_LIMITS,
   formatGameScore,
+  GAME_METADATA,
 } from "../../src/types/games";
 
 describe("Starforge game type registration", () => {
@@ -32,7 +32,7 @@ describe("Starforge game type registration", () => {
   });
 
   it("has GAME_SCORE_LIMITS entry", () => {
-    const limits = GAME_SCORE_LIMITS.starforge_game;
+    const limits = EXTENDED_GAME_SCORE_LIMITS.starforge_game;
     expect(limits).toBeDefined();
     expect(limits.maxScore).toBe(999999999);
     expect(limits.scoreDirection).toBe("higher");

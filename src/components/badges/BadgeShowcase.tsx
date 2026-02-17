@@ -5,8 +5,8 @@
  * Shows up to 5 badges with "View All" option.
  */
 
-import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
 import { getBadgeById } from "@/data/badges";
+import { useColors } from "@/store/ThemeContext";
 import type { UserBadge } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
@@ -37,7 +37,7 @@ function BadgeShowcaseBase({
   showHeader = true,
   title = "Featured Badges",
 }: BadgeShowcaseProps) {
-  const colors = useProfileThemeColors();
+  const colors = useColors();
 
   const displayBadges = badges.slice(0, maxDisplay);
 

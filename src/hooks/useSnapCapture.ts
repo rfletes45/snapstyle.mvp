@@ -1,4 +1,8 @@
 /**
+ * @deprecated DEAD CODE — replaced by useAttachmentPicker + handleDirectCameraSend
+ * in ChatScreen.tsx. This file is no longer imported anywhere and can be safely
+ * deleted. Kept temporarily for reference during migration.
+ *
  * useSnapCapture Hook (UNI-05 Extraction)
  *
  * Extracts photo capture functionality from ChatScreen to reduce duplication.
@@ -16,7 +20,6 @@ import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useState } from "react";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useSnapCapture");

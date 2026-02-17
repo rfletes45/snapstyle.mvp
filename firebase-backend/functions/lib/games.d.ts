@@ -69,8 +69,39 @@ export declare const expireGameInvites: functions.CloudFunction<unknown>;
 export declare const expireMatchmakingEntries: functions.CloudFunction<unknown>;
 /**
  * Clean up old completed games (keep for 90 days)
+ *
+ * Queries by `endedAt` first, then falls back to `updatedAt` to catch games
+ * that were completed before the endedAt fix was deployed.
+ * Also recursively deletes subcollections (Moves, Spectators, MatchChat).
  */
 export declare const cleanupOldGames: functions.CloudFunction<unknown>;
+/**
+ * Clean up resolved game invites (accepted/declined/cancelled/expired)
+ *
+ * Once an invite reaches a terminal status it serves no purpose in Firestore.
+ * We keep them for 30 days for debugging / audit, then delete.
+ * Runs daily at 02:30 (offset from cleanupOldGames to avoid contention).
+ */
+export declare const cleanupResolvedInvites: functions.CloudFunction<unknown>;
+/**
+ * Clean up stale matchmaking queue entries.
+ *
+ * `expireMatchmakingEntries` marks entries as "expired" but never deletes them,
+ * causing the MatchmakingQueue collection to grow unbounded. This function
+ * deletes entries in terminal states (expired, matched, cancelled) older than
+ * 7 days. Runs daily at 03:00.
+ */
+export declare const cleanupStaleMatchmakingEntries: functions.CloudFunction<unknown>;
+/**
+ * Clean up old single-player game sessions.
+ *
+ * Game sessions are stored under Users/{uid}/GameSessions. Over time these
+ * accumulate and bloat per-user document counts. This function scans
+ * the GameSessions collectionGroup and deletes sessions older than 180 days.
+ * High scores are preserved in the separate GameHighScores subcollection.
+ * Runs daily at 03:30.
+ */
+export declare const cleanupOldGameSessions: functions.CloudFunction<unknown>;
 /**
  * Make a move in a turn-based game
  * Validates move and updates game state

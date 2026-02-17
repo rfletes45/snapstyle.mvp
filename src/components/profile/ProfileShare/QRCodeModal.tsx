@@ -15,13 +15,13 @@ import {
   Button,
   IconButton,
   Text,
-  useTheme,
 } from "react-native-paper";
 import Animated, { FadeIn, ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { generateProfileShare } from "@/services/profileService";
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileShareData } from "@/types/userProfile";
 
 // =============================================================================
@@ -96,16 +96,17 @@ function QRCodeModalBase({
   username,
   onClose,
 }: QRCodeModalProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const insets = useSafeAreaInsets();
 
   const colors = {
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    primary: theme.colors.primary,
-    surfaceVariant: theme.colors.surfaceVariant,
+    background: profileColors.background,
+    surface: profileColors.surface,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    primary: profileColors.primary,
+    surfaceVariant: profileColors.surfaceVariant,
+    error: profileColors.error,
   };
 
   // State
@@ -191,11 +192,9 @@ function QRCodeModalBase({
                   <MaterialCommunityIcons
                     name="alert-circle"
                     size={48}
-                    color={theme.colors.error}
+                    color={colors.error}
                   />
-                  <Text
-                    style={[styles.errorText, { color: theme.colors.error }]}
-                  >
+                  <Text style={[styles.errorText, { color: colors.error }]}>
                     {error}
                   </Text>
                   <Button mode="outlined" onPress={onClose}>

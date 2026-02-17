@@ -112,8 +112,6 @@ const GAME_METADATA: Record<
   checkers: { minPlayers: 2, maxPlayers: 2 },
   tic_tac_toe: { minPlayers: 2, maxPlayers: 2 },
   crazy_eights: { minPlayers: 2, maxPlayers: 4 },
-  "8ball_pool": { minPlayers: 2, maxPlayers: 2 },
-  air_hockey: { minPlayers: 2, maxPlayers: 2 },
 };
 
 // =============================================================================

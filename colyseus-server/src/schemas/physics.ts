@@ -2,7 +2,7 @@
  * Physics Schemas â€” State types for all Tier 1 real-time physics games
  *
  * Used by PhysicsRoom base and its subclasses:
- *   PongRoom, AirHockeyRoom, BounceBlitzRoom, BrickBreakerRoom
+ *   PongRoom, BounceBlitzRoom, BrickBreakerRoom
  *
  * IMPORTANT: @colyseus/schema has a 64-property-per-class limit.
  * Complex games (BrickBreaker) use sub-schemas.

@@ -139,8 +139,6 @@ export function formatPlayerCount(game: GameMetadata): string {
 
 export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   // Action/Quick Play
-  reaction_tap: "ReactionTapGame",
-  timed_tap: "TimedTapGame",
   bounce_blitz: "BounceBlitzGame",
   brick_breaker: "BrickBreakerGame",
   pong_game: "PongGame",
@@ -160,9 +158,7 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   dot_match: "DotsGame",
   gomoku_master: "GomokuGame",
   reversi_game: "ReversiGame",
-  "8ball_pool": "PoolGame",
-  air_hockey: "AirHockeyGame",
-  tropical_fishing: "TropicalFishingGame",
   starforge_game: "StarforgeGame",
-  golf_duels: "GolfDuelsGame",
+  sketch_party_game: "SketchPartyGameScreen",
+  minigolf_duels: "MiniGolfDuelsGame",
 };

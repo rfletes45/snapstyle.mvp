@@ -29,7 +29,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Button, Divider, useTheme } from "react-native-paper";
+import { Button } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BadgeShowcase } from "@/components/badges";
@@ -38,9 +38,7 @@ import {
   GameScoresDisplay,
   GameScoresEditor,
   ProfileActions as ProfileActionsGrid,
-  ProfileBackground,
   ProfileStats,
-  ProfileThemePicker,
 } from "@/components/profile";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
 import { OwnProfileHeader } from "@/components/profile/ProfileHeader/index";
@@ -50,17 +48,17 @@ import {
 } from "@/components/profile/ProfilePicture";
 import { LoadingState } from "@/components/ui";
 import { BorderRadius, Spacing } from "@/constants/theme";
-import { ProfileThemeColorsProvider } from "@/contexts/ProfileThemeColorsContext";
-import { getThemeById, PROFILE_THEMES } from "@/data/profileThemes";
+
 import { useFullProfileData } from "@/hooks/useFullProfileData";
 import { useGameScores } from "@/hooks/useGameScores";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
 import { logout } from "@/services/auth";
-import { getEquippedTheme, getUserOwnedThemes } from "@/services/profileThemes";
+
 import { useAuth } from "@/store/AuthContext";
+import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
-import type { ProfileAction, ProfileTheme } from "@/types/profile";
+import type { ProfileAction } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
 import { createLogger } from "@/utils/log";
@@ -80,13 +78,6 @@ interface OwnProfileScreenProps {
 export default function OwnProfileScreen({
   navigation,
 }: OwnProfileScreenProps) {
-  const theme = useTheme();
-  const colors = {
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    error: theme.colors.error,
-    onError: theme.colors.onError,
-  };
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const { profile: baseProfile, refreshProfile } = useUser();
@@ -129,63 +120,16 @@ export default function OwnProfileScreen({
   const [pictureEditorVisible, setPictureEditorVisible] = useState(false);
   const [decorationPickerVisible, setDecorationPickerVisible] = useState(false);
   const [bioEditorVisible, setBioEditorVisible] = useState(false);
-  const [themePickerVisible, setThemePickerVisible] = useState(false);
   const [gameScoresEditorVisible, setGameScoresEditorVisible] = useState(false);
-
-  // Theme state
-  const [equippedTheme, setEquippedTheme] = useState<ProfileTheme | null>(null);
-  const [ownedThemes, setOwnedThemes] = useState<string[]>([]);
-  const [themeLoading, setThemeLoading] = useState(true);
 
   // Ref to track decoration picker delay timer
   const decorationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const colors = useColors();
+
   // Bio and status from full profile data
   const userBio: ProfileBio | null = fullProfile?.bio || null;
   const userStatus: ProfileStatus | null = fullProfile?.status || null;
-
-  // ==========================================================================
-  // Load Theme Data
-  // ==========================================================================
-
-  const loadThemeData = useCallback(async () => {
-    if (!currentFirebaseUser?.uid) return;
-
-    setThemeLoading(true);
-    try {
-      const [themeId, owned] = await Promise.all([
-        getEquippedTheme(currentFirebaseUser.uid),
-        getUserOwnedThemes(currentFirebaseUser.uid),
-      ]);
-
-      // Convert theme ID to theme object
-      if (themeId) {
-        const themeObj = getThemeById(themeId);
-
-        if (!themeObj) {
-          // Fall back to dark_mode theme if the theme ID doesn't exist
-          const fallbackTheme =
-            getThemeById("dark_mode") || PROFILE_THEMES[1] || PROFILE_THEMES[0];
-          setEquippedTheme(fallbackTheme);
-        } else {
-          setEquippedTheme(themeObj);
-        }
-      } else {
-        // Default to first theme if none equipped
-        setEquippedTheme(PROFILE_THEMES[0] || null);
-      }
-
-      setOwnedThemes(owned);
-    } catch (error) {
-      logger.error("Error loading theme data:", error);
-    } finally {
-      setThemeLoading(false);
-    }
-  }, [currentFirebaseUser?.uid]);
-
-  useEffect(() => {
-    loadThemeData();
-  }, [loadThemeData]);
 
   // Clean up decoration timer on unmount
   useEffect(() => {
@@ -202,14 +146,9 @@ export default function OwnProfileScreen({
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([
-      refresh(),
-      refreshPicture(),
-      refreshFullProfile(),
-      loadThemeData(),
-    ]);
+    await Promise.all([refresh(), refreshPicture(), refreshFullProfile()]);
     setRefreshing(false);
-  }, [refresh, refreshPicture, refreshFullProfile, loadThemeData]);
+  }, [refresh, refreshPicture, refreshFullProfile]);
 
   const handleSignOut = useCallback(async () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -275,14 +214,6 @@ export default function OwnProfileScreen({
     refreshPicture();
   }, [refreshPicture]);
 
-  const handleOpenThemePicker = useCallback(() => {
-    setThemePickerVisible(true);
-  }, []);
-
-  const handleThemeChanged = useCallback((theme: ProfileTheme) => {
-    setEquippedTheme(theme);
-  }, []);
-
   // Modal close handlers
   const handleClosePictureEditor = useCallback(() => {
     setPictureEditorVisible(false);
@@ -294,10 +225,6 @@ export default function OwnProfileScreen({
 
   const handleCloseBioEditor = useCallback(() => {
     setBioEditorVisible(false);
-  }, []);
-
-  const handleCloseThemePicker = useCallback(() => {
-    setThemePickerVisible(false);
   }, []);
 
   const handleCloseGameScoresEditor = useCallback(() => {
@@ -318,12 +245,6 @@ export default function OwnProfileScreen({
         label: "Shop",
         icon: "shopping",
         onPress: () => navigation.navigate("Shop"),
-      },
-      {
-        id: "theme",
-        label: "Themes",
-        icon: "palette",
-        onPress: handleOpenThemePicker,
       },
       {
         id: "decorations",
@@ -360,15 +281,15 @@ export default function OwnProfileScreen({
         onPress: () => navigation.navigate("BlockedUsers"),
       },
     ],
-    [navigation, handleOpenThemePicker, handleOpenDecorationPickerDirect],
+    [navigation, handleOpenDecorationPickerDirect],
   );
 
   // ==========================================================================
   // Render
   // ==========================================================================
 
-  // Loading state - wait for both profile data AND theme to load
-  if (!baseProfile || profileDataLoading || themeLoading) {
+  // Loading state
+  if (!baseProfile || profileDataLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LoadingState message="Loading profile..." />
@@ -377,8 +298,8 @@ export default function OwnProfileScreen({
   }
 
   return (
-    <ProfileThemeColorsProvider theme={equippedTheme}>
-      <ProfileBackground theme={equippedTheme} style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.scrollContainer}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[
@@ -411,7 +332,14 @@ export default function OwnProfileScreen({
             onEditNamePress={handleEditName}
           />
 
-          <Divider style={styles.divider} />
+          <View
+            style={[
+              styles.sectionDivider,
+              {
+                backgroundColor: colors.surfaceVariant,
+              },
+            ]}
+          />
 
           {/* Game Scores Display */}
           <>
@@ -421,12 +349,18 @@ export default function OwnProfileScreen({
               isOwnProfile={true}
               onEditPress={() => setGameScoresEditorVisible(true)}
               onGamePress={(gameId) => {
-                // Navigate to game
                 navigation.navigate("Games", { gameId });
               }}
               testID="own-profile-game-scores"
             />
-            <Divider style={styles.divider} />
+            <View
+              style={[
+                styles.sectionDivider,
+                {
+                  backgroundColor: colors.surfaceVariant,
+                },
+              ]}
+            />
           </>
 
           {/* Featured Badges */}
@@ -441,7 +375,14 @@ export default function OwnProfileScreen({
                 }}
                 onViewAll={() => navigation.navigate("BadgeCollection")}
               />
-              <Divider style={styles.divider} />
+              <View
+                style={[
+                  styles.sectionDivider,
+                  {
+                    backgroundColor: colors.surfaceVariant,
+                  },
+                ]}
+              />
             </>
           )}
 
@@ -456,7 +397,14 @@ export default function OwnProfileScreen({
                   navigation.navigate("UserProfile", { userId: friendUid })
                 }
               />
-              <Divider style={styles.divider} />
+              <View
+                style={[
+                  styles.sectionDivider,
+                  {
+                    backgroundColor: colors.surfaceVariant,
+                  },
+                ]}
+              />
             </>
           )}
 
@@ -464,7 +412,14 @@ export default function OwnProfileScreen({
           {profile?.stats && (
             <>
               <ProfileStats stats={profile.stats} expanded={false} />
-              <Divider style={styles.divider} />
+              <View
+                style={[
+                  styles.sectionDivider,
+                  {
+                    backgroundColor: colors.surfaceVariant,
+                  },
+                ]}
+              />
             </>
           )}
 
@@ -474,18 +429,22 @@ export default function OwnProfileScreen({
           {/* Sign Out */}
           <View style={styles.signOutContainer}>
             <Button
-              mode="contained"
+              mode="outlined"
               onPress={handleSignOut}
-              buttonColor={colors.error}
-              textColor={colors.onError}
-              style={styles.signOutButton}
+              textColor={colors.textSecondary}
+              style={[
+                styles.signOutButton,
+                {
+                  borderColor: colors.textSecondary + "40",
+                },
+              ]}
               accessibilityLabel="Sign out of your account"
             >
               Sign Out
             </Button>
           </View>
         </ScrollView>
-      </ProfileBackground>
+      </View>
 
       {/* Profile Picture Editor Modal */}
       <ProfilePictureEditor
@@ -520,15 +479,6 @@ export default function OwnProfileScreen({
         onBioUpdated={handleBioUpdated}
       />
 
-      {/* Profile Theme Picker Modal */}
-      <ProfileThemePicker
-        visible={themePickerVisible}
-        userId={currentFirebaseUser?.uid || ""}
-        currentThemeId={equippedTheme?.id}
-        onClose={handleCloseThemePicker}
-        onThemeChanged={handleThemeChanged}
-      />
-
       {/* Game Scores Editor Modal */}
       <GameScoresEditor
         visible={gameScoresEditorVisible}
@@ -541,7 +491,7 @@ export default function OwnProfileScreen({
         }}
         testID="game-scores-editor"
       />
-    </ProfileThemeColorsProvider>
+    </View>
   );
 }
 
@@ -553,18 +503,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContainer: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
   content: {
     flexGrow: 1,
   },
-  divider: {
-    marginVertical: Spacing.md,
+  sectionDivider: {
+    width: "70%",
+    height: 1,
+    marginVertical: Spacing.lg,
+    borderRadius: 1,
+    alignSelf: "center",
+    opacity: 0.35,
   },
   signOutContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
+    paddingTop: Spacing.xxl,
+    paddingBottom: Spacing.lg,
     marginTop: "auto",
   },
   signOutButton: {

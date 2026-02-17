@@ -14,6 +14,7 @@ import {
   cleanupOldGames,
   cleanupResolvedInvites,
   cleanupStaleMatchmakingEntries,
+  cleanupVacantGames,
   createGameFromInvite,
   expireGameInvites,
   expireMatchmakingEntries,
@@ -34,15 +35,6 @@ import {
 } from "./migrations/migrateGameInvites";
 
 // Shop/IAP/Gifting/Deals/Calls/Preview
-import { grantItem, purchaseWithTokens } from "./shop";
-import { getPurchaseHistory, restorePurchases, validateReceipt } from "./iap";
-import { expireGifts, getGiftHistory, openGift, sendGift } from "./gifting";
-import {
-  cleanupOldDeals,
-  generateDailyDeals,
-  generateWeeklyDeals,
-  triggerDailyDeals,
-} from "./dailyDeals";
 import {
   cleanupCallSignaling,
   getTurnCredentials,
@@ -50,24 +42,27 @@ import {
   onCallCreated,
   onCallUpdated,
 } from "./calls";
+import {
+  cleanupOldDeals,
+  generateDailyDeals,
+  generateWeeklyDeals,
+  triggerDailyDeals,
+} from "./dailyDeals";
+import { expireGifts, getGiftHistory, openGift, sendGift } from "./gifting";
+import { getPurchaseHistory, restorePurchases, validateReceipt } from "./iap";
 import { fetchLinkPreviewFunction } from "./linkPreview";
+import { grantItem, purchaseWithTokens } from "./shop";
 
 // Extracted modules
-import { onNewGroupMessageV2, onNewMessage } from "./notifications";
-import { onNewFriendRequest, onStoryViewed } from "./social";
 import {
-  cleanupExpiredPushTokens,
-  cleanupExpiredSnaps,
-  cleanupExpiredStories,
-  cleanupOldScheduledMessages,
-  streakReminder,
-} from "./scheduled";
-import { onScheduledMessageCreated, processScheduledMessages } from "./scheduledMessages";
-import {
-  onGameSessionCreated,
-  onStreakAchievementCheck,
-  weeklyLeaderboardReset,
-} from "./leaderboards";
+  adminApplyStrike,
+  adminApplyWarning,
+  adminLiftBan,
+  adminResolveReport,
+  adminSetAdminClaim,
+  adminSetBan,
+  initializeFirstAdmin,
+} from "./admin";
 import {
   claimTaskReward,
   initializeExistingWallets,
@@ -81,14 +76,10 @@ import {
   seedDailyTasks,
 } from "./economy";
 import {
-  adminApplyStrike,
-  adminApplyWarning,
-  adminLiftBan,
-  adminResolveReport,
-  adminSetAdminClaim,
-  adminSetBan,
-  initializeFirstAdmin,
-} from "./admin";
+  onGameSessionCreated,
+  onStreakAchievementCheck,
+  weeklyLeaderboardReset,
+} from "./leaderboards";
 import {
   checkMessageRateLimit,
   onNewMessageEvent,
@@ -96,6 +87,19 @@ import {
   sendFriendRequestWithRateLimit,
   updateExpiredBans,
 } from "./moderation";
+import { onNewGroupMessageV2, onNewMessage } from "./notifications";
+import {
+  cleanupExpiredPushTokens,
+  cleanupExpiredSnaps,
+  cleanupExpiredStories,
+  cleanupOldScheduledMessages,
+  streakReminder,
+} from "./scheduled";
+import {
+  onScheduledMessageCreated,
+  processScheduledMessages,
+} from "./scheduledMessages";
+import { onNewFriendRequest, onStoryViewed } from "./social";
 
 // Remaining legacy exports not covered by extracted modules.
 import { onDeleteMessage, seedShopCatalog } from "./legacy";
@@ -138,6 +142,7 @@ export {
   cleanupOldScheduledMessages,
   cleanupResolvedInvites,
   cleanupStaleMatchmakingEntries,
+  cleanupVacantGames,
   createGameFromInvite,
   expireGameInvites,
   expireGifts,

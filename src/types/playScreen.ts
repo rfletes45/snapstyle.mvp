@@ -104,7 +104,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Fast-paced action games",
     icon: "lightning-bolt",
     accentColor: "#FF6B6B",
-    games: ["reaction_tap", "timed_tap", "bounce_blitz"],
+    games: ["bounce_blitz"],
     layout: "carousel",
   },
   {
@@ -122,14 +122,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Challenge your friends",
     icon: "account-group",
     accentColor: "#6C5CE7",
-    games: [
-      "tic_tac_toe",
-      "checkers",
-      "chess",
-      "crazy_eights",
-      "tropical_fishing",
-      "golf_duels",
-    ],
+    games: ["tic_tac_toe", "checkers", "chess", "crazy_eights"],
     layout: "carousel",
   },
   {

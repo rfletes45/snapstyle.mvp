@@ -46,7 +46,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resignGame = exports.makeMove = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
+exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-admin/firestore");
 const functions = __importStar(require("firebase-functions"));
@@ -129,9 +129,36 @@ function getInitialGameState(gameType) {
                 cueBallInHand: false,
                 consecutiveFouls: { player1: 0, player2: 0 },
             };
+        // Phase 3 turn-based games
+        case "snap_reversi":
+            return {
+                board: createInitialReversiBoard(),
+                consecutivePasses: 0,
+                flippedThisTurn: [],
+            };
+        case "snap_war":
+            return {
+                player1Deck: [],
+                player2Deck: [],
+                player1WarPile: [],
+                player2WarPile: [],
+                isWar: false,
+                roundNumber: 0,
+            };
         default:
             return {};
     }
+}
+function createInitialReversiBoard() {
+    const board = Array.from({ length: 8 }, () => Array(8).fill(0));
+    board[3][3] = 2;
+    board[3][4] = 1;
+    board[4][3] = 1;
+    board[4][4] = 2;
+    return board;
+}
+function createInitialWordsBoard() {
+    return Array.from({ length: 9 }, () => Array(9).fill(""));
 }
 function getInitialChessBoard() {
     return [
@@ -717,6 +744,22 @@ exports.onGameCompletedCreateHistory = functions.firestore
             ...historyRecord,
             id: historyRef.id,
         });
+        // Strip heavy fields from the original match document now that
+        // a lightweight GameHistory record has been created.  This reduces
+        // Firestore storage costs and the bandwidth of any future reads
+        // against the TurnBasedGames collection (e.g. cleanupOldGames).
+        try {
+            const gameRef = db.collection("TurnBasedGames").doc(gameId);
+            await gameRef.update({
+                gameState: admin.firestore.FieldValue.delete(),
+                moveHistory: admin.firestore.FieldValue.delete(),
+            });
+            functions.logger.info(`Stripped gameState/moveHistory from game ${gameId}`);
+        }
+        catch (stripError) {
+            // Non-critical — the data will still be cleaned up by cleanupOldGames
+            functions.logger.warn(`Failed to strip heavy fields from game ${gameId}`, { error: stripError });
+        }
         functions.logger.info(`GameHistory created: ${historyRef.id}`, {
             gameId,
             gameType: after.gameType,
@@ -1329,24 +1372,163 @@ exports.expireMatchmakingEntries = functions.pubsub
 });
 /**
  * Clean up old completed games (keep for 90 days)
+ *
+ * Queries by `endedAt` first, then falls back to `updatedAt` to catch games
+ * that were completed before the endedAt fix was deployed.
+ * Also recursively deletes subcollections (Moves, Spectators, MatchChat).
  */
 exports.cleanupOldGames = functions.pubsub
     .schedule("every day 02:00")
     .onRun(async () => {
     const cutoff = firestore_1.Timestamp.fromMillis(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const snapshot = await db
+    const SUBCOLLECTIONS = ["Moves", "Spectators", "MatchChat"];
+    let totalDeleted = 0;
+    // Helper: delete a document and its known subcollections
+    async function deleteGameDoc(docRef) {
+        for (const sub of SUBCOLLECTIONS) {
+            const subSnap = await docRef.collection(sub).limit(500).get();
+            if (!subSnap.empty) {
+                const subBatch = db.batch();
+                subSnap.docs.forEach((d) => subBatch.delete(d.ref));
+                await subBatch.commit();
+            }
+        }
+        await docRef.delete();
+    }
+    // 1️⃣ Primary query: games with endedAt set
+    const endedAtSnap = await db
         .collection("TurnBasedGames")
         .where("status", "in", ["completed", "abandoned"])
         .where("endedAt", "<", cutoff)
         .limit(500)
         .get();
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-    });
-    await batch.commit();
-    if (snapshot.size > 0) {
-        functions.logger.info("Cleaned up old games", { count: snapshot.size });
+    for (const gameDoc of endedAtSnap.docs) {
+        await deleteGameDoc(gameDoc.ref);
+        totalDeleted++;
+    }
+    // 2️⃣ Fallback query: legacy games that never received an endedAt field.
+    //    Use updatedAt instead so they aren't stranded forever.
+    const remaining = 500 - totalDeleted;
+    if (remaining > 0) {
+        const fallbackSnap = await db
+            .collection("TurnBasedGames")
+            .where("status", "in", ["completed", "abandoned"])
+            .where("updatedAt", "<", cutoff)
+            .limit(remaining)
+            .get();
+        // Filter out any docs that DO have an endedAt (already handled above)
+        for (const gameDoc of fallbackSnap.docs) {
+            const data = gameDoc.data();
+            if (!data.endedAt) {
+                await deleteGameDoc(gameDoc.ref);
+                totalDeleted++;
+            }
+        }
+    }
+    if (totalDeleted > 0) {
+        functions.logger.info("Cleaned up old games", {
+            count: totalDeleted,
+        });
+    }
+    return null;
+});
+/**
+ * Clean up resolved game invites (accepted/declined/cancelled/expired)
+ *
+ * Once an invite reaches a terminal status it serves no purpose in Firestore.
+ * We keep them for 30 days for debugging / audit, then delete.
+ * Runs daily at 02:30 (offset from cleanupOldGames to avoid contention).
+ */
+exports.cleanupResolvedInvites = functions.pubsub
+    .schedule("every day 02:30")
+    .onRun(async () => {
+    const cutoff = firestore_1.Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const TERMINAL_STATUSES = ["accepted", "declined", "cancelled", "expired"];
+    let totalDeleted = 0;
+    const snapshot = await db
+        .collection("GameInvites")
+        .where("status", "in", TERMINAL_STATUSES)
+        .where("createdAt", "<", cutoff)
+        .limit(500)
+        .get();
+    if (!snapshot.empty) {
+        const batch = db.batch();
+        snapshot.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        totalDeleted = snapshot.size;
+    }
+    if (totalDeleted > 0) {
+        functions.logger.info("Cleaned up resolved invites", {
+            count: totalDeleted,
+        });
+    }
+    return null;
+});
+/**
+ * Clean up stale matchmaking queue entries.
+ *
+ * `expireMatchmakingEntries` marks entries as "expired" but never deletes them,
+ * causing the MatchmakingQueue collection to grow unbounded. This function
+ * deletes entries in terminal states (expired, matched, cancelled) older than
+ * 7 days. Runs daily at 03:00.
+ */
+exports.cleanupStaleMatchmakingEntries = functions.pubsub
+    .schedule("every day 03:00")
+    .onRun(async () => {
+    const cutoff = firestore_1.Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const TERMINAL_STATUSES = ["expired", "matched", "cancelled"];
+    let totalDeleted = 0;
+    for (const status of TERMINAL_STATUSES) {
+        const snapshot = await db
+            .collection("MatchmakingQueue")
+            .where("status", "==", status)
+            .where("updatedAt", "<", cutoff)
+            .limit(500)
+            .get();
+        if (!snapshot.empty) {
+            const batch = db.batch();
+            snapshot.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+            totalDeleted += snapshot.size;
+        }
+    }
+    if (totalDeleted > 0) {
+        functions.logger.info("Cleaned up stale matchmaking entries", {
+            count: totalDeleted,
+        });
+    }
+    return null;
+});
+/**
+ * Clean up old single-player game sessions.
+ *
+ * Game sessions are stored under Users/{uid}/GameSessions. Over time these
+ * accumulate and bloat per-user document counts. This function scans
+ * the GameSessions collectionGroup and deletes sessions older than 180 days.
+ * High scores are preserved in the separate GameHighScores subcollection.
+ * Runs daily at 03:30.
+ */
+exports.cleanupOldGameSessions = functions.pubsub
+    .schedule("every day 03:30")
+    .onRun(async () => {
+    const cutoff = firestore_1.Timestamp.fromMillis(Date.now() - 180 * 24 * 60 * 60 * 1000);
+    let totalDeleted = 0;
+    const snapshot = await db
+        .collectionGroup("GameSessions")
+        .where("createdAt", "<", cutoff)
+        .limit(500)
+        .get();
+    if (!snapshot.empty) {
+        // Firestore batches are limited to 500 writes
+        const batch = db.batch();
+        snapshot.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        totalDeleted = snapshot.size;
+    }
+    if (totalDeleted > 0) {
+        functions.logger.info("Cleaned up old game sessions", {
+            count: totalDeleted,
+        });
     }
     return null;
 });

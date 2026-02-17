@@ -23,6 +23,7 @@ import {
 } from "../../schemas/physics";
 import { verifyFirebaseToken } from "../../services/firebase";
 import { persistGameResult } from "../../services/persistence";
+import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
 // Constants
@@ -53,12 +54,22 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // ── Protocol version gate ─────────────────────────────────────────────
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
     };
   }
 
@@ -188,7 +199,10 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
 
   async onDispose(): Promise<void> {
     if (this.state.phase === "finished" && this.state.winnerId) {
-      await persistGameResult(this.state as unknown as BaseGameState, this.state.elapsed);
+      await persistGameResult(
+        this.state as unknown as BaseGameState,
+        this.state.elapsed,
+      );
     }
     log.info(`[bounce_blitz_game] Room disposed: ${this.roomId}`);
   }
@@ -300,5 +314,3 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
     this.unlock();
   }
 }
-
-

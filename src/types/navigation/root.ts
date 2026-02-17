@@ -25,8 +25,6 @@ export type MomentsStackParamList = {
 
 export type PlayStackParamList = {
   GamesHub: undefined;
-  ReactionTapGame: OptionalRouteParams;
-  TimedTapGame: OptionalRouteParams;
   BounceBlitzGame: OptionalRouteParams;
   WordGame: OptionalRouteParams;
   Play2048Game: OptionalRouteParams;
@@ -40,14 +38,12 @@ export type PlayStackParamList = {
   DotsGame: OptionalRouteParams;
   LightsGame: OptionalRouteParams;
   GomokuGame: OptionalRouteParams;
-  AirHockeyGame: OptionalRouteParams;
-  TropicalFishingGame: OptionalRouteParams;
-  PoolGame: OptionalRouteParams;
   PongGame: OptionalRouteParams;
   ReversiGame: OptionalRouteParams;
   CrosswordGame: OptionalRouteParams;
   StarforgeGame: OptionalRouteParams;
-  GolfDuelsGame: OptionalRouteParams;
+  SketchPartyGameScreen: OptionalRouteParams;
+  MiniGolfDuelsGame: OptionalRouteParams;
   Leaderboard: { gameId?: string } | undefined;
   Achievements: { gameId?: string } | undefined;
   GameHistory: OptionalRouteParams;

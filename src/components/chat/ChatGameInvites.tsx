@@ -30,7 +30,6 @@ import type { UniversalGameInvite } from "@/types/turnBased";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/chat/ChatGameInvites");
 // =============================================================================
@@ -161,14 +160,27 @@ export function ChatGameInvites({
 
   const handleJoin = useCallback(
     async (invite: UniversalGameInvite) => {
-      await claimInviteSlot(
+      const result = await claimInviteSlot(
         invite.id,
         currentUserId,
         currentUserName,
         resolvedAvatar,
       );
+
+      // Always navigate the joiner into the game's built-in lobby with
+      // inviteId.  The lobby hook subscribes to the invite doc and waits
+      // for the host to start the game.  Previously this only navigated
+      // when colyseusRoomKey or gameId were set, which meant turn-based
+      // invites created from chat (no roomKey, no gameId yet) left the
+      // joiner stranded in chat instead of entering the lobby.
+      if (result.success) {
+        const matchId = invite.settings?.colyseusRoomKey || invite.gameId || "";
+        onNavigateToGame(matchId, invite.gameType, {
+          inviteId: invite.id,
+        });
+      }
     },
-    [currentUserId, currentUserName, resolvedAvatar],
+    [currentUserId, currentUserName, resolvedAvatar, onNavigateToGame],
   );
 
   const handleLeave = useCallback(
@@ -198,14 +210,18 @@ export function ChatGameInvites({
 
       const result = await startGameEarly(invite.id, currentUserId);
 
-      if (result.success && result.gameId) {
-        onNavigateToGame(result.gameId, invite.gameType);
-      } else if (result.error) {
+      // Do NOT navigate here — the UniversalInviteCard auto-navigate effect
+      // detects the invite transitioning to "active" and navigates ALL
+      // participants (host included) via onPlay with the inviteId.
+      // Navigating here as well caused a double-navigation bug where the
+      // second (auto-navigate) call overwrote the first and the host lost
+      // the inviteId param, bypassing the lobby and ending up in a
+      // different Colyseus room than the opponent.
+      if (!result.success && result.error) {
         logger.error("[ChatGameInvites] Start early failed:", result.error);
-        // Invite will update via subscription if there's an error
       }
     },
-    [currentUserId, onNavigateToGame],
+    [currentUserId],
   );
 
   const handleCancel = useCallback(
@@ -223,8 +239,8 @@ export function ChatGameInvites({
   );
 
   const handlePlay = useCallback(
-    (gameId: string, gameType: string) => {
-      onNavigateToGame(gameId, gameType);
+    (gameId: string, gameType: string, inviteId?: string) => {
+      onNavigateToGame(gameId, gameType, inviteId ? { inviteId } : undefined);
     },
     [onNavigateToGame],
   );

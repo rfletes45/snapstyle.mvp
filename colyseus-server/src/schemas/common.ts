@@ -79,6 +79,7 @@ export class BaseGameState extends Schema {
    * "countdown" → all ready, 3-2-1 countdown
    * "playing"   → game in progress
    * "finished"  → game over, showing results
+   * "error"     → unrecoverable error — client should show message & exit
    */
   @type("string") phase: string = "waiting";
 
@@ -109,11 +110,27 @@ export class BaseGameState extends Schema {
   /** Session ID of the player whose turn it is (turn-based only) */
   @type("string") currentTurnPlayerId: string = "";
 
+  /**
+   * Firebase UID of the player whose turn it is.
+   * Canonical turn ownership — survives reconnections & session ID changes.
+   */
+  @type("string") currentTurnUid: string = "";
+
   /** Whether this is a ranked/rated match */
   @type("boolean") isRated: boolean = true;
 
   /** Firestore document ID for persistence linkage */
   @type("string") firestoreGameId: string = "";
+
+  // =========================================================================
+  // Error Phase Support
+  // =========================================================================
+
+  /** Machine-readable error code (non-empty only when phase === "error") */
+  @type("string") errorCode: string = "";
+
+  /** Human-readable error message for the client UI */
+  @type("string") errorMessage: string = "";
 
   // =========================================================================
   // Spectator Support

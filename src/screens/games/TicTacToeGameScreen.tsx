@@ -14,15 +14,6 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
-import Animated, {
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
 import {
   Alert,
   Dimensions,
@@ -32,9 +23,17 @@ import {
   View,
 } from "react-native";
 import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import FriendPickerModal from "@/components/FriendPickerModal";
 import { SkiaCellHighlight } from "@/components/games/graphics/SkiaCellHighlight";
 import { SkiaGameBoard } from "@/components/games/graphics/SkiaGameBoard";
 import { SkiaTicTacToePieces } from "@/components/games/graphics/SkiaTicTacToePieces";
@@ -51,11 +50,16 @@ import {
   TurnBasedWaitingOverlay,
   TurnIndicatorBar,
 } from "@/components/games/TurnBasedOverlay";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
-import { sendGameInvite } from "@/services/gameInvites";
+import { getGroupMembers } from "@/services/groups";
 import {
   endMatch,
   resignMatch,
@@ -73,13 +77,13 @@ import {
   TicTacToeMove,
   TicTacToePosition,
 } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
-
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
+import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/TicTacToeGameScreen");
 // =============================================================================
 // Constants
@@ -154,7 +158,14 @@ interface TicTacToeGameScreenProps {
   };
 }
 
-type GameMode = "menu" | "local" | "online" | "colyseus" | "invite" | "waiting";
+type GameMode =
+  | "menu"
+  | "lobby"
+  | "local"
+  | "online"
+  | "colyseus"
+  | "invite"
+  | "waiting";
 
 // =============================================================================
 // Helper Functions
@@ -285,11 +296,17 @@ function Cell({
 // Main Component
 // =============================================================================
 
-function TicTacToeGameScreen({
-  navigation,
-  route,
-}: TicTacToeGameScreenProps) {
-  useGameBackHandler({ gameType: "tic_tac_toe", isGameOver: false });
+function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
+  // If navigated with inviteId (chat invite), start in lobby; otherwise menu
+  const initialMode: GameMode = route.params?.inviteId ? "lobby" : "menu";
+  const [gameMode, setGameMode] = useState<GameMode>(initialMode);
+  useGameBackHandler({
+    gameType: "tic_tac_toe",
+    isGameOver: false,
+    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
+    isInLobby: gameMode === "lobby",
+    entryPoint: route.params?.entryPoint,
+  });
   const __codexGameHaptics = useGameHaptics();
   void __codexGameHaptics;
 
@@ -320,7 +337,6 @@ function TicTacToeGameScreen({
   });
 
   // Game state
-  const [gameMode, setGameMode] = useState<GameMode>("menu");
   const [board, setBoard] = useState<TicTacToeBoard>(
     createInitialTicTacToeBoard,
   );
@@ -343,8 +359,30 @@ function TicTacToeGameScreen({
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
-  // Colyseus multiplayer hook
+  // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("tic_tac_toe_game");
+
+  // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
+  const lobbyController = useGameLobbyController({
+    gameType: "tic_tac_toe",
+    inviteId: route.params?.inviteId,
+    entryPoint: route.params?.entryPoint,
+    isTurnBased: true,
+    onGameReady: (gameId: string) => {
+      logger.info(`[TicTacToe] Lobby ready, gameId=${gameId}`);
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+    },
+    onLeaveLobby: () => {
+      setGameMode("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
+  });
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
     room: mp.room,
@@ -383,6 +421,8 @@ function TicTacToeGameScreen({
   // ==========================================================================
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route.params?.inviteId) return;
     if (!matchId) return;
 
     const unsubscribe = subscribeToMatch(matchId, (updatedMatch) => {
@@ -422,7 +462,9 @@ function TicTacToeGameScreen({
         );
 
         // Phase 7: Check achievements on game completion
-        handleGameCompletion(typedMatch as Parameters<typeof handleGameCompletion>[0]);
+        handleGameCompletion(
+          typedMatch as Parameters<typeof handleGameCompletion>[0],
+        );
       }
     });
 
@@ -436,6 +478,8 @@ function TicTacToeGameScreen({
   );
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route.params?.inviteId) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameMode("colyseus");
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
@@ -443,7 +487,7 @@ function TicTacToeGameScreen({
       setGameMode("online");
       setMatchId(firestoreGameId);
     }
-  }, [resolvedMode, firestoreGameId]);
+  }, [resolvedMode, firestoreGameId, route.params?.inviteId]);
 
   // ==========================================================================
   // Game Logic
@@ -587,42 +631,53 @@ function TicTacToeGameScreen({
   };
 
   const handleInviteFriend = () => {
-    setShowFriendPicker(true);
+    // Enter the lobby as host — invite can be sent from inside the lobby
+    setGameMode("lobby");
   };
 
-  const handleSelectFriend = async (friend: {
-    friendUid: string;
-    displayName: string;
-  }) => {
+  const handleSelectInviteFriend = async (friend: FriendItem) => {
     setShowFriendPicker(false);
     if (!currentFirebaseUser || !userProfile) return;
 
     setLoading(true);
     try {
-      await sendGameInvite(
-        currentFirebaseUser.uid,
-        userProfile.displayName || "Player",
-        userProfile.avatarConfig
-          ? JSON.stringify(userProfile.avatarConfig)
-          : undefined,
-        {
-          gameType: "tic_tac_toe",
-          recipientId: friend.friendUid,
-          recipientName: friend.displayName,
-          settings: {
-            isRated: false,
-            chatEnabled: false,
-          },
-        },
+      // Delegate to lobby hook for unified invite management
+      await lobbyController.lobby.sendFriendInvite(
+        friend.friendUid,
+        friend.displayName || friend.username,
+        undefined,
       );
-
-      Alert.alert(
-        "Invite Sent!",
-        `Game invite sent to ${friend.displayName}. You'll be notified when they respond.`,
-      );
-    } catch (error) {
+    } catch (error: any) {
       logger.error("[TicTacToe] Error sending invite:", error);
-      Alert.alert("Error", "Failed to send game invite. Please try again.");
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to send game invite. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectInviteGroup = async (group: GroupItem) => {
+    setShowFriendPicker(false);
+    if (!currentFirebaseUser || !userProfile) return;
+
+    setLoading(true);
+    try {
+      const members = await getGroupMembers(group.groupId);
+      const memberIds = members.map((m) => m.uid);
+      // Delegate to lobby hook for unified invite management
+      await lobbyController.lobby.sendGroupInvite(
+        group.groupId,
+        group.name,
+        memberIds,
+      );
+    } catch (error: any) {
+      logger.error("[TicTacToe] Error sending group invite:", error);
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to send group game invite. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -717,6 +772,39 @@ function TicTacToeGameScreen({
   // Render
   // ==========================================================================
 
+  // ── Lobby Screen ────────────────────────────────────────────────────
+  if (gameMode === "lobby") {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <MultiplayerLobbyOverlay
+          controller={lobbyController}
+          gameTitle="Tic-Tac-Toe"
+          gameIcon="❌⭕"
+          onInvitePress={() => setShowFriendPicker(true)}
+          onLeave={() => {
+            lobbyController.lobby.leaveLobby();
+            setGameMode("menu");
+          }}
+          showReadyButton={false}
+        >
+          {/* Children rendered when phase transitions to "playing" */}
+          <View style={{ flex: 1 }} />
+        </MultiplayerLobbyOverlay>
+
+        <InvitePickerModal
+          visible={showFriendPicker}
+          onDismiss={() => setShowFriendPicker(false)}
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
+          currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
+        />
+      </SafeAreaView>
+    );
+  }
+
   // Menu Screen
   if (gameMode === "menu") {
     return (
@@ -772,12 +860,13 @@ function TicTacToeGameScreen({
           </View>
         </View>
 
-        <FriendPickerModal
+        <InvitePickerModal
           visible={showFriendPicker}
           onDismiss={() => setShowFriendPicker(false)}
-          onSelectFriend={handleSelectFriend}
-          title="Challenge a Friend"
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
           currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
         />
       </SafeAreaView>
     );

@@ -49,7 +49,6 @@ export type AchievementCategory =
   | "checkers" // Checkers specific
   | "tic_tac_toe" // Tic-Tac-Toe specific
   | "crazy_eights" // Crazy Eights specific
-  | "pool" // 8-Ball Pool specific
 
   // Social
   | "social" // Friend-related achievements
@@ -116,9 +115,6 @@ export type AchievementTriggerType =
   | "tic_tac_toe_win" // Tic-Tac-Toe win
   | "tic_tac_toe_perfect" // Win without opponent scoring
   | "crazy_eights_win" // Crazy Eights win
-  | "pool_win" // 8-Ball Pool win
-  | "pool_run_out" // Clear table without missing
-  | "pool_8ball_break" // Sink 8-ball on break
 
   // Time-based triggers
   | "time_played" // Total time in games
@@ -390,7 +386,6 @@ export function getCategoryDisplayName(category: AchievementCategory): string {
     checkers: "Checkers",
     tic_tac_toe: "Tic-Tac-Toe",
     crazy_eights: "Crazy Eights",
-    pool: "8-Ball Pool",
     social: "Social",
     streak: "Streaks",
   };

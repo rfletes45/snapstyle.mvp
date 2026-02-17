@@ -17,17 +17,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  ActivityIndicator,
-  Text,
-  TextInput,
-  useTheme,
-} from "react-native-paper";
+import { ActivityIndicator, Text, TextInput } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { updateBio } from "@/services/profileService";
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileBio } from "@/types/userProfile";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/profile/ProfileBio/ProfileBioEditor");
@@ -65,16 +60,16 @@ function ProfileBioEditorBase({
   onClose,
   onBioUpdated,
 }: ProfileBioEditorProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const colors = {
-    background: theme.colors.background,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    primary: theme.colors.primary,
-    error: theme.colors.error,
-    border: theme.colors.outline,
+    background: profileColors.background,
+    surface: profileColors.surface,
+    surfaceVariant: profileColors.surfaceVariant,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    primary: profileColors.primary,
+    error: profileColors.error,
+    border: profileColors.outline,
   };
   const insets = useSafeAreaInsets();
 

@@ -18,20 +18,21 @@ import {
   Surface,
   Switch,
   Text,
-  useTheme,
 } from "react-native-paper";
 import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import type {
   ProfileGameScore,
   ProfileGameScoresConfig,
 } from "@/types/userProfile";
 
-
 import { createLogger } from "@/utils/log";
-const logger = createLogger("components/profile/ProfileGameScores/GameScoresEditor");
+const logger = createLogger(
+  "components/profile/ProfileGameScores/GameScoresEditor",
+);
 // =============================================================================
 // Types
 // =============================================================================
@@ -118,7 +119,7 @@ const GameItem = memo(function GameItem({
   selectionDisabled,
   index,
 }: GameItemProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <Animated.View
@@ -131,8 +132,8 @@ const GameItem = memo(function GameItem({
           game.isSelected && styles.gameItemSelected,
           {
             backgroundColor: game.isSelected
-              ? theme.colors.primaryContainer
-              : theme.colors.surfaceVariant,
+              ? colors.primary + "20"
+              : colors.surfaceVariant,
           },
         ]}
         elevation={game.isSelected ? 2 : 1}
@@ -140,12 +141,9 @@ const GameItem = memo(function GameItem({
         {/* Selection Order Badge */}
         {game.isSelected && (
           <View
-            style={[
-              styles.orderBadge,
-              { backgroundColor: theme.colors.primary },
-            ]}
+            style={[styles.orderBadge, { backgroundColor: colors.primary }]}
           >
-            <Text style={[styles.orderText, { color: theme.colors.onPrimary }]}>
+            <Text style={[styles.orderText, { color: colors.textOnPrimary }]}>
               {game.displayOrder}
             </Text>
           </View>
@@ -159,14 +157,12 @@ const GameItem = memo(function GameItem({
         {/* Game Info */}
         <View style={styles.gameInfo}>
           <Text
-            style={[styles.gameName, { color: theme.colors.onSurface }]}
+            style={[styles.gameName, { color: colors.text }]}
             numberOfLines={1}
           >
             {game.gameName}
           </Text>
-          <Text
-            style={[styles.gameScore, { color: theme.colors.onSurfaceVariant }]}
-          >
+          <Text style={[styles.gameScore, { color: colors.textSecondary }]}>
             High Score: {formatScore(game.score)}
           </Text>
         </View>
@@ -185,11 +181,7 @@ const GameItem = memo(function GameItem({
               <MaterialCommunityIcons
                 name="chevron-up"
                 size={20}
-                color={
-                  canMoveUp
-                    ? theme.colors.primary
-                    : theme.colors.onSurfaceDisabled
-                }
+                color={canMoveUp ? colors.primary : colors.textSecondary}
               />
             </TouchableOpacity>
             <TouchableOpacity
@@ -203,11 +195,7 @@ const GameItem = memo(function GameItem({
               <MaterialCommunityIcons
                 name="chevron-down"
                 size={20}
-                color={
-                  canMoveDown
-                    ? theme.colors.primary
-                    : theme.colors.onSurfaceDisabled
-                }
+                color={canMoveDown ? colors.primary : colors.textSecondary}
               />
             </TouchableOpacity>
           </View>
@@ -218,7 +206,7 @@ const GameItem = memo(function GameItem({
           value={game.isSelected}
           onValueChange={() => onToggle(game.gameId)}
           disabled={!game.isSelected && selectionDisabled}
-          color={theme.colors.primary}
+          color={colors.primary}
         />
       </Surface>
     </Animated.View>
@@ -238,7 +226,7 @@ export const GameScoresEditor = memo(function GameScoresEditor({
   maxGames = MAX_DISPLAY_GAMES,
   testID,
 }: GameScoresEditorProps) {
-  const theme = useTheme();
+  const colors = useColors();
   const [isLoading, setIsLoading] = useState(false);
   const [enabled, setEnabled] = useState(currentConfig.enabled);
   const [selectedGames, setSelectedGames] = useState<ProfileGameScore[]>(
@@ -370,23 +358,21 @@ export const GameScoresEditor = memo(function GameScoresEditor({
         onDismiss={onDismiss}
         contentContainerStyle={[
           styles.modalContent,
-          { backgroundColor: theme.colors.surface },
+          { backgroundColor: colors.surface },
         ]}
         testID={testID}
       >
         <Animated.View entering={FadeIn} style={styles.modalInner}>
           {/* Header */}
           <View style={styles.header}>
-            <Text
-              style={[styles.headerTitle, { color: theme.colors.onSurface }]}
-            >
+            <Text style={[styles.headerTitle, { color: colors.text }]}>
               Game Scores Display
             </Text>
             <TouchableOpacity onPress={onDismiss}>
               <MaterialCommunityIcons
                 name="close"
                 size={24}
-                color={theme.colors.onSurface}
+                color={colors.text}
               />
             </TouchableOpacity>
           </View>
@@ -395,7 +381,7 @@ export const GameScoresEditor = memo(function GameScoresEditor({
           <Surface
             style={[
               styles.enableToggle,
-              { backgroundColor: theme.colors.surfaceVariant },
+              { backgroundColor: colors.surfaceVariant },
             ]}
             elevation={1}
           >
@@ -403,21 +389,16 @@ export const GameScoresEditor = memo(function GameScoresEditor({
               <MaterialCommunityIcons
                 name="trophy"
                 size={24}
-                color={theme.colors.primary}
+                color={colors.primary}
               />
               <View style={styles.enableText}>
-                <Text
-                  style={[
-                    styles.enableLabel,
-                    { color: theme.colors.onSurface },
-                  ]}
-                >
+                <Text style={[styles.enableLabel, { color: colors.text }]}>
                   Show Game Scores
                 </Text>
                 <Text
                   style={[
                     styles.enableDescription,
-                    { color: theme.colors.onSurfaceVariant },
+                    { color: colors.textSecondary },
                   ]}
                 >
                   Display your top scores on your profile
@@ -427,18 +408,13 @@ export const GameScoresEditor = memo(function GameScoresEditor({
             <Switch
               value={enabled}
               onValueChange={setEnabled}
-              color={theme.colors.primary}
+              color={colors.primary}
             />
           </Surface>
 
           {/* Selection Counter */}
           <View style={styles.counter}>
-            <Text
-              style={[
-                styles.counterText,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
+            <Text style={[styles.counterText, { color: colors.textSecondary }]}>
               {selectedCount} of {maxGames} games selected
             </Text>
           </View>
@@ -456,21 +432,15 @@ export const GameScoresEditor = memo(function GameScoresEditor({
                 <MaterialCommunityIcons
                   name="gamepad-variant-outline"
                   size={48}
-                  color={theme.colors.onSurfaceVariant}
+                  color={colors.textSecondary}
                 />
                 <Text
-                  style={[
-                    styles.emptyText,
-                    { color: theme.colors.onSurfaceVariant },
-                  ]}
+                  style={[styles.emptyText, { color: colors.textSecondary }]}
                 >
                   No game scores available yet.
                 </Text>
                 <Text
-                  style={[
-                    styles.emptySubtext,
-                    { color: theme.colors.onSurfaceVariant },
-                  ]}
+                  style={[styles.emptySubtext, { color: colors.textSecondary }]}
                 >
                   Play some games to add scores here!
                 </Text>

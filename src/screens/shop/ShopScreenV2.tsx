@@ -43,6 +43,7 @@ import {
   purchaseWithTokens,
 } from "@/services/shop";
 import { useAuth } from "@/store/AuthContext";
+import { useColors } from "@/store/ThemeContext";
 import { ShopItemWithStatus, Wallet } from "@/types/models";
 import { LIST_PERFORMANCE_PROPS } from "@/utils/listPerformance";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -66,8 +67,6 @@ import {
   useTheme,
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useColors } from "@/store/ThemeContext";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/shop/ShopScreenV2");
@@ -84,7 +83,6 @@ type CategoryFilter =
   | "background"
   | "profile_frame"
   | "chat_bubble"
-  | "profile_theme"
   | "clothing"
   | "accessory";
 
@@ -95,7 +93,6 @@ const CATEGORIES: { key: CategoryFilter; label: string; icon: string }[] = [
   { key: "background", label: "Backgrounds", icon: "image" },
   { key: "profile_frame", label: "Frames", icon: "card-outline" },
   { key: "chat_bubble", label: "Bubbles", icon: "message-text" },
-  { key: "profile_theme", label: "Themes", icon: "palette" },
   { key: "clothing", label: "Clothing", icon: "tshirt-crew" },
   { key: "accessory", label: "Accessories", icon: "necklace" },
 ];

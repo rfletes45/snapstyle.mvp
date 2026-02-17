@@ -85,6 +85,13 @@ export interface TurnBasedMatch<
 
   /** Timestamp when draw was offered */
   drawOfferedAt?: number;
+
+  // =========================================================================
+  // Phase 4: Invite Lifecycle (Game System Overhaul)
+  // =========================================================================
+
+  /** ID of originating invite (for completion propagation) */
+  inviteId?: string;
 }
 
 /**
@@ -395,7 +402,7 @@ export const CRAZY_EIGHTS_CONFIG = {
   /** Minimum players for a game */
   minPlayers: 2,
   /** Maximum players for a game */
-  maxPlayers: 4,
+  maxPlayers: 7,
   /** The rank that allows suit declaration */
   wildRank: "8" as CardRank,
 } as const;
@@ -630,11 +637,7 @@ export interface GameInvite {
 /**
  * Real-time game types (for invites)
  */
-export type RealTimeGameType =
-  | "8ball_pool"
-  | "air_hockey"
-  | "golf_duels"
-  | "tropical_fishing";
+export type RealTimeGameType = "sketch_party_game";
 
 // =============================================================================
 // Universal Game Invite Types (NEW)
@@ -648,6 +651,7 @@ export type UniversalInviteStatus =
   | "pending" // Waiting for first player to join (after sender)
   | "filling" // Some players joined, not full yet
   | "ready" // All required slots filled, game starting
+  | "starting" // Host triggered start — match being created (transient)
   | "active" // Game in progress
   | "completed" // Game finished
   | "declined" // Recipient declined (DM/specific only)
@@ -741,6 +745,22 @@ export interface UniversalGameInvite {
   /** Game ID once created (status becomes 'active') */
   gameId?: string;
 
+  // ============= LIFECYCLE METADATA =============
+  /** Schema version — allows future migrations (currently 1) */
+  inviteVersion?: number;
+
+  /** Correlation ID for tracing across client → server → Firestore */
+  traceId?: string;
+
+  /** When the game finished (status becomes 'completed') */
+  completedAt?: number;
+
+  /** Winner's user ID (set on completion) */
+  winnerId?: string;
+
+  /** How the game ended (e.g. "checkmate", "resignation", "timeout") */
+  winReason?: string;
+
   // ============= SETTINGS =============
   settings: {
     isRated: boolean;
@@ -749,6 +769,8 @@ export interface UniversalGameInvite {
       seconds: number;
     };
     chatEnabled: boolean;
+    /** Pre-created Colyseus room key for real-time games (e.g. Sketch Party) */
+    colyseusRoomKey?: string;
   };
 
   // ============= TIMESTAMPS =============

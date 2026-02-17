@@ -10,8 +10,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileStatus as ProfileStatusType } from "@/types/userProfile";
 import { MOOD_CONFIG } from "@/types/userProfile";
 
@@ -64,13 +65,13 @@ function ProfileStatusBase({
   size = "medium",
   style,
 }: ProfileStatusProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-    border: theme.colors.outline,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    surfaceVariant: profileColors.surfaceVariant,
+    primary: profileColors.primary,
+    border: profileColors.outline,
   };
 
   // Check if status is active

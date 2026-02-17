@@ -6,6 +6,7 @@
  */
 
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
+import { GameErrorCode, createGameError } from "@/types/gameErrors";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
@@ -86,8 +87,6 @@ export const COLYSEUS_SERVER_URL: string = __DEV__ ? DEV_URL! : PROD_URL;
  */
 export const COLYSEUS_ROOM_NAMES: Record<string, string> = {
   // Quick-Play
-  reaction_tap_game: "reaction",
-  timed_tap_game: "timed_tap",
   dot_match_game: "dot_match",
 
   // Turn-Based
@@ -101,24 +100,21 @@ export const COLYSEUS_ROOM_NAMES: Record<string, string> = {
 
   // Physics / Real-Time
   pong_game: "pong",
-  air_hockey_game: "air_hockey",
-  air_hockey: "air_hockey",
-  "8ball_pool_game": "pool",
-  "8ball_pool": "pool",
   bounce_blitz_game: "bounce_blitz",
   brick_breaker_game: "brick_breaker",
 
   // Cooperative / Creative
   word_master_game: "word_master",
   crossword_puzzle_game: "crossword",
-  tropical_fishing: "island_room",
-
-  // Physics / Real-Time (Golf)
-  golf_duels: "golf_duels",
-  golf_duels_game: "golf_duels",
 
   // Incremental
   starforge_game: "starforge",
+
+  // Party
+  sketch_party_game: "sketch_party",
+
+  // Physics — Mini-Golf
+  minigolf_duels: "minigolf_duels",
 };
 
 /**
@@ -142,6 +138,37 @@ export function getColyseusRoomName(gameType: string): string | null {
   return COLYSEUS_ROOM_NAMES[gameType] || null;
 }
 
+/**
+ * Resolve the Colyseus room name for a game type — throwing variant.
+ *
+ * Handles `_game` suffix normalization:
+ *  1. Direct lookup: "chess_game" → "chess"
+ *  2. Append `_game`:  "chess" → "chess_game" → "chess"
+ *  3. Strip `_game`:   "chess_game" (already tried in step 1)
+ *
+ * @throws GameError with JOIN_ROOM_NOT_FOUND if no mapping exists
+ */
+export function resolveColyseusRoomName(gameType: string): string {
+  // 1. Direct match
+  const direct = COLYSEUS_ROOM_NAMES[gameType];
+  if (direct) return direct;
+
+  // 2. Try appending _game (handles ExtendedGameType like "chess" → "chess_game")
+  const withSuffix = COLYSEUS_ROOM_NAMES[gameType + "_game"];
+  if (withSuffix) return withSuffix;
+
+  // 3. Try stripping _game (handles double-suffix edge cases)
+  if (gameType.endsWith("_game")) {
+    const stripped = COLYSEUS_ROOM_NAMES[gameType.slice(0, -5)];
+    if (stripped) return stripped;
+  }
+
+  throw createGameError(GameErrorCode.JOIN_ROOM_NOT_FOUND, {
+    message: `No Colyseus room mapping for game type "${gameType}"`,
+    context: { gameType },
+  });
+}
+
 // =============================================================================
 // Game Category Mapping
 // =============================================================================
@@ -155,16 +182,15 @@ export type ColyseusGameCategory =
   | "turnbased"
   | "complex"
   | "coop"
-  | "incremental";
+  | "incremental"
+  | "party";
 
 /**
  * Maps each game type key to its Colyseus tier category.
  * Used by shouldUseColyseus() to check the correct feature flag.
  */
-const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
+export const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
   // Quick-Play (score race)
-  reaction_tap_game: "quickplay",
-  timed_tap_game: "quickplay",
   dot_match_game: "quickplay",
 
   // Turn-Based (simple)
@@ -180,24 +206,21 @@ const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
 
   // Physics / Real-Time
   pong_game: "physics",
-  air_hockey_game: "physics",
-  air_hockey: "physics",
-  "8ball_pool_game": "physics",
-  "8ball_pool": "physics",
   bounce_blitz_game: "physics",
   brick_breaker_game: "physics",
 
   // Cooperative / Creative
   word_master_game: "coop",
   crossword_puzzle_game: "coop",
-  tropical_fishing: "coop",
-
-  // Physics / Real-Time (Golf)
-  golf_duels: "physics",
-  golf_duels_game: "physics",
 
   // Incremental
   starforge_game: "incremental",
+
+  // Party
+  sketch_party_game: "party",
+
+  // Physics — Mini-Golf
+  minigolf_duels: "physics",
 };
 
 /**
@@ -233,6 +256,8 @@ export function shouldUseColyseus(gameType: string): boolean {
       return !!COLYSEUS_FEATURES.COOP_ENABLED;
     case "incremental":
       return !!COLYSEUS_FEATURES.INCREMENTAL_ENABLED;
+    case "party":
+      return !!COLYSEUS_FEATURES.PARTY_ENABLED;
     default:
       return false;
   }

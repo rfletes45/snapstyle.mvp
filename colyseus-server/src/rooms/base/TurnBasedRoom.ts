@@ -1,21 +1,22 @@
-﻿import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
+import { createServerLogger } from "../../utils/logger";
 const log = createServerLogger("TurnBasedRoom");
 
 /**
- * TurnBasedRoom â€” Abstract base for all Tier 2 turn-based games
+ * TurnBasedRoom — Abstract base for all Tier 2 turn-based games
  *
  * Pattern: Two players alternate turns. The server validates every move,
  * applies it to the authoritative state, checks win conditions, and
  * syncs the result to both clients via Colyseus state patches.
  *
  * Lifecycle:
- * 1. Both players join â†’ "waiting"
- * 2. Both send "ready" â†’ "countdown" (3 seconds)
- * 3. Countdown expires â†’ "playing" (player 0 goes first)
+ * 1. Both players join → "waiting"
+ * 2. Both send "ready" → "countdown" (3 seconds)
+ * 3. Countdown expires → "playing" (player 0 goes first)
  * 4. Players alternate sending "move" messages
- * 5. Server validates â†’ applies â†’ checks win â†’ advances turn
- * 6. On win/draw/resign â†’ "finished"
- * 7. On dispose: if finished â†’ persistGameResult(); if abandoned â†’ saveGameState()
+ * 5. Server validates → applies → checks win → advances turn
+ * 6. On win/draw/resign → "finished"
+ * 7. On dispose: if finished → persistGameResult(); if abandoned → saveGameState()
  *
  * Firestore Persistence:
  * - When both players leave a game in progress, the full board state is
@@ -25,16 +26,16 @@ const log = createServerLogger("TurnBasedRoom");
  * Subclasses must implement:
  *   - gameTypeKey (string)
  *   - defaultBoardWidth / defaultBoardHeight (numbers)
- *   - initializeBoard(options) â€” set up the initial board
- *   - validateMove(sessionId, move) â€” return true if move is legal
- *   - applyMove(sessionId, move) â€” mutate state to apply the move
- *   - checkWinCondition() â€” return winner info or null
- *   - serializeExtraState() â€” game-specific persistence fields
- *   - restoreExtraState(saved) â€” restore game-specific fields
+ *   - initializeBoard(options) — set up the initial board
+ *   - validateMove(sessionId, move) — return true if move is legal
+ *   - applyMove(sessionId, move) — mutate state to apply the move
+ *   - checkWinCondition() — return winner info or null
+ *   - serializeExtraState() — game-specific persistence fields
+ *   - restoreExtraState(saved) — restore game-specific fields
  *
  * Used by: TicTacToe, ConnectFour, Gomoku, Hex, Reversi (Phase 2)
  *
- * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md Â§7.2
+ * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §7.2
  */
 
 import { Client, Room } from "colyseus";
@@ -47,13 +48,24 @@ import {
 } from "../../schemas/turnbased";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
+  deleteGameAndInvite,
   loadGameState,
+  markGameVacant,
   persistGameResult,
   saveGameState,
 } from "../../services/persistence";
+import { checkProtocolVersion } from "../../utils/protocol";
+import {
+  MessageRateLimiter,
+  TURN_BASED_RATE_LIMITS,
+} from "../../utils/rateLimiter";
+import {
+  createStuckRoomWatchdog,
+  type StuckRoomWatchdog,
+} from "../../utils/stuckRoomWatchdog";
 
 // =============================================================================
-// Move Payload â€” what clients send with "move" messages
+// Move Payload — what clients send with "move" messages
 // =============================================================================
 
 export interface MovePayload {
@@ -70,7 +82,7 @@ export interface MovePayload {
 }
 
 // =============================================================================
-// Win Result â€” returned by checkWinCondition()
+// Win Result — returned by checkWinCondition()
 // =============================================================================
 
 export interface WinResult {
@@ -91,7 +103,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   patchRate = 100; // 10fps sync (turns don't need fast updates)
   autoDispose = true;
 
-  /** Game type key â€” must match client-side GAME_REGISTRY */
+  /** Game type key — must match client-side GAME_REGISTRY */
   protected abstract readonly gameTypeKey: string;
 
   /** Default board width */
@@ -118,14 +130,23 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   /** Whether this room was restored from a saved game (enables async play) */
   private isRestoredGame = false;
 
-  /** Saved player data from Firestore (UID â†’ serialized player) for re-mapping */
+  /** Saved player data from Firestore (UID → serialized player) for re-mapping */
   private savedPlayers = new Map<string, any>();
 
   /** UID of the player whose turn it is (persists across sessions) */
   private currentTurnUid: string = "";
 
+  /** Scoped logger with room-level context (traceId, firestoreGameId, etc.) */
+  protected roomLog: ServerLogger = log;
+
+  /** Message rate limiter to prevent move spam */
+  private rateLimiter = new MessageRateLimiter(TURN_BASED_RATE_LIMITS);
+
+  /** Stuck-room watchdog — logs if room never reaches playing */
+  private stuckWatchdog: StuckRoomWatchdog | null = null;
+
   // =========================================================================
-  // Abstract Methods â€” Subclasses MUST implement
+  // Abstract Methods — Subclasses MUST implement
   // =========================================================================
 
   /**
@@ -179,7 +200,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   }
 
   // =========================================================================
-  // Lifecycle â€” onAuth
+  // Lifecycle — onAuth
   // =========================================================================
 
   async onAuth(
@@ -187,18 +208,47 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     options: Record<string, any>,
     context: any,
   ): Promise<any> {
+    // -- Protocol version gate ---------------------------------------------
+    const proto = checkProtocolVersion(options);
+    if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: this.gameTypeKey,
+      });
+      throw new Error(proto.reason);
+    }
+
     const decoded = await verifyFirebaseToken(
       context?.token || options?.token || "",
     );
+
+    // Log join attempt with structured context
+    log.info("Auth success", {
+      uid: decoded.uid,
+      sessionId: client.sessionId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options?.firestoreGameId,
+      traceId: options?.traceId,
+      protocolVersion: proto.clientVersion,
+      platform: options?.buildInfo?.platform,
+    });
+
     return {
       uid: decoded.uid,
-      displayName: (decoded as { name?: string; email?: string; picture?: string }).name || (decoded as { name?: string; email?: string; picture?: string }).email || "Player",
-      avatarUrl: (decoded as { name?: string; email?: string; picture?: string }).picture || "",
+      displayName:
+        (decoded as { name?: string; email?: string; picture?: string }).name ||
+        (decoded as { name?: string; email?: string; picture?: string })
+          .email ||
+        "Player",
+      avatarUrl:
+        (decoded as { name?: string; email?: string; picture?: string })
+          .picture || "",
+      traceId: options?.traceId,
     };
   }
 
   // =========================================================================
-  // Lifecycle â€” onCreate
+  // Lifecycle — onCreate
   // =========================================================================
 
   async onCreate(options: Record<string, any>): Promise<void> {
@@ -206,6 +256,14 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     this.state.gameType = this.gameTypeKey;
     this.state.gameId = this.roomId;
     this.state.maxPlayers = this.maxClients;
+
+    // Build scoped logger with room-level correlation context
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options.firestoreGameId || undefined,
+      traceId: options.traceId || undefined,
+    });
 
     // Always track the firestoreGameId for persistence
     if (options.firestoreGameId) {
@@ -216,10 +274,21 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     if (options.firestoreGameId) {
       const savedState = await loadGameState(options.firestoreGameId);
       if (savedState) {
+        // -- Validate firestoreGameId ? gameType ---------------------------
+        if (savedState.gameType && savedState.gameType !== this.gameTypeKey) {
+          this.roomLog.error(
+            `gameType mismatch: saved="${savedState.gameType}" vs room="${this.gameTypeKey}"`,
+          );
+          this.state.phase = "error";
+          this.state.errorCode = "GAME_TYPE_MISMATCH";
+          this.state.errorMessage = `This room is ${this.gameTypeKey} but the saved game is ${savedState.gameType}`;
+          return;
+        }
+
         this.isRestoredGame = true;
         this.restoreFromSaved(savedState);
-        log.info(
-          `[${this.gameTypeKey}] Restored game from Firestore: ${options.firestoreGameId}`,
+        this.roomLog.info(
+          `Restored game from Firestore: ${options.firestoreGameId}`,
         );
         return;
       }
@@ -230,8 +299,11 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     this.state.initBoard(this.defaultBoardWidth, this.defaultBoardHeight);
     this.initializeBoard(options);
 
-    log.info(
-      `[${this.gameTypeKey}] Room created: ${this.roomId} (${this.defaultBoardWidth}x${this.defaultBoardHeight})`,
+    // Start stuck-room watchdog (logs if room never reaches playing)
+    this.stuckWatchdog = createStuckRoomWatchdog(this as any, this.roomLog);
+
+    this.roomLog.info(
+      `Room created (${this.defaultBoardWidth}x${this.defaultBoardHeight})`,
     );
   }
 
@@ -253,9 +325,9 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       const player = this.state.tbPlayers.get(client.sessionId);
       if (player) {
         player.ready = true;
-        log.info(
-          `[${this.gameTypeKey}] Player ready: ${player.displayName}`,
-        );
+        this.roomLog.info(`Player ready: ${player.displayName}`, {
+          uid: player.uid,
+        });
         this.checkAllReady();
       }
     },
@@ -265,6 +337,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
      */
     move: (client: Client, payload: MovePayload) => {
       if (this.isSpectator(client.sessionId)) return;
+      if (this.rateLimiter.isRateLimited(client.sessionId, "move")) return;
       // Must be playing phase
       if (this.state.phase !== "playing") {
         client.send("error", { message: "Game is not in progress" });
@@ -293,8 +366,8 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
         this.state.winnerId = result.winnerId;
         this.state.winReason = result.reason;
         this.state.phase = "finished";
-        log.info(
-          `[${this.gameTypeKey}] Game over: ${result.reason} â€” winner: ${result.winnerId || "draw"}`,
+        this.roomLog.info(
+          `Game over: ${result.reason} — winner: ${result.winnerId || "draw"}`,
         );
         return;
       }
@@ -316,9 +389,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
           this.playerUids.get(opponent.sessionId) || opponent.uid;
         this.state.winReason = "resignation";
         this.state.phase = "finished";
-        log.info(
-          `[${this.gameTypeKey}] Player resigned: ${client.sessionId}`,
-        );
+        this.roomLog.info(`Player resigned`, { sessionId: client.sessionId });
       }
     },
 
@@ -344,7 +415,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
         this.state.winnerId = "";
         this.state.winReason = "draw_agreed";
         this.state.phase = "finished";
-        log.info(`[${this.gameTypeKey}] Draw agreed`);
+        this.roomLog.info(`Draw agreed`);
       }
     },
 
@@ -372,7 +443,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     },
 
     /**
-     * Rematch accepted â€” reset the game.
+     * Rematch accepted — reset the game.
      */
     rematch_accept: (client: Client) => {
       if (this.isSpectator(client.sessionId)) return;
@@ -382,11 +453,11 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   };
 
   // =========================================================================
-  // Lifecycle â€” onJoin
+  // Lifecycle — onJoin
   // =========================================================================
 
   onJoin(client: Client, options: Record<string, any>, auth: any): void {
-    // â”€â”€â”€ Spectator join â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator join ─────────────────────────────────────────────────
     if (options.spectator === true) {
       const spectator = new SpectatorEntry();
       spectator.uid = auth.uid;
@@ -397,15 +468,15 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       this.state.spectators.set(client.sessionId, spectator);
       this.state.spectatorCount++;
       this.spectatorSessionIds.add(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
       );
       return;
     }
 
     this.playerUids.set(client.sessionId, auth.uid);
 
-    // â”€â”€â”€ Restored game: re-map player by UID to their existing slot â”€â”€â”€â”€â”€â”€
+    // ─── Restored game: re-map player by UID to their existing slot ──────
     if (this.isRestoredGame && this.state.phase === "playing") {
       // Check if this player's UID already has a slot (returning player)
       let existingKey: string | null = null;
@@ -440,8 +511,9 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
           this.state.currentTurnPlayerId = client.sessionId;
         }
 
-        log.info(
-          `[${this.gameTypeKey}] Player rejoined restored game: ${existing.displayName} (index=${existing.playerIndex})`,
+        this.roomLog.info(
+          `Player rejoined restored game: ${existing.displayName} (index=${existing.playerIndex})`,
+          { uid: auth.uid },
         );
         return;
       }
@@ -475,8 +547,9 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
           this.state.currentTurnPlayerId = client.sessionId;
         }
 
-        log.info(
-          `[${this.gameTypeKey}] Player joined restored game from saved data: ${player.displayName} (index=${player.playerIndex})`,
+        this.roomLog.info(
+          `Player joined restored game from saved data: ${player.displayName} (index=${player.playerIndex})`,
+          { uid: auth.uid },
         );
         return;
       }
@@ -484,7 +557,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       // Brand new player joining a restored game (shouldn't normally happen)
     }
 
-    // â”€â”€â”€ Fresh game: create a new player slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Fresh game: create a new player slot ─────────────────────────────
     const player = new TurnBasedPlayer();
     player.uid = auth.uid;
     player.sessionId = client.sessionId;
@@ -507,15 +580,15 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     basePlayer.connected = true;
     this.state.players.set(client.sessionId, basePlayer);
 
-    log.info(
-      `[${this.gameTypeKey}] Player joined: ${player.displayName} (index=${player.playerIndex})`,
+    this.roomLog.info(
+      `Player joined: ${player.displayName} (index=${player.playerIndex})`,
     );
 
     if (this.state.tbPlayers.size >= 2) {
       this.lock();
 
       // Auto-ready all players and start when the room is full.
-      // Turn-based games don't have a pre-game lobby â€” start immediately.
+      // Turn-based games don't have a pre-game lobby — start immediately.
       // (Individual "ready" messages also work as a fallback.)
       this.state.tbPlayers.forEach((p: TurnBasedPlayer) => {
         p.ready = true;
@@ -525,17 +598,17 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   }
 
   // =========================================================================
-  // Lifecycle â€” onLeave
+  // Lifecycle — onLeave
   // =========================================================================
 
   async onLeave(client: Client, code?: number): Promise<void> {
-    // â”€â”€â”€ Spectator leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Spectator leave ────────────────────────────────────────────────
     if (this.spectatorSessionIds.has(client.sessionId)) {
       this.state.spectators.delete(client.sessionId);
       this.state.spectatorCount = Math.max(0, this.state.spectatorCount - 1);
       this.spectatorSessionIds.delete(client.sessionId);
-      log.info(
-        `[${this.gameTypeKey}] Spectator left (${this.state.spectatorCount} watching)`,
+      this.roomLog.info(
+        `Spectator left (${this.state.spectatorCount} watching)`,
       );
       return;
     }
@@ -555,15 +628,11 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
         // Reconnected!
         if (player) player.connected = true;
         if (basePlayer) basePlayer.connected = true;
-        log.info(
-          `[${this.gameTypeKey}] Player reconnected: ${client.sessionId}`,
-        );
+        this.roomLog.info(`Player reconnected: ${client.sessionId}`);
         return;
       } catch {
-        // Reconnection timed out â€” player is gone
-        log.info(
-          `[${this.gameTypeKey}] Reconnection timeout: ${client.sessionId}`,
-        );
+        // Reconnection timed out — player is gone
+        this.roomLog.info(`Reconnection timeout: ${client.sessionId}`);
       }
     }
 
@@ -586,12 +655,12 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
 
     if (!anyConnected && this.state.phase === "playing") {
       this.allPlayersLeft = true;
-      // Don't delete players â€” needed for restoration
+      // Don't delete players — needed for restoration
     }
   }
 
   // =========================================================================
-  // Lifecycle â€” onDispose
+  // Lifecycle — onDispose
   // =========================================================================
 
   async onDispose(): Promise<void> {
@@ -600,19 +669,24 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       this.countdownInterval.clear();
       this.countdownInterval = null;
     }
+    this.rateLimiter.dispose();
+    this.stuckWatchdog?.dispose();
 
     const gameDurationMs = this.gameStartTime
       ? Date.now() - this.gameStartTime
       : undefined;
 
     if (this.state.phase === "finished") {
-      // Game completed â€” persist final result
+      // Game completed � persist final result, then clean up game + invite
       await persistGameResult(this.state, gameDurationMs);
-      log.info(
-        `[${this.gameTypeKey}] Game completed and persisted: ${this.roomId}`,
+      const firestoreGameId =
+        this.state.firestoreGameId || this.state.gameId || this.roomId;
+      await deleteGameAndInvite(firestoreGameId);
+      this.roomLog.info(
+        `Game completed, persisted, and cleaned up: ${this.roomId}`,
       );
     } else if (this.state.phase === "playing") {
-      // Game in progress â€” always save to Firestore for async restoration.
+      // Game in progress — always save to Firestore for async restoration.
       // Track the current turn player's UID so we can re-map when they rejoin.
       let turnUid = this.currentTurnUid;
       if (!turnUid && this.state.currentTurnPlayerId) {
@@ -659,18 +733,34 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       };
 
       await saveGameState(this.state, this.roomId, extraFields);
-      log.info(
-        `[${this.gameTypeKey}] Game suspended and saved: ${this.roomId}`,
+      // Mark as vacant � Cloud Function will delete after 2 days if nobody returns
+      const firestoreGameIdSave =
+        this.state.firestoreGameId || this.state.gameId || this.roomId;
+      await markGameVacant(firestoreGameIdSave, this.gameTypeKey, true);
+      this.roomLog.info(
+        `Game suspended, saved, marked vacant (2-day TTL): ${this.roomId}`,
+      );
+    } else if (
+      this.state.phase === "waiting" ||
+      this.state.phase === "countdown"
+    ) {
+      // PRE-START ABANDONMENT: Everyone left before the game officially started.
+      // Delete the game invite + any session records immediately.
+      const firestoreGameIdPrestart =
+        this.state.firestoreGameId || this.state.gameId || this.roomId;
+      await deleteGameAndInvite(firestoreGameIdPrestart);
+      this.roomLog.info(
+        `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
       );
     } else {
-      log.info(
-        `[${this.gameTypeKey}] Room disposed (phase: ${this.state.phase}): ${this.roomId}`,
+      this.roomLog.info(
+        `Room disposed (phase: ${this.state.phase}): ${this.roomId}`,
       );
     }
   }
 
   // =========================================================================
-  // Helpers â€” Turn Management
+  // Helpers — Turn Management
   // =========================================================================
 
   /**
@@ -713,6 +803,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   private startGame(): void {
     this.state.phase = "playing";
     this.gameStartTime = Date.now();
+    this.stuckWatchdog?.markPlaying();
 
     // First player (index 0) goes first
     const players = Array.from(
@@ -723,9 +814,11 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
         players.find((p) => p.playerIndex === 0) || players[0];
       this.state.currentTurnPlayerId = firstPlayer.sessionId;
       this.currentTurnUid = firstPlayer.uid;
+      // Sync UID-canonical turn ownership to schema
+      this.state.currentTurnUid = firstPlayer.uid;
     }
 
-    log.info(`[${this.gameTypeKey}] Game started: ${this.roomId}`);
+    this.roomLog.info("Game started");
   }
 
   /**
@@ -740,8 +833,9 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     );
     const nextIndex = (currentIndex + 1) % players.length;
     this.state.currentTurnPlayerId = players[nextIndex].sessionId;
-    // Track UID for async persistence
+    // Track UID for async persistence + sync to schema
     this.currentTurnUid = players[nextIndex].uid;
+    this.state.currentTurnUid = players[nextIndex].uid;
   }
 
   /**
@@ -793,7 +887,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
   }
 
   // =========================================================================
-  // Helpers â€” Persistence
+  // Helpers — Persistence
   // =========================================================================
 
   /**
@@ -817,8 +911,10 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
 
     // Restore current turn UID (persisted so we can re-map to new session IDs)
     this.currentTurnUid = saved.currentTurnUid || "";
+    // Sync UID-canonical turn ownership to schema
+    this.state.currentTurnUid = this.currentTurnUid;
     // The currentTurnPlayerId (session-based) will be set when the player
-    // with this UID joins â€” see onJoin's restored game branch.
+    // with this UID joins — see onJoin's restored game branch.
     this.state.currentTurnPlayerId = "";
 
     // Restore player data by UID for re-mapping when players rejoin.
@@ -900,8 +996,8 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     this.restoreExtraState(saved);
 
     this.gameStartTime = Date.now();
-    log.info(
-      `[${this.gameTypeKey}] State restored: turn ${this.state.turnNumber}, ${this.state.moveHistory.length} moves, currentTurnUid=${this.currentTurnUid}`,
+    this.roomLog.info(
+      `State restored: turn ${this.state.turnNumber}, ${this.state.moveHistory.length} moves, currentTurnUid=${this.currentTurnUid}`,
     );
   }
 
@@ -936,8 +1032,6 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     this.initializeBoard({});
     this.state.phase = "waiting";
 
-    log.info(`[${this.gameTypeKey}] Rematch started: ${this.roomId}`);
+    this.roomLog.info(`Rematch started: ${this.roomId}`);
   }
 }
-
-

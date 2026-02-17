@@ -1,0 +1,28 @@
+{
+  "id": "neon_2",
+  "packId": "neon",
+  "name": "Neon Zigzag",
+  "par": 3,
+  "maxStrokes": 10,
+  "bounds": { "width": 500, "height": 800 },
+  "tee": { "x": 400, "y": 700 },
+  "cup": { "x": 100, "y": 100 },
+  "cupRadius": 18,
+  "walls": [
+    [
+      { "x": 250, "y": 0 },
+      { "x": 450, "y": 0 },
+      { "x": 450, "y": 400 },
+      { "x": 250, "y": 400 }
+    ],
+    [
+      { "x": 50, "y": 400 },
+      { "x": 250, "y": 400 },
+      { "x": 250, "y": 800 },
+      { "x": 50, "y": 800 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": []
+}

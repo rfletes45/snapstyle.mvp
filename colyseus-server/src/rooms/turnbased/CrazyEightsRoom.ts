@@ -28,6 +28,9 @@ import { CardGameRoom } from "../base/CardGameRoom";
 export class CrazyEightsRoom extends CardGameRoom {
   protected readonly gameTypeKey = "crazy_eights_game";
 
+  /** Count of consecutive no-draw passes for stalemate detection */
+  private consecutivePasses = 0;
+
   // â”€â”€â”€ Game Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   protected initializeGame(_options: Record<string, any>): void {
@@ -138,6 +141,7 @@ export class CrazyEightsRoom extends CardGameRoom {
 
     this.state.discardSize = this.discardPile.length;
     this.state.drawCount = 0;
+    this.consecutivePasses = 0; // A card was played, reset stalemate counter
 
     // Check for winner
     if (hand.length === 0) {
@@ -214,14 +218,54 @@ export class CrazyEightsRoom extends CardGameRoom {
     const player = this.state.cardPlayers.get(client.sessionId);
     if (!player) return;
 
-    // Can only pass if drawn already or deck empty
-    if (!player.hasDrawnThisTurn && this.deck.length > 0) {
+    // Can only pass if drawn already or deck + discard are truly exhausted
+    const canReshuffle = this.discardPile.length > 1;
+    if (!player.hasDrawnThisTurn && (this.deck.length > 0 || canReshuffle)) {
       client.send("error", { message: "Must draw before passing" });
       return;
     }
 
+    // Track consecutive no-draw passes for stalemate detection
+    if (!player.hasDrawnThisTurn) {
+      this.consecutivePasses++;
+    } else {
+      // Player drew then passed — reset counter since deck is shrinking
+      this.consecutivePasses = 0;
+    }
+
+    this.state.drawCount = 0; // Reset for next player's turn
     this.advanceTurn();
     this.syncHandSizes();
+
+    // Stalemate: all players passed without being able to draw
+    if (this.consecutivePasses >= this.playerOrder.length) {
+      this.endInStalemate();
+    }
+  }
+
+  // ——— Stalemate ————————————————————————————————————————————————————————
+
+  private endInStalemate(): void {
+    let lowestScore = Infinity;
+    let winnerId = "";
+
+    this.state.cardPlayers.forEach((p: any) => {
+      const hand = this.hands.get(p.sessionId);
+      if (hand) {
+        const score = this.calculateHandScore(hand);
+        p.score = score;
+        if (score < lowestScore) {
+          lowestScore = score;
+          winnerId = p.uid;
+        }
+      }
+    });
+
+    this.state.winnerId = winnerId;
+    this.state.winReason = "stalemate";
+    this.state.phase = "finished";
+    this.syncHandSizes();
+    this.broadcastHands();
   }
 
   // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -256,6 +300,7 @@ export class CrazyEightsRoom extends CardGameRoom {
       discardPile: this.discardPile,
       currentSuit: this.state.currentSuit,
       playerOrder: this.playerOrder,
+      consecutivePasses: this.consecutivePasses,
     };
   }
 
@@ -275,7 +320,7 @@ export class CrazyEightsRoom extends CardGameRoom {
     this.state.currentSuit = saved.currentSuit || "";
     this.state.deckSize = this.deck.length;
     this.state.discardSize = this.discardPile.length;
+    this.consecutivePasses = saved.consecutivePasses || 0;
     this.syncHandSizes();
   }
 }
-

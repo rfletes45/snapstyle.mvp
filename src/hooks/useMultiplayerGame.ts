@@ -19,7 +19,9 @@
  */
 
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
-import { Room } from "@colyseus/sdk";
+import { colyseusService } from "@/services/colyseus";
+import type { GameSessionContext } from "@/types/gameSession";
+import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +118,9 @@ export interface MultiplayerState {
 export interface MultiplayerActions {
   /** Start a multiplayer session for this game */
   startMultiplayer: (
-    options?: string | { roomId?: string; spectator?: boolean },
+    options?:
+      | string
+      | { roomId?: string; firestoreGameId?: string; spectator?: boolean },
   ) => Promise<void>;
 
   /** Alias for startMultiplayer */
@@ -216,10 +220,16 @@ export function useMultiplayerGame(
   // ─── Actions ─────────────────────────────────────────────────────────
 
   const startMultiplayer = useCallback(
-    async (options?: string | { roomId?: string; spectator?: boolean }) => {
+    async (
+      options?:
+        | string
+        | { roomId?: string; firestoreGameId?: string; spectator?: boolean },
+    ) => {
       const roomId = typeof options === "string" ? options : options?.roomId;
       const spectator =
         typeof options === "string" ? false : !!options?.spectator;
+      const overrideGameId =
+        typeof options === "string" ? undefined : options?.firestoreGameId;
 
       if (!isAvailable) {
         setError("Multiplayer is not available");
@@ -232,15 +242,6 @@ export function useMultiplayerGame(
       setError(null);
 
       try {
-        // Dynamically import to avoid loading Colyseus when feature is off
-        const { colyseusService } = await import("@/services/colyseus");
-        const { getColyseusRoomName } = await import("@/config/colyseus");
-
-        const roomName = getColyseusRoomName(gameType);
-        if (!roomName) {
-          throw new Error(`No Colyseus room configured for ${gameType}`);
-        }
-
         const stateHandlers = {
           onStateChange: (state: any) => {
             if (!mountedRef.current) return;
@@ -313,17 +314,33 @@ export function useMultiplayerGame(
         // If a roomId is provided (invite flow), join by ID instead of matchmaking.
         // If firestoreGameId is provided (universal invite flow), pass it to joinOrCreate
         // so server's filterBy(["firestoreGameId"]) matches both players to the same room.
+        // An override firestoreGameId from startMultiplayer options takes precedence over
+        // the one passed at hook construction time.
+        const effectiveGameId = overrideGameId || inviteGameId;
         const joinOptions = {
-          ...(inviteGameId ? { firestoreGameId: inviteGameId } : {}),
+          ...(effectiveGameId ? { firestoreGameId: effectiveGameId } : {}),
           ...(spectator ? { spectator: true } : {}),
         };
-        const room = roomId
-          ? await colyseusService.joinById(roomId, joinOptions, stateHandlers)
-          : await colyseusService.joinOrCreate(
-              gameType,
-              joinOptions,
-              stateHandlers,
-            );
+
+        let room: Room;
+        if (roomId) {
+          // Legacy path: join by explicit room ID
+          room = await colyseusService.joinById(
+            roomId,
+            joinOptions,
+            stateHandlers,
+          );
+        } else {
+          // Canonical path: build GameSessionContext → joinWithContext
+          const ctx: GameSessionContext = {
+            gameType: gameType as any, // screens pass Colyseus keys, resolver normalises
+            entryPoint: "play",
+            mode: "colyseus",
+            ...(effectiveGameId ? { firestoreGameId: effectiveGameId } : {}),
+            ...(spectator ? { spectator: true } : {}),
+          };
+          room = await colyseusService.joinWithContext(ctx, stateHandlers);
+        }
 
         scoreRaceRef.current = room;
         setRoom(room as Room);

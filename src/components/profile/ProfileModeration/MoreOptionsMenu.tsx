@@ -20,11 +20,12 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
-import { Divider, Text, useTheme } from "react-native-paper";
+import { Divider, Text } from "react-native-paper";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 
 // =============================================================================
@@ -71,16 +72,16 @@ export const MoreOptionsMenu = memo(function MoreOptionsMenu({
   onAction,
   onClose,
 }: MoreOptionsMenuProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const insets = useSafeAreaInsets();
 
   const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-    error: theme.colors.error,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    surface: profileColors.surface,
+    surfaceVariant: profileColors.surfaceVariant,
+    primary: profileColors.primary,
+    error: profileColors.error,
     warning: "#FFA000",
   };
 
@@ -277,7 +278,9 @@ export const MoreOptionsMenu = memo(function MoreOptionsMenu({
                           ]}
                         >
                           <MaterialCommunityIcons
-                            name={action.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                            name={
+                              action.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                            }
                             size={22}
                             color={action.color || colors.text}
                           />

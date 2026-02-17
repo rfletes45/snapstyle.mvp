@@ -32,11 +32,10 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA, GameMetadata } from "@/types/games";
-import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/components/GameRecommendations");
@@ -233,8 +232,8 @@ export function GameRecommendations({
         });
 
         // Rule 3: Popular games (trending)
-        const popularGames = availableGames.filter(
-          (g) => ["play_2048", "word_master"].includes(g.id),
+        const popularGames = availableGames.filter((g) =>
+          ["play_2048", "word_master"].includes(g.id),
         );
         popularGames.forEach((game) => {
           if (!includedGameIds.has(game.id)) {
@@ -324,7 +323,9 @@ export function GameRecommendations({
         keyExtractor={keyExtractor}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.emptyStateText, { color: colors.textSecondary }]}
+            >
               No recommendations right now. Check back after more games.
             </Text>
           </View>

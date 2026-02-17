@@ -12,10 +12,11 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useMemo } from "react";
 import { StyleSheet, View, ViewStyle } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import type { FriendshipDetails } from "@/types/userProfile";
 
 // =============================================================================
@@ -123,16 +124,7 @@ function FriendshipInfoCardBase({
   style,
   testID,
 }: FriendshipInfoCardProps) {
-  const theme = useTheme();
-
-  const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surface: theme.colors.surface,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-    error: theme.colors.error,
-  };
+  const colors = useColors();
 
   const milestone = useMemo(
     () => getStreakMilestone(details.streakCount),
@@ -250,7 +242,7 @@ function FriendshipInfoCardBase({
             <MaterialCommunityIcons
               name="heart"
               size={28}
-              color={colors.error}
+              color={colors.primary}
             />
           </View>
           <Text style={[styles.durationValue, { color: colors.text }]}>

@@ -75,7 +75,7 @@ export interface Message {
   clientMessageId?: string;
   // Scorecard data (for type: "scorecard")
   scorecard?: {
-    gameId: GameType;
+    gameId: ExtendedGameType;
     score: number;
     playerName: string;
   };
@@ -97,11 +97,9 @@ export interface StoryView {
   viewed: boolean; // true (for querying convenience)
 }
 
-// Game Types - Original mini-games
-export type GameType = "reaction_tap" | "timed_tap";
-
-// Extended game types
+// Game Types
 // @see src/types/games.ts for full type definitions and metadata
+
 export type SinglePlayerGameType = "bounce_blitz" | "play_2048" | "word_master";
 
 export type TurnBasedGameType =
@@ -110,11 +108,10 @@ export type TurnBasedGameType =
   | "crazy_eights"
   | "tic_tac_toe";
 
-export type RealTimeGameType = "8ball_pool" | "air_hockey" | "tropical_fishing";
+export type RealTimeGameType = "starforge_game" | "sketch_party_game";
 
 // All available game types
 export type ExtendedGameType =
-  | GameType
   | SinglePlayerGameType
   | TurnBasedGameType
   | RealTimeGameType;
@@ -127,8 +124,6 @@ export interface GameSession {
   playedAt: number; // Always converted to number in service layer
   // Anti-cheat metadata
   duration?: number; // Game duration in ms
-  tapCount?: number; // Number of taps (for timed_tap)
-  reactionTime?: number; // Reaction time in ms (for reaction_tap)
 }
 
 // Extended game session for new games
@@ -154,15 +149,6 @@ export interface ExtendedGameSession {
 }
 
 // Game score limits for anti-cheat validation
-export const GAME_SCORE_LIMITS: Record<
-  GameType,
-  { minScore: number; maxScore: number; maxDuration?: number }
-> = {
-  reaction_tap: { minScore: 100, maxScore: 2000 }, // Reaction time in ms (lower is better)
-  timed_tap: { minScore: 1, maxScore: 200, maxDuration: 10000 }, // Taps in 10 seconds
-};
-
-// Extended score limits for new games
 // @see src/types/games.ts EXTENDED_GAME_SCORE_LIMITS for full configuration
 
 // Cosmetics
@@ -505,7 +491,7 @@ export interface Achievement {
   meta?: {
     // Optional metadata about how it was earned
     score?: number;
-    gameId?: GameType;
+    gameId?: ExtendedGameType;
     streakCount?: number;
     friendCount?: number;
   };
@@ -919,7 +905,7 @@ export interface GroupMessage {
   imagePath?: string;
   // For scorecard messages
   scorecard?: {
-    gameId: GameType;
+    gameId: ExtendedGameType;
     score: number;
     playerName: string;
   };

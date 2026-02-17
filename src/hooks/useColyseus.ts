@@ -16,10 +16,9 @@
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §8.3
  */
 
-import { Room } from "@colyseus/sdk";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { colyseusService, JoinOptions } from "@/services/colyseus";
-
+import type { Room } from "@colyseus/sdk";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useColyseus");
@@ -93,6 +92,7 @@ export function useColyseus({
 
   const roomRef = useRef<Room | null>(null);
   const mountedRef = useRef(true);
+  const joiningRef = useRef(false);
 
   // ===========================================================================
   // Join Room
@@ -100,6 +100,9 @@ export function useColyseus({
 
   const joinRoom = useCallback(async () => {
     if (!mountedRef.current) return;
+    // Guard against concurrent joins (React Strict Mode double-mount)
+    if (joiningRef.current) return;
+    joiningRef.current = true;
 
     try {
       setError(null);
@@ -197,6 +200,8 @@ export function useColyseus({
         setError(err.message || "Failed to join room");
         logger.error("[useColyseus] Join failed:", err);
       }
+    } finally {
+      joiningRef.current = false;
     }
   }, [gameType, options, firestoreGameId, roomId]);
 

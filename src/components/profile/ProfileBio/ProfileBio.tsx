@@ -10,8 +10,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
-import { Text, useTheme } from "react-native-paper";
+import { Text } from "react-native-paper";
 
+import { useColors } from "@/store/ThemeContext";
 import type { ProfileBio as ProfileBioType } from "@/types/userProfile";
 
 // =============================================================================
@@ -42,13 +43,13 @@ function ProfileBioBase({
   maxLines = 4,
   style,
 }: ProfileBioProps) {
-  const theme = useTheme();
+  const profileColors = useColors();
   const colors = {
-    text: theme.colors.onSurface,
-    textSecondary: theme.colors.onSurfaceVariant,
-    surfaceVariant: theme.colors.surfaceVariant,
-    primary: theme.colors.primary,
-    border: theme.colors.outline,
+    text: profileColors.text,
+    textSecondary: profileColors.textSecondary,
+    surfaceVariant: profileColors.surfaceVariant,
+    primary: profileColors.primary,
+    border: profileColors.outline,
   };
 
   const hasBio = bio?.text && bio.text.trim().length > 0;

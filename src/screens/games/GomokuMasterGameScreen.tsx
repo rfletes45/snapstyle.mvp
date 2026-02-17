@@ -10,9 +10,12 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
+import { SkiaGameBoard } from "@/components/games/graphics";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
-import { SkiaGameBoard } from "@/components/games/graphics";
 import {
   DrawOfferDialog,
   GameActionBar,
@@ -23,16 +26,24 @@ import {
   TurnBasedWaitingOverlay,
   TurnIndicatorBar,
 } from "@/components/games/TurnBasedOverlay";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
-import { sendGameInvite } from "@/services/gameInvites";
 import {
   getPersonalBest,
   PersonalBest,
   recordGameSession,
   sendScorecard,
 } from "@/services/games";
+import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
@@ -45,7 +56,13 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Dimensions,
@@ -56,11 +73,6 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 
 // =============================================================================
 // Constants
@@ -83,7 +95,7 @@ const GAME_TYPE = "gomoku_master";
 type CellState = 0 | 1 | 2; // 0 = empty, 1 = black, 2 = white
 type Board = CellState[][];
 type GameMode = "local" | "ai" | "online";
-type GameState = "menu" | "playing" | "result";
+type GameState = "menu" | "lobby" | "playing" | "result";
 
 interface Coord {
   row: number;
@@ -278,7 +290,13 @@ function GomokuMasterGameScreen({
 }: GomokuMasterGameScreenProps) {
   const __codexGameCompletion = useGameCompletion({ gameType: "gomoku" });
   void __codexGameCompletion;
-  useGameBackHandler({ gameType: "gomoku", isGameOver: false });
+  const [gameMode, setGameMode] = useState<GameMode>("ai");
+  useGameBackHandler({
+    gameType: "gomoku",
+    isGameOver: false,
+    isMultiplayer: gameMode === "online",
+    entryPoint: route?.params?.entryPoint,
+  });
   const __codexGameHaptics = useGameHaptics();
   void __codexGameHaptics;
   const __codexGameOverModal = (
@@ -291,8 +309,9 @@ function GomokuMasterGameScreen({
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
 
-  const [gameState, setGameState] = useState<GameState>("menu");
-  const [gameMode, setGameMode] = useState<GameMode>("ai");
+  const [gameState, setGameState] = useState<GameState>(
+    route?.params?.inviteId ? "lobby" : "menu",
+  );
   const [board, setBoard] = useState<Board>(EMPTY_BOARD());
   const [currentPlayer, setCurrentPlayer] = useState<CellState>(1); // 1 = black goes first
   const [winner, setWinner] = useState<CellState | null>(null);
@@ -320,9 +339,31 @@ function GomokuMasterGameScreen({
     };
   }, []);
 
-  // Colyseus multiplayer hook
-  const mp = useTurnBasedGame("gomoku_master_game");
+  // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const isSpectator = route?.params?.spectatorMode === true;
+  const mp = useTurnBasedGame("gomoku_master_game");
+
+  // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
+  const lobbyController = useGameLobbyController({
+    gameType: "gomoku",
+    inviteId: route?.params?.inviteId,
+    entryPoint: route?.params?.entryPoint,
+    isTurnBased: true,
+    onGameReady: (gameId: string) => {
+      setGameMode("online");
+      setGameState("playing");
+      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+    },
+    onLeaveLobby: () => {
+      setGameState("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
+  });
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
     room: mp.room,
@@ -338,10 +379,12 @@ function GomokuMasterGameScreen({
   );
 
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route?.params?.inviteId) return;
     if (resolvedMode && firestoreGameId) {
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
     }
-  }, [resolvedMode, firestoreGameId, isSpectator]);
+  }, [resolvedMode, firestoreGameId, isSpectator, route?.params?.inviteId]);
 
   // Derive Colyseus board as 2D array for rendering
   const colyseusBoard: Board | null =
@@ -360,9 +403,7 @@ function GomokuMasterGameScreen({
   // Load personal best
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
-        setPersonalBest,
-      );
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(setPersonalBest);
     }
   }, [currentFirebaseUser]);
 
@@ -515,39 +556,56 @@ function GomokuMasterGameScreen({
   const [showInvitePicker, setShowInvitePicker] = useState(false);
 
   const handleInviteFriend = useCallback(() => {
-    setShowInvitePicker(true);
+    setGameState("lobby");
   }, []);
 
   const handleSelectFriendForInvite = useCallback(
-    async (friend: any) => {
+    async (friend: FriendItem) => {
       if (!currentFirebaseUser || !profile) return;
       setShowInvitePicker(false);
       setInviteLoading(true);
       try {
-        await sendGameInvite(
-          currentFirebaseUser.uid,
-          profile.displayName || "Player",
-          profile.avatarConfig
-            ? JSON.stringify(profile.avatarConfig)
-            : undefined,
-          {
-            gameType: GAME_TYPE,
-            recipientId: friend.friendUid,
-            recipientName: friend.displayName || "Friend",
-            settings: { isRated: false, chatEnabled: false },
-          },
-        );
-        Alert.alert(
-          "Invite Sent!",
-          `Game invite sent to ${friend.displayName || "your friend"}. They'll see it on their Play screen!`,
+        await lobbyController.lobby.sendFriendInvite(
+          friend.friendUid,
+          friend.displayName || "Friend",
+          undefined,
         );
       } catch (error: any) {
-        Alert.alert("Error", "Failed to send game invite. Please try again.");
+        Alert.alert(
+          "Error",
+          error?.message || "Failed to send game invite. Please try again.",
+        );
       } finally {
         setInviteLoading(false);
       }
     },
-    [currentFirebaseUser, profile],
+    [currentFirebaseUser, profile, lobbyController.lobby],
+  );
+
+  const handleSelectGroupForInvite = useCallback(
+    async (group: GroupItem) => {
+      if (!currentFirebaseUser || !profile) return;
+      setShowInvitePicker(false);
+      setInviteLoading(true);
+      try {
+        const members = await getGroupMembers(group.groupId);
+        const memberIds = members.map((m) => m.uid);
+        await lobbyController.lobby.sendGroupInvite(
+          group.groupId,
+          group.name,
+          memberIds,
+        );
+      } catch (error: any) {
+        Alert.alert(
+          "Error",
+          error?.message ||
+            "Failed to send group game invite. Please try again.",
+        );
+      } finally {
+        setInviteLoading(false);
+      }
+    },
+    [currentFirebaseUser, profile, lobbyController.lobby],
   );
 
   // ==========================================================================
@@ -754,7 +812,23 @@ function GomokuMasterGameScreen({
         <View style={{ width: 32 }} />
       </View>
 
-      {gameState === "menu" ? (
+      {gameState === "lobby" ? (
+        <View style={{ flex: 1 }}>
+          <MultiplayerLobbyOverlay
+            controller={lobbyController}
+            gameTitle="Gomoku"
+            gameIcon="⚫⚪"
+            onInvitePress={() => setShowInvitePicker(true)}
+            onLeave={() => {
+              lobbyController.lobby.leaveLobby();
+              setGameState("menu");
+            }}
+            showReadyButton={false}
+          >
+            <View style={{ flex: 1 }} />
+          </MultiplayerLobbyOverlay>
+        </View>
+      ) : gameState === "menu" ? (
         <View style={styles.menuContent}>
           <Text style={[styles.gameTitle, { color: colors.text }]}>
             ⚫⚪ Gomoku
@@ -888,10 +962,11 @@ function GomokuMasterGameScreen({
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Send Scorecard"
       />
-      <FriendPickerModal
+      <InvitePickerModal
         visible={showInvitePicker}
         onDismiss={() => setShowInvitePicker(false)}
         onSelectFriend={handleSelectFriendForInvite}
+        onSelectGroup={handleSelectGroupForInvite}
         currentUserId={currentFirebaseUser?.uid || ""}
         title="Invite to Gomoku"
       />
@@ -926,20 +1001,20 @@ function GomokuMasterGameScreen({
         mp.isMultiplayer &&
         mp.phase === "playing" &&
         !isSpectator && (
-        <GameActionBar
-          onResign={() => setShowResignConfirm(true)}
-          onOfferDraw={mp.offerDraw}
-          isMyTurn={mp.isMyTurn}
-          drawPending={mp.drawPending}
-          colors={{
-            primary: colors.primary,
-            background: colors.background,
-            surface: colors.surface,
-            text: colors.text,
-            textSecondary: colors.textSecondary,
-            border: colors.border,
-          }}
-        />
+          <GameActionBar
+            onResign={() => setShowResignConfirm(true)}
+            onOfferDraw={mp.offerDraw}
+            isMyTurn={mp.isMyTurn}
+            drawPending={mp.drawPending}
+            colors={{
+              primary: colors.primary,
+              background: colors.background,
+              surface: colors.surface,
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              border: colors.border,
+            }}
+          />
         )}
 
       {/* Colyseus Multiplayer Overlays */}

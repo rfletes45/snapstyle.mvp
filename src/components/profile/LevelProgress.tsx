@@ -4,7 +4,7 @@
  * Displays user's level with XP progress bar.
  */
 
-import { useProfileThemeColors } from "@/contexts/ProfileThemeColorsContext";
+import { useColors } from "@/store/ThemeContext";
 import type { LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
@@ -25,7 +25,7 @@ function LevelProgressBase({
   showDetails = true,
   compact = false,
 }: LevelProgressProps) {
-  const colors = useProfileThemeColors();
+  const colors = useColors();
 
   const progress = level.xpToNextLevel > 0 ? level.xp / level.xpToNextLevel : 1;
 

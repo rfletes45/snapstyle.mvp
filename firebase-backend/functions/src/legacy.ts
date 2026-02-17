@@ -1416,29 +1416,7 @@ function isValidScore(
   gameId: string,
   score: number,
 ): { valid: boolean; reason?: string } {
-  if (gameId === "reaction_tap") {
-    // Reaction time: 100ms - 2000ms is valid
-    if (score < 100) {
-      return {
-        valid: false,
-        reason: "Reaction time too fast (likely cheating)",
-      };
-    }
-    if (score > 2000) {
-      return { valid: false, reason: "Reaction time too slow" };
-    }
-  } else if (gameId === "timed_tap") {
-    // Taps in 10 seconds: 1 - 200 is valid
-    if (score < 1) {
-      return { valid: false, reason: "Invalid tap count" };
-    }
-    if (score > 200) {
-      return { valid: false, reason: "Tap count too high (likely cheating)" };
-    }
-  } else {
-    return { valid: false, reason: "Unknown game type" };
-  }
-  return { valid: true };
+  return { valid: false, reason: "Unknown game type" };
 }
 
 /**
@@ -1494,13 +1472,7 @@ export const onGameSessionCreated = functions.firestore
 
       if (existingEntry.exists) {
         const existingScore = existingEntry.data()!.score;
-        // For reaction_tap: lower is better
-        // For timed_tap: higher is better
-        if (session.gameId === "reaction_tap") {
-          shouldUpdate = session.score < existingScore;
-        } else {
-          shouldUpdate = session.score > existingScore;
-        }
+        shouldUpdate = session.score > existingScore;
       }
 
       if (shouldUpdate) {
@@ -1565,24 +1537,6 @@ async function checkGameAchievements(
     }
     if (totalGames >= 50) {
       await grantAchievementIfNotEarned(achievementsRef, "game_50_sessions");
-    }
-
-    // Game-specific achievements
-    if (gameId === "reaction_tap" && score < 200) {
-      await grantAchievementIfNotEarned(
-        achievementsRef,
-        "game_reaction_master",
-        {
-          score,
-          gameId,
-        },
-      );
-    }
-    if (gameId === "timed_tap" && score >= 100) {
-      await grantAchievementIfNotEarned(achievementsRef, "game_speed_demon", {
-        score,
-        gameId,
-      });
     }
   } catch (error) {
     console.error("❌ Error checking game achievements:", error);
@@ -2087,17 +2041,7 @@ export const onGamePlayedTaskProgress = functions.firestore
 
       for (const taskDoc of winTasksQuery.docs) {
         const task = taskDoc.data();
-        // For reaction_tap, lower score is better (reaction time in ms)
-        // For timed_tap, higher score is better (tap count)
-        let isWin = false;
-
-        if (gameId === "reaction_tap") {
-          // Win if reaction time is under 300ms
-          isWin = score <= 300;
-        } else if (gameId === "timed_tap") {
-          // Win if tap count is over 50
-          isWin = score >= 50;
-        }
+        const isWin = false;
 
         if (isWin) {
           await updateTaskProgress(playerId, "win_game");

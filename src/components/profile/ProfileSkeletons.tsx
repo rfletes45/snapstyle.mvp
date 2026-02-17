@@ -9,7 +9,7 @@
 
 import React, { memo, useEffect } from "react";
 import { StyleSheet, View } from "react-native";
-import { Surface, useTheme } from "react-native-paper";
+import { Surface } from "react-native-paper";
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -19,6 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 
 // =============================================================================
 // Base Skeleton Component
@@ -37,7 +38,7 @@ const SkeletonBox = memo(function SkeletonBox({
   borderRadius = BorderRadius.sm,
   style,
 }: SkeletonBoxProps) {
-  const theme = useTheme();
+  const colors = useColors();
   const shimmerValue = useSharedValue(0);
 
   useEffect(() => {
@@ -64,7 +65,7 @@ const SkeletonBox = memo(function SkeletonBox({
           width,
           height,
           borderRadius,
-          backgroundColor: theme.colors.surfaceVariant,
+          backgroundColor: colors.surfaceVariant,
         },
         animatedStyle,
         style,
@@ -78,14 +79,11 @@ const SkeletonBox = memo(function SkeletonBox({
 // =============================================================================
 
 export const ProfileHeaderSkeleton = memo(function ProfileHeaderSkeleton() {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <Surface
-      style={[
-        styles.headerContainer,
-        { backgroundColor: theme.colors.surface },
-      ]}
+      style={[styles.headerContainer, { backgroundColor: colors.surface }]}
       elevation={1}
     >
       {/* Banner skeleton */}
@@ -131,11 +129,11 @@ export const ProfileHeaderSkeleton = memo(function ProfileHeaderSkeleton() {
 // =============================================================================
 
 export const ProfileBioSkeleton = memo(function ProfileBioSkeleton() {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <Surface
-      style={[styles.bioContainer, { backgroundColor: theme.colors.surface }]}
+      style={[styles.bioContainer, { backgroundColor: colors.surface }]}
       elevation={1}
     >
       <SkeletonBox width={80} height={18} />
@@ -151,7 +149,7 @@ export const ProfileBioSkeleton = memo(function ProfileBioSkeleton() {
 // =============================================================================
 
 export const GameScoresSkeleton = memo(function GameScoresSkeleton() {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <View style={styles.scoresContainer}>
@@ -164,10 +162,7 @@ export const GameScoresSkeleton = memo(function GameScoresSkeleton() {
       {[1, 2, 3].map((i) => (
         <Surface
           key={i}
-          style={[
-            styles.scoreCard,
-            { backgroundColor: theme.colors.surfaceVariant },
-          ]}
+          style={[styles.scoreCard, { backgroundColor: colors.surfaceVariant }]}
           elevation={1}
         >
           <SkeletonBox width={40} height={40} borderRadius={20} />
@@ -187,8 +182,7 @@ export const GameScoresSkeleton = memo(function GameScoresSkeleton() {
 // =============================================================================
 
 export const BadgeDisplaySkeleton = memo(function BadgeDisplaySkeleton() {
-  const theme = useTheme();
-
+  // BadgeDisplaySkeleton doesn't actually use theme colors directly, but keeping pattern consistent
   return (
     <View style={styles.badgesContainer}>
       {/* Header */}
@@ -210,26 +204,6 @@ export const BadgeDisplaySkeleton = memo(function BadgeDisplaySkeleton() {
 // Theme Preview Skeleton
 // =============================================================================
 
-export const ThemePreviewSkeleton = memo(function ThemePreviewSkeleton() {
-  const theme = useTheme();
-
-  return (
-    <Surface
-      style={[styles.themeContainer, { backgroundColor: theme.colors.surface }]}
-      elevation={1}
-    >
-      {/* Background preview */}
-      <SkeletonBox width="100%" height={150} borderRadius={BorderRadius.md} />
-
-      {/* Theme info */}
-      <View style={styles.themeInfo}>
-        <SkeletonBox width={100} height={18} />
-        <SkeletonBox width={80} height={14} style={styles.marginTop} />
-      </View>
-    </Surface>
-  );
-});
-
 // =============================================================================
 // Full Profile Skeleton
 // =============================================================================
@@ -250,7 +224,7 @@ export const FullProfileSkeleton = memo(function FullProfileSkeleton() {
 // =============================================================================
 
 export const PrivacySettingsSkeleton = memo(function PrivacySettingsSkeleton() {
-  const theme = useTheme();
+  const colors = useColors();
 
   return (
     <View style={styles.privacyContainer}>
@@ -275,7 +249,7 @@ export const PrivacySettingsSkeleton = memo(function PrivacySettingsSkeleton() {
               key={item}
               style={[
                 styles.settingItem,
-                { backgroundColor: theme.colors.surfaceVariant },
+                { backgroundColor: colors.surfaceVariant },
               ]}
               elevation={1}
             >
@@ -377,16 +351,6 @@ const styles = StyleSheet.create({
   badgesRow: {
     flexDirection: "row",
     gap: Spacing.sm,
-  },
-
-  // Theme
-  themeContainer: {
-    margin: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-  },
-  themeInfo: {
-    marginTop: Spacing.sm,
   },
 
   // Full Profile

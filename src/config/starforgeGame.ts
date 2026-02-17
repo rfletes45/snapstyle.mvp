@@ -1,9 +1,8 @@
 /**
  * Starforge game URL configuration.
  *
- * The starforge-viewer web client runs as a Vite app (port 5174 dev) and can be
- * co-located behind the Colyseus server at /starforge (production) or accessed
- * directly during development.
+ * The starforge-viewer web app is bundled with esbuild and served by the
+ * Colyseus Express server at /starforge.  No standalone dev server is needed.
  *
  * URL params consumed by the viewer:
  *   ?server=ws://host:2567  — Colyseus WebSocket endpoint
@@ -50,7 +49,6 @@ export interface StarforgeLaunchParams {
 }
 
 const PROD_STARFORGE_URL = "https://starforge.yourdomain.com";
-const DEV_STARFORGE_PORT = 5174;
 const DEV_COLYSEUS_PORT = 2567;
 const COLOCATED_STARFORGE_PATH = "/starforge";
 const DEV_CANDIDATE_FALLBACKS = ["localhost", "127.0.0.1", "10.0.2.2"];
@@ -144,10 +142,6 @@ function getDevHost(): string {
   })!;
 }
 
-function toDedicatedDevBaseUrl(host: string): string {
-  return `http://${host}:${DEV_STARFORGE_PORT}`;
-}
-
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export function getStarforgeBaseUrlCandidates(): string[] {
@@ -160,7 +154,7 @@ export function getStarforgeBaseUrlCandidates(): string[] {
     const candidates: string[] = [];
     const primary = getDevHost();
 
-    // Primary: co-located on Colyseus server at /starforge
+    // Co-located on Colyseus server at /starforge
     addCandidate(
       candidates,
       toStarforgeUrlFromColyseusBase(process.env.EXPO_PUBLIC_COLYSEUS_URL),
@@ -174,12 +168,6 @@ export function getStarforgeBaseUrlCandidates(): string[] {
     addCandidate(candidates, toStarforgeUrlOnColyseusHost(primary));
     for (const host of DEV_CANDIDATE_FALLBACKS) {
       addCandidate(candidates, toStarforgeUrlOnColyseusHost(host));
-    }
-
-    // Secondary: standalone Vite dev server (starforge-viewer/vite at port 5174)
-    addCandidate(candidates, toDedicatedDevBaseUrl(primary));
-    for (const host of DEV_CANDIDATE_FALLBACKS) {
-      addCandidate(candidates, toDedicatedDevBaseUrl(host));
     }
 
     return candidates;

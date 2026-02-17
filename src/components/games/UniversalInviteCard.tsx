@@ -23,12 +23,11 @@ import {
   useTheme,
 } from "react-native-paper";
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
 import type { UniversalGameInvite } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "@/constants/theme";
 import { PlayerSlots } from "./PlayerSlots";
 import { QueueProgressBar } from "./QueueProgressBar";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/games/UniversalInviteCard");
@@ -50,7 +49,7 @@ export interface UniversalInviteCardProps {
   /** Cancel the invite (host only) */
   onCancel: () => Promise<void>;
   /** Navigate to active game */
-  onPlay?: (gameId: string, gameType: string) => void;
+  onPlay?: (gameId: string, gameType: string, inviteId?: string) => void;
   /** Spectate an active game (Colyseus-based) */
   onSpectate?: () => void;
   /** Compact mode */
@@ -83,6 +82,8 @@ function getStatusInfo(
       return { text: `${slotsRemaining} more needed`, color: "#FFA500" };
     case "ready":
       return { text: "Ready to start!", color: "#4CAF50" };
+    case "starting":
+      return { text: "Starting…", color: "#8BC34A" };
     case "active":
       return { text: "In Progress", color: "#2196F3" };
     case "completed":
@@ -130,24 +131,30 @@ export function UniversalInviteCard({
   const minPlayers = metadata?.minPlayers ?? 2;
 
   // Action availability
+  const isStarting = invite.status === "starting";
   const canJoin =
     !hasJoined &&
     !isFull &&
     !isExpired &&
+    !isStarting &&
     ["pending", "filling"].includes(invite.status);
   const canLeave =
     hasJoined &&
     !isHost &&
+    !isStarting &&
     ["pending", "filling", "ready"].includes(invite.status);
   // Can start early if host and have minimum players, OR can start if game is ready
   const canStartEarly =
     isHost &&
     onStartEarly &&
+    !isStarting &&
     ["pending", "filling"].includes(invite.status) &&
     invite.claimedSlots.length >= minPlayers;
   const canStartGame = isHost && onStartEarly && invite.status === "ready";
   const canCancel =
-    isHost && ["pending", "filling", "ready"].includes(invite.status);
+    isHost &&
+    !isStarting &&
+    ["pending", "filling", "ready"].includes(invite.status);
   const canPlay = hasJoined && invite.gameId && invite.status === "active";
   const canSpectate =
     !hasJoined &&
@@ -188,7 +195,7 @@ export function UniversalInviteCard({
         logger.info(
           `[UniversalInviteCard] Auto-navigating to ${invite.gameType} game: ${invite.gameId}`,
         );
-        onPlay(invite.gameId!, invite.gameType);
+        onPlay(invite.gameId!, invite.gameType, invite.id);
       }, 300);
 
       return () => clearTimeout(timer);
@@ -320,7 +327,9 @@ export function UniversalInviteCard({
               <Button
                 mode="contained"
                 compact
-                onPress={() => onPlay(invite.gameId!, invite.gameType)}
+                onPress={() =>
+                  onPlay(invite.gameId!, invite.gameType, invite.id)
+                }
               >
                 Play
               </Button>
@@ -426,7 +435,7 @@ export function UniversalInviteCard({
             <Button
               mode="contained"
               icon="play"
-              onPress={() => onPlay(invite.gameId!, invite.gameType)}
+              onPress={() => onPlay(invite.gameId!, invite.gameType, invite.id)}
               style={styles.actionButton}
             >
               Play Now

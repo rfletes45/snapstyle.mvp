@@ -10,7 +10,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useMemo } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Surface, Text, useTheme } from "react-native-paper";
+import { Surface, Text } from "react-native-paper";
 import Animated, {
   FadeIn,
   FadeInLeft,
@@ -19,6 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import { ExtendedGameType, GAME_METADATA } from "@/types/games";
 import type { ProfileGameScore } from "@/types/userProfile";
 
@@ -87,19 +88,9 @@ const ComparisonRow = memo(function ComparisonRow({
   data,
   index,
 }: ComparisonRowProps) {
-  const theme = useTheme();
-
-  const winnerColor =
-    data.winner === "owner"
-      ? "#4CAF50"
-      : data.winner === "viewer"
-        ? "#2196F3"
-        : theme.colors.onSurfaceVariant;
-
-  const ownerColor =
-    data.winner === "owner" ? "#4CAF50" : theme.colors.onSurface;
-  const viewerColor =
-    data.winner === "viewer" ? "#2196F3" : theme.colors.onSurface;
+  const colors = useColors();
+  const ownerColor = data.winner === "owner" ? colors.primary : colors.text;
+  const viewerColor = data.winner === "viewer" ? colors.secondary : colors.text;
 
   return (
     <Animated.View
@@ -109,7 +100,7 @@ const ComparisonRow = memo(function ComparisonRow({
       <Surface
         style={[
           styles.comparisonRow,
-          { backgroundColor: theme.colors.surfaceVariant },
+          { backgroundColor: colors.surfaceVariant },
         ]}
         elevation={1}
       >
@@ -132,18 +123,13 @@ const ComparisonRow = memo(function ComparisonRow({
             <Text style={styles.gameIcon}>{data.gameIcon}</Text>
           </View>
           <Text
-            style={[styles.gameName, { color: theme.colors.onSurface }]}
+            style={[styles.gameName, { color: colors.text }]}
             numberOfLines={1}
           >
             {data.gameName}
           </Text>
           {data.winner !== "none" && data.diff > 0 && (
-            <Text
-              style={[
-                styles.diffText,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
+            <Text style={[styles.diffText, { color: colors.textSecondary }]}>
               Δ {formatScore(data.diff)}
             </Text>
           )}
@@ -185,7 +171,7 @@ const Summary = memo(function Summary({
   ownerName,
   viewerName,
 }: SummaryProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   const winner =
     ownerWins > viewerWins
@@ -197,23 +183,15 @@ const Summary = memo(function Summary({
   return (
     <Animated.View entering={FadeIn.delay(300)} style={styles.summary}>
       <Surface
-        style={[
-          styles.summaryCard,
-          { backgroundColor: theme.colors.primaryContainer },
-        ]}
+        style={[styles.summaryCard, { backgroundColor: colors.surfaceVariant }]}
         elevation={2}
       >
         <MaterialCommunityIcons
           name="trophy"
           size={32}
-          color={winner === "tie" ? theme.colors.onPrimaryContainer : "#FFD700"}
+          color={winner === "tie" ? colors.textSecondary : "#FFD700"}
         />
-        <Text
-          style={[
-            styles.summaryTitle,
-            { color: theme.colors.onPrimaryContainer },
-          ]}
-        >
+        <Text style={[styles.summaryTitle, { color: colors.text }]}>
           {winner === "owner"
             ? `${ownerName} leads!`
             : winner === "viewer"
@@ -222,48 +200,28 @@ const Summary = memo(function Summary({
         </Text>
         <View style={styles.summaryStats}>
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: "#4CAF50" }]}>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
               {ownerWins}
             </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
               {ownerName}
             </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text
-              style={[
-                styles.statValue,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
+            <Text style={[styles.statValue, { color: colors.text }]}>
               {ties}
             </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
               Tied
             </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: "#2196F3" }]}>
+            <Text style={[styles.statValue, { color: colors.secondary }]}>
               {viewerWins}
             </Text>
-            <Text
-              style={[
-                styles.statLabel,
-                { color: theme.colors.onPrimaryContainer },
-              ]}
-            >
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
               {viewerName}
             </Text>
           </View>
@@ -284,7 +242,7 @@ export const ScoreComparisonView = memo(function ScoreComparisonView({
   viewerName = "You",
   testID,
 }: ScoreComparisonViewProps) {
-  const theme = useTheme();
+  const colors = useColors();
 
   // Build comparison data
   const comparisonData = useMemo((): ComparisonData[] => {
@@ -366,11 +324,9 @@ export const ScoreComparisonView = memo(function ScoreComparisonView({
           <MaterialCommunityIcons
             name="gamepad-variant-outline"
             size={48}
-            color={theme.colors.onSurfaceVariant}
+            color={colors.textSecondary}
           />
-          <Text
-            style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}
-          >
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             No scores to compare
           </Text>
         </View>
@@ -382,7 +338,7 @@ export const ScoreComparisonView = memo(function ScoreComparisonView({
     <View style={styles.container} testID={testID}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
           Score Comparison
         </Text>
       </View>
@@ -390,21 +346,18 @@ export const ScoreComparisonView = memo(function ScoreComparisonView({
       {/* Column Headers */}
       <View style={styles.columnHeaders}>
         <Text
-          style={[styles.columnHeader, { color: theme.colors.primary }]}
+          style={[styles.columnHeader, { color: colors.primary }]}
           numberOfLines={1}
         >
           {ownerName}
         </Text>
         <Text
-          style={[
-            styles.columnHeaderCenter,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
+          style={[styles.columnHeaderCenter, { color: colors.textSecondary }]}
         >
           Game
         </Text>
         <Text
-          style={[styles.columnHeader, { color: theme.colors.secondary }]}
+          style={[styles.columnHeader, { color: colors.secondary }]}
           numberOfLines={1}
         >
           {viewerName}

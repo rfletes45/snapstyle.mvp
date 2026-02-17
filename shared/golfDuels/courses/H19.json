@@ -1,0 +1,56 @@
+{
+  "id": "H19",
+  "name": "Bumper Maze",
+  "difficulty": 4,
+  "par": 4,
+  "maxStrokes": 9,
+  "bounds": { "width": 100, "height": 60 },
+  "tee": { "x": 15, "y": 50 },
+  "cup": { "x": 85, "y": 10 },
+  "cupRadius": 2.5,
+  "walls": [
+    [
+      { "x": 10, "y": 0 },
+      { "x": 90, "y": 0 },
+      { "x": 90, "y": 60 },
+      { "x": 10, "y": 60 }
+    ],
+    [
+      { "x": 30, "y": 0 },
+      { "x": 30, "y": 30 }
+    ],
+    [
+      { "x": 60, "y": 30 },
+      { "x": 60, "y": 60 }
+    ]
+  ],
+  "surfaces": [],
+  "hazards": [],
+  "obstacles": [
+    {
+      "id": "bumper_1",
+      "type": "bumper",
+      "position": { "x": 20, "y": 20 },
+      "radius": 3
+    },
+    {
+      "id": "bumper_2",
+      "type": "bumper",
+      "position": { "x": 45, "y": 15 },
+      "radius": 4
+    },
+    {
+      "id": "bumper_3",
+      "type": "bumper",
+      "position": { "x": 45, "y": 45 },
+      "radius": 4
+    },
+    {
+      "id": "bumper_4",
+      "type": "bumper",
+      "position": { "x": 75, "y": 35 },
+      "radius": 3
+    }
+  ],
+  "slopes": []
+}
