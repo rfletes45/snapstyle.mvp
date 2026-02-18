@@ -169,6 +169,17 @@
   - `npm run lint`: PASS (warnings only)
   - `npm run test`: PASS
 
+### Segment 3 verification rerun (2026-02-18)
+
+- Revalidated Segment 3 inventory docs in place:
+  - `docs/REPO_MAP.md`
+  - `docs/DEPRECATION_MAP.md`
+- Re-ran root checks to confirm no behavioral regressions:
+  - `npm run type-check` PASS
+  - `npm run lint` PASS (warnings only)
+  - `npm run test -- --ci --watchAll=false --no-cache` PASS
+- No additional code changes required for Segment 3 exit criteria.
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
