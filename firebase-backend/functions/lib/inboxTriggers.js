@@ -90,7 +90,9 @@ async function getGroupMemberUids(groupId) {
         return snap.docs.map((d) => d.id);
     }
     catch (error) {
-        console.error(`[inboxTriggers] getGroupMemberUids error:`, error);
+        functions.logger.error("[inboxTriggers] getGroupMemberUids error", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return [];
     }
 }
@@ -181,7 +183,9 @@ exports.onDMMessageInbox = functions.firestore
         console.log(`[onDMMessageInbox] Updated inbox for chat ${chatId.substring(0, 8)}`);
     }
     catch (error) {
-        console.error("[onDMMessageInbox] Error:", error);
+        functions.logger.error("[onDMMessageInbox] Error", {
+            error: error instanceof Error ? error.message : String(error),
+        });
     }
 });
 // =============================================================================
@@ -261,7 +265,9 @@ exports.onGroupMessageInbox = functions.firestore
         console.log(`[onGroupMessageInbox] Updated ${memberUids.length} inbox entries for group ${groupId.substring(0, 8)}`);
     }
     catch (error) {
-        console.error("[onGroupMessageInbox] Error:", error);
+        functions.logger.error("[onGroupMessageInbox] Error", {
+            error: error instanceof Error ? error.message : String(error),
+        });
     }
 });
 // =============================================================================
@@ -294,7 +300,11 @@ exports.markInboxRead = functions.https.onCall(async (data, context) => {
         return { success: true };
     }
     catch (error) {
-        console.error("[markInboxRead] Error:", error);
+        functions.logger.error("[markInboxRead] Error", {
+            uid,
+            threadId,
+            error: error instanceof Error ? error.message : String(error),
+        });
         throw new functions.https.HttpsError("internal", "Failed to update inbox");
     }
 });

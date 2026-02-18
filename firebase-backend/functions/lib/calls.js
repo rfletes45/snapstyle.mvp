@@ -37,7 +37,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onGroupCallHostAction = exports.onGroupCallParticipantJoined = exports.onGroupCallInviteCreated = exports.cancelCall = exports.sendCallNotification = exports.registerVoIPToken = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.handleCallTimeouts = exports.onCallUpdated = exports.onCallCreated = void 0;
+exports.getTurnCredentials = exports.cleanupCallSignaling = exports.handleCallTimeouts = exports.onCallUpdated = exports.onCallCreated = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const db = admin.firestore();
@@ -371,7 +371,7 @@ exports.getTurnCredentials = functions.https.onCall(async (data, context) => {
 // ============================================================================
 // HTTP: Register VoIP Push Token (iOS)
 // ============================================================================
-exports.registerVoIPToken = functions.https.onCall(async (data, context) => {
+const registerVoIPToken = functions.https.onCall(async (data, context) => {
     // Verify authentication
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to register VoIP token");
@@ -410,7 +410,7 @@ exports.registerVoIPToken = functions.https.onCall(async (data, context) => {
 // ============================================================================
 // HTTP: Send Call Push Notification (for testing/manual trigger)
 // ============================================================================
-exports.sendCallNotification = functions.https.onCall(async (data, context) => {
+const sendCallNotification = functions.https.onCall(async (data, context) => {
     // Verify authentication
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
@@ -507,7 +507,7 @@ exports.sendCallNotification = functions.https.onCall(async (data, context) => {
 // ============================================================================
 // HTTP: Cancel Call (cleanup for incomplete calls)
 // ============================================================================
-exports.cancelCall = functions.https.onCall(async (data, context) => {
+const cancelCall = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
     }
@@ -552,7 +552,7 @@ exports.cancelCall = functions.https.onCall(async (data, context) => {
 // ============================================================================
 // Group Call Invite - Send Notification to Invited Participant
 // ============================================================================
-exports.onGroupCallInviteCreated = functions.firestore
+const onGroupCallInviteCreated = functions.firestore
     .document("GroupCallInvites/{inviteId}")
     .onCreate(async (snapshot, context) => {
     const invite = snapshot.data();
@@ -634,7 +634,7 @@ exports.onGroupCallInviteCreated = functions.firestore
 // ============================================================================
 // Group Call Participant Joined - Notify Others
 // ============================================================================
-exports.onGroupCallParticipantJoined = functions.firestore
+const onGroupCallParticipantJoined = functions.firestore
     .document("Calls/{callId}")
     .onUpdate(async (change, context) => {
     const before = change.before.data();
@@ -713,7 +713,7 @@ exports.onGroupCallParticipantJoined = functions.firestore
 // ============================================================================
 // Group Call - Host Controls Notifications
 // ============================================================================
-exports.onGroupCallHostAction = functions.https.onCall(async (data, context) => {
+const onGroupCallHostAction = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "Must be authenticated");
     }

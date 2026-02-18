@@ -46,7 +46,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupStaleActiveInvites = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
+exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-admin/firestore");
 const functions = __importStar(require("firebase-functions"));
@@ -1480,7 +1480,7 @@ exports.cleanupResolvedInvites = functions.pubsub
  * user force-quits, this function catches orphaned active invites.
  * Runs daily at 02:45 (between cleanupResolvedInvites and matchmaking).
  */
-exports.cleanupStaleActiveInvites = functions.pubsub
+const cleanupStaleActiveInvites = functions.pubsub
     .schedule("every day 02:45")
     .onRun(async () => {
     const STALE_STATUSES = ["active", "starting"];

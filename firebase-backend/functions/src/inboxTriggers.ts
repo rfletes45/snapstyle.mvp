@@ -53,7 +53,9 @@ async function getGroupMemberUids(groupId: string): Promise<string[]> {
       .get();
     return snap.docs.map((d) => d.id);
   } catch (error) {
-    console.error(`[inboxTriggers] getGroupMemberUids error:`, error);
+    functions.logger.error("[inboxTriggers] getGroupMemberUids error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }
@@ -156,7 +158,9 @@ export const onDMMessageInbox = functions.firestore
         `[onDMMessageInbox] Updated inbox for chat ${chatId.substring(0, 8)}`,
       );
     } catch (error) {
-      console.error("[onDMMessageInbox] Error:", error);
+      functions.logger.error("[onDMMessageInbox] Error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   });
 
@@ -250,7 +254,9 @@ export const onGroupMessageInbox = functions.firestore
         `[onGroupMessageInbox] Updated ${memberUids.length} inbox entries for group ${groupId.substring(0, 8)}`,
       );
     } catch (error) {
-      console.error("[onGroupMessageInbox] Error:", error);
+      functions.logger.error("[onGroupMessageInbox] Error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   });
 
@@ -302,7 +308,11 @@ export const markInboxRead = functions.https.onCall(
 
       return { success: true };
     } catch (error) {
-      console.error("[markInboxRead] Error:", error);
+      functions.logger.error("[markInboxRead] Error", {
+        uid,
+        threadId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw new functions.https.HttpsError(
         "internal",
         "Failed to update inbox",

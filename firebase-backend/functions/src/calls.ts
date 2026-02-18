@@ -461,7 +461,7 @@ export const getTurnCredentials = functions.https.onCall(
 // HTTP: Register VoIP Push Token (iOS)
 // ============================================================================
 
-export const registerVoIPToken = functions.https.onCall(
+const registerVoIPToken = functions.https.onCall(
   async (data, context) => {
     // Verify authentication
     if (!context.auth) {
@@ -518,7 +518,7 @@ export const registerVoIPToken = functions.https.onCall(
 // HTTP: Send Call Push Notification (for testing/manual trigger)
 // ============================================================================
 
-export const sendCallNotification = functions.https.onCall(
+const sendCallNotification = functions.https.onCall(
   async (data, context) => {
     // Verify authentication
     if (!context.auth) {
@@ -641,7 +641,7 @@ export const sendCallNotification = functions.https.onCall(
 // HTTP: Cancel Call (cleanup for incomplete calls)
 // ============================================================================
 
-export const cancelCall = functions.https.onCall(async (data, context) => {
+const cancelCall = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError(
       "unauthenticated",
@@ -709,7 +709,7 @@ export const cancelCall = functions.https.onCall(async (data, context) => {
 // Group Call Invite - Send Notification to Invited Participant
 // ============================================================================
 
-export const onGroupCallInviteCreated = functions.firestore
+const onGroupCallInviteCreated = functions.firestore
   .document("GroupCallInvites/{inviteId}")
   .onCreate(async (snapshot, context) => {
     const invite = snapshot.data();
@@ -799,7 +799,7 @@ export const onGroupCallInviteCreated = functions.firestore
 // Group Call Participant Joined - Notify Others
 // ============================================================================
 
-export const onGroupCallParticipantJoined = functions.firestore
+const onGroupCallParticipantJoined = functions.firestore
   .document("Calls/{callId}")
   .onUpdate(async (change, context) => {
     const before = change.before.data() as Call;
@@ -901,7 +901,7 @@ export const onGroupCallParticipantJoined = functions.firestore
 // Group Call - Host Controls Notifications
 // ============================================================================
 
-export const onGroupCallHostAction = functions.https.onCall(
+const onGroupCallHostAction = functions.https.onCall(
   async (data, context) => {
     if (!context.auth) {
       throw new functions.https.HttpsError(

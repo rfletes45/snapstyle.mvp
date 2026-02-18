@@ -175,7 +175,10 @@ export async function checkGlobalRateLimit(
 
     return result;
   } catch (error) {
-    console.error("[checkGlobalRateLimit] Error:", error);
+    functions.logger.error("[checkGlobalRateLimit] Error", {
+      uid,
+      error: error instanceof Error ? error.message : String(error),
+    });
     // Allow on error to prevent blocking legitimate users
     return {
       allowed: true,

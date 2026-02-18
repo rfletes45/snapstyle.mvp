@@ -270,6 +270,41 @@
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 - `cd firebase-backend/functions && npx --no-install tsc --noEmit` PASS
 
+## Segment 7
+
+### What changed
+
+- Added `docs/FUNCTIONS.md` as the canonical functions contract inventory:
+  - deployed function surface from `firebase-backend/functions/src/index.ts`
+  - callable/trigger/scheduled/http-request grouping
+  - auth/access expectations and primary data paths
+  - non-deployed function candidate list with caller proof
+- Hardened error logging in functions runtime paths:
+  - `firebase-backend/functions/src/inboxTriggers.ts`
+  - `firebase-backend/functions/src/rateLimiter.ts`
+  - replaced raw `console.error(...)` with `functions.logger.error(...)` and sanitized error payloads
+- Prevented accidental deployment drift by converting non-exported candidates to local consts:
+  - `firebase-backend/functions/src/calls.ts`
+    - `registerVoIPToken`, `sendCallNotification`, `cancelCall`
+    - `onGroupCallInviteCreated`, `onGroupCallParticipantJoined`, `onGroupCallHostAction`
+  - `firebase-backend/functions/src/games.ts`
+    - `cleanupStaleActiveInvites`
+- Updated `docs/00_INDEX.md` to move `docs/FUNCTIONS.md` from planned list to active core docs.
+
+### Why this is safe
+
+- Deployment surface is still controlled by `functions/src/index.ts`; no function exports were added/removed there.
+- Non-deployed candidates were already not exported from `index.ts`; changing them from `export const` to `const` reduces accidental re-export risk without runtime behavior change.
+- Logging changes improve operational safety (PII/error object leakage reduction) without changing control flow.
+- No Firestore schema/rules/index contract changes were introduced in Segment 7.
+
+### Validation
+
+- `cd firebase-backend/functions && npm run build` PASS
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -280,7 +315,7 @@
 | 4 | 2026-02-18 | Audited feature flags/config surfaces, added configuration guide, and confirmed conservative defaults without risky flips. | `docs/CONFIGURATION.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 5 | 2026-02-18 | Consolidated client contract typing and added runtime guards at Firestore/callable/game-join boundaries; documented canonical type sources. | `src/services/gameInvites.ts`, `src/types/messaging.ts`, `src/hooks/useMessageRequests.ts`, `src/types/gameSession.ts`, `src/services/colyseusJoin.ts`, `docs/DATA_CONTRACT_CLIENT.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 6 | 2026-02-18 | Audited write/query contract against rules and indexes, fixed one invalid story query shape, removed one rules-violating client write, and documented the Firestore contract. | `docs/FIRESTORE_CONTRACT.md`, `src/services/story/snapStoryService.ts`, `src/services/iap.ts`, `firebase-backend/firestore.indexes.json`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions tsc PASS | Done |
-| 7 | - | - | - | - | Not started |
+| 7 | 2026-02-18 | Audited deployed Cloud Functions contracts, hardened sanitized logging paths, and reduced accidental-deployment risk for non-exported function candidates. | `docs/FUNCTIONS.md`, `firebase-backend/functions/src/inboxTriggers.ts`, `firebase-backend/functions/src/rateLimiter.ts`, `firebase-backend/functions/src/calls.ts`, `firebase-backend/functions/src/games.ts`, `docs/00_INDEX.md`, `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Functions build PASS; Root type-check/lint/test PASS | Done |
 | 8 | - | - | - | - | Not started |
 | 9 | - | - | - | - | Not started |
 | 10 | - | - | - | - | Not started |

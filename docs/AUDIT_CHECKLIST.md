@@ -93,7 +93,7 @@ cd firebase-backend/functions && npx --no-install tsc --noEmit
 
 ## Segment 7 - Cloud Functions Deep Clean
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Functions inventory with contracts and auth expectations.
 - Input validation/error handling/logging hardened.

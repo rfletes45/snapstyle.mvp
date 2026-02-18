@@ -1932,7 +1932,7 @@ export const cleanupResolvedInvites = functions.pubsub
  * user force-quits, this function catches orphaned active invites.
  * Runs daily at 02:45 (between cleanupResolvedInvites and matchmaking).
  */
-export const cleanupStaleActiveInvites = functions.pubsub
+const cleanupStaleActiveInvites = functions.pubsub
   .schedule("every day 02:45")
   .onRun(async () => {
     const STALE_STATUSES = ["active", "starting"];

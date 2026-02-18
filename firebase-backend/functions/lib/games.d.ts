@@ -84,15 +84,6 @@ export declare const cleanupOldGames: functions.CloudFunction<unknown>;
  */
 export declare const cleanupResolvedInvites: functions.CloudFunction<unknown>;
 /**
- * Clean up stale "active" or "starting" invites whose game has finished.
- *
- * This is a safety net: normally the client propagates game completion back
- * to the invite via `completeGameInvite()`.  If the client crashes or the
- * user force-quits, this function catches orphaned active invites.
- * Runs daily at 02:45 (between cleanupResolvedInvites and matchmaking).
- */
-export declare const cleanupStaleActiveInvites: functions.CloudFunction<unknown>;
-/**
  * Clean up stale matchmaking queue entries.
  *
  * `expireMatchmakingEntries` marks entries as "expired" but never deletes them,
