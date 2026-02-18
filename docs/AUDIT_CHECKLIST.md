@@ -20,7 +20,7 @@ npm run type-check
 
 ## Segment 2 - Tooling Baseline (Typecheck/Lint/Test Reliable)
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Root `type-check` + `lint` pass.
 - Root tests pass or explicitly quarantined with justification.
@@ -36,7 +36,7 @@ cd colyseus-server && npx --no-install tsc --noEmit && npm run lint -- --no-cach
 
 ## Segment 3 - Repo Inventory + Deprecation Map
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - `docs/REPO_MAP.md` and `docs/DEPRECATION_MAP.md` created/updated.
 - Segment 3 findings + top 20 cleanup candidates in audit report.
@@ -50,7 +50,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 4 - Config + Feature Flags Audit
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - `constants/featureFlags.ts` audited with proof-based cleanup only.
 - Config paths audited and documented in `docs/CONFIGURATION.md`.

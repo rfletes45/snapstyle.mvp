@@ -25,6 +25,7 @@ Read in this order for fastest orientation:
 - AI project handoff: [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md)
 - Architecture: [01_ARCHITECTURE.md](01_ARCHITECTURE.md)
 - Firebase and data plane: [02_FIREBASE.md](02_FIREBASE.md)
+- Configuration and feature flags: [CONFIGURATION.md](CONFIGURATION.md)
 - Messaging: [03_CHAT_V2.md](03_CHAT_V2.md), [03_CHAT_V3.md](03_CHAT_V3.md)
 - Games: [06_GAMES.md](06_GAMES.md), [GAME_SYSTEM_REFERENCE.md](GAME_SYSTEM_REFERENCE.md)
 - Testing and ops: [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
@@ -45,7 +46,6 @@ Read in this order for fastest orientation:
 
 These are linked early so later segments can fill them in without index churn:
 
-- `docs/CONFIGURATION.md`
 - `docs/DATA_CONTRACT_CLIENT.md`
 - `docs/FIRESTORE_CONTRACT.md`
 - `docs/FUNCTIONS.md`

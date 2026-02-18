@@ -177,8 +177,41 @@
 - Re-ran root checks to confirm no behavioral regressions:
   - `npm run type-check` PASS
   - `npm run lint` PASS (warnings only)
-  - `npm run test -- --ci --watchAll=false --no-cache` PASS
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
 - No additional code changes required for Segment 3 exit criteria.
+
+## Segment 4
+
+### What changed
+
+- Added `docs/CONFIGURATION.md` with:
+  - canonical config surfaces (feature flags, Expo config, Firebase bootstrap, env vars)
+  - risk-sensitive defaults and platform differences
+  - safe process for adding new config
+- Updated `docs/00_INDEX.md` to link `docs/CONFIGURATION.md` in core docs.
+- Updated `docs/AUDIT_CHECKLIST.md` to mark Segments 2-4 complete.
+
+### Feature-flag audit findings
+
+- Audited all top-level exports in `constants/featureFlags.ts` and verified each has active caller coverage in app/test/doc surfaces.
+- Sub-flag scan found several no-direct-caller keys concentrated in roadmap groups (`CALL_FEATURES`, some `PROFILE_V2_FEATURES`, `THREE_JS_FEATURES`, `COLYSEUS_FEATURES`).
+- No sub-flag deletions were made in Segment 4 because these are staged rollout placeholders and removing them now would reduce forward rollout controls with no runtime reliability gain.
+
+### Why this is safe
+
+- Segment 4 changes are docs-only.
+- No runtime defaults were flipped.
+- Conservative defaults remain in place for risky systems:
+  - `USE_VISION_CAMERA = false`
+  - `CALL_FEATURES.CALLS_ENABLED = false`
+  - `COLYSEUS_FEATURES.USE_PRODUCTION_SERVER = false`
+  - `USE_LOCAL_STORAGE = !IS_WEB`
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
 
 ## Changelog by Segment
 
@@ -187,7 +220,7 @@
 | 1 | 2026-02-18 | Added/normalized audit framework docs and refreshed baseline to current Segment 0 command results. | `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check PASS (unchanged) | Done |
 | 2 | 2026-02-17 | Stabilized root tooling loop by fixing lint blocker, strict test typing drift, and one flaky rate-limit test boundary. | `src/components/chat/ChatDebugHUD.tsx`, `__tests__/services/sendMessageV2.test.ts`, `__tests__/services/resolveChatSettings.test.ts`, `__tests__/services/messageRequests.test.ts`, `__tests__/services/privacyPublish.test.ts`, `__tests__/services/rateLimiter.test.ts`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions build PASS; Colyseus type-check/lint/test PASS | Done |
 | 3 | 2026-02-18 | Added repo inventory and deprecation mapping docs with evidence-backed caller/risk analysis and ranked cleanup candidates. | `docs/REPO_MAP.md`, `docs/DEPRECATION_MAP.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS (unchanged behavior) | Done |
-| 4 | - | - | - | - | Not started |
+| 4 | 2026-02-18 | Audited feature flags/config surfaces, added configuration guide, and confirmed conservative defaults without risky flips. | `docs/CONFIGURATION.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 5 | - | - | - | - | Not started |
 | 6 | - | - | - | - | Not started |
 | 7 | - | - | - | - | Not started |
