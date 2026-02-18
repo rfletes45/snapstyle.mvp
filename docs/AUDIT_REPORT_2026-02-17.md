@@ -28,7 +28,8 @@
 
 ## Deleted Code
 
-- None yet.
+- `src/hooks/useSnapCapture.ts` (Segment 17; no runtime callers)
+- `src/components/games/withGameLobby.tsx` (Segment 17; no runtime callers)
 
 ## Risks
 
@@ -668,6 +669,44 @@
 - `npm run test -- --ci --watchAll=false --no-cache` PASS (53 suites, 1126 tests)
 - `cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache` PASS (12 suites, 353 tests)
 
+## Segment 17
+
+### What changed
+
+- Removed two deprecated modules after no-caller proof:
+  - deleted `src/hooks/useSnapCapture.ts`
+  - deleted `src/components/games/withGameLobby.tsx`
+- Consolidated docs to reflect actual active paths and removed stale references:
+  - `docs/DEPRECATION_MAP.md`
+  - `docs/REPO_MAP.md`
+  - `docs/CHAT_SYSTEM.md`
+  - `src/screens/chat/ChatScreen.tsx` (stale legacy comment cleanup)
+
+### Deletion ledger (proof)
+
+- `src/hooks/useSnapCapture.ts`
+  - Proof command: `rg "useSnapCapture" src App.tsx __tests__`
+  - Result: only the deleted module itself and docs/comments; no runtime import callers.
+- `src/components/games/withGameLobby.tsx`
+  - Proof command: `rg "withGameLobby" src App.tsx __tests__`
+  - Result: only the deleted module itself and docs; no screen/component callers.
+
+### Why this is safe
+
+- Both deletions were constrained to modules with zero runtime callers.
+- No behavior changes were introduced in active messaging/lobby execution paths.
+- Documentation now matches repository reality and avoids directing contributors to removed legacy wrappers.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+- `cd firebase-backend/functions && npx --no-install tsc --noEmit` PASS
+- `cd colyseus-server && npx --no-install tsc --noEmit` PASS
+- `cd colyseus-server && npm run lint -- --no-cache` PASS (warnings only)
+- `cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -688,5 +727,5 @@
 | 14 | 2026-02-18 | Added performance guidance, deferred optional call bootstrap until post-render, and tightened outbox resume processing to real foreground transitions only. | `docs/PERFORMANCE.md`, `App.tsx`, `src/hooks/useOutboxProcessor.ts`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS | Done |
 | 15 | 2026-02-18 | Hardened admin/migration HTTP endpoint auth, removed weak admin-setup fallback behavior, sanitized link-preview URL logging, improved secret-file ignore hygiene, and added security/privacy documentation. | `firebase-backend/functions/src/httpAuth.ts`, `firebase-backend/functions/src/legacy.ts`, `firebase-backend/functions/src/migrations/migrateGameInvites.ts`, `firebase-backend/functions/src/linkPreview.ts`, `.gitignore`, `docs/SECURITY_PRIVACY.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; functions build PASS | Done |
 | 16 | 2026-02-18 | Added invariant-focused messaging/games/profile tests, extracted testable Colyseus join-error mapping, and documented package-level testing workflows. | `src/services/colyseusErrorMap.ts`, `src/services/colyseus.ts`, `__tests__/services/colyseusErrorMap.test.ts`, `__tests__/services/traceIdPropagation.test.ts`, `__tests__/services/messagingOutboxInvariants.test.ts`, `__tests__/services/profilePrivacyFilters.test.ts`, `docs/TESTING.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; colyseus-server test PASS | Done |
-| 17 | - | - | - | - | Not started |
+| 17 | 2026-02-18 | Removed two no-caller deprecated modules (`useSnapCapture`, `withGameLobby`), updated deprecation/repo/chat docs to match active architecture, and recorded deletion-proof evidence. | `src/hooks/useSnapCapture.ts`, `src/components/games/withGameLobby.tsx`, `docs/DEPRECATION_MAP.md`, `docs/REPO_MAP.md`, `docs/CHAT_SYSTEM.md`, `src/screens/chat/ChatScreen.tsx`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; functions tsc PASS; colyseus tsc/lint/test PASS | Done |
 | 18 | - | - | - | - | Not started |

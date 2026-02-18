@@ -107,8 +107,8 @@ Retry behavior:
 - Removed active UI bypasses to deprecated `chatV2` imports:
   - `src/screens/chat/ChatScreen.tsx` now retries via `retryMessage(...)`
   - `src/hooks/useOutboxProcessor.ts` now processes via unified `processPendingMessages(...)`
-- Deprecated dead hook alignment:
-  - `src/hooks/useSnapCapture.ts` now references unified `sendMessage(...)`
+- Deprecated dead hook cleanup:
+  - legacy `useSnapCapture` was removed in Segment 17 (no runtime callers)
 
 ## Failure Modes + Recovery
 

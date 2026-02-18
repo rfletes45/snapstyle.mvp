@@ -251,7 +251,7 @@ export default function ChatScreen({
   });
 
   // ==========================================================================
-  // Camera & Attachment Hooks (replaces legacy useSnapCapture)
+  // Camera & attachment actions are handled through unified chat screen hooks.
   // ==========================================================================
 
   /** Streak milestone messages for DM photo celebrations */

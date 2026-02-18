@@ -111,7 +111,7 @@
   - Call invites in `firebase-backend/functions/src/calls.ts` (`GroupCallInvites`)
 - Lobby implementation overlap:
   - Active stack: `useGameLobbyController` + `MultiplayerLobbyOverlay`
-  - Legacy/stranded path: `src/components/games/withGameLobby.tsx` (no current caller found)
+  - Legacy wrapper `withGameLobby` was removed in Segment 17 after no-caller proof.
 - Messaging write overlap:
   - `src/services/messaging/send.ts` unified facade plus `src/services/chatV2.ts` legacy implementation still in active call path
 - Profile update overlap:

@@ -17,15 +17,13 @@ Primary signals used:
 
 | Module | Deprecation signal | Suspected replacement | Current callers (search proof) | Removal risk |
 | --- | --- | --- | --- | --- |
-| `src/services/chatV2.ts` | File-level `@deprecated` + function-level deprecations | `src/services/messaging/send.ts` + consolidated messaging services | Active callers: `src/services/messaging/send.ts`, `src/hooks/useOutboxProcessor.ts`, `src/hooks/useUnifiedMessages.ts`, `src/hooks/useSnapCapture.ts`, `src/screens/chat/ChatScreen.tsx` | High |
+| `src/services/chatV2.ts` | File-level `@deprecated` + function-level deprecations | `src/services/messaging/send.ts` + consolidated messaging services | Active callers: `src/services/messaging/send.ts`, `src/hooks/useOutboxProcessor.ts`, `src/hooks/useUnifiedMessages.ts`, `src/screens/chat/ChatScreen.tsx` | High |
 | `src/services/messageList.ts` | File-level `@deprecated` | Local-first message repository path (`useLocalMessages` + DB-first subscribe) | Active caller: `src/services/messaging/subscribe.ts`; tests in `__tests__/messaging/subscribe.test.ts` | Medium |
 | `src/services/messaging/subscribe.ts` | File-level `@deprecated` | New subscribe stack (planned SQLite-first pipeline) | Active caller: `src/hooks/useUnifiedMessages.ts` | Medium |
 | `src/hooks/useUnifiedMessages.ts` | File-level `@deprecated` note (`Use useLocalMessages`) | `useLocalMessages` (already referenced in docs) | Active caller: `src/hooks/useChat.ts` | High |
 | `src/services/outbox.ts` | File-level `@deprecated` (SQLite replacement) | SQLite-backed outbox/storage layer | Active callers include `src/services/chatV2.ts`, `src/services/messaging/send.ts`, `src/hooks/useChatDebugInfo.ts` | High |
-| `src/hooks/useSnapCapture.ts` | Header: `@deprecated DEAD CODE` | `useAttachmentPicker` + direct camera-send flow (noted in `src/screens/chat/ChatScreen.tsx`) | No runtime import caller found in `src` (only self file + doc/comment mentions) | Low |
 | `src/services/gameInvites.ts` legacy API (`sendGameInvite`, `cancelGameInvite`) | Function-level `@deprecated` comments | Universal API (`sendUniversalInvite`, `cancelUniversalInvite`) | `sendGameInvite(`/`cancelGameInvite(` search only finds definitions in this file (+ one comment in `src/services/turnBasedGames.ts`) | Low |
 | `src/services/gameInvites.ts` legacy query API (`getPendingInvites`, `subscribeToPendingInvites`) | Function-level `@deprecated No production callers` | `subscribeToPlayPageInvites` | No `src` callers outside defining file; only docs mention old APIs | Low |
-| `src/components/games/withGameLobby.tsx` | Legacy lobby wrapper pattern; no active integrations found | `useGameLobbyController` + `MultiplayerLobbyOverlay` | `withGameLobby` search returns only this file (no screen imports) | Low |
 | `src/components/profile/LegacyProfileHeader.tsx` | Filename indicates legacy path | New profile layout components/screens (`OwnProfileScreen`, `UserProfileScreen`) | Still imported by `src/screens/profile/ProfileScreen.tsx` and re-exported by `src/components/profile/index.ts` | Medium |
 | `src/components/profile/LegacyProfileActions.tsx` | Filename indicates legacy path | New profile action surface under new profile layout | Still imported by `src/screens/profile/ProfileScreen.tsx` and re-exported by `src/components/profile/index.ts` | Medium |
 | `src/services/groups.ts::subscribeToGroupMessages` | Function annotated `@deprecated` | `@/services/messaging` subscriptions (`subscribeToConversationMessages`) | No call sites found outside `src/services/groups.ts`; active group subscriptions run via messaging adapters | Low |
@@ -48,8 +46,14 @@ Primary signals used:
 - Active canonical flow:
   - `src/hooks/useGameLobbyController.ts`
   - `src/components/games/MultiplayerLobbyOverlay.tsx`
-- Additional legacy wrapper:
-  - `src/components/games/withGameLobby.tsx` (no active caller found)
+- Legacy wrapper `withGameLobby` was removed in Segment 17 after no-caller proof.
+
+## Removed in Segment 17
+
+| Module | Why removed | Proof summary |
+| --- | --- | --- |
+| `src/hooks/useSnapCapture.ts` | Deprecated dead hook with no runtime imports | `rg \"useSnapCapture\" src App.tsx __tests__` returned only the module itself and comments/docs, with no import callers. |
+| `src/components/games/withGameLobby.tsx` | Legacy wrapper with no active integrations | `rg \"withGameLobby\" src App.tsx __tests__` returned only the module itself and docs, with no screen imports/callers. |
 
 ### Messaging Writes / Subscriptions
 

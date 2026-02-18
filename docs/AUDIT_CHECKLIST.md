@@ -229,7 +229,7 @@ cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 17 - Final Deprecation Removal + Doc Consolidation
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Every deletion has no-caller proof + validation reruns.
 - Deletion ledger complete in audit report.
