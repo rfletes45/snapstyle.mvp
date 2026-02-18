@@ -231,6 +231,7 @@ export async function getStoriesFromFriend(
       where("senderId", "==", friendId),
       where("storyVisible", "==", true),
       where("expiresAt", ">", now),
+      orderBy("expiresAt", "asc"),
       orderBy("createdAt", "asc"),
     );
     const snapshot = await getDocs(q);

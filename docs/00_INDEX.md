@@ -25,6 +25,7 @@ Read in this order for fastest orientation:
 - AI project handoff: [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md)
 - Architecture: [01_ARCHITECTURE.md](01_ARCHITECTURE.md)
 - Firebase and data plane: [02_FIREBASE.md](02_FIREBASE.md)
+- Firestore contract: [FIRESTORE_CONTRACT.md](FIRESTORE_CONTRACT.md)
 - Configuration and feature flags: [CONFIGURATION.md](CONFIGURATION.md)
 - Client data contract: [DATA_CONTRACT_CLIENT.md](DATA_CONTRACT_CLIENT.md)
 - Messaging: [03_CHAT_V2.md](03_CHAT_V2.md), [03_CHAT_V3.md](03_CHAT_V3.md)
@@ -47,7 +48,6 @@ Read in this order for fastest orientation:
 
 These are linked early so later segments can fill them in without index churn:
 
-- `docs/FIRESTORE_CONTRACT.md`
 - `docs/FUNCTIONS.md`
 - `docs/CHAT_SYSTEM.md`
 - `docs/PROFILE_SYSTEM.md`

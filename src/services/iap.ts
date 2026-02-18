@@ -18,7 +18,6 @@ import {
   orderBy,
   query,
   Timestamp,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -365,12 +364,6 @@ export async function purchaseProduct(
 
       // Mock transaction ID
       const mockTransactionId = `mock_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-      // Update purchase record
-      await updateDoc(purchaseRef, {
-        status: "completed",
-        transactionId: mockTransactionId,
-      });
 
       // Verify and deliver
       const result = await verifyAndDeliverPurchase(

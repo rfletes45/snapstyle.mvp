@@ -237,6 +237,39 @@
 - `npm run lint` PASS (warnings only)
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 
+## Segment 6
+
+### What changed
+
+- Added `docs/FIRESTORE_CONTRACT.md` with:
+  - canonical collection contract map
+  - client write-path inventory references
+  - rules alignment notes
+  - index coverage and validation checklist
+- Fixed an invalid Firestore query shape in `src/services/story/snapStoryService.ts`:
+  - `getStoriesFromFriend()` now orders by `expiresAt` before `createdAt` to satisfy inequality-query requirements.
+- Added minimal composite indexes in `firebase-backend/firestore.indexes.json` for story query shapes:
+  - `Pictures`: `(senderId, storyVisible, expiresAt, createdAt asc)`
+  - `Pictures`: `(senderId, storyVisible, expiresAt, createdAt desc)`
+  - `Stories`: `(isSnapStory, expiresAt)`
+- Removed a client-side write that violated rules in `src/services/iap.ts`:
+  - eliminated mock-flow `updateDoc()` on `IAPPurchases` (updates are disallowed by rules).
+- Updated `docs/00_INDEX.md` to link `docs/FIRESTORE_CONTRACT.md`.
+- Updated `docs/AUDIT_CHECKLIST.md` to mark Segment 6 complete.
+
+### Why this is safe
+
+- Changes are contract-alignment and query/index correctness fixes; no feature flags or auth models were loosened.
+- Removed a write path instead of weakening rules for `IAPPurchases`, preserving least-privilege behavior.
+- Added indexes only for observed query shapes; no data mutation semantics changed.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+- `cd firebase-backend/functions && npx --no-install tsc --noEmit` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -246,7 +279,7 @@
 | 3 | 2026-02-18 | Added repo inventory and deprecation mapping docs with evidence-backed caller/risk analysis and ranked cleanup candidates. | `docs/REPO_MAP.md`, `docs/DEPRECATION_MAP.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS (unchanged behavior) | Done |
 | 4 | 2026-02-18 | Audited feature flags/config surfaces, added configuration guide, and confirmed conservative defaults without risky flips. | `docs/CONFIGURATION.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 5 | 2026-02-18 | Consolidated client contract typing and added runtime guards at Firestore/callable/game-join boundaries; documented canonical type sources. | `src/services/gameInvites.ts`, `src/types/messaging.ts`, `src/hooks/useMessageRequests.ts`, `src/types/gameSession.ts`, `src/services/colyseusJoin.ts`, `docs/DATA_CONTRACT_CLIENT.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
-| 6 | - | - | - | - | Not started |
+| 6 | 2026-02-18 | Audited write/query contract against rules and indexes, fixed one invalid story query shape, removed one rules-violating client write, and documented the Firestore contract. | `docs/FIRESTORE_CONTRACT.md`, `src/services/story/snapStoryService.ts`, `src/services/iap.ts`, `firebase-backend/firestore.indexes.json`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions tsc PASS | Done |
 | 7 | - | - | - | - | Not started |
 | 8 | - | - | - | - | Not started |
 | 9 | - | - | - | - | Not started |

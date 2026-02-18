@@ -78,7 +78,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 6 - Firestore Rules + Indexes Contract Audit
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Client writes mapped to rules and query/index requirements.
 - `docs/FIRESTORE_CONTRACT.md` added/updated.
