@@ -1,4 +1,5 @@
 import { IncomingCallOverlay } from "@/components/calls";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
 import { CallProvider } from "@/contexts/CallContext";
@@ -24,7 +25,7 @@ import {
   NavigationContainerRef,
 } from "@react-navigation/native";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -36,11 +37,6 @@ initializeFirebase(firebaseConfig);
 // Lock the app to portrait at startup. Individual screens (e.g. Tropical
 // Fishing) can temporarily switch to landscape via useScreenOrientation().
 lockToPortrait();
-
-// Initialize background call handler for incoming calls when app is in background
-initializeBackgroundCallHandler();
-initializeAppStateListener();
-createCallNotificationChannel();
 
 /**
  * Root error handler for ErrorBoundary
@@ -59,6 +55,24 @@ function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
   const navigationRef =
     useRef<NavigationContainerRef<RootStackParamList>>(null);
+
+  // Defer call bootstrap work until after first render, and only if calls
+  // are feature-enabled.
+  useEffect(() => {
+    if (!CALL_FEATURES.CALLS_ENABLED) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      initializeBackgroundCallHandler();
+      initializeAppStateListener();
+      createCallNotificationChannel();
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   /**
    * Handle navigation from in-app toast notifications

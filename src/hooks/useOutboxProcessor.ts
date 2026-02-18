@@ -26,6 +26,7 @@ export function useOutboxProcessor(): void {
   const { currentFirebaseUser } = useAuth();
   const isProcessing = useRef(false);
   const lastProcessTime = useRef(0);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   // Minimum interval between processing attempts (5 seconds)
   const MIN_PROCESS_INTERVAL = 5000;
@@ -85,9 +86,16 @@ export function useOutboxProcessor(): void {
     if (!currentFirebaseUser) return;
 
     const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === "active") {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      const resumedFromBackground =
+        (previousState === "background" || previousState === "inactive") &&
+        nextState === "active";
+
+      if (resumedFromBackground) {
         logger.info("[OutboxProcessor] App became active, checking outbox...");
-        processIfNeeded();
+        void processIfNeeded();
       }
     };
 

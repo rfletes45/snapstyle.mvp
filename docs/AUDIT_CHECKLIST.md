@@ -190,7 +190,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 14 - Performance + Startup Cleanup
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Safe startup/render/sync hotpath optimizations only.
 - `docs/PERFORMANCE.md` added/updated.
