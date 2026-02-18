@@ -64,7 +64,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 5 - Types + Data Contract Baseline
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Canonical type locations identified and duplicate types consolidated safely.
 - High-risk boundary runtime guards added where needed.

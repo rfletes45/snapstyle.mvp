@@ -213,6 +213,30 @@
 - `npm run lint` PASS (warnings only)
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 
+## Segment 5
+
+### What changed
+
+- Established and documented canonical client contract locations in `docs/DATA_CONTRACT_CLIENT.md`.
+- Consolidated duplicate invite status typing in `src/services/gameInvites.ts` by aliasing `InviteStatus` to `GameInviteStatus` from `src/types/turnBased.ts`.
+- Added runtime boundary guards:
+  - Messaging request decode/validation in `src/types/messaging.ts`
+  - Message request hook validation in `src/hooks/useMessageRequests.ts`
+  - Colyseus join options guard/assertion in `src/types/gameSession.ts` and `src/services/colyseusJoin.ts`
+- Updated `docs/AUDIT_CHECKLIST.md` to mark Segment 5 complete.
+
+### Why this is safe
+
+- Changes are type-contract and validation-layer focused; no feature rollout flags were flipped.
+- Runtime guards fail fast on malformed boundary payloads and preserve existing success paths.
+- Contract consolidation removes duplicate literal unions without changing persisted data shape.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -221,7 +245,7 @@
 | 2 | 2026-02-17 | Stabilized root tooling loop by fixing lint blocker, strict test typing drift, and one flaky rate-limit test boundary. | `src/components/chat/ChatDebugHUD.tsx`, `__tests__/services/sendMessageV2.test.ts`, `__tests__/services/resolveChatSettings.test.ts`, `__tests__/services/messageRequests.test.ts`, `__tests__/services/privacyPublish.test.ts`, `__tests__/services/rateLimiter.test.ts`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions build PASS; Colyseus type-check/lint/test PASS | Done |
 | 3 | 2026-02-18 | Added repo inventory and deprecation mapping docs with evidence-backed caller/risk analysis and ranked cleanup candidates. | `docs/REPO_MAP.md`, `docs/DEPRECATION_MAP.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS (unchanged behavior) | Done |
 | 4 | 2026-02-18 | Audited feature flags/config surfaces, added configuration guide, and confirmed conservative defaults without risky flips. | `docs/CONFIGURATION.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
-| 5 | - | - | - | - | Not started |
+| 5 | 2026-02-18 | Consolidated client contract typing and added runtime guards at Firestore/callable/game-join boundaries; documented canonical type sources. | `src/services/gameInvites.ts`, `src/types/messaging.ts`, `src/hooks/useMessageRequests.ts`, `src/types/gameSession.ts`, `src/services/colyseusJoin.ts`, `docs/DATA_CONTRACT_CLIENT.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 6 | - | - | - | - | Not started |
 | 7 | - | - | - | - | Not started |
 | 8 | - | - | - | - | Not started |
