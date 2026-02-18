@@ -163,7 +163,7 @@ cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 12 - Embedded Web Game Client + WebView Integration
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - URL/param contract and fallback UX audited.
 - `docs/EMBEDDED_WEB_GAMES.md` added/updated.

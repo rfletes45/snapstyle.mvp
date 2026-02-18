@@ -4,6 +4,7 @@
  *
  * URL params for multiplayer:
  *   ?server=ws://localhost:2567&room=starforge&name=Alice&role=player
+ *   &firestoreGameId=abc123&inviteId=inv_xxx&traceId=gs_xxx
  */
 import { GameLoop } from "./core/gameLoop";
 import balanceJson from "./data/balance.v1.json";
@@ -261,6 +262,9 @@ export async function startGame(): Promise<void> {
   const roomName = params.get("room") ?? "starforge";
   const playerName = params.get("name") ?? undefined;
   const playerRole = (params.get("role") as PlayerRole) ?? undefined;
+  const firestoreGameId = params.get("firestoreGameId") ?? undefined;
+  const inviteId = params.get("inviteId") ?? undefined;
+  const traceId = params.get("traceId") ?? undefined;
 
   if (serverEndpoint) {
     const adapter = createRoomAdapter();
@@ -284,6 +288,9 @@ export async function startGame(): Promise<void> {
       .connect(serverEndpoint, roomName, {
         name: playerName,
         role: playerRole,
+        firestoreGameId,
+        inviteId,
+        traceId,
       })
       .then(() => {
         console.log(`[Starforge] Connected to ${serverEndpoint}/${roomName}`);

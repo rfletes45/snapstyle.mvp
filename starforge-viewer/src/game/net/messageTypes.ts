@@ -33,6 +33,9 @@ export interface ClientJoinInfoMsg {
 export interface JoinOptions {
   name?: string;
   role?: PlayerRole;
+  firestoreGameId?: string;
+  inviteId?: string;
+  traceId?: string;
 }
 
 /* ------------------------------------------------------------------ */

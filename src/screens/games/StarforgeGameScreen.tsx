@@ -21,6 +21,8 @@ import {
 } from "@/config/starforgeGame";
 import { Spacing } from "@/constants/theme";
 import type { PlayStackParamList } from "@/types/navigation/root";
+import { createTraceId } from "@/utils/trace";
+import * as Network from "expo-network";
 
 type Props = NativeStackScreenProps<PlayStackParamList, "StarforgeGame">;
 
@@ -28,6 +30,7 @@ interface RouteParamsShape {
   matchId?: string;
   roomId?: string;
   inviteId?: string;
+  traceId?: string;
   spectatorMode?: boolean;
   entryPoint?: string;
 }
@@ -57,6 +60,7 @@ function asRouteParams(value: unknown): RouteParamsShape {
     matchId: typeof params.matchId === "string" ? params.matchId : undefined,
     roomId: typeof params.roomId === "string" ? params.roomId : undefined,
     inviteId: typeof params.inviteId === "string" ? params.inviteId : undefined,
+    traceId: typeof params.traceId === "string" ? params.traceId : undefined,
     spectatorMode:
       typeof params.spectatorMode === "boolean"
         ? params.spectatorMode
@@ -84,6 +88,14 @@ async function probeStarforgeHost(baseUrl: string): Promise<ProbeResult> {
     if (error instanceof Error && error.name === "AbortError") {
       return { status: "timeout", detail: `${PROBE_TIMEOUT_MS}ms` };
     }
+    try {
+      const networkState = await Network.getNetworkStateAsync();
+      if (networkState.isConnected === false) {
+        return { status: "unreachable", detail: "offline" };
+      }
+    } catch {
+      // Ignore secondary network-state failures; keep generic error classification.
+    }
     return { status: "unreachable", detail: "network_error" };
   } finally {
     clearTimeout(timeoutId);
@@ -102,7 +114,12 @@ function getProbeLine(baseUrl: string, result: ProbeResult): string {
 export default function StarforgeGameScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const params = asRouteParams(route.params);
-  const launchMode = getLaunchMode(params.matchId, params.spectatorMode);
+  const effectiveGameId = params.matchId ?? params.roomId;
+  const launchMode = getLaunchMode(effectiveGameId, params.spectatorMode);
+  const traceId = useMemo(
+    () => params.traceId ?? createTraceId("gs"),
+    [params.traceId],
+  );
 
   // Hide status bar for immersion
   useEffect(() => {
@@ -156,8 +173,13 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
         nextReport.length > 0 &&
         !nextReport.some((l) => l.includes("-> reachable"))
       ) {
+        const hasOfflineSignal = nextReport.some((line) =>
+          line.includes("(offline)"),
+        );
         setLoadError(
-          "No reachable Starforge host. Start the starforge-viewer dev server, or build and co-locate on colyseus-server.",
+          hasOfflineSignal
+            ? "No network connection detected. Reconnect and retry."
+            : "No reachable Starforge host. Start the starforge-viewer dev server, or build and co-locate on colyseus-server.",
         );
       }
 
@@ -181,7 +203,9 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
     const useMultiplayer = shouldUseColyseus("starforge_game");
     return buildStarforgeGameUrl({
       mode: launchMode,
-      firestoreGameId: params.matchId,
+      firestoreGameId: effectiveGameId,
+      inviteId: params.inviteId,
+      traceId,
       role: params.spectatorMode ? "spectator" : "player",
       source: params.entryPoint ?? "play",
       embedded: true,
@@ -191,10 +215,20 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
   }, [
     resolvedBaseUrl,
     launchMode,
-    params.matchId,
+    effectiveGameId,
+    params.inviteId,
     params.spectatorMode,
     params.entryPoint,
+    traceId,
   ]);
+
+  const handleExit = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate("GamesHub");
+  }, [navigation]);
 
   // ── Bridge messages from WebView ────────────────────────────────────
   const handleWebViewMessage = useCallback(
@@ -206,6 +240,9 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
           source?: string;
           type?: string;
           sessionId?: string;
+          firestoreGameId?: string;
+          inviteId?: string;
+          traceId?: string;
           flux?: number;
           mode?: string;
           message?: string;
@@ -218,7 +255,7 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
         }
 
         if (data.type === "back") {
-          navigation.goBack();
+          handleExit();
           return;
         }
 
@@ -226,6 +263,10 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
           const parts: string[] = [];
           if (data.sessionId) parts.push(`Session: ${data.sessionId}`);
           if (data.mode) parts.push(`Mode: ${data.mode}`);
+          if (data.firestoreGameId)
+            parts.push(`Match: ${data.firestoreGameId}`);
+          if (data.inviteId) parts.push(`Invite: ${data.inviteId}`);
+          if (data.traceId) parts.push(`Trace: ${data.traceId}`);
           if (data.flux !== undefined) parts.push(`Flux: ${data.flux}`);
           setSessionInfo(parts.join("  |  ") || null);
         }
@@ -233,7 +274,7 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
         // Ignore non-JSON messages
       }
     },
-    [navigation],
+    [handleExit],
   );
 
   const shouldAllowNavigation = useCallback(
@@ -309,7 +350,7 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
             <Button mode="contained" onPress={handleRetry}>
               Retry
             </Button>
-            <Button mode="text" onPress={() => navigation.goBack()}>
+            <Button mode="text" onPress={handleExit}>
               Back to Play
             </Button>
           </Card.Content>
@@ -392,6 +433,12 @@ export default function StarforgeGameScreen({ navigation, route }: Props) {
           </Text>
         </View>
       ) : null}
+
+      {__DEV__ && sessionInfo ? (
+        <View style={styles.debugBanner}>
+          <Text style={styles.debugText}>{sessionInfo}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -418,6 +465,22 @@ const styles = StyleSheet.create({
     color: "#a5e8ff",
     fontSize: 12,
     fontWeight: "600",
+    textAlign: "center",
+  },
+  debugBanner: {
+    position: "absolute",
+    top: Spacing.md,
+    left: Spacing.md,
+    right: Spacing.md,
+    zIndex: 12,
+    borderRadius: 10,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  debugText: {
+    color: "#d7f8ff",
+    fontSize: 11,
     textAlign: "center",
   },
   webView: {

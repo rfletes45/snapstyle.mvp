@@ -10,6 +10,8 @@
  *   &name=Alice              — display name
  *   &role=player|spectator   — player role
  *   &firestoreGameId=...     — invite match id
+ *   &inviteId=...            — universal invite id
+ *   &traceId=...             — end-to-end correlation id
  *   &embedded=1              — signals WebView embedding
  */
 import Constants from "expo-constants";
@@ -32,6 +34,10 @@ export type StarforgeLaunchMode = "game" | "join" | "spectate";
 export interface StarforgeLaunchParams {
   /** Firestore GameInvite document id — used for Colyseus filterBy */
   firestoreGameId?: string;
+  /** Universal invite id (for analytics/debug correlation) */
+  inviteId?: string;
+  /** End-to-end trace id propagated into web client + room join */
+  traceId?: string;
   /** Player display name */
   playerName?: string;
   /** Player role (player or spectator) */
@@ -217,6 +223,12 @@ export function buildStarforgeGameUrl(
 
   if (params.firestoreGameId) {
     query.push(`firestoreGameId=${encodeURIComponent(params.firestoreGameId)}`);
+  }
+  if (params.inviteId) {
+    query.push(`inviteId=${encodeURIComponent(params.inviteId)}`);
+  }
+  if (params.traceId) {
+    query.push(`traceId=${encodeURIComponent(params.traceId)}`);
   }
   if (params.playerName) {
     query.push(`name=${encodeURIComponent(params.playerName)}`);

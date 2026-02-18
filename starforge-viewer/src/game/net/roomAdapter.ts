@@ -103,8 +103,12 @@ export function createRoomAdapter(): RoomAdapter {
         console.log("[RoomAdapter] Welcome:", info);
         postToParent({
           type: "session_info",
-          sessionId: info.sessionId,
+          sessionId:
+            typeof info.sessionId === "string" ? info.sessionId : room?.sessionId,
           mode: role,
+          firestoreGameId: options?.firestoreGameId,
+          inviteId: options?.inviteId,
+          traceId: options?.traceId,
         });
       });
 
@@ -131,6 +135,9 @@ export function createRoomAdapter(): RoomAdapter {
         type: "session_info",
         sessionId: room.sessionId,
         mode: role,
+        firestoreGameId: options?.firestoreGameId,
+        inviteId: options?.inviteId,
+        traceId: options?.traceId,
       });
     },
 

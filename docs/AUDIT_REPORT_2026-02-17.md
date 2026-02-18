@@ -477,6 +477,47 @@
 - `cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache` PASS (12/12 suites, 353 tests)
 - `npm run type-check` PASS (root, to verify spectator-client edits)
 
+## Segment 12
+
+### What changed
+
+- Hardened RN WebView launch and route-param translation in:
+  - `src/screens/games/StarforgeGameScreen.tsx`
+  - `src/config/starforgeGame.ts`
+- Added explicit embedded-web param propagation for invite/session tracing:
+  - URL builder now supports `inviteId` and `traceId`.
+  - Starforge launch now passes `matchId|roomId`, `inviteId`, and `traceId`.
+- Fixed web client join-option translation so invite/session context is not dropped:
+  - `starforge-viewer/src/game/gameMain.ts`
+  - `starforge-viewer/src/game/net/messageTypes.ts`
+  - `starforge-viewer/src/game/net/roomAdapter.ts`
+  - `firestoreGameId`, `inviteId`, `traceId` now flow from URL -> Colyseus join options -> session bridge payload.
+- Hardened failure and exit UX in embedded screen:
+  - offline detection during host probe (`expo-network`)
+  - clearer unreachable/offline error messaging with retry path
+  - safe back fallback when no navigation stack (`MainTabs -> Play -> GamesHub`)
+  - dev-only session info banner for bridge/param verification
+- Added canonical embedded contract doc:
+  - `docs/EMBEDDED_WEB_GAMES.md`
+- Updated docs/checklist:
+  - `docs/00_INDEX.md`
+  - `docs/AUDIT_CHECKLIST.md`
+
+### Why this is safe
+
+- Changes are integration-surface only (URL/query/bridge handling, failure UX, docs).
+- No game simulation logic or Firestore contract behavior was changed.
+- Param additions are backward-compatible (optional query fields).
+- WebView host probe and exit fallback reduce user-facing dead-ends without changing multiplayer invariants.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+- `cd starforge-viewer && npm run typecheck` PASS
+- `cd starforge-viewer && npm run build` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -492,7 +533,7 @@
 | 9 | 2026-02-18 | Consolidated profile write ownership under `profileService`, centralized hydration/validators, added profile contract tests, and documented profile system behavior/contracts. | `src/services/profile/profileContract.ts`, `src/services/profileService.ts`, `src/screens/profile/ProfileScreen.tsx`, `src/screens/settings/SettingsScreen.tsx`, `src/services/cosmetics.ts`, `__tests__/services/profileContract.test.ts`, `docs/PROFILE_SYSTEM.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 10 | 2026-02-18 | Extracted and tested lobby-state selectors, added recovery-action tests, and documented canonical games lifecycle with explicit exceptions for bespoke multiplayer screens. | `src/hooks/gameLobbySelectors.ts`, `src/hooks/useGameLobbyController.ts`, `__tests__/hooks/useGameLobbyControllerSelectors.test.ts`, `__tests__/services/gameRecoveryActions.test.ts`, `docs/GAMES_PLATFORM.md`, `docs/00_INDEX.md`, `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Root: type-check/lint/test PASS | Done |
 | 11 | 2026-02-18 | Hardened Colyseus protocol gate + trace propagation across room families, aligned spectator join metadata, mapped protocol mismatch errors, and documented room contracts/reconnection/load-shedding behavior. | `colyseus-server/src/rooms/base/TurnBasedRoom.ts`, `colyseus-server/src/rooms/base/ScoreRaceRoom.ts`, `colyseus-server/src/rooms/base/PhysicsRoom.ts`, `colyseus-server/src/rooms/base/CardGameRoom.ts`, `colyseus-server/src/rooms/coop/WordMasterRoom.ts`, `colyseus-server/src/rooms/coop/CrosswordRoom.ts`, `colyseus-server/src/rooms/party/SketchPartyRoom.ts`, `colyseus-server/src/rooms/physics/MiniGolfDuelsRoom.ts`, `colyseus-server/src/rooms/physics/BrickBreakerRoom.ts`, `colyseus-server/src/rooms/physics/BounceBlitzRoom.ts`, `colyseus-server/src/rooms/spectator/SpectatorRoom.ts`, `colyseus-server/src/rooms/incremental/IncrementalRoom.ts`, `colyseus-server/src/rooms/incremental/StarforgeRoom.ts`, `colyseus-server/src/schemas/common.ts`, `colyseus-server/src/schemas/physics.ts`, `colyseus-server/src/schemas/draw.ts`, `colyseus-server/src/schemas/minigolf.ts`, `colyseus-server/src/schemas/spectator.ts`, `src/services/colyseus.ts`, `src/hooks/useSpectator.ts`, `docs/COLYSEUS_SERVER.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Colyseus build/lint/test PASS; Root type-check PASS | Done |
-| 12 | - | - | - | - | Not started |
+| 12 | 2026-02-18 | Audited embedded web game integration, fixed URL/join param translation (`firestoreGameId`, `inviteId`, `traceId`), hardened WebView offline/error/back handling, and documented the end-to-end embedded contract. | `src/config/starforgeGame.ts`, `src/screens/games/StarforgeGameScreen.tsx`, `starforge-viewer/src/game/gameMain.ts`, `starforge-viewer/src/game/net/messageTypes.ts`, `starforge-viewer/src/game/net/roomAdapter.ts`, `docs/EMBEDDED_WEB_GAMES.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; starforge-viewer typecheck/build PASS | Done |
 | 13 | - | - | - | - | Not started |
 | 14 | - | - | - | - | Not started |
 | 15 | - | - | - | - | Not started |
