@@ -628,6 +628,46 @@
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 - `cd firebase-backend/functions && npm run build` PASS
 
+## Segment 16
+
+### What changed
+
+- Added a pure Colyseus join-error mapping module for invariant testing:
+  - `src/services/colyseusErrorMap.ts`
+  - `src/services/colyseus.ts` now consumes this mapper.
+- Added games protocol mismatch mapping tests:
+  - `__tests__/services/colyseusErrorMap.test.ts`
+  - explicitly verifies mapping to `GameErrorCode.PROTOCOL_VERSION_MISMATCH`.
+- Expanded join-contract coverage for protocol + trace metadata:
+  - `__tests__/services/traceIdPropagation.test.ts`
+  - now asserts `token`, `protocolVersion`, `buildInfo`, and `traceId`.
+- Expanded messaging outbox invariants:
+  - `__tests__/services/messagingOutboxInvariants.test.ts`
+  - added retryable-failure backoff assertion (short exponential retry path).
+- Added profile privacy filtering matrix tests:
+  - `__tests__/services/profilePrivacyFilters.test.ts`
+  - covers self, stranger, friend, and blocked relationship outcomes via `applyPrivacyFilters`.
+- Added canonical testing guide:
+  - `docs/TESTING.md`
+- Updated docs/checklist:
+  - `docs/00_INDEX.md`
+  - `docs/AUDIT_CHECKLIST.md`
+
+### Why this is safe
+
+- Core app behavior was not refactored; changes are test-focused plus one pure extraction (`colyseusErrorMap`) used by existing logic.
+- New tests target invariant behavior already expected by architecture contracts:
+  - messaging idempotency/ordering/outbox retry semantics
+  - game protocol/trace join metadata and mismatch mapping
+  - profile privacy filtering outcomes
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS (53 suites, 1126 tests)
+- `cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache` PASS (12 suites, 353 tests)
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -647,6 +687,6 @@
 | 13 | 2026-02-18 | Audited calls/camera subsystem gating, added contract doc, enforced feature-aware call runtime/bootstrap no-op behavior, and gated profile call entrypoint by feature/platform availability. | `docs/CALLS_CAMERA.md`, `src/contexts/CallContext.tsx`, `src/services/calls/index.ts`, `src/screens/profile/UserProfileScreen.tsx`, `src/components/profile/ProfileActions/ProfileActionsBar.tsx`, `src/components/calls/index.ts`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS | Done |
 | 14 | 2026-02-18 | Added performance guidance, deferred optional call bootstrap until post-render, and tightened outbox resume processing to real foreground transitions only. | `docs/PERFORMANCE.md`, `App.tsx`, `src/hooks/useOutboxProcessor.ts`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS | Done |
 | 15 | 2026-02-18 | Hardened admin/migration HTTP endpoint auth, removed weak admin-setup fallback behavior, sanitized link-preview URL logging, improved secret-file ignore hygiene, and added security/privacy documentation. | `firebase-backend/functions/src/httpAuth.ts`, `firebase-backend/functions/src/legacy.ts`, `firebase-backend/functions/src/migrations/migrateGameInvites.ts`, `firebase-backend/functions/src/linkPreview.ts`, `.gitignore`, `docs/SECURITY_PRIVACY.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; functions build PASS | Done |
-| 16 | - | - | - | - | Not started |
+| 16 | 2026-02-18 | Added invariant-focused messaging/games/profile tests, extracted testable Colyseus join-error mapping, and documented package-level testing workflows. | `src/services/colyseusErrorMap.ts`, `src/services/colyseus.ts`, `__tests__/services/colyseusErrorMap.test.ts`, `__tests__/services/traceIdPropagation.test.ts`, `__tests__/services/messagingOutboxInvariants.test.ts`, `__tests__/services/profilePrivacyFilters.test.ts`, `docs/TESTING.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; colyseus-server test PASS | Done |
 | 17 | - | - | - | - | Not started |
 | 18 | - | - | - | - | Not started |

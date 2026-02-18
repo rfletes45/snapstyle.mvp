@@ -38,7 +38,7 @@ Read in this order for fastest orientation:
 - Calls and camera: [CALLS_CAMERA.md](CALLS_CAMERA.md)
 - Performance notes: [PERFORMANCE.md](PERFORMANCE.md)
 - Security and privacy: [SECURITY_PRIVACY.md](SECURITY_PRIVACY.md)
-- Testing and ops: [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
+- Testing and ops: [TESTING.md](TESTING.md), [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
 
 ## Deep-Dive Subsystem Docs
 
@@ -51,9 +51,3 @@ Read in this order for fastest orientation:
 - Rolling report: [AUDIT_REPORT_2026-02-17.md](AUDIT_REPORT_2026-02-17.md)
 - Repo map: [REPO_MAP.md](REPO_MAP.md)
 - Deprecation map: [DEPRECATION_MAP.md](DEPRECATION_MAP.md)
-
-## Planned Audit Deliverables
-
-These are linked early so later segments can fill them in without index churn:
-
-- `docs/TESTING.md`

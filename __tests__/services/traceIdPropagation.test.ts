@@ -110,4 +110,24 @@ describe("traceId propagation", () => {
     expect(opts.inviteId).toBe("inv-456");
     expect(opts.traceId).toBe("inv-trace-xxx");
   });
+
+  it("should include protocol/build metadata in join options", async () => {
+    const ctx: GameSessionContext = {
+      gameType: "chess" as any,
+      entryPoint: "play",
+      mode: "colyseus",
+    };
+
+    const opts = await buildJoinOptions(ctx);
+
+    expect(opts.token).toBe("mock-firebase-token");
+    expect(opts.protocolVersion).toBe(1);
+    expect(opts.buildInfo).toEqual(
+      expect.objectContaining({
+        appVersion: "1.0.0",
+        protocolVersion: 1,
+      }),
+    );
+    expect(opts.traceId).toMatch(/^gs-/);
+  });
 });

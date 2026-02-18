@@ -149,4 +149,32 @@ describe("Messaging invariants: idempotency, ordering, outbox transitions", () =
     expect(failed?.lastErrorCode).toBeDefined();
     expect((failed?.nextRetryAt ?? 0) - before).toBeGreaterThan(300 * DAY_MS);
   });
+
+  it("uses short backoff for retryable failures", async () => {
+    const queued = await enqueueMessage({
+      scope: "dm",
+      conversationId: "chat_123",
+      kind: "text",
+      text: "temporary network issue",
+    });
+
+    const randomSpy = jest.spyOn(Math, "random").mockReturnValue(0.5);
+    const before = Date.now();
+
+    const result = await processOutbox(async () => {
+      throw new Error("network unavailable");
+    });
+
+    randomSpy.mockRestore();
+
+    const failed = await getOutboxItem(queued.messageId);
+    const delta = (failed?.nextRetryAt ?? 0) - before;
+
+    expect(result.sent).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(failed?.state).toBe("failed");
+    expect(failed?.attemptCount).toBe(1);
+    expect(delta).toBeGreaterThanOrEqual(1500);
+    expect(delta).toBeLessThanOrEqual(2500);
+  });
 });

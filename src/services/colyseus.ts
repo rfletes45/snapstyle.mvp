@@ -22,8 +22,9 @@ import {
   getColyseusRoomName,
   resolveColyseusRoomName,
 } from "@/config/colyseus";
+import { mapColyseusJoinError } from "@/services/colyseusErrorMap";
 import { buildJoinOptions } from "@/services/colyseusJoin";
-import { GameErrorCode, createGameError } from "@/types/gameErrors";
+import { createGameError } from "@/types/gameErrors";
 import {
   GAME_PROTOCOL_VERSION,
   getClientBuildInfo,
@@ -357,7 +358,7 @@ class ColyseusService {
       );
 
       // Map SDK errors to canonical GameError
-      const code = mapJoinError(error);
+      const code = mapColyseusJoinError(error);
       throw createGameError(code, {
         message: error?.message ?? "Failed to join room",
         context: {
@@ -491,38 +492,6 @@ class ColyseusService {
       handlers.onError?.(code, message);
     });
   }
-}
-
-// =============================================================================
-// Error Mapping
-// =============================================================================
-
-/**
- * Map a Colyseus SDK error to a GameErrorCode.
- * Inspects error message for common patterns.
- */
-function mapJoinError(error: any): GameErrorCode {
-  const msg = (error?.message ?? "").toLowerCase();
-  if (
-    msg.includes("protocolversion") ||
-    msg.includes("protocol version") ||
-    msg.includes("update the app")
-  ) {
-    return GameErrorCode.PROTOCOL_VERSION_MISMATCH;
-  }
-  if (msg.includes("full") || msg.includes("maxclients")) {
-    return GameErrorCode.JOIN_ROOM_FULL;
-  }
-  if (msg.includes("auth") || msg.includes("token")) {
-    return GameErrorCode.AUTH_TOKEN_INVALID;
-  }
-  if (msg.includes("timeout") || msg.includes("timed out")) {
-    return GameErrorCode.JOIN_TIMEOUT;
-  }
-  if (msg.includes("not found") || msg.includes("no available")) {
-    return GameErrorCode.JOIN_ROOM_NOT_FOUND;
-  }
-  return GameErrorCode.JOIN_FAILED;
 }
 
 // =============================================================================

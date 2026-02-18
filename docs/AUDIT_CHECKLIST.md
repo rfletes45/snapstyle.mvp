@@ -217,7 +217,7 @@ cd firebase-backend/functions && npm run build
 
 ## Segment 16 - Test Coverage Uplift
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Invariant-focused tests added (messaging/games/profile priorities).
 - `docs/TESTING.md` added/updated.
