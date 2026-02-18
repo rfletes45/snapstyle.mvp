@@ -22,7 +22,7 @@ import { ProfileHeader } from "@/components/profile/LegacyProfileHeader";
 import { LoadingState } from "@/components/ui";
 import { useProfileData } from "@/hooks/useProfileData";
 import { logout } from "@/services/auth";
-import { updateProfile } from "@/services/users";
+import { updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import type { ProfileAction } from "@/types/profile";
@@ -85,19 +85,12 @@ export default function ProfileScreen({ navigation }: any) {
     setLoading(true);
 
     try {
-      const updateSuccess = await updateProfile(currentFirebaseUser.uid, {
-        displayName: editDisplayName,
-      });
-
-      if (updateSuccess) {
-        await refreshProfile();
-        setSuccess("All set!");
-        setIsEditing(false);
-        // Clear success message after 2 seconds
-        setTimeout(() => setSuccess(""), 2000);
-      } else {
-        setError("Couldn't update profile. Please try again.");
-      }
+      await updateDisplayName(currentFirebaseUser.uid, editDisplayName);
+      await refreshProfile();
+      setSuccess("All set!");
+      setIsEditing(false);
+      // Clear success message after 2 seconds
+      setTimeout(() => setSuccess(""), 2000);
     } catch (err: any) {
       logger.error("Profile update error:", err);
       setError(err.message || "Couldn't update profile");

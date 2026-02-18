@@ -18,7 +18,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
-import { updateProfile } from "./users";
+import { updateAvatarConfig as persistAvatarConfig } from "./profileService";
 
 
 import { createLogger } from "@/utils/log";
@@ -170,7 +170,8 @@ export async function updateAvatarConfig(
   avatarConfig: AvatarConfig,
 ): Promise<boolean> {
   try {
-    return await updateProfile(userId, { avatarConfig });
+    await persistAvatarConfig(userId, avatarConfig);
+    return true;
   } catch (error) {
     logger.error("Error updating avatar config:", error);
     return false;

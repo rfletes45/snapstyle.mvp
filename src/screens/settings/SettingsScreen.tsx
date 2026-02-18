@@ -10,7 +10,7 @@
  */
 
 import { logout } from "@/services/auth";
-import { updateProfile } from "@/services/users";
+import { updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useSnackbar } from "@/store/SnackbarContext";
@@ -165,19 +165,15 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
     });
 
     try {
-      const updatePromise = updateProfile(currentFirebaseUser.uid, {
-        displayName: editDisplayName,
-      });
+      const updatePromise = updateDisplayName(
+        currentFirebaseUser.uid,
+        editDisplayName,
+      );
 
-      const success = await Promise.race([updatePromise, timeoutPromise]);
-
-      if (success) {
-        await refreshProfile();
-        showSuccess("Display name updated!");
-        setShowEditName(false);
-      } else {
-        showError("Failed to update display name");
-      }
+      await Promise.race([updatePromise, timeoutPromise]);
+      await refreshProfile();
+      showSuccess("Display name updated!");
+      setShowEditName(false);
     } catch (err: any) {
       logger.error("Display name update error:", err);
       showError(err.message || "Failed to update display name");

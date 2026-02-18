@@ -15,7 +15,7 @@
  * @module services/profileService
  */
 
-import type { Friend, FriendRequest } from "@/types/models";
+import type { AvatarConfig, Friend, FriendRequest } from "@/types/models";
 import type {
   ExtendedMuteConfig,
   FriendshipDetails,
@@ -31,7 +31,6 @@ import type {
 } from "@/types/userProfile";
 import {
   applyPrivacyFilters,
-  DEFAULT_PRIVACY_SETTINGS,
   getFriendshipDetails,
 } from "@/types/userProfile";
 import { log } from "@/utils/log";
@@ -54,6 +53,14 @@ import { Share } from "react-native";
 import { isUserBlocked } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 import { getFriends } from "./friends";
+import {
+  hydrateProfileData,
+  validateAvatarConfig,
+  validateBioText,
+  validateDisplayName,
+  validateFullPrivacySettings,
+  validateStatusInput,
+} from "./profile/profileContract";
 import { getUserProfile } from "./users";
 
 // =============================================================================
@@ -76,44 +83,7 @@ export async function getFullProfileData(
       return null;
     }
 
-    const userData = userDoc.data() as Partial<UserProfileData>;
-
-    // Merge with defaults for any missing fields
-    return {
-      uid: userId,
-      username: userData.username || "",
-      usernameLower: userData.usernameLower || "",
-      displayName: userData.displayName || "",
-      avatarConfig: userData.avatarConfig || { baseColor: "#6366F1" },
-      profilePicture: userData.profilePicture || {
-        url: null,
-        updatedAt: Date.now(),
-      },
-      avatarDecoration: userData.avatarDecoration || { decorationId: null },
-      bio: userData.bio || { text: "", updatedAt: Date.now() },
-      status: userData.status,
-      gameScores: userData.gameScores || {
-        enabled: false,
-        displayedGames: [],
-        updatedAt: Date.now(),
-      },
-      theme: userData.theme || {
-        equippedThemeId: "default",
-        updatedAt: Date.now(),
-      },
-      featuredBadges: userData.featuredBadges || {
-        badgeIds: [],
-        updatedAt: Date.now(),
-      },
-      privacy: userData.privacy || DEFAULT_PRIVACY_SETTINGS,
-      ownedDecorations: userData.ownedDecorations || [],
-      ownedThemes: userData.ownedThemes || ["default"],
-      createdAt: userData.createdAt || Date.now(),
-      lastActive: userData.lastActive || Date.now(),
-      lastProfileUpdate: userData.lastProfileUpdate || Date.now(),
-      profileViews: userData.profileViews,
-      expoPushToken: userData.expoPushToken,
-    };
+    return hydrateProfileData(userId, userDoc.data() as Partial<UserProfileData>);
   } catch (error) {
     log.error("Error fetching profile data", error);
     return null;
@@ -134,42 +104,7 @@ export function subscribeToProfile(
     userRef,
     (doc) => {
       if (doc.exists()) {
-        const userData = doc.data() as Partial<UserProfileData>;
-        callback({
-          uid: userId,
-          username: userData.username || "",
-          usernameLower: userData.usernameLower || "",
-          displayName: userData.displayName || "",
-          avatarConfig: userData.avatarConfig || { baseColor: "#6366F1" },
-          profilePicture: userData.profilePicture || {
-            url: null,
-            updatedAt: Date.now(),
-          },
-          avatarDecoration: userData.avatarDecoration || { decorationId: null },
-          bio: userData.bio || { text: "", updatedAt: Date.now() },
-          status: userData.status,
-          gameScores: userData.gameScores || {
-            enabled: false,
-            displayedGames: [],
-            updatedAt: Date.now(),
-          },
-          theme: userData.theme || {
-            equippedThemeId: "default",
-            updatedAt: Date.now(),
-          },
-          featuredBadges: userData.featuredBadges || {
-            badgeIds: [],
-            updatedAt: Date.now(),
-          },
-          privacy: userData.privacy || DEFAULT_PRIVACY_SETTINGS,
-          ownedDecorations: userData.ownedDecorations || [],
-          ownedThemes: userData.ownedThemes || ["default"],
-          createdAt: userData.createdAt || Date.now(),
-          lastActive: userData.lastActive || Date.now(),
-          lastProfileUpdate: userData.lastProfileUpdate || Date.now(),
-          profileViews: userData.profileViews,
-          expoPushToken: userData.expoPushToken,
-        });
+        callback(hydrateProfileData(userId, doc.data() as Partial<UserProfileData>));
       } else {
         callback(null);
       }
@@ -474,6 +409,60 @@ export async function removeProfilePicture(userId: string): Promise<void> {
 }
 
 // =============================================================================
+// CORE PROFILE FIELD OPERATIONS
+// =============================================================================
+
+/**
+ * Update user display name.
+ */
+export async function updateDisplayName(
+  userId: string,
+  displayName: string,
+): Promise<void> {
+  try {
+    const normalizedDisplayName = validateDisplayName(displayName);
+
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    await updateDoc(userRef, {
+      displayName: normalizedDisplayName,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Display name updated");
+  } catch (error) {
+    log.error("Error updating display name", error);
+    throw error;
+  }
+}
+
+/**
+ * Update legacy avatar config fields used by profile header/avatar rendering.
+ */
+export async function updateAvatarConfig(
+  userId: string,
+  avatarConfig: AvatarConfig,
+): Promise<void> {
+  try {
+    const validatedAvatarConfig = validateAvatarConfig(avatarConfig);
+
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    await updateDoc(userRef, {
+      avatarConfig: validatedAvatarConfig,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Avatar config updated");
+  } catch (error) {
+    log.error("Error updating avatar config", error);
+    throw error;
+  }
+}
+
+// =============================================================================
 // BIO OPERATIONS
 // =============================================================================
 
@@ -482,17 +471,14 @@ export async function removeProfilePicture(userId: string): Promise<void> {
  */
 export async function updateBio(userId: string, text: string): Promise<void> {
   try {
-    // Validate length
-    if (text.length > 200) {
-      throw new Error("Bio must be 200 characters or less");
-    }
+    const normalizedBio = validateBioText(text);
 
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
 
     await updateDoc(userRef, {
       bio: {
-        text: text.trim(),
+        text: normalizedBio,
         updatedAt: Date.now(),
       },
       lastProfileUpdate: Date.now(),
@@ -519,16 +505,14 @@ export async function setStatus(
   expiresIn?: number, // milliseconds until expiry
 ): Promise<void> {
   try {
-    if (text.length > 50) {
-      throw new Error("Status must be 50 characters or less");
-    }
+    const normalizedStatus = validateStatusInput(text, mood);
 
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
 
     const status: ProfileStatus = {
-      text: text.trim(),
-      mood,
+      text: normalizedStatus.text,
+      mood: normalizedStatus.mood,
       setAt: Date.now(),
       expiresAt: expiresIn ? Date.now() + expiresIn : undefined,
     };
@@ -1291,38 +1275,10 @@ export async function updateFullPrivacySettings(
   settings: ProfilePrivacySettings,
 ): Promise<void> {
   try {
+    validateFullPrivacySettings(settings);
+
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
-
-    // Validate settings
-    const validVisibility = ["everyone", "friends", "nobody"];
-    const visibilityFields = [
-      "profileVisibility",
-      "showProfilePicture",
-      "showBio",
-      "showStatus",
-      "showGameScores",
-      "showBadges",
-      "showLastActive",
-      "showOnlineStatus",
-      "showFriendshipInfo",
-      "showFriendsList",
-      "allowFriendRequests",
-      "allowMessages",
-      "allowCalls",
-      "allowGameInvites",
-    ];
-
-    for (const field of visibilityFields) {
-      if (
-        settings[field as keyof ProfilePrivacySettings] &&
-        !validVisibility.includes(
-          settings[field as keyof ProfilePrivacySettings] as string,
-        )
-      ) {
-        throw new Error(`Invalid value for ${field}`);
-      }
-    }
 
     await updateDoc(userRef, {
       privacy: settings,

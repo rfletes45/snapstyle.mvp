@@ -122,7 +122,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 9 - Profile System Deep Clean
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Profile writes/reads stabilized via canonical service paths.
 - Theme/default hydration behavior preserved.

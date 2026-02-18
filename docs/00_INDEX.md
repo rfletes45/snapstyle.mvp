@@ -29,6 +29,7 @@ Read in this order for fastest orientation:
 - Functions contract: [FUNCTIONS.md](FUNCTIONS.md)
 - Configuration and feature flags: [CONFIGURATION.md](CONFIGURATION.md)
 - Client data contract: [DATA_CONTRACT_CLIENT.md](DATA_CONTRACT_CLIENT.md)
+- Profile system: [PROFILE_SYSTEM.md](PROFILE_SYSTEM.md)
 - Messaging: [03_CHAT_V2.md](03_CHAT_V2.md), [03_CHAT_V3.md](03_CHAT_V3.md)
 - Chat system contract: [CHAT_SYSTEM.md](CHAT_SYSTEM.md)
 - Games: [06_GAMES.md](06_GAMES.md), [GAME_SYSTEM_REFERENCE.md](GAME_SYSTEM_REFERENCE.md)
@@ -50,7 +51,6 @@ Read in this order for fastest orientation:
 
 These are linked early so later segments can fill them in without index churn:
 
-- `docs/PROFILE_SYSTEM.md`
 - `docs/GAMES_PLATFORM.md` (or equivalent updates in `docs/06_GAMES.md`)
 - `docs/COLYSEUS_SERVER.md`
 - `docs/EMBEDDED_WEB_GAMES.md`
