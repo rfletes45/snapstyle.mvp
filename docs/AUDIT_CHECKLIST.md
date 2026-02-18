@@ -136,7 +136,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 10 - Games Platform Consistency + Error Handling
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Unified invite/lobby lifecycle across multiplayer games.
 - Trace IDs, watchdogs, and error taxonomy preserved.

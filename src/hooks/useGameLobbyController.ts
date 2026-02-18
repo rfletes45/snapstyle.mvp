@@ -37,6 +37,10 @@ import type {
   UseGameLobbyOptions,
   UseGameLobbyReturn,
 } from "@/hooks/useGameLobby";
+import {
+  getConnectionBannerForState,
+  shouldShowLobbyOverlayForState,
+} from "@/hooks/gameLobbySelectors";
 import { useGameLobby } from "@/hooks/useGameLobby";
 import type { RoomHealthState } from "@/hooks/useRoomHealth";
 import { useRoomHealth } from "@/hooks/useRoomHealth";
@@ -270,12 +274,12 @@ export function useGameLobbyController(
 
   // ── Connection banner ─────────────────────────────────────────────────
   const connectionBanner = useMemo<string | null>(() => {
-    if (roomReconnecting) return "Reconnecting to game server\u2026";
-    if (roomOpponentDisconnected)
-      return "Opponent disconnected \u2014 waiting for reconnection\u2026";
-    if (health.stale && roomPhase === "playing")
-      return "Connection may be unstable\u2026";
-    return null;
+    return getConnectionBannerForState({
+      roomReconnecting,
+      roomOpponentDisconnected,
+      roomHealthStale: health.stale,
+      roomPhase,
+    });
   }, [roomReconnecting, roomOpponentDisconnected, health.stale, roomPhase]);
 
   // ── Active error ──────────────────────────────────────────────────────
@@ -400,24 +404,12 @@ export function useGameLobbyController(
 
   // ── Should show overlay ───────────────────────────────────────────────
   const shouldShowOverlay = useMemo(() => {
-    // Hide overlay when room is actively playing and no blocking errors
-    if (
-      (roomPhase === "playing" || roomPhase === "finished") &&
-      lobby.phase !== "error" &&
-      !activeError &&
-      !watchdog.isStuck
-    ) {
-      return false;
-    }
-    // Show overlay when lobby hasn't resolved yet
-    if (lobby.phase !== "playing" && lobby.phase !== "starting") {
-      return true;
-    }
-    // Show overlay on error
-    if (activeError) return true;
-    // Show overlay when watchdog detects stuck
-    if (watchdog.isStuck) return true;
-    return false;
+    return shouldShowLobbyOverlayForState({
+      roomPhase,
+      lobbyPhase: lobby.phase,
+      hasActiveError: !!activeError,
+      watchdogStuck: watchdog.isStuck,
+    });
   }, [roomPhase, lobby.phase, activeError, watchdog.isStuck]);
 
   return {
@@ -431,3 +423,4 @@ export function useGameLobbyController(
     shouldShowOverlay,
   };
 }
+

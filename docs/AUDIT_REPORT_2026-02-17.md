@@ -388,6 +388,55 @@
 - `npm run lint` PASS (warnings only)
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 
+## Segment 10
+
+### What changed
+
+- Standardized lobby-state decision logic into isolated selectors:
+  - `src/hooks/gameLobbySelectors.ts`
+    - `getConnectionBannerForState(...)`
+    - `shouldShowLobbyOverlayForState(...)`
+  - `src/hooks/useGameLobbyController.ts` now consumes those selectors.
+- Added targeted games reliability tests:
+  - `__tests__/hooks/useGameLobbyControllerSelectors.test.ts`
+    - lobby phase and overlay visibility transitions
+    - connection banner state precedence
+  - `__tests__/services/gameRecoveryActions.test.ts`
+    - retry/rejoin/reset/cancel/report-bug action handling
+    - side-effect and callback dispatch expectations
+- Added canonical lifecycle doc:
+  - `docs/GAMES_PLATFORM.md`
+    - invite -> lobby -> join -> recovery lifecycle
+    - controller coverage list
+    - explicit, documented exceptions for bespoke flows
+- Updated docs index to include games platform contract:
+  - `docs/00_INDEX.md`
+
+### Multiplayer lifecycle findings and explicit exceptions
+
+- Unified controller + lobby overlay path is active for core RN multiplayer screens (`Chess`, `Checkers`, `TicTacToe`, `ConnectFour`, `DotMatch`, `Gomoku`, `Reversi`, `CrazyEights`, `SketchParty`).
+- Two non-controller multiplayer screens remain by design and are explicitly documented:
+  - `src/screens/games/MiniGolfDuelsGameScreen.tsx` (host-room-key + invite queue handshake path)
+  - `src/screens/games/StarforgeGameScreen.tsx` (embedded WebView probe/load/bridge lifecycle)
+- Joiner navigation consistency is enforced in:
+  - `src/components/chat/ChatGameInvites.tsx`
+  - `src/screens/games/GamesHubScreen.tsx`
+- Participant auto-navigation on invite activation is enforced in:
+  - `src/components/games/UniversalInviteCard.tsx`
+
+### Why this is safe
+
+- Changes are scoped to lobby selector extraction, tests, and docs; no gameplay reducer or room protocol logic was refactored.
+- `useGameLobbyController` behavior is preserved while moving decision logic into testable pure functions.
+- Recovery action tests verify existing dispatch behavior without changing action semantics.
+- Exceptions to the unified controller path are no longer implicit; they are now documented with rationale.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -401,7 +450,7 @@
 | 7 | 2026-02-18 | Audited deployed Cloud Functions contracts, hardened sanitized logging paths, and reduced accidental-deployment risk for non-exported function candidates. | `docs/FUNCTIONS.md`, `firebase-backend/functions/src/inboxTriggers.ts`, `firebase-backend/functions/src/rateLimiter.ts`, `firebase-backend/functions/src/calls.ts`, `firebase-backend/functions/src/games.ts`, `docs/00_INDEX.md`, `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Functions build PASS; Root type-check/lint/test PASS | Done |
 | 8 | 2026-02-18 | Unified active chat UI service usage under `services/messaging`, added invariant-focused outbox/ordering/idempotency tests, and documented chat contracts. | `src/screens/chat/ChatScreen.tsx`, `src/hooks/useOutboxProcessor.ts`, `src/hooks/useSnapCapture.ts`, `src/hooks/useUnifiedMessages.ts`, `__tests__/services/messagingOutboxInvariants.test.ts`, `docs/CHAT_SYSTEM.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 9 | 2026-02-18 | Consolidated profile write ownership under `profileService`, centralized hydration/validators, added profile contract tests, and documented profile system behavior/contracts. | `src/services/profile/profileContract.ts`, `src/services/profileService.ts`, `src/screens/profile/ProfileScreen.tsx`, `src/screens/settings/SettingsScreen.tsx`, `src/services/cosmetics.ts`, `__tests__/services/profileContract.test.ts`, `docs/PROFILE_SYSTEM.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
-| 10 | - | - | - | - | Not started |
+| 10 | 2026-02-18 | Extracted and tested lobby-state selectors, added recovery-action tests, and documented canonical games lifecycle with explicit exceptions for bespoke multiplayer screens. | `src/hooks/gameLobbySelectors.ts`, `src/hooks/useGameLobbyController.ts`, `__tests__/hooks/useGameLobbyControllerSelectors.test.ts`, `__tests__/services/gameRecoveryActions.test.ts`, `docs/GAMES_PLATFORM.md`, `docs/00_INDEX.md`, `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Root: type-check/lint/test PASS | Done |
 | 11 | - | - | - | - | Not started |
 | 12 | - | - | - | - | Not started |
 | 13 | - | - | - | - | Not started |
