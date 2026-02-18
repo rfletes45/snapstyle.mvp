@@ -423,7 +423,7 @@ export default function TasksScreen({ navigation }: any) {
                     { color: theme.colors.onSurface },
                   ]}
                 >
-                  Today's Progress
+                  Today&apos;s Progress
                 </Text>
                 <Text
                   style={[

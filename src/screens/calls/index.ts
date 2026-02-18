@@ -77,10 +77,12 @@ if (areNativeCallsAvailable) {
   GroupCallScreen = require("./GroupCallScreen").GroupCallScreen;
 } else {
   // Provide stub screens for web/Expo Go
-  VideoCallScreen = () =>
-    React.createElement(UnavailableScreen, { screenName: "Video Calls" });
-  GroupCallScreen = () =>
-    React.createElement(UnavailableScreen, { screenName: "Group Calls" });
+  VideoCallScreen = function VideoCallScreenUnavailable() {
+    return React.createElement(UnavailableScreen, { screenName: "Video Calls" });
+  };
+  GroupCallScreen = function GroupCallScreenUnavailable() {
+    return React.createElement(UnavailableScreen, { screenName: "Group Calls" });
+  };
 }
 
 export { GroupCallScreen, VideoCallScreen };

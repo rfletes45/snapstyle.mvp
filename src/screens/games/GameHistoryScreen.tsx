@@ -48,12 +48,9 @@ import {
 } from "@/types/games";
 import {
   BounceBlitzStats,
-  ClickerMineStats,
-  HelixDropStats,
-  MemoryMasterStats,
+  BrickBreakerStats,
   Play2048Stats,
   SinglePlayerGameStats,
-  SnakeMasterStats,
   WordMasterStats,
 } from "@/types/singlePlayerGames";
 import { TurnBasedGameType } from "@/types/turnBased";
@@ -99,11 +96,11 @@ const SINGLEPLAYER_GAMES: {
   { type: "all", label: "All Games", icon: "ðŸŽ®" },
   { type: "word_master", label: "Word", icon: "ðŸ“" },
   { type: "bounce_blitz", label: "Bounce Blitz", icon: "âšª" },
-  { type: "clicker_mine", label: "Clicker Mine", icon: "⛏️" },
-  { type: "helix_drop", label: "Helix Drop", icon: "🌀" },
   { type: "play_2048", label: "2048", icon: "ðŸ”¢" },
-  { type: "snake_master", label: "Snake", icon: "ðŸ" },
-  { type: "memory_master", label: "Memory", icon: "ðŸ§ " },
+  { type: "brick_breaker", label: "Brick Breaker", icon: "🧱" },
+  { type: "minesweeper_classic", label: "Minesweeper", icon: "💣" },
+  { type: "lights_out", label: "Lights Out", icon: "💡" },
+  { type: "pong_game", label: "Pong", icon: "🏓" },
 ];
 
 // =============================================================================
@@ -628,29 +625,17 @@ export function GameHistoryScreen() {
         }
         return `âŒ ${ws.attemptsUsed}/6 attempts`;
       }
-      case "snake_master": {
-        const ss = stats as SnakeMasterStats;
-        return `ðŸŽ ${ss.foodEaten} apples â€¢ ${ss.maxLength} max length`;
-      }
       case "play_2048": {
         const s2 = stats as Play2048Stats;
         return `ðŸ”¢ Best: ${s2.bestTile} â€¢ ${s2.moveCount} moves`;
-      }
-      case "memory_master": {
-        const ms = stats as MemoryMasterStats;
-        return `ðŸ§  ${ms.pairsMatched} pairs â€¢ ${ms.attempts} attempts`;
       }
       case "bounce_blitz": {
         const bb = stats as BounceBlitzStats;
         return `âšª Level ${bb.levelReached} â€¢ ${bb.blocksDestroyed} blocks`;
       }
-      case "clicker_mine": {
-        const cm = stats as ClickerMineStats;
-        return `⛏️ Depth ${cm.depthReached} • ${cm.taps} taps • ${cm.prestiges} prestige`;
-      }
-      case "helix_drop": {
-        const hd = stats as HelixDropStats;
-        return `🌀 Level ${hd.levelReached} • Combo x${hd.maxCombo}`;
+      case "brick_breaker": {
+        const bb = stats as BrickBreakerStats;
+        return `🧱 ${bb.levelsCompleted} levels • ${bb.bricksDestroyed} bricks`;
       }
       default:
         return item.singlePlayerScore !== undefined

@@ -833,7 +833,7 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
               { color: theme.colors.onSurfaceVariant },
             ]}
           >
-            Classic game of X's and O's
+            Classic game of X&apos;s and O&apos;s
           </Text>
 
           <View style={styles.menuButtons}>

@@ -249,16 +249,20 @@ export interface UseSpectatorReturn {
 // =============================================================================
 
 export function useSpectator(params: UseSpectatorParams): UseSpectatorReturn {
-  switch (params.mode) {
-    case "multiplayer-spectator":
-      return useMultiplayerSpectator(params);
-    case "multiplayer-spectator-standalone":
-      return useMultiplayerSpectatorStandalone(params);
-    case "sp-host":
-      return useSpHost(params);
-    case "sp-spectator":
-      return useSpSpectator(params);
-  }
+  // Freeze mode at first render so hook ordering cannot change mid-lifecycle.
+  const modeRef = useRef(params.mode);
+  const stableMode = modeRef.current;
+
+  const selectedHook: (p: UseSpectatorParams) => UseSpectatorReturn =
+    stableMode === "multiplayer-spectator"
+      ? (useMultiplayerSpectator as (p: UseSpectatorParams) => UseSpectatorReturn)
+      : stableMode === "multiplayer-spectator-standalone"
+        ? (useMultiplayerSpectatorStandalone as (p: UseSpectatorParams) => UseSpectatorReturn)
+        : stableMode === "sp-host"
+          ? (useSpHost as (p: UseSpectatorParams) => UseSpectatorReturn)
+          : (useSpSpectator as (p: UseSpectatorParams) => UseSpectatorReturn);
+
+  return selectedHook(params);
 }
 
 // =============================================================================

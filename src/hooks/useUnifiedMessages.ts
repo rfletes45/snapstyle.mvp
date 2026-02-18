@@ -32,13 +32,21 @@
  * ```
  */
 
-import { updateReadWatermark as updateDMReadWatermark } from "@/services/chatMembers";
+import { CHAT_FEATURES } from "@/constants/featureFlags";
+import {
+  updateDeliveryWatermark as updateDMDeliveryWatermark,
+  updateReadWatermark as updateDMReadWatermark,
+} from "@/services/chatMembers";
 import {
   getPendingForConversation,
   mergeMessagesWithOutbox,
 } from "@/services/chatV2";
-import { updateGroupReadWatermark } from "@/services/groupMembers";
+import {
+  updateGroupDeliveryWatermark,
+  updateGroupReadWatermark,
+} from "@/services/groupMembers";
 import { subscribeToInboxSettings } from "@/services/inboxSettings";
+import { resolveFromInboxSettings } from "@/services/messaging/resolveChatSettings";
 import {
   loadOlderMessages,
   resetPaginationCursor,
@@ -147,16 +155,26 @@ export function useUnifiedMessages(
   // Refs
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastWatermarkRef = useRef<number>(0);
+  const lastDeliveryWatermarkRef = useRef<number>(0);
   const updateWatermarkRef = useRef<
+    ((timestamp: number) => Promise<void>) | undefined
+  >(undefined);
+  const updateDeliveryWatermarkRef = useRef<
     ((timestamp: number) => Promise<void>) | undefined
   >(undefined);
   const lastLoadOlderTimeRef = useRef<number>(0);
 
-  // Compute sendReadReceipts: use option if provided, else use user's setting
-  // For DMs, we respect the user's showReadReceipts setting
+  // Resolve effective settings via the V3 resolver
+  const effectiveSettings = useMemo(
+    () => resolveFromInboxSettings(inboxSettings),
+    [inboxSettings],
+  );
+
+  // Compute sendReadReceipts: use option if provided, else use effective setting
+  // For DMs, we respect the user's publishReadReceipts setting
   const sendReadReceipts =
     sendReadReceiptsOption ??
-    (scope === "dm" ? inboxSettings.showReadReceipts : false);
+    (scope === "dm" ? effectiveSettings.publishReadReceipts : false);
 
   // Subscribe to user's inbox settings for dynamic read receipt control
   useEffect(() => {
@@ -234,6 +252,16 @@ export function useUnifiedMessages(
             updateWatermarkRef.current?.(watermark);
             lastWatermarkRef.current = latestTimestamp;
           }
+
+          // Segment 2: Delivery ack — update delivery watermark
+          if (
+            CHAT_FEATURES.CHAT_DELIVERY_ACKS &&
+            effectiveSettings.publishDeliveryReceipts &&
+            latestTimestamp > lastDeliveryWatermarkRef.current
+          ) {
+            updateDeliveryWatermarkRef.current?.(latestTimestamp);
+            lastDeliveryWatermarkRef.current = latestTimestamp;
+          }
         }
       },
       onPaginationState: (state) => {
@@ -296,10 +324,40 @@ export function useUnifiedMessages(
     [scope, conversationId, currentUid, sendReadReceipts],
   );
 
-  // Keep ref updated for use in subscription callback
+  // Update delivery watermark (Segment 2)
+  const updateDeliveryWatermark = useCallback(
+    async (timestamp: number) => {
+      if (!CHAT_FEATURES.CHAT_DELIVERY_ACKS) return;
+      if (!conversationId || !currentUid) return;
+      try {
+        if (scope === "dm") {
+          await updateDMDeliveryWatermark(
+            conversationId,
+            currentUid,
+            timestamp,
+          );
+        } else {
+          await updateGroupDeliveryWatermark(
+            conversationId,
+            currentUid,
+            timestamp,
+          );
+        }
+      } catch (err) {
+        log.error("Failed to update delivery watermark", err);
+      }
+    },
+    [scope, conversationId, currentUid],
+  );
+
+  // Keep refs updated for use in subscription callback
   useEffect(() => {
     updateWatermarkRef.current = updateWatermark;
   }, [updateWatermark]);
+
+  useEffect(() => {
+    updateDeliveryWatermarkRef.current = updateDeliveryWatermark;
+  }, [updateDeliveryWatermark]);
 
   // Load older messages (with debounce protection)
   const loadOlder = useCallback(async () => {

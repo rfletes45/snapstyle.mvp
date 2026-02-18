@@ -28,6 +28,11 @@ jest.mock("../../src/services/persistence", () => ({
   cleanupExpiredGameStates: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock("colyseus", () => ({
+  Room: class MockRoom {},
+  Client: class MockClient {},
+}));
+
 import { ArraySchema, MapSchema } from "@colyseus/schema";
 import { evaluateGuess } from "../../src/rooms/coop/WordMasterRoom";
 import {

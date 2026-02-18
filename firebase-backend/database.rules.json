@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "presence": {
+      "$uid": {
+        ".read": true,
+        ".write": "auth !== null && auth.uid === $uid"
+      }
+    },
+    "statusVisibility": {
+      "$uid": {
+        ".read": true,
+        ".write": "auth !== null && (auth.uid === $uid || auth.token.admin === true)"
+      }
+    }
+  }
+}

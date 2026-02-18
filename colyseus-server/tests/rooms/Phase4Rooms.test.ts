@@ -1030,11 +1030,6 @@ describe("Shared Game Lifecycle", () => {
       expect(p.connected).toBe(false);
     });
 
-      expect(p.connected).toBe(true);
-      p.connected = false;
-      expect(p.connected).toBe(false);
-    });
-
     it("should track connection status for BounceBlitzPlayerState", () => {
       const p = new BounceBlitzPlayerState();
       expect(p.connected).toBe(true);
@@ -1042,9 +1037,6 @@ describe("Shared Game Lifecycle", () => {
 
     it("should track connection status for BrickBreakerPlayerState", () => {
       const p = new BrickBreakerPlayerState();
-      expect(p.connected).toBe(true);
-    });
-
       expect(p.connected).toBe(true);
     });
   });

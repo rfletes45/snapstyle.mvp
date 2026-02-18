@@ -1060,6 +1060,7 @@ const DraggableItem: React.FC<DraggableItemProps> = React.memo(
     );
   },
 );
+DraggableItem.displayName = "EditorDraggableItem";
 
 // =============================================================================
 // TOOL BUTTON
@@ -1090,6 +1091,7 @@ const ToolButton: React.FC<ToolButtonProps> = React.memo(
     </TouchableOpacity>
   ),
 );
+ToolButton.displayName = "EditorToolButton";
 
 // =============================================================================
 // STYLES

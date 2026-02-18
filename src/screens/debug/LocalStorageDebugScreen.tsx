@@ -925,7 +925,7 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
             </>
           ) : (
             <Text style={styles.emptyText}>
-              Cache not initialized. Tap "Initialize" below.
+              Cache not initialized. Tap &quot;Initialize&quot; below.
             </Text>
           )}
         </Card.Content>
@@ -1018,7 +1018,7 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
         <Card.Content>
           {testResults.length === 0 ? (
             <Text style={styles.emptyText}>
-              Tap "Run All" to test the storage system
+              Tap &quot;Run All&quot; to test the storage system
             </Text>
           ) : (
             testResults.map((result, index) => (
@@ -1078,10 +1078,10 @@ export default function LocalStorageDebugScreen({ navigation }: any) {
                 • Scan the QR code with Expo Go on your phone
               </Text>
               <Text variant="bodySmall">
-                • Press "a" in the terminal for Android emulator
+                • Press &quot;a&quot; in the terminal for Android emulator
               </Text>
               <Text variant="bodySmall">
-                • Press "i" in the terminal for iOS simulator
+                • Press &quot;i&quot; in the terminal for iOS simulator
               </Text>
             </View>
           </Card.Content>

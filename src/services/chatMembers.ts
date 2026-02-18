@@ -12,6 +12,7 @@
  * @module services/chatMembers
  */
 
+import { CHAT_FEATURES } from "@/constants/featureFlags";
 import {
   MemberStatePrivate,
   MemberStatePublic,
@@ -30,6 +31,7 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { getFirestoreInstance } from "./firebase";
 
 const log = createLogger("chatMembers");
@@ -167,8 +169,30 @@ export async function updateReadWatermark(
   options: { sendPublicReceipt?: boolean } = { sendPublicReceipt: true },
 ): Promise<void> {
   try {
-    const db = getFirestoreInstance();
     const { sendPublicReceipt = true } = options;
+
+    // -----------------------------------------------------------------------
+    // Segment 7: When CHAT_PRIVACY_SERVER_ENFORCED is enabled, route the
+    // public read receipt through the server callable so privacy settings
+    // are validated server-side.
+    // -----------------------------------------------------------------------
+    if (CHAT_FEATURES.CHAT_PRIVACY_SERVER_ENFORCED && sendPublicReceipt) {
+      const fns = getFunctions();
+      const publishReadReceiptFn = httpsCallable(fns, "publishReadReceipt");
+      await publishReadReceiptFn({
+        scope: "dm",
+        conversationId: chatId,
+        lastReadAt: timestamp,
+      });
+      // The callable also updates private lastSeenAtPrivate, so we're done.
+      log.debug(
+        "Read watermark published via server",
+        ctx({ chatId, uid, timestamp }),
+      );
+      return;
+    }
+
+    const db = getFirestoreInstance();
 
     // Update public watermark (for read receipts) - only if enabled
     if (sendPublicReceipt) {
@@ -237,6 +261,28 @@ export async function updateTypingIndicator(
 
   lastTypingUpdate = now;
 
+  // -------------------------------------------------------------------------
+  // Segment 7: route through server callable when privacy enforcement is on
+  // -------------------------------------------------------------------------
+  if (CHAT_FEATURES.CHAT_PRIVACY_SERVER_ENFORCED) {
+    try {
+      const fns = getFunctions();
+      const publishTypingFn = httpsCallable(fns, "publishTypingIndicator");
+      await publishTypingFn({
+        scope: "dm",
+        conversationId: chatId,
+        typingAt: now,
+      });
+      log.debug("Typing indicator published via server", ctx({ chatId, uid }));
+    } catch (error) {
+      log.error(
+        "Failed to publish typing via server",
+        ctx({ chatId, uid, error }),
+      );
+    }
+    return;
+  }
+
   try {
     const db = getFirestoreInstance();
     const docRef = doc(db, "Chats", chatId, "Members", uid);
@@ -272,6 +318,23 @@ export async function clearTypingIndicator(
   chatId: string,
   uid: string,
 ): Promise<void> {
+  // Segment 7: route through server callable when privacy enforcement is on
+  if (CHAT_FEATURES.CHAT_PRIVACY_SERVER_ENFORCED) {
+    try {
+      const fns = getFunctions();
+      const publishTypingFn = httpsCallable(fns, "publishTypingIndicator");
+      await publishTypingFn({
+        scope: "dm",
+        conversationId: chatId,
+        typingAt: null,
+      });
+      log.debug("Typing indicator cleared via server", ctx({ chatId, uid }));
+    } catch (error) {
+      log.debug("Could not clear typing via server", ctx({ chatId, uid }));
+    }
+    return;
+  }
+
   try {
     const db = getFirestoreInstance();
     const docRef = doc(db, "Chats", chatId, "Members", uid);
@@ -413,6 +476,123 @@ export function subscribeToReadReceipt(
     (error) => {
       log.error(
         "Read receipt subscription error",
+        ctx({ chatId, otherUid, error }),
+      );
+      callback(null);
+    },
+  );
+}
+
+// =============================================================================
+// Delivery Watermarks (Segment 2 — CHAT_DELIVERY_ACKS)
+// =============================================================================
+
+/**
+ * Update delivery watermark (public) for DM chat.
+ *
+ * Writes `lastDeliveredAtPublic` to the caller's Members doc.
+ * The value is monotonically increasing — the caller must ensure that
+ * the new timestamp >= the existing one (and Firestore rules enforce it).
+ *
+ * @param chatId - Chat document ID
+ * @param uid - Current user's UID
+ * @param timestamp - Max serverReceivedAt from delivered messages
+ */
+export async function updateDeliveryWatermark(
+  chatId: string,
+  uid: string,
+  timestamp: number,
+): Promise<void> {
+  if (!CHAT_FEATURES.CHAT_DELIVERY_ACKS) return;
+
+  // -------------------------------------------------------------------------
+  // Segment 7: route through server callable when privacy enforcement is on
+  // -------------------------------------------------------------------------
+  if (CHAT_FEATURES.CHAT_PRIVACY_SERVER_ENFORCED) {
+    try {
+      const fns = getFunctions();
+      const publishDeliveryFn = httpsCallable(fns, "publishDeliveryReceipt");
+      await publishDeliveryFn({
+        scope: "dm",
+        conversationId: chatId,
+        lastDeliveredAt: timestamp,
+      });
+      log.debug(
+        "Delivery watermark published via server",
+        ctx({ chatId, uid, timestamp }),
+      );
+    } catch (error) {
+      log.error(
+        "Failed to publish delivery via server",
+        ctx({ chatId, uid, error }),
+      );
+    }
+    return;
+  }
+
+  try {
+    const db = getFirestoreInstance();
+    const publicDocRef = doc(db, "Chats", chatId, "Members", uid);
+
+    await setDoc(
+      publicDocRef,
+      {
+        uid,
+        lastDeliveredAtPublic: timestamp,
+      },
+      { merge: true },
+    );
+
+    log.debug("Updated delivery watermark", ctx({ chatId, uid, timestamp }));
+  } catch (error) {
+    log.error(
+      "Failed to update delivery watermark",
+      ctx({ chatId, uid, error }),
+    );
+    // Non-critical — don't throw
+  }
+}
+
+/**
+ * Subscribe to other user's delivery watermark.
+ *
+ * This allows showing "Delivered" status on sent messages before
+ * the other user opens the chat and sends a read receipt.
+ *
+ * @param chatId - Chat document ID
+ * @param otherUid - Other user's UID
+ * @param callback - Called with lastDeliveredAtPublic or null
+ * @returns Unsubscribe function
+ */
+export function subscribeToDeliveryReceipt(
+  chatId: string,
+  otherUid: string,
+  callback: (deliveredWatermark: number | null) => void,
+): () => void {
+  if (!CHAT_FEATURES.CHAT_DELIVERY_ACKS) {
+    // Return a no-op unsubscribe so callers don't need to guard
+    callback(null);
+    return () => {};
+  }
+
+  const db = getFirestoreInstance();
+  const docRef = doc(db, "Chats", chatId, "Members", otherUid);
+
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        callback(null);
+        return;
+      }
+
+      const data = snapshot.data();
+      const lastDeliveredAtPublic = toMillis(data.lastDeliveredAtPublic);
+      callback(lastDeliveredAtPublic ?? null);
+    },
+    (error) => {
+      log.error(
+        "Delivery receipt subscription error",
         ctx({ chatId, otherUid, error }),
       );
       callback(null);

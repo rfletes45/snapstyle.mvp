@@ -70,11 +70,6 @@ function GameInvitesBannerComponent({
 }: GameInvitesBannerProps) {
   const { colors, isDark } = useAppTheme();
 
-  // Don't render if no invites
-  if (!invites || invites.length === 0) {
-    return null;
-  }
-
   // Render individual invite card
   const renderInviteCard = useCallback(
     ({ item: invite }: ListRenderItemInfo<UniversalGameInvite>) => {
@@ -99,6 +94,11 @@ function GameInvitesBannerComponent({
     () => <View style={{ width: CARD_GAP }} />,
     [],
   );
+
+  // Don't render if no invites
+  if (!invites || invites.length === 0) {
+    return null;
+  }
 
   // Snap offsets for smooth scrolling
   const snapToOffsets = invites.map(

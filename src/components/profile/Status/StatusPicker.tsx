@@ -260,7 +260,7 @@ function StatusPickerBase({
               <Text
                 style={[styles.sectionTitle, { color: colors.textSecondary }]}
               >
-                What's on your mind? (optional)
+                What&apos;s on your mind? (optional)
               </Text>
               <View
                 style={[styles.inputContainer, { borderColor: colors.outline }]}

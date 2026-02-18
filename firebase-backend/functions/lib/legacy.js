@@ -158,10 +158,48 @@ exports.onNewMessage = functions.firestore
         // Get recipient's push token
         const pushToken = await (0, utils_1.getUserPushToken)(recipientId);
         if (pushToken) {
-            // Determine notification content based on message type
+            // -----------------------------------------------------------
+            // Segment 1 – respect recipient's notificationPreview setting
+            // -----------------------------------------------------------
+            let previewMode = "full";
+            try {
+                const recipientSettingsDoc = await db
+                    .collection("Users")
+                    .doc(recipientId)
+                    .collection("settings")
+                    .doc("inbox")
+                    .get();
+                if (recipientSettingsDoc.exists) {
+                    const rSettings = recipientSettingsDoc.data();
+                    if (rSettings?.notificationPreview &&
+                        ["full", "sender_only", "generic"].includes(rSettings.notificationPreview)) {
+                        previewMode = rSettings.notificationPreview;
+                    }
+                }
+            }
+            catch (previewErr) {
+                // Non-critical — fall back to "full"
+                console.warn("[onNewMessage] Could not read recipient notification preview setting", previewErr);
+            }
+            // Determine notification content based on message type + preview mode
             const isSnap = message.type === "image";
-            const title = senderName;
-            const body = isSnap ? "📸 Sent you a picture!" : message.content;
+            let title;
+            let body;
+            switch (previewMode) {
+                case "generic":
+                    title = "New Message";
+                    body = "You have a new message";
+                    break;
+                case "sender_only":
+                    title = senderName;
+                    body = "Sent you a message";
+                    break;
+                case "full":
+                default:
+                    title = senderName;
+                    body = isSnap ? "📸 Sent you a picture!" : message.content;
+                    break;
+            }
             await (0, utils_1.sendExpoPushNotification)({
                 to: pushToken,
                 title,
@@ -326,37 +364,72 @@ exports.onNewGroupMessageV2 = functions.firestore
                     console.log(`[onNewGroupMessageV2] No push token for user: ${recipientUid.substring(0, 8)}`);
                     continue;
                 }
-                // Build notification content
-                let title;
-                let body;
-                if (isMentioned) {
-                    title = `${senderName} mentioned you in ${groupName}`;
-                }
-                else {
-                    title = `${groupName}`;
-                }
-                // Determine body based on message type
-                if (message.kind === "text" && message.text) {
-                    body = `${senderName}: ${message.text}`;
-                    if (body.length > 100) {
-                        body = body.substring(0, 97) + "...";
+                // -----------------------------------------------------------
+                // Segment 1 – respect recipient's notificationPreview setting
+                // -----------------------------------------------------------
+                let previewMode = "full";
+                try {
+                    const recipientSettingsDoc = await db
+                        .collection("Users")
+                        .doc(recipientUid)
+                        .collection("settings")
+                        .doc("inbox")
+                        .get();
+                    if (recipientSettingsDoc.exists) {
+                        const rSettings = recipientSettingsDoc.data();
+                        if (rSettings?.notificationPreview &&
+                            ["full", "sender_only", "generic"].includes(rSettings.notificationPreview)) {
+                            previewMode = rSettings.notificationPreview;
+                        }
                     }
                 }
-                else if (message.kind === "media") {
-                    const attachmentCount = message.attachments?.length || 1;
-                    body =
-                        attachmentCount > 1
-                            ? `${senderName}: 📷 ${attachmentCount} photos`
-                            : `${senderName}: 📷 Photo`;
+                catch (previewErr) {
+                    console.warn(`[onNewGroupMessageV2] Could not read notification preview for ${recipientUid.substring(0, 8)}`, previewErr);
                 }
-                else if (message.kind === "voice") {
-                    body = `${senderName}: 🎤 Voice message`;
+                // Build notification content — apply preview mode
+                let title;
+                let body;
+                if (previewMode === "generic") {
+                    title = "New Message";
+                    body = "You have a new message in a group";
                 }
-                else if (message.kind === "file") {
-                    body = `${senderName}: 📎 File`;
+                else if (previewMode === "sender_only") {
+                    title = isMentioned
+                        ? `${senderName} mentioned you in ${groupName}`
+                        : groupName;
+                    body = `${senderName} sent a message`;
                 }
                 else {
-                    body = `${senderName} sent a message`;
+                    // "full" — original behaviour
+                    if (isMentioned) {
+                        title = `${senderName} mentioned you in ${groupName}`;
+                    }
+                    else {
+                        title = `${groupName}`;
+                    }
+                    // Determine body based on message type
+                    if (message.kind === "text" && message.text) {
+                        body = `${senderName}: ${message.text}`;
+                        if (body.length > 100) {
+                            body = body.substring(0, 97) + "...";
+                        }
+                    }
+                    else if (message.kind === "media") {
+                        const attachmentCount = message.attachments?.length || 1;
+                        body =
+                            attachmentCount > 1
+                                ? `${senderName}: 📷 ${attachmentCount} photos`
+                                : `${senderName}: 📷 Photo`;
+                    }
+                    else if (message.kind === "voice") {
+                        body = `${senderName}: 🎤 Voice message`;
+                    }
+                    else if (message.kind === "file") {
+                        body = `${senderName}: 📎 File`;
+                    }
+                    else {
+                        body = `${senderName} sent a message`;
+                    }
                 }
                 // Send notification
                 await (0, utils_1.sendExpoPushNotification)({
@@ -1125,31 +1198,7 @@ function getCurrentWeekKey() {
  * Helper: Validate game score bounds (anti-cheat)
  */
 function isValidScore(gameId, score) {
-    if (gameId === "reaction_tap") {
-        // Reaction time: 100ms - 2000ms is valid
-        if (score < 100) {
-            return {
-                valid: false,
-                reason: "Reaction time too fast (likely cheating)",
-            };
-        }
-        if (score > 2000) {
-            return { valid: false, reason: "Reaction time too slow" };
-        }
-    }
-    else if (gameId === "timed_tap") {
-        // Taps in 10 seconds: 1 - 200 is valid
-        if (score < 1) {
-            return { valid: false, reason: "Invalid tap count" };
-        }
-        if (score > 200) {
-            return { valid: false, reason: "Tap count too high (likely cheating)" };
-        }
-    }
-    else {
-        return { valid: false, reason: "Unknown game type" };
-    }
-    return { valid: true };
+    return { valid: false, reason: "Unknown game type" };
 }
 /**
  * onGameSessionCreated: Triggered when a new game session is recorded
@@ -1198,14 +1247,7 @@ exports.onGameSessionCreated = functions.firestore
         let shouldUpdate = true;
         if (existingEntry.exists) {
             const existingScore = existingEntry.data().score;
-            // For reaction_tap: lower is better
-            // For timed_tap: higher is better
-            if (session.gameId === "reaction_tap") {
-                shouldUpdate = session.score < existingScore;
-            }
-            else {
-                shouldUpdate = session.score > existingScore;
-            }
+            shouldUpdate = session.score > existingScore;
         }
         if (shouldUpdate) {
             await entryRef.set({
@@ -1255,19 +1297,6 @@ async function checkGameAchievements(playerId, gameId, score) {
         }
         if (totalGames >= 50) {
             await grantAchievementIfNotEarned(achievementsRef, "game_50_sessions");
-        }
-        // Game-specific achievements
-        if (gameId === "reaction_tap" && score < 200) {
-            await grantAchievementIfNotEarned(achievementsRef, "game_reaction_master", {
-                score,
-                gameId,
-            });
-        }
-        if (gameId === "timed_tap" && score >= 100) {
-            await grantAchievementIfNotEarned(achievementsRef, "game_speed_demon", {
-                score,
-                gameId,
-            });
         }
     }
     catch (error) {
@@ -1659,17 +1688,7 @@ exports.onGamePlayedTaskProgress = functions.firestore
             .get();
         for (const taskDoc of winTasksQuery.docs) {
             const task = taskDoc.data();
-            // For reaction_tap, lower score is better (reaction time in ms)
-            // For timed_tap, higher score is better (tap count)
-            let isWin = false;
-            if (gameId === "reaction_tap") {
-                // Win if reaction time is under 300ms
-                isWin = score <= 300;
-            }
-            else if (gameId === "timed_tap") {
-                // Win if tap count is over 50
-                isWin = score >= 50;
-            }
+            const isWin = false;
             if (isWin) {
                 await updateTaskProgress(playerId, "win_game");
                 break; // Only count once per game session

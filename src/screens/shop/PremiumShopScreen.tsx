@@ -398,7 +398,7 @@ export default function PremiumShopScreen() {
         Exclusive Items
       </Text>
       <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-        Premium-only items you can't get anywhere else
+        Premium-only items you can&apos;t get anywhere else
       </Text>
 
       {exclusives.length === 0 ? (

@@ -43,6 +43,7 @@ import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
 import {
   AttachmentV2,
   LocalAttachment,
+  MentionSpan,
   MessageKind,
   OutboxItem,
   ReplyToMetadata,
@@ -354,6 +355,7 @@ export { getClientId };
 export type {
   AttachmentV2,
   LocalAttachment,
+  MentionSpan,
   MessageKind,
   OutboxItem,
   ReplyToMetadata,

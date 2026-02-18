@@ -7,6 +7,7 @@
  * @module services/groupMembers
  */
 
+import { CHAT_FEATURES } from "@/constants/featureFlags";
 import { MemberStatePrivate, MemberStatePublic } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import {
@@ -213,6 +214,42 @@ export async function updateGroupReadWatermark(
   } catch (error) {
     log.error("Failed to update group read watermark", error);
     throw error;
+  }
+}
+
+/**
+ * Update delivery watermark for a group (Segment 2 — CHAT_DELIVERY_ACKS)
+ *
+ * Writes `lastDeliveredAtPublic` to the caller's public Members doc.
+ * Monotonically increasing — Firestore rules enforce >= existing value.
+ *
+ * @param groupId - Group document ID
+ * @param uid - Current user's UID
+ * @param timestamp - Max serverReceivedAt from delivered messages
+ */
+export async function updateGroupDeliveryWatermark(
+  groupId: string,
+  uid: string,
+  timestamp: number,
+): Promise<void> {
+  if (!CHAT_FEATURES.CHAT_DELIVERY_ACKS) return;
+
+  try {
+    await setDoc(
+      getMemberPublicRef(groupId, uid),
+      {
+        uid,
+        lastDeliveredAtPublic: timestamp,
+      },
+      { merge: true },
+    );
+    log.debug("Updated group delivery watermark", {
+      operation: "updateDeliveryWatermark",
+      data: { groupId, timestamp },
+    });
+  } catch (error) {
+    log.error("Failed to update group delivery watermark", error);
+    // Non-critical — don't throw
   }
 }
 

@@ -72,12 +72,15 @@ export async function submitBugReport(
 ): Promise<string> {
   try {
     const user = getAuth().currentUser;
+    if (!user) {
+      throw new Error("Must be authenticated to submit bug reports.");
+    }
     const buildInfo = getClientBuildInfo();
 
     const report = {
       // Who
-      uid: user?.uid ?? "anonymous",
-      displayName: user?.displayName ?? user?.email ?? "Unknown",
+      uid: user.uid,
+      displayName: user.displayName ?? user.email ?? user.uid,
 
       // What
       errorCode: context.errorCode ?? null,

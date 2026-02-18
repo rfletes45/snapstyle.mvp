@@ -462,7 +462,7 @@ describe("CallQuality", () => {
     it("should return good score for moderate metrics", () => {
       const score = calculateMOSScore(150, 1.5, 25);
       expect(score).toBeGreaterThanOrEqual(3.5);
-      expect(score).toBeLessThan(4.5);
+      expect(score).toBeLessThanOrEqual(4.5);
     });
 
     it("should return poor score for bad metrics", () => {

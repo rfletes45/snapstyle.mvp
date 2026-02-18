@@ -42,16 +42,16 @@ export default function BlockUserModal({
             When you block someone:
           </Text>
           <Text variant="bodySmall" style={styles.bulletPoint}>
-            • They won't be able to send you messages
+            • They won&apos;t be able to send you messages
           </Text>
           <Text variant="bodySmall" style={styles.bulletPoint}>
-            • They won't be able to send friend requests
+            • They won&apos;t be able to send friend requests
           </Text>
           <Text variant="bodySmall" style={styles.bulletPoint}>
             • Your friendship will be removed
           </Text>
           <Text variant="bodySmall" style={styles.bulletPoint}>
-            • They won't be notified
+            • They won&apos;t be notified
           </Text>
 
           <Text variant="bodyMedium" style={styles.reasonLabel}>

@@ -412,7 +412,7 @@ export default function ShopScreen({ navigation }: any) {
                 { color: theme.colors.onSurfaceVariant },
               ]}
             >
-              Get them before they're gone!
+              Get them before they&apos;re gone!
             </Text>
           </View>
           <FlatList

@@ -88,6 +88,7 @@ const SpectatorBrick = React.memo(
     );
   },
 );
+SpectatorBrick.displayName = "SpectatorBrick";
 
 const SpectatorBall = React.memo(
   ({ ball, scale }: { ball: BrickBallState; scale: number }) => {
@@ -119,6 +120,7 @@ const SpectatorBall = React.memo(
     );
   },
 );
+SpectatorBall.displayName = "SpectatorBall";
 
 const SpectatorPaddle = React.memo(
   ({ paddle, scale }: { paddle: BrickPaddleState; scale: number }) => {
@@ -142,6 +144,7 @@ const SpectatorPaddle = React.memo(
     );
   },
 );
+SpectatorPaddle.displayName = "SpectatorPaddle";
 
 const SpectatorPowerUp = React.memo(
   ({ powerUp, scale }: { powerUp: FallingPowerUp; scale: number }) => {
@@ -162,6 +165,7 @@ const SpectatorPowerUp = React.memo(
     );
   },
 );
+SpectatorPowerUp.displayName = "SpectatorPowerUp";
 
 const SpectatorLaser = React.memo(
   ({ laser, scale }: { laser: LaserState; scale: number }) => {
@@ -180,6 +184,7 @@ const SpectatorLaser = React.memo(
     );
   },
 );
+SpectatorLaser.displayName = "SpectatorLaser";
 
 // ─── Main Renderer ──────────────────────────────────────────────────────
 

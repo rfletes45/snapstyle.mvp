@@ -244,7 +244,7 @@ export default function SetStatusScreen({ navigation }: SetStatusScreenProps) {
         {/* Status Text */}
         <Animated.View entering={FadeInUp.delay(200)}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-            What's on your mind?
+            What&apos;s on your mind?
           </Text>
           <View
             style={[styles.inputContainer, { borderColor: colors.outline }]}

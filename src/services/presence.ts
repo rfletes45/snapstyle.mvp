@@ -18,6 +18,7 @@
  * @module services/presence
  */
 
+import { CHAT_FEATURES } from "@/constants/featureFlags";
 import { createLogger } from "@/utils/log";
 import { getAuth } from "firebase/auth";
 import {
@@ -52,6 +53,16 @@ export interface PresenceWithPrivacy extends PresenceData {
   canSeeLastSeen: boolean;
 }
 
+/**
+ * RTDB mirror of user privacy flags.
+ * Written by Firestore trigger onChatSettingsChanged.
+ */
+export interface StatusVisibility {
+  onlineAllowed: boolean;
+  lastSeenAllowed: boolean;
+  updatedAt?: number;
+}
+
 // =============================================================================
 // Module State
 // =============================================================================
@@ -59,6 +70,46 @@ export interface PresenceWithPrivacy extends PresenceData {
 let presenceInitialized = false;
 let connectedRef: DatabaseReference | null = null;
 let currentUserPresenceRef: DatabaseReference | null = null;
+
+/**
+ * When CHAT_SETTINGS_V3 is enabled, callers can pass effective settings
+ * to gate whether presence is published. This flag is stored at the module
+ * level so that `initializePresence` and `setPresenceOnline` can reference
+ * it without requiring callers in the connection listener to pass settings.
+ *
+ * Default: true (publish) — preserves existing behaviour when either:
+ *  - CHAT_SETTINGS_V3 is OFF, or
+ *  - the caller hasn't provided effective settings yet.
+ */
+let shouldPublishOnlineStatus = true;
+let shouldPublishLastSeen = true;
+
+/**
+ * Update the module-level publish flags.
+ *
+ * Call this whenever the user's effective settings change (e.g. from a
+ * useEffect in the AuthContext that subscribes to inbox settings and
+ * resolves them through `resolveFromInboxSettings`).
+ *
+ * When CHAT_SETTINGS_V3 is OFF, this function is a no-op — presence
+ * continues to be published unconditionally.
+ */
+export function setPresencePrivacyFlags(flags: {
+  publishOnlineStatus?: boolean;
+  publishLastSeen?: boolean;
+}): void {
+  if (!CHAT_FEATURES.CHAT_SETTINGS_V3) return;
+  if (flags.publishOnlineStatus !== undefined) {
+    shouldPublishOnlineStatus = flags.publishOnlineStatus;
+  }
+  if (flags.publishLastSeen !== undefined) {
+    shouldPublishLastSeen = flags.publishLastSeen;
+  }
+  log.debug("Presence privacy flags updated", {
+    operation: "privacyFlags",
+    data: { shouldPublishOnlineStatus, shouldPublishLastSeen },
+  });
+}
 
 // =============================================================================
 // Helper Functions
@@ -110,16 +161,26 @@ export function initializePresence(uid: string): void {
 
         if (currentUserPresenceRef) {
           // When we disconnect, set offline status
+          // Always write onDisconnect so absent presence looks offline
           onDisconnect(currentUserPresenceRef).set({
             online: false,
-            lastSeen: serverTimestamp(),
+            lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
           });
 
-          // Set online status
-          set(currentUserPresenceRef, {
-            online: true,
-            lastSeen: serverTimestamp(),
-          });
+          // Set online status — respect privacy flag
+          if (shouldPublishOnlineStatus) {
+            set(currentUserPresenceRef, {
+              online: true,
+              lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
+            });
+          } else {
+            // User opted out of online status; write offline so stale
+            // "online: true" from a previous session doesn't linger.
+            set(currentUserPresenceRef, {
+              online: false,
+              lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
+            });
+          }
         }
       } else {
         log.debug("Disconnected from RTDB", { operation: "disconnected" });
@@ -178,12 +239,20 @@ export async function setPresenceOnline(online: boolean): Promise<void> {
     const db = getRealtimeDatabase();
     const presenceRef = ref(db, `presence/${uid}`);
 
+    // When CHAT_SETTINGS_V3 is enabled and user opted out of
+    // publishOnlineStatus, force online=false so the presence node
+    // never advertises this user as online.
+    const effectiveOnline = online && shouldPublishOnlineStatus;
+
     await set(presenceRef, {
-      online,
-      lastSeen: serverTimestamp(),
+      online: effectiveOnline,
+      lastSeen: shouldPublishLastSeen ? serverTimestamp() : null,
     });
 
-    log.debug("Set presence", { operation: "setOnline", data: { online } });
+    log.debug("Set presence", {
+      operation: "setOnline",
+      data: { online, effectiveOnline },
+    });
   } catch (error) {
     log.error("Failed to set presence", { operation: "setOnline", error });
   }
@@ -310,4 +379,87 @@ export function formatLastSeen(lastSeen: number | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+// =============================================================================
+// Status Visibility (Segment 7 — RTDB Privacy Mirror)
+// =============================================================================
+
+/**
+ * Fetch the RTDB status visibility flags for a target user.
+ *
+ * When CHAT_PRIVACY_SERVER_ENFORCED is enabled, this tells the
+ * subscribing client whether the target user allows their online
+ * status and last-seen to be shown.
+ *
+ * @param uid - Target user whose visibility flags to check
+ * @returns StatusVisibility (defaults to allowed if not present)
+ */
+export async function getStatusVisibility(
+  uid: string,
+): Promise<StatusVisibility> {
+  if (!CHAT_FEATURES.CHAT_PRIVACY_SERVER_ENFORCED) {
+    return { onlineAllowed: true, lastSeenAllowed: true };
+  }
+
+  try {
+    const db = getRealtimeDatabase();
+    const visRef = ref(db, `statusVisibility/${uid}`);
+    const snapshot = await get(visRef);
+    const data = snapshot.val() as StatusVisibility | null;
+
+    return {
+      onlineAllowed: data?.onlineAllowed ?? true,
+      lastSeenAllowed: data?.lastSeenAllowed ?? true,
+      updatedAt: data?.updatedAt,
+    };
+  } catch (error) {
+    log.error("Failed to get status visibility", {
+      operation: "getStatusVisibility",
+      data: { uid },
+      error,
+    });
+    // Fail open — if we can't read, assume allowed
+    return { onlineAllowed: true, lastSeenAllowed: true };
+  }
+}
+
+/**
+ * Subscribe to a user's status visibility flags in real-time.
+ *
+ * When CHAT_PRIVACY_SERVER_ENFORCED is enabled, the caller should
+ * combine this with `subscribeToPresence` to mask the online status
+ * and last-seen fields if the target user has disabled them.
+ *
+ * @param uid - Target user
+ * @param callback - Called when visibility flags change
+ * @returns Unsubscribe function
+ */
+export function subscribeToStatusVisibility(
+  uid: string,
+  callback: (visibility: StatusVisibility) => void,
+): () => void {
+  if (!CHAT_FEATURES.CHAT_PRIVACY_SERVER_ENFORCED) {
+    // Immediately fire allowed and return no-op
+    callback({ onlineAllowed: true, lastSeenAllowed: true });
+    return () => {};
+  }
+
+  const db = getRealtimeDatabase();
+  const visRef = ref(db, `statusVisibility/${uid}`);
+
+  const handleValue = (snapshot: { val: () => StatusVisibility | null }) => {
+    const data = snapshot.val();
+    callback({
+      onlineAllowed: data?.onlineAllowed ?? true,
+      lastSeenAllowed: data?.lastSeenAllowed ?? true,
+      updatedAt: data?.updatedAt,
+    });
+  };
+
+  onValue(visRef, handleValue);
+
+  return () => {
+    off(visRef, "value", handleValue);
+  };
 }

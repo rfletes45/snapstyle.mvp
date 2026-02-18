@@ -69,11 +69,11 @@ describe("Card Schemas", () => {
     expect(state.discardSize).toBe(0);
     expect(state.currentSuit).toBe("");
     expect(state.drawCount).toBe(0);
-    expect(state.isWar).toBe(false);
-    expect(state.warPileSize).toBe(0);
-    expect(state.p1DeckSize).toBe(26);
-    expect(state.p2DeckSize).toBe(26);
-    expect(state.roundResult).toBe("");
+    expect(state.countdown).toBe(0);
+    expect(state.cardPlayers.size).toBe(0);
+    expect(state.topCard.suit).toBe("");
+    expect(state.topCard.rank).toBe("");
+    expect(state.topCard.faceUp).toBe(false);
   });
 
   it("should track card players in MapSchema", () => {
@@ -1019,15 +1019,9 @@ describe("Phase 3 Cross-Game Integration", () => {
     expect(state.topCard.faceUp).toBe(true);
   });
 
-  it("should have CardGameState with War-specific fields", () => {
+  it("should update CardGameState countdown for pre-game start", () => {
     const state = new CardGameState();
-    state.isWar = true;
-    state.warPileSize = 6;
-    state.p1DeckSize = 20;
-    state.p2DeckSize = 20;
-    state.roundResult = "war";
-    expect(state.isWar).toBe(true);
-    expect(state.warPileSize).toBe(6);
-    expect(state.roundResult).toBe("war");
+    state.countdown = 3;
+    expect(state.countdown).toBe(3);
   });
 });

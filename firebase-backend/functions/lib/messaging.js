@@ -47,10 +47,130 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.toggleReactionV2Function = exports.sendMessageV2Function = exports.editMessageV2Function = exports.deleteMessageForAllV2Function = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const chatMedia_1 = require("./chatMedia");
+const messageRequests_1 = require("./messageRequests");
+const rateLimiter_1 = require("./rateLimiter");
 // Lazy initialization to avoid "app not initialized" error
 // The app is initialized in index.ts before these functions are called
 function getDb() {
     return admin.firestore();
+}
+// =============================================================================
+// Server-side feature flags (Segment 6)
+// Cloud Functions don't import client-side featureFlags.
+// Set to true when ready for Phase 2 rollout.
+// =============================================================================
+/** Enable the global per-user bucketed rate limiter (Segment 6). */
+const ENABLE_GLOBAL_RATE_LIMIT = false;
+/** Enable group settings enforcement — slow mode, announcement-only,
+ *  media permissions, @mention all (Segment 9). */
+const ENABLE_GROUP_SETTINGS_ENFORCEMENT = false;
+// =============================================================================
+// Group Settings Helpers (Segment 9)
+// =============================================================================
+/**
+ * Load group-level settings from the Groups/{groupId} document.
+ *
+ * Returns `null` if the group doc doesn't exist or has no `settings` field.
+ */
+async function loadGroupSettings(groupId) {
+    const db = getDb();
+    const groupDoc = await db.collection("Groups").doc(groupId).get();
+    if (!groupDoc.exists)
+        return null;
+    return groupDoc.data()?.settings ?? null;
+}
+/**
+ * Check whether a user is an admin or owner in a group.
+ *
+ * Reads Groups/{groupId}/Members/{uid}.role and the top-level
+ * Groups/{groupId}.createdBy field.
+ */
+async function isGroupAdminOrOwner(groupId, uid) {
+    const db = getDb();
+    const [memberDoc, groupDoc] = await Promise.all([
+        db.collection("Groups").doc(groupId).collection("Members").doc(uid).get(),
+        db.collection("Groups").doc(groupId).get(),
+    ]);
+    // Owner check
+    if (groupDoc.exists && groupDoc.data()?.createdBy === uid)
+        return true;
+    // Admin role check
+    if (memberDoc.exists) {
+        const role = memberDoc.data()?.role;
+        if (role === "admin" || role === "owner")
+            return true;
+    }
+    return false;
+}
+/**
+ * Look up the last message timestamp by this user in a group.
+ *
+ * Used for slow-mode enforcement. Returns 0 if no prior messages found.
+ */
+async function getLastGroupMessageTimestamp(groupId, uid) {
+    const db = getDb();
+    const snap = await db
+        .collection("Groups")
+        .doc(groupId)
+        .collection("Messages")
+        .where("senderId", "==", uid)
+        .orderBy("serverReceivedAt", "desc")
+        .limit(1)
+        .get();
+    if (snap.empty)
+        return 0;
+    const data = snap.docs[0].data();
+    const ts = data.serverReceivedAt;
+    if (ts && typeof ts.toMillis === "function")
+        return ts.toMillis();
+    if (typeof ts === "number")
+        return ts;
+    return 0;
+}
+/**
+ * Enforce GroupSettings on a sendMessageV2 call (Segment 9).
+ *
+ * Throws HttpsError if the user's send is rejected.
+ * No-op if ENABLE_GROUP_SETTINGS_ENFORCEMENT is false.
+ */
+async function enforceGroupSettings(groupId, senderId, kind, mentionUids) {
+    if (!ENABLE_GROUP_SETTINGS_ENFORCEMENT)
+        return;
+    const settings = await loadGroupSettings(groupId);
+    if (!settings)
+        return; // no settings doc → no restrictions
+    const isAdmin = await isGroupAdminOrOwner(groupId, senderId);
+    // 1. Announcement-only: non-admins cannot send any messages
+    if (settings.announcementOnly && !isAdmin) {
+        throw new functions.https.HttpsError("permission-denied", "This group is in announcement-only mode. Only admins can send messages.");
+    }
+    // 2. Slow mode: enforce minimum gap between messages
+    if (settings.slowModeSeconds && settings.slowModeSeconds > 0 && !isAdmin) {
+        const lastTs = await getLastGroupMessageTimestamp(groupId, senderId);
+        if (lastTs > 0) {
+            const elapsed = (Date.now() - lastTs) / 1000;
+            if (elapsed < settings.slowModeSeconds) {
+                const waitSec = Math.ceil(settings.slowModeSeconds - elapsed);
+                throw new functions.https.HttpsError("resource-exhausted", `Slow mode active. Please wait ${waitSec} seconds before sending another message.`);
+            }
+        }
+    }
+    // 3. Media permission: non-admins may be blocked from sending media
+    if (settings.allowMediaFromMembers === false &&
+        !isAdmin &&
+        (kind === "media" || kind === "voice" || kind === "file")) {
+        throw new functions.https.HttpsError("permission-denied", "Only admins can send media in this group.");
+    }
+    // 4. @mention all: non-admins may be blocked from @all
+    if (settings.allowMentionsAll === false && !isAdmin && mentionUids) {
+        // Convention: "all" or "@all" as a mention UID means everyone
+        if (mentionUids.includes("all") ||
+            mentionUids.includes("@all") ||
+            mentionUids.includes("everyone")) {
+            throw new functions.https.HttpsError("permission-denied", "Only admins can mention @all in this group.");
+        }
+    }
 }
 // =============================================================================
 // Input Validation Helpers
@@ -239,8 +359,16 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to send messages");
     }
     const senderId = context.auth.uid;
-    const { conversationId, scope, kind, text, replyTo, mentionUids, mentionSpans, attachments, clientId, messageId, createdAt, } = data;
-    console.log(`[sendMessageV2] Request from ${senderId.substring(0, 8)}:`, sanitizeForLog({ conversationId, scope, kind, messageId }));
+    const { conversationId, scope, kind, text, replyTo, mentionUids, mentionSpans, attachments, stagedAttachments, clientId, messageId, createdAt, traceId, } = data;
+    // Segment 8: Log traceId if present (for cross-system correlation)
+    const logTraceId = traceId || `srv-${messageId?.substring(0, 12) || "unknown"}`;
+    console.log(`[sendMessageV2] Request from ${senderId.substring(0, 8)}:`, sanitizeForLog({
+        conversationId,
+        scope,
+        kind,
+        messageId,
+        traceId: logTraceId,
+    }));
     // 2. Validate required fields
     if (!isValidString(conversationId, 1, 100)) {
         throw new functions.https.HttpsError("invalid-argument", "Invalid conversationId");
@@ -281,11 +409,28 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (attachments && attachments.length > 10) {
         throw new functions.https.HttpsError("invalid-argument", "Maximum 10 attachments per message");
     }
+    // Validate staged attachments
+    if (stagedAttachments && stagedAttachments.length > 10) {
+        throw new functions.https.HttpsError("invalid-argument", "Maximum 10 attachments per message");
+    }
+    // Mutual exclusion: cannot provide both legacy and staged attachments
+    if (attachments &&
+        attachments.length > 0 &&
+        stagedAttachments &&
+        stagedAttachments.length > 0) {
+        throw new functions.https.HttpsError("invalid-argument", "Cannot provide both attachments and stagedAttachments");
+    }
     // 3. Membership check
     const isMember = await checkMembership(conversationId, scope, senderId);
     if (!isMember) {
         console.log(`[sendMessageV2] Non-member attempt: ${senderId.substring(0, 8)}`);
         throw new functions.https.HttpsError("permission-denied", "Not a member of this conversation");
+    }
+    // 3b. Group settings enforcement (Segment 9)
+    // Checks slow mode, announcement-only, media permissions, @mention all.
+    // No-op when ENABLE_GROUP_SETTINGS_ENFORCEMENT is false.
+    if (scope === "group") {
+        await enforceGroupSettings(conversationId, senderId, kind, mentionUids);
     }
     // 4. Block check (DM only)
     if (scope === "dm") {
@@ -297,13 +442,52 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
                 console.log(`[sendMessageV2] Blocked user attempt: ${senderId.substring(0, 8)} <-> ${otherUid.substring(0, 8)}`);
                 throw new functions.https.HttpsError("permission-denied", "Cannot send message to this user");
             }
+            // 4b. Message request gating (Segment 5)
+            // Checks the recipient's dmAcceptance setting and friendship status.
+            // When the flag is off on the server this function is still called but
+            // will only act if the recipient has explicitly set dmAcceptance ≠ "everyone".
+            const previewForGating = text
+                ? text.length > 80
+                    ? text.substring(0, 80) + "…"
+                    : text
+                : kind;
+            const gatingResult = await (0, messageRequests_1.checkDmAcceptance)(senderId, otherUid, conversationId, previewForGating, kind);
+            if (gatingResult.outcome === "rejected") {
+                throw new functions.https.HttpsError("permission-denied", gatingResult.reason);
+            }
+            if (gatingResult.outcome === "request_created") {
+                // Don't write the message; inform the client a request was created
+                return {
+                    success: true,
+                    message: {
+                        id: messageId,
+                        serverReceivedAt: Date.now(),
+                        messageRequestCreated: true,
+                    },
+                    isExisting: false,
+                };
+            }
         }
     }
     // 5. Rate limit check
-    const rateLimitOk = await checkRateLimit(senderId);
-    if (!rateLimitOk) {
-        console.log(`[sendMessageV2] Rate limited: ${senderId.substring(0, 8)}`);
-        throw new functions.https.HttpsError("resource-exhausted", "Rate limit exceeded. Please wait before sending more messages.");
+    // Segment 6: When CHAT_GLOBAL_RATE_LIMIT is enabled (server-side
+    // config), use the global bucketed limiter. Otherwise, fall back
+    // to the legacy per-conversation limiter.
+    const useGlobalRateLimit = ENABLE_GLOBAL_RATE_LIMIT;
+    if (useGlobalRateLimit) {
+        const globalResult = await (0, rateLimiter_1.checkGlobalRateLimit)(senderId);
+        if (!globalResult.allowed) {
+            console.log(`[sendMessageV2] Global rate limited: ${senderId.substring(0, 8)} ` +
+                `(remaining=${globalResult.remaining}, retryAfter=${globalResult.retryAfterSeconds}s)`);
+            throw new functions.https.HttpsError("resource-exhausted", `Rate limit exceeded. Please wait ${globalResult.retryAfterSeconds ?? 60} seconds.`);
+        }
+    }
+    else {
+        const rateLimitOk = await checkRateLimit(senderId);
+        if (!rateLimitOk) {
+            console.log(`[sendMessageV2] Rate limited: ${senderId.substring(0, 8)}`);
+            throw new functions.https.HttpsError("resource-exhausted", "Rate limit exceeded. Please wait before sending more messages.");
+        }
     }
     // 6. Build collection path
     const collectionPath = scope === "dm"
@@ -360,6 +544,8 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         serverReceivedAt: admin.firestore.FieldValue.serverTimestamp(),
         idempotencyKey,
         clientId,
+        // Segment 8: Include traceId in message doc for debugging/correlation
+        ...(traceId ? { traceId: logTraceId } : {}),
     };
     // Add optional fields
     if (replyTo) {
@@ -374,6 +560,13 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (attachments && attachments.length > 0) {
         messageData.attachments = attachments;
     }
+    // Segment 3: Staged media pipeline — commit staged attachments to final
+    // paths, strip download tokens, and store path-only references.
+    if (stagedAttachments && stagedAttachments.length > 0) {
+        const committed = await (0, chatMedia_1.commitStagedAttachments)(scope, conversationId, messageId, stagedAttachments);
+        messageData.attachments = committed;
+        console.log(`[sendMessageV2] Committed ${committed.length} staged attachment(s) for ${messageId.substring(0, 8)}`);
+    }
     // For groups, add sender profile snapshot
     if (scope === "group") {
         const senderProfile = await getUserProfile(senderId);
@@ -387,7 +580,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     console.log(`[sendMessageV2] Creating message ${messageId.substring(0, 8)}`);
     await db.collection(collectionPath).doc(messageId).set(messageData);
     // 10. Update conversation preview (lastMessage fields)
-    const previewText = getPreviewText(kind, text, attachments);
+    const previewText = getPreviewText(kind, text, attachments || stagedAttachments);
     const conversationRef = scope === "dm"
         ? db.collection("Chats").doc(conversationId)
         : db.collection("Groups").doc(conversationId);

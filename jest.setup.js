@@ -31,6 +31,18 @@ jest.mock("expo-haptics", () => ({
   },
 }));
 
+// Mock expo-constants for node test environment
+jest.mock("expo-constants", () => ({
+  __esModule: true,
+  default: {
+    expoConfig: {
+      extra: {},
+    },
+    manifest2: null,
+    manifest: null,
+  },
+}));
+
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => {
   const Reanimated = require("react-native-reanimated/mock");

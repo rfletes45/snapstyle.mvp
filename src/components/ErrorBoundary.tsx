@@ -147,7 +147,7 @@ function ErrorFallback({ error, errorInfo, onRetry }: ErrorFallbackProps) {
           Oops! Something went wrong
         </Text>
         <Text style={[styles.message, { color: colors.textSecondary }]}>
-          We're sorry, but something unexpected happened. Please try again or
+          We&apos;re sorry, but something unexpected happened. Please try again or
           restart the app if the issue persists.
         </Text>
 

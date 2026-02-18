@@ -10,9 +10,10 @@
 import { subscribeToTyping } from "@/services/chatMembers";
 import { subscribeToInboxSettings } from "@/services/inboxSettings";
 import { setTypingIndicator } from "@/services/messaging";
+import { resolveFromInboxSettings } from "@/services/messaging/resolveChatSettings";
 import { DEFAULT_INBOX_SETTINGS, InboxSettings } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useTypingStatus");
 
@@ -81,6 +82,12 @@ export function useTypingStatus(
   const typingTimeoutRef = useRef<number | null>(null);
   const lastTypingRef = useRef(false);
 
+  // Resolve effective settings via the V3 resolver
+  const effective = useMemo(
+    () => resolveFromInboxSettings(settings),
+    [settings],
+  );
+
   // Subscribe to user's inbox settings
   useEffect(() => {
     if (!currentUid) return;
@@ -99,7 +106,7 @@ export function useTypingStatus(
     }
 
     // Don't subscribe if typing indicators are disabled
-    if (!settings.showTypingIndicators) {
+    if (!effective.publishTyping) {
       setIsOtherUserTyping(false);
       return;
     }
@@ -126,13 +133,13 @@ export function useTypingStatus(
     );
 
     return unsubscribe;
-  }, [conversationId, otherUid, scope, settings.showTypingIndicators, debug]);
+  }, [conversationId, otherUid, scope, effective.publishTyping, debug]);
 
   // Update current user's typing status with debouncing
   const setTyping = useCallback(
     (isTyping: boolean) => {
       // Don't send typing indicators if disabled in settings
-      if (!settings.showTypingIndicators) {
+      if (!effective.publishTyping) {
         return;
       }
 
@@ -180,7 +187,7 @@ export function useTypingStatus(
         }, TYPING_TIMEOUT_MS) as unknown as number;
       }
     },
-    [conversationId, currentUid, scope, settings.showTypingIndicators, debug],
+    [conversationId, currentUid, scope, effective.publishTyping, debug],
   );
 
   // Cleanup typing status on unmount
@@ -202,6 +209,6 @@ export function useTypingStatus(
   return {
     isOtherUserTyping,
     setTyping,
-    typingIndicatorsEnabled: settings.showTypingIndicators,
+    typingIndicatorsEnabled: effective.publishTyping,
   };
 }

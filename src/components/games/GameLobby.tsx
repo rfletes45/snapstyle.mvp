@@ -233,7 +233,7 @@ export function GameLobby({
         )}
         {showReadyButton && isReady && (
           <View style={styles.readyIndicator}>
-            <Text style={styles.readyIndicatorText}>✓ You're Ready</Text>
+            <Text style={styles.readyIndicatorText}>✓ You&apos;re Ready</Text>
           </View>
         )}
 

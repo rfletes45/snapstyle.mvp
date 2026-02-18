@@ -88,16 +88,6 @@ function getDefaultSettings(gameType) {
             timeControl: { type: "per_turn", seconds: 120 },
             chatEnabled: true,
         },
-        "8ball_pool": {
-            isRated: true,
-            timeControl: { type: "per_turn", seconds: 60 },
-            chatEnabled: true,
-        },
-        air_hockey: {
-            isRated: true,
-            timeControl: { type: "none", seconds: 0 },
-            chatEnabled: true,
-        },
     };
     return defaults[gameType] || { isRated: false, chatEnabled: true };
 }

@@ -341,7 +341,20 @@ service cloud.firestore {
             (!request.resource.data.keys().hasAll(['confirmBeforeDelete']) ||
              request.resource.data.confirmBeforeDelete is bool) &&
             (!request.resource.data.keys().hasAll(['swipeActionsEnabled']) ||
-             request.resource.data.swipeActionsEnabled is bool)
+             request.resource.data.swipeActionsEnabled is bool) &&
+            // ---- Settings V3 fields (Segment 1) ----
+            // dmAcceptance enum
+            (!request.resource.data.keys().hasAll(['dmAcceptance']) ||
+             request.resource.data.dmAcceptance in ['friends_only', 'everyone', 'requests']) &&
+            // notificationPreview enum
+            (!request.resource.data.keys().hasAll(['notificationPreview']) ||
+             request.resource.data.notificationPreview in ['full', 'sender_only', 'generic']) &&
+            // autoDownloadMedia enum
+            (!request.resource.data.keys().hasAll(['autoDownloadMedia']) ||
+             request.resource.data.autoDownloadMedia in ['never', 'wifi', 'always']) &&
+            // publishDeliveryReceipts bool
+            (!request.resource.data.keys().hasAll(['publishDeliveryReceipts']) ||
+             request.resource.data.publishDeliveryReceipts is bool)
           ));
         
         // No delete - settings persist
@@ -482,6 +495,35 @@ service cloud.firestore {
         
         // Owner can unmute users
         allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // Inbox subcollection (Segment 4 — Inbox Scaling)
+      // Server-managed aggregated inbox entries per conversation.
+      // Users/{uid}/Inbox/{threadId}
+      //   threadId format: "dm:{chatId}" or "group:{groupId}"
+      // --------------------------------------------------------
+      match /Inbox/{threadId} {
+        // Owner can read their own inbox
+        allow read: if isAuth() && isOwner(uid);
+
+        // All writes are server-managed (via triggers / admin SDK)
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // MessageRequests subcollection (Segment 5 — Message Requests)
+      // Server-created when a non-friend DMs a user with
+      // dmAcceptance = "requests". Owner can read; writes are
+      // server-only (accept/decline go through callables).
+      // Users/{uid}/MessageRequests/{chatId}
+      // --------------------------------------------------------
+      match /MessageRequests/{chatId} {
+        // Owner can read their own message requests
+        allow read: if isAuth() && isOwner(uid);
+
+        // All writes are server-managed (callables / admin SDK)
+        allow create, update, delete: if false;
       }
     }
 
@@ -731,12 +773,27 @@ service cloud.firestore {
         allow read: if isAuth() && 
                       request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members;
         
-        // Create/Update: users can only modify their own state
-        allow create, update: if isAuth() && 
-                                isOwner(uid) &&
-                                request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
-                                // Validate required field
-                                request.resource.data.uid == uid;
+        // Create: users can only create their own state
+        allow create: if isAuth() && 
+                        isOwner(uid) &&
+                        request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
+                        // Validate required field
+                        request.resource.data.uid == uid;
+
+        // Update: users can only modify their own state, with monotonic watermarks
+        allow update: if isAuth() && 
+                        isOwner(uid) &&
+                        request.auth.uid in get(/databases/(default)/documents/Chats/$(chatId)).data.members &&
+                        // Validate required field
+                        request.resource.data.uid == uid &&
+                        // Segment 2: Monotonic lastReadAtPublic (can only move forward)
+                        (!request.resource.data.keys().hasAll(['lastReadAtPublic']) ||
+                         !resource.data.keys().hasAll(['lastReadAtPublic']) ||
+                         request.resource.data.lastReadAtPublic >= resource.data.lastReadAtPublic) &&
+                        // Segment 2: Monotonic lastDeliveredAtPublic (can only move forward)
+                        (!request.resource.data.keys().hasAll(['lastDeliveredAtPublic']) ||
+                         !resource.data.keys().hasAll(['lastDeliveredAtPublic']) ||
+                         request.resource.data.lastDeliveredAtPublic >= resource.data.lastDeliveredAtPublic);
         
         // No delete - member state persists
         allow delete: if false;
@@ -1176,9 +1233,18 @@ service cloud.firestore {
                       );
         
         // Update: owner can change roles, or member updating their own data
+        // Segment 2: monotonic watermark validation for self-updates
         allow update: if isAuth() && (
                         get(/databases/$(database)/documents/Groups/$(groupId)).data.ownerId == request.auth.uid ||
-                        memberId == request.auth.uid
+                        (memberId == request.auth.uid &&
+                         // Monotonic lastReadAtPublic
+                         (!request.resource.data.keys().hasAll(['lastReadAtPublic']) ||
+                          !resource.data.keys().hasAll(['lastReadAtPublic']) ||
+                          request.resource.data.lastReadAtPublic >= resource.data.lastReadAtPublic) &&
+                         // Monotonic lastDeliveredAtPublic
+                         (!request.resource.data.keys().hasAll(['lastDeliveredAtPublic']) ||
+                          !resource.data.keys().hasAll(['lastDeliveredAtPublic']) ||
+                          request.resource.data.lastDeliveredAtPublic >= resource.data.lastDeliveredAtPublic))
                       );
         
         // Delete: owner/admin can remove, or member can leave (remove self)

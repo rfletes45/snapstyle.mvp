@@ -633,3 +633,89 @@ export const COLYSEUS_FEATURES = {
   /** Debug: Simulate network lag (ms) â€” 0 = disabled */
   DEBUG_SIMULATED_LAG: 0,
 } as const;
+// =============================================================================
+// Chat V3 Feature Flags
+// =============================================================================
+
+/**
+ * Chat V3 feature flags
+ *
+ * Controls progressive rollout of chat improvements:
+ * - Settings V3 (global + per-chat overrides + resolver)
+ * - Signed media URLs (no long-lived tokens in Firestore)
+ * - Staged uploads (client → staging → final)
+ * - Message requests (anti-spam for DMs)
+ * - Global rate limiting (bucketed)
+ * - Inbox aggregation (single collection)
+ * - Delivery acknowledgements (watermarks)
+ * - Server-enforced privacy (callables for typing/read/delivery)
+ * - Debug HUD (dev-only)
+ *
+ * Phase plan:
+ *   Phase 1: Add types/resolvers/collections; no behavior change by default.
+ *   Phase 2: Enable in dev-only; validate end-to-end.
+ *   Phase 3: Enable for internal cohort via flags.
+ *   Phase 4: Expand; only then consider deprecations.
+ *
+ * @see docs/03_CHAT_V3.md
+ */
+export const CHAT_FEATURES = {
+  // =========================================================================
+  // Phase 1 — Settings V3 (global + per-chat overrides + resolver)
+  // =========================================================================
+
+  /** Enable Settings V3 resolver and tri-state per-chat overrides */
+  CHAT_SETTINGS_V3: false,
+
+  // =========================================================================
+  // Phase 1 — Media Pipeline
+  // =========================================================================
+
+  /** Store only storage paths in message docs; mint short-lived signed URLs */
+  CHAT_SIGNED_MEDIA_URLS: false,
+
+  /** Upload attachments to staging path; server commits to final on send */
+  CHAT_STAGED_UPLOADS: false,
+
+  // =========================================================================
+  // Phase 1 — Message Requests
+  // =========================================================================
+
+  /** Enforce dmAcceptance setting; unsolicited DMs go to requests queue */
+  CHAT_MESSAGE_REQUESTS: false,
+
+  // =========================================================================
+  // Phase 1 — Rate Limiting
+  // =========================================================================
+
+  /** Enable global per-user bucketed rate limiter (replaces single-doc) */
+  CHAT_GLOBAL_RATE_LIMIT: false,
+
+  // =========================================================================
+  // Phase 1 — Inbox Aggregation
+  // =========================================================================
+
+  /** Query Users/{uid}/Inbox instead of Chats + Groups collections */
+  CHAT_INBOX_AGGREGATION: false,
+
+  // =========================================================================
+  // Phase 1 — Delivery Acks
+  // =========================================================================
+
+  /** Enable lastDeliveredAtPublic watermark on member docs */
+  CHAT_DELIVERY_ACKS: false,
+
+  // =========================================================================
+  // Phase 1 — Privacy Server Enforcement
+  // =========================================================================
+
+  /** Route typing/read/delivery writes through Cloud Function callables */
+  CHAT_PRIVACY_SERVER_ENFORCED: false,
+
+  // =========================================================================
+  // Debug
+  // =========================================================================
+
+  /** Show ChatDebugHUD overlay (dev-only, default true in __DEV__) */
+  CHAT_DEBUG_HUD: __DEV__,
+} as const;

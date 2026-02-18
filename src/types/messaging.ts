@@ -286,6 +286,464 @@ export interface LinkPreviewV2 {
 }
 
 // =============================================================================
+// Settings V3 Types (CHAT_SETTINGS_V3)
+// =============================================================================
+
+/**
+ * Tri-state for per-conversation overrides.
+ * - "inherit": use global setting
+ * - "on": force enabled regardless of global
+ * - "off": force disabled regardless of global
+ */
+export type TriState = "inherit" | "on" | "off";
+
+/**
+ * DM acceptance mode (global user setting).
+ * Controls who can initiate DMs with this user.
+ */
+export type DmAcceptance = "friends_only" | "everyone" | "requests";
+
+/**
+ * Notification preview detail level.
+ */
+export type NotificationPreview = "full" | "sender_only" | "generic";
+
+/**
+ * Auto-download media preference.
+ */
+export type AutoDownloadMedia = "never" | "wifi" | "always";
+
+/**
+ * Chat Settings V3 — global user-level settings.
+ *
+ * Stored at: `Users/{uid}/settings/chatSettings` (new doc) or
+ * merged into `Users/{uid}/settings/inbox` (backward compat).
+ *
+ * When CHAT_SETTINGS_V3 flag is OFF the resolver falls back
+ * to the existing InboxSettings shape.
+ */
+export interface ChatSettingsV3 {
+  /** Who can DM this user */
+  dmAcceptance: DmAcceptance;
+
+  /** Notification preview detail */
+  notificationPreview: NotificationPreview;
+
+  /** Auto-download media preference */
+  autoDownloadMedia: AutoDownloadMedia;
+
+  /** Publish read receipts to other members */
+  publishReadReceipts: boolean;
+
+  /** Publish delivery receipts (lastDeliveredAtPublic) */
+  publishDeliveryReceipts: boolean;
+
+  /** Publish typing indicators */
+  publishTyping: boolean;
+
+  /** Publish online status to RTDB */
+  publishOnlineStatus: boolean;
+
+  /** Publish last-seen timestamp */
+  publishLastSeen: boolean;
+}
+
+/**
+ * Default V3 settings — matches current production behavior.
+ */
+export const DEFAULT_CHAT_SETTINGS_V3: ChatSettingsV3 = {
+  dmAcceptance: "everyone",
+  notificationPreview: "full",
+  autoDownloadMedia: "wifi",
+  publishReadReceipts: true,
+  publishDeliveryReceipts: true,
+  publishTyping: true,
+  publishOnlineStatus: true,
+  publishLastSeen: true,
+};
+
+/**
+ * Per-conversation privacy overrides (stored in MembersPrivate).
+ *
+ * Each field uses TriState so "inherit" defers to the global setting.
+ */
+export interface PerChatPrivacyOverrides {
+  readReceipts: TriState;
+  deliveryReceipts: TriState;
+  typingIndicators: TriState;
+  notificationPreview: "inherit" | NotificationPreview;
+  autoDownloadMedia: "inherit" | AutoDownloadMedia;
+}
+
+/**
+ * Default per-chat overrides — everything inherits from global.
+ */
+export const DEFAULT_PER_CHAT_OVERRIDES: PerChatPrivacyOverrides = {
+  readReceipts: "inherit",
+  deliveryReceipts: "inherit",
+  typingIndicators: "inherit",
+  notificationPreview: "inherit",
+  autoDownloadMedia: "inherit",
+};
+
+/**
+ * Group-level settings (stored on Groups/{groupId}.settings).
+ * Only admins/owner can modify.
+ */
+export interface GroupSettings {
+  /** Minimum seconds between messages per member (0 = off) */
+  slowModeSeconds?: number;
+
+  /** Only admins/owner can send; members read-only */
+  announcementOnly?: boolean;
+
+  /** Allow non-admin members to send media attachments */
+  allowMediaFromMembers?: boolean;
+
+  /** Allow @all / @everyone mentions from non-admins */
+  allowMentionsAll?: boolean;
+
+  /**
+   * Message retention semantics:
+   * - "standard": normal history
+   * - "ephemeral_client_only": no server search/pins, best-effort history
+   */
+  retentionMode?: "standard" | "ephemeral_client_only";
+}
+
+/**
+ * Resolved (effective) settings after applying:
+ *   per-chat override > global V3 setting > default fallback.
+ *
+ * This is what the UI and services should consume.
+ */
+export interface EffectiveChatSettings {
+  publishReadReceipts: boolean;
+  publishDeliveryReceipts: boolean;
+  publishTyping: boolean;
+  publishOnlineStatus: boolean;
+  publishLastSeen: boolean;
+  notificationPreview: NotificationPreview;
+  autoDownloadMedia: AutoDownloadMedia;
+}
+
+/**
+ * Default effective settings (production-compatible defaults).
+ */
+export const DEFAULT_EFFECTIVE_SETTINGS: EffectiveChatSettings = {
+  publishReadReceipts: true,
+  publishDeliveryReceipts: true,
+  publishTyping: true,
+  publishOnlineStatus: true,
+  publishLastSeen: true,
+  notificationPreview: "full",
+  autoDownloadMedia: "wifi",
+};
+
+// =============================================================================
+// Global Rate Limit Types (Segment 6)
+// =============================================================================
+
+/**
+ * Result from a rate-limit check on the server.
+ *
+ * The server returns this shape when `CHAT_GLOBAL_RATE_LIMIT` is
+ * enabled so the client can display a meaningful retry-after UX.
+ */
+export interface RateLimitInfo {
+  /** Whether the action is allowed */
+  allowed: boolean;
+
+  /** Remaining budget in the current window */
+  remaining: number;
+
+  /** Window size in seconds */
+  windowSeconds: number;
+
+  /** Seconds until the current window resets (if rate-limited) */
+  retryAfterSeconds?: number;
+}
+
+// =============================================================================
+// Staged Attachment Types (Segment 3 — Media Pipeline)
+// =============================================================================
+
+/**
+ * Attachment metadata without a download URL.
+ *
+ * When CHAT_STAGED_UPLOADS is enabled, the client uploads to a staging
+ * path and stores only the path + metadata. The server commits the
+ * staging object to the final path, and viewers mint short-lived
+ * signed URLs on demand.
+ */
+export interface StagedAttachment {
+  /** Unique attachment ID within message */
+  id: string;
+
+  /** Attachment type */
+  kind: AttachmentKind;
+
+  /** MIME type */
+  mime: string;
+
+  /**
+   * Storage path (staging or final, depending on lifecycle stage).
+   * - Client sets: `chat-staging/{scope}/{conversationId}/{messageId}/{id}`
+   * - Server commits to: `chat-media/{scope}/{conversationId}/{messageId}/{id}`
+   */
+  path: string;
+
+  /** File size in bytes */
+  sizeBytes: number;
+
+  /** Image/video width */
+  width?: number;
+
+  /** Image/video height */
+  height?: number;
+
+  /** Audio/video duration in ms */
+  durationMs?: number;
+
+  /** Thumbnail storage path (no URL) */
+  thumbPath?: string;
+
+  /** User-provided caption */
+  caption?: string;
+
+  /** View-once flag */
+  viewOnce?: boolean;
+}
+
+/**
+ * Result from the `mintChatMediaUrl` callable.
+ */
+export interface SignedMediaUrlResult {
+  /** Short-lived signed URL for rendering */
+  url: string;
+
+  /** Expiry timestamp (ms since epoch) */
+  expiresAt: number;
+}
+
+// =============================================================================
+// Inbox Aggregation Types (Segment 4)
+// =============================================================================
+
+/**
+ * Server-managed inbox entry stored at `Users/{uid}/Inbox/{threadId}`.
+ *
+ * threadId format:
+ *   - `dm:{chatId}`   for DM conversations
+ *   - `group:{groupId}` for group conversations
+ *
+ * This doc is written by Cloud Function triggers, not the client.
+ * The client only reads.
+ */
+export interface InboxEntry {
+  /** Thread ID (matches the document ID) */
+  threadId: string;
+
+  /** Conversation scope */
+  scope: "dm" | "group";
+
+  /** Underlying conversation document ID */
+  conversationId: string;
+
+  /** Timestamp of the last message — used for sorting */
+  lastActivityAt: number;
+
+  /** UID of the last message sender */
+  lastSenderId: string;
+
+  /** Kind of the last message */
+  lastMessageKind: string;
+
+  /**
+   * Preview text of the last message.
+   * Populated by Cloud Function trigger.
+   * Will respect the recipient's notificationPreview setting
+   * (full / sender_only / generic) and fall back to "generic" by default.
+   */
+  lastMessagePreview: string;
+
+  /**
+   * Number of unread messages (or a sentinel value).
+   * Incremented server-side; reset to 0 when the user marks read.
+   */
+  unreadCount: number;
+
+  /**
+   * Alternative to counting: timestamp since which messages are unread.
+   * If the user read at T, and lastActivityAt > T, conversation is unread.
+   */
+  unreadSince?: number;
+
+  /** Pinned timestamp (null if not pinned) */
+  pinnedAt?: number | null;
+
+  /** Whether the user has archived this thread */
+  archived: boolean;
+
+  /** Muted until timestamp (-1 = forever, null = not muted) */
+  mutedUntil?: number | null;
+
+  /** Notification level override for this thread */
+  notifyLevel: "all" | "mentions" | "none";
+
+  // ---- Group-specific snapshot fields ----
+
+  /** Group display name (groups only) */
+  groupName?: string;
+
+  /** Group avatar storage path (groups only) */
+  avatarPath?: string;
+
+  /** Member count snapshot (groups only) */
+  memberCount?: number;
+
+  // ---- DM-specific snapshot fields ----
+
+  /** Other user's display name (DMs only) */
+  otherUserName?: string;
+
+  /** Other user's UID (DMs only) */
+  otherUserId?: string;
+}
+
+// =============================================================================
+// Message Request Types (Segment 5 — Message Requests)
+// =============================================================================
+
+/**
+ * Status of a message request.
+ */
+export type MessageRequestStatus = "pending" | "accepted" | "declined";
+
+/**
+ * A DM message request entry, stored at
+ * `Users/{recipientUid}/MessageRequests/{chatId}`.
+ *
+ * Created server-side when a non-friend sends the first DM and
+ * the recipient's `dmAcceptance` is `"requests"` or `"friends_only"`.
+ *
+ * Once accepted, the Chat doc is "unlocked" — further messages flow
+ * normally without gating.
+ */
+export interface MessageRequest {
+  /** Chat document ID (same as document ID) */
+  chatId: string;
+
+  /** UID of the user who initiated the DM */
+  requesterId: string;
+
+  /** Display name snapshot of the requester (for UI) */
+  requesterName: string;
+
+  /** Avatar config snapshot (optional) */
+  requesterAvatarConfig?: unknown;
+
+  /** Current status */
+  status: MessageRequestStatus;
+
+  /** When the request was created */
+  createdAt: number;
+
+  /** When the request was resolved (accepted or declined) */
+  resolvedAt?: number;
+
+  /** Preview text of the first message */
+  messagePreview: string;
+
+  /** Kind of first message */
+  messageKind: string;
+}
+
+/**
+ * Response returned by the acceptMessageRequest / declineMessageRequest
+ * callables.
+ */
+export interface MessageRequestResponse {
+  success: boolean;
+}
+
+/**
+ * Runtime guard for message request callable responses.
+ */
+export function isMessageRequestResponse(
+  value: unknown,
+): value is MessageRequestResponse {
+  if (!value || typeof value !== "object") return false;
+  return typeof (value as { success?: unknown }).success === "boolean";
+}
+
+/**
+ * Decode an unknown Firestore snapshot payload into MessageRequest.
+ *
+ * Returns null when required fields are missing or invalid.
+ */
+export function decodeMessageRequest(
+  value: unknown,
+  fallbackChatId: string,
+): MessageRequest | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+
+  const status = raw.status;
+  if (status !== "pending" && status !== "accepted" && status !== "declined") {
+    return null;
+  }
+
+  const createdAt = coerceTimestamp(raw.createdAt);
+  if (createdAt === undefined) return null;
+
+  const resolvedAt = coerceTimestamp(raw.resolvedAt);
+  const chatId =
+    typeof raw.chatId === "string" && raw.chatId.trim().length > 0
+      ? raw.chatId
+      : fallbackChatId;
+
+  const requesterId =
+    typeof raw.requesterId === "string" ? raw.requesterId : "";
+  const requesterName =
+    typeof raw.requesterName === "string" && raw.requesterName.trim().length > 0
+      ? raw.requesterName
+      : "Someone";
+
+  const messagePreview =
+    typeof raw.messagePreview === "string" ? raw.messagePreview : "";
+  const messageKind = typeof raw.messageKind === "string" ? raw.messageKind : "text";
+
+  return {
+    chatId,
+    requesterId,
+    requesterName,
+    requesterAvatarConfig: raw.requesterAvatarConfig,
+    status,
+    createdAt,
+    resolvedAt,
+    messagePreview,
+    messageKind,
+  };
+}
+
+function coerceTimestamp(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "toMillis" in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    const millis = (value as { toMillis: () => number }).toMillis();
+    return Number.isFinite(millis) ? millis : undefined;
+  }
+  return undefined;
+}
+
+// =============================================================================
 // Member State Types
 // =============================================================================
 
@@ -311,6 +769,14 @@ export interface MemberStatePublic {
    * Messages with serverReceivedAt <= this value are "read"
    */
   lastReadAtPublic?: number;
+
+  /**
+   * Delivery receipt watermark (Segment 2 — CHAT_DELIVERY_ACKS).
+   * Messages with serverReceivedAt <= this value have been delivered
+   * to the user's device. Only written if effectiveSettings.publishDeliveryReceipts
+   * is true. Must increase monotonically.
+   */
+  lastDeliveredAtPublic?: number;
 
   /**
    * Typing indicator timestamp
@@ -359,6 +825,17 @@ export interface MemberStatePrivate {
    */
   sendReadReceipts?: boolean;
 
+  // =========================================================================
+  // Per-Chat Privacy Overrides (Settings V3 — CHAT_SETTINGS_V3)
+  // =========================================================================
+
+  /**
+   * Per-conversation privacy overrides.
+   * When CHAT_SETTINGS_V3 is enabled, these tri-state fields override
+   * the user's global ChatSettingsV3. "inherit" defers to global.
+   */
+  privacyOverrides?: PerChatPrivacyOverrides;
+
   /**
    * Private last-seen watermark for unread computation
    * Unlike lastReadAtPublic, this is not shared with other members
@@ -390,6 +867,249 @@ export interface MemberStatePrivate {
    * Used with soft delete to restore on new activity
    */
   hiddenUntilNewMessage?: boolean;
+}
+
+// =============================================================================
+// Error Taxonomy (Segment 8)
+// =============================================================================
+
+/**
+ * Structured error codes for the chat system.
+ *
+ * These replace ad-hoc string matching in the outbox and provide
+ * a single source of truth for error classification.
+ */
+export enum ChatErrorCode {
+  /** Device is offline */
+  NETWORK_OFFLINE = "NETWORK_OFFLINE",
+
+  /** User lacks permission for this action */
+  PERMISSION_DENIED = "PERMISSION_DENIED",
+
+  /** Per-conversation rate limit exceeded */
+  RATE_LIMIT_CONVERSATION = "RATE_LIMIT_CONVERSATION",
+
+  /** Global per-user rate limit exceeded */
+  RATE_LIMIT_GLOBAL = "RATE_LIMIT_GLOBAL",
+
+  /** DM blocked by message request gating */
+  MESSAGE_REQUEST_REQUIRED = "MESSAGE_REQUEST_REQUIRED",
+
+  /** Staged attachment commit failed on server */
+  ATTACHMENT_COMMIT_FAILED = "ATTACHMENT_COMMIT_FAILED",
+
+  /** Signed media URL minting failed */
+  SIGNED_URL_MINT_FAILED = "SIGNED_URL_MINT_FAILED",
+
+  /** Privacy publish callable rejected the write */
+  PRIVACY_PUBLISH_DISABLED = "PRIVACY_PUBLISH_DISABLED",
+
+  /** Server returned invalid-argument */
+  INVALID_ARGUMENT = "INVALID_ARGUMENT",
+
+  /** User is not authenticated */
+  UNAUTHENTICATED = "UNAUTHENTICATED",
+
+  /** Message already exists (idempotency) */
+  ALREADY_EXISTS = "ALREADY_EXISTS",
+
+  /** Target resource not found */
+  NOT_FOUND = "NOT_FOUND",
+
+  /** Uncategorized / unexpected error */
+  UNKNOWN = "UNKNOWN",
+}
+
+/**
+ * Whether a ChatErrorCode is retryable.
+ *
+ * Non-retryable errors should NOT be retried — the condition will
+ * not change without user action (e.g. unblocking, auth re-login).
+ */
+export const NON_RETRYABLE_CHAT_ERRORS: ReadonlySet<ChatErrorCode> = new Set([
+  ChatErrorCode.PERMISSION_DENIED,
+  ChatErrorCode.UNAUTHENTICATED,
+  ChatErrorCode.NOT_FOUND,
+  ChatErrorCode.ALREADY_EXISTS,
+  ChatErrorCode.INVALID_ARGUMENT,
+  ChatErrorCode.MESSAGE_REQUEST_REQUIRED,
+  ChatErrorCode.PRIVACY_PUBLISH_DISABLED,
+]);
+
+/**
+ * Structured chat error with trace ID.
+ *
+ * Wraps any raw error with classification metadata.
+ */
+export interface ChatError {
+  /** Structured error code */
+  code: ChatErrorCode;
+
+  /** Human-readable message */
+  message: string;
+
+  /** Trace ID linking client → server logs */
+  traceId: string;
+
+  /** Whether this error should be retried */
+  retryable: boolean;
+
+  /** Seconds until next retry (from rate limiter) */
+  retryAfterSeconds?: number;
+
+  /** Original raw error (for debugging) */
+  rawError?: unknown;
+}
+
+/**
+ * Generate a trace ID for correlating a send operation across
+ * client outbox → Cloud Function → Firestore write → logs.
+ *
+ * Format: `msg-{random12chars}`
+ */
+export function generateTraceId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "msg-";
+  for (let i = 0; i < 12; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * Map a raw Firebase/network error to a structured ChatError.
+ *
+ * @param rawError - The raw error (HttpsError, TypeError, etc.)
+ * @param traceId - The trace ID for this operation
+ * @returns Structured ChatError
+ */
+export function classifyChatError(
+  rawError: unknown,
+  traceId: string,
+): ChatError {
+  // Handle network / offline errors
+  if (rawError instanceof TypeError && rawError.message?.includes("network")) {
+    return {
+      code: ChatErrorCode.NETWORK_OFFLINE,
+      message:
+        "No network connection. Message will be sent when you're back online.",
+      traceId,
+      retryable: true,
+      rawError,
+    };
+  }
+
+  // Handle Firebase HttpsError (has a `code` property)
+  const errAny = rawError as Record<string, unknown>;
+  const fbCode = errAny?.code as string | undefined;
+  const fbMessage = (errAny?.message as string) ?? "Unknown error";
+
+  // Map Firebase error codes to ChatErrorCode
+  const codeMap: Record<string, ChatErrorCode> = {
+    unauthenticated: ChatErrorCode.UNAUTHENTICATED,
+    "permission-denied": ChatErrorCode.PERMISSION_DENIED,
+    "invalid-argument": ChatErrorCode.INVALID_ARGUMENT,
+    "not-found": ChatErrorCode.NOT_FOUND,
+    "already-exists": ChatErrorCode.ALREADY_EXISTS,
+    "resource-exhausted": ChatErrorCode.RATE_LIMIT_GLOBAL,
+  };
+
+  if (fbCode && codeMap[fbCode]) {
+    const code = codeMap[fbCode];
+
+    // Refine based on message content
+    let refinedCode = code;
+    if (
+      fbCode === "resource-exhausted" &&
+      fbMessage.toLowerCase().includes("conversation")
+    ) {
+      refinedCode = ChatErrorCode.RATE_LIMIT_CONVERSATION;
+    }
+    if (
+      fbCode === "permission-denied" &&
+      fbMessage.toLowerCase().includes("message request")
+    ) {
+      refinedCode = ChatErrorCode.MESSAGE_REQUEST_REQUIRED;
+    }
+    if (
+      fbCode === "permission-denied" &&
+      fbMessage.toLowerCase().includes("blocked")
+    ) {
+      refinedCode = ChatErrorCode.PERMISSION_DENIED;
+    }
+
+    // Extract retry-after from message if present
+    let retryAfterSeconds: number | undefined;
+    const retryMatch = fbMessage.match(/retry.after.*?(\d+)/i);
+    if (retryMatch) {
+      retryAfterSeconds = parseInt(retryMatch[1], 10);
+    }
+
+    return {
+      code: refinedCode,
+      message: fbMessage,
+      traceId,
+      retryable: !NON_RETRYABLE_CHAT_ERRORS.has(refinedCode),
+      retryAfterSeconds,
+      rawError,
+    };
+  }
+
+  // Generic string-based fallback for old error patterns
+  const msg = fbMessage.toLowerCase();
+  if (msg.includes("offline") || msg.includes("network")) {
+    return {
+      code: ChatErrorCode.NETWORK_OFFLINE,
+      message: "Network unavailable",
+      traceId,
+      retryable: true,
+      rawError,
+    };
+  }
+
+  // Unknown error — treat as retryable
+  return {
+    code: ChatErrorCode.UNKNOWN,
+    message: fbMessage || "An unexpected error occurred",
+    traceId,
+    retryable: true,
+    rawError,
+  };
+}
+
+/**
+ * Get a user-friendly message for a ChatErrorCode.
+ */
+export function getChatErrorUserMessage(code: ChatErrorCode): string {
+  switch (code) {
+    case ChatErrorCode.NETWORK_OFFLINE:
+      return "You're offline. Message will send when you reconnect.";
+    case ChatErrorCode.PERMISSION_DENIED:
+      return "You don't have permission to send this message.";
+    case ChatErrorCode.RATE_LIMIT_CONVERSATION:
+      return "Slow down! You're sending messages too fast in this chat.";
+    case ChatErrorCode.RATE_LIMIT_GLOBAL:
+      return "Slow down! You've reached your messaging limit. Try again shortly.";
+    case ChatErrorCode.MESSAGE_REQUEST_REQUIRED:
+      return "This person only accepts messages from friends.";
+    case ChatErrorCode.ATTACHMENT_COMMIT_FAILED:
+      return "Failed to process attachment. Please try again.";
+    case ChatErrorCode.SIGNED_URL_MINT_FAILED:
+      return "Failed to load media. Tap to retry.";
+    case ChatErrorCode.PRIVACY_PUBLISH_DISABLED:
+      return "This action is disabled by your privacy settings.";
+    case ChatErrorCode.INVALID_ARGUMENT:
+      return "Invalid message. Please check and try again.";
+    case ChatErrorCode.UNAUTHENTICATED:
+      return "Session expired. Please sign in again.";
+    case ChatErrorCode.ALREADY_EXISTS:
+      return "Message already sent.";
+    case ChatErrorCode.NOT_FOUND:
+      return "Conversation not found.";
+    case ChatErrorCode.UNKNOWN:
+    default:
+      return "Something went wrong. Please try again.";
+  }
 }
 
 // =============================================================================
@@ -446,6 +1166,21 @@ export interface OutboxItem {
 
   /** Last error message */
   lastError?: string;
+
+  /**
+   * Trace ID for correlating this send across
+   * client outbox → Cloud Function → Firestore write → logs.
+   * Format: msg-xxxxxxxxxxxx
+   * (Segment 8)
+   */
+  traceId?: string;
+
+  /**
+   * Structured error code from the last failed attempt.
+   * Replaces ad-hoc string matching for retry classification.
+   * (Segment 8)
+   */
+  lastErrorCode?: ChatErrorCode;
 }
 
 /**
@@ -621,6 +1356,25 @@ export interface InboxSettings {
 
   /** Recent search terms (max 10) */
   recentSearches: string[];
+
+  // =========================================================================
+  // Settings V3 extensions (CHAT_SETTINGS_V3)
+  // These fields are optional for backward compatibility.
+  // When present they are used by the resolver; when absent the resolver
+  // uses DEFAULT_CHAT_SETTINGS_V3 values.
+  // =========================================================================
+
+  /** V3: Who can DM this user */
+  dmAcceptance?: DmAcceptance;
+
+  /** V3: Notification preview mode */
+  notificationPreview?: NotificationPreview;
+
+  /** V3: Auto-download media preference */
+  autoDownloadMedia?: AutoDownloadMedia;
+
+  /** V3: Publish delivery receipts */
+  publishDeliveryReceipts?: boolean;
 }
 
 /**

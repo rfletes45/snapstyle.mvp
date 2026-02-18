@@ -84,6 +84,15 @@ export declare const cleanupOldGames: functions.CloudFunction<unknown>;
  */
 export declare const cleanupResolvedInvites: functions.CloudFunction<unknown>;
 /**
+ * Clean up stale "active" or "starting" invites whose game has finished.
+ *
+ * This is a safety net: normally the client propagates game completion back
+ * to the invite via `completeGameInvite()`.  If the client crashes or the
+ * user force-quits, this function catches orphaned active invites.
+ * Runs daily at 02:45 (between cleanupResolvedInvites and matchmaking).
+ */
+export declare const cleanupStaleActiveInvites: functions.CloudFunction<unknown>;
+/**
  * Clean up stale matchmaking queue entries.
  *
  * `expireMatchmakingEntries` marks entries as "expired" but never deletes them,
@@ -92,6 +101,20 @@ export declare const cleanupResolvedInvites: functions.CloudFunction<unknown>;
  * 7 days. Runs daily at 03:00.
  */
 export declare const cleanupStaleMatchmakingEntries: functions.CloudFunction<unknown>;
+/**
+ * Clean up vacant multiplayer games after their grace period expires.
+ *
+ * When all players disconnect from a Colyseus room, the server marks the
+ * corresponding Firestore doc as "vacant" with a vacantSince timestamp.
+ *
+ * Deletion windows:
+ *   - Non-turn-based (physics/score-race): 10 minutes
+ *   - Turn-based: 2 days
+ *
+ * Runs every 5 minutes. Deletes from ColyseusGameState, TurnBasedGames,
+ * RealtimeGameSessions, and the associated GameInvite (if linked).
+ */
+export declare const cleanupVacantGames: functions.CloudFunction<unknown>;
 /**
  * Clean up old single-player game sessions.
  *

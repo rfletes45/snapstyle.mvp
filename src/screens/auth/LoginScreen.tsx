@@ -243,7 +243,7 @@ export default function LoginScreen({ navigation }: any) {
               variant="bodyMedium"
               style={{ color: theme.colors.onSurfaceVariant }}
             >
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
             </Text>
             <Button
               mode="text"

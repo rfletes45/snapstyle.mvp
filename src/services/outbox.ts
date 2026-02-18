@@ -24,6 +24,8 @@
  */
 
 import {
+  classifyChatError,
+  generateTraceId,
   LocalAttachment,
   MentionSpan,
   MessageKind,
@@ -197,6 +199,7 @@ export async function enqueueMessage(params: {
     mentionUids: params.mentionUids,
     mentionSpans: params.mentionSpans,
     localAttachments: params.localAttachments,
+    traceId: generateTraceId(),
     createdAt: Date.now(),
     attemptCount: 0,
     nextRetryAt: Date.now(),
@@ -382,10 +385,17 @@ export async function processOutbox(
     } catch (error: unknown) {
       failed++;
 
-      const isNonRetryable = isNonRetryableError(error);
+      // Segment 8: Use structured error taxonomy alongside legacy check
+      const chatError = classifyChatError(
+        error,
+        item.traceId || generateTraceId(),
+      );
+      const isNonRetryable = isNonRetryableError(error) || !chatError.retryable;
       const backoffMs = isNonRetryable
         ? Infinity
-        : calculateBackoff(item.attemptCount + 1);
+        : chatError.retryAfterSeconds
+          ? chatError.retryAfterSeconds * 1000
+          : calculateBackoff(item.attemptCount + 1);
       const nextRetryAt = isNonRetryable
         ? Date.now() + 365 * 24 * 60 * 60 * 1000
         : Date.now() + backoffMs;
@@ -396,10 +406,18 @@ export async function processOutbox(
       await updateOutboxItem(item.messageId, {
         state: "failed",
         lastError: errorMessage,
+        lastErrorCode: chatError.code,
         nextRetryAt,
       });
 
-      log.warn("Outbox item failed", { operation: "sendFailed" });
+      log.warn("Outbox item failed", {
+        operation: "sendFailed",
+        data: {
+          traceId: chatError.traceId,
+          errorCode: chatError.code,
+          retryable: chatError.retryable,
+        },
+      });
     }
   }
 
@@ -460,12 +478,17 @@ export async function retryItem(
 
     throw new Error("Send function returned false");
   } catch (error: unknown) {
+    const chatError = classifyChatError(
+      error,
+      item.traceId || generateTraceId(),
+    );
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isNonRetryable = isNonRetryableError(error);
+    const isNonRetryable = isNonRetryableError(error) || !chatError.retryable;
 
     await updateOutboxItem(messageId, {
       state: "failed",
       lastError: errorMessage,
+      lastErrorCode: chatError.code,
       nextRetryAt: isNonRetryable
         ? Date.now() + 365 * 24 * 60 * 60 * 1000
         : Date.now() + calculateBackoff(item.attemptCount + 1),

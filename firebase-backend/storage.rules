@@ -196,6 +196,30 @@ service firebase.storage {
     }
 
     // ============================================================
+    // CHAT-STAGING: Temporary uploads before server commit (Segment 3)
+    // ============================================================
+    
+    // Path: /chat-staging/{scope}/{conversationId}/{messageId}/{allPaths=**}
+    // Client uploads here; server copies to chat-media on sendMessageV2.
+    // Read is denied for clients — only the Admin SDK (server) reads these.
+    match /chat-staging/{scope}/{conversationId}/{messageId}/{allPaths=**} {
+      allow read: if false;
+      allow write: if isAuth() &&
+                     validFileSize(25 * 1024 * 1024);
+    }
+
+    // ============================================================
+    // CHAT-MEDIA: Final committed chat media (Segment 3)
+    // ============================================================
+    
+    // Path: /chat-media/{scope}/{conversationId}/{messageId}/{allPaths=**}
+    // Server-only: written by commitStagedAttachments, read via signed URLs.
+    // Both read and write are denied for clients.
+    match /chat-media/{scope}/{conversationId}/{messageId}/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // ============================================================
     // CATCH-ALL: Deny everything else
     // ============================================================
     

@@ -243,7 +243,7 @@ export default function DebugScreen({ navigation }: any) {
               🔧 Fix Missing Cosmetics
             </Text>
             <Text variant="bodyMedium" style={styles.fixDescription}>
-              This will automatically grant all cosmetics you've earned through
+              This will automatically grant all cosmetics you&apos;ve earned through
               your streaks.
             </Text>
             <Button

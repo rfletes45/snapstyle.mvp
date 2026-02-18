@@ -383,12 +383,12 @@ function useVoiceRecorderImpl(
 export function useVoiceRecorder(
   options: UseVoiceRecorderOptions = {},
 ): UseVoiceRecorderReturn {
-  // Use fallback if expo-audio is not available
-  if (!AudioModule || !useAudioRecorder) {
-    return useVoiceRecorderFallback(options);
-  }
-
-  return useVoiceRecorderImpl(options);
+  // Module availability is static for the app session; select once and invoke.
+  const selectedHook =
+    AudioModule && useAudioRecorder
+      ? useVoiceRecorderImpl
+      : useVoiceRecorderFallback;
+  return selectedHook(options);
 }
 
 export default useVoiceRecorder;

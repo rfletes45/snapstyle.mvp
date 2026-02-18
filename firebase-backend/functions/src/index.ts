@@ -104,6 +104,31 @@ import { onNewFriendRequest, onStoryViewed } from "./social";
 // Remaining legacy exports not covered by extracted modules.
 import { onDeleteMessage, seedShopCatalog } from "./legacy";
 
+// Chat Media Pipeline (Segment 3)
+import { cleanupStagingOrphans, mintChatMediaUrl } from "./chatMedia";
+
+// Inbox Aggregation Triggers (Segment 4)
+import {
+  markInboxRead,
+  onDMMessageInbox,
+  onGroupMessageInbox,
+} from "./inboxTriggers";
+
+// Message Requests (Segment 5)
+import { acceptMessageRequest, declineMessageRequest } from "./messageRequests";
+
+// Global Rate Limiter (Segment 6)
+import { getRateLimitStatus } from "./rateLimiter";
+
+// Privacy-Enforced Publish APIs (Segment 7)
+import {
+  onChatSettingsChanged,
+  onInboxSettingsChanged,
+  publishDeliveryReceipt,
+  publishReadReceipt,
+  publishTypingIndicator,
+} from "./privacyPublish";
+
 // Utilities extracted from legacy index.
 export {
   getUserPushToken,
@@ -124,6 +149,7 @@ export const toggleReactionV2 = toggleReactionV2Function;
 export const fetchLinkPreview = fetchLinkPreviewFunction;
 
 export {
+  acceptMessageRequest,
   adminApplyStrike,
   adminApplyWarning,
   adminLiftBan,
@@ -141,9 +167,11 @@ export {
   cleanupOldGames,
   cleanupOldScheduledMessages,
   cleanupResolvedInvites,
+  cleanupStagingOrphans,
   cleanupStaleMatchmakingEntries,
   cleanupVacantGames,
   createGameFromInvite,
+  declineMessageRequest,
   expireGameInvites,
   expireGifts,
   expireMatchmakingEntries,
@@ -151,22 +179,27 @@ export {
   generateWeeklyDeals,
   getGiftHistory,
   getPurchaseHistory,
+  getRateLimitStatus,
   getTurnCredentials,
   grantItem,
   handleCallTimeouts,
   initializeExistingWallets,
   initializeFirstAdmin,
   makeMove,
+  markInboxRead,
   migrateGameInvites,
   migrateGameInvitesDryRun,
+  mintChatMediaUrl,
   onCallCreated,
   onCallUpdated,
+  onDMMessageInbox,
   onDeleteMessage,
   onFriendAddedTaskProgress,
   onGameCompletedCreateHistory,
   onGameHistoryCreatedUpdateLeaderboard,
   onGamePlayedTaskProgress,
   onGameSessionCreated,
+  onGroupMessageInbox,
   onMessageSentTaskProgress,
   onNewFriendRequest,
   onNewGroupMessageV2,
@@ -184,6 +217,9 @@ export {
   processGameCompletion,
   processMatchmakingQueue,
   processScheduledMessages,
+  publishDeliveryReceipt,
+  publishReadReceipt,
+  publishTypingIndicator,
   purchaseWithTokens,
   recordDailyLogin,
   resignGame,
@@ -199,3 +235,6 @@ export {
   validateReceipt,
   weeklyLeaderboardReset,
 };
+
+// Segment 7 Firestore triggers (named exports for stable function names)
+export { onChatSettingsChanged, onInboxSettingsChanged };

@@ -1408,7 +1408,7 @@ function WordMasterGameScreen({
                   marginBottom: 8,
                 }}
               >
-                ✅ Today's word completed!
+                ✅ Today&apos;s word completed!
               </Text>
               <Text
                 style={{ color: "#818384", fontSize: 14, marginBottom: 16 }}

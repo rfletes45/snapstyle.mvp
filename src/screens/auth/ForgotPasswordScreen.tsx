@@ -107,7 +107,7 @@ export default function ForgotPasswordScreen({ navigation }: any) {
               { color: theme.colors.onSurfaceVariant },
             ]}
           >
-            We've sent a password reset link to{"\n"}
+            We&apos;ve sent a password reset link to{"\n"}
             <Text style={{ fontWeight: "bold", color: theme.colors.primary }}>
               {email.trim()}
             </Text>
@@ -117,7 +117,7 @@ export default function ForgotPasswordScreen({ navigation }: any) {
             variant="bodySmall"
             style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}
           >
-            Didn't receive the email? Check your spam folder or try again.
+            Didn&apos;t receive the email? Check your spam folder or try again.
           </Text>
 
           <Button
@@ -185,7 +185,7 @@ export default function ForgotPasswordScreen({ navigation }: any) {
             style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
           >
             No worries! Enter the email address associated with your account and
-            we'll send you a link to reset your password.
+            we&apos;ll send you a link to reset your password.
           </Text>
 
           <TextInput

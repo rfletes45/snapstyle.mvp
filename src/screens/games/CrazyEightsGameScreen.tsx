@@ -345,7 +345,7 @@ function TurnTransitionModal({
         <View style={styles.turnTransitionContent}>
           <MaterialCommunityIcons name="cards" size={64} color="#FFFFFF" />
           <Text style={styles.turnTransitionTitle}>
-            It's {playerName}'s Turn
+            It&apos;s {playerName}&apos;s Turn
           </Text>
           <Text style={styles.turnTransitionSubtitle}>
             Pass the device to {playerName}
@@ -1430,7 +1430,7 @@ function CrazyEightsGameScreen({
               ]}
             >
               • Match the top card by suit or rank{"\n"}• 8s are wild - play
-              anytime, choose next suit{"\n"}• Draw if you can't play{"\n"}•
+              anytime, choose next suit{"\n"}• Draw if you can&apos;t play{"\n"}•
               First to empty their hand wins!
             </Text>
           </View>

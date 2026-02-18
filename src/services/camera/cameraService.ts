@@ -174,7 +174,10 @@ export async function getMicrophonePermissionStatus(): Promise<PermissionStatus>
 export async function getPhotoLibraryPermissionStatus(): Promise<PermissionStatus> {
   try {
     // Dynamically try expo-media-library if installed
-    const MediaLibrary = await import("expo-media-library").catch(() => null);
+    const mediaLibraryModuleName = "expo-media-library";
+    const MediaLibrary = await import(mediaLibraryModuleName).catch(
+      () => null,
+    );
     if (MediaLibrary) {
       const { status } = await MediaLibrary.getPermissionsAsync();
       return mapExpoStatus(status);

@@ -656,7 +656,9 @@ The **Universal Game Invite** system is the sole active invite API:
 - Slot-based system supporting DM (1:1) and group (2–10 player) contexts
 - Atomic Firestore transactions for slot claiming and host controls
 
-> **Legacy functions** (`sendGameInvite`, `acceptGameInvite`, `declineGameInvite`, `cancelGameInvite`) are deprecated with zero production callers. They remain in the codebase with `@deprecated` JSDoc annotations and will be removed in a future release.
+> Legacy invite API status as of February 17, 2026:
+> - Deprecated but still exported: `sendGameInvite`, `cancelGameInvite`
+> - Removed (zero callers): `acceptGameInvite`, `declineGameInvite`
 
 ### 7.2 Universal Invite Flow
 
@@ -826,8 +828,8 @@ All multiplayer game screens use `InvitePickerModal` for game invites and `sendU
 | `FriendPickerModal`            | Active — scorecard only |
 | `GroupPickerModal`             | Deleted                 |
 | `sendGameInvite()` (legacy)    | Deprecated, 0 callers   |
-| `acceptGameInvite()` (legacy)  | Deprecated, 0 callers   |
-| `declineGameInvite()` (legacy) | Deprecated, 0 callers   |
+| `acceptGameInvite()` (legacy)  | Removed                 |
+| `declineGameInvite()` (legacy) | Removed                 |
 | `cancelGameInvite()` (legacy)  | Deprecated, 0 callers   |
 
 ---

@@ -105,18 +105,10 @@ export const GamePerformanceMonitor: React.FC<GamePerformanceMonitorProps> =
     const [isExpanded, setIsExpanded] = useState(initialExpanded);
     const [frameStats, setFrameStats] = useState<FrameTimingStats | null>(null);
     const monitorRef = React.useRef<FrameRateMonitor | null>(null);
+    const shouldRender = (__DEV__ || showInProduction) && visible;
 
-    // Only show in development unless explicitly enabled
-    if (!__DEV__ && !showInProduction) {
-      return null;
-    }
-
-    if (!visible) {
-      return null;
-    }
-
-    const { metrics, recordFrame, getReport, reset } = usePerformanceMonitor({
-      enabled: true,
+    const { metrics, getReport, reset } = usePerformanceMonitor({
+      enabled: shouldRender,
       onPerformanceDrop: (m) => {
         logger.warn("[Performance] FPS dropped:", m.fps);
       },
@@ -124,6 +116,13 @@ export const GamePerformanceMonitor: React.FC<GamePerformanceMonitorProps> =
 
     // Initialize frame monitor
     useEffect(() => {
+      if (!shouldRender) {
+        monitorRef.current?.stop();
+        monitorRef.current = null;
+        setFrameStats(null);
+        return;
+      }
+
       monitorRef.current = new FrameRateMonitor(300);
       monitorRef.current.start();
 
@@ -138,12 +137,13 @@ export const GamePerformanceMonitor: React.FC<GamePerformanceMonitorProps> =
         clearInterval(interval);
         monitorRef.current?.stop();
       };
-    }, []);
+    }, [shouldRender]);
 
     // Record frame on each render (for external game loop integration)
     useEffect(() => {
+      if (!shouldRender) return;
       monitorRef.current?.recordFrame();
-    });
+    }, [shouldRender, metrics.fps, metrics.frameTime, metrics.droppedFrames]);
 
     const handleToggle = useCallback(() => {
       setIsExpanded((prev) => !prev);
@@ -164,6 +164,11 @@ export const GamePerformanceMonitor: React.FC<GamePerformanceMonitorProps> =
     }, [getReport, gameType, onReport]);
 
     const positionStyles = getPositionStyles(position);
+
+    // Only show in development unless explicitly enabled
+    if (!shouldRender) {
+      return null;
+    }
 
     return (
       <View style={[styles.container, positionStyles]}>

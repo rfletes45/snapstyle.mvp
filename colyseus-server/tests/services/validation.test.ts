@@ -8,42 +8,42 @@ import {
 } from "../../src/services/validation";
 
 describe("validateScoreUpdate", () => {
-  it("should accept valid score for tap_race", () => {
-    // 10 taps in 1 second (max is 15/s * 1.5 buffer = 22.5/s)
-    expect(validateScoreUpdate("tap_race", 10, 0, 1000)).toBe(true);
+  it("should accept valid score for dot_match", () => {
+    // 5 points in 1 second (max is 5/s * 1.5 buffer = 7.5/s)
+    expect(validateScoreUpdate("dot_match", 5, 0, 1000)).toBe(true);
   });
 
   it("should reject negative scores", () => {
-    expect(validateScoreUpdate("tap_race", -5, 0, 1000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", -5, 0, 1000)).toBe(false);
   });
 
   it("should reject decreasing scores", () => {
-    expect(validateScoreUpdate("tap_race", 5, 10, 1000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", 5, 10, 1000)).toBe(false);
   });
 
   it("should reject non-integer scores", () => {
-    expect(validateScoreUpdate("tap_race", 5.5, 0, 1000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", 5.5, 0, 1000)).toBe(false);
   });
 
   it("should reject non-finite scores", () => {
-    expect(validateScoreUpdate("tap_race", Infinity, 0, 1000)).toBe(false);
-    expect(validateScoreUpdate("tap_race", NaN, 0, 1000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", Infinity, 0, 1000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", NaN, 0, 1000)).toBe(false);
   });
 
   it("should reject scores exceeding max total", () => {
-    expect(validateScoreUpdate("tap_race", 1000, 0, 60000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", 1000, 0, 60000)).toBe(false);
   });
 
   it("should reject scores exceeding max rate with buffer", () => {
-    // tap_race max rate is 15/s * 1.5 buffer = 22.5/s
-    // 25 in 1 second exceeds the buffer
-    expect(validateScoreUpdate("tap_race", 25, 0, 1000)).toBe(false);
+    // dot_match max rate is 5/s * 1.5 buffer = 7.5/s
+    // 8 in 1 second exceeds the buffer
+    expect(validateScoreUpdate("dot_match", 8, 0, 1000)).toBe(false);
   });
 
   it("should accept scores within burst buffer", () => {
-    // tap_race max rate is 15/s * 1.5 buffer = 22.5/s
-    // 20 in 1 second is within the buffer
-    expect(validateScoreUpdate("tap_race", 20, 0, 1000)).toBe(true);
+    // dot_match max rate is 5/s * 1.5 buffer = 7.5/s
+    // 7 in 1 second is within the buffer
+    expect(validateScoreUpdate("dot_match", 7, 0, 1000)).toBe(true);
   });
 
   it("should accept valid reaction score", () => {
@@ -56,16 +56,16 @@ describe("validateScoreUpdate", () => {
 
   it("should handle very short elapsed times", () => {
     // elapsedMs gets clamped to min 100ms = 0.1s
-    // 5 in 0.1s = 50/s, exceeds tap_race max of 22.5/s
-    expect(validateScoreUpdate("tap_race", 5, 0, 10)).toBe(false);
+    // 1 in 0.1s = 10/s, exceeds dot_match max of 7.5/s
+    expect(validateScoreUpdate("dot_match", 1, 0, 10)).toBe(false);
   });
 });
 
 describe("getScoreBounds", () => {
   it("should return bounds for known game types", () => {
-    const bounds = getScoreBounds("tap_race");
+    const bounds = getScoreBounds("dot_match");
     expect(bounds).toBeDefined();
-    expect(bounds!.maxPerSecond).toBe(15);
+    expect(bounds!.maxPerSecond).toBe(5);
     expect(bounds!.maxTotal).toBe(999);
   });
 

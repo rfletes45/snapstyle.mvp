@@ -19,6 +19,7 @@ import {
 } from "@/types/games";
 import type { TurnBasedMatchConfig, TurnBasedPlayer } from "@/types/turnBased";
 import {
+  GameInviteStatus,
   PlayerSlot,
   SendUniversalInviteParams,
   UniversalGameInvite,
@@ -65,12 +66,7 @@ export type InviteGameType = TurnBasedGameType | RealTimeGameType;
 /**
  * @deprecated Use {@link UniversalInviteStatus} from `@/types/turnBased`.
  */
-export type InviteStatus =
-  | "pending"
-  | "accepted"
-  | "declined"
-  | "expired"
-  | "cancelled";
+export type InviteStatus = GameInviteStatus;
 
 /**
  * @deprecated Use {@link UniversalGameInvite} from `@/types/turnBased`.
@@ -90,7 +86,7 @@ interface GameInvite {
   recipientAvatar?: string;
 
   // Status
-  status: InviteStatus;
+  status: GameInviteStatus;
 
   // Game settings
   settings: GameInviteSettings;
@@ -137,7 +133,7 @@ export interface CreateInviteInput {
  * @deprecated No longer needed — universal queries use inline Firestore constraints.
  */
 export interface InviteFilterOptions {
-  status?: InviteStatus[];
+  status?: GameInviteStatus[];
   gameType?: InviteGameType;
   limit?: number;
 }
@@ -464,105 +460,6 @@ export async function sendGameInvite(
   }
 
   return invite as unknown as GameInvite;
-}
-
-/**
- * Accept a game invite.
- *
- * @deprecated Use {@link claimInviteSlot} + {@link startGameEarly} instead.
- * This legacy function only works with old-format invites.
- */
-async function acceptGameInvite(
-  inviteId: string,
-  userId: string,
-): Promise<{ invite: GameInvite; gameId: string }> {
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-  const inviteSnap = await getDoc(inviteRef);
-
-  if (!inviteSnap.exists()) {
-    throw new Error("Invite not found");
-  }
-
-  const invite = inviteSnap.data() as GameInvite;
-
-  // Validate
-  if (invite.recipientId !== userId) {
-    throw new Error("You are not the recipient of this invite");
-  }
-
-  if (invite.status !== "pending") {
-    throw new Error(`Invite is ${invite.status}, cannot accept`);
-  }
-
-  // Check expiration
-  if (Timestamp.now().toMillis() > invite.expiresAt.toMillis()) {
-    await updateDoc(inviteRef, {
-      status: "expired",
-      updatedAt: serverTimestamp(),
-    });
-    throw new Error("Invite has expired");
-  }
-
-  // Create the game - this would call turnBasedGames.createMatch()
-  // For now, generate a placeholder game ID
-  const gameId = `game_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-
-  // Update invite — Colyseus rooms are created on-demand when both players
-  // navigate to the game screen (using firestoreGameId-based filterBy matching),
-  // so we no longer pre-create rooms at invite-accept time.
-  await updateDoc(inviteRef, {
-    status: "accepted",
-    updatedAt: serverTimestamp(),
-    respondedAt: serverTimestamp(),
-    gameId,
-  });
-
-  const acceptedInvite: GameInvite = {
-    ...invite,
-    status: "accepted",
-    gameId,
-  };
-
-  return {
-    invite: acceptedInvite,
-    gameId,
-  };
-}
-
-/**
- * Decline a game invite.
- *
- * @deprecated Use {@link unclaimInviteSlot} or {@link cancelUniversalInvite} instead.
- * This legacy function only works with old-format invites.
- */
-async function declineGameInvite(
-  inviteId: string,
-  userId: string,
-): Promise<void> {
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-  const inviteSnap = await getDoc(inviteRef);
-
-  if (!inviteSnap.exists()) {
-    throw new Error("Invite not found");
-  }
-
-  const invite = inviteSnap.data() as GameInvite;
-
-  // Validate
-  if (invite.recipientId !== userId) {
-    throw new Error("You are not the recipient of this invite");
-  }
-
-  if (invite.status !== "pending") {
-    throw new Error(`Invite is ${invite.status}, cannot decline`);
-  }
-
-  // Update invite
-  await updateDoc(inviteRef, {
-    status: "declined",
-    updatedAt: serverTimestamp(),
-    respondedAt: serverTimestamp(),
-  });
 }
 
 /**
@@ -1380,20 +1277,6 @@ export async function deleteGameInviteDoc(
 // =============================================================================
 
 /**
- * @deprecated No production callers. Use subscribeToUniversalInvite instead.
- */
-async function getInviteById(inviteId: string): Promise<GameInvite | null> {
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-  const inviteSnap = await getDoc(inviteRef);
-
-  if (!inviteSnap.exists()) {
-    return null;
-  }
-
-  return inviteSnap.data() as GameInvite;
-}
-
-/**
  * @deprecated No production callers. Legacy query function.
  */
 async function getSentInvites(
@@ -1508,76 +1391,6 @@ async function getExistingInvite(
 // Universal Invite Query Functions
 // =============================================================================
 
-/**
- * Get invites for the Play page
- *
- * Returns DM invites where:
- * - showInPlayPage is true
- * - User is in eligibleUserIds
- * - Status is pending or filling
- * - User is NOT the sender
- */
-async function getPlayPageInvites(
-  userId: string,
-): Promise<UniversalGameInvite[]> {
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("showInPlayPage", "==", true),
-    where("eligibleUserIds", "array-contains", userId),
-    where("status", "in", ["pending", "filling"]),
-    orderBy("createdAt", "desc"),
-    limit(20),
-  );
-
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs
-    .map((d) => d.data() as UniversalGameInvite)
-    .filter((inv) => inv.senderId !== userId); // Exclude own invites
-}
-
-/**
- * Get active invites for a specific conversation (chat display)
- *
- * Returns invites where:
- * - conversationId matches
- * - Status is pending, filling, ready, or active
- */
-async function getConversationInvites(
-  conversationId: string,
-  userId: string,
-): Promise<UniversalGameInvite[]> {
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("conversationId", "==", conversationId),
-    where("status", "in", ["pending", "filling", "ready", "active"]),
-    orderBy("createdAt", "desc"),
-    limit(10),
-  );
-
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs
-    .map((d) => d.data() as UniversalGameInvite)
-    .filter((inv) => inv.eligibleUserIds.includes(userId));
-}
-
-/**
- * Get a universal invite by ID
- */
-async function getUniversalInviteById(
-  inviteId: string,
-): Promise<UniversalGameInvite | null> {
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-  const inviteSnap = await getDoc(inviteRef);
-
-  if (!inviteSnap.exists()) {
-    return null;
-  }
-
-  return inviteSnap.data() as UniversalGameInvite;
-}
-
 // =============================================================================
 // Real-time Subscriptions
 // =============================================================================
@@ -1610,32 +1423,6 @@ export function subscribeToPendingInvites(
     },
     (error) => {
       logger.error("[GameInvites] Subscription error:", error);
-      onError?.(error);
-    },
-  );
-}
-
-/**
- * @deprecated No production callers. Use subscribeToUniversalInvite instead.
- */
-function subscribeToInvite(
-  inviteId: string,
-  onUpdate: (invite: GameInvite | null) => void,
-  onError?: (error: Error) => void,
-): Unsubscribe {
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-
-  return onSnapshot(
-    inviteRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onUpdate(null);
-        return;
-      }
-      onUpdate(snapshot.data() as GameInvite);
-    },
-    (error) => {
-      logger.error("[GameInvites] Invite subscription error:", error);
       onError?.(error);
     },
   );
@@ -1759,54 +1546,6 @@ export function subscribeToConversationInvites(
 // =============================================================================
 // Cleanup Functions
 // =============================================================================
-
-/**
- * @deprecated Dead code. Expire logic belongs in Cloud Functions.
- */
-async function markExpiredInvites(): Promise<number> {
-  const now = Timestamp.now();
-
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("status", "==", "pending"),
-    where("expiresAt", "<", now),
-  );
-
-  const snapshot = await getDocs(q);
-
-  const updates = snapshot.docs.map((doc) =>
-    updateDoc(doc.ref, {
-      status: "expired",
-      updatedAt: serverTimestamp(),
-    }),
-  );
-
-  await Promise.all(updates);
-
-  return snapshot.size;
-}
-
-/**
- * @deprecated Dead code. Cleanup belongs in Cloud Functions.
- */
-async function deleteOldInvites(daysOld: number = 30): Promise<number> {
-  const cutoff = Timestamp.fromMillis(
-    Date.now() - daysOld * 24 * 60 * 60 * 1000,
-  );
-
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("status", "in", ["accepted", "declined", "expired", "cancelled"]),
-    where("createdAt", "<", cutoff),
-  );
-
-  const snapshot = await getDocs(q);
-
-  const deletes = snapshot.docs.map((doc) => deleteDoc(doc.ref));
-  await Promise.all(deletes);
-
-  return snapshot.size;
-}
 
 /**
  * Clean up invites for games that have already completed

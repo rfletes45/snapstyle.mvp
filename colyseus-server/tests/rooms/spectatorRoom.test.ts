@@ -4,6 +4,11 @@
  * These tests verify the static load tier configuration and the
  * throttle/capacity behaviours introduced in Segment 8.
  */
+jest.mock("colyseus", () => ({
+  Room: class MockRoom {},
+  Client: class MockClient {},
+}));
+
 
 describe("SpectatorRoom — load shedding config", () => {
   // We can't easily instantiate a Colyseus Room in a unit test,

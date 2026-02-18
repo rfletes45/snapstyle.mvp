@@ -70,6 +70,8 @@ interface SendMessageV2Params {
   clientId: string;
   messageId: string;
   createdAt?: number;
+  /** Client-generated trace ID for cross-system log correlation (Segment 8) */
+  traceId?: string;
 }
 
 /** Response from sendMessageV2 Cloud Function */
@@ -247,6 +249,7 @@ export async function sendMessageWithOutbox(params: {
         clientId,
         messageId: outboxItem.messageId,
         createdAt: outboxItem.createdAt,
+        traceId: outboxItem.traceId,
       });
 
       if (result.success) {

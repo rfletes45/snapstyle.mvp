@@ -18,6 +18,7 @@ import {
   filterExpiredStories,
   getBatchViewedStories,
   getFriendsStories,
+  getPreloadedImageUrl,
   getStoryTimeRemaining,
   preloadStoryImages,
 } from "@/services/stories";
@@ -62,17 +63,6 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
 
   // In-memory cache for viewed moments across screen visits
   const viewedCacheRef = useRef<Map<string, boolean>>(new Map());
-
-  // Fetch stories and reset posting state when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      if (currentFirebaseUser) {
-        loadStories();
-      }
-      // Reset posting state when returning to this screen
-      setPostingStory(false);
-    }, [currentFirebaseUser, loadStories]),
-  );
 
   const loadStories = useCallback(async () => {
     if (!currentFirebaseUser) return;
@@ -146,6 +136,17 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
       setLoading(false);
     }
   }, [currentFirebaseUser]);
+
+  // Fetch stories and reset posting state when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (currentFirebaseUser) {
+        loadStories();
+      }
+      // Reset posting state when returning to this screen
+      setPostingStory(false);
+    }, [currentFirebaseUser, loadStories]),
+  );
 
   const handlePostStory = useCallback(async () => {
     // Prevent double-tap
@@ -428,7 +429,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
               </View>
             </TouchableOpacity>
           }
-          renderItem={({ item: story }) => (
+          renderItem={({ item: story }) => {
+            const storyImageUri = getPreloadedImageUrl(story.id);
+            return (
             <TouchableOpacity
               style={[
                 styles.storyCard,
@@ -444,9 +447,9 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
             >
               <View style={styles.storyImageContainer}>
                 {/* Moment thumbnail image */}
-                {story.imageUrl ? (
+                {storyImageUri ? (
                   <Image
-                    source={{ uri: story.imageUrl }}
+                    source={{ uri: storyImageUri }}
                     style={[
                       styles.storyImage,
                       !viewedStories.has(story.id) && {
@@ -514,7 +517,8 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
                 {story.viewCount} {story.viewCount === 1 ? "view" : "views"}
               </Text>
             </TouchableOpacity>
-          )}
+            );
+          }}
         />
       )}
 

@@ -503,20 +503,6 @@ export default function FriendsScreen({ navigation }: any) {
     }
   };
 
-  if (loading) {
-    return <LoadingState message="Loading connections..." />;
-  }
-
-  if (error) {
-    return (
-      <ErrorState
-        title="Something went wrong"
-        message={error}
-        onRetry={loadData}
-      />
-    );
-  }
-
   // Separate pending requests
   const receivedRequests = pendingRequests.filter((r) => r.to === uid);
   const sentRequests = pendingRequests.filter((r) => r.from === uid);
@@ -529,9 +515,7 @@ export default function FriendsScreen({ navigation }: any) {
     return friends.filter((f) => {
       const name = f.otherUserProfile?.username?.toLowerCase() || "";
       const display = f.otherUserProfile?.displayName?.toLowerCase() || "";
-      return (
-        name.includes(normalizedQuery) || display.includes(normalizedQuery)
-      );
+      return name.includes(normalizedQuery) || display.includes(normalizedQuery);
     });
   }, [friends, normalizedQuery]);
 
@@ -540,9 +524,7 @@ export default function FriendsScreen({ navigation }: any) {
     return receivedRequests.filter((r) => {
       const name = r.otherUserProfile?.username?.toLowerCase() || "";
       const display = r.otherUserProfile?.displayName?.toLowerCase() || "";
-      return (
-        name.includes(normalizedQuery) || display.includes(normalizedQuery)
-      );
+      return name.includes(normalizedQuery) || display.includes(normalizedQuery);
     });
   }, [receivedRequests, normalizedQuery]);
 
@@ -557,6 +539,20 @@ export default function FriendsScreen({ navigation }: any) {
       return name.includes(normalizedQuery);
     });
   }, [sentRequests, normalizedQuery]);
+
+  if (loading) {
+    return <LoadingState message="Loading connections..." />;
+  }
+
+  if (error) {
+    return (
+      <ErrorState
+        title="Something went wrong"
+        message={error}
+        onRetry={loadData}
+      />
+    );
+  }
 
   return (
     <View

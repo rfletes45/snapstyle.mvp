@@ -224,6 +224,7 @@ const Brick = React.memo(
     );
   },
 );
+Brick.displayName = "Brick";
 
 /**
  * Ball component
@@ -267,6 +268,7 @@ const Ball = React.memo(
     );
   },
 );
+Ball.displayName = "Ball";
 
 /**
  * Animated Paddle component - uses shared value for smooth UI thread updates
@@ -316,6 +318,7 @@ const AnimatedPaddle = React.memo(
     );
   },
 );
+AnimatedPaddle.displayName = "AnimatedPaddle";
 
 /**
  * Falling power-up component
@@ -365,6 +368,7 @@ const PowerUp = React.memo(
     );
   },
 );
+PowerUp.displayName = "PowerUp";
 
 /**
  * Laser projectile component
@@ -392,6 +396,7 @@ const Laser = React.memo(
     );
   },
 );
+Laser.displayName = "Laser";
 
 /**
  * Lives display
@@ -413,6 +418,7 @@ const LivesDisplay = React.memo(
     );
   },
 );
+LivesDisplay.displayName = "LivesDisplay";
 
 /**
  * Active effects display
@@ -446,6 +452,7 @@ const ActiveEffectsDisplay = React.memo(
     );
   },
 );
+ActiveEffectsDisplay.displayName = "ActiveEffectsDisplay";
 
 // =============================================================================
 // Main Component

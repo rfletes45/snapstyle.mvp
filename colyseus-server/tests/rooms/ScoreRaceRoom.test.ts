@@ -116,9 +116,9 @@ describe("Firebase Auth Integration", () => {
 
 describe("Score Race Game Logic", () => {
   it("should validate scores correctly", () => {
-    expect(validateScoreUpdate("tap_race", 10, 0, 5000)).toBe(true);
-    expect(validateScoreUpdate("tap_race", -1, 0, 1000)).toBe(false);
-    expect(validateScoreUpdate("tap_race", 1000, 0, 60000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", 10, 0, 5000)).toBe(true);
+    expect(validateScoreUpdate("dot_match", -1, 0, 1000)).toBe(false);
+    expect(validateScoreUpdate("dot_match", 1000, 0, 60000)).toBe(false);
   });
 
   it("should determine winner by higher score", () => {

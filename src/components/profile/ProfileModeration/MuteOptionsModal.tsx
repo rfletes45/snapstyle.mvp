@@ -193,8 +193,8 @@ export const MuteOptionsModal = memo(function MuteOptionsModal({
                   <Text
                     style={[styles.infoText, { color: colors.textSecondary }]}
                   >
-                    While muted, you won't receive notifications from{" "}
-                    {displayName}. They won't know they're muted.
+                    While muted, you won&apos;t receive notifications from{" "}
+                    {displayName}. They won&apos;t know they&apos;re muted.
                   </Text>
                   <Button
                     mode="contained"
@@ -360,8 +360,8 @@ export const MuteOptionsModal = memo(function MuteOptionsModal({
                         { color: colors.textSecondary },
                       ]}
                     >
-                      {displayName} won't be notified that you've muted them.
-                      You'll stay friends and can still message each other.
+                      {displayName} won&apos;t be notified that you&apos;ve muted them.
+                      You&apos;ll stay friends and can still message each other.
                     </Text>
                   </View>
                 </ScrollView>

@@ -48,6 +48,7 @@ export function IncomingCallOverlay({
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   const isVisible = visibleProp ?? showIncomingCallUI;
+  const colors = useColors();
 
   // Animation and ringtone effects
   useEffect(() => {
@@ -137,7 +138,6 @@ export function IncomingCallOverlay({
   const callerParticipant = incomingCall.participants[incomingCall.callerId];
   const callerName = callerParticipant?.displayName || "Unknown Caller";
   const isVideoCall = incomingCall.type === "video";
-  const colors = useColors();
 
   return (
     <Animated.View

@@ -1,8 +1,8 @@
 "use strict";
 /** Cloud Functions entrypoint (imports/re-exports only). */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onFriendAddedTaskProgress = exports.onDeleteMessage = exports.onCallUpdated = exports.onCallCreated = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = exports.makeMove = exports.initializeFirstAdmin = exports.initializeExistingWallets = exports.handleCallTimeouts = exports.grantItem = exports.getTurnCredentials = exports.getPurchaseHistory = exports.getGiftHistory = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.expireMatchmakingEntries = exports.expireGifts = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldScheduledMessages = exports.cleanupOldGames = exports.cleanupOldGameSessions = exports.cleanupOldDeals = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.cleanupExpiredPushTokens = exports.cleanupCallSignaling = exports.claimTaskReward = exports.checkMessageRateLimit = exports.adminSetBan = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminLiftBan = exports.adminApplyWarning = exports.adminApplyStrike = exports.fetchLinkPreview = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = exports.sendExpoPushNotification = exports.sanitizeForLog = exports.isValidUid = exports.isValidString = exports.isGroupChatMuted = exports.isDmChatMuted = exports.getUserPushToken = void 0;
-exports.weeklyLeaderboardReset = exports.validateReceipt = exports.updateExpiredBans = exports.triggerDailyDeals = exports.streakReminder = exports.sendGift = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.seedDailyTasks = exports.rollbackGameInvitesMigration = exports.restorePurchases = exports.resignGame = exports.recordDailyLogin = exports.purchaseWithTokens = exports.processScheduledMessages = exports.processMatchmakingQueue = exports.processGameCompletion = exports.openGift = exports.onUserCreated = exports.onUniversalInviteUpdate = exports.onStreakAchievementCheck = exports.onStoryViewedTaskProgress = exports.onStoryViewed = exports.onStoryPostedTaskProgress = exports.onScheduledMessageCreated = exports.onNewReport = exports.onNewMessageEvent = exports.onNewMessage = exports.onNewGroupMessageV2 = exports.onNewFriendRequest = exports.onMessageSentTaskProgress = exports.onGameSessionCreated = exports.onGamePlayedTaskProgress = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = void 0;
+exports.markInboxRead = exports.makeMove = exports.initializeFirstAdmin = exports.initializeExistingWallets = exports.handleCallTimeouts = exports.grantItem = exports.getTurnCredentials = exports.getRateLimitStatus = exports.getPurchaseHistory = exports.getGiftHistory = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.expireMatchmakingEntries = exports.expireGifts = exports.expireGameInvites = exports.declineMessageRequest = exports.createGameFromInvite = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupStagingOrphans = exports.cleanupResolvedInvites = exports.cleanupOldScheduledMessages = exports.cleanupOldGames = exports.cleanupOldGameSessions = exports.cleanupOldDeals = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.cleanupExpiredPushTokens = exports.cleanupCallSignaling = exports.claimTaskReward = exports.checkMessageRateLimit = exports.adminSetBan = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminLiftBan = exports.adminApplyWarning = exports.adminApplyStrike = exports.acceptMessageRequest = exports.fetchLinkPreview = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = exports.sendExpoPushNotification = exports.sanitizeForLog = exports.isValidUid = exports.isValidString = exports.isGroupChatMuted = exports.isDmChatMuted = exports.getUserPushToken = void 0;
+exports.onInboxSettingsChanged = exports.onChatSettingsChanged = exports.weeklyLeaderboardReset = exports.validateReceipt = exports.updateExpiredBans = exports.triggerDailyDeals = exports.streakReminder = exports.sendGift = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.seedDailyTasks = exports.rollbackGameInvitesMigration = exports.restorePurchases = exports.resignGame = exports.recordDailyLogin = exports.purchaseWithTokens = exports.publishTypingIndicator = exports.publishReadReceipt = exports.publishDeliveryReceipt = exports.processScheduledMessages = exports.processMatchmakingQueue = exports.processGameCompletion = exports.openGift = exports.onUserCreated = exports.onUniversalInviteUpdate = exports.onStreakAchievementCheck = exports.onStoryViewedTaskProgress = exports.onStoryViewed = exports.onStoryPostedTaskProgress = exports.onScheduledMessageCreated = exports.onNewReport = exports.onNewMessageEvent = exports.onNewMessage = exports.onNewGroupMessageV2 = exports.onNewFriendRequest = exports.onMessageSentTaskProgress = exports.onGroupMessageInbox = exports.onGameSessionCreated = exports.onGamePlayedTaskProgress = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.onFriendAddedTaskProgress = exports.onDeleteMessage = exports.onDMMessageInbox = exports.onCallUpdated = exports.onCallCreated = exports.mintChatMediaUrl = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = void 0;
 // V2 Messaging
 const messaging_1 = require("./messaging");
 // Games
@@ -11,6 +11,7 @@ Object.defineProperty(exports, "cleanupOldGameSessions", { enumerable: true, get
 Object.defineProperty(exports, "cleanupOldGames", { enumerable: true, get: function () { return games_1.cleanupOldGames; } });
 Object.defineProperty(exports, "cleanupResolvedInvites", { enumerable: true, get: function () { return games_1.cleanupResolvedInvites; } });
 Object.defineProperty(exports, "cleanupStaleMatchmakingEntries", { enumerable: true, get: function () { return games_1.cleanupStaleMatchmakingEntries; } });
+Object.defineProperty(exports, "cleanupVacantGames", { enumerable: true, get: function () { return games_1.cleanupVacantGames; } });
 Object.defineProperty(exports, "createGameFromInvite", { enumerable: true, get: function () { return games_1.createGameFromInvite; } });
 Object.defineProperty(exports, "expireGameInvites", { enumerable: true, get: function () { return games_1.expireGameInvites; } });
 Object.defineProperty(exports, "expireMatchmakingEntries", { enumerable: true, get: function () { return games_1.expireMatchmakingEntries; } });
@@ -27,50 +28,39 @@ Object.defineProperty(exports, "migrateGameInvites", { enumerable: true, get: fu
 Object.defineProperty(exports, "migrateGameInvitesDryRun", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvitesDryRun; } });
 Object.defineProperty(exports, "rollbackGameInvitesMigration", { enumerable: true, get: function () { return migrateGameInvites_1.rollbackGameInvitesMigration; } });
 // Shop/IAP/Gifting/Deals/Calls/Preview
-const shop_1 = require("./shop");
-Object.defineProperty(exports, "grantItem", { enumerable: true, get: function () { return shop_1.grantItem; } });
-Object.defineProperty(exports, "purchaseWithTokens", { enumerable: true, get: function () { return shop_1.purchaseWithTokens; } });
-const iap_1 = require("./iap");
-Object.defineProperty(exports, "getPurchaseHistory", { enumerable: true, get: function () { return iap_1.getPurchaseHistory; } });
-Object.defineProperty(exports, "restorePurchases", { enumerable: true, get: function () { return iap_1.restorePurchases; } });
-Object.defineProperty(exports, "validateReceipt", { enumerable: true, get: function () { return iap_1.validateReceipt; } });
-const gifting_1 = require("./gifting");
-Object.defineProperty(exports, "expireGifts", { enumerable: true, get: function () { return gifting_1.expireGifts; } });
-Object.defineProperty(exports, "getGiftHistory", { enumerable: true, get: function () { return gifting_1.getGiftHistory; } });
-Object.defineProperty(exports, "openGift", { enumerable: true, get: function () { return gifting_1.openGift; } });
-Object.defineProperty(exports, "sendGift", { enumerable: true, get: function () { return gifting_1.sendGift; } });
-const dailyDeals_1 = require("./dailyDeals");
-Object.defineProperty(exports, "cleanupOldDeals", { enumerable: true, get: function () { return dailyDeals_1.cleanupOldDeals; } });
-Object.defineProperty(exports, "generateDailyDeals", { enumerable: true, get: function () { return dailyDeals_1.generateDailyDeals; } });
-Object.defineProperty(exports, "generateWeeklyDeals", { enumerable: true, get: function () { return dailyDeals_1.generateWeeklyDeals; } });
-Object.defineProperty(exports, "triggerDailyDeals", { enumerable: true, get: function () { return dailyDeals_1.triggerDailyDeals; } });
 const calls_1 = require("./calls");
 Object.defineProperty(exports, "cleanupCallSignaling", { enumerable: true, get: function () { return calls_1.cleanupCallSignaling; } });
 Object.defineProperty(exports, "getTurnCredentials", { enumerable: true, get: function () { return calls_1.getTurnCredentials; } });
 Object.defineProperty(exports, "handleCallTimeouts", { enumerable: true, get: function () { return calls_1.handleCallTimeouts; } });
 Object.defineProperty(exports, "onCallCreated", { enumerable: true, get: function () { return calls_1.onCallCreated; } });
 Object.defineProperty(exports, "onCallUpdated", { enumerable: true, get: function () { return calls_1.onCallUpdated; } });
+const dailyDeals_1 = require("./dailyDeals");
+Object.defineProperty(exports, "cleanupOldDeals", { enumerable: true, get: function () { return dailyDeals_1.cleanupOldDeals; } });
+Object.defineProperty(exports, "generateDailyDeals", { enumerable: true, get: function () { return dailyDeals_1.generateDailyDeals; } });
+Object.defineProperty(exports, "generateWeeklyDeals", { enumerable: true, get: function () { return dailyDeals_1.generateWeeklyDeals; } });
+Object.defineProperty(exports, "triggerDailyDeals", { enumerable: true, get: function () { return dailyDeals_1.triggerDailyDeals; } });
+const gifting_1 = require("./gifting");
+Object.defineProperty(exports, "expireGifts", { enumerable: true, get: function () { return gifting_1.expireGifts; } });
+Object.defineProperty(exports, "getGiftHistory", { enumerable: true, get: function () { return gifting_1.getGiftHistory; } });
+Object.defineProperty(exports, "openGift", { enumerable: true, get: function () { return gifting_1.openGift; } });
+Object.defineProperty(exports, "sendGift", { enumerable: true, get: function () { return gifting_1.sendGift; } });
+const iap_1 = require("./iap");
+Object.defineProperty(exports, "getPurchaseHistory", { enumerable: true, get: function () { return iap_1.getPurchaseHistory; } });
+Object.defineProperty(exports, "restorePurchases", { enumerable: true, get: function () { return iap_1.restorePurchases; } });
+Object.defineProperty(exports, "validateReceipt", { enumerable: true, get: function () { return iap_1.validateReceipt; } });
 const linkPreview_1 = require("./linkPreview");
+const shop_1 = require("./shop");
+Object.defineProperty(exports, "grantItem", { enumerable: true, get: function () { return shop_1.grantItem; } });
+Object.defineProperty(exports, "purchaseWithTokens", { enumerable: true, get: function () { return shop_1.purchaseWithTokens; } });
 // Extracted modules
-const notifications_1 = require("./notifications");
-Object.defineProperty(exports, "onNewGroupMessageV2", { enumerable: true, get: function () { return notifications_1.onNewGroupMessageV2; } });
-Object.defineProperty(exports, "onNewMessage", { enumerable: true, get: function () { return notifications_1.onNewMessage; } });
-const social_1 = require("./social");
-Object.defineProperty(exports, "onNewFriendRequest", { enumerable: true, get: function () { return social_1.onNewFriendRequest; } });
-Object.defineProperty(exports, "onStoryViewed", { enumerable: true, get: function () { return social_1.onStoryViewed; } });
-const scheduled_1 = require("./scheduled");
-Object.defineProperty(exports, "cleanupExpiredPushTokens", { enumerable: true, get: function () { return scheduled_1.cleanupExpiredPushTokens; } });
-Object.defineProperty(exports, "cleanupExpiredSnaps", { enumerable: true, get: function () { return scheduled_1.cleanupExpiredSnaps; } });
-Object.defineProperty(exports, "cleanupExpiredStories", { enumerable: true, get: function () { return scheduled_1.cleanupExpiredStories; } });
-Object.defineProperty(exports, "cleanupOldScheduledMessages", { enumerable: true, get: function () { return scheduled_1.cleanupOldScheduledMessages; } });
-Object.defineProperty(exports, "streakReminder", { enumerable: true, get: function () { return scheduled_1.streakReminder; } });
-const scheduledMessages_1 = require("./scheduledMessages");
-Object.defineProperty(exports, "onScheduledMessageCreated", { enumerable: true, get: function () { return scheduledMessages_1.onScheduledMessageCreated; } });
-Object.defineProperty(exports, "processScheduledMessages", { enumerable: true, get: function () { return scheduledMessages_1.processScheduledMessages; } });
-const leaderboards_1 = require("./leaderboards");
-Object.defineProperty(exports, "onGameSessionCreated", { enumerable: true, get: function () { return leaderboards_1.onGameSessionCreated; } });
-Object.defineProperty(exports, "onStreakAchievementCheck", { enumerable: true, get: function () { return leaderboards_1.onStreakAchievementCheck; } });
-Object.defineProperty(exports, "weeklyLeaderboardReset", { enumerable: true, get: function () { return leaderboards_1.weeklyLeaderboardReset; } });
+const admin_1 = require("./admin");
+Object.defineProperty(exports, "adminApplyStrike", { enumerable: true, get: function () { return admin_1.adminApplyStrike; } });
+Object.defineProperty(exports, "adminApplyWarning", { enumerable: true, get: function () { return admin_1.adminApplyWarning; } });
+Object.defineProperty(exports, "adminLiftBan", { enumerable: true, get: function () { return admin_1.adminLiftBan; } });
+Object.defineProperty(exports, "adminResolveReport", { enumerable: true, get: function () { return admin_1.adminResolveReport; } });
+Object.defineProperty(exports, "adminSetAdminClaim", { enumerable: true, get: function () { return admin_1.adminSetAdminClaim; } });
+Object.defineProperty(exports, "adminSetBan", { enumerable: true, get: function () { return admin_1.adminSetBan; } });
+Object.defineProperty(exports, "initializeFirstAdmin", { enumerable: true, get: function () { return admin_1.initializeFirstAdmin; } });
 const economy_1 = require("./economy");
 Object.defineProperty(exports, "claimTaskReward", { enumerable: true, get: function () { return economy_1.claimTaskReward; } });
 Object.defineProperty(exports, "initializeExistingWallets", { enumerable: true, get: function () { return economy_1.initializeExistingWallets; } });
@@ -82,24 +72,58 @@ Object.defineProperty(exports, "onStoryViewedTaskProgress", { enumerable: true, 
 Object.defineProperty(exports, "onUserCreated", { enumerable: true, get: function () { return economy_1.onUserCreated; } });
 Object.defineProperty(exports, "recordDailyLogin", { enumerable: true, get: function () { return economy_1.recordDailyLogin; } });
 Object.defineProperty(exports, "seedDailyTasks", { enumerable: true, get: function () { return economy_1.seedDailyTasks; } });
-const admin_1 = require("./admin");
-Object.defineProperty(exports, "adminApplyStrike", { enumerable: true, get: function () { return admin_1.adminApplyStrike; } });
-Object.defineProperty(exports, "adminApplyWarning", { enumerable: true, get: function () { return admin_1.adminApplyWarning; } });
-Object.defineProperty(exports, "adminLiftBan", { enumerable: true, get: function () { return admin_1.adminLiftBan; } });
-Object.defineProperty(exports, "adminResolveReport", { enumerable: true, get: function () { return admin_1.adminResolveReport; } });
-Object.defineProperty(exports, "adminSetAdminClaim", { enumerable: true, get: function () { return admin_1.adminSetAdminClaim; } });
-Object.defineProperty(exports, "adminSetBan", { enumerable: true, get: function () { return admin_1.adminSetBan; } });
-Object.defineProperty(exports, "initializeFirstAdmin", { enumerable: true, get: function () { return admin_1.initializeFirstAdmin; } });
+const leaderboards_1 = require("./leaderboards");
+Object.defineProperty(exports, "onGameSessionCreated", { enumerable: true, get: function () { return leaderboards_1.onGameSessionCreated; } });
+Object.defineProperty(exports, "onStreakAchievementCheck", { enumerable: true, get: function () { return leaderboards_1.onStreakAchievementCheck; } });
+Object.defineProperty(exports, "weeklyLeaderboardReset", { enumerable: true, get: function () { return leaderboards_1.weeklyLeaderboardReset; } });
 const moderation_1 = require("./moderation");
 Object.defineProperty(exports, "checkMessageRateLimit", { enumerable: true, get: function () { return moderation_1.checkMessageRateLimit; } });
 Object.defineProperty(exports, "onNewMessageEvent", { enumerable: true, get: function () { return moderation_1.onNewMessageEvent; } });
 Object.defineProperty(exports, "onNewReport", { enumerable: true, get: function () { return moderation_1.onNewReport; } });
 Object.defineProperty(exports, "sendFriendRequestWithRateLimit", { enumerable: true, get: function () { return moderation_1.sendFriendRequestWithRateLimit; } });
 Object.defineProperty(exports, "updateExpiredBans", { enumerable: true, get: function () { return moderation_1.updateExpiredBans; } });
+const notifications_1 = require("./notifications");
+Object.defineProperty(exports, "onNewGroupMessageV2", { enumerable: true, get: function () { return notifications_1.onNewGroupMessageV2; } });
+Object.defineProperty(exports, "onNewMessage", { enumerable: true, get: function () { return notifications_1.onNewMessage; } });
+const scheduled_1 = require("./scheduled");
+Object.defineProperty(exports, "cleanupExpiredPushTokens", { enumerable: true, get: function () { return scheduled_1.cleanupExpiredPushTokens; } });
+Object.defineProperty(exports, "cleanupExpiredSnaps", { enumerable: true, get: function () { return scheduled_1.cleanupExpiredSnaps; } });
+Object.defineProperty(exports, "cleanupExpiredStories", { enumerable: true, get: function () { return scheduled_1.cleanupExpiredStories; } });
+Object.defineProperty(exports, "cleanupOldScheduledMessages", { enumerable: true, get: function () { return scheduled_1.cleanupOldScheduledMessages; } });
+Object.defineProperty(exports, "streakReminder", { enumerable: true, get: function () { return scheduled_1.streakReminder; } });
+const scheduledMessages_1 = require("./scheduledMessages");
+Object.defineProperty(exports, "onScheduledMessageCreated", { enumerable: true, get: function () { return scheduledMessages_1.onScheduledMessageCreated; } });
+Object.defineProperty(exports, "processScheduledMessages", { enumerable: true, get: function () { return scheduledMessages_1.processScheduledMessages; } });
+const social_1 = require("./social");
+Object.defineProperty(exports, "onNewFriendRequest", { enumerable: true, get: function () { return social_1.onNewFriendRequest; } });
+Object.defineProperty(exports, "onStoryViewed", { enumerable: true, get: function () { return social_1.onStoryViewed; } });
 // Remaining legacy exports not covered by extracted modules.
 const legacy_1 = require("./legacy");
 Object.defineProperty(exports, "onDeleteMessage", { enumerable: true, get: function () { return legacy_1.onDeleteMessage; } });
 Object.defineProperty(exports, "seedShopCatalog", { enumerable: true, get: function () { return legacy_1.seedShopCatalog; } });
+// Chat Media Pipeline (Segment 3)
+const chatMedia_1 = require("./chatMedia");
+Object.defineProperty(exports, "cleanupStagingOrphans", { enumerable: true, get: function () { return chatMedia_1.cleanupStagingOrphans; } });
+Object.defineProperty(exports, "mintChatMediaUrl", { enumerable: true, get: function () { return chatMedia_1.mintChatMediaUrl; } });
+// Inbox Aggregation Triggers (Segment 4)
+const inboxTriggers_1 = require("./inboxTriggers");
+Object.defineProperty(exports, "markInboxRead", { enumerable: true, get: function () { return inboxTriggers_1.markInboxRead; } });
+Object.defineProperty(exports, "onDMMessageInbox", { enumerable: true, get: function () { return inboxTriggers_1.onDMMessageInbox; } });
+Object.defineProperty(exports, "onGroupMessageInbox", { enumerable: true, get: function () { return inboxTriggers_1.onGroupMessageInbox; } });
+// Message Requests (Segment 5)
+const messageRequests_1 = require("./messageRequests");
+Object.defineProperty(exports, "acceptMessageRequest", { enumerable: true, get: function () { return messageRequests_1.acceptMessageRequest; } });
+Object.defineProperty(exports, "declineMessageRequest", { enumerable: true, get: function () { return messageRequests_1.declineMessageRequest; } });
+// Global Rate Limiter (Segment 6)
+const rateLimiter_1 = require("./rateLimiter");
+Object.defineProperty(exports, "getRateLimitStatus", { enumerable: true, get: function () { return rateLimiter_1.getRateLimitStatus; } });
+// Privacy-Enforced Publish APIs (Segment 7)
+const privacyPublish_1 = require("./privacyPublish");
+Object.defineProperty(exports, "onChatSettingsChanged", { enumerable: true, get: function () { return privacyPublish_1.onChatSettingsChanged; } });
+Object.defineProperty(exports, "onInboxSettingsChanged", { enumerable: true, get: function () { return privacyPublish_1.onInboxSettingsChanged; } });
+Object.defineProperty(exports, "publishDeliveryReceipt", { enumerable: true, get: function () { return privacyPublish_1.publishDeliveryReceipt; } });
+Object.defineProperty(exports, "publishReadReceipt", { enumerable: true, get: function () { return privacyPublish_1.publishReadReceipt; } });
+Object.defineProperty(exports, "publishTypingIndicator", { enumerable: true, get: function () { return privacyPublish_1.publishTypingIndicator; } });
 // Utilities extracted from legacy index.
 var utils_1 = require("./utils");
 Object.defineProperty(exports, "getUserPushToken", { enumerable: true, get: function () { return utils_1.getUserPushToken; } });

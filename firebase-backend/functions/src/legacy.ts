@@ -203,10 +203,57 @@ export const onNewMessage = functions.firestore
       const pushToken = await getUserPushToken(recipientId);
 
       if (pushToken) {
-        // Determine notification content based on message type
+        // -----------------------------------------------------------
+        // Segment 1 – respect recipient's notificationPreview setting
+        // -----------------------------------------------------------
+        let previewMode: "full" | "sender_only" | "generic" = "full";
+        try {
+          const recipientSettingsDoc = await db
+            .collection("Users")
+            .doc(recipientId)
+            .collection("settings")
+            .doc("inbox")
+            .get();
+          if (recipientSettingsDoc.exists) {
+            const rSettings = recipientSettingsDoc.data();
+            if (
+              rSettings?.notificationPreview &&
+              ["full", "sender_only", "generic"].includes(
+                rSettings.notificationPreview,
+              )
+            ) {
+              previewMode = rSettings.notificationPreview;
+            }
+          }
+        } catch (previewErr) {
+          // Non-critical — fall back to "full"
+          console.warn(
+            "[onNewMessage] Could not read recipient notification preview setting",
+            previewErr,
+          );
+        }
+
+        // Determine notification content based on message type + preview mode
         const isSnap = message.type === "image";
-        const title = senderName;
-        const body = isSnap ? "📸 Sent you a picture!" : message.content;
+
+        let title: string;
+        let body: string;
+
+        switch (previewMode) {
+          case "generic":
+            title = "New Message";
+            body = "You have a new message";
+            break;
+          case "sender_only":
+            title = senderName;
+            body = "Sent you a message";
+            break;
+          case "full":
+          default:
+            title = senderName;
+            body = isSnap ? "📸 Sent you a picture!" : message.content;
+            break;
+        }
 
         await sendExpoPushNotification({
           to: pushToken,
@@ -409,34 +456,74 @@ export const onNewGroupMessageV2 = functions.firestore
             continue;
           }
 
-          // Build notification content
+          // -----------------------------------------------------------
+          // Segment 1 – respect recipient's notificationPreview setting
+          // -----------------------------------------------------------
+          let previewMode: "full" | "sender_only" | "generic" = "full";
+          try {
+            const recipientSettingsDoc = await db
+              .collection("Users")
+              .doc(recipientUid)
+              .collection("settings")
+              .doc("inbox")
+              .get();
+            if (recipientSettingsDoc.exists) {
+              const rSettings = recipientSettingsDoc.data();
+              if (
+                rSettings?.notificationPreview &&
+                ["full", "sender_only", "generic"].includes(
+                  rSettings.notificationPreview,
+                )
+              ) {
+                previewMode = rSettings.notificationPreview;
+              }
+            }
+          } catch (previewErr) {
+            console.warn(
+              `[onNewGroupMessageV2] Could not read notification preview for ${recipientUid.substring(0, 8)}`,
+              previewErr,
+            );
+          }
+
+          // Build notification content — apply preview mode
           let title: string;
           let body: string;
 
-          if (isMentioned) {
-            title = `${senderName} mentioned you in ${groupName}`;
-          } else {
-            title = `${groupName}`;
-          }
-
-          // Determine body based on message type
-          if (message.kind === "text" && message.text) {
-            body = `${senderName}: ${message.text}`;
-            if (body.length > 100) {
-              body = body.substring(0, 97) + "...";
-            }
-          } else if (message.kind === "media") {
-            const attachmentCount = message.attachments?.length || 1;
-            body =
-              attachmentCount > 1
-                ? `${senderName}: 📷 ${attachmentCount} photos`
-                : `${senderName}: 📷 Photo`;
-          } else if (message.kind === "voice") {
-            body = `${senderName}: 🎤 Voice message`;
-          } else if (message.kind === "file") {
-            body = `${senderName}: 📎 File`;
-          } else {
+          if (previewMode === "generic") {
+            title = "New Message";
+            body = "You have a new message in a group";
+          } else if (previewMode === "sender_only") {
+            title = isMentioned
+              ? `${senderName} mentioned you in ${groupName}`
+              : groupName;
             body = `${senderName} sent a message`;
+          } else {
+            // "full" — original behaviour
+            if (isMentioned) {
+              title = `${senderName} mentioned you in ${groupName}`;
+            } else {
+              title = `${groupName}`;
+            }
+
+            // Determine body based on message type
+            if (message.kind === "text" && message.text) {
+              body = `${senderName}: ${message.text}`;
+              if (body.length > 100) {
+                body = body.substring(0, 97) + "...";
+              }
+            } else if (message.kind === "media") {
+              const attachmentCount = message.attachments?.length || 1;
+              body =
+                attachmentCount > 1
+                  ? `${senderName}: 📷 ${attachmentCount} photos`
+                  : `${senderName}: 📷 Photo`;
+            } else if (message.kind === "voice") {
+              body = `${senderName}: 🎤 Voice message`;
+            } else if (message.kind === "file") {
+              body = `${senderName}: 📎 File`;
+            } else {
+              body = `${senderName} sent a message`;
+            }
           }
 
           // Send notification

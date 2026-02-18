@@ -134,6 +134,7 @@ if (USE_VISION_CAMERA) {
     // VisionCamera unavailable (Expo Go)
   }
 }
+const useFallbackCameraDevice = () => null;
 
 const logger = createLogger("screens/camera/CameraScreen");
 // =============================================================================
@@ -333,6 +334,7 @@ const DraggableItem: React.FC<DraggableItemProps> = React.memo(
     );
   },
 );
+DraggableItem.displayName = "DraggableItem";
 
 // =============================================================================
 // TOOL BUTTON
@@ -363,6 +365,7 @@ const ToolButton: React.FC<ToolButtonProps> = React.memo(
     </TouchableOpacity>
   ),
 );
+ToolButton.displayName = "ToolButton";
 
 // =============================================================================
 // MAIN COMPONENT
@@ -417,9 +420,11 @@ const CameraScreen: React.FC = () => {
     useRecording(cameraRef);
 
   // -- AR Face Detection (VisionCamera + MLKit) -------------------------------
-  const visionDevice = useCameraDevice
-    ? useCameraDevice(settings.facing === "front" ? "front" : "back")
-    : null;
+  const useVisionCameraDeviceHook =
+    useCameraDevice ?? useFallbackCameraDevice;
+  const visionDevice = useVisionCameraDeviceHook(
+    settings.facing === "front" ? "front" : "back",
+  );
   const visionCameraRef = useRef<any>(null);
   const {
     detectedFaces,
@@ -450,6 +455,14 @@ const CameraScreen: React.FC = () => {
   // Temporarily suppress flash while capturing the silent preview frame so the
   // user is never blinded by a flash they didn't trigger.
   const [flashSuppressed, setFlashSuppressed] = useState(false);
+
+  // ==========================================================================
+  // LOCAL STATE - Editor mode
+  // ==========================================================================
+  /** When non-null we are in editor mode; null = camera mode */
+  const [capturedMedia, setCapturedMedia] = useState<CapturedMedia | null>(
+    null,
+  );
 
   // One-shot preview capture when the camera first becomes ready (and on
   // facing change).  Flash is forced off for the duration of the capture.
@@ -518,13 +531,6 @@ const CameraScreen: React.FC = () => {
   // Double-tap-to-flip tracking
   const lastTapTime = useRef(0);
 
-  // ==========================================================================
-  // LOCAL STATE - Editor mode
-  // ==========================================================================
-  /** When non-null we are in editor mode; null = camera mode */
-  const [capturedMedia, setCapturedMedia] = useState<CapturedMedia | null>(
-    null,
-  );
   const [activeTool, setActiveTool] = useState<EditTool>("none");
 
   // Text tool
@@ -716,7 +722,7 @@ const CameraScreen: React.FC = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
-      await startRecording(settings);
+      await startRecording();
 
       // Start visual timer
       setRecordingSeconds(0);
@@ -738,7 +744,6 @@ const CameraScreen: React.FC = () => {
     isBusy,
     recordingState.isRecording,
     startRecording,
-    settings,
     triggerHaptic,
   ]);
 
@@ -1062,6 +1067,13 @@ const CameraScreen: React.FC = () => {
     haptic();
   }, [clearAllFilters, haptic]);
 
+  // -- Computed editor filter (for Skia rendering) ----------------------------
+  const editorFilter = useMemo<FilterConfig | null>(() => {
+    if (selectedFilterId === "none") return null;
+    const f = ALL_FILTERS.find((ff) => ff.id === selectedFilterId);
+    return f ?? null;
+  }, [selectedFilterId]);
+
   // -- Save to photo library --------------------------------------------------
   const handleSaveToLibrary = useCallback(async () => {
     if (!capturedMedia) return;
@@ -1114,7 +1126,8 @@ const CameraScreen: React.FC = () => {
 
       // Try expo-media-library for saving to camera roll
       try {
-        const MediaLibrary = await import("expo-media-library");
+        const mediaLibraryModuleName = "expo-media-library";
+        const MediaLibrary = await import(mediaLibraryModuleName);
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status === "granted") {
           await MediaLibrary.saveToLibraryAsync(saveUri);
@@ -1266,13 +1279,6 @@ const CameraScreen: React.FC = () => {
     setShareSnap,
     navigation,
   ]);
-
-  // -- Computed editor filter (for Skia rendering) ----------------------------
-  const editorFilter = useMemo<FilterConfig | null>(() => {
-    if (selectedFilterId === "none") return null;
-    const f = ALL_FILTERS.find((ff) => ff.id === selectedFilterId);
-    return f ?? null;
-  }, [selectedFilterId]);
 
   // -- Render overlay elements (editor) ---------------------------------------
   const renderOverlayElement = useCallback(
@@ -1518,7 +1524,7 @@ const CameraScreen: React.FC = () => {
           </View>
           <Text style={styles.permissionTitle}>Camera Unavailable</Text>
           <Text style={styles.permissionText}>
-            No camera module could be loaded. If you're using Expo Go, set
+            No camera module could be loaded. If you&apos;re using Expo Go, set
             USE_VISION_CAMERA to false in featureFlags.ts. For production
             builds, ensure react-native-vision-camera is installed.
           </Text>

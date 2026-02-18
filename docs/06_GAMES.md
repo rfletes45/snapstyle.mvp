@@ -488,17 +488,20 @@ All game invites now use `sendUniversalInvite()` from `src/services/gameInvites.
 | `CompactInviteCard`   | Condensed invite card for Play tab        | GamesHubScreen          |
 | `GamePickerModal`     | Game selection when sending invite        | Chat screens            |
 
-### Legacy Invite Functions (Deprecated)
+### Legacy Invite Functions (Deprecated / Removed)
 
-The following functions in `src/services/gameInvites.ts` are **deprecated** and have zero production callers. They remain for backward compatibility with integration tests and will be removed in a future release:
+Remaining deprecated exports in `src/services/gameInvites.ts`:
 
 - `sendGameInvite()` → use `sendUniversalInvite()` instead
-- `acceptGameInvite()` → use `claimInviteSlot()` + `startGameEarly()`
-- `declineGameInvite()` → use `unclaimInviteSlot()` or `cancelUniversalInvite()`
 - `cancelGameInvite()` → use `cancelUniversalInvite()` (transactional)
 - `getPendingInvites()` → use `subscribeToPlayPageInvites()`
 - `subscribeToPendingInvites()` → use `subscribeToPlayPageInvites()`
-- `subscribeToInvite()` → use `subscribeToUniversalInvite()`
+
+Removed in cleanup pass on February 17, 2026 (zero callers):
+
+- `acceptGameInvite()` → replaced by `claimInviteSlot()` + `startGameEarly()`
+- `declineGameInvite()` → replaced by `unclaimInviteSlot()` / `cancelUniversalInvite()`
+- `subscribeToInvite()` → replaced by `subscribeToUniversalInvite()`
 
 The barrel export object `gameInvites` has been trimmed to remove dead entries.
 
@@ -512,10 +515,10 @@ The barrel export object `gameInvites` has been trimmed to remove dead entries.
 | ---------------------------------- | --------- | ------------------------------------------------- | ------------------- |
 | `GroupPickerModal`                 | Seg 9     | `InvitePickerModal` (unified)                     | Deleted             |
 | `sendGameInvite()`                 | Seg 9     | `sendUniversalInvite()`                           | Deprecated (marked) |
-| `acceptGameInvite()`               | Seg 9     | `claimInviteSlot()` + `startGameEarly()`          | Deprecated (marked) |
-| `declineGameInvite()`              | Seg 9     | `unclaimInviteSlot()` / `cancelUniversalInvite()` | Deprecated (marked) |
+| `acceptGameInvite()`               | Seg 9     | `claimInviteSlot()` + `startGameEarly()`          | Removed             |
+| `declineGameInvite()`              | Seg 9     | `unclaimInviteSlot()` / `cancelUniversalInvite()` | Removed             |
 | `cancelGameInvite()`               | Seg 9     | `cancelUniversalInvite()`                         | Deprecated (marked) |
-| Legacy query functions (6)         | Seg 9     | Real-time subscriptions                           | Deprecated (marked) |
+| Legacy helper/query internals      | 2026-02-17 | Real-time subscriptions                           | Removed             |
 | Per-game lobby components          | Seg 5     | `MultiplayerLobbyOverlay`                         | Already removed     |
 | `PoolGameScreen`                   | Pre-Seg 0 | N/A (game removed)                                | Deleted             |
 | Old `InviteStatus` type            | Seg 9     | `UniversalInviteStatus`                           | Deprecated (marked) |

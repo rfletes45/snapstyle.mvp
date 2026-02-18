@@ -30,7 +30,6 @@ jest.mock("@/services/chatV2", () => ({
 
 // Mock the outbox module
 jest.mock("@/services/outbox", () => ({
-  getOutboxForConversation: jest.fn().mockResolvedValue([]),
   generateMessageId: jest.fn().mockReturnValue("generated-id-123"),
   getClientId: jest.fn().mockResolvedValue("client-id-456"),
   getPendingItems: jest.fn().mockResolvedValue([]),
@@ -147,19 +146,17 @@ describe("Unified Send Service", () => {
   });
 
   describe("getPendingForConversation", () => {
-    it("should delegate to getOutboxForConversation", async () => {
+    it("should filter pending items by conversation", async () => {
       const mockItems = [
-        { messageId: "msg1", state: "queued" },
-        { messageId: "msg2", state: "sending" },
+        { messageId: "msg1", state: "queued", conversationId: "group123" },
+        { messageId: "msg2", state: "sending", conversationId: "other-group" },
       ];
-      mockOutbox.getOutboxForConversation.mockResolvedValue(mockItems);
+      mockOutbox.getPendingItems.mockResolvedValue(mockItems);
 
       const result = await getPendingForConversation("group", "group123");
 
-      expect(mockOutbox.getOutboxForConversation).toHaveBeenCalledWith(
-        "group123",
-      );
-      expect(result).toEqual(mockItems);
+      expect(mockOutbox.getPendingItems).toHaveBeenCalled();
+      expect(result).toEqual([mockItems[0]]);
     });
   });
 

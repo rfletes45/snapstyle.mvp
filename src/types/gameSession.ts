@@ -97,3 +97,54 @@ export interface GameJoinOptions {
   /** Chat conversation ID (for post-game navigation & chat integration) */
   conversationId?: string;
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object";
+}
+
+/**
+ * Runtime guard for Colyseus join payloads.
+ *
+ * Used at the wire boundary before sending options to the server.
+ */
+export function isGameJoinOptions(value: unknown): value is GameJoinOptions {
+  if (!isRecord(value)) return false;
+
+  if (typeof value.token !== "string" || value.token.length === 0) return false;
+  if (
+    typeof value.protocolVersion !== "number" ||
+    !Number.isFinite(value.protocolVersion)
+  ) {
+    return false;
+  }
+
+  if (!isRecord(value.buildInfo)) return false;
+  if (
+    typeof value.buildInfo.appVersion !== "string" ||
+    typeof value.buildInfo.platform !== "string" ||
+    typeof value.buildInfo.protocolVersion !== "number"
+  ) {
+    return false;
+  }
+
+  if (
+    value.traceId !== undefined &&
+    (typeof value.traceId !== "string" || value.traceId.length === 0)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Assertion wrapper for join payload validation.
+ */
+export function assertGameJoinOptions(
+  value: unknown,
+  message = "Invalid GameJoinOptions payload",
+): asserts value is GameJoinOptions {
+  if (!isGameJoinOptions(value)) {
+    throw new Error(message);
+  }
+}

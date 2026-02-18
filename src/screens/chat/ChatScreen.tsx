@@ -43,6 +43,7 @@ import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 
 // Unified chat hooks (UNI-04, UNI-05)
 import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { usePresence } from "@/hooks/usePresence";
 import { useReadReceipts } from "@/hooks/useReadReceipts";
 import { useTypingStatus } from "@/hooks/useTypingStatus";
@@ -378,6 +379,9 @@ export default function ChatScreen({
     otherUid: friendUid,
     debug: DEBUG_CHAT,
   });
+
+  // Connectivity state for network banner + offline UX
+  const networkStatus = useNetworkStatus();
 
   // Voice recorder
   const voiceRecorder = useVoiceRecorder({
@@ -1147,7 +1151,11 @@ export default function ChatScreen({
         )}
 
         {/* Network Status Banner */}
-        <NetworkBanner />
+        <NetworkBanner
+          showOffline={networkStatus.showOfflineBanner}
+          showOnline={networkStatus.showOnlineBanner}
+          statusText={networkStatus.statusText}
+        />
 
         {/* Typing Indicator */}
         <TypingIndicator

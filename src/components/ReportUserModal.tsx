@@ -103,7 +103,7 @@ export default function ReportUserModal({
             />
 
             <Text variant="bodySmall" style={styles.disclaimer}>
-              Your report is confidential. We'll review it and take appropriate
+              Your report is confidential. We&apos;ll review it and take appropriate
               action. False reports may result in action against your account.
             </Text>
           </ScrollView>

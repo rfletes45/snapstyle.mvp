@@ -20,7 +20,11 @@ import {
   GAME_PROTOCOL_VERSION,
   getClientBuildInfo,
 } from "@/types/gameProtocol";
-import type { GameJoinOptions, GameSessionContext } from "@/types/gameSession";
+import {
+  assertGameJoinOptions,
+  type GameJoinOptions,
+  type GameSessionContext,
+} from "@/types/gameSession";
 import { createTraceId } from "@/utils/trace";
 import { getAuth } from "firebase/auth";
 
@@ -80,6 +84,9 @@ export async function buildJoinOptions(
   if (ctx.spectator) opts.spectator = true;
   if (ctx.inviteId) opts.inviteId = ctx.inviteId;
   if (ctx.conversationId) opts.conversationId = ctx.conversationId;
+
+  // Defensive wire-boundary check to prevent malformed join payloads.
+  assertGameJoinOptions(opts, "buildJoinOptions produced invalid join options");
 
   return opts;
 }
