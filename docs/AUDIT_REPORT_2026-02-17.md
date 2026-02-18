@@ -92,6 +92,19 @@
   - Functions: `npm run build` PASS
   - Colyseus server: `npx --no-install tsc --noEmit` PASS, `npm run lint` PASS (warnings only), `npm run test` PASS
 
+### Segment 2 verification rerun (2026-02-18)
+
+- Re-ran Segment 2 command set for deterministic validation without introducing code changes.
+- Command outcomes:
+  - Root: `npm run type-check` PASS, `npm run lint` PASS (warnings only), `npm run test -- --ci --watchAll=false` PASS.
+  - Functions: `npm run build` PASS.
+  - Colyseus server: `npm run build` PASS, `npm run lint` PASS (warnings only), `npm run test -- --ci --watchAll=false` PASS.
+  - Additional package roots present in repo snapshot:
+    - `starforge-viewer`: `npm run typecheck` PASS, `npm run build` PASS.
+    - `starforge-viewer/server`: `npm run typecheck` PASS.
+- No flaky failures reproduced in this rerun; no quarantine changes required.
+- `client/package.json` still not present, so client package checks remain N/A.
+
 ## Segment 3
 
 ### What was done
