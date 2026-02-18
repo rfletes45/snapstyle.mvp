@@ -39,6 +39,9 @@ export class SpectatorRoomState extends Schema {
   /** The game type being played (e.g., "brick_breaker", "bounce_blitz") */
   @type("string") gameType: string = "";
 
+  /** End-to-end correlation ID propagated from join options */
+  @type("string") traceId: string = "";
+
   /** Firebase UID of the host (player being watched) */
   @type("string") hostId: string = "";
 

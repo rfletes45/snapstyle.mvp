@@ -214,6 +214,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       log.warn(`Protocol rejected: ${proto.reason}`, {
         sessionId: client.sessionId,
         gameType: this.gameTypeKey,
+        traceId: options?.traceId,
       });
       throw new Error(proto.reason);
     }
@@ -256,6 +257,7 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     this.state.gameType = this.gameTypeKey;
     this.state.gameId = this.roomId;
     this.state.maxPlayers = this.maxClients;
+    this.state.traceId = options.traceId || "";
 
     // Build scoped logger with room-level correlation context
     this.roomLog = log.child({

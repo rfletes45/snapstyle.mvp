@@ -44,6 +44,7 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
   autoDispose = true;
 
   private gameStartTime = 0;
+  private roomLog = log;
 
   // ===========================================================================
   // Lifecycle
@@ -57,6 +58,11 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: "bounce_blitz_game",
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -77,11 +83,17 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
     this.setState(new BounceBlitzState());
     this.state.gameType = "bounce_blitz_game";
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.seed = Math.floor(Math.random() * 2147483647);
     this.state.gameDuration = options.duration || DEFAULT_DURATION;
     this.state.phase = "waiting";
 
-    log.info(`[bounce_blitz_game] Room created: ${this.roomId}`);
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.state.gameType,
+      traceId: options.traceId || undefined,
+    });
+    this.roomLog.info(`[bounce_blitz_game] Room created: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -204,7 +216,7 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
         this.state.elapsed,
       );
     }
-    log.info(`[bounce_blitz_game] Room disposed: ${this.roomId}`);
+    this.roomLog.info(`[bounce_blitz_game] Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -247,7 +259,7 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
       if (this.state.remaining <= 0) this.endGame();
     }, 100);
 
-    log.info("[bounce_blitz_game] Game started!");
+    this.roomLog.info("[bounce_blitz_game] Game started!");
   }
 
   private checkAllFinished(): void {
@@ -291,7 +303,7 @@ export class BounceBlitzRoom extends Room<{ state: BounceBlitzState }> {
       results,
     });
 
-    log.info(
+    this.roomLog.info(
       `[bounce_blitz_game] Game over! Winner: ${this.state.winnerId || "TIE"}`,
     );
   }

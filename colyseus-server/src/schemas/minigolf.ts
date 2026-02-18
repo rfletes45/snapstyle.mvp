@@ -59,6 +59,7 @@ export class MiniGolfState extends Schema {
   @type("string") phase: string = "waiting";
   @type("string") gameId: string = "";
   @type("string") gameType: string = "";
+  @type("string") traceId: string = "";
   @type({ map: MiniGolfPlayer }) players = new MapSchema<MiniGolfPlayer>();
   @type("uint8") maxPlayers: number = 2;
   @type("string") winnerId: string = "";

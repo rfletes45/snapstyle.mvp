@@ -25,6 +25,7 @@ import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import { persistGameResult } from "../../services/persistence";
 import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
 
 const log = createServerLogger("SketchPartyRoom");
@@ -206,6 +207,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
   private turnTimer: any = null;
   private revealTimer: any = null;
   private hintTimers: any[] = [];
+  private roomLog: ServerLogger = log;
 
   // =========================================================================
   // Auth (Firebase ID token verification — existing pattern)
@@ -219,6 +221,11 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: "sketch_party_game",
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -245,6 +252,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
   onCreate(options: Record<string, any>): void {
     this.setState(new SketchPartyState());
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.gameType = "sketch_party_game";
     this.state.phase = "waiting";
     this.state.turnSubphase = "lobby";
@@ -298,7 +306,14 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     // Register message handlers
     this._registerMessages();
 
-    log.info(
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.state.gameType,
+      firestoreGameId: this.state.firestoreGameId || undefined,
+      traceId: options.traceId || undefined,
+    });
+
+    this.roomLog.info(
       `[sketch_party] Room created: ${this.roomId} (firestoreGameId=${this.state.firestoreGameId}, rounds=${this.state.rounds}, drawTime=${this.state.drawTimeSec}s)`,
     );
   }
@@ -331,7 +346,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       this.uidToSessionId.set(auth.uid, client.sessionId);
       this.sessionToUid.set(client.sessionId, auth.uid);
 
-      log.info(
+      this.roomLog.info(
         `[sketch_party] Player reconnected with new session: ${auth.displayName} (${existingSessionId} → ${client.sessionId})`,
       );
     } else {
@@ -363,7 +378,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
         this.state.playerOrder.push(auth.uid);
       }
 
-      log.info(
+      this.roomLog.info(
         `[sketch_party] Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.spPlayers.size} players]`,
       );
     }
@@ -391,7 +406,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       this.spectatorSessionIds.delete(client.sessionId);
       this.state.spectators.delete(client.sessionId);
       this.state.spectatorCount = this.state.spectators.size;
-      log.info(`[sketch_party] Spectator left: ${client.sessionId}`);
+      this.roomLog.info(`[sketch_party] Spectator left: ${client.sessionId}`);
       return;
     }
 
@@ -414,7 +429,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
         if (player) {
           player.connected = true;
         }
-        log.info(`[sketch_party] Player reconnected: ${client.sessionId}`);
+        this.roomLog.info(`[sketch_party] Player reconnected: ${client.sessionId}`);
         return;
       } catch {
         // Reconnection timed out
@@ -428,7 +443,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     this.sessionToUid.delete(client.sessionId);
     if (uid) this.uidToSessionId.delete(uid);
 
-    log.info(`[sketch_party] Player left permanently: ${client.sessionId}`);
+    this.roomLog.info(`[sketch_party] Player left permanently: ${client.sessionId}`);
 
     // If game is active, handle drawer leaving or insufficient players
     if (this.state.phase === "playing" || this.state.phase === "countdown") {
@@ -463,10 +478,10 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
           duration,
         );
       } catch (err) {
-        log.error("[sketch_party] Failed to persist game result:", err);
+        this.roomLog.error("[sketch_party] Failed to persist game result:", err);
       }
     }
-    log.info(`[sketch_party] Room disposed: ${this.roomId}`);
+    this.roomLog.info(`[sketch_party] Room disposed: ${this.roomId}`);
   }
 
   // =========================================================================
@@ -481,7 +496,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       const player = this.state.spPlayers.get(client.sessionId);
       if (!player) return;
       player.ready = true;
-      log.info(`[sketch_party] Player ready: ${player.displayName}`);
+      this.roomLog.info(`[sketch_party] Player ready: ${player.displayName}`);
       this._checkAutoStart();
     });
 
@@ -500,7 +515,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
         return;
       }
 
-      log.info(
+      this.roomLog.info(
         `[sketch_party] Game force-started by host: ${player.displayName}`,
       );
       this._startCountdown();
@@ -540,7 +555,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
           );
         }
 
-        log.info(
+        this.roomLog.info(
           `[sketch_party] Settings updated by host: rounds=${this.state.rounds} drawTime=${this.state.drawTimeSec}`,
         );
       },
@@ -559,7 +574,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
         if (idx < 0 || idx >= this.wordChoices.length) return;
 
         const word = this.wordChoices[idx];
-        log.info(`[sketch_party] Drawer chose: "${word}"`);
+        this.roomLog.info(`[sketch_party] Drawer chose: "${word}"`);
         this._clearChooseTimer();
         this._beginDrawing(word);
       },
@@ -697,7 +712,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     this.onMessage(
       "app_state",
       (client: Client, payload: { state: string }) => {
-        log.info(
+        this.roomLog.info(
           `[sketch_party] App state: ${client.sessionId} → ${payload.state}`,
         );
       },
@@ -716,7 +731,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
 
     const allReady = activePlayers.every((p) => p.ready);
     if (allReady) {
-      log.info("[sketch_party] All players ready — auto-starting");
+      this.roomLog.info("[sketch_party] All players ready — auto-starting");
       this._startCountdown();
     }
   }
@@ -823,14 +838,14 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       kind: "system",
     });
 
-    log.info(
+    this.roomLog.info(
       `[sketch_party] Turn started: drawer=${drawerPlayer.displayName} round=${this.state.roundNumber}`,
     );
 
     // Choose timeout: auto-pick first word
     this.chooseTimer = this.clock.setTimeout(() => {
       if (this.state.turnSubphase === "choosing") {
-        log.info("[sketch_party] Choose timeout — auto-picking word 0");
+        this.roomLog.info("[sketch_party] Choose timeout — auto-picking word 0");
         this._beginDrawing(this.wordChoices[0]);
       }
     }, DEFAULT_CHOOSE_TIME_SEC * 1000);
@@ -1112,7 +1127,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       finalScores,
     });
 
-    log.info(
+    this.roomLog.info(
       `[sketch_party] Game finished: winner=${winnerId} (${maxScore} pts)`,
     );
   }
@@ -1184,7 +1199,7 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       client.send("canvas_snapshot", { ops: this.canvasOps });
     }
 
-    log.info(
+    this.roomLog.info(
       `[sketch_party] Spectator joined: ${auth.displayName} (${client.sessionId})`,
     );
   }

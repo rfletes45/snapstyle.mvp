@@ -271,6 +271,9 @@ class ColyseusService {
       const room = await this.client.joinOrCreate(COLYSEUS_SPECTATOR_ROOM, {
         gameType,
         token,
+        protocolVersion: GAME_PROTOCOL_VERSION,
+        buildInfo: getClientBuildInfo(),
+        traceId: createTraceId("gs"),
       });
 
       this.setupRoomHandlers(room, handlers);
@@ -500,6 +503,13 @@ class ColyseusService {
  */
 function mapJoinError(error: any): GameErrorCode {
   const msg = (error?.message ?? "").toLowerCase();
+  if (
+    msg.includes("protocolversion") ||
+    msg.includes("protocol version") ||
+    msg.includes("update the app")
+  ) {
+    return GameErrorCode.PROTOCOL_VERSION_MISMATCH;
+  }
   if (msg.includes("full") || msg.includes("maxclients")) {
     return GameErrorCode.JOIN_ROOM_FULL;
   }

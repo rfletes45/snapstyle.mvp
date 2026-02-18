@@ -122,6 +122,9 @@ export class BaseGameState extends Schema {
   /** Firestore document ID for persistence linkage */
   @type("string") firestoreGameId: string = "";
 
+  /** End-to-end correlation ID propagated from client join options */
+  @type("string") traceId: string = "";
+
   // =========================================================================
   // Error Phase Support
   // =========================================================================

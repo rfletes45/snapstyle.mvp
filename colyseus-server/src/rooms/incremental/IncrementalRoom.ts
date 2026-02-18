@@ -1,4 +1,5 @@
 import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
 const log = createServerLogger("IncrementalRoom");
 
 /**
@@ -96,6 +97,7 @@ export abstract class IncrementalRoom<
 
   /** The firestoreGameId for cold storage. Populated in onCreate. */
   private persistenceKey: string | null = null;
+  protected roomLog: ServerLogger = log;
 
   // ── Abstract hooks ───────────────────────────────────────
 
@@ -148,6 +150,10 @@ export abstract class IncrementalRoom<
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      this.roomLog.warn(`Protocol rejected: ${proto.reason}`, {
+        gameType: this.gameTypeKey,
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -173,6 +179,13 @@ export abstract class IncrementalRoom<
 
     // Let subclass initialize sim (which must call setState)
     this.initSim(options);
+    this.state.traceId = (options.traceId as string) || "";
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: this.persistenceKey || undefined,
+      traceId: this.state.traceId || undefined,
+    });
 
     // Attempt cold storage restoration (async, non-blocking)
     if (this.persistenceKey) {
@@ -217,11 +230,11 @@ export abstract class IncrementalRoom<
     this.onMessage(
       "app_state",
       (_client: Client, payload: Record<string, unknown>) => {
-        log.debug("app_state", payload);
+        this.roomLog.debug("app_state", payload);
       },
     );
 
-    log.info(
+    this.roomLog.info(
       `Room ${this.roomId} created (type=${this.gameTypeKey}, hz=${this.simHz})`,
     );
   }
@@ -255,7 +268,7 @@ export abstract class IncrementalRoom<
       (this as any).broadcast("spectator_count", {
         count: state.spectatorCount,
       });
-      log.info(
+      this.roomLog.info(
         `Spectator ${authInfo.displayName} joined (session=${client.sessionId})`,
       );
       return;
@@ -263,7 +276,7 @@ export abstract class IncrementalRoom<
 
     // ── Player path ──
     if (this.playerSessionIds.size >= this.maxActivePlayers) {
-      log.warn(
+      this.roomLog.warn(
         `Player slots full — demoting ${authInfo.displayName} to spectator`,
       );
       joinOpts.spectator = true;
@@ -292,7 +305,7 @@ export abstract class IncrementalRoom<
       gameType: this.gameTypeKey,
     });
 
-    log.info(
+    this.roomLog.info(
       `Player ${authInfo.displayName} joined (session=${client.sessionId}, idx=${player.playerIndex})`,
     );
 
@@ -326,7 +339,7 @@ export abstract class IncrementalRoom<
 
     this.allowReconnection(client, this.reconnectionTimeoutSec);
 
-    log.info(
+    this.roomLog.info(
       `Player dropped (session=${client.sessionId}, code=${code}, timeout=${this.reconnectionTimeoutSec}s)`,
     );
   }
@@ -349,7 +362,7 @@ export abstract class IncrementalRoom<
       displayName: player?.displayName ?? "Unknown",
     });
 
-    log.info(`Player reconnected (session=${client.sessionId})`);
+    this.roomLog.info(`Player reconnected (session=${client.sessionId})`);
   }
 
   // ── Leave (intentional/final) ───────────────────────────
@@ -368,7 +381,7 @@ export abstract class IncrementalRoom<
       (this as any).broadcast("spectator_count", {
         count: state.spectatorCount,
       });
-      log.info(`Spectator left (session=${client.sessionId})`);
+      this.roomLog.info(`Spectator left (session=${client.sessionId})`);
       return;
     }
 
@@ -378,7 +391,7 @@ export abstract class IncrementalRoom<
       state.players.delete(client.sessionId);
       this.playerSessionIds.delete(client.sessionId);
       this.onPlayerLeft?.(client.sessionId);
-      log.info(`Player ${player.displayName} left (code=${code})`);
+      this.roomLog.info(`Player ${player.displayName} left (code=${code})`);
     }
 
     // If no players remain during playing, stop sim and start idle timer
@@ -424,7 +437,7 @@ export abstract class IncrementalRoom<
       }
     }, intervalMs);
 
-    log.info(`Sim started (roomId=${this.roomId}, hz=${this.simHz})`);
+    this.roomLog.info(`Sim started (roomId=${this.roomId}, hz=${this.simHz})`);
   }
 
   protected stopSim(): void {
@@ -434,7 +447,7 @@ export abstract class IncrementalRoom<
     if (state.phase === "playing") {
       state.phase = "finished";
     }
-    log.info(`Sim stopped (roomId=${this.roomId})`);
+    this.roomLog.info(`Sim stopped (roomId=${this.roomId})`);
   }
 
   async onDispose(): Promise<void> {
@@ -456,7 +469,7 @@ export abstract class IncrementalRoom<
       );
     }
 
-    log.info(`Room ${this.roomId} disposed`);
+    this.roomLog.info(`Room ${this.roomId} disposed`);
   }
 
   // ── Cold Storage ─────────────────────────────────────────
@@ -470,13 +483,13 @@ export abstract class IncrementalRoom<
       .then((snapshot) => {
         if (snapshot && snapshot.data) {
           this.hydrateSnapshot(snapshot.data);
-          log.info(
+          this.roomLog.info(
             `Restored cold storage for ${firestoreGameId} (tick=${snapshot.tick})`,
           );
         }
       })
       .catch((err) => {
-        log.error(`Cold storage restore failed for ${firestoreGameId}:`, err);
+        this.roomLog.error(`Cold storage restore failed for ${firestoreGameId}:`, err);
       });
   }
 
@@ -499,7 +512,7 @@ export abstract class IncrementalRoom<
     this.clearIdleTimer();
     this.idleTimerHandle = setTimeout(() => {
       if (this.playerSessionIds.size === 0) {
-        log.info(`Idle timeout reached for room ${this.roomId} — disposing`);
+        this.roomLog.info(`Idle timeout reached for room ${this.roomId} — disposing`);
         this.disconnect();
       }
     }, this.idleTimeoutMs);

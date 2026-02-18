@@ -97,7 +97,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     // 4. Sync initial state to schema
     this.syncToSchema();
 
-    log.info(`StarforgeRoom initSim (seed=${seed}, hz=${this.simHz})`);
+    this.roomLog.info(`StarforgeRoom initSim (seed=${seed}, hz=${this.simHz})`);
   }
 
   protected stepSim(_dt: number): void {
@@ -113,14 +113,14 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
   ): boolean {
     const type = cmd.t as string;
     if (!type) {
-      log.warn(`No command type from ${sessionId}`);
+      this.roomLog.warn(`No command type from ${sessionId}`);
       return false;
     }
 
     // Build a typed InputCommand from the raw message
     const inputCmd = this.parseInputCommand(cmd);
     if (!inputCmd) {
-      log.warn(`Invalid command: ${type} from ${sessionId}`);
+      this.roomLog.warn(`Invalid command: ${type} from ${sessionId}`);
       return false;
     }
 
@@ -144,10 +144,10 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
         },
       );
 
-      log.debug(`${type} from ${sessionId} applied (tick=${this.sim.tick})`);
+      this.roomLog.debug(`${type} from ${sessionId} applied (tick=${this.sim.tick})`);
       return true;
     } catch (err) {
-      log.error(`Error applying ${type} from ${sessionId}:`, err);
+      this.roomLog.error(`Error applying ${type} from ${sessionId}:`, err);
       return false;
     }
   }
@@ -160,7 +160,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     this.loadCatalogs();
     this.sim = data as unknown as SimStateV1;
     this.syncToSchema();
-    log.info(`Hydrated from snapshot (tick=${this.sim.tick})`);
+    this.roomLog.info(`Hydrated from snapshot (tick=${this.sim.tick})`);
   }
 
   // ── Internals ─────────────────────────────────────────────
@@ -184,7 +184,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     presence.online = true;
     this.state.coopPresence.set(sessionId, presence);
 
-    log.info(`Co-op presence added for ${auth.displayName} (session=${sessionId})`);
+    this.roomLog.info(`Co-op presence added for ${auth.displayName} (session=${sessionId})`);
   }
 
   protected onPlayerLeft(sessionId: string): void {
@@ -194,7 +194,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     }
     this.sessionAuth.delete(sessionId);
     this.sessionInputCounts.delete(sessionId);
-    log.info(`Co-op presence removed for session=${sessionId}`);
+    this.roomLog.info(`Co-op presence removed for session=${sessionId}`);
   }
 
   /** Track a player's input for co-op presence display. */
@@ -237,7 +237,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     setSimHz(this.simHz);
 
     this.catalogsLoaded = true;
-    log.info("Starforge catalogs loaded");
+    this.roomLog.info("Starforge catalogs loaded");
   }
 
   /**

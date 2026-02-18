@@ -63,6 +63,7 @@ export class WordMasterState extends Schema {
   @type("string") phase: string = "waiting";
   @type("string") gameId: string = "";
   @type("string") gameType: string = "word_master_game";
+  @type("string") traceId: string = "";
   @type("uint8") maxPlayers: number = 2;
   @type("string") winnerId: string = "";
   @type("string") winReason: string = "";
@@ -148,6 +149,7 @@ export class CrosswordState extends Schema {
   @type("string") phase: string = "waiting";
   @type("string") gameId: string = "";
   @type("string") gameType: string = "crossword_puzzle_game";
+  @type("string") traceId: string = "";
   @type("uint8") maxPlayers: number = 2;
   @type("string") winnerId: string = "";
   @type("string") winReason: string = "";

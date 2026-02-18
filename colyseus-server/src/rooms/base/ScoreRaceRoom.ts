@@ -92,6 +92,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       log.warn(`Protocol rejected: ${proto.reason}`, {
         sessionId: client.sessionId,
         gameType: this.gameTypeKey,
+        traceId: options?.traceId,
       });
       throw new Error(proto.reason);
     }
@@ -131,6 +132,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     this.state.seed = Math.floor(Math.random() * 2147483647);
     this.state.phase = "waiting";
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.difficulty = options.difficulty || 1;
 
     if (options.firestoreGameId) {

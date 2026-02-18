@@ -58,6 +58,7 @@ export class PhysicsState extends Schema {
   @type("string") phase: string = "waiting";
   @type("string") gameId: string = "";
   @type("string") gameType: string = "";
+  @type("string") traceId: string = "";
   @type({ map: PhysicsPlayer }) players = new MapSchema<PhysicsPlayer>();
   @type("uint8") maxPlayers: number = 2;
   @type("string") winnerId: string = "";
@@ -113,6 +114,7 @@ export class BrickBreakerState extends Schema {
   @type("string") phase: string = "waiting";
   @type("string") gameId: string = "";
   @type("string") gameType: string = "";
+  @type("string") traceId: string = "";
   @type("uint8") maxPlayers: number = 2;
   @type("string") winnerId: string = "";
   @type("string") winReason: string = "";
@@ -146,6 +148,7 @@ export class BounceBlitzState extends Schema {
   @type("string") phase: string = "waiting";
   @type("string") gameId: string = "";
   @type("string") gameType: string = "";
+  @type("string") traceId: string = "";
   @type("uint8") maxPlayers: number = 2;
   @type("string") winnerId: string = "";
   @type("string") winReason: string = "";

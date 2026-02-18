@@ -45,6 +45,7 @@ export class BrickBreakerRoom extends Room<{ state: BrickBreakerState }> {
   autoDispose = true;
 
   private gameStartTime = 0;
+  private roomLog = log;
 
   // ===========================================================================
   // Lifecycle
@@ -58,6 +59,11 @@ export class BrickBreakerRoom extends Room<{ state: BrickBreakerState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: "brick_breaker_game",
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -78,11 +84,17 @@ export class BrickBreakerRoom extends Room<{ state: BrickBreakerState }> {
     this.setState(new BrickBreakerState());
     this.state.gameType = "brick_breaker_game";
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.seed = Math.floor(Math.random() * 2147483647);
     this.state.maxLevel = options.maxLevel || MAX_LEVEL;
     this.state.phase = "waiting";
 
-    log.info(`[brick_breaker_game] Room created: ${this.roomId}`);
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.state.gameType,
+      traceId: options.traceId || undefined,
+    });
+    this.roomLog.info(`[brick_breaker_game] Room created: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -229,7 +241,7 @@ export class BrickBreakerRoom extends Room<{ state: BrickBreakerState }> {
         this.state.elapsed,
       );
     }
-    log.info(`[brick_breaker_game] Room disposed: ${this.roomId}`);
+    this.roomLog.info(`[brick_breaker_game] Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -272,7 +284,7 @@ export class BrickBreakerRoom extends Room<{ state: BrickBreakerState }> {
       if (this.state.remaining <= 0) this.endGame();
     }, 100);
 
-    log.info("[brick_breaker_game] Game started!");
+    this.roomLog.info("[brick_breaker_game] Game started!");
   }
 
   private checkAllFinished(): void {
@@ -326,7 +338,7 @@ export class BrickBreakerRoom extends Room<{ state: BrickBreakerState }> {
       results,
     });
 
-    log.info(
+    this.roomLog.info(
       `[brick_breaker_game] Game over! Winner: ${this.state.winnerId || "TIE"}`,
     );
   }

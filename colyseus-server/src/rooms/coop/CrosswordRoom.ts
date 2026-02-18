@@ -1,4 +1,5 @@
 ﻿import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
 const log = createServerLogger("CrosswordRoom");
 
 /**
@@ -207,6 +208,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
   maxClients = 2;
   patchRate = 100; // 10fps
   autoDispose = true;
+  private roomLog: ServerLogger = log;
 
   /** The puzzle solution (server-side only) */
   private solution: (string | null)[][] = [];
@@ -226,6 +228,11 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: "crossword_puzzle_game",
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -252,6 +259,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
   onCreate(options: Record<string, any>): void {
     this.setState(new CrosswordState());
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.seed = Math.floor(Math.random() * 2147483647);
     this.state.phase = "waiting";
 
@@ -288,7 +296,14 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       this.state.clues.push(clue);
     }
 
-    log.info(`[crossword] Room created: ${this.roomId} (puzzle: ${puzzleIdx})`);
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: "crossword_puzzle_game",
+      traceId: options.traceId || undefined,
+    });
+    this.roomLog.info(
+      `[crossword] Room created: ${this.roomId} (puzzle: ${puzzleIdx})`,
+    );
   }
 
   // ===========================================================================
@@ -301,7 +316,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       const player = this.state.cwPlayers.get(client.sessionId);
       if (player) {
         player.ready = true;
-        log.info(`[crossword] Player ready: ${player.displayName}`);
+        this.roomLog.info(`[crossword] Player ready: ${player.displayName}`);
         this.checkAllReady();
       }
     },
@@ -410,7 +425,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
     },
 
     app_state: (client: Client, payload: { state: string }) => {
-      log.info(
+      this.roomLog.info(
         `[crossword] Player app state: ${client.sessionId} â†’ ${payload.state}`,
       );
     },
@@ -439,7 +454,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       puzzleIndex: this.state.puzzleIndex,
     });
 
-    log.info(
+    this.roomLog.info(
       `[crossword] Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.cwPlayers.size}/${this.maxClients}]`,
     );
 
@@ -488,7 +503,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
         results: [],
       });
     }
-    log.info(`[crossword] Player left: ${client.sessionId}`);
+    this.roomLog.info(`[crossword] Player left: ${client.sessionId}`);
   }
 
   async onDispose(): Promise<void> {
@@ -498,7 +513,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
         this.state.elapsed,
       );
     }
-    log.info(`[crossword] Room disposed: ${this.roomId}`);
+    this.roomLog.info(`[crossword] Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -547,7 +562,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       puzzleIndex: this.state.puzzleIndex,
     });
 
-    log.info(`[crossword] Game started! Puzzle: ${this.state.puzzleIndex}`);
+    this.roomLog.info(`[crossword] Game started! Puzzle: ${this.state.puzzleIndex}`);
   }
 
   private checkCompletion(): void {
@@ -605,7 +620,7 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       results,
     });
 
-    log.info(
+    this.roomLog.info(
       `[crossword] Puzzle complete! Time: ${Math.floor(this.state.elapsed / 1000)}s`,
     );
   }
@@ -660,6 +675,8 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
     this.state.countdown = 0;
 
     this.unlock();
-    log.info(`[crossword] Room reset for rematch (puzzle: ${newPuzzleIdx})`);
+    this.roomLog.info(
+      `[crossword] Room reset for rematch (puzzle: ${newPuzzleIdx})`,
+    );
   }
 }

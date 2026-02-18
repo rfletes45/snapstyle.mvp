@@ -33,6 +33,7 @@ Read in this order for fastest orientation:
 - Messaging: [03_CHAT_V2.md](03_CHAT_V2.md), [03_CHAT_V3.md](03_CHAT_V3.md)
 - Chat system contract: [CHAT_SYSTEM.md](CHAT_SYSTEM.md)
 - Games: [06_GAMES.md](06_GAMES.md), [GAMES_PLATFORM.md](GAMES_PLATFORM.md), [GAME_SYSTEM_REFERENCE.md](GAME_SYSTEM_REFERENCE.md)
+- Colyseus server contract: [COLYSEUS_SERVER.md](COLYSEUS_SERVER.md)
 - Testing and ops: [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
 
 ## Deep-Dive Subsystem Docs
@@ -51,7 +52,6 @@ Read in this order for fastest orientation:
 
 These are linked early so later segments can fill them in without index churn:
 
-- `docs/COLYSEUS_SERVER.md`
 - `docs/EMBEDDED_WEB_GAMES.md`
 - `docs/CALLS_CAMERA.md`
 - `docs/PERFORMANCE.md`

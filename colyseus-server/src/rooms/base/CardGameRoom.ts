@@ -99,6 +99,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       log.warn(`Protocol rejected: ${proto.reason}`, {
         sessionId: client.sessionId,
         gameType: this.gameTypeKey,
+        traceId: options?.traceId,
       });
       throw new Error(proto.reason);
     }
@@ -137,7 +138,15 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     this.setState(new CardGameState());
     this.state.gameType = this.gameTypeKey;
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.maxPlayers = this.maxClients;
+
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: options.firestoreGameId || undefined,
+      traceId: options.traceId || undefined,
+    });
 
     // Restore from Firestore?
     if (options.firestoreGameId) {

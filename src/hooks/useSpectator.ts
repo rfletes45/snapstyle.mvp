@@ -51,6 +51,11 @@ import {
   createSpectatorSession,
   finishSpectatorSession,
 } from "@/services/spectatorSessions";
+import {
+  GAME_PROTOCOL_VERSION,
+  getClientBuildInfo,
+} from "@/types/gameProtocol";
+import { createTraceId } from "@/utils/trace";
 import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -372,6 +377,9 @@ function useMultiplayerSpectatorStandalone(
           firestoreGameId,
           spectator: true,
           token,
+          protocolVersion: GAME_PROTOCOL_VERSION,
+          buildInfo: getClientBuildInfo(),
+          traceId: createTraceId("gs"),
         });
 
         if (!mountedRef.current) {
@@ -516,6 +524,9 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
       const newRoom = await client.joinOrCreate("spectator", {
         gameType,
         token,
+        protocolVersion: GAME_PROTOCOL_VERSION,
+        buildInfo: getClientBuildInfo(),
+        traceId: createTraceId("gs"),
       });
 
       if (!mountedRef.current) {
@@ -758,6 +769,9 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
         const newRoom = await client.joinById(targetRoomId, {
           spectator: true,
           token,
+          protocolVersion: GAME_PROTOCOL_VERSION,
+          buildInfo: getClientBuildInfo(),
+          traceId: createTraceId("gs"),
         });
 
         if (!mountedRef.current) {

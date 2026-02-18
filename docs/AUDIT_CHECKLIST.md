@@ -150,7 +150,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 11 - Colyseus Server Audit + Protocol Safety
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Protocol/version and trace propagation validated.
 - Room contracts and reconnection/debugging documented in `docs/COLYSEUS_SERVER.md`.

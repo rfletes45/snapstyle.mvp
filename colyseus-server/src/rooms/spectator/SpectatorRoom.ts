@@ -23,6 +23,7 @@ const log = createServerLogger("SpectatorRoom");
 import { Client, Room } from "colyseus";
 import { SpectatorEntry, SpectatorRoomState } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
+import type { ServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
@@ -35,6 +36,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
   maxClients = 51; // 1 host + 50 spectators (soft cap via maxSpectators)
   patchRate = 100; // 10fps state sync (base)
   autoDispose = true;
+  private roomLog: ServerLogger = log;
 
   /** Session ID of the host (the player being watched) */
   private hostSessionId: string = "";
@@ -83,6 +85,11 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: "spectator",
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -109,10 +116,17 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
   onCreate(options: Record<string, any>): void {
     this.setState(new SpectatorRoomState());
     this.state.gameType = options.gameType || "";
+    this.state.traceId = options.traceId || "";
     this.state.phase = "waiting";
     this.state.maxSpectators = options.maxSpectators || 50;
 
-    log.info(
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: "spectator",
+      traceId: options.traceId || undefined,
+    });
+
+    this.roomLog.info(
       `[SpectatorRoom] Room created: ${this.roomId} (game: ${this.state.gameType})`,
     );
   }
@@ -129,7 +143,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     start_hosting: (client: Client) => {
       if (client.sessionId !== this.hostSessionId) return;
       this.state.phase = "active";
-      log.info(
+      this.roomLog.info(
         `[SpectatorRoom] Host started broadcasting: ${this.state.hostName}`,
       );
     },
@@ -306,7 +320,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       }
       this.state.phase = "finished";
       this.state.boostSessionEndsAt = 0;
-      log.info(
+      this.roomLog.info(
         `[SpectatorRoom] Game ended: ${this.state.hostName} â€” score: ${this.state.currentScore}`,
       );
     },
@@ -401,7 +415,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
      * App state change (background/foreground).
      */
     app_state: (client: Client, payload: { state: string }) => {
-      log.info(
+      this.roomLog.info(
         `[SpectatorRoom] App state: ${client.sessionId} â†’ ${payload.state}`,
       );
     },
@@ -418,7 +432,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       this.state.hostId = auth.uid;
       this.state.hostName = auth.displayName || "Host";
 
-      log.info(
+      this.roomLog.info(
         `[SpectatorRoom] Host joined: ${auth.displayName} (${client.sessionId})`,
       );
 
@@ -449,7 +463,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     // Adapt patchRate based on spectator load
     this.adjustPatchRate();
 
-    log.info(
+    this.roomLog.info(
       `[SpectatorRoom] Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
     );
   }
@@ -462,17 +476,17 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       if (this.state.phase === "active" && !consented) {
         try {
           await this.allowReconnection(client, 30);
-          log.info(`[SpectatorRoom] Host reconnected`);
+          this.roomLog.info(`[SpectatorRoom] Host reconnected`);
           return;
         } catch {
           // Host didn't come back â€” end the session
-          log.info(`[SpectatorRoom] Host disconnected permanently`);
+          this.roomLog.info(`[SpectatorRoom] Host disconnected permanently`);
         }
       }
 
       this.state.phase = "finished";
       this.broadcast("host_left", {});
-      log.info(`[SpectatorRoom] Host left, room will close`);
+      this.roomLog.info(`[SpectatorRoom] Host left, room will close`);
       return;
     }
 
@@ -488,7 +502,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
       // Adapt patchRate based on spectator load
       this.adjustPatchRate();
 
-      log.info(
+      this.roomLog.info(
         `[SpectatorRoom] Spectator left (${this.state.spectatorCount} watching)`,
       );
     }
@@ -496,11 +510,11 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
 
   async onDispose(): Promise<void> {
     if (this.droppedGameStateUpdates > 0) {
-      log.info(
+      this.roomLog.info(
         `[SpectatorRoom] Room disposed: ${this.roomId} (dropped ${this.droppedGameStateUpdates} gameStateJson updates)`,
       );
     } else {
-      log.info(`[SpectatorRoom] Room disposed: ${this.roomId}`);
+      this.roomLog.info(`[SpectatorRoom] Room disposed: ${this.roomId}`);
     }
   }
 
@@ -518,7 +532,7 @@ export class SpectatorRoom extends Room<{ state: SpectatorRoomState }> {
     for (const tier of SpectatorRoom.LOAD_TIERS) {
       if (count <= tier.maxSpectators) {
         if (this.patchRate !== tier.patchRate) {
-          log.info(
+          this.roomLog.info(
             `[SpectatorRoom] Adjusting patchRate: ${this.patchRate} → ${tier.patchRate} (${count} spectators)`,
           );
           this.setPatchRate(tier.patchRate);

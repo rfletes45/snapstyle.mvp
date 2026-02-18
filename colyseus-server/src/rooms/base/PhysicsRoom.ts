@@ -132,6 +132,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       log.warn(`Protocol rejected: ${proto.reason}`, {
         sessionId: client.sessionId,
         gameType: this.gameTypeKey,
+        traceId: options?.traceId,
       });
       throw new Error(proto.reason);
     }
@@ -172,6 +173,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     this.setState(new PhysicsState());
     this.state.gameType = this.gameTypeKey;
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.maxPlayers = this.maxClients;
     this.state.scoreToWin = this.scoreToWin;
     this.state.seed = Math.floor(Math.random() * 2147483647);

@@ -1,4 +1,5 @@
 ﻿import { createServerLogger } from "../../utils/logger";
+import type { ServerLogger } from "../../utils/logger";
 const log = createServerLogger("WordMasterRoom");
 
 /**
@@ -635,6 +636,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
   maxClients = 2;
   patchRate = 100; // 10fps
   autoDispose = true;
+  private roomLog: ServerLogger = log;
 
   /** The target word (hidden until game ends) */
   private targetWord: string = "";
@@ -654,6 +656,11 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: client.sessionId,
+        gameType: "word_master_game",
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -680,13 +687,19 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
   onCreate(options: Record<string, any>): void {
     this.setState(new WordMasterState());
     this.state.gameId = this.roomId;
+    this.state.traceId = options.traceId || "";
     this.state.seed = Math.floor(Math.random() * 2147483647);
     this.state.phase = "waiting";
 
     // Pick target word using seed for determinism
     this.targetWord = WORD_LIST[this.state.seed % WORD_LIST.length];
 
-    log.info(`[word_master] Room created: ${this.roomId}`);
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: "word_master_game",
+      traceId: options.traceId || undefined,
+    });
+    this.roomLog.info(`[word_master] Room created: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -699,7 +712,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
       const player = this.state.wmPlayers.get(client.sessionId);
       if (player) {
         player.ready = true;
-        log.info(`[word_master] Player ready: ${player.displayName}`);
+        this.roomLog.info(`[word_master] Player ready: ${player.displayName}`);
         this.checkAllReady();
       }
     },
@@ -788,7 +801,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
     },
 
     app_state: (client: Client, payload: { state: string }) => {
-      log.info(
+      this.roomLog.info(
         `[word_master] Player app state: ${client.sessionId} â†’ ${payload.state}`,
       );
     },
@@ -816,7 +829,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
       seed: this.state.seed,
     });
 
-    log.info(
+    this.roomLog.info(
       `[word_master] Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.wmPlayers.size}/${this.maxClients}]`,
     );
 
@@ -858,7 +871,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
       player.score = 0;
       this.checkAllFinished();
     }
-    log.info(`[word_master] Player left: ${client.sessionId}`);
+    this.roomLog.info(`[word_master] Player left: ${client.sessionId}`);
   }
 
   async onDispose(): Promise<void> {
@@ -868,7 +881,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
         this.state.elapsed,
       );
     }
-    log.info(`[word_master] Room disposed: ${this.roomId}`);
+    this.roomLog.info(`[word_master] Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -916,7 +929,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
       }
     }, 1000);
 
-    log.info(`[word_master] Game started!`);
+    this.roomLog.info(`[word_master] Game started!`);
   }
 
   private checkAllFinished(): void {
@@ -984,7 +997,7 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
       results,
     });
 
-    log.info(
+    this.roomLog.info(
       `[word_master] Game over! Winner: ${this.state.winnerId || "NONE"}`,
     );
   }
@@ -1011,6 +1024,6 @@ export class WordMasterRoom extends Room<{ state: WordMasterState }> {
     this.targetWord = WORD_LIST[this.state.seed % WORD_LIST.length];
 
     this.unlock();
-    log.info(`[word_master] Room reset for rematch`);
+    this.roomLog.info(`[word_master] Room reset for rematch`);
   }
 }

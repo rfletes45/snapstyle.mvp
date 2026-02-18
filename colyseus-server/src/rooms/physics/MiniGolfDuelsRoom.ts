@@ -67,6 +67,7 @@ import {
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import { persistGameResult } from "../../services/persistence";
+import type { ServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
@@ -162,6 +163,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
   // --- Timers ---
   private physicsInterval: { clear(): void } | null = null;
   private scorecardTimeout: { clear(): void } | null = null;
+  private roomLog: ServerLogger = log;
 
   // --- Ordered UID list for turn alternation ---
   private playerUids: string[] = [];
@@ -178,6 +180,11 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
     // ── Protocol version gate ─────────────────────────────────────────────
     const proto = checkProtocolVersion(options);
     if (!proto.ok) {
+      log.warn(`Protocol rejected: ${proto.reason}`, {
+        sessionId: _client.sessionId,
+        gameType: this.gameTypeKey,
+        traceId: options?.traceId,
+      });
       throw new Error(proto.reason);
     }
 
@@ -201,6 +208,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
 
     state.gameType = this.gameTypeKey;
     state.gameId = this.roomId;
+    state.traceId = options.traceId || "";
     state.maxPlayers = 2;
     state.phase = "waiting";
     state.seed = Math.floor(Math.random() * 2147483647);
@@ -215,7 +223,13 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
       state.firestoreGameId = options.firestoreGameId;
     }
 
-    log.info(
+    this.roomLog = log.child({
+      roomId: this.roomId,
+      gameType: this.gameTypeKey,
+      firestoreGameId: state.firestoreGameId || undefined,
+      traceId: options.traceId || undefined,
+    });
+    this.roomLog.info(
       `Room created: ${this.roomId} (courseId=${this.packId}, holes=${state.holesTotal})`,
     );
   }
@@ -230,7 +244,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
       const player = this.state.players.get(client.sessionId);
       if (player) {
         player.ready = true;
-        log.info(`Player ready: ${player.displayName}`);
+        this.roomLog.info(`Player ready: ${player.displayName}`);
         this.checkAllReady();
       }
     },
@@ -283,7 +297,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
         holesTotal: this.state.holesTotal,
       });
 
-      log.info(
+      this.roomLog.info(
         `Spectator joined: ${auth.displayName} (${this.state.spectatorCount} watching)`,
       );
       return;
@@ -323,7 +337,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
       holesTotal: this.state.holesTotal,
     });
 
-    log.info(
+    this.roomLog.info(
       `Player joined: ${auth.displayName} [${this.state.players.size}/2]`,
     );
 
@@ -425,7 +439,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
       Matter.Engine.clear(this.engine);
     }
 
-    log.info(`Room disposed: ${this.roomId}`);
+    this.roomLog.info(`Room disposed: ${this.roomId}`);
   }
 
   // ===========================================================================
@@ -1007,7 +1021,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
     br.stopCount = STOP_FRAMES;
 
     this.broadcast("ball_holed", { uid });
-    log.info(
+    this.roomLog.info(
       `Ball holed: ${uid} (strokes: ${this.state.strokesHoleByUid.get(uid)})`,
     );
 
@@ -1072,7 +1086,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
     // --- Anti-stuck: force stop after too many frames in motion ---
     const isStuck = br.motionFrames >= ANTI_STUCK_MAX_FRAMES;
     if (isStuck) {
-      log.warn(
+      this.roomLog.warn(
         `Anti-stuck triggered for ${currentUid} after ${br.motionFrames} frames`,
       );
       this.broadcast("anti_stuck", { uid: currentUid });
@@ -1199,7 +1213,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
       gameDurationMs: this.state.elapsed,
     });
 
-    log.info(`Match over! Winner: ${winnerId || "tie"} (${reason})`);
+    this.roomLog.info(`Match over! Winner: ${winnerId || "tie"} (${reason})`);
   }
 
   // ===========================================================================
@@ -1322,7 +1336,7 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
     }
 
     this.unlock();
-    log.info("Room reset for rematch");
+    this.roomLog.info("Room reset for rematch");
   }
 
   // ===========================================================================
