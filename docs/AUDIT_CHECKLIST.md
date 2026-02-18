@@ -1,56 +1,46 @@
-﻿# Audit Checklist (18 Segments)
+# Audit Checklist
 
-Use this checklist to track each audit segment consistently. Mark a segment complete only when its exit criteria and checks pass.
+Use this checklist to execute the deep-clean plan one segment at a time. Mark a segment complete only when its exit criteria are met and required checks are rerun.
 
-## Segment 1 - Audit framework docs
-- [ ] Complete
+## Segment 0 - Safety + Baseline Health Check (reference)
+
+Status: Completed in current run (read-only).
+
+## Segment 1 - Create Audit Framework Docs
+
+- [x] Complete
 Exit criteria:
-- `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, and `docs/AUDIT_REPORT_2026-02-17.md` are updated.
-- No non-doc files are changed in this segment.
-- Root type-check result is unchanged from baseline.
+- `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` updated.
+- Doc-only changes.
+- Root type-check status unchanged.
 Commands:
 ```bash
 npm run type-check
 ```
 
-## Segment 2 - Repo contract map
+## Segment 2 - Tooling Baseline (Typecheck/Lint/Test Reliable)
+
 - [ ] Complete
 Exit criteria:
-- Source-of-truth services, types, and contracts are documented for touched areas.
-- Proposed work is scoped to minimal files.
+- Root `type-check` + `lint` pass.
+- Root tests pass or explicitly quarantined with justification.
+- Functions/server/client package checks run where package roots exist.
 Commands:
 ```bash
 npm run type-check
 npm run lint
-```
-
-## Segment 3 - Root lint blocker fixes
-- [ ] Complete
-Exit criteria:
-- Root lint has zero blocking errors.
-- No new lint errors are introduced in touched files.
-Commands:
-```bash
-npm run lint
-npm run type-check
-```
-
-## Segment 4 - Messaging invariants
-- [ ] Complete
-Exit criteria:
-- Messaging changes preserve idempotency, ordering, and outbox semantics.
-- Relevant chat tests pass.
-Commands:
-```bash
-npm run type-check
 npm run test -- --ci --watchAll=false --no-cache
+cd firebase-backend/functions && npx --no-install tsc --noEmit
+cd colyseus-server && npx --no-install tsc --noEmit && npm run lint -- --no-cache && npm run test -- --ci --watchAll=false --no-cache
 ```
 
-## Segment 5 - Profile and moderation safety
+## Segment 3 - Repo Inventory + Deprecation Map
+
 - [ ] Complete
 Exit criteria:
-- Profile field changes are type-safe and backward compatible.
-- Related permission and moderation paths are validated.
+- `docs/REPO_MAP.md` and `docs/DEPRECATION_MAP.md` created/updated.
+- Segment 3 findings + top 20 cleanup candidates in audit report.
+- Checks unchanged.
 Commands:
 ```bash
 npm run type-check
@@ -58,11 +48,13 @@ npm run lint
 npm run test -- --ci --watchAll=false --no-cache
 ```
 
-## Segment 6 - Games client stability
+## Segment 4 - Config + Feature Flags Audit
+
 - [ ] Complete
 Exit criteria:
-- Game client changes preserve invite/lobby/session flows.
-- No regressions in multiplayer entry points.
+- `constants/featureFlags.ts` audited with proof-based cleanup only.
+- Config paths audited and documented in `docs/CONFIGURATION.md`.
+- No risky default flips without explicit rationale.
 Commands:
 ```bash
 npm run type-check
@@ -70,138 +62,198 @@ npm run lint
 npm run test -- --ci --watchAll=false --no-cache
 ```
 
-## Segment 7 - Colyseus server health
+## Segment 5 - Types + Data Contract Baseline
+
 - [ ] Complete
 Exit criteria:
-- Room/server changes compile and pass lint/tests.
-- No protocol compatibility regressions.
+- Canonical type locations identified and duplicate types consolidated safely.
+- High-risk boundary runtime guards added where needed.
+- `docs/DATA_CONTRACT_CLIENT.md` added/updated.
 Commands:
 ```bash
-cd colyseus-server && npm run build
-cd colyseus-server && npm run lint
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 6 - Firestore Rules + Indexes Contract Audit
+
+- [ ] Complete
+Exit criteria:
+- Client writes mapped to rules and query/index requirements.
+- `docs/FIRESTORE_CONTRACT.md` added/updated.
+- Rules/index updates are minimal and safe when needed.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+cd firebase-backend/functions && npx --no-install tsc --noEmit
+```
+
+## Segment 7 - Cloud Functions Deep Clean
+
+- [ ] Complete
+Exit criteria:
+- Functions inventory with contracts and auth expectations.
+- Input validation/error handling/logging hardened.
+- `docs/FUNCTIONS.md` added/updated.
+Commands:
+```bash
+cd firebase-backend/functions && npm run build
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 8 - Messaging System Deep Clean
+
+- [ ] Complete
+Exit criteria:
+- Messaging invariants preserved (idempotency, ordering, watermark semantics, outbox states).
+- Direct-write bypasses removed where proven safe.
+- `docs/CHAT_SYSTEM.md` added/updated.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 9 - Profile System Deep Clean
+
+- [ ] Complete
+Exit criteria:
+- Profile writes/reads stabilized via canonical service paths.
+- Theme/default hydration behavior preserved.
+- `docs/PROFILE_SYSTEM.md` added/updated.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 10 - Games Platform Consistency + Error Handling
+
+- [ ] Complete
+Exit criteria:
+- Unified invite/lobby lifecycle across multiplayer games.
+- Trace IDs, watchdogs, and error taxonomy preserved.
+- `docs/GAMES_PLATFORM.md` or equivalent `docs/06_GAMES.md` updates.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 11 - Colyseus Server Audit + Protocol Safety
+
+- [ ] Complete
+Exit criteria:
+- Protocol/version and trace propagation validated.
+- Room contracts and reconnection/debugging documented in `docs/COLYSEUS_SERVER.md`.
+Commands:
+```bash
+cd colyseus-server && npx --no-install tsc --noEmit
+cd colyseus-server && npm run lint -- --no-cache
 cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache
 ```
 
-## Segment 8 - Cloud Functions health
+## Segment 12 - Embedded Web Game Client + WebView Integration
+
 - [ ] Complete
 Exit criteria:
-- Functions code compiles cleanly.
-- Export surface and deployment contract are intact.
+- URL/param contract and fallback UX audited.
+- `docs/EMBEDDED_WEB_GAMES.md` added/updated.
 Commands:
 ```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 13 - Calls + Camera Subsystem Audit
+
+- [ ] Complete
+Exit criteria:
+- UI/service-layer gating validated.
+- Risky flags unchanged unless explicitly justified.
+- `docs/CALLS_CAMERA.md` added/updated.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 14 - Performance + Startup Cleanup
+
+- [ ] Complete
+Exit criteria:
+- Safe startup/render/sync hotpath optimizations only.
+- `docs/PERFORMANCE.md` added/updated.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
+```
+
+## Segment 15 - Security + Privacy Review
+
+- [ ] Complete
+Exit criteria:
+- Secrets/logging/auth/rules hardening completed.
+- `docs/SECURITY_PRIVACY.md` added/updated.
+Commands:
+```bash
+npm run type-check
+npm run lint
+npm run test -- --ci --watchAll=false --no-cache
 cd firebase-backend/functions && npm run build
 ```
 
-## Segment 9 - Firestore rules and indexes
-- [ ] Complete
-Exit criteria:
-- New/changed writes are allowed by rules.
-- New query shapes are covered by indexes.
-Commands:
-```bash
-npm run type-check
-cd firebase-backend/functions && npm run build
-```
+## Segment 16 - Test Coverage Uplift
 
-## Segment 10 - Navigation and route typing
 - [ ] Complete
 Exit criteria:
-- Navigator routes and params are aligned with screens.
-- Full-screen/tab-hidden behavior remains intentional.
-Commands:
-```bash
-npm run type-check
-npm run lint
-```
-
-## Segment 11 - Feature-flag compliance
-- [ ] Complete
-Exit criteria:
-- Risky or incomplete behavior is gated.
-- Flags are applied in service and UI layers where needed.
-Commands:
-```bash
-npm run type-check
-npm run lint
-```
-
-## Segment 12 - Local-first and sync reliability
-- [ ] Complete
-Exit criteria:
-- Outbox, sync, and local persistence paths remain consistent.
-- No duplicate send or read-state regressions.
-Commands:
-```bash
-npm run type-check
-npm run test -- --ci --watchAll=false --no-cache
-```
-
-## Segment 13 - Performance and watchdogs
-- [ ] Complete
-Exit criteria:
-- Watchdog and recovery logic remains consistent.
-- No obvious performance regressions in touched paths.
-Commands:
-```bash
-npm run type-check
-npm run test -- --ci --watchAll=false --no-cache
-```
-
-## Segment 14 - Deprecated and dead code cleanup
-- [ ] Complete
-Exit criteria:
-- Removed paths have no production callers.
-- References, exports, and imports remain coherent.
-Commands:
-```bash
-npm run type-check
-npm run lint
-npm run test -- --ci --watchAll=false --no-cache
-```
-
-## Segment 15 - Documentation sync
-- [ ] Complete
-Exit criteria:
-- Behavior/contract changes are reflected in `docs/`.
-- New operational steps are documented.
-Commands:
-```bash
-npm run type-check
-```
-
-## Segment 16 - Regression test hardening
-- [ ] Complete
-Exit criteria:
-- Failing or flaky tests in touched areas are resolved.
-- CI-targeted test run is stable.
+- Invariant-focused tests added (messaging/games/profile priorities).
+- `docs/TESTING.md` added/updated.
 Commands:
 ```bash
 npm run test -- --ci --watchAll=false --no-cache
 cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache
 ```
 
-## Segment 17 - Release candidate verification
+## Segment 17 - Final Deprecation Removal + Doc Consolidation
+
 - [ ] Complete
 Exit criteria:
-- Root + server + functions checks pass for touched areas.
-- No blocker issues remain open.
+- Every deletion has no-caller proof + validation reruns.
+- Deletion ledger complete in audit report.
+- Index links/doc references consolidated.
 Commands:
 ```bash
 npm run type-check
 npm run lint
 npm run test -- --ci --watchAll=false --no-cache
-cd colyseus-server && npm run build && npm run lint && npm run test -- --ci --watchAll=false --no-cache
-cd firebase-backend/functions && npm run build
+cd colyseus-server && npx --no-install tsc --noEmit && npm run lint -- --no-cache && npm run test -- --ci --watchAll=false --no-cache
+cd firebase-backend/functions && npx --no-install tsc --noEmit
 ```
 
-## Segment 18 - Final audit sign-off
+## Segment 18 - Release-Quality Wrap-Up
+
 - [ ] Complete
 Exit criteria:
-- Audit report is complete and linked from docs index.
-- Final risk and follow-up list is documented.
+- Final audit report and checklist fully updated.
+- Full checks rerun across package roots.
 Commands:
 ```bash
 npm run type-check
 npm run lint
 npm run test -- --ci --watchAll=false --no-cache
+cd colyseus-server && npx --no-install tsc --noEmit && npm run lint -- --no-cache && npm run test -- --ci --watchAll=false --no-cache
+cd firebase-backend/functions && npx --no-install tsc --noEmit
 ```

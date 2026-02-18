@@ -5,23 +5,26 @@
 | Scope | Command | Result | Notes |
 | --- | --- | --- | --- |
 | Root | `npm run type-check` | PASS | No TypeScript errors. |
-| Root | `npm run lint` | FAIL | 2 errors, 541 warnings. Blocking errors are in `src/components/chat/ChatDebugHUD.tsx` hook ordering. |
-| Root | `npm run test -- --ci --watchAll=false --no-cache` | PASS | CI-style run passed. |
+| Root | `npm run lint` | PASS | 0 errors, 541 warnings. |
+| Root | `npm run test -- --ci --watchAll=false --no-cache` | PASS | 47/47 suites, 1088 tests passed. |
 | Functions | `npx --no-install tsc --noEmit` | PASS | Read-only equivalent of build check. |
+| Functions | `npm run build -- --noEmit` | PASS | Build script succeeded in current baseline run. |
 | Colyseus server | `npx --no-install tsc --noEmit` | PASS | Type-check passes. |
-| Colyseus server | `npm run lint -- --no-cache` | PASS | Lint passes. |
-| Colyseus server | `npm run test -- --ci --watchAll=false --no-cache` | PASS | Tests pass. |
+| Colyseus server | `npm run build -- --noEmit` | PASS | Build script succeeded in current baseline run. |
+| Colyseus server | `npm run lint -- --no-cache` | PASS | 0 errors, 161 warnings. |
+| Colyseus server | `npm run test -- --ci --watchAll=false --no-cache` | PASS | 12/12 suites, 353 tests passed. |
 | Client web package | `client/package.json` lookup | N/A | `client/` package root not present. |
 
 ## Findings
 
-- Root lint has blocking `react-hooks/rules-of-hooks` errors in `src/components/chat/ChatDebugHUD.tsx`.
-- Root lint warning backlog is large (541 warnings across many files).
+- Root validation commands pass, but warning backlog is still high:
+  - Root lint: 541 warnings.
+  - Colyseus lint: 161 warnings.
 - `client/` package root expected by docs is not present in this repository snapshot.
 
 ## Fixes
 
-- None yet. Segment 1 is documentation-only scaffolding.
+- Segment 1 updates in this run are docs-only audit scaffolding changes.
 
 ## Deleted Code
 
@@ -29,15 +32,34 @@
 
 ## Risks
 
-- Lint blocker must be fixed before relying on root lint as a merge gate.
 - Warning volume can hide meaningful new warnings unless triaged by category.
 - Documentation and repository structure diverge around `client/` package expectations.
 
 ## Follow-ups
 
-- Segment 2: confirm ownership and source-of-truth contracts for touched subsystems.
-- Segment 3: fix root lint blocking errors first, then reassess warning strategy.
-- Segment 4+: implement scoped fixes with report updates per segment.
+- Segment 2: focus on deterministic tooling behavior and warning triage strategy.
+- Segment 3+: continue scoped subsystem passes with invariant checks per segment.
+
+## Segment 1
+
+### What changed
+
+- Updated `docs/00_INDEX.md`:
+  - tightened start-here read order
+  - added one-paragraph repo mental model
+  - linked existing audit docs and planned audit deliverables
+- Updated `docs/AUDIT_CHECKLIST.md`:
+  - aligned to 18-segment execution plan
+  - added per-segment exit criteria + command blocks
+- Updated `docs/AUDIT_REPORT_2026-02-17.md`:
+  - refreshed baseline status using current Segment 0 run
+  - recorded Segment 1 changes
+
+### Why safe
+
+- Segment is doc-only; no runtime or build logic changed.
+- Baseline validation rerun to confirm root status unchanged:
+  - `npm run type-check` PASS
 
 ## Segment 2
 
@@ -138,7 +160,7 @@
 
 | Segment | Date | Summary | Files changed | Checks | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | - | - | - | - | Not started |
+| 1 | 2026-02-18 | Added/normalized audit framework docs and refreshed baseline to current Segment 0 command results. | `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check PASS (unchanged) | Done |
 | 2 | 2026-02-17 | Stabilized root tooling loop by fixing lint blocker, strict test typing drift, and one flaky rate-limit test boundary. | `src/components/chat/ChatDebugHUD.tsx`, `__tests__/services/sendMessageV2.test.ts`, `__tests__/services/resolveChatSettings.test.ts`, `__tests__/services/messageRequests.test.ts`, `__tests__/services/privacyPublish.test.ts`, `__tests__/services/rateLimiter.test.ts`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions build PASS; Colyseus type-check/lint/test PASS | Done |
 | 3 | 2026-02-18 | Added repo inventory and deprecation mapping docs with evidence-backed caller/risk analysis and ranked cleanup candidates. | `docs/REPO_MAP.md`, `docs/DEPRECATION_MAP.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS (unchanged behavior) | Done |
 | 4 | - | - | - | - | Not started |
