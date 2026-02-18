@@ -582,6 +582,52 @@
 - `npm run lint` PASS (warnings only)
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 
+## Segment 15
+
+### What changed
+
+- Added shared HTTP admin auth utility:
+  - `firebase-backend/functions/src/httpAuth.ts`
+  - supports admin bearer token auth and secure setup-key auth
+- Protected previously unguarded admin/migration HTTP endpoints:
+  - `firebase-backend/functions/src/legacy.ts`
+    - `seedDailyTasks`
+    - `initializeExistingWallets`
+    - `seedShopCatalog`
+  - `firebase-backend/functions/src/migrations/migrateGameInvites.ts`
+    - `migrateGameInvites`
+    - `migrateGameInvitesDryRun`
+    - `rollbackGameInvitesMigration`
+- Hardened admin bootstrap endpoint:
+  - `initializeFirstAdmin` now requires securely configured `ADMIN_SETUP_KEY` and no longer accepts weak fallback defaults.
+- Reduced log privacy risk in link preview callable:
+  - `firebase-backend/functions/src/linkPreview.ts`
+  - URL logging now strips query/hash to avoid leaking tokens or sensitive query params.
+- Strengthened repo ignore patterns for secret-like local files:
+  - `.gitignore`
+  - added `.env`/`.env.*` ignores (with `*.example` exceptions)
+  - fixed Firebase local config ignore patterns
+  - added service-account key ignore globs
+- Added canonical security documentation:
+  - `docs/SECURITY_PRIVACY.md`
+- Updated docs/checklist:
+  - `docs/00_INDEX.md`
+  - `docs/AUDIT_CHECKLIST.md`
+
+### Why this is safe
+
+- Changes are access-control and logging hygiene only; no product feature flow or Firestore data model was refactored.
+- Admin/migration HTTP endpoints now fail closed without valid admin auth.
+- `initializeFirstAdmin` now requires explicit secure configuration, eliminating accidental exposure from placeholder secrets.
+- Logging changes preserve observability while reducing sensitive URL leakage risk.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+- `cd firebase-backend/functions && npm run build` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -600,7 +646,7 @@
 | 12 | 2026-02-18 | Audited embedded web game integration, fixed URL/join param translation (`firestoreGameId`, `inviteId`, `traceId`), hardened WebView offline/error/back handling, and documented the end-to-end embedded contract. | `src/config/starforgeGame.ts`, `src/screens/games/StarforgeGameScreen.tsx`, `starforge-viewer/src/game/gameMain.ts`, `starforge-viewer/src/game/net/messageTypes.ts`, `starforge-viewer/src/game/net/roomAdapter.ts`, `docs/EMBEDDED_WEB_GAMES.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; starforge-viewer typecheck/build PASS | Done |
 | 13 | 2026-02-18 | Audited calls/camera subsystem gating, added contract doc, enforced feature-aware call runtime/bootstrap no-op behavior, and gated profile call entrypoint by feature/platform availability. | `docs/CALLS_CAMERA.md`, `src/contexts/CallContext.tsx`, `src/services/calls/index.ts`, `src/screens/profile/UserProfileScreen.tsx`, `src/components/profile/ProfileActions/ProfileActionsBar.tsx`, `src/components/calls/index.ts`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS | Done |
 | 14 | 2026-02-18 | Added performance guidance, deferred optional call bootstrap until post-render, and tightened outbox resume processing to real foreground transitions only. | `docs/PERFORMANCE.md`, `App.tsx`, `src/hooks/useOutboxProcessor.ts`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS | Done |
-| 15 | - | - | - | - | Not started |
+| 15 | 2026-02-18 | Hardened admin/migration HTTP endpoint auth, removed weak admin-setup fallback behavior, sanitized link-preview URL logging, improved secret-file ignore hygiene, and added security/privacy documentation. | `firebase-backend/functions/src/httpAuth.ts`, `firebase-backend/functions/src/legacy.ts`, `firebase-backend/functions/src/migrations/migrateGameInvites.ts`, `firebase-backend/functions/src/linkPreview.ts`, `.gitignore`, `docs/SECURITY_PRIVACY.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; functions build PASS | Done |
 | 16 | - | - | - | - | Not started |
 | 17 | - | - | - | - | Not started |
 | 18 | - | - | - | - | Not started |

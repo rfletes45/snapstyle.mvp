@@ -53,6 +53,7 @@ exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = export
 exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const httpAuth_1 = require("./httpAuth");
 // Import V2 Messaging functions
 const messaging_1 = require("./messaging");
 // Import Games functions
@@ -1740,8 +1741,14 @@ exports.recordDailyLogin = functions.https.onCall(async (data, context) => {
  * This creates default task definitions
  */
 exports.seedDailyTasks = functions.https.onRequest(async (req, res) => {
-    // Only allow from admin/localhost in development
-    // In production, this should be protected or removed
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({
+            success: false,
+            error: authResult.error,
+        });
+        return;
+    }
     const defaultTasks = [
         {
             id: "daily_send_5_messages",
@@ -1845,7 +1852,14 @@ exports.seedDailyTasks = functions.https.onRequest(async (req, res) => {
  * Run once via admin to migrate existing users
  */
 exports.initializeExistingWallets = functions.https.onRequest(async (req, res) => {
-    // This is an admin function - should be protected in production
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({
+            success: false,
+            error: authResult.error,
+        });
+        return;
+    }
     try {
         const usersSnapshot = await db.collection("Users").get();
         let created = 0;
@@ -1893,7 +1907,14 @@ exports.initializeExistingWallets = functions.https.onRequest(async (req, res) =
  * Creates initial shop items for testing
  */
 exports.seedShopCatalog = functions.https.onRequest(async (req, res) => {
-    // This is an admin function - should be protected in production
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({
+            success: false,
+            error: authResult.error,
+        });
+        return;
+    }
     // Sample shop items based on existing cosmetics
     const shopItems = [
         // Featured limited-time items
@@ -2531,13 +2552,16 @@ exports.initializeFirstAdmin = functions.https.onRequest(async (req, res) => {
         res.status(405).send("Method not allowed");
         return;
     }
-    const { uid, secretKey } = req.body;
-    // Use environment variable or hardcoded secret for development
-    const expectedSecret = process.env.ADMIN_SETUP_KEY || "SECRET";
-    if (secretKey !== expectedSecret) {
-        res.status(403).json({ error: "Invalid secret key" });
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req, {
+        allowAdminToken: false,
+        allowSetupKey: true,
+        requireSetupKey: true,
+    });
+    if (!authResult.ok) {
+        res.status(authResult.status).json({ error: authResult.error });
         return;
     }
+    const { uid } = req.body;
     if (!uid) {
         res.status(400).json({ error: "Missing uid" });
         return;

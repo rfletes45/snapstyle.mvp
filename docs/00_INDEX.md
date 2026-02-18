@@ -37,6 +37,7 @@ Read in this order for fastest orientation:
 - Embedded web game contract: [EMBEDDED_WEB_GAMES.md](EMBEDDED_WEB_GAMES.md)
 - Calls and camera: [CALLS_CAMERA.md](CALLS_CAMERA.md)
 - Performance notes: [PERFORMANCE.md](PERFORMANCE.md)
+- Security and privacy: [SECURITY_PRIVACY.md](SECURITY_PRIVACY.md)
 - Testing and ops: [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
 
 ## Deep-Dive Subsystem Docs
@@ -55,5 +56,4 @@ Read in this order for fastest orientation:
 
 These are linked early so later segments can fill them in without index churn:
 
-- `docs/SECURITY_PRIVACY.md`
 - `docs/TESTING.md`

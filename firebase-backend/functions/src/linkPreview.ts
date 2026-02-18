@@ -135,6 +135,18 @@ function getCacheKey(url: string): string {
   return Buffer.from(url).toString("base64").substring(0, 64);
 }
 
+/**
+ * Strip query/hash to avoid leaking private URL parameters in logs.
+ */
+function sanitizeUrlForLog(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
 // ============================================
 // EXPORTED FUNCTION
 // ============================================
@@ -188,25 +200,32 @@ export const fetchLinkPreviewFunction = functions.https.onCall(
     }
 
     const cacheKey = getCacheKey(url);
+    const safeUrlForLog = sanitizeUrlForLog(url);
     const cacheRef = db.collection("LinkPreviews").doc(cacheKey);
 
     // Check cache first
     try {
       const cached = await cacheRef.get();
       if (cached.exists) {
-        const data = cached.data() as LinkPreviewData;
+        const cachedData = cached.data() as LinkPreviewData;
         // Check if not expired
-        if (data.expiresAt > Date.now()) {
-          console.log(`✅ [fetchLinkPreview] Cache hit for: ${url}`);
-          return { success: true, preview: data, cached: true };
+        if (cachedData.expiresAt > Date.now()) {
+          functions.logger.info("[fetchLinkPreview] Cache hit", {
+            url: safeUrlForLog,
+          });
+          return { success: true, preview: cachedData, cached: true };
         }
       }
-    } catch (error) {
-      console.warn("[fetchLinkPreview] Cache lookup failed:", error);
+    } catch {
+      functions.logger.warn("[fetchLinkPreview] Cache lookup failed", {
+        url: safeUrlForLog,
+      });
     }
 
     // Fetch the URL
-    console.log(`🔵 [fetchLinkPreview] Fetching: ${url}`);
+    functions.logger.info("[fetchLinkPreview] Fetching URL", {
+      url: safeUrlForLog,
+    });
 
     try {
       const controller = new AbortController();
@@ -226,7 +245,10 @@ export const fetchLinkPreviewFunction = functions.https.onCall(
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        console.warn(`[fetchLinkPreview] HTTP ${response.status} for: ${url}`);
+        functions.logger.warn("[fetchLinkPreview] Non-200 response", {
+          status: response.status,
+          url: safeUrlForLog,
+        });
         return {
           success: false,
           error: `Failed to fetch URL (HTTP ${response.status})`,
@@ -267,14 +289,21 @@ export const fetchLinkPreviewFunction = functions.https.onCall(
       // Save to cache
       try {
         await cacheRef.set(preview);
-        console.log(`✅ [fetchLinkPreview] Cached preview for: ${url}`);
-      } catch (error) {
-        console.warn("[fetchLinkPreview] Failed to cache:", error);
+        functions.logger.info("[fetchLinkPreview] Cached preview", {
+          url: safeUrlForLog,
+        });
+      } catch {
+        functions.logger.warn("[fetchLinkPreview] Failed to cache", {
+          url: safeUrlForLog,
+        });
       }
 
       return { success: true, preview };
     } catch (error: any) {
-      console.error(`❌ [fetchLinkPreview] Error fetching ${url}:`, error);
+      functions.logger.error("[fetchLinkPreview] Fetch failed", {
+        url: safeUrlForLog,
+        error: error?.message || String(error),
+      });
 
       if (error.name === "AbortError") {
         return { success: false, error: "Request timed out" };

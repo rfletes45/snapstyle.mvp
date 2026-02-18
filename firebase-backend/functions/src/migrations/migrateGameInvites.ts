@@ -12,6 +12,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { authorizeAdminHttpRequest } from "../httpAuth";
 
 const db = admin.firestore();
 
@@ -206,6 +207,12 @@ function buildMigrationUpdates(
  */
 export const migrateGameInvites = functions.https.onRequest(
   async (req, res) => {
+    const authResult = await authorizeAdminHttpRequest(req);
+    if (!authResult.ok) {
+      res.status(authResult.status).json({ error: authResult.error });
+      return;
+    }
+
     functions.logger.info("Starting GameInvites migration");
 
     const result: MigrationResult = {
@@ -293,6 +300,12 @@ export const migrateGameInvites = functions.https.onRequest(
  */
 export const migrateGameInvitesDryRun = functions.https.onRequest(
   async (req, res) => {
+    const authResult = await authorizeAdminHttpRequest(req);
+    if (!authResult.ok) {
+      res.status(authResult.status).json({ error: authResult.error });
+      return;
+    }
+
     functions.logger.info("Starting GameInvites migration DRY RUN");
 
     const result = {
@@ -358,6 +371,12 @@ export const migrateGameInvitesDryRun = functions.https.onRequest(
  */
 export const rollbackGameInvitesMigration = functions.https.onRequest(
   async (req, res) => {
+    const authResult = await authorizeAdminHttpRequest(req);
+    if (!authResult.ok) {
+      res.status(authResult.status).json({ error: authResult.error });
+      return;
+    }
+
     // Safety check - require confirmation parameter
     if (req.query.confirm !== "YES_ROLLBACK") {
       res.status(400).json({

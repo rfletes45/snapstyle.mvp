@@ -17,6 +17,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
+import { authorizeAdminHttpRequest } from "./httpAuth";
 
 // Import V2 Messaging functions
 import {
@@ -2192,8 +2193,14 @@ export const recordDailyLogin = functions.https.onCall(
  * This creates default task definitions
  */
 export const seedDailyTasks = functions.https.onRequest(async (req, res) => {
-  // Only allow from admin/localhost in development
-  // In production, this should be protected or removed
+  const authResult = await authorizeAdminHttpRequest(req);
+  if (!authResult.ok) {
+    res.status(authResult.status).json({
+      success: false,
+      error: authResult.error,
+    });
+    return;
+  }
 
   const defaultTasks = [
     {
@@ -2304,7 +2311,14 @@ export const seedDailyTasks = functions.https.onRequest(async (req, res) => {
  */
 export const initializeExistingWallets = functions.https.onRequest(
   async (req, res) => {
-    // This is an admin function - should be protected in production
+    const authResult = await authorizeAdminHttpRequest(req);
+    if (!authResult.ok) {
+      res.status(authResult.status).json({
+        success: false,
+        error: authResult.error,
+      });
+      return;
+    }
 
     try {
       const usersSnapshot = await db.collection("Users").get();
@@ -2362,7 +2376,14 @@ export const initializeExistingWallets = functions.https.onRequest(
  */
 export const seedShopCatalog = functions.https.onRequest(
   async (req: functions.https.Request, res: functions.Response) => {
-    // This is an admin function - should be protected in production
+    const authResult = await authorizeAdminHttpRequest(req);
+    if (!authResult.ok) {
+      res.status(authResult.status).json({
+        success: false,
+        error: authResult.error,
+      });
+      return;
+    }
 
     // Sample shop items based on existing cosmetics
     const shopItems = [
@@ -3228,15 +3249,17 @@ export const initializeFirstAdmin = functions.https.onRequest(
       return;
     }
 
-    const { uid, secretKey } = req.body;
-    // Use environment variable or hardcoded secret for development
-    const expectedSecret = process.env.ADMIN_SETUP_KEY || "SECRET";
-
-    if (secretKey !== expectedSecret) {
-      res.status(403).json({ error: "Invalid secret key" });
+    const authResult = await authorizeAdminHttpRequest(req, {
+      allowAdminToken: false,
+      allowSetupKey: true,
+      requireSetupKey: true,
+    });
+    if (!authResult.ok) {
+      res.status(authResult.status).json({ error: authResult.error });
       return;
     }
 
+    const { uid } = req.body;
     if (!uid) {
       res.status(400).json({ error: "Missing uid" });
       return;

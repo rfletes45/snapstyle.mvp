@@ -203,7 +203,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 15 - Security + Privacy Review
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Secrets/logging/auth/rules hardening completed.
 - `docs/SECURITY_PRIVACY.md` added/updated.

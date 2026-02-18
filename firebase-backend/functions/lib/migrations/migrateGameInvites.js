@@ -47,6 +47,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.rollbackGameInvitesMigration = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const httpAuth_1 = require("../httpAuth");
 const db = admin.firestore();
 // =============================================================================
 // Helper Functions
@@ -172,6 +173,11 @@ function buildMigrationUpdates(data) {
  * Safe to run multiple times - skips already migrated documents.
  */
 exports.migrateGameInvites = functions.https.onRequest(async (req, res) => {
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({ error: authResult.error });
+        return;
+    }
     functions.logger.info("Starting GameInvites migration");
     const result = {
         migrated: 0,
@@ -244,6 +250,11 @@ exports.migrateGameInvites = functions.https.onRequest(async (req, res) => {
  * Dry-run migration - shows what would be migrated without making changes
  */
 exports.migrateGameInvitesDryRun = functions.https.onRequest(async (req, res) => {
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({ error: authResult.error });
+        return;
+    }
     functions.logger.info("Starting GameInvites migration DRY RUN");
     const result = {
         wouldMigrate: 0,
@@ -295,6 +306,11 @@ exports.migrateGameInvitesDryRun = functions.https.onRequest(async (req, res) =>
  * USE WITH CAUTION - only for emergency rollback
  */
 exports.rollbackGameInvitesMigration = functions.https.onRequest(async (req, res) => {
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({ error: authResult.error });
+        return;
+    }
     // Safety check - require confirmation parameter
     if (req.query.confirm !== "YES_ROLLBACK") {
         res.status(400).json({

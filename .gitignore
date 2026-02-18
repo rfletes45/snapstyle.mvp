@@ -31,6 +31,10 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+!.env.example
+!.env.*.example
 .env*.local
 
 # typescript
@@ -43,5 +47,9 @@ app-example
 /android
 
 # Firebase config files
-  firebaseConfig.local.ts
-  src/services/firebaseConfig.local.ts
+firebaseConfig.local.ts
+src/services/firebaseConfig.local.ts
+
+# service account keys
+**/serviceAccountKey.json
+**/service-account.json
