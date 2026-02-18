@@ -25,7 +25,7 @@ import {
   CallState,
   StartCallParams,
 } from "@/types/call";
-
+import { CALL_FEATURES } from "@/constants/featureFlags";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("contexts/CallContext");
@@ -33,6 +33,9 @@ const logger = createLogger("contexts/CallContext");
 const isWeb = Platform.OS === "web";
 const isExpoGo = Constants.appOwnership === "expo";
 const areNativeCallsAvailable = !isWeb && !isExpoGo;
+const isCallsFeatureEnabled = CALL_FEATURES.CALLS_ENABLED;
+const isCallRuntimeEnabled =
+  areNativeCallsAvailable && isCallsFeatureEnabled;
 
 // Conditionally import native modules
 let MediaStream: any = null;
@@ -45,7 +48,7 @@ let callReconnectionService: any = null;
 let concurrentCallManager: any = null;
 let foregroundServiceManager: any = null;
 
-if (areNativeCallsAvailable) {
+if (isCallRuntimeEnabled) {
   try {
     // Only import when native calls are available
     const webrtc = require("react-native-webrtc");
@@ -166,9 +169,13 @@ interface CallProviderProps {
 }
 
 export function CallProvider({ children }: CallProviderProps): JSX.Element {
-  // If native calls are not available, provide no-op context
-  if (!areNativeCallsAvailable) {
-    logInfo("Native calls not available - using no-op provider");
+  // If runtime calls are not enabled, provide no-op context
+  if (!isCallRuntimeEnabled) {
+    if (!isCallsFeatureEnabled) {
+      logInfo("Calls feature disabled - using no-op provider");
+    } else {
+      logInfo("Native calls not available - using no-op provider");
+    }
     return (
       <CallContext.Provider value={noopContextValue}>
         {children}

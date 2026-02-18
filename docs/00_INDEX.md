@@ -35,6 +35,7 @@ Read in this order for fastest orientation:
 - Games: [06_GAMES.md](06_GAMES.md), [GAMES_PLATFORM.md](GAMES_PLATFORM.md), [GAME_SYSTEM_REFERENCE.md](GAME_SYSTEM_REFERENCE.md)
 - Colyseus server contract: [COLYSEUS_SERVER.md](COLYSEUS_SERVER.md)
 - Embedded web game contract: [EMBEDDED_WEB_GAMES.md](EMBEDDED_WEB_GAMES.md)
+- Calls and camera: [CALLS_CAMERA.md](CALLS_CAMERA.md)
 - Testing and ops: [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
 
 ## Deep-Dive Subsystem Docs
@@ -53,7 +54,6 @@ Read in this order for fastest orientation:
 
 These are linked early so later segments can fill them in without index churn:
 
-- `docs/CALLS_CAMERA.md`
 - `docs/PERFORMANCE.md`
 - `docs/SECURITY_PRIVACY.md`
 - `docs/TESTING.md`

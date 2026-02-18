@@ -176,7 +176,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 13 - Calls + Camera Subsystem Audit
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - UI/service-layer gating validated.
 - Risky flags unchanged unless explicitly justified.

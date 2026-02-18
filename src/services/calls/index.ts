@@ -13,6 +13,7 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+import { CALL_FEATURES } from "@/constants/featureFlags";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/index");
@@ -20,6 +21,7 @@ const logger = createLogger("services/calls/index");
 const isWeb = Platform.OS === "web";
 const isExpoGo = Constants.appOwnership === "expo";
 const areNativeCallsAvailable = !isWeb && !isExpoGo;
+const isCallsFeatureEnabled = CALL_FEATURES.CALLS_ENABLED;
 
 // Re-export platform check for consumers
 export { areNativeCallsAvailable };
@@ -32,6 +34,13 @@ export { areNativeCallsAvailable };
  * Initialize background call handler - safe to call on any platform
  */
 export function initializeBackgroundCallHandler(): void {
+  if (!isCallsFeatureEnabled) {
+    logger.info(
+      "[CallServices] Skipping background handler init - calls feature disabled",
+    );
+    return;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.info(
       "[CallServices] Skipping background handler init - native calls not available",
@@ -56,6 +65,13 @@ export function initializeBackgroundCallHandler(): void {
  * Initialize app state listener - safe to call on any platform
  */
 export function initializeAppStateListener(): void {
+  if (!isCallsFeatureEnabled) {
+    logger.info(
+      "[CallServices] Skipping app state listener - calls feature disabled",
+    );
+    return;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.info(
       "[CallServices] Skipping app state listener - native calls not available",
@@ -79,6 +95,13 @@ export function initializeAppStateListener(): void {
  * Create call notification channel - safe to call on any platform
  */
 export function createCallNotificationChannel(): void {
+  if (!isCallsFeatureEnabled) {
+    logger.info(
+      "[CallServices] Skipping notification channel - calls feature disabled",
+    );
+    return;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.info(
       "[CallServices] Skipping notification channel - native calls not available",
@@ -148,6 +171,11 @@ export { callSettingsService } from "./callSettingsService";
  * Get the call service instance (native only)
  */
 export async function getCallService() {
+  if (!isCallsFeatureEnabled) {
+    logger.warn("[CallServices] callService disabled by feature flag");
+    return null;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.warn("[CallServices] callService not available on this platform");
     return null;
@@ -160,6 +188,11 @@ export async function getCallService() {
  * Get the WebRTC service instance (native only)
  */
 export async function getWebRTCService() {
+  if (!isCallsFeatureEnabled) {
+    logger.warn("[CallServices] webRTCService disabled by feature flag");
+    return null;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.warn("[CallServices] webRTCService not available on this platform");
     return null;
@@ -172,6 +205,11 @@ export async function getWebRTCService() {
  * Get the CallKeep service instance (native only)
  */
 export async function getCallKeepService() {
+  if (!isCallsFeatureEnabled) {
+    logger.warn("[CallServices] callKeepService disabled by feature flag");
+    return null;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.warn(
       "[CallServices] callKeepService not available on this platform",
@@ -186,6 +224,11 @@ export async function getCallKeepService() {
  * Get the group call service instance (native only)
  */
 export async function getGroupCallService() {
+  if (!isCallsFeatureEnabled) {
+    logger.warn("[CallServices] groupCallService disabled by feature flag");
+    return null;
+  }
+
   if (!areNativeCallsAvailable) {
     logger.warn(
       "[CallServices] groupCallService not available on this platform",

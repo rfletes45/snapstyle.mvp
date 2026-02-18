@@ -213,17 +213,23 @@ function ProfileActionsBarBase({
           >
             Message
           </Button>
-          <Button
-            mode="outlined"
-            onPress={onCall}
-            disabled={isLoading}
-            icon={({ size, color }) => (
-              <MaterialCommunityIcons name="phone" size={size} color={color} />
-            )}
-            style={styles.halfButton}
-          >
-            Call
-          </Button>
+          {onCall ? (
+            <Button
+              mode="outlined"
+              onPress={onCall}
+              disabled={isLoading}
+              icon={({ size, color }) => (
+                <MaterialCommunityIcons
+                  name="phone"
+                  size={size}
+                  color={color}
+                />
+              )}
+              style={styles.halfButton}
+            >
+              Call
+            </Button>
+          ) : null}
           {onMoreOptions && (
             <Button
               mode="outlined"

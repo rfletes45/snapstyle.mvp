@@ -9,14 +9,6 @@
  * you only render them on supported platforms.
  */
 
-import Constants from "expo-constants";
-import { Platform } from "react-native";
-
-// Platform detection
-const isWeb = Platform.OS === "web";
-const isExpoGo = Constants.appOwnership === "expo";
-export const areNativeCallsAvailable = !isWeb && !isExpoGo;
-
 // Safe components (no native dependencies)
 export { CallButton, CallButtonGroup } from "./CallButton";
 export { CallControls, MinimalCallControls } from "./CallControls";

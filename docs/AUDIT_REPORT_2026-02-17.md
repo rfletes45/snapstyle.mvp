@@ -518,6 +518,41 @@
 - `cd starforge-viewer && npm run typecheck` PASS
 - `cd starforge-viewer && npm run build` PASS
 
+## Segment 13
+
+### What changed
+
+- Added canonical calls/camera subsystem doc:
+  - `docs/CALLS_CAMERA.md`
+  - includes provider/service inventory, gating matrix, staged-rollout constraints, and safe enablement checklist
+- Tightened service-layer call gating to honor feature flags (not just platform checks):
+  - `src/contexts/CallContext.tsx`
+  - `src/services/calls/index.ts`
+  - call runtime/bootstrap now short-circuits when `CALL_FEATURES.CALLS_ENABLED` is `false`
+- Closed a UI entrypoint gap for profile calls:
+  - `src/screens/profile/UserProfileScreen.tsx`
+  - `src/components/profile/ProfileActions/ProfileActionsBar.tsx`
+  - call action only shown/wired when calls are feature-enabled and native runtime is available
+- Performed one proven-safe cleanup:
+  - `src/components/calls/index.ts` removed unused exported `areNativeCallsAvailable`
+  - no callers found via repo-wide search
+- Updated docs/checklist:
+  - `docs/00_INDEX.md`
+  - `docs/AUDIT_CHECKLIST.md`
+
+### Why this is safe
+
+- No call defaults were flipped; `CALL_FEATURES.CALLS_ENABLED` remains `false`.
+- Changes reduce accidental side effects by preventing disabled-call bootstrap/runtime initialization.
+- Profile call CTA now aligns with actual route/runtime availability, preventing invalid navigation paths when calls are disabled.
+- Cleanup was constrained to a no-caller export removal only.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -534,7 +569,7 @@
 | 10 | 2026-02-18 | Extracted and tested lobby-state selectors, added recovery-action tests, and documented canonical games lifecycle with explicit exceptions for bespoke multiplayer screens. | `src/hooks/gameLobbySelectors.ts`, `src/hooks/useGameLobbyController.ts`, `__tests__/hooks/useGameLobbyControllerSelectors.test.ts`, `__tests__/services/gameRecoveryActions.test.ts`, `docs/GAMES_PLATFORM.md`, `docs/00_INDEX.md`, `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Root: type-check/lint/test PASS | Done |
 | 11 | 2026-02-18 | Hardened Colyseus protocol gate + trace propagation across room families, aligned spectator join metadata, mapped protocol mismatch errors, and documented room contracts/reconnection/load-shedding behavior. | `colyseus-server/src/rooms/base/TurnBasedRoom.ts`, `colyseus-server/src/rooms/base/ScoreRaceRoom.ts`, `colyseus-server/src/rooms/base/PhysicsRoom.ts`, `colyseus-server/src/rooms/base/CardGameRoom.ts`, `colyseus-server/src/rooms/coop/WordMasterRoom.ts`, `colyseus-server/src/rooms/coop/CrosswordRoom.ts`, `colyseus-server/src/rooms/party/SketchPartyRoom.ts`, `colyseus-server/src/rooms/physics/MiniGolfDuelsRoom.ts`, `colyseus-server/src/rooms/physics/BrickBreakerRoom.ts`, `colyseus-server/src/rooms/physics/BounceBlitzRoom.ts`, `colyseus-server/src/rooms/spectator/SpectatorRoom.ts`, `colyseus-server/src/rooms/incremental/IncrementalRoom.ts`, `colyseus-server/src/rooms/incremental/StarforgeRoom.ts`, `colyseus-server/src/schemas/common.ts`, `colyseus-server/src/schemas/physics.ts`, `colyseus-server/src/schemas/draw.ts`, `colyseus-server/src/schemas/minigolf.ts`, `colyseus-server/src/schemas/spectator.ts`, `src/services/colyseus.ts`, `src/hooks/useSpectator.ts`, `docs/COLYSEUS_SERVER.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Colyseus build/lint/test PASS; Root type-check PASS | Done |
 | 12 | 2026-02-18 | Audited embedded web game integration, fixed URL/join param translation (`firestoreGameId`, `inviteId`, `traceId`), hardened WebView offline/error/back handling, and documented the end-to-end embedded contract. | `src/config/starforgeGame.ts`, `src/screens/games/StarforgeGameScreen.tsx`, `starforge-viewer/src/game/gameMain.ts`, `starforge-viewer/src/game/net/messageTypes.ts`, `starforge-viewer/src/game/net/roomAdapter.ts`, `docs/EMBEDDED_WEB_GAMES.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; starforge-viewer typecheck/build PASS | Done |
-| 13 | - | - | - | - | Not started |
+| 13 | 2026-02-18 | Audited calls/camera subsystem gating, added contract doc, enforced feature-aware call runtime/bootstrap no-op behavior, and gated profile call entrypoint by feature/platform availability. | `docs/CALLS_CAMERA.md`, `src/contexts/CallContext.tsx`, `src/services/calls/index.ts`, `src/screens/profile/UserProfileScreen.tsx`, `src/components/profile/ProfileActions/ProfileActionsBar.tsx`, `src/components/calls/index.ts`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS | Done |
 | 14 | - | - | - | - | Not started |
 | 15 | - | - | - | - | Not started |
 | 16 | - | - | - | - | Not started |

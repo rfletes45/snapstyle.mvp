@@ -44,12 +44,13 @@ import {
   ProfileActionsBar,
 } from "@/components/profile/ProfileActions/index";
 import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
-import { PROFILE_V2_FEATURES } from "@/constants/featureFlags";
+import { CALL_FEATURES, PROFILE_V2_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
 import { useScoreComparison } from "@/hooks/useGameScores";
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
+import { areNativeCallsAvailable } from "@/utils/platform";
 
 // Services
 import { blockUser, unblockUser } from "@/services/blocking";
@@ -115,6 +116,8 @@ function UserProfileScreenContent({
   const currentUserId = currentFirebaseUser?.uid;
 
   const colors = useColors();
+  const canInitiateCalls =
+    CALL_FEATURES.CALLS_ENABLED && areNativeCallsAvailable;
 
   // ==========================================================================
   // State
@@ -869,7 +872,7 @@ function UserProfileScreenContent({
               onAcceptRequest={handleAcceptRequest}
               onDeclineRequest={handleDeclineRequest}
               onMessage={handleMessage}
-              onCall={handleCall}
+              onCall={canInitiateCalls ? handleCall : undefined}
               onRemoveFriend={handleRemoveFriend}
               onUnblock={handleUnblock}
               onMoreOptions={handleMoreOptions}
