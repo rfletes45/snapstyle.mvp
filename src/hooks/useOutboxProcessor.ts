@@ -1,4 +1,4 @@
-import { processPendingMessages } from "@/services/chatV2";
+import { processPendingMessages } from "@/services/messaging";
 import { useAuth } from "@/store/AuthContext";
 import { useEffect, useRef } from "react";
 import { AppState, AppStateStatus } from "react-native";

@@ -9,7 +9,7 @@
  * Handles camera/gallery permissions, image selection, compression, and upload.
  */
 
-import { sendMessageWithOutbox } from "@/services/chatV2";
+import { sendMessage } from "@/services/messaging";
 import { compressImage, uploadSnapImage } from "@/services/storage";
 import { updateStreakAfterMessage } from "@/services/streakCosmetics";
 import {
@@ -202,7 +202,7 @@ export function useSnapCapture(
         if (debug) {
           logger.info("🔵 [useSnapCapture] Sending message via V2...");
         }
-        const { sendPromise } = await sendMessageWithOutbox({
+        const { sendPromise } = await sendMessage({
           conversationId: chatId,
           scope: "dm",
           kind: "media",

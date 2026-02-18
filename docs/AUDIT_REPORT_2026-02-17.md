@@ -305,6 +305,48 @@
 - `npm run lint` PASS (warnings only)
 - `npm run test -- --ci --watchAll=false --no-cache` PASS
 
+## Segment 8
+
+### What changed
+
+- Added `docs/CHAT_SYSTEM.md` as the canonical unified chat contract doc:
+  - DM + group send flow
+  - local-first and Firestore fallback paths
+  - outbox states/retry behavior
+  - invariant definitions (idempotency, ordering, watermark strategy)
+  - failure modes and recovery paths
+- Routed active UI-level legacy chat service usage to unified messaging APIs:
+  - `src/screens/chat/ChatScreen.tsx`
+    - retry path now uses `retryMessage(...)` from `@/services/messaging`
+  - `src/hooks/useOutboxProcessor.ts`
+    - background processing now uses `processPendingMessages(...)` from `@/services/messaging`
+  - `src/hooks/useSnapCapture.ts` (deprecated dead hook)
+    - send path now references unified `sendMessage(...)`
+- Reduced additional legacy coupling in unified hook composition:
+  - `src/hooks/useUnifiedMessages.ts`
+    - outbox lookup now uses `getPendingForConversation(...)` from unified messaging send service
+- Added explicit messaging invariant coverage:
+  - `__tests__/services/messagingOutboxInvariants.test.ts`
+    - duplicate enqueue prevention (idempotency guard)
+    - server-authoritative merge ordering + optimistic dedupe
+    - outbox success transition (`queued -> sending -> removed`)
+    - non-retryable failure transition (`failed` + long retry horizon)
+- Updated docs index:
+  - `docs/00_INDEX.md` now links `docs/CHAT_SYSTEM.md` in active core docs.
+
+### Why this is safe
+
+- Changes are scoped to messaging API wiring, docs, and tests; no feature flag defaults changed.
+- UI paths now consistently call the unified messaging surface, reducing direct dependencies on deprecated modules without changing backend contracts.
+- Added tests target hard invariants called out in the architecture guide and verify behavior already implemented in `outbox.ts`/`chatV2.ts`.
+- Validation confirms no regressions in compile/lint/test gates.
+
+### Validation
+
+- `npm run type-check` PASS
+- `npm run lint` PASS (warnings only)
+- `npm run test -- --ci --watchAll=false --no-cache` PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -316,7 +358,7 @@
 | 5 | 2026-02-18 | Consolidated client contract typing and added runtime guards at Firestore/callable/game-join boundaries; documented canonical type sources. | `src/services/gameInvites.ts`, `src/types/messaging.ts`, `src/hooks/useMessageRequests.ts`, `src/types/gameSession.ts`, `src/services/colyseusJoin.ts`, `docs/DATA_CONTRACT_CLIENT.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 6 | 2026-02-18 | Audited write/query contract against rules and indexes, fixed one invalid story query shape, removed one rules-violating client write, and documented the Firestore contract. | `docs/FIRESTORE_CONTRACT.md`, `src/services/story/snapStoryService.ts`, `src/services/iap.ts`, `firebase-backend/firestore.indexes.json`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions tsc PASS | Done |
 | 7 | 2026-02-18 | Audited deployed Cloud Functions contracts, hardened sanitized logging paths, and reduced accidental-deployment risk for non-exported function candidates. | `docs/FUNCTIONS.md`, `firebase-backend/functions/src/inboxTriggers.ts`, `firebase-backend/functions/src/rateLimiter.ts`, `firebase-backend/functions/src/calls.ts`, `firebase-backend/functions/src/games.ts`, `docs/00_INDEX.md`, `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Functions build PASS; Root type-check/lint/test PASS | Done |
-| 8 | - | - | - | - | Not started |
+| 8 | 2026-02-18 | Unified active chat UI service usage under `services/messaging`, added invariant-focused outbox/ordering/idempotency tests, and documented chat contracts. | `src/screens/chat/ChatScreen.tsx`, `src/hooks/useOutboxProcessor.ts`, `src/hooks/useSnapCapture.ts`, `src/hooks/useUnifiedMessages.ts`, `__tests__/services/messagingOutboxInvariants.test.ts`, `docs/CHAT_SYSTEM.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS | Done |
 | 9 | - | - | - | - | Not started |
 | 10 | - | - | - | - | Not started |
 | 11 | - | - | - | - | Not started |

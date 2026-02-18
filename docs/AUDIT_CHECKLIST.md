@@ -108,7 +108,7 @@ npm run test -- --ci --watchAll=false --no-cache
 
 ## Segment 8 - Messaging System Deep Clean
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Messaging invariants preserved (idempotency, ordering, watermark semantics, outbox states).
 - Direct-write bypasses removed where proven safe.

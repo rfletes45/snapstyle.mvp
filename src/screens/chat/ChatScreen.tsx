@@ -80,8 +80,8 @@ import { EmptyState, PresenceIndicator } from "@/components/ui";
 // Services
 import { blockUser } from "@/services/blocking";
 import { getOrCreateChat } from "@/services/chat";
-import { retryFailedMessage as retryFailedMessageV2 } from "@/services/chatV2";
 import { getUserProfileByUid } from "@/services/friends";
+import { retryMessage } from "@/services/messaging";
 import { submitReport } from "@/services/reporting";
 import {
   getScheduledMessagesForChat,
@@ -790,7 +790,7 @@ export default function ChatScreen({
   }, []);
 
   const handleRetryMessage = useCallback(async (msg: MessageWithProfile) => {
-    await retryFailedMessageV2(msg.id);
+    await retryMessage(msg.id);
   }, []);
 
   // Enhanced scroll-to-message with highlight animation

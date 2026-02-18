@@ -38,9 +38,9 @@ import {
   updateReadWatermark as updateDMReadWatermark,
 } from "@/services/chatMembers";
 import {
-  getPendingForConversation,
   mergeMessagesWithOutbox,
 } from "@/services/chatV2";
+import { getPendingForConversation } from "@/services/messaging/send";
 import {
   updateGroupDeliveryWatermark,
   updateGroupReadWatermark,
@@ -297,12 +297,12 @@ export function useUnifiedMessages(
   const loadOutboxItems = useCallback(async () => {
     if (!conversationId) return;
     try {
-      const items = await getPendingForConversation(conversationId);
+      const items = await getPendingForConversation(scope, conversationId);
       setOutboxItems(items);
     } catch (err) {
       log.error("Failed to load outbox items", err);
     }
-  }, [conversationId]);
+  }, [scope, conversationId]);
 
   // Update read watermark
   const updateWatermark = useCallback(
