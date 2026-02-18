@@ -707,6 +707,54 @@
 - `cd colyseus-server && npm run lint -- --no-cache` PASS (warnings only)
 - `cd colyseus-server && npm run test -- --ci --watchAll=false --no-cache` PASS
 
+## Segment 18
+
+### Final validation snapshot
+
+| Scope | Baseline (Segment 0) | Final (Segment 18) | Delta |
+| --- | --- | --- | --- |
+| Root `type-check` | PASS | PASS | Unchanged |
+| Root `lint` | PASS (541 warnings) | PASS (538 warnings) | -3 warnings |
+| Root `test` | PASS (47 suites / 1088 tests) | PASS (53 suites / 1126 tests) | +6 suites / +38 tests |
+| Functions `tsc`/build | PASS | PASS | Unchanged |
+| Colyseus `tsc` | PASS | PASS | Unchanged |
+| Colyseus `lint` | PASS (161 warnings) | PASS (164 warnings) | +3 warnings |
+| Colyseus `test` | PASS (12 suites / 353 tests) | PASS (12 suites / 353 tests) | Unchanged |
+| `starforge-viewer` typecheck/build | Not run in Segment 0 matrix | PASS | Added package-root validation |
+| `starforge-viewer/server` typecheck | Not run in Segment 0 matrix | PASS | Added package-root validation |
+| `client/` package root | Not present | Not present | N/A in this repo snapshot |
+
+### Key fixes by subsystem
+
+- Tooling/tests: stabilized root lint/type-check/test determinism and removed flaky test boundary behavior.
+- Firestore contract: aligned one invalid story query shape, added missing indexes, and removed one rules-violating client write.
+- Cloud Functions/security: hardened admin/migration HTTP auth and reduced sensitive URL logging exposure.
+- Messaging/profile/games: preserved core invariants while consolidating service usage and increasing invariant-focused test coverage.
+- Colyseus/web-game integration: strengthened protocol/trace handling and hardened embedded WebView param/failure flows.
+
+### Deletion ledger (final)
+
+- `src/hooks/useSnapCapture.ts` (Segment 17)
+- `src/components/games/withGameLobby.tsx` (Segment 17)
+
+### Remaining risks (ranked)
+
+1. High lint-warning backlog (root 538, Colyseus 164) can mask new regressions.
+2. Legacy messaging layers (`chatV2`/`outbox`/deprecated adapters) remain in active call paths and raise future cleanup risk.
+3. Backend legacy export bridge (`firebase-backend/functions/src/legacy.ts`) still carries high coupling/risk for deep removals.
+4. Docs mention `client/` package expectations while current snapshot uses `starforge-viewer/` packages.
+
+### Suggested next PRs
+
+1. Warning-burn-down PR focused on `react-hooks/exhaustive-deps` and unused-variable categories.
+2. Messaging deprecation PR to retire `chatV2`/`messageList` adapters behind explicit migration gates.
+3. Functions extraction PR to further split `legacy.ts` while preserving exported function names.
+4. Docs consistency PR to reconcile package-root references (`client/` vs `starforge-viewer/`).
+
+### Segment 18 notes
+
+- `CHANGELOG*` file was not found in this repository snapshot, so no changelog file entry was added.
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
@@ -728,4 +776,4 @@
 | 15 | 2026-02-18 | Hardened admin/migration HTTP endpoint auth, removed weak admin-setup fallback behavior, sanitized link-preview URL logging, improved secret-file ignore hygiene, and added security/privacy documentation. | `firebase-backend/functions/src/httpAuth.ts`, `firebase-backend/functions/src/legacy.ts`, `firebase-backend/functions/src/migrations/migrateGameInvites.ts`, `firebase-backend/functions/src/linkPreview.ts`, `.gitignore`, `docs/SECURITY_PRIVACY.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; functions build PASS | Done |
 | 16 | 2026-02-18 | Added invariant-focused messaging/games/profile tests, extracted testable Colyseus join-error mapping, and documented package-level testing workflows. | `src/services/colyseusErrorMap.ts`, `src/services/colyseus.ts`, `__tests__/services/colyseusErrorMap.test.ts`, `__tests__/services/traceIdPropagation.test.ts`, `__tests__/services/messagingOutboxInvariants.test.ts`, `__tests__/services/profilePrivacyFilters.test.ts`, `docs/TESTING.md`, `docs/00_INDEX.md`, `docs/AUDIT_CHECKLIST.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; colyseus-server test PASS | Done |
 | 17 | 2026-02-18 | Removed two no-caller deprecated modules (`useSnapCapture`, `withGameLobby`), updated deprecation/repo/chat docs to match active architecture, and recorded deletion-proof evidence. | `src/hooks/useSnapCapture.ts`, `src/components/games/withGameLobby.tsx`, `docs/DEPRECATION_MAP.md`, `docs/REPO_MAP.md`, `docs/CHAT_SYSTEM.md`, `src/screens/chat/ChatScreen.tsx`, `docs/AUDIT_REPORT_2026-02-17.md` | Root type-check/lint/test PASS; functions tsc PASS; colyseus tsc/lint/test PASS | Done |
-| 18 | - | - | - | - | Not started |
+| 18 | 2026-02-18 | Finalized audit report/checklist with before-vs-after outcomes, consolidated subsystem fix summary, completed deletion ledger, ranked remaining risks, and reran full multi-package validation matrix. | `docs/AUDIT_REPORT_2026-02-17.md`, `docs/AUDIT_CHECKLIST.md` | Root type-check/lint/test PASS; functions tsc/build PASS; colyseus tsc/lint/test PASS; starforge-viewer typecheck/build PASS; starforge-viewer/server typecheck PASS | Done |

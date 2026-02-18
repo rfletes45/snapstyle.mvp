@@ -245,7 +245,7 @@ cd firebase-backend/functions && npx --no-install tsc --noEmit
 
 ## Segment 18 - Release-Quality Wrap-Up
 
-- [ ] Complete
+- [x] Complete
 Exit criteria:
 - Final audit report and checklist fully updated.
 - Full checks rerun across package roots.
