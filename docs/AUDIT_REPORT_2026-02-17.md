@@ -70,13 +70,77 @@
   - Functions: `npm run build` PASS
   - Colyseus server: `npx --no-install tsc --noEmit` PASS, `npm run lint` PASS (warnings only), `npm run test` PASS
 
+## Segment 3
+
+### What was done
+
+- Created `docs/REPO_MAP.md` with:
+  - major folder responsibilities
+  - entry points per subsystem
+  - critical execution paths (app boot, messaging, profile, multiplayer)
+- Created `docs/DEPRECATION_MAP.md` with:
+  - module-level deprecation candidates
+  - suspected replacements
+  - caller evidence and removal risk
+- Ran targeted searches for:
+  - `deprecated`, `legacy`, `TODO remove`, `dead code`, `remove after`, `temp`, `hack`
+  - overlap zones: invites, lobby, messaging writes/subscriptions, profile updates
+
+### Key findings
+
+- Active + deprecated messaging layers coexist:
+  - active facade: `src/services/messaging/send.ts`, `src/services/messaging/subscribe.ts`
+  - deprecated underlying layers still in call path: `src/services/chatV2.ts`, `src/services/messageList.ts`, `src/services/outbox.ts`, `src/hooks/useUnifiedMessages.ts`
+- Invite migration is incomplete by design:
+  - universal invite APIs are active (`sendUniversalInvite`, `claimInviteSlot`, `startGameEarly`)
+  - legacy invite APIs remain exported in `src/services/gameInvites.ts`
+- Lobby architecture has a canonical path plus an apparently stranded wrapper:
+  - canonical: `useGameLobbyController` + `MultiplayerLobbyOverlay`
+  - no active caller found: `src/components/games/withGameLobby.tsx`
+- Profile update ownership is split:
+  - domain-specific updates in `src/services/profileService.ts`
+  - generic patch path in `src/services/users.ts::updateProfile`
+- Backend extraction is partial:
+  - `firebase-backend/functions/src/legacy.ts` is still imported by multiple module wrappers and `functions/src/index.ts`
+
+### Top 20 cleanup candidates (ranked by confidence)
+
+1. `src/hooks/useSnapCapture.ts` - **High** - flagged `@deprecated DEAD CODE`; no runtime import callers found.
+2. `src/components/games/withGameLobby.tsx` - **High** - no active caller found; canonical lobby path already in place.
+3. `src/services/gameInvites.ts::getPendingInvites` - **High** - deprecated and no app caller found.
+4. `src/services/gameInvites.ts::subscribeToPendingInvites` - **High** - deprecated and no app caller found.
+5. `src/services/gameInvites.ts::sendGameInvite` - **High** - deprecated; no call site found outside defining file.
+6. `src/services/gameInvites.ts::cancelGameInvite` - **High** - deprecated; no call site found outside defining file.
+7. `src/services/groups.ts::subscribeToGroupMessages` - **High** - deprecated legacy API; no call site found outside defining file.
+8. `src/services/messaging/subscribe.ts` facade - **Medium-High** - thin deprecated adapter over `messageList`.
+9. `src/services/messageList.ts` - **Medium-High** - deprecated but still required by `messaging/subscribe`.
+10. `src/hooks/useUnifiedMessages.ts` - **Medium-High** - deprecated but still required by `useChat`.
+11. `src/services/chatV2.ts` - **Medium** - deprecated core send layer, but still heavily referenced.
+12. `src/services/outbox.ts` - **Medium** - deprecated storage layer, but still foundational and active.
+13. `src/components/profile/LegacyProfileHeader.tsx` - **Medium** - still used by legacy profile screen.
+14. `src/components/profile/LegacyProfileActions.tsx` - **Medium** - still used by legacy profile screen.
+15. `src/services/users.ts::updateProfile` call sites in profile/settings/cosmetics - **Medium** - duplicates profile mutation ownership.
+16. `src/services/profileService.ts` vs `src/services/users.ts` split update surface - **Medium** - duplication risk, not delete-ready.
+17. `firebase-backend/functions/src/legacy.ts` extraction remainder - **Low** (confidence), **Very High** (impact) - many wrappers still depend on it.
+18. `firebase-backend/functions/src/*` wrappers importing `./legacy` - **Medium** - consolidation target once exports stabilize.
+19. Legacy compatibility fields in `src/types/messaging.ts` - **Low-Medium** - removable only after backend/client contract cleanup.
+20. Cross-domain invite fragmentation (game/group/call invite docs + services) - **Low-Medium** - architectural cleanup candidate after ownership decisions.
+
+### Safety and validation
+
+- Segment 3 changes are doc-only (`docs/REPO_MAP.md`, `docs/DEPRECATION_MAP.md`, this report section).
+- Root checks rerun status:
+  - `npm run type-check`: PASS
+  - `npm run lint`: PASS (warnings only)
+  - `npm run test`: PASS
+
 ## Changelog by Segment
 
 | Segment | Date | Summary | Files changed | Checks | Status |
 | --- | --- | --- | --- | --- | --- |
 | 1 | - | - | - | - | Not started |
 | 2 | 2026-02-17 | Stabilized root tooling loop by fixing lint blocker, strict test typing drift, and one flaky rate-limit test boundary. | `src/components/chat/ChatDebugHUD.tsx`, `__tests__/services/sendMessageV2.test.ts`, `__tests__/services/resolveChatSettings.test.ts`, `__tests__/services/messageRequests.test.ts`, `__tests__/services/privacyPublish.test.ts`, `__tests__/services/rateLimiter.test.ts`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS; Functions build PASS; Colyseus type-check/lint/test PASS | Done |
-| 3 | - | - | - | - | Not started |
+| 3 | 2026-02-18 | Added repo inventory and deprecation mapping docs with evidence-backed caller/risk analysis and ranked cleanup candidates. | `docs/REPO_MAP.md`, `docs/DEPRECATION_MAP.md`, `docs/AUDIT_REPORT_2026-02-17.md` | Root: type-check/lint/test PASS (unchanged behavior) | Done |
 | 4 | - | - | - | - | Not started |
 | 5 | - | - | - | - | Not started |
 | 6 | - | - | - | - | Not started |
