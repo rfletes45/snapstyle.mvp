@@ -13,16 +13,11 @@
  * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 6 & 7
  */
 
-import {
-  AchievementTriggerResult,
-  checkGameAchievements,
-  GameCompletionContext,
-} from "@/services/achievementTriggers";
+import type { AchievementTriggerResult } from "@/services/achievementTriggers";
 import { calculateUserStats } from "@/services/gameHistory";
 import { completeGameInvite } from "@/services/gameInvites";
 import { useAuth } from "@/store/AuthContext";
-import { useInAppNotifications } from "@/store/InAppNotificationsContext";
-import {
+import type {
   AchievementNotification,
   GameAchievementDefinition,
 } from "@/types/achievements";
@@ -144,8 +139,6 @@ export function useGameCompletion(
 
   const { currentFirebaseUser } = useAuth();
   const userId = currentFirebaseUser?.uid;
-  const { pushNotification } = useInAppNotifications();
-
   // Navigation hook
   const { exitGame, goToChat, goToPlayScreen, goToGameHistory, hasChat } =
     useGameNavigation(navigationOptions);
@@ -246,62 +239,8 @@ export function useGameCompletion(
           };
         }
 
-        // Build achievement context
-        // stats is guaranteed non-null here (either from calculateUserStats or fallback)
-        const context: GameCompletionContext = {
-          match,
-          userId,
-          isWinner,
-          isDraw,
-          stats: stats!,
-          durationMs,
-          totalMoves: match.moveHistory?.length || 0,
-        };
-
-        // Check achievements
-        let achievementResult: AchievementTriggerResult | null = null;
-        try {
-          achievementResult = await checkGameAchievements(context);
-
-          // Create notifications for awarded achievements
-          if (achievementResult.awarded.length > 0) {
-            const newNotifications: AchievementNotification[] =
-              achievementResult.awardedDefinitions.map((def) => ({
-                achievement: def,
-                earnedAt: Date.now(),
-                isNew: true,
-                earnCount: 1,
-              }));
-
-            setNotifications((prev) => [...prev, ...newNotifications]);
-
-            // Push through in-app notification system for global visibility
-            for (const def of achievementResult.awardedDefinitions) {
-              pushNotification({
-                type: "achievement",
-                title: "Achievement Unlocked! 🏆",
-                body: `${def.name} — ${def.description}`,
-                entityId: def.id,
-                fromUserId: userId || "",
-                navigateTo: {
-                  screen: "Achievements",
-                },
-              });
-            }
-
-            // Callback
-            if (onAchievementsAwarded) {
-              onAchievementsAwarded(achievementResult.awardedDefinitions);
-            }
-
-            logger.info(
-              `[useGameCompletion] Awarded ${achievementResult.awarded.length} achievements:`,
-              achievementResult.awarded,
-            );
-          }
-        } catch (error) {
-          logger.error("[useGameCompletion] Achievement check failed:", error);
-        }
+        // V1 client-side achievement checking disabled — V2 evaluator runs
+        // server-side in Cloud Functions and writes directly to Firestore.
 
         // ── Invite completion propagation ────────────────────────────
         // If this game originated from an invite, mark it completed.
@@ -325,11 +264,11 @@ export function useGameCompletion(
         const result: GameCompletionResult = {
           isWinner,
           isDraw,
-          achievementsAwarded: achievementResult?.awardedDefinitions || [],
-          achievementResult,
+          achievementsAwarded: [],
+          achievementResult: null,
           stats,
-          xpEarned: achievementResult?.totalXpEarned || 0,
-          coinsEarned: achievementResult?.totalCoinsEarned || 0,
+          xpEarned: 0,
+          coinsEarned: 0,
         };
 
         setLastResult(result);
@@ -349,14 +288,7 @@ export function useGameCompletion(
         setIsProcessing(false);
       }
     },
-    [
-      userId,
-      lastResult,
-      onAchievementsAwarded,
-      autoExitOnComplete,
-      autoExitDelay,
-      exitGame,
-    ],
+    [userId, lastResult, autoExitOnComplete, autoExitDelay, exitGame],
   );
 
   /**

@@ -47,6 +47,7 @@
  */
 
 import { SentInviteRef, updateAllSpectatorInvites } from "@/services/games";
+import { recordSpectatorWatch } from "@/services/socialGameStats";
 import {
   createSpectatorSession,
   finishSpectatorSession,
@@ -260,9 +261,13 @@ export function useSpectator(params: UseSpectatorParams): UseSpectatorReturn {
 
   const selectedHook: (p: UseSpectatorParams) => UseSpectatorReturn =
     stableMode === "multiplayer-spectator"
-      ? (useMultiplayerSpectator as (p: UseSpectatorParams) => UseSpectatorReturn)
+      ? (useMultiplayerSpectator as (
+          p: UseSpectatorParams,
+        ) => UseSpectatorReturn)
       : stableMode === "multiplayer-spectator-standalone"
-        ? (useMultiplayerSpectatorStandalone as (p: UseSpectatorParams) => UseSpectatorReturn)
+        ? (useMultiplayerSpectatorStandalone as (
+            p: UseSpectatorParams,
+          ) => UseSpectatorReturn)
         : stableMode === "sp-host"
           ? (useSpHost as (p: UseSpectatorParams) => UseSpectatorReturn)
           : (useSpSpectator as (p: UseSpectatorParams) => UseSpectatorReturn);
@@ -391,6 +396,12 @@ function useMultiplayerSpectatorStandalone(
         setRoom(newRoom);
         setConnected(true);
         setLoading(false);
+
+        // Record spectator watch for Achievements V2 social counter
+        const uid = getAuth().currentUser?.uid;
+        if (uid) {
+          recordSpectatorWatch(uid).catch(() => {});
+        }
 
         newRoom.onStateChange((newState: any) => {
           if (!mountedRef.current) return;
@@ -783,6 +794,12 @@ function useSpSpectator(params: SpSpectatorParams): UseSpectatorReturn {
         setRoom(newRoom);
         setConnected(true);
         setLoading(false);
+
+        // Record spectator watch for Achievements V2 social counter
+        const spUid = getAuth().currentUser?.uid;
+        if (spUid) {
+          recordSpectatorWatch(spUid).catch(() => {});
+        }
 
         newRoom.onStateChange((newState: any) => {
           if (!mountedRef.current) return;

@@ -294,17 +294,17 @@ export const CALL_FEATURES = {
    * - Users can initiate and receive calls
    * - Call history is tracked
    *
-   * @default false - Enable after Phase 1 testing
+   * @default true - Enabled
    */
-  CALLS_ENABLED: false,
+  CALLS_ENABLED: true,
 
   /**
    * Enable audio-only calls
    * Requires CALLS_ENABLED to be true
    *
-   * @default false
+   * @default true
    */
-  AUDIO_CALLS_ENABLED: false,
+  AUDIO_CALLS_ENABLED: true,
 
   // =========================================================================
   // Phase 2: Video & Native Integration
@@ -314,26 +314,26 @@ export const CALL_FEATURES = {
    * Enable video calls
    * Requires CALLS_ENABLED to be true
    *
-   * @default false - Enable after Phase 2 testing
+   * @default true - Enabled
    */
-  VIDEO_CALLS_ENABLED: false,
+  VIDEO_CALLS_ENABLED: true,
 
   /**
    * Enable CallKeep integration for native call UI
    * iOS: CallKit integration
    * Android: ConnectionService integration
    *
-   * @default false
+   * @default true
    */
-  NATIVE_CALL_UI_ENABLED: false,
+  NATIVE_CALL_UI_ENABLED: true,
 
   /**
    * Enable background audio during calls
    * Allows calls to continue when app is minimized
    *
-   * @default false
+   * @default true
    */
-  BACKGROUND_CALLS_ENABLED: false,
+  BACKGROUND_CALLS_ENABLED: true,
 
   // =========================================================================
   // Phase 3: Group Calls
@@ -344,17 +344,17 @@ export const CALL_FEATURES = {
    * Requires CALLS_ENABLED to be true
    * Max 8 participants
    *
-   * @default false - Enable after Phase 3 testing
+   * @default true - Enabled
    */
-  GROUP_CALLS_ENABLED: false,
+  GROUP_CALLS_ENABLED: true,
 
   /**
    * Enable host controls for group calls
    * Includes: mute all, remove participant, pin video
    *
-   * @default false
+   * @default true
    */
-  HOST_CONTROLS_ENABLED: false,
+  HOST_CONTROLS_ENABLED: true,
 
   /**
    * Enable adaptive bitrate for video calls
@@ -372,17 +372,17 @@ export const CALL_FEATURES = {
    * Enable call history screen
    * Shows recent calls with filtering and stats
    *
-   * @default false
+   * @default true
    */
-  CALL_HISTORY_ENABLED: false,
+  CALL_HISTORY_ENABLED: true,
 
   /**
    * Enable call settings screen
    * Camera, audio, ringtone, DND, privacy settings
    *
-   * @default false
+   * @default true
    */
-  CALL_SETTINGS_ENABLED: false,
+  CALL_SETTINGS_ENABLED: true,
 
   /**
    * Enable call quality analytics
@@ -395,9 +395,9 @@ export const CALL_FEATURES = {
   /**
    * Show missed calls badge in tab bar
    *
-   * @default false
+   * @default true
    */
-  MISSED_CALL_BADGE_ENABLED: false,
+  MISSED_CALL_BADGE_ENABLED: true,
 
   /**
    * Enable call quality indicator during calls
@@ -718,4 +718,35 @@ export const CHAT_FEATURES = {
 
   /** Show ChatDebugHUD overlay (dev-only, default true in __DEV__) */
   CHAT_DEBUG_HUD: __DEV__,
+} as const;
+
+// =============================================================================
+// Achievements V2
+// =============================================================================
+
+/**
+ * Feature flags for the Achievements V2 system.
+ *
+ * V2 uses server-authoritative evaluation, per-game stats subcollections,
+ * a static achievements catalog, and social counters (invites, spectating,
+ * rematches). Legacy achievements continue to work in parallel.
+ */
+export const ACHIEVEMENTS_V2_FEATURES = {
+  /**
+   * Master switch — when true the client reads from v2 achievement docs.
+   * V1 legacy collections are no longer read.
+   */
+  ENABLED: true,
+
+  /**
+   * Show v2 progress bars, tiers, and social achievements in the UI.
+   * Requires ENABLED = true.
+   */
+  V2_UI: true,
+
+  /**
+   * Run one-time migration on app start to seed v2 docs from legacy data.
+   * Requires ENABLED = true.
+   */
+  AUTO_MIGRATE: true,
 } as const;

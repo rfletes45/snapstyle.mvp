@@ -15,6 +15,7 @@
  *   } = useCrosswordMultiplayer({ gameType: "crossword_puzzle_game" });
  */
 
+import { recordRematchCompleted } from "@/services/socialGameStats";
 import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useColyseus, UseColyseusOptions } from "./useColyseus";
@@ -362,11 +363,17 @@ export function useCrosswordMultiplayer(
   const sendRematch = useCallback(() => {
     sendMessage("rematch");
     setRematchRequested(false);
+    // Record rematch for Achievements V2 social counter
+    const uid = myUidRef.current;
+    if (uid) recordRematchCompleted(uid).catch(() => {});
   }, [sendMessage]);
 
   const acceptRematch = useCallback(() => {
     sendMessage("rematch_accept");
     setRematchRequested(false);
+    // Record rematch for Achievements V2 social counter
+    const uid = myUidRef.current;
+    if (uid) recordRematchCompleted(uid).catch(() => {});
     setPhase("waiting");
     setCompleted(false);
     setResults([]);

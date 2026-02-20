@@ -16,6 +16,15 @@ import * as admin from "firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import * as functions from "firebase-functions";
 
+import {
+  evaluateAchievementsV2,
+  updatePerGameStatsV2,
+} from "./achievementsV2Evaluator";
+import {
+  incrementInvitesAccepted,
+  incrementInvitesSent,
+} from "./socialGameStatsHelpers";
+
 // Initialize if not already
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -500,6 +509,20 @@ export const onUniversalInviteUpdate = functions.firestore
       afterStatus,
     });
 
+    // ── Achievements V2: Social counters ────────────────────────────
+    // Track invites sent (first slot = host creating invite)
+    if (beforeSlotCount === 0 && afterSlotCount >= 1 && after.senderId) {
+      await incrementInvitesSent(after.senderId).catch(() => {});
+    }
+    // Track invites accepted (new non-host slot claimed)
+    if (
+      afterSlotCount > beforeSlotCount &&
+      afterSlotCount > 1 &&
+      after.senderId
+    ) {
+      await incrementInvitesAccepted(after.senderId).catch(() => {});
+    }
+
     // CASE 1: Status changed to ready - create the game
     if (afterStatus === "ready" && beforeStatus !== "ready") {
       await createGameFromUniversalInvite(change.after.ref, after);
@@ -720,9 +743,32 @@ export const processGameCompletion = functions.firestore
 
     if (wasActive && isTerminal) {
       try {
-        // Update player stats and check achievements
+        // Update player stats (shared)
         await updatePlayerStats(after);
-        await checkAchievements(after);
+        // V1 achievements disabled — V2 evaluator handles all achievement logic
+        // await checkAchievements(after);
+
+        // ── Achievements V2 ──────────────────────────────────
+        // Update per-game stats and run v2 evaluator for each player
+        const playerIds = [after.players.player1.id, after.players.player2.id];
+        const winnerId = after.winner?.playerId;
+        for (const pid of playerIds) {
+          try {
+            const outcome = !winnerId
+              ? ("draw" as const)
+              : winnerId === pid
+                ? ("win" as const)
+                : ("loss" as const);
+            await updatePerGameStatsV2(pid, after.gameType, outcome);
+            await evaluateAchievementsV2(pid);
+          } catch (v2Err) {
+            // Non-critical — don't fail the whole completion
+            functions.logger.warn("[AchievementsV2] Player eval failed", {
+              playerId: pid,
+              error: v2Err,
+            });
+          }
+        }
 
         // Update invite status to "completed" if game was created from an invite
         if (after.inviteId) {

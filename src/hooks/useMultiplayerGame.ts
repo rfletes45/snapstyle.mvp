@@ -20,6 +20,7 @@
 
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { colyseusService } from "@/services/colyseus";
+import { recordRematchCompleted } from "@/services/socialGameStats";
 import type { GameSessionContext } from "@/types/gameSession";
 import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -420,12 +421,18 @@ export function useMultiplayerGame(
   const requestRematch = useCallback(() => {
     if (scoreRaceRef.current) {
       scoreRaceRef.current.send?.("rematch", {});
+      // Record rematch for Achievements V2 social counter
+      const uid = myUidRef.current;
+      if (uid) recordRematchCompleted(uid).catch(() => {});
     }
   }, []);
 
   const acceptRematch = useCallback(() => {
     if (scoreRaceRef.current) {
       scoreRaceRef.current.send?.("rematch_accept", {});
+      // Record rematch for Achievements V2 social counter
+      const uid = myUidRef.current;
+      if (uid) recordRematchCompleted(uid).catch(() => {});
     }
     setRematchRequested(false);
     setPhase("waiting");

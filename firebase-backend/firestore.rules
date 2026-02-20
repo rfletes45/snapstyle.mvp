@@ -256,7 +256,7 @@ service cloud.firestore {
         allow delete: if isAuth() && isOwner(uid);
       }
 
-      // Achievements subcollection (Phase 17 per guide)
+      // Achievements subcollection (Phase 17 per guide) — LEGACY
       match /Achievements/{achievementId} {
         // User can read their own achievements
         allow read: if isAuth() && isOwner(uid);
@@ -270,6 +270,56 @@ service cloud.firestore {
         
         // Achievements are immutable once earned
         allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Achievements V2 subcollection
+      // /users/{uid}/achievements/{achievementId}
+      // Individual docs per achievement with progress tracking.
+      // Writes are server-authoritative (Cloud Functions).
+      // --------------------------------------------------------
+      match /achievements/{achievementId} {
+        // User can read their own v2 achievements
+        allow read: if isAuth() && isOwner(uid);
+
+        // Server-written only; client reads. Cloud Functions use
+        // admin SDK which bypasses rules, so deny client writes.
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Per-game stats subcollection (Achievements V2)
+      // /users/{uid}/statsPerGame/{gameType}
+      // Written by Cloud Functions on game completion.
+      // --------------------------------------------------------
+      match /statsPerGame/{gameType} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Achievement Summary (Achievements V2)
+      // /users/{uid}/achievementSummary (single doc)
+      // Aggregated totals, updated by Cloud Functions.
+      // --------------------------------------------------------
+      match /achievementSummary/{docId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Social Game Stats (Achievements V2)
+      // /users/{uid}/socialGameStats (single doc)
+      // Invite/spectator/rematch counters.
+      // Server writes via Cloud Functions (invite counters).
+      // Client writes allowed for spectator/rematch counters
+      // with basic validation (values can only increase).
+      // --------------------------------------------------------
+      match /socialGameStats/{docId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create: if isAuth() && isOwner(uid);
+        allow update: if isAuth() && isOwner(uid);
+        allow delete: if false;
       }
 
       // --------------------------------------------------------
@@ -1914,6 +1964,47 @@ service cloud.firestore {
       
       // Messages are immutable
       allow update, delete: if false;
+    }
+
+    // ================================================================
+    // ACHIEVEMENTS V2 — lowercase /users/{uid}/ subcollections
+    // ================================================================
+    // The V2 system writes to /users/{uid}/ (lowercase) via both
+    // Cloud Functions admin SDK and client reads.  These rules grant
+    // authenticated owner read access and deny client writes
+    // (server-authoritative via admin SDK which bypasses rules).
+    // ================================================================
+    match /users/{uid} {
+      // Allow reading the user-level doc (if it exists)
+      allow read: if isAuth() && isOwner(uid);
+      allow write: if false;
+
+      // /users/{uid}/achievements/{achievementId}
+      match /achievements/{achievementId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      // /users/{uid}/statsPerGame/{gameType}
+      match /statsPerGame/{gameType} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      // /users/{uid}/achievementSummary/{docId}
+      match /achievementSummary/{docId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      // /users/{uid}/socialGameStats/{docId}
+      // Client writes allowed for spectator/rematch counters.
+      match /socialGameStats/{docId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create: if isAuth() && isOwner(uid);
+        allow update: if isAuth() && isOwner(uid);
+        allow delete: if false;
+      }
     }
 
     // PLAYER GAME STATS COLLECTION

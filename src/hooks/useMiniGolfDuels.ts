@@ -7,6 +7,8 @@
  * @see colyseus-server/src/rooms/physics/MiniGolfDuelsRoom.ts
  */
 
+import { recordRematchCompleted } from "@/services/socialGameStats";
+import { getAuth } from "firebase/auth";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useColyseus } from "./useColyseus";
 
@@ -322,12 +324,19 @@ export function useMiniGolfDuels({
     [sendMessage, isSpectator],
   );
 
-  const sendRematch = useCallback(() => sendMessage("rematch"), [sendMessage]);
+  const sendRematch = useCallback(() => {
+    sendMessage("rematch");
+    // Record rematch for Achievements V2 social counter
+    const uid = getAuth().currentUser?.uid;
+    if (uid) recordRematchCompleted(uid).catch(() => {});
+  }, [sendMessage]);
 
-  const sendRematchAccept = useCallback(
-    () => sendMessage("rematch_accept"),
-    [sendMessage],
-  );
+  const sendRematchAccept = useCallback(() => {
+    sendMessage("rematch_accept");
+    // Record rematch for Achievements V2 social counter
+    const uid = getAuth().currentUser?.uid;
+    if (uid) recordRematchCompleted(uid).catch(() => {});
+  }, [sendMessage]);
 
   return {
     connected,

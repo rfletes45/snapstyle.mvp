@@ -1,10 +1,10 @@
 # Documentation Index
 
-Last updated: 2026-02-18
+Last updated: 2026-02-19
 
 ## Start Here
 
-Read in this order for fastest orientation:
+Read in this order:
 
 1. [App.tsx](../App.tsx)
 2. [src/navigation/RootNavigator.tsx](../src/navigation/RootNavigator.tsx)
@@ -12,42 +12,29 @@ Read in this order for fastest orientation:
 4. [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md)
 5. [01_ARCHITECTURE.md](01_ARCHITECTURE.md)
 6. [02_FIREBASE.md](02_FIREBASE.md)
-7. [03_CHAT_V2.md](03_CHAT_V2.md)
+7. [CHAT_SYSTEM.md](CHAT_SYSTEM.md)
 8. [06_GAMES.md](06_GAMES.md)
-9. [04_TESTING.md](04_TESTING.md)
+9. [TESTING.md](TESTING.md)
 
-## Repo Mental Model
+## Core System Docs
 
-`snapstyle-mvp` is an Expo React Native app with provider-driven client state, feature-flagged behavior, and service-layer orchestration, backed by Firebase (Auth, Firestore, Storage, Cloud Functions) and Colyseus for real-time multiplayer. Safe changes start at types/contracts and service paths, then validate Firestore rules/indexes and protocol invariants, and finally verify navigation and tests so no user-visible flow regresses.
+- App + architecture: [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md), [01_ARCHITECTURE.md](01_ARCHITECTURE.md)
+- Backend and contracts: [02_FIREBASE.md](02_FIREBASE.md), [FIRESTORE_CONTRACT.md](FIRESTORE_CONTRACT.md), [FUNCTIONS.md](FUNCTIONS.md)
+- Client contracts + config: [DATA_CONTRACT_CLIENT.md](DATA_CONTRACT_CLIENT.md), [CONFIGURATION.md](CONFIGURATION.md)
+- Messaging and profile: [CHAT_SYSTEM.md](CHAT_SYSTEM.md), [03_CHAT_V2.md](03_CHAT_V2.md), [PROFILE_SYSTEM.md](PROFILE_SYSTEM.md)
+- Games stack: [06_GAMES.md](06_GAMES.md), [GAMES_PLATFORM.md](GAMES_PLATFORM.md), [COLYSEUS_SERVER.md](COLYSEUS_SERVER.md), [EMBEDDED_WEB_GAMES.md](EMBEDDED_WEB_GAMES.md)
+- Platform concerns: [CALLS_CAMERA.md](CALLS_CAMERA.md), [PERFORMANCE.md](PERFORMANCE.md), [SECURITY_PRIVACY.md](SECURITY_PRIVACY.md), [TESTING.md](TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
 
-## Core Docs
+## Audit + Maintenance Docs
 
-- AI project handoff: [AI_PROJECT_GUIDE.md](AI_PROJECT_GUIDE.md)
-- Architecture: [01_ARCHITECTURE.md](01_ARCHITECTURE.md)
-- Firebase and data plane: [02_FIREBASE.md](02_FIREBASE.md)
-- Firestore contract: [FIRESTORE_CONTRACT.md](FIRESTORE_CONTRACT.md)
-- Functions contract: [FUNCTIONS.md](FUNCTIONS.md)
-- Configuration and feature flags: [CONFIGURATION.md](CONFIGURATION.md)
-- Client data contract: [DATA_CONTRACT_CLIENT.md](DATA_CONTRACT_CLIENT.md)
-- Profile system: [PROFILE_SYSTEM.md](PROFILE_SYSTEM.md)
-- Messaging: [03_CHAT_V2.md](03_CHAT_V2.md), [03_CHAT_V3.md](03_CHAT_V3.md)
-- Chat system contract: [CHAT_SYSTEM.md](CHAT_SYSTEM.md)
-- Games: [06_GAMES.md](06_GAMES.md), [GAMES_PLATFORM.md](GAMES_PLATFORM.md), [GAME_SYSTEM_REFERENCE.md](GAME_SYSTEM_REFERENCE.md)
-- Colyseus server contract: [COLYSEUS_SERVER.md](COLYSEUS_SERVER.md)
-- Embedded web game contract: [EMBEDDED_WEB_GAMES.md](EMBEDDED_WEB_GAMES.md)
-- Calls and camera: [CALLS_CAMERA.md](CALLS_CAMERA.md)
-- Performance notes: [PERFORMANCE.md](PERFORMANCE.md)
-- Security and privacy: [SECURITY_PRIVACY.md](SECURITY_PRIVACY.md)
-- Testing and ops: [TESTING.md](TESTING.md), [04_TESTING.md](04_TESTING.md), [05_RUNBOOK.md](05_RUNBOOK.md)
+- [AUDIT_CHECKLIST.md](AUDIT_CHECKLIST.md)
+- [AUDIT_REPORT_2026-02-17.md](AUDIT_REPORT_2026-02-17.md)
+- [REPO_MAP.md](REPO_MAP.md)
+- [DEPRECATION_MAP.md](DEPRECATION_MAP.md)
+- [ARCHIVE.md](ARCHIVE.md)
 
-## Deep-Dive Subsystem Docs
+## Cleanup Policy
 
-- Chat architecture set: [chat/README.md](chat/README.md), [chat/CHAT_SYSTEM_COMPLETE.md](chat/CHAT_SYSTEM_COMPLETE.md), [chat/architecture.md](chat/architecture.md), [chat/client-flows.md](chat/client-flows.md), [chat/security-permissions.md](chat/security-permissions.md)
-- Games planning and QA: [GAME_SYSTEM_OVERHAUL_PLAN.md](GAME_SYSTEM_OVERHAUL_PLAN.md), [LOBBY_OVERHAUL_QA.md](LOBBY_OVERHAUL_QA.md), [SPECTATOR_SYSTEM_PLAN.md](SPECTATOR_SYSTEM_PLAN.md)
-
-## Audit Docs
-
-- Checklist: [AUDIT_CHECKLIST.md](AUDIT_CHECKLIST.md)
-- Rolling report: [AUDIT_REPORT_2026-02-17.md](AUDIT_REPORT_2026-02-17.md)
-- Repo map: [REPO_MAP.md](REPO_MAP.md)
-- Deprecation map: [DEPRECATION_MAP.md](DEPRECATION_MAP.md)
+- Keep this index limited to canonical, actively maintained docs.
+- Historical plans and long-form implementation logs are pruned from `docs/` once work is complete.
+- Use git history when old planning detail is needed.

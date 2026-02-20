@@ -1578,12 +1578,12 @@ export const onGameSessionCreated = functions.firestore
         );
       }
 
-      // Check for achievements
-      await checkGameAchievements(
-        session.playerId,
-        session.gameId,
-        session.score,
-      );
+      // V1 achievements disabled — V2 evaluator handles all achievement logic
+      // await checkGameAchievements(
+      //   session.playerId,
+      //   session.gameId,
+      //   session.score,
+      // );
 
       return;
     } catch (error) {
@@ -1659,48 +1659,24 @@ async function grantAchievementIfNotEarned(
 
 /**
  * onStreakUpdated: Check for streak achievements when streak changes
- * This extends the existing streak update logic
+ * V1 DISABLED — streak achievements are now handled by V2 evaluator.
+ * Keeping the export to avoid breaking deployed Cloud Functions references.
  */
 export const onStreakAchievementCheck = functions.firestore
   .document("Friends/{friendId}")
-  .onUpdate(async (change, context) => {
+  .onUpdate(async (change, _context) => {
+    // V1 streak achievements disabled — V2 evaluator handles all achievement logic
     const before = change.before.data();
     const after = change.after.data();
 
-    // Only check if streakCount increased
     if (after.streakCount <= before.streakCount) {
       return;
     }
 
-    const streakCount = after.streakCount;
-    const users = after.users as string[];
-
     console.log(
-      `🔥 Streak updated to ${streakCount} between ${users.join(" and ")}`,
+      `🔥 [V1-DISABLED] Streak updated to ${after.streakCount} — skipping V1 achievement grants (V2 handles this)`,
     );
-
-    // Check streak achievements for both users
-    const thresholds: [number, string][] = [
-      [3, "streak_3_days"],
-      [7, "streak_7_days"],
-      [30, "streak_30_days"],
-      [100, "streak_100_days"],
-    ];
-
-    for (const userId of users) {
-      const achievementsRef = db
-        .collection("Users")
-        .doc(userId)
-        .collection("Achievements");
-
-      for (const [threshold, achievementType] of thresholds) {
-        if (streakCount >= threshold) {
-          await grantAchievementIfNotEarned(achievementsRef, achievementType, {
-            streakCount,
-          });
-        }
-      }
-    }
+    return;
   });
 
 /**

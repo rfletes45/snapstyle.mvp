@@ -812,13 +812,31 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   // Game categories (memoized to avoid recreating on every render)
   const quickPlayGames = useMemo<ExtendedGameType[]>(
-    () => ["bounce_blitz"],
+    () => ["bounce_blitz", "brick_breaker", "pong_game"],
     [],
   );
-  const puzzleGames = useMemo<ExtendedGameType[]>(() => ["play_2048"], []);
-  const dailyGames = useMemo<ExtendedGameType[]>(() => ["word_master"], []);
+  const puzzleGames = useMemo<ExtendedGameType[]>(
+    () => ["play_2048", "minesweeper_classic", "lights_out"],
+    [],
+  );
+  const dailyGames = useMemo<ExtendedGameType[]>(
+    () => ["word_master", "crossword_puzzle"],
+    [],
+  );
   const multiplayerGames = useMemo<ExtendedGameType[]>(
-    () => ["tic_tac_toe", "checkers", "chess", "crazy_eights"],
+    () => [
+      "tic_tac_toe",
+      "checkers",
+      "chess",
+      "crazy_eights",
+      "connect_four",
+      "dot_match",
+      "gomoku_master",
+      "reversi_game",
+      "starforge_game",
+      "sketch_party_game",
+      "minigolf_duels",
+    ],
     [],
   );
 

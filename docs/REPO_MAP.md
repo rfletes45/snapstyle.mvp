@@ -1,14 +1,16 @@
 # Repo Map
 
-> Segment 3/18 inventory snapshot (2026-02-18). This is a read-mostly map of what exists now, not a refactor plan.
+> Segment 3/18 inventory snapshot (updated 2026-02-19). This is a read-mostly map of what exists now, not a refactor plan.
 
 ## Scope
 
-`snapstyle-mvp` is a multi-package repo with three active package roots and one expected-but-missing web package root:
+`snapstyle-mvp` is a multi-package repo with five active package roots and one expected-but-missing legacy web package root:
 
 - Root app: `package.json` (Expo React Native client)
 - Cloud Functions: `firebase-backend/functions/package.json`
 - Colyseus server: `colyseus-server/package.json`
+- Embedded web game viewer: `starforge-viewer/package.json`
+- Embedded web game server: `starforge-viewer/server/package.json`
 - Embedded web client package: `client/package.json` (not present in this snapshot)
 
 ## Major Folders and Responsibilities
@@ -123,7 +125,6 @@
 - `docs/01_ARCHITECTURE.md`
 - `docs/02_FIREBASE.md`
 - `docs/03_CHAT_V2.md`
-- `docs/03_CHAT_V3.md`
 - `docs/06_GAMES.md`
 - `docs/AUDIT_CHECKLIST.md`
 - `docs/AUDIT_REPORT_2026-02-17.md`

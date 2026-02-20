@@ -104,7 +104,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Fast-paced action games",
     icon: "lightning-bolt",
     accentColor: "#FF6B6B",
-    games: ["bounce_blitz"],
+    games: ["bounce_blitz", "brick_breaker", "pong_game"],
     layout: "carousel",
   },
   {
@@ -113,7 +113,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Test your brain",
     icon: "puzzle",
     accentColor: "#4ECDC4",
-    games: ["play_2048"],
+    games: ["play_2048", "minesweeper_classic", "lights_out"],
     layout: "carousel",
   },
   {
@@ -122,7 +122,19 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Challenge your friends",
     icon: "account-group",
     accentColor: "#6C5CE7",
-    games: ["tic_tac_toe", "checkers", "chess", "crazy_eights"],
+    games: [
+      "tic_tac_toe",
+      "checkers",
+      "chess",
+      "crazy_eights",
+      "connect_four",
+      "dot_match",
+      "gomoku_master",
+      "reversi_game",
+      "starforge_game",
+      "sketch_party_game",
+      "minigolf_duels",
+    ],
     layout: "carousel",
   },
   {
@@ -131,7 +143,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "New puzzle every day",
     icon: "calendar-today",
     accentColor: "#FFD700",
-    games: ["word_master"],
+    games: ["word_master", "crossword_puzzle"],
     layout: "single",
   },
 ];

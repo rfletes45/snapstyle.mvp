@@ -1,6 +1,6 @@
 # Calls + Camera Audit
 
-Last updated: 2026-02-18
+Last updated: 2026-02-19
 
 ## Scope
 
@@ -39,7 +39,7 @@ This document captures the current calls/camera subsystem reality, gating, and s
 ### Calls (feature + platform)
 
 - Feature gate:
-  - `constants/featureFlags.ts` -> `CALL_FEATURES.CALLS_ENABLED` (default `false`)
+  - `constants/featureFlags.ts` -> `CALL_FEATURES.CALLS_ENABLED` (default `true`)
 - Platform gate:
   - native calls require not web and not Expo Go
   - see `src/utils/platform.ts` and repeated runtime checks in calls modules
@@ -80,8 +80,10 @@ This document captures the current calls/camera subsystem reality, gating, and s
 
 ## Partially Integrated / Risk Notes
 
-- Calls remain intentionally staged off by default (`CALL_FEATURES.*` mostly `false`).
-- App-level call bootstrap calls still execute from `App.tsx`, but are now no-ops when feature-disabled via service-layer checks.
+- Calls are now enabled by default (`CALL_FEATURES.CALLS_ENABLED = true`).
+- All sub-flags (audio, video, group, native UI, background, history, settings) are enabled.
+- App-level call bootstrap calls execute from `App.tsx` and initialize WebRTC / CallKeep services.
+- On web and Expo Go, the system gracefully degrades: buttons appear but show an informative alert explaining a dev build is needed.
 - Camera uses an Expo-compatible path by default (`USE_VISION_CAMERA=false`) for Expo Go compatibility.
 
 ## Segment 13 Safe Cleanup Performed
