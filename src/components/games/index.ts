@@ -116,3 +116,18 @@ export {
 // =============================================================================
 
 export { GamePickerModal, type GamePickerModalProps } from "./GamePickerModal";
+
+// =============================================================================
+// Enhanced Games Profile Header (Phase 7)
+// =============================================================================
+
+export { EnhancedGamesProfileHeader } from "./EnhancedGamesProfileHeader";
+
+export { AvatarStack, type AvatarStackProps } from "./AvatarStack";
+export { CurrencyChip, type CurrencyChipProps } from "./CurrencyChip";
+export { ExpandedPanel, type ExpandedPanelProps } from "./ExpandedPanel";
+export {
+  TaskProgressRail,
+  type TaskProgressRailProps,
+} from "./TaskProgressRail";
+export { XpBar, type XpBarProps } from "./XpBar";

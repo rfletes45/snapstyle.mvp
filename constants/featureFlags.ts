@@ -269,6 +269,25 @@ export const PLAY_SCREEN_FEATURES = {
 
   /** Phase 6: Remove recent games section */
   REMOVE_RECENT_GAMES: true,
+
+  // =========================================================================
+  // Phase 7: Enhanced Profile Header
+  // =========================================================================
+
+  /**
+   * Phase 7: Enable the enhanced "Player Summary Header" on the Play tab.
+   *
+   * When enabled:
+   * - Replaces the inline profile card with EnhancedGamesProfileHeader
+   * - Shows avatar stack with decoration slots, XP bar, currency chips,
+   *   daily/monthly task rails, and an expandable details panel
+   *
+   * When disabled:
+   * - Falls back to the legacy inline profile card
+   *
+   * @default true
+   */
+  ENHANCED_PROFILE_HEADER: true,
 } as const;
 
 // =============================================================================

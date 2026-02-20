@@ -59,7 +59,7 @@ export type ProfileTabStackParamList = {
   Settings: undefined;
   ThemeSettings: undefined;
   Wallet: undefined;
-  Tasks: undefined;
+  Tasks: { tab?: "daily" | "monthly" } | undefined;
   Shop: undefined;
   AdminReports: undefined;
 };

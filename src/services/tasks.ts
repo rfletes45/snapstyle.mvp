@@ -17,6 +17,7 @@ import {
   TaskProgress,
   TaskWithProgress,
   getCurrentDayKey,
+  getCurrentMonthKey,
 } from "@/types/models";
 import {
   collection,
@@ -30,7 +31,6 @@ import {
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getAppInstance, getFirestoreInstance } from "./firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/tasks");
@@ -243,10 +243,16 @@ export async function getTasksWithProgress(
   cadence?: TaskCadence,
 ): Promise<TaskWithProgress[]> {
   try {
+    // Choose the right key for progress lookup
+    const dayKey =
+      cadence === "monthly"
+        ? getCurrentMonthKey(DEFAULT_TIMEZONE)
+        : getCurrentDayKey(DEFAULT_TIMEZONE);
+
     // Fetch tasks and progress in parallel
     const [tasks, progressMap] = await Promise.all([
       getActiveTasks(cadence),
-      getTaskProgress(uid),
+      getTaskProgress(uid, dayKey),
     ]);
 
     return tasks.map((task) => {
@@ -280,7 +286,11 @@ export function subscribeToTasksWithProgress(
   cadence?: TaskCadence,
 ): () => void {
   const db = getFirestoreInstance();
-  const currentDayKey = getCurrentDayKey(DEFAULT_TIMEZONE);
+  // Use month key for monthly tasks, day key for everything else
+  const currentDayKey =
+    cadence === "monthly"
+      ? getCurrentMonthKey(DEFAULT_TIMEZONE)
+      : getCurrentDayKey(DEFAULT_TIMEZONE);
 
   // Track current state
   let currentTasks: Task[] = [];
@@ -395,6 +405,7 @@ export function subscribeToTasksWithProgress(
 export async function claimTaskReward(
   taskId: string,
   dayKey?: string,
+  cadence?: TaskCadence,
 ): Promise<{
   success: boolean;
   tokensAwarded?: number;
@@ -414,7 +425,11 @@ export async function claimTaskReward(
       }
     >(functions, "claimTaskReward");
 
-    const currentDayKey = dayKey || getCurrentDayKey(DEFAULT_TIMEZONE);
+    const currentDayKey =
+      dayKey ||
+      (cadence === "monthly"
+        ? getCurrentMonthKey(DEFAULT_TIMEZONE)
+        : getCurrentDayKey(DEFAULT_TIMEZONE));
 
     logger.info(
       "[tasks] Claiming reward for task:",
@@ -538,4 +553,36 @@ export function getTimeUntilReset(timezone = DEFAULT_TIMEZONE): string {
   }
 
   return `${hoursLeft}h ${minutesLeft}m`;
+}
+
+/**
+ * Get days remaining until monthly reset (1st of next month in timezone)
+ */
+export function getDaysUntilMonthReset(timezone = DEFAULT_TIMEZONE): number {
+  const now = new Date();
+
+  const dayFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    day: "numeric",
+  });
+  const monthFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+  });
+
+  const currentDay = parseInt(
+    dayFormatter.formatToParts(now).find((p) => p.type === "day")?.value || "1",
+  );
+  const monthParts = monthFormatter.formatToParts(now);
+  const currentMonth = parseInt(
+    monthParts.find((p) => p.type === "month")?.value || "1",
+  );
+  const currentYear = parseInt(
+    monthParts.find((p) => p.type === "year")?.value || "2026",
+  );
+
+  // Days in current month
+  const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+  return daysInMonth - currentDay;
 }

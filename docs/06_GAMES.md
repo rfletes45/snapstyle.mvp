@@ -333,6 +333,73 @@ The GamesHub screen (`src/screens/games/GamesHubScreen.tsx`) is the main Play ta
 10. **GameRecommendations** — Suggested games based on play history
 11. **GameStatsSummary** — Player stats (games played, win rate, etc.)
 
+### Enhanced Profile Header (Phase 7)
+
+Gated by `PLAY_SCREEN_FEATURES.ENHANCED_PROFILE_HEADER`.
+
+The **EnhancedGamesProfileHeader** replaces the legacy inline profile card with a
+premium "Player Summary Header" that shows identity, progression, economy, and task
+progress in a single compact card. It supports an expand/collapse panel for deeper
+detail.
+
+**Components** (all in `src/components/games/`):
+
+| Component                    | Purpose                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `EnhancedGamesProfileHeader` | Top-level orchestrator — three-zone layout + rails + expand                                 |
+| `AvatarStack`                | Layered PFP with 5 decoration slots (frame, aura, badge, overlay, backplate) + presence dot |
+| `XpBar`                      | Level pill + animated XP progress bar with numeric label                                    |
+| `CurrencyChip`               | Compact currency badge with icon, amount, claimable dot                                     |
+| `TaskProgressRail`           | Daily / monthly task progress bar with claimable indicator                                  |
+| `ExpandedPanel`              | Collapsible panel: claimables, mini stats, equipped cosmetics, active boosts                |
+
+**Data source**: `usePlayerSummary` hook (`src/hooks/usePlayerSummary.ts`) composes
+existing hooks (`useProfileData`, `useProfilePicture`, `subscribeToWallet`,
+`getTasksWithProgress`) into a single `PlayerSummary` payload. No new Firestore docs
+or listeners are introduced.
+
+**Types**: `src/types/playerSummary.ts` — `PlayerSummary`, `EquippedDecor`,
+`CurrencyBalances`, `TasksProgressSummary`, `MiniStats`, `ActiveBoost`.
+
+**Feature flag**: `PLAY_SCREEN_FEATURES.ENHANCED_PROFILE_HEADER` (default `true`).
+When `false`, falls back to the legacy inline profile card.
+
+### Tasks System (Daily & Monthly)
+
+The **TasksScreen** (`src/screens/tasks/TasksScreen.tsx`) provides a dual-tab view
+for daily and monthly challenges. It lives in the **ProfileStack** and is navigated
+to from the enhanced profile header via `CommonActions.navigate`.
+
+**Tab structure**:
+
+| Tab     | Cadence   | Reset         | Key format   |
+| ------- | --------- | ------------- | ------------ |
+| Daily   | `daily`   | Midnight (TZ) | `YYYY-MM-DD` |
+| Monthly | `monthly` | 1st of month  | `YYYY-MM`    |
+
+**Route params**: `{ tab?: "daily" | "monthly" }` — controls which tab is selected
+on entry. Defaults to `"daily"`.
+
+**Service layer** (`src/services/tasks.ts`):
+
+- `subscribeToTasksWithProgress(uid, onUpdate, cadence)` — real-time dual Firestore
+  subscription (Tasks collection + TaskProgress sub-collection), filtered by cadence
+  and using the appropriate period key (`dayKey` for daily, `monthKey` for monthly).
+- `claimTaskReward(taskId, dayKey?, cadence?)` — calls Cloud Function, auto-selects
+  the correct period key based on cadence.
+- `getDaysUntilMonthReset()` — days remaining until the 1st of next month.
+- `getCurrentMonthKey()` — helper in `src/types/models.ts`, returns `"YYYY-MM"`.
+
+**Cloud Functions** (`firebase-backend/functions/src/legacy.ts`):
+
+- `updateTaskProgress` now handles both daily and monthly cadence — uses `dayKey` for
+  daily tasks and `monthKey` (YYYY-MM) for monthly tasks; resets progress when the
+  period changes.
+- `claimTaskReward` verifies the period key matches for both daily and monthly tasks.
+- `seedMonthlyTasks` — admin HTTP endpoint to seed 7 monthly challenge definitions
+  (Seasoned Player, Monthly Champion, Chatterbox, Content Creator, Story Binge,
+  Expanding Circles, Streak Master) with higher reward amounts (80–250 tokens).
+
 ---
 
 ## Anti-Cheat
@@ -511,18 +578,18 @@ The barrel export object `gameInvites` has been trimmed to remove dead entries.
 
 > Added 2026-02-17 as part of Segment 9 — Deprecations & Migration Complete.
 
-| What                               | When      | Replacement                                       | Status              |
-| ---------------------------------- | --------- | ------------------------------------------------- | ------------------- |
-| `GroupPickerModal`                 | Seg 9     | `InvitePickerModal` (unified)                     | Deleted             |
-| `sendGameInvite()`                 | Seg 9     | `sendUniversalInvite()`                           | Deprecated (marked) |
-| `acceptGameInvite()`               | Seg 9     | `claimInviteSlot()` + `startGameEarly()`          | Removed             |
-| `declineGameInvite()`              | Seg 9     | `unclaimInviteSlot()` / `cancelUniversalInvite()` | Removed             |
-| `cancelGameInvite()`               | Seg 9     | `cancelUniversalInvite()`                         | Deprecated (marked) |
+| What                               | When       | Replacement                                       | Status              |
+| ---------------------------------- | ---------- | ------------------------------------------------- | ------------------- |
+| `GroupPickerModal`                 | Seg 9      | `InvitePickerModal` (unified)                     | Deleted             |
+| `sendGameInvite()`                 | Seg 9      | `sendUniversalInvite()`                           | Deprecated (marked) |
+| `acceptGameInvite()`               | Seg 9      | `claimInviteSlot()` + `startGameEarly()`          | Removed             |
+| `declineGameInvite()`              | Seg 9      | `unclaimInviteSlot()` / `cancelUniversalInvite()` | Removed             |
+| `cancelGameInvite()`               | Seg 9      | `cancelUniversalInvite()`                         | Deprecated (marked) |
 | Legacy helper/query internals      | 2026-02-17 | Real-time subscriptions                           | Removed             |
-| Per-game lobby components          | Seg 5     | `MultiplayerLobbyOverlay`                         | Already removed     |
-| `PoolGameScreen`                   | Pre-Seg 0 | N/A (game removed)                                | Deleted             |
-| Old `InviteStatus` type            | Seg 9     | `UniversalInviteStatus`                           | Deprecated (marked) |
-| `gameInvites` barrel (legacy keys) | Seg 9     | Direct named imports                              | Trimmed             |
+| Per-game lobby components          | Seg 5      | `MultiplayerLobbyOverlay`                         | Already removed     |
+| `PoolGameScreen`                   | Pre-Seg 0  | N/A (game removed)                                | Deleted             |
+| Old `InviteStatus` type            | Seg 9      | `UniversalInviteStatus`                           | Deprecated (marked) |
+| `gameInvites` barrel (legacy keys) | Seg 9      | Direct named imports                              | Trimmed             |
 
 ---
 

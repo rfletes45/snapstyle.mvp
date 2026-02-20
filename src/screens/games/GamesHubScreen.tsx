@@ -17,6 +17,7 @@
  */
 
 import { UniversalInviteCard } from "@/components/games";
+import { EnhancedGamesProfileHeader } from "@/components/games/EnhancedGamesProfileHeader";
 import { GameInviteBadge } from "@/components/games/GameInviteBadge";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ThreeFloatingIcons, ThreeGameBackground } from "@/components/three";
@@ -1082,99 +1083,105 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
             </>
           )}
 
-          {/* Profile Card */}
-          <View
-            style={[
-              styles.profileCard,
-              {
-                backgroundColor: theme.colors.surfaceVariant,
-                borderColor: theme.colors.outlineVariant,
-              },
-            ]}
-          >
-            <ProfilePictureWithDecoration
-              pictureUrl={picture?.url || null}
-              name={currentFirebaseUser?.displayName || "User"}
-              size={56}
-              decorationId={decoration?.decorationId}
-            />
-            <View style={styles.profileCardInfo}>
-              <Text
-                style={[
-                  styles.profileCardName,
-                  { color: theme.colors.onSurface },
-                ]}
-                numberOfLines={1}
-              >
-                {currentFirebaseUser?.displayName || "Player"}
-              </Text>
-              <View style={styles.profileCardLevel}>
+          {/* Profile Card — Enhanced or Legacy */}
+          {PLAY_SCREEN_FEATURES.ENHANCED_PROFILE_HEADER ? (
+            <EnhancedGamesProfileHeader />
+          ) : (
+            <View
+              style={[
+                styles.profileCard,
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.outlineVariant,
+                },
+              ]}
+            >
+              <ProfilePictureWithDecoration
+                pictureUrl={picture?.url || null}
+                name={currentFirebaseUser?.displayName || "User"}
+                size={56}
+                decorationId={decoration?.decorationId}
+              />
+              <View style={styles.profileCardInfo}>
                 <Text
                   style={[
-                    styles.profileCardLevelText,
-                    { color: theme.colors.onSurfaceVariant },
+                    styles.profileCardName,
+                    { color: theme.colors.onSurface },
                   ]}
+                  numberOfLines={1}
                 >
-                  Level {levelInfo?.current ?? 1}
+                  {currentFirebaseUser?.displayName || "Player"}
                 </Text>
-                <ProgressBar
-                  progress={
-                    levelInfo ? levelInfo.xp / levelInfo.xpToNextLevel : 0
-                  }
-                  color={theme.colors.primary}
-                  style={styles.profileCardProgress}
-                />
-              </View>
-              <View style={styles.profileCardButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.profileCardButton,
-                    { backgroundColor: theme.colors.primary },
-                  ]}
-                  onPress={() => navigation.navigate("Tasks", { tab: "daily" })}
-                >
-                  <MaterialCommunityIcons
-                    name="calendar-check"
-                    size={14}
-                    color={theme.colors.onPrimary}
-                  />
+                <View style={styles.profileCardLevel}>
                   <Text
                     style={[
-                      styles.profileCardButtonText,
-                      { color: theme.colors.onPrimary },
+                      styles.profileCardLevelText,
+                      { color: theme.colors.onSurfaceVariant },
                     ]}
                   >
-                    Daily Tasks
+                    Level {levelInfo?.current ?? 1}
                   </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.profileCardButton,
-                    {
-                      backgroundColor: theme.colors.secondaryContainer,
-                    },
-                  ]}
-                  onPress={() =>
-                    navigation.navigate("Tasks", { tab: "monthly" })
-                  }
-                >
-                  <MaterialCommunityIcons
-                    name="calendar-month"
-                    size={14}
-                    color={theme.colors.onSecondaryContainer}
+                  <ProgressBar
+                    progress={
+                      levelInfo ? levelInfo.xp / levelInfo.xpToNextLevel : 0
+                    }
+                    color={theme.colors.primary}
+                    style={styles.profileCardProgress}
                   />
-                  <Text
+                </View>
+                <View style={styles.profileCardButtons}>
+                  <TouchableOpacity
                     style={[
-                      styles.profileCardButtonText,
-                      { color: theme.colors.onSecondaryContainer },
+                      styles.profileCardButton,
+                      { backgroundColor: theme.colors.primary },
                     ]}
+                    onPress={() =>
+                      navigation.navigate("Tasks", { tab: "daily" })
+                    }
                   >
-                    Monthly Tasks
-                  </Text>
-                </TouchableOpacity>
+                    <MaterialCommunityIcons
+                      name="calendar-check"
+                      size={14}
+                      color={theme.colors.onPrimary}
+                    />
+                    <Text
+                      style={[
+                        styles.profileCardButtonText,
+                        { color: theme.colors.onPrimary },
+                      ]}
+                    >
+                      Daily Tasks
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.profileCardButton,
+                      {
+                        backgroundColor: theme.colors.secondaryContainer,
+                      },
+                    ]}
+                    onPress={() =>
+                      navigation.navigate("Tasks", { tab: "monthly" })
+                    }
+                  >
+                    <MaterialCommunityIcons
+                      name="calendar-month"
+                      size={14}
+                      color={theme.colors.onSecondaryContainer}
+                    />
+                    <Text
+                      style={[
+                        styles.profileCardButtonText,
+                        { color: theme.colors.onSecondaryContainer },
+                      ]}
+                    >
+                      Monthly Tasks
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
+          )}
 
           {/* Phase 4: Category Carousels Mode vs Legacy Vertical Lists */}
           {PLAY_SCREEN_FEATURES.CATEGORY_CAROUSELS ? (

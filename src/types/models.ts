@@ -602,7 +602,7 @@ export interface Transaction {
 /**
  * Task cadence - when tasks reset
  */
-export type TaskCadence = "daily" | "weekly" | "one_time";
+export type TaskCadence = "daily" | "weekly" | "monthly" | "one_time";
 
 /**
  * Task types that determine how progress is tracked
@@ -669,6 +669,23 @@ export function getCurrentDayKey(
     day: "2-digit",
   });
   return formatter.format(now); // Returns "YYYY-MM-DD"
+}
+
+/**
+ * Helper to get current month key for monthly tasks (timezone-aware)
+ * Returns "YYYY-MM" format
+ */
+export function getCurrentMonthKey(
+  timezone = "America/Indiana/Indianapolis",
+): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+  });
+  // en-CA formats as "YYYY-MM" when only year + month are requested
+  return formatter.format(now);
 }
 
 /**
