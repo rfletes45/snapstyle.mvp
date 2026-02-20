@@ -54,7 +54,8 @@ export class StarforgeWreck extends Schema {
   @type("string") archetypeId: string = "";
   @type("int64") hpMicro: number = 0;
   @type("int64") maxHpMicro: number = 0;
-  @type(StarforgeWreckResources) yieldRemainingMicro = new StarforgeWreckResources();
+  @type(StarforgeWreckResources) yieldRemainingMicro =
+    new StarforgeWreckResources();
   @type("float32") x: number = 0;
   @type("float32") z: number = 0;
   @type("uint32") spawnedAtTick: number = 0;
@@ -111,7 +112,8 @@ export class StarforgeCapBoost extends Schema {
 export class StarforgeEventState extends Schema {
   @type(StarforgeActiveEvent) activeEvent: StarforgeActiveEvent | null = null;
   @type("uint32") lastSpawnRollTick: number = 0;
-  @type([StarforgeProdBoost]) prodBoosts = new ArraySchema<StarforgeProdBoost>();
+  @type([StarforgeProdBoost]) prodBoosts =
+    new ArraySchema<StarforgeProdBoost>();
   @type([StarforgeCapBoost]) capBoosts = new ArraySchema<StarforgeCapBoost>();
 }
 

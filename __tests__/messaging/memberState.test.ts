@@ -75,13 +75,14 @@ describe("Unified Member State Service", () => {
   });
 
   describe("updateLastSeenPrivate", () => {
-    it("should use updateReadWatermark for DMs", async () => {
+    it("should use updateReadWatermark for DMs with sendPublicReceipt: false", async () => {
       await updateLastSeenPrivate("dm", "chat123", "user456", 1234567890);
 
       expect(mockChatMembers.updateReadWatermark).toHaveBeenCalledWith(
         "chat123",
         "user456",
         1234567890,
+        { sendPublicReceipt: false },
       );
     });
 

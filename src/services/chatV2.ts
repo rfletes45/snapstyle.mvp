@@ -312,10 +312,14 @@ export async function retryFailedMessage(messageId: string): Promise<boolean> {
       replyTo: item.replyTo,
       mentionUids: item.mentionUids,
       mentionSpans: item.mentionSpans,
-      attachments: [], // NOTE: Handle attachments
+      // NOTE: Attachment retry not supported on legacy outbox path (Path B).
+      // LocalAttachment[] (pre-upload) ≠ AttachmentV2[] (post-upload).
+      // The active SQLite path (Path A) handles attachment upload via syncEngine.
+      attachments: [],
       clientId,
       messageId: item.messageId,
       createdAt: item.createdAt,
+      traceId: item.traceId, // Preserve cross-system log correlation
     });
 
     return result.success;
@@ -350,10 +354,14 @@ export async function processPendingMessages(): Promise<{
       replyTo: item.replyTo,
       mentionUids: item.mentionUids,
       mentionSpans: item.mentionSpans,
-      attachments: [], // NOTE: Handle attachments
+      // NOTE: Attachment retry not supported on legacy outbox path (Path B).
+      // LocalAttachment[] (pre-upload) ≠ AttachmentV2[] (post-upload).
+      // The active SQLite path (Path A) handles attachment upload via syncEngine.
+      attachments: [],
       clientId,
       messageId: item.messageId,
       createdAt: item.createdAt,
+      traceId: item.traceId, // Preserve cross-system log correlation
     });
 
     return result.success;

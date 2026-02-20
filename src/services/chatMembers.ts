@@ -238,12 +238,17 @@ export async function updateReadWatermark(
 // Typing Indicators
 // =============================================================================
 
-let lastTypingUpdate = 0;
+/**
+ * Per-chat typing throttle timestamps.
+ * Keyed by chatId to prevent cross-chat throttle leakage.
+ */
+const lastTypingUpdateByChat = new Map<string, number>();
 
 /**
  * Update typing indicator with throttling
  *
  * Throttled to prevent excessive Firestore writes.
+ * Throttle is tracked per-chat to avoid leakage between conversations.
  *
  * @param chatId - Chat document ID
  * @param uid - User ID
@@ -254,12 +259,13 @@ export async function updateTypingIndicator(
 ): Promise<void> {
   const now = Date.now();
 
-  // Throttle updates
-  if (now - lastTypingUpdate < TYPING_THROTTLE_MS) {
+  // Throttle updates per chat
+  const lastUpdate = lastTypingUpdateByChat.get(chatId) ?? 0;
+  if (now - lastUpdate < TYPING_THROTTLE_MS) {
     return;
   }
 
-  lastTypingUpdate = now;
+  lastTypingUpdateByChat.set(chatId, now);
 
   // -------------------------------------------------------------------------
   // Segment 7: route through server callable when privacy enforcement is on

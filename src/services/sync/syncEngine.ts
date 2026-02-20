@@ -25,6 +25,7 @@ import {
   markMessagePermanentlyFailed,
   markMessageSynced,
   markMessageSyncFailed,
+  MAX_MESSAGE_RETRIES,
   MessageWithAttachments,
   updateAttachmentUploadStatus,
   upsertMessageFromServer,
@@ -42,7 +43,6 @@ import { AttachmentV2, MessageV2 } from "@/types/messaging";
 import type { GroupMessage } from "@/types/models";
 import { toTimestamp } from "@/utils/dates";
 import { Platform } from "react-native";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/sync/syncEngine");
@@ -134,13 +134,10 @@ export function setOnlineStatus(online: boolean): void {
  * Update pending count from database
  */
 export function refreshPendingCount(): void {
-  const pending = getPendingMessages(1);
-  updateSyncState({ pendingCount: pending.length > 0 ? -1 : 0 }); // -1 indicates "some pending"
-
-  // Get actual count
+  // Single COUNT query — avoids the redundant getPendingMessages(1) call
   const db = getDatabase();
   const result = db.getFirstSync<{ count: number }>(
-    `SELECT COUNT(*) as count FROM messages WHERE sync_status IN ('pending', 'failed') AND retry_count < 10`,
+    `SELECT COUNT(*) as count FROM messages WHERE sync_status IN ('pending', 'failed') AND retry_count < ${MAX_MESSAGE_RETRIES}`,
   );
   updateSyncState({ pendingCount: result?.count || 0 });
 }
@@ -456,10 +453,10 @@ export async function pullMessages(
       : `Groups/${conversationId}/Messages`;
 
   // Query new messages since last sync
-  // Use createdAt for groups (client-side timestamp), serverReceivedAt for DMs
-  // Note: serverReceivedAt uses FieldValue.serverTimestamp() which can be null
-  // on initial local snapshots, so DM pull also uses createdAt to avoid missing messages
-  const orderField = scope === "dm" ? "createdAt" : "createdAt";
+  // Both DM and Group messages use createdAt for ordering because
+  // serverReceivedAt uses FieldValue.serverTimestamp() which can be null
+  // on initial local snapshots.
+  const orderField = "createdAt";
   const q = query(
     collection(firestore, collectionPath),
     where(orderField, ">", lastSyncedAt),
@@ -666,10 +663,7 @@ export async function fullSyncConversation(
     );
     return count;
   } catch (error: any) {
-    logger.error(
-      `[SyncEngine] Full sync failed for ${conversationId}:`,
-      error,
-    );
+    logger.error(`[SyncEngine] Full sync failed for ${conversationId}:`, error);
     throw error;
   }
 }
@@ -967,7 +961,7 @@ export function getConversationsWithPending(): string[] {
   const db = getDatabase();
   const results = db.getAllSync<{ conversation_id: string }>(
     `SELECT DISTINCT conversation_id FROM messages 
-     WHERE sync_status IN ('pending', 'failed') AND retry_count < 10`,
+     WHERE sync_status IN ('pending', 'failed') AND retry_count < ${MAX_MESSAGE_RETRIES}`,
   );
   return results.map((r: { conversation_id: string }) => r.conversation_id);
 }

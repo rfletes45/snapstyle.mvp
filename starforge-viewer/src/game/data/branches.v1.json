@@ -1,35 +1,31 @@
-﻿{
+{
   "schemaVersion": "starforge.branches.v1",
   "fullEraMinRebirthCount": 1,
   "starterMachines": ["CUTTER", "HOPPER"],
-  "branches": {
-    "LOGISTICS": {
+  "branches": [
+    {
       "id": "LOGISTICS",
-      "title": "Logistics",
-      "desc": "Automate wreck retrieval and manage energy for drones.",
+      "label": "Salvage Logistics",
       "keystone": "DRONES_MAG",
       "unlocks": ["CRANE", "BATTERY"]
     },
-    "ANALYSIS": {
+    {
       "id": "ANALYSIS",
-      "title": "Analysis",
-      "desc": "Improve scanning and research to unlock rare discoveries.",
+      "label": "Analysis & Targeting",
       "keystone": "SCANNER",
       "unlocks": ["LAB", "SIGNAL"]
     },
-    "FABRICATION": {
+    {
       "id": "FABRICATION",
-      "title": "Fabrication",
-      "desc": "Build machines that reshape resources and unlock new slots.",
+      "label": "Fabrication & Conversion",
       "keystone": "ASSEMBLER",
       "unlocks": ["NANOFORGE", "PRINTER"]
     },
-    "COSMIC": {
+    {
       "id": "COSMIC",
-      "title": "Cosmic",
-      "desc": "Endgame structures that alter the fabric of the sector.",
+      "label": "Cosmic Engineering",
       "keystone": "DYSON",
       "unlocks": []
     }
-  }
+  ]
 }

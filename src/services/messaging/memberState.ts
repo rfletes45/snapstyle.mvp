@@ -26,8 +26,8 @@
  * ```
  */
 
-import { createLogger } from "@/utils/log";
 import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
+import { createLogger } from "@/utils/log";
 
 // Import DM member functions
 import {
@@ -137,11 +137,15 @@ export async function updateLastSeenPrivate(
   }
 
   if (scope === "dm") {
-    // For DMs, updateLastSeen uses Date.now() internally
-    // Use updateReadWatermark which accepts a timestamp
-    await updateDMReadWatermark(conversationId, uid, timestamp);
+    // For DMs, use updateReadWatermark with sendPublicReceipt: false
+    // to update only the private lastSeenAtPrivate without broadcasting
+    // the read receipt to the other user.
+    await updateDMReadWatermark(conversationId, uid, timestamp, {
+      sendPublicReceipt: false,
+    });
   } else {
-    // For groups, use the regular watermark update
+    // For groups, use the regular watermark update (groups don't have
+    // public read receipts so there's no distinction).
     await updateGroupReadWatermark(conversationId, uid, timestamp);
   }
 }

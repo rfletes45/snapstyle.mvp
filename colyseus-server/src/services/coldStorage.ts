@@ -7,8 +7,8 @@
  *
  * Collection: ColyseusGameSnapshots/{firestoreGameId}
  */
-import { getFirestoreDb } from "./firebase";
 import { createServerLogger } from "../utils/logger";
+import { getFirestoreDb } from "./firebase";
 
 const log = createServerLogger("coldStorage");
 

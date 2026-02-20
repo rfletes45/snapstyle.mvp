@@ -22,9 +22,11 @@ import {
 import * as Crypto from "expo-crypto";
 import { getDatabase } from "./index";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/database/messageRepository");
+
+/** Max retry attempts before a message is considered permanently failed */
+export const MAX_MESSAGE_RETRIES = 10;
 // =============================================================================
 // Types
 // =============================================================================
@@ -86,61 +88,65 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
     retry_count: 0,
   };
 
-  db.runSync(
-    `INSERT INTO messages (
-      id, conversation_id, scope, sender_id, sender_name, kind, text,
-      created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
-      mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
-      hidden_for_json, link_preview_json, sync_status, sync_error, retry_count
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      row.id,
-      row.conversation_id,
-      row.scope,
-      row.sender_id,
-      row.sender_name,
-      row.kind,
-      row.text,
-      row.created_at,
-      row.server_received_at,
-      row.edited_at,
-      row.reply_to_id,
-      row.reply_to_preview,
-      row.mentions_json,
-      row.reactions_json,
-      row.deleted_for_all,
-      row.deleted_by,
-      row.deleted_at,
-      row.hidden_for_json,
-      row.link_preview_json,
-      row.sync_status,
-      row.sync_error,
-      row.retry_count,
-    ],
-  );
+  // Wrap message + attachments + conversation update in a transaction
+  // to prevent partial writes on crash/interruption.
+  db.withTransactionSync(() => {
+    db.runSync(
+      `INSERT INTO messages (
+        id, conversation_id, scope, sender_id, sender_name, kind, text,
+        created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
+        mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
+        hidden_for_json, link_preview_json, sync_status, sync_error, retry_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        row.id,
+        row.conversation_id,
+        row.scope,
+        row.sender_id,
+        row.sender_name,
+        row.kind,
+        row.text,
+        row.created_at,
+        row.server_received_at,
+        row.edited_at,
+        row.reply_to_id,
+        row.reply_to_preview,
+        row.mentions_json,
+        row.reactions_json,
+        row.deleted_for_all,
+        row.deleted_by,
+        row.deleted_at,
+        row.hidden_for_json,
+        row.link_preview_json,
+        row.sync_status,
+        row.sync_error,
+        row.retry_count,
+      ],
+    );
 
-  // Insert attachments if present (already uploaded)
-  if (params.attachments && params.attachments.length > 0) {
-    for (const att of params.attachments) {
-      insertAttachment(messageId, att);
+    // Insert attachments if present (already uploaded)
+    if (params.attachments && params.attachments.length > 0) {
+      for (const att of params.attachments) {
+        insertAttachment(messageId, att);
+      }
     }
-  }
 
-  // Insert local attachments pending upload
-  if (params.localAttachments && params.localAttachments.length > 0) {
-    for (const att of params.localAttachments) {
-      insertLocalAttachment(messageId, att);
+    // Insert local attachments pending upload
+    if (params.localAttachments && params.localAttachments.length > 0) {
+      for (const att of params.localAttachments) {
+        insertLocalAttachment(messageId, att);
+      }
     }
-  }
 
-  // Update conversation last message
-  updateConversationLastMessage(
-    params.conversationId,
-    params.scope,
-    messageId,
-    params.text || "",
-    now,
-  );
+    // Update conversation last message
+    updateConversationLastMessage(
+      params.conversationId,
+      params.scope,
+      messageId,
+      params.text || "",
+      now,
+    );
+  });
 
   return row;
 }
@@ -157,13 +163,31 @@ export function upsertMessageFromServer(message: MessageV2): void {
       [message.id],
     );
 
+    // Normalize deletedForAll: accept both boolean and object shapes
+    const deletedForAll =
+      typeof message.deletedForAll === "object" && message.deletedForAll
+        ? message.deletedForAll
+        : message.deletedForAll
+          ? { by: "unknown", at: Date.now() }
+          : null;
+
     if (existing) {
-      // Update existing - server wins for synced fields
+      // Update existing - server wins for ALL content fields
+      // This ensures edits, mention changes, and deletion metadata
+      // are reflected locally after sync.
       db.runSync(
         `UPDATE messages SET
           server_received_at = ?,
+          text = ?,
+          kind = ?,
+          sender_name = ?,
           edited_at = ?,
+          mentions_json = ?,
+          reply_to_id = ?,
+          reply_to_preview = ?,
           reactions_json = ?,
+          hidden_for_json = ?,
+          link_preview_json = ?,
           deleted_for_all = ?,
           deleted_by = ?,
           deleted_at = ?,
@@ -172,13 +196,21 @@ export function upsertMessageFromServer(message: MessageV2): void {
         WHERE id = ?`,
         [
           message.serverReceivedAt,
+          message.text ?? null,
+          message.kind || "text",
+          message.senderName || null,
           message.editedAt || null,
+          message.mentionUids ? JSON.stringify(message.mentionUids) : null,
+          message.replyTo?.messageId || null,
+          message.replyTo ? JSON.stringify(message.replyTo) : null,
           message.reactionsSummary
             ? JSON.stringify(message.reactionsSummary)
             : null,
-          message.deletedForAll ? 1 : 0,
-          message.deletedForAll?.by || null,
-          message.deletedForAll?.at || null,
+          message.hiddenFor ? JSON.stringify(message.hiddenFor) : null,
+          message.linkPreview ? JSON.stringify(message.linkPreview) : null,
+          deletedForAll ? 1 : 0,
+          deletedForAll?.by || null,
+          deletedForAll?.at || null,
           message.id,
         ],
       );
@@ -222,9 +254,9 @@ export function upsertMessageFromServer(message: MessageV2): void {
           message.reactionsSummary
             ? JSON.stringify(message.reactionsSummary)
             : null,
-          message.deletedForAll ? 1 : 0,
-          message.deletedForAll?.by || null,
-          message.deletedForAll?.at || null,
+          deletedForAll ? 1 : 0,
+          deletedForAll?.by || null,
+          deletedForAll?.at || null,
           message.hiddenFor ? JSON.stringify(message.hiddenFor) : null,
           message.linkPreview ? JSON.stringify(message.linkPreview) : null,
         ],
@@ -238,10 +270,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
       }
     }
   } catch (error: any) {
-    logger.error(
-      "[MessageRepository] Error upserting message:",
-      error.message,
-    );
+    logger.error("[MessageRepository] Error upserting message:", error.message);
     logger.error(
       "[MessageRepository] Message data:",
       JSON.stringify(
@@ -346,11 +375,8 @@ export function getMessages(
     params,
   );
 
-  // Fetch attachments for all messages
-  return messages.map((msg) => ({
-    ...msg,
-    attachments: getAttachmentsForMessage(msg.id),
-  }));
+  // Batch-load attachments for all messages (avoids N+1)
+  return attachBatchAttachments(messages);
 }
 
 /**
@@ -383,16 +409,13 @@ export function getPendingMessages(
   const messages = db.getAllSync<MessageRow>(
     `SELECT * FROM messages 
      WHERE sync_status IN ('pending', 'failed')
-     AND retry_count < 10
+     AND retry_count < ${MAX_MESSAGE_RETRIES}
      ORDER BY created_at ASC
      LIMIT ?`,
     [limit],
   );
 
-  return messages.map((msg) => ({
-    ...msg,
-    attachments: getAttachmentsForMessage(msg.id),
-  }));
+  return attachBatchAttachments(messages);
 }
 
 /**
@@ -653,6 +676,58 @@ function getAttachmentsForMessage(messageId: string): AttachmentRow[] {
     "SELECT * FROM attachments WHERE message_id = ?",
     [messageId],
   );
+}
+
+/**
+ * Batch-load attachments for multiple messages.
+ * Returns a Map keyed by message_id for O(1) lookup.
+ * Eliminates N+1 query pattern in getMessages/getMessagesByStatus.
+ */
+function getAttachmentsForMessages(
+  messageIds: string[],
+): Map<string, AttachmentRow[]> {
+  const result = new Map<string, AttachmentRow[]>();
+  if (messageIds.length === 0) return result;
+
+  // Initialize empty arrays for all IDs
+  for (const id of messageIds) {
+    result.set(id, []);
+  }
+
+  const db = getDatabase();
+  // SQLite placeholder limit is ~999; chunk if needed
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < messageIds.length; i += CHUNK_SIZE) {
+    const chunk = messageIds.slice(i, i + CHUNK_SIZE);
+    const placeholders = chunk.map(() => "?").join(",");
+    const rows = db.getAllSync<AttachmentRow>(
+      `SELECT * FROM attachments WHERE message_id IN (${placeholders})`,
+      chunk,
+    );
+    for (const row of rows) {
+      const arr = result.get(row.message_id);
+      if (arr) {
+        arr.push(row);
+      } else {
+        result.set(row.message_id, [row]);
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Attach attachments to messages using batch loading.
+ * Replaces the per-message getAttachmentsForMessage pattern.
+ */
+function attachBatchAttachments(
+  messages: MessageRow[],
+): MessageWithAttachments[] {
+  const attachmentMap = getAttachmentsForMessages(messages.map((m) => m.id));
+  return messages.map((msg) => ({
+    ...msg,
+    attachments: attachmentMap.get(msg.id) || [],
+  }));
 }
 
 /**

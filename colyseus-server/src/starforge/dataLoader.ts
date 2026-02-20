@@ -3,16 +3,16 @@
  * No DOM, no Three.js. Node.js fs-based loading.
  */
 
-import * as path from "path";
 import * as fs from "fs";
+import * as path from "path";
 import type { BalanceV1 } from "./data/balanceSchema";
-import type { MachinesCatalog } from "./data/machinesSchema";
-import type { UpgradesCatalog } from "./data/upgradesSchema";
 import type { ContractsCatalog } from "./data/contractsSchema";
 import type { EventsCatalog } from "./data/eventsSchema";
+import type { MachinesCatalog } from "./data/machinesSchema";
 import type { MilestonesCatalog } from "./data/milestonesSchema";
-import type { WrecksCatalog } from "./data/wrecksSchema";
 import type { TierUnlocksCatalog } from "./data/tierUnlocksSchema";
+import type { UpgradesCatalog } from "./data/upgradesSchema";
+import type { WrecksCatalog } from "./data/wrecksSchema";
 
 export interface StarforgeCatalogs {
   balance: BalanceV1;

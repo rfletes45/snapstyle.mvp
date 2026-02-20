@@ -3,7 +3,6 @@ import { useAuth } from "@/store/AuthContext";
 import { useEffect, useRef } from "react";
 import { AppState, AppStateStatus } from "react-native";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useOutboxProcessor");
 /**
@@ -106,6 +105,22 @@ export function useOutboxProcessor(): void {
 
     return () => {
       subscription?.remove();
+    };
+  }, [currentFirebaseUser?.uid]);
+
+  // Effect 3: Periodic retry every 60 seconds for long-lived sessions.
+  // Without this, failed messages stay in the outbox until the user
+  // backgrounds and resumes the app.
+  useEffect(() => {
+    if (!currentFirebaseUser) return;
+
+    const PERIODIC_RETRY_INTERVAL = 60_000; // 60 seconds
+    const interval = setInterval(() => {
+      void processIfNeeded();
+    }, PERIODIC_RETRY_INTERVAL);
+
+    return () => {
+      clearInterval(interval);
     };
   }, [currentFirebaseUser?.uid]);
 }

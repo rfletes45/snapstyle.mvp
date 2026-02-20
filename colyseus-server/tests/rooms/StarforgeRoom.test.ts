@@ -21,18 +21,18 @@ jest.mock("../../src/services/coldStorage", () => ({
   deleteSnapshot: jest.fn().mockResolvedValue(true),
 }));
 
-import { MapSchema, ArraySchema } from "@colyseus/schema";
+import { ArraySchema, MapSchema } from "@colyseus/schema";
 import {
-  StarforgeState,
-  StarforgeResources,
-  StarforgeResourceCaps,
+  StarforgeContractState,
+  StarforgeCoopPresence,
+  StarforgeEventState,
   StarforgeMachineStack,
+  StarforgeMilestoneState,
+  StarforgeResourceCaps,
+  StarforgeResources,
+  StarforgeState,
   StarforgeStats,
   StarforgeWrecksField,
-  StarforgeContractState,
-  StarforgeEventState,
-  StarforgeMilestoneState,
-  StarforgeCoopPresence,
 } from "../../src/schemas/starforge";
 
 // ─── Schema Defaults ────────────────────────────────────────

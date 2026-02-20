@@ -1,6 +1,6 @@
 # Chat System Contract
 
-Last updated: 2026-02-18 (Segment 8)
+Last updated: 2026-02-19 (Polish Pass)
 
 ## Scope
 
@@ -120,6 +120,44 @@ Retry behavior:
   - uploaded subset is preserved; media-only messages with complete upload failure are not sent
 - background/app resume:
   - `useOutboxProcessor` triggers `processPendingMessages(...)` on mount + foreground transitions
+- periodic retry (long sessions):
+  - `useOutboxProcessor` runs a 60-second interval retry to catch messages that failed after the last foreground event
+
+## Known Limitations
+
+- **Attachment retry on Path B (legacy outbox):** The AsyncStorage outbox stores `LocalAttachment[]` (pre-upload local URIs), but `sendMessageV2` expects `AttachmentV2[]` (post-upload URLs/paths). Retrying a failed message with attachments on Path B will send the message text-only. The active Path A (SQLite/syncEngine) handles attachment upload correctly via `uploadMultipleAttachments`.
+- **Dual outbox systems:** Both AsyncStorage (Path B) and SQLite (Path A) outbox systems coexist. Path B is only used when `USE_LOCAL_STORAGE = false` (web). Full migration is blocked by web platform support.
+- **N+1 inbox reads:** `useInboxData` fetches `MembersPrivate` per conversation on each snapshot. Optimization requires a server-side Inbox aggregation collection (gated by `CHAT_INBOX_AGGREGATION` flag, currently `false`).
+
+## Polish Pass (2026-02-19)
+
+Changes applied during production polish review (see `CHAT_POLISH_REVIEW.md` for full audit):
+
+### Correctness
+
+- **C1:** `upsertMessageFromServer` UPDATE now includes `text`, `kind`, `sender_name`, `mentions_json`, `reply_to_preview`, `hidden_for_json`, `link_preview_json` — edited messages no longer show stale text locally
+- **C3:** `deletedForAll` normalized from boolean/object to consistent `{ by, at }` shape in `messageRepository.ts`
+
+### Data Consistency
+
+- **D1:** Typing throttle changed from module-level singleton to per-chat `Map<string, number>` in `chatMembers.ts`
+- **D5:** `insertMessage` wrapped in `db.withTransactionSync()` — crash during write no longer leaves orphaned rows
+- **D6:** `updateLastSeenPrivate` passes `{ sendPublicReceipt: false }` — private watermark no longer leaks public read receipts
+
+### Performance
+
+- **F1:** Batch attachment loading via `getAttachmentsForMessages()` — replaces N+1 per-message queries with single `WHERE message_id IN (...)` query
+- **F2:** Removed redundant `getPendingMessages(1)` call in `refreshPendingCount()`
+
+### UX
+
+- **U1:** Added 60-second periodic outbox retry interval to `useOutboxProcessor`
+
+### Maintainability
+
+- **M3/D4:** Removed dead ternary `scope === "dm" ? "createdAt" : "createdAt"` in `syncEngine.ts`
+- **M4:** `retryFailedMessage` and `processPendingMessages` now pass `traceId` for cross-system log correlation
+- **M5:** Extracted `MAX_MESSAGE_RETRIES = 10` constant in `messageRepository.ts`, imported by `syncEngine.ts`
 
 ## Validation
 
