@@ -49,6 +49,7 @@
  */
 
 import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
+import type { SenderStyle } from "@/cosmetics/types";
 import {
   getOrCreateDMConversation,
   getOrCreateGroupConversation,
@@ -110,6 +111,8 @@ export interface UseChatConfig {
   atBottomThreshold?: number;
   /** Message threshold for auto-scroll (default: 30) */
   autoscrollMessageThreshold?: number;
+  /** Sender's chat style snapshot to stamp on outgoing messages */
+  senderStyle?: SenderStyle;
   /** Enable debug logging */
   debug?: boolean;
 }
@@ -506,6 +509,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           mentionUids,
           mentionSpans,
           localAttachments: attachments,
+          senderStyle: config.senderStyle,
         });
 
         const result = await sendPromise;

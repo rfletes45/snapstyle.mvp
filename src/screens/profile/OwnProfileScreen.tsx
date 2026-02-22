@@ -235,22 +235,16 @@ export default function OwnProfileScreen({
   const actions = useMemo<ProfileAction[]>(
     () => [
       {
+        id: "customize",
+        label: "Customize",
+        icon: "palette",
+        onPress: () => navigation.navigate("Customization"),
+      },
+      {
         id: "wallet",
         label: "My Wallet",
         icon: "wallet",
         onPress: () => navigation.navigate("Wallet"),
-      },
-      {
-        id: "shop",
-        label: "Shop",
-        icon: "shopping",
-        onPress: () => navigation.navigate("Shop"),
-      },
-      {
-        id: "decorations",
-        label: "Decorations",
-        icon: "star-circle",
-        onPress: handleOpenDecorationPickerDirect,
       },
       {
         id: "tasks",
@@ -281,7 +275,7 @@ export default function OwnProfileScreen({
         onPress: () => navigation.navigate("BlockedUsers"),
       },
     ],
-    [navigation, handleOpenDecorationPickerDirect],
+    [navigation],
   );
 
   // ==========================================================================
@@ -316,6 +310,7 @@ export default function OwnProfileScreen({
             username={baseProfile.username}
             pictureUrl={pictureUrl}
             decorationId={decorationId}
+            backgroundId={profile?.equippedBackgroundId ?? null}
             bio={userBio}
             status={userStatus}
             level={

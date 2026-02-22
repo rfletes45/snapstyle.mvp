@@ -11,21 +11,21 @@
  * @module components/chat/inbox/ConversationItem
  */
 
+import AppImage from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import { formatRelativeTime, toTimestamp } from "@/utils/dates";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useMemo } from "react";
 import {
-  Image,
   StyleSheet,
   TouchableOpacity,
   View,
   type GestureResponderEvent,
 } from "react-native";
 import { Badge, Text } from "react-native-paper";
-import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Text Highlighting Helper
@@ -175,12 +175,13 @@ export const ConversationItem = memo(function ConversationItem({
         accessibilityLabel={`View ${type === "dm" ? "profile" : "group info"}`}
       >
         {type === "group" && avatarUrl ? (
-          <Image
+          <AppImage
             source={{ uri: avatarUrl }}
             style={[
               styles.avatarPlaceholder,
               { width: 52, height: 52, borderRadius: 26 },
             ]}
+            debugLabel="ConversationAvatar"
           />
         ) : type === "group" ? (
           <View

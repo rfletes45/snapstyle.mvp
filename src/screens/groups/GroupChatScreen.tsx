@@ -23,6 +23,8 @@
  * @module screens/groups/GroupChatScreen
  */
 
+import AppImage from "@/components/AppImage";
+import { usePrefetchChatImages } from "@/utils/imagePrefetch";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
   useCallback,
@@ -33,7 +35,6 @@ import React, {
 } from "react";
 import {
   Alert,
-  Image,
   Platform,
   StyleSheet,
   TouchableOpacity,
@@ -55,7 +56,15 @@ import {
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
+import { useUser } from "@/store/UserContext";
 import { useFocusEffect } from "@react-navigation/native";
+
+// Chat cosmetics
+import {
+  buildSenderStyle,
+  resolveIncomingBubbleStyle,
+  resolveOutgoingChatStyle,
+} from "@/cosmetics/chatAppearanceResolver";
 
 // Unified hooks
 import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
@@ -90,6 +99,7 @@ import { EmptyState, ErrorState } from "@/components/ui";
 
 // Services
 import { getUserProfileByUid } from "@/services/friends";
+import { getGroupMemberPrivate } from "@/services/groupMembers";
 import {
   getGroup,
   getGroupMembers,
@@ -110,12 +120,13 @@ import {
   scheduleMessage,
 } from "@/services/scheduledMessages";
 
-// Duck feature
-import DuckBubble from "@/components/chat/DuckBubble";
+// Animal feature
+import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import SpectatorInviteBubble, {
   parseSpectatorInviteContent,
 } from "@/components/SpectatorInviteBubble";
-import { playQuack } from "@/services/chat/quackService";
+import { detectAnimalEmoji, getAnimalEmoji } from "@/cosmetics/animalAssets";
+import { playAnimalSound } from "@/services/chat/animalSoundService";
 
 // Group Calls (Phase 3) - lazy loaded to avoid native module issues
 import { CallType } from "@/types/call";
@@ -176,11 +187,31 @@ interface Props {
 
 export default function GroupChatScreen({ route, navigation }: Props) {
   const { groupId, groupName: initialGroupName } = route.params;
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
   const { setCurrentChatId } = useInAppNotifications();
+  const { profile } = useUser();
+
+  // Resolve outgoing chat cosmetics (bubble color, text color, font)
+  const chatStyle = useMemo(
+    () =>
+      resolveOutgoingChatStyle({
+        chatAppearance: profile?.chatAppearance ?? null,
+        appearanceMode: isDark ? "dark" : "light",
+      }),
+    [profile?.chatAppearance, isDark],
+  );
+
+  // Build sender style snapshot for stamping on outgoing messages
+  const senderStyle = useMemo(() => {
+    const style = buildSenderStyle(profile?.chatAppearance ?? null);
+    console.log(
+      `[MSG_SEND_STYLE] Built senderStyle from chatAppearance=${JSON.stringify(profile?.chatAppearance ?? null)} → senderStyle=${JSON.stringify(style)}`,
+    );
+    return style;
+  }, [profile?.chatAppearance]);
 
   // Track current group chat for notification suppression
   useFocusEffect(
@@ -264,6 +295,25 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     };
   }, []);
 
+  // Show/hide other members' custom chat styles (viewer preference)
+  const [showMemberChatStyles, setShowMemberChatStyles] = useState(true);
+
+  // Re-read on focus so toggling in ChatSettingsScreen takes effect immediately
+  useFocusEffect(
+    useCallback(() => {
+      if (!groupId || !uid) return;
+      let cancelled = false;
+      getGroupMemberPrivate(groupId, uid).then((priv) => {
+        if (!cancelled && priv) {
+          setShowMemberChatStyles(priv.showMemberChatStyles !== false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [groupId, uid]),
+  );
+
   // ==========================================================================
   // Mentionable Members
   // ==========================================================================
@@ -294,11 +344,15 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     onSchedulePress: () => setScheduleModalVisible(true),
     mentionableMembers,
     maxMentionSuggestions: 5,
+    senderStyle,
     debug: DEBUG_CHAT_V2,
   });
 
   // Messages come directly from the unified hook (SQLite-backed)
   const messages = screen.messages;
+
+  // Warm image cache for recent chat images
+  usePrefetchChatImages(messages?.slice(0, 20));
 
   // ==========================================================================
   // Attachment & Voice Hooks
@@ -413,7 +467,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 return {
                   ...member,
                   profilePictureUrl: profile.profilePicture?.url || null,
-                  decorationId: profile.avatarDecoration?.equippedId || null,
+                  decorationId: profile.avatarDecoration?.decorationId || null,
                 };
               }
             } catch {
@@ -747,20 +801,27 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     setGamePickerVisible(true);
   }, []);
 
-  // Duck button press handler — sends a duck bubble + quack sound
-  const handleDuckPress = useCallback(async () => {
+  // Animal button press handler — sends an animal bubble + plays animal sound
+  const handleAnimalPress = useCallback(async () => {
     if (!uid || !groupId || screen.sending) return;
+    const animalId = profile?.chatAppearance?.animalThemeId ?? null;
     try {
-      await playQuack();
+      await playAnimalSound(animalId);
     } catch (e) {
-      logger.warn("❌ [GroupChatScreen] Quack sound error:", e);
+      logger.warn("❌ [GroupChatScreen] Animal sound error:", e);
     }
     try {
-      await screen.chat.sendMessage("🦆", {});
+      await screen.chat.sendMessage(getAnimalEmoji(animalId), {});
     } catch (error) {
-      logger.error("❌ [GroupChatScreen] Duck send error:", error);
+      logger.error("❌ [GroupChatScreen] Animal send error:", error);
     }
-  }, [uid, groupId, screen.chat, screen.sending]);
+  }, [
+    uid,
+    groupId,
+    profile?.chatAppearance?.animalThemeId,
+    screen.chat,
+    screen.sending,
+  ]);
 
   // Handle single-player game selection - navigate directly to game
   const handleSinglePlayerGame = useCallback(
@@ -1076,6 +1137,36 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       const senderDisplayName = getSenderDisplayName(item);
       const senderProfile = getSenderProfileInfo(item.senderId);
 
+      // Resolve incoming sender style (custom bubble color/font from sender)
+      // When showMemberChatStyles is false, suppress sender styles → theme defaults
+      const incomingStyle = !isOwnMessage
+        ? resolveIncomingBubbleStyle({
+            senderStyle: showMemberChatStyles
+              ? (item.senderStyle ?? null)
+              : null,
+            appearanceMode: isDark ? "dark" : "light",
+            defaultBgColor: colors.surfaceVariant,
+            defaultTextColor: colors.text,
+          })
+        : null;
+
+      if (!isOwnMessage) {
+        console.log(
+          `[MSG_RENDER_STYLE] id=${item.id} sender=${item.senderId} senderStyle=${JSON.stringify(item.senderStyle ?? null)} showMemberChatStyles=${showMemberChatStyles} resolvedBg=${incomingStyle?.bubbleBgColor}`,
+        );
+      }
+
+      // Unified style: outgoing uses viewer's chatStyle, incoming uses sender's stamped style
+      const bubbleBgColor = isOwnMessage
+        ? chatStyle.bubbleBgColor
+        : incomingStyle!.bubbleBgColor;
+      const bubbleTextColor = isOwnMessage
+        ? chatStyle.bubbleTextColor
+        : incomingStyle!.bubbleTextColor;
+      const bubbleFontFamily = isOwnMessage
+        ? chatStyle.fontFamily
+        : incomingStyle!.fontFamily;
+
       if (item.kind === "system") {
         return (
           <View style={styles.systemMessage}>
@@ -1176,148 +1267,152 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   onLongPress={() => handleMessageLongPress(item)}
                   delayLongPress={300}
                 >
-                  {/* Duck message — render self-contained DuckBubble */}
-                  {item.text?.trim() === "🦆" &&
-                  item.kind !== "media" &&
-                  item.kind !== "voice" &&
-                  item.kind !== "scorecard" ? (
-                    <DuckBubble isMine={isOwnMessage} />
-                  ) : (
-                    <View
-                      style={[
-                        styles.messageBubble,
-                        isOwnMessage
-                          ? [
-                              styles.ownMessage,
-                              { backgroundColor: colors.primary },
-                            ]
-                          : [
-                              styles.otherMessage,
-                              {
-                                backgroundColor: colors.surfaceVariant,
-                              },
-                            ],
-                        item.kind === "media" && styles.imageOnlyBubble,
-                        item.kind === "voice" && styles.voiceBubble,
-                      ]}
-                    >
-                      {item.kind === "media" && imageAttachment ? (
-                        <Image
-                          source={{ uri: imageAttachment.url }}
-                          style={styles.standaloneImage}
-                          resizeMode="cover"
-                        />
-                      ) : item.kind === "voice" && voiceAttachment ? (
-                        <VoiceMessagePlayer
-                          url={voiceAttachment.url}
-                          durationMs={voiceAttachment.durationMs || 0}
-                          isOwn={isOwnMessage}
-                        />
-                      ) : item.kind === "scorecard" &&
-                        item.text &&
-                        parseSpectatorInviteContent(item.text) ? (
-                        (() => {
-                          const invite = parseSpectatorInviteContent(
-                            item.text!,
-                          )!;
-                          return (
-                            <SpectatorInviteBubble
-                              invite={invite}
-                              isMine={isOwnMessage}
-                              onPress={
-                                !isOwnMessage && !invite.finished
-                                  ? () =>
-                                      navigation.navigate("SpectatorView", {
-                                        roomId: invite.roomId,
-                                        gameType: invite.gameId,
-                                        hostName: invite.hostName,
-                                        inviteMode: invite.inviteMode,
-                                        boostSessionEndsAt:
-                                          invite.boostSessionEndsAt,
-                                      })
-                                  : undefined
-                              }
-                            />
-                          );
-                        })()
-                      ) : item.kind === "scorecard" && item.scorecard ? (
-                        <View style={styles.scorecardContent}>
-                          <MaterialCommunityIcons
-                            name="gamepad-variant"
-                            size={24}
-                            color={
-                              isOwnMessage ? colors.textOnPrimary : colors.text
-                            }
+                  {/* Animal message — render data-driven AnimalBubble */}
+                  {(() => {
+                    const detectedAnimalId = item.text
+                      ? detectAnimalEmoji(item.text)
+                      : null;
+                    return detectedAnimalId &&
+                      item.kind !== "media" &&
+                      item.kind !== "voice" &&
+                      item.kind !== "scorecard" ? (
+                      <AnimalBubble
+                        animalId={detectedAnimalId}
+                        isMine={isOwnMessage}
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.messageBubble,
+                          isOwnMessage
+                            ? [
+                                styles.ownMessage,
+                                { backgroundColor: bubbleBgColor },
+                              ]
+                            : [
+                                styles.otherMessage,
+                                {
+                                  backgroundColor: bubbleBgColor,
+                                },
+                              ],
+                          item.kind === "media" && styles.imageOnlyBubble,
+                          item.kind === "voice" && styles.voiceBubble,
+                        ]}
+                      >
+                        {item.kind === "media" && imageAttachment ? (
+                          <AppImage
+                            source={{ uri: imageAttachment.url }}
+                            style={styles.standaloneImage}
+                            contentFit="cover"
+                            debugLabel="GroupChatImage"
                           />
-                          <Text
-                            style={[
-                              styles.scorecardGame,
-                              {
-                                color: isOwnMessage
-                                  ? colors.textOnPrimary
-                                  : colors.text,
-                              },
-                            ]}
-                          >
-                            {GAME_METADATA[
-                              item.scorecard.gameId as ExtendedGameType
-                            ]?.name ?? item.scorecard.gameId}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.scorecardScore,
-                              {
-                                color: isOwnMessage
-                                  ? colors.textOnPrimary
-                                  : colors.text,
-                              },
-                            ]}
-                          >
-                            {formatGameScore(
-                              item.scorecard.gameId as ExtendedGameType,
-                              item.scorecard.score,
-                            )}
-                          </Text>
-                        </View>
-                      ) : (
-                        <>
-                          <MessageWithMentions
-                            text={item.text || ""}
-                            mentionSpans={
-                              item.mentionSpans ??
-                              ((item.mentionUids?.length ?? 0) > 0
-                                ? extractMentionsExact(
-                                    item.text || "",
-                                    mentionableMembers,
-                                  ).mentionSpans
-                                : undefined)
-                            }
-                            currentUid={uid}
-                            textStyle={[
-                              styles.messageText,
-                              {
-                                color: isOwnMessage
-                                  ? colors.textOnPrimary
-                                  : colors.text,
-                              },
-                            ]}
+                        ) : item.kind === "voice" && voiceAttachment ? (
+                          <VoiceMessagePlayer
+                            url={voiceAttachment.url}
+                            durationMs={voiceAttachment.durationMs || 0}
+                            isOwn={isOwnMessage}
                           />
-                          {hasUrls(item.text || "") && (
-                            <LinkPreviewCard
-                              preview={
-                                linkPreviews.get(item.id) || {
-                                  url: extractUrls(item.text || "")[0] || "",
-                                  fetchedAt: Date.now(),
+                        ) : item.kind === "scorecard" &&
+                          item.text &&
+                          parseSpectatorInviteContent(item.text) ? (
+                          (() => {
+                            const invite = parseSpectatorInviteContent(
+                              item.text!,
+                            )!;
+                            return (
+                              <SpectatorInviteBubble
+                                invite={invite}
+                                isMine={isOwnMessage}
+                                onPress={
+                                  !isOwnMessage && !invite.finished
+                                    ? () =>
+                                        navigation.navigate("SpectatorView", {
+                                          roomId: invite.roomId,
+                                          gameType: invite.gameId,
+                                          hostName: invite.hostName,
+                                          inviteMode: invite.inviteMode,
+                                          boostSessionEndsAt:
+                                            invite.boostSessionEndsAt,
+                                        })
+                                    : undefined
                                 }
-                              }
-                              isOwn={isOwnMessage}
-                              loading={loadingPreviews.has(item.id)}
+                              />
+                            );
+                          })()
+                        ) : item.kind === "scorecard" && item.scorecard ? (
+                          <View style={styles.scorecardContent}>
+                            <MaterialCommunityIcons
+                              name="gamepad-variant"
+                              size={24}
+                              color={bubbleTextColor}
                             />
-                          )}
-                        </>
-                      )}
-                    </View>
-                  )}
+                            <Text
+                              style={[
+                                styles.scorecardGame,
+                                {
+                                  color: bubbleTextColor,
+                                },
+                              ]}
+                            >
+                              {GAME_METADATA[
+                                item.scorecard.gameId as ExtendedGameType
+                              ]?.name ?? item.scorecard.gameId}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.scorecardScore,
+                                {
+                                  color: bubbleTextColor,
+                                },
+                              ]}
+                            >
+                              {formatGameScore(
+                                item.scorecard.gameId as ExtendedGameType,
+                                item.scorecard.score,
+                              )}
+                            </Text>
+                          </View>
+                        ) : (
+                          <>
+                            <MessageWithMentions
+                              text={item.text || ""}
+                              mentionSpans={
+                                item.mentionSpans ??
+                                ((item.mentionUids?.length ?? 0) > 0
+                                  ? extractMentionsExact(
+                                      item.text || "",
+                                      mentionableMembers,
+                                    ).mentionSpans
+                                  : undefined)
+                              }
+                              currentUid={uid}
+                              textStyle={[
+                                styles.messageText,
+                                {
+                                  color: bubbleTextColor,
+                                  ...(bubbleFontFamily
+                                    ? { fontFamily: bubbleFontFamily }
+                                    : {}),
+                                },
+                              ]}
+                            />
+                            {hasUrls(item.text || "") && (
+                              <LinkPreviewCard
+                                preview={
+                                  linkPreviews.get(item.id) || {
+                                    url: extractUrls(item.text || "")[0] || "",
+                                    fetchedAt: Date.now(),
+                                  }
+                                }
+                                isOwn={isOwnMessage}
+                                loading={loadingPreviews.has(item.id)}
+                              />
+                            )}
+                          </>
+                        )}
+                      </View>
+                    );
+                  })()}
                 </TouchableOpacity>
 
                 {/* Only show timestamp on last message of group */}
@@ -1362,6 +1457,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [
       uid,
       colors,
+      isDark,
+      chatStyle,
+      showMemberChatStyles,
       shouldShowSender,
       shouldShowTimestamp,
       shouldShowAvatar,
@@ -1423,12 +1521,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             onPress={() => navigation.navigate("GroupChatInfo", { groupId })}
           >
             {group?.avatarUrl ? (
-              <Image
+              <AppImage
                 source={{ uri: group.avatarUrl }}
                 style={[
                   styles.groupIcon,
                   { width: 36, height: 36, borderRadius: 18 },
                 ]}
+                debugLabel="GroupAvatar"
               />
             ) : (
               <View
@@ -1595,7 +1694,8 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
-          onDuckPress={handleDuckPress}
+          onAnimalPress={handleAnimalPress}
+          animalThemeId={profile?.chatAppearance?.animalThemeId}
           onGamePress={handleGamePress}
           keyboardHeight={screen.keyboard.keyboardHeight}
           safeAreaBottom={insets.bottom}

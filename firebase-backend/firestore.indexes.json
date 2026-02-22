@@ -714,6 +714,14 @@
         { "fieldPath": "isSnapStory", "order": "ASCENDING" },
         { "fieldPath": "expiresAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "Entitlements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "grantedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

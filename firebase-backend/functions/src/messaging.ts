@@ -315,6 +315,11 @@ async function getChatMembers(chatId: string): Promise<string[]> {
 async function getUserProfile(uid: string): Promise<{
   displayName?: string;
   avatarConfig?: unknown;
+  chatAppearance?: {
+    bubbleColorId?: string | null;
+    fontId?: string | null;
+    animalThemeId?: string | null;
+  };
 } | null> {
   const db = getDb();
   const userDoc = await db.collection("Users").doc(uid).get();
@@ -323,6 +328,7 @@ async function getUserProfile(uid: string): Promise<{
   return {
     displayName: data.displayName,
     avatarConfig: data.avatarConfig,
+    chatAppearance: data.chatAppearance,
   };
 }
 
@@ -459,6 +465,15 @@ interface SendMessageV2Input {
   createdAt?: number;
   /** Client-generated trace ID for cross-system log correlation (Segment 8) */
   traceId?: string;
+  /** Sender's chat style snapshot (bubble color, font, animal theme) */
+  senderStyle?: {
+    bubbleColorId?: string | null;
+    bubbleColorHex?: string | null;
+    fontId?: string | null;
+    fontKey?: string | null;
+    animalThemeId?: string | null;
+    v: 1;
+  };
 }
 
 interface SendMessageV2Response {
@@ -511,6 +526,7 @@ export const sendMessageV2 = functions.https.onCall(
       messageId,
       createdAt,
       traceId,
+      senderStyle,
     } = data;
 
     // Segment 8: Log traceId if present (for cross-system correlation)
@@ -815,6 +831,18 @@ export const sendMessageV2 = functions.https.onCall(
       messageData.attachments = attachments;
     }
 
+    // Stamp sender's chat style if provided by client
+    if (senderStyle && typeof senderStyle === "object" && senderStyle.v === 1) {
+      messageData.senderStyle = {
+        bubbleColorId: senderStyle.bubbleColorId ?? null,
+        bubbleColorHex: senderStyle.bubbleColorHex ?? null,
+        fontId: senderStyle.fontId ?? null,
+        fontKey: senderStyle.fontKey ?? null,
+        animalThemeId: senderStyle.animalThemeId ?? null,
+        v: 1,
+      };
+    }
+
     // Segment 3: Staged media pipeline — commit staged attachments to final
     // paths, strip download tokens, and store path-only references.
     if (stagedAttachments && stagedAttachments.length > 0) {
@@ -837,6 +865,40 @@ export const sendMessageV2 = functions.https.onCall(
         messageData.senderName = senderProfile.displayName;
         messageData.senderDisplayName = senderProfile.displayName; // Legacy field
         messageData.senderAvatarConfig = senderProfile.avatarConfig;
+
+        // Server-side fallback: if client didn't send senderStyle, build it
+        // from the sender's chatAppearance profile field.
+        if (!messageData.senderStyle && senderProfile.chatAppearance) {
+          const ca = senderProfile.chatAppearance as {
+            bubbleColorId?: string | null;
+            fontId?: string | null;
+            animalThemeId?: string | null;
+          };
+          messageData.senderStyle = {
+            bubbleColorId: ca.bubbleColorId ?? null,
+            fontId: ca.fontId ?? null,
+            animalThemeId: ca.animalThemeId ?? null,
+            v: 1,
+          };
+        }
+      }
+    }
+
+    // For DMs: server-side fallback for senderStyle when not provided by client
+    if (scope === "dm" && !messageData.senderStyle) {
+      const senderProfile = await getUserProfile(senderId);
+      if (senderProfile?.chatAppearance) {
+        const ca = senderProfile.chatAppearance as {
+          bubbleColorId?: string | null;
+          fontId?: string | null;
+          animalThemeId?: string | null;
+        };
+        messageData.senderStyle = {
+          bubbleColorId: ca.bubbleColorId ?? null,
+          fontId: ca.fontId ?? null,
+          animalThemeId: ca.animalThemeId ?? null,
+          v: 1,
+        };
       }
     }
 

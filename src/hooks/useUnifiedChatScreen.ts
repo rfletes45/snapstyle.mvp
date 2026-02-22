@@ -45,6 +45,7 @@
  * @module hooks/useUnifiedChatScreen
  */
 
+import type { SenderStyle } from "@/cosmetics/types";
 import { MentionableMember } from "@/services/mentionParser";
 import { LocalAttachment } from "@/services/storage";
 import { AttachmentV2 } from "@/types/messaging";
@@ -176,6 +177,9 @@ export interface UseUnifiedChatScreenConfig {
   /** Message threshold for auto-scroll (default: 30) */
   autoscrollMessageThreshold?: number;
 
+  /** Sender's chat style snapshot to stamp on outgoing messages */
+  senderStyle?: SenderStyle;
+
   // -------------------------------------------------------------------------
   // Debug
   // -------------------------------------------------------------------------
@@ -290,6 +294,9 @@ export function useUnifiedChatScreen(
     debug = false,
   } = config;
 
+  // Extract senderStyle separately (not in destructuring default since it's optional)
+  const { senderStyle } = config;
+
   // -------------------------------------------------------------------------
   // useChat Hook - Messages, Keyboard, Scroll, Reply State
   // -------------------------------------------------------------------------
@@ -305,6 +312,7 @@ export function useUnifiedChatScreen(
       sendReadReceipts,
       atBottomThreshold,
       autoscrollMessageThreshold,
+      senderStyle,
       debug,
     }),
     [
@@ -317,6 +325,7 @@ export function useUnifiedChatScreen(
       sendReadReceipts,
       atBottomThreshold,
       autoscrollMessageThreshold,
+      senderStyle,
       debug,
     ],
   );

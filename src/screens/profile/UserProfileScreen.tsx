@@ -740,6 +740,7 @@ function UserProfileScreenContent({
             username={profile.username}
             pictureUrl={profile.profilePicture?.url || null}
             decorationId={profile.avatarDecoration?.decorationId || null}
+            backgroundId={profile.equippedBackgroundId ?? null}
             bio={profile.bio}
             status={profile.status}
             lastActive={

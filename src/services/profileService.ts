@@ -15,6 +15,7 @@
  * @module services/profileService
  */
 
+import { getCosmeticById } from "@/cosmetics/catalog";
 import type { AvatarConfig, Friend, FriendRequest } from "@/types/models";
 import type {
   ExtendedMuteConfig,
@@ -29,10 +30,7 @@ import type {
   UserProfileData,
   UserReport,
 } from "@/types/userProfile";
-import {
-  applyPrivacyFilters,
-  getFriendshipDetails,
-} from "@/types/userProfile";
+import { applyPrivacyFilters, getFriendshipDetails } from "@/types/userProfile";
 import { log } from "@/utils/log";
 import * as ImageManipulator from "expo-image-manipulator";
 import {
@@ -51,6 +49,7 @@ import {
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { Share } from "react-native";
 import { isUserBlocked } from "./blocking";
+import { hasEntitlement } from "./entitlements";
 import { getFirestoreInstance } from "./firebase";
 import { getFriends } from "./friends";
 import {
@@ -83,7 +82,10 @@ export async function getFullProfileData(
       return null;
     }
 
-    return hydrateProfileData(userId, userDoc.data() as Partial<UserProfileData>);
+    return hydrateProfileData(
+      userId,
+      userDoc.data() as Partial<UserProfileData>,
+    );
   } catch (error) {
     log.error("Error fetching profile data", error);
     return null;
@@ -104,7 +106,9 @@ export function subscribeToProfile(
     userRef,
     (doc) => {
       if (doc.exists()) {
-        callback(hydrateProfileData(userId, doc.data() as Partial<UserProfileData>));
+        callback(
+          hydrateProfileData(userId, doc.data() as Partial<UserProfileData>),
+        );
       } else {
         callback(null);
       }
@@ -619,21 +623,38 @@ export async function equipDecoration(
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
 
-    // Verify user owns the decoration
-    const userDoc = await getDoc(userRef);
-    const userData = userDoc.data() as Partial<UserProfileData>;
-    let ownedDecorations = userData.ownedDecorations || [];
+    // 1) Check the unified Entitlements system (canonical for shop purchases)
+    const ownsViaEntitlement = await hasEntitlement(userId, decorationId);
 
-    // Auto-grant free decorations on first equip
-    if (!ownedDecorations.includes(decorationId)) {
-      const { getDecorationById } = await import("@/data/avatarDecorations");
-      const decoration = getDecorationById(decorationId);
-      if (decoration?.obtainMethod.type === "free" && decoration.available) {
-        ownedDecorations = [...ownedDecorations, decorationId];
-        await updateDoc(userRef, { ownedDecorations });
-      } else {
-        throw new Error("You do not own this decoration");
+    // 2) Check if it's a free/starter item in the catalog
+    const catalogDef = getCosmeticById(decorationId);
+    const isFreeItem =
+      catalogDef?.type === "decoration" &&
+      (catalogDef.source === "free" || catalogDef.source === "starter");
+
+    // 3) Check legacy ownedDecorations array (back-compat)
+    let ownsViaLegacy = false;
+    if (!ownsViaEntitlement && !isFreeItem) {
+      const userDoc = await getDoc(userRef);
+      const userData = userDoc.data() as Partial<UserProfileData>;
+      const ownedDecorations = userData.ownedDecorations || [];
+      ownsViaLegacy = ownedDecorations.includes(decorationId);
+
+      // Auto-grant free decorations via old data source
+      if (!ownsViaLegacy) {
+        const { getDecorationById } = await import("@/data/avatarDecorations");
+        const decoration = getDecorationById(decorationId);
+        if (decoration?.obtainMethod.type === "free" && decoration.available) {
+          await updateDoc(userRef, {
+            ownedDecorations: [...ownedDecorations, decorationId],
+          });
+          ownsViaLegacy = true;
+        }
       }
+    }
+
+    if (!ownsViaEntitlement && !isFreeItem && !ownsViaLegacy) {
+      throw new Error("You do not own this decoration");
     }
 
     await updateDoc(userRef, {
@@ -796,6 +817,11 @@ async function updateFeaturedBadges(
 
 /**
  * Equip a theme
+ *
+ * Ownership is checked in order:
+ *   1. The unified Entitlements subcollection (canonical)
+ *   2. Catalog: themes with source "free" or "starter" are always OK
+ *   3. Legacy ownedThemes array on the user doc (back-compat)
  */
 export async function equipTheme(
   userId: string,
@@ -805,12 +831,25 @@ export async function equipTheme(
     const db = getFirestoreInstance();
     const userRef = doc(db, "Users", userId);
 
-    // Verify user owns the theme
-    const userDoc = await getDoc(userRef);
-    const userData = userDoc.data() as Partial<UserProfileData>;
-    const ownedThemes = userData.ownedThemes || ["default"];
+    // 1) Check the unified Entitlements system
+    const ownsViaEntitlement = await hasEntitlement(userId, themeId);
 
-    if (!ownedThemes.includes(themeId)) {
+    // 2) Check if it's a free/starter theme in the catalog
+    const catalogDef = getCosmeticById(themeId);
+    const isFreeTheme =
+      catalogDef?.type === "theme" &&
+      (catalogDef.source === "free" || catalogDef.source === "starter");
+
+    // 3) Check the legacy ownedThemes array
+    let ownsViaLegacy = false;
+    if (!ownsViaEntitlement && !isFreeTheme) {
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data() as Partial<UserProfileData>;
+      const ownedThemes = userData.ownedThemes || ["default"];
+      ownsViaLegacy = ownedThemes.includes(themeId);
+    }
+
+    if (!ownsViaEntitlement && !isFreeTheme && !ownsViaLegacy) {
       throw new Error("You do not own this theme");
     }
 
@@ -1302,4 +1341,177 @@ async function applyPrivacyPreset(
   const { PRIVACY_PRESETS } = await import("@/types/userProfile");
   const presetSettings = PRIVACY_PRESETS[preset].settings;
   await updateFullPrivacySettings(userId, presetSettings);
+}
+
+// =============================================================================
+// Chat Appearance — Equip / Unequip
+// =============================================================================
+
+/**
+ * Equip a chat bubble color cosmetic.
+ * Validates ownership (entitlement or free/starter) before writing.
+ */
+export async function equipChatBubbleColor(
+  userId: string,
+  bubbleColorId: string,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    // Ownership check
+    const ownsViaEntitlement = await hasEntitlement(userId, bubbleColorId);
+    const catalogDef = getCosmeticById(bubbleColorId);
+    const isFreeItem =
+      catalogDef?.type === "chat_bubble_color" &&
+      (catalogDef.source === "free" || catalogDef.source === "starter");
+
+    if (!ownsViaEntitlement && !isFreeItem) {
+      throw new Error("You do not own this bubble color");
+    }
+
+    // Use dot-notation to atomically update only the target field
+    // Avoids race conditions from read-modify-write pattern
+    await updateDoc(userRef, {
+      "chatAppearance.bubbleColorId": bubbleColorId,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat bubble color equipped", { data: { bubbleColorId } });
+  } catch (error) {
+    log.error("Error equipping chat bubble color", error);
+    throw error;
+  }
+}
+
+/**
+ * Unequip chat bubble color (reset to default).
+ */
+export async function unequipChatBubbleColor(userId: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    await updateDoc(userRef, {
+      "chatAppearance.bubbleColorId": null,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat bubble color unequipped");
+  } catch (error) {
+    log.error("Error unequipping chat bubble color", error);
+    throw error;
+  }
+}
+
+/**
+ * Equip a chat font cosmetic.
+ * Validates ownership (entitlement or free/starter) before writing.
+ */
+export async function equipChatFont(
+  userId: string,
+  fontId: string,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    // Ownership check
+    const ownsViaEntitlement = await hasEntitlement(userId, fontId);
+    const catalogDef = getCosmeticById(fontId);
+    const isFreeItem =
+      catalogDef?.type === "chat_font" &&
+      (catalogDef.source === "free" || catalogDef.source === "starter");
+
+    if (!ownsViaEntitlement && !isFreeItem) {
+      throw new Error("You do not own this font");
+    }
+
+    // Use dot-notation to atomically update only the target field
+    await updateDoc(userRef, {
+      "chatAppearance.fontId": fontId,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat font equipped", { data: { fontId } });
+  } catch (error) {
+    log.error("Error equipping chat font", error);
+    throw error;
+  }
+}
+
+/**
+ * Unequip chat font (reset to platform default).
+ */
+export async function unequipChatFont(userId: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    await updateDoc(userRef, {
+      "chatAppearance.fontId": null,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat font unequipped");
+  } catch (error) {
+    log.error("Error unequipping chat font", error);
+    throw error;
+  }
+}
+
+/**
+ * Equip a chat animal theme cosmetic.
+ * Validates ownership (entitlement or free/starter) before writing.
+ */
+export async function equipChatAnimalTheme(
+  userId: string,
+  animalThemeId: string,
+): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    // Ownership check
+    const ownsViaEntitlement = await hasEntitlement(userId, animalThemeId);
+    const catalogDef = getCosmeticById(animalThemeId);
+    const isFreeItem =
+      catalogDef?.type === "chat_animal_theme" &&
+      (catalogDef.source === "free" || catalogDef.source === "starter");
+
+    if (!ownsViaEntitlement && !isFreeItem) {
+      throw new Error("You do not own this animal theme");
+    }
+
+    // Use dot-notation to atomically update only the target field
+    await updateDoc(userRef, {
+      "chatAppearance.animalThemeId": animalThemeId,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat animal theme equipped", { data: { animalThemeId } });
+  } catch (error) {
+    log.error("Error equipping chat animal theme", error);
+    throw error;
+  }
+}
+
+/**
+ * Unequip chat animal theme (reset to default duck).
+ */
+export async function unequipChatAnimalTheme(userId: string): Promise<void> {
+  try {
+    const db = getFirestoreInstance();
+    const userRef = doc(db, "Users", userId);
+
+    await updateDoc(userRef, {
+      "chatAppearance.animalThemeId": null,
+      lastProfileUpdate: Date.now(),
+    });
+
+    log.info("Chat animal theme unequipped");
+  } catch (error) {
+    log.error("Error unequipping chat animal theme", error);
+    throw error;
+  }
 }

@@ -379,6 +379,29 @@ export async function setGroupPinned(
   }
 }
 
+/**
+ * Toggle whether to show other members' custom chat styles (bubble colors, fonts).
+ * When disabled, all incoming messages render with theme defaults.
+ */
+export async function setGroupShowMemberChatStyles(
+  groupId: string,
+  uid: string,
+  showMemberChatStyles: boolean,
+): Promise<void> {
+  try {
+    await updateDoc(getMemberPrivateRef(groupId, uid), {
+      showMemberChatStyles,
+    });
+    log.info("Set group showMemberChatStyles", {
+      operation: "setShowMemberChatStyles",
+      data: { groupId, showMemberChatStyles },
+    });
+  } catch (error) {
+    log.error("Failed to set group showMemberChatStyles", error);
+    throw error;
+  }
+}
+
 // =============================================================================
 // Real-time Subscriptions
 // =============================================================================

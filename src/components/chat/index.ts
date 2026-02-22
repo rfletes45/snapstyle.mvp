@@ -144,9 +144,13 @@ export { ReactionDetailSheet } from "./ReactionDetailSheet";
 // Seen By Sheet (group read receipts)
 export { SeenBySheet } from "./SeenBySheet";
 
-// Duck Feature
+// Duck Feature (legacy — kept for backward compat)
 export { default as DuckBubble } from "./DuckBubble";
 export { DUCK_BG, DUCK_FG, default as DuckIcon } from "./DuckIcon";
+
+// Animal Theme Feature (data-driven replacement)
+export { AnimalBubble } from "./AnimalBubble";
+export { AnimalIcon } from "./AnimalIcon";
 
 // Inbox Components
 export {

@@ -13,6 +13,7 @@
  * @module types/userProfile
  */
 
+import type { ChatAppearance } from "@/cosmetics/types";
 import type { AvatarConfig, Friend } from "./models";
 
 // =============================================================================
@@ -765,6 +766,12 @@ export interface UserProfileData {
   // Privacy settings
   privacy: ProfilePrivacySettings;
 
+  // Equipped background (unified cosmetics system)
+  equippedBackgroundId: string | null;
+
+  // Chat appearance (bubble color, font, animal theme)
+  chatAppearance?: ChatAppearance;
+
   // Owned items
   ownedDecorations: string[];
   ownedThemes: string[];
@@ -815,6 +822,12 @@ export const DEFAULT_USER_PROFILE_DATA: Omit<
     updatedAt: Date.now(),
   },
   privacy: DEFAULT_PRIVACY_SETTINGS,
+  equippedBackgroundId: null,
+  chatAppearance: {
+    bubbleColorId: null,
+    fontId: null,
+    animalThemeId: null,
+  },
   ownedDecorations: [],
   ownedThemes: ["default"],
   lastProfileUpdate: Date.now(),

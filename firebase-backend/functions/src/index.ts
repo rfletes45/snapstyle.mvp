@@ -24,6 +24,7 @@ import {
   onUniversalInviteUpdate,
   processGameCompletion,
   processMatchmakingQueue,
+  processRealtimeGameCompletion,
   resignGame,
 } from "./games";
 
@@ -52,6 +53,15 @@ import { expireGifts, getGiftHistory, openGift, sendGift } from "./gifting";
 import { getPurchaseHistory, restorePurchases, validateReceipt } from "./iap";
 import { fetchLinkPreviewFunction } from "./linkPreview";
 import { grantItem, purchaseWithTokens } from "./shop";
+
+// Cosmetic entitlements (unified cosmetics system)
+import {
+  grantCosmeticEntitlement,
+  purchaseCosmeticWithTokens,
+} from "./cosmeticEntitlements";
+
+// Achievements V2 (single-player completion trigger)
+import { processSinglePlayerCompletion } from "./achievementsV2Evaluator";
 
 // Extracted modules
 import {
@@ -181,6 +191,7 @@ export {
   getPurchaseHistory,
   getRateLimitStatus,
   getTurnCredentials,
+  grantCosmeticEntitlement,
   grantItem,
   handleCallTimeouts,
   initializeExistingWallets,
@@ -216,10 +227,13 @@ export {
   openGift,
   processGameCompletion,
   processMatchmakingQueue,
+  processRealtimeGameCompletion,
   processScheduledMessages,
+  processSinglePlayerCompletion,
   publishDeliveryReceipt,
   publishReadReceipt,
   publishTypingIndicator,
+  purchaseCosmeticWithTokens,
   purchaseWithTokens,
   recordDailyLogin,
   resignGame,
@@ -235,6 +249,10 @@ export {
   validateReceipt,
   weeklyLeaderboardReset,
 };
+
+// ─── Callable aliases for client backward-compat ───────────────────────────
+// Client iap.ts calls "verifyIAPPurchase" — map it to the canonical handler.
+export const verifyIAPPurchase = validateReceipt;
 
 // Segment 7 Firestore triggers (named exports for stable function names)
 export { onChatSettingsChanged, onInboxSettingsChanged };

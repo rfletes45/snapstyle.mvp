@@ -526,6 +526,27 @@ service cloud.firestore {
       }
 
       // --------------------------------------------------------
+      // Entitlements subcollection (Unified Cosmetics System)
+      // Canonical ownership for all cosmetic items.
+      // Users/{uid}/Entitlements/{cosmeticId}
+      // --------------------------------------------------------
+      match /Entitlements/{cosmeticId} {
+        // Owner and other authenticated users can read (for profile display)
+        allow read: if isAuth();
+
+        // Free/starter items can be created by the owner directly.
+        // Shop/achievement/event grants come from server (Cloud Functions).
+        allow create: if isAuth() && isOwner(uid) &&
+          request.resource.data.cosmeticId == cosmeticId &&
+          request.resource.data.type in ['badge', 'background', 'decoration', 'theme', 'chat_bubble_color', 'chat_font', 'chat_animal_theme'] &&
+          request.resource.data.grantedAt is number &&
+          request.resource.data.source in ['free', 'starter'];
+
+        // Entitlements are immutable once created
+        allow update, delete: if false;
+      }
+
+      // --------------------------------------------------------
       // mutedUsers subcollection (New Profile System)
       // Tracks users muted by this user (softer than blocking)
       // Users/{uid}/mutedUsers/{mutedUid}
@@ -866,7 +887,10 @@ service cloud.firestore {
                                 request.resource.data.uid == uid &&
                                 // Validate notifyLevel if present
                                 (!request.resource.data.keys().hasAll(['notifyLevel']) ||
-                                 request.resource.data.notifyLevel in ['all', 'mentions', 'none']);
+                                 request.resource.data.notifyLevel in ['all', 'mentions', 'none']) &&
+                                // Validate showMemberChatStyles if present (must be boolean)
+                                (!request.resource.data.keys().hasAll(['showMemberChatStyles']) ||
+                                 request.resource.data.showMemberChatStyles is bool);
         
         // No delete - private state persists
         allow delete: if false;
@@ -1328,7 +1352,10 @@ service cloud.firestore {
                                 request.resource.data.uid == uid &&
                                 // Validate notifyLevel if present
                                 (!request.resource.data.keys().hasAll(['notifyLevel']) ||
-                                 request.resource.data.notifyLevel in ['all', 'mentions', 'none']);
+                                 request.resource.data.notifyLevel in ['all', 'mentions', 'none']) &&
+                                // Validate showMemberChatStyles if present (must be boolean)
+                                (!request.resource.data.keys().hasAll(['showMemberChatStyles']) ||
+                                 request.resource.data.showMemberChatStyles is bool);
         
         // No delete - private state persists
         allow delete: if false;

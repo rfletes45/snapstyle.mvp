@@ -6,10 +6,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react";
 import { useAuth } from "./AuthContext";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("store/UserContext");
@@ -59,30 +60,44 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentFirebaseUser]);
 
-  // Reset hydration when auth changes (user logs in/out)
+  // Track previous UID so we only reset hydration when the actual user
+  // identity changes — NOT when refreshProfile's reference changes due to
+  // Firebase User object identity churn (token refresh, reconnect, etc.).
+  // Resetting isHydrated mid-session unmounts the entire navigation tree
+  // via AppGate, causing the tab navigator to remount at initialRouteName
+  // ("Inbox") and losing the user's place.
+  const previousUidRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
-    // Only reset if auth is hydrated
-    if (authHydrated) {
-      // If user logged out, mark as hydrated with null profile
-      if (!currentFirebaseUser) {
-        setProfile(null);
-        setIsHydrated(true);
-        setLoading(false);
-      } else {
-        // User logged in - need to fetch profile
+    // Only act once auth state is resolved
+    if (!authHydrated) return;
+
+    if (!currentFirebaseUser) {
+      // User logged out
+      setProfile(null);
+      setIsHydrated(true);
+      setLoading(false);
+      previousUidRef.current = null;
+    } else {
+      const uidChanged = previousUidRef.current !== currentFirebaseUser.uid;
+      previousUidRef.current = currentFirebaseUser.uid;
+
+      if (uidChanged) {
+        // Genuinely new user — show loading while we fetch their profile
         setIsHydrated(false);
-        refreshProfile();
       }
+      // For same-user re-fires (e.g. refreshProfile identity changed),
+      // we still refresh the data but do NOT reset hydration.
+      refreshProfile();
     }
   }, [currentFirebaseUser, authHydrated, refreshProfile]);
 
-  return (
-    <UserContext.Provider
-      value={{ profile, loading, isHydrated, error, refreshProfile }}
-    >
-      {children}
-    </UserContext.Provider>
+  const value = useMemo(
+    () => ({ profile, loading, isHydrated, error, refreshProfile }),
+    [profile, loading, isHydrated, error, refreshProfile],
   );
+
+  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 
 export function useUser(): UserContextType {

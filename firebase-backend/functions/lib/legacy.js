@@ -49,8 +49,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.onCallUpdated = exports.onCallCreated = exports.handleCallTimeouts = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.triggerDailyDeals = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.cleanupOldDeals = exports.sendGift = exports.openGift = exports.getGiftHistory = exports.expireGifts = exports.validateReceipt = exports.restorePurchases = exports.getPurchaseHistory = exports.purchaseWithTokens = exports.grantItem = exports.rollbackGameInvitesMigration = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = exports.resignGame = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.makeMove = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.cleanupOldGameSessions = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
-exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = void 0;
+exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.onCallUpdated = exports.onCallCreated = exports.handleCallTimeouts = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.triggerDailyDeals = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.cleanupOldDeals = exports.sendGift = exports.openGift = exports.getGiftHistory = exports.expireGifts = exports.validateReceipt = exports.restorePurchases = exports.getPurchaseHistory = exports.purchaseWithTokens = exports.grantItem = exports.rollbackGameInvitesMigration = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = exports.resignGame = exports.processRealtimeGameCompletion = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.makeMove = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.cleanupOldGameSessions = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const httpAuth_1 = require("./httpAuth");
@@ -71,6 +71,7 @@ Object.defineProperty(exports, "onGameHistoryCreatedUpdateLeaderboard", { enumer
 Object.defineProperty(exports, "onUniversalInviteUpdate", { enumerable: true, get: function () { return games_1.onUniversalInviteUpdate; } });
 Object.defineProperty(exports, "processGameCompletion", { enumerable: true, get: function () { return games_1.processGameCompletion; } });
 Object.defineProperty(exports, "processMatchmakingQueue", { enumerable: true, get: function () { return games_1.processMatchmakingQueue; } });
+Object.defineProperty(exports, "processRealtimeGameCompletion", { enumerable: true, get: function () { return games_1.processRealtimeGameCompletion; } });
 Object.defineProperty(exports, "resignGame", { enumerable: true, get: function () { return games_1.resignGame; } });
 // Import Migration functions
 const migrateGameInvites_1 = require("./migrations/migrateGameInvites");
@@ -1263,8 +1264,12 @@ exports.onGameSessionCreated = functions.firestore
         else {
             console.log("⏭️ Score not better than existing, skipping leaderboard update");
         }
-        // Check for achievements
-        await checkGameAchievements(session.playerId, session.gameId, session.score);
+        // V1 achievements disabled — V2 evaluator handles all achievement logic
+        // await checkGameAchievements(
+        //   session.playerId,
+        //   session.gameId,
+        //   session.score,
+        // );
         return;
     }
     catch (error) {
@@ -1324,40 +1329,20 @@ async function grantAchievementIfNotEarned(achievementsRef, achievementType, met
 }
 /**
  * onStreakUpdated: Check for streak achievements when streak changes
- * This extends the existing streak update logic
+ * V1 DISABLED — streak achievements are now handled by V2 evaluator.
+ * Keeping the export to avoid breaking deployed Cloud Functions references.
  */
 exports.onStreakAchievementCheck = functions.firestore
     .document("Friends/{friendId}")
-    .onUpdate(async (change, context) => {
+    .onUpdate(async (change, _context) => {
+    // V1 streak achievements disabled — V2 evaluator handles all achievement logic
     const before = change.before.data();
     const after = change.after.data();
-    // Only check if streakCount increased
     if (after.streakCount <= before.streakCount) {
         return;
     }
-    const streakCount = after.streakCount;
-    const users = after.users;
-    console.log(`🔥 Streak updated to ${streakCount} between ${users.join(" and ")}`);
-    // Check streak achievements for both users
-    const thresholds = [
-        [3, "streak_3_days"],
-        [7, "streak_7_days"],
-        [30, "streak_30_days"],
-        [100, "streak_100_days"],
-    ];
-    for (const userId of users) {
-        const achievementsRef = db
-            .collection("Users")
-            .doc(userId)
-            .collection("Achievements");
-        for (const [threshold, achievementType] of thresholds) {
-            if (streakCount >= threshold) {
-                await grantAchievementIfNotEarned(achievementsRef, achievementType, {
-                    streakCount,
-                });
-            }
-        }
-    }
+    console.log(`🔥 [V1-DISABLED] Streak updated to ${after.streakCount} — skipping V1 achievement grants (V2 handles this)`);
+    return;
 });
 /**
  * Weekly leaderboard reset notification (optional)
@@ -1391,6 +1376,19 @@ function getCurrentDayKey(timezone = DEFAULT_TIMEZONE) {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
+    });
+    return formatter.format(now);
+}
+/**
+ * Get current month key for monthly tasks (timezone-aware)
+ * Returns "YYYY-MM" format
+ */
+function getCurrentMonthKey(timezone = DEFAULT_TIMEZONE) {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
     });
     return formatter.format(now);
 }
@@ -1481,9 +1479,10 @@ exports.claimTaskReward = functions.https.onCall(async (data, context) => {
             throw new functions.https.HttpsError("failed-precondition", "No progress found for this task");
         }
         const progress = progressDoc.data();
-        // Verify dayKey matches (for daily tasks)
-        if (task.cadence === "daily" && progress.dayKey !== dayKey) {
-            throw new functions.https.HttpsError("failed-precondition", "Progress is from a different day");
+        // Verify dayKey matches (for daily and monthly tasks)
+        if ((task.cadence === "daily" || task.cadence === "monthly") &&
+            progress.dayKey !== dayKey) {
+            throw new functions.https.HttpsError("failed-precondition", "Progress is from a different period");
         }
         // Check if already claimed
         if (progress.claimed) {
@@ -1561,6 +1560,7 @@ exports.claimTaskReward = functions.https.onCall(async (data, context) => {
  */
 async function updateTaskProgress(uid, taskType, incrementBy = 1) {
     const dayKey = getCurrentDayKey();
+    const monthKey = getCurrentMonthKey();
     // Find active tasks of this type
     const tasksRef = db.collection("Tasks");
     const tasksQuery = await tasksRef
@@ -1574,6 +1574,8 @@ async function updateTaskProgress(uid, taskType, incrementBy = 1) {
     for (const taskDoc of tasksQuery.docs) {
         const task = taskDoc.data();
         const taskId = taskDoc.id;
+        // Choose key based on cadence
+        const periodKey = task.cadence === "monthly" ? monthKey : dayKey;
         // Get or create progress document
         const progressRef = db
             .collection("Users")
@@ -1587,19 +1589,20 @@ async function updateTaskProgress(uid, taskType, incrementBy = 1) {
                 taskId,
                 progress: incrementBy,
                 claimed: false,
-                dayKey,
+                dayKey: periodKey,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
         }
         else {
             const progress = progressDoc.data();
-            // For daily tasks, reset if it's a new day
-            if (task.cadence === "daily" && progress.dayKey !== dayKey) {
+            // For daily/monthly tasks, reset if period has changed
+            if ((task.cadence === "daily" || task.cadence === "monthly") &&
+                progress.dayKey !== periodKey) {
                 batch.set(progressRef, {
                     taskId,
                     progress: incrementBy,
                     claimed: false,
-                    dayKey,
+                    dayKey: periodKey,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
@@ -1846,6 +1849,117 @@ exports.seedDailyTasks = functions.https.onRequest(async (req, res) => {
     await batch.commit();
     console.log(`✅ Seeded ${defaultTasks.length} daily tasks`);
     res.json({ success: true, tasksCreated: defaultTasks.length });
+});
+/**
+ * Seed monthly tasks into the Tasks collection
+ * Run once from admin panel to populate monthly challenges
+ */
+exports.seedMonthlyTasks = functions.https.onRequest(async (req, res) => {
+    const authResult = await (0, httpAuth_1.authorizeAdminHttpRequest)(req);
+    if (!authResult.ok) {
+        res.status(authResult.status).json({
+            success: false,
+            error: authResult.error,
+        });
+        return;
+    }
+    const monthlyTasks = [
+        {
+            id: "monthly_play_20_games",
+            title: "Seasoned Player",
+            description: "Play 20 games this month",
+            icon: "gamepad-variant",
+            cadence: "monthly",
+            type: "play_game",
+            target: 20,
+            rewardTokens: 150,
+            active: true,
+            sortOrder: 1,
+        },
+        {
+            id: "monthly_win_10_games",
+            title: "Monthly Champion",
+            description: "Win 10 games this month",
+            icon: "trophy",
+            cadence: "monthly",
+            type: "win_game",
+            target: 10,
+            rewardTokens: 200,
+            active: true,
+            sortOrder: 2,
+        },
+        {
+            id: "monthly_send_100_messages",
+            title: "Chatterbox",
+            description: "Send 100 messages this month",
+            icon: "message-text-outline",
+            cadence: "monthly",
+            type: "send_message",
+            target: 100,
+            rewardTokens: 100,
+            active: true,
+            sortOrder: 3,
+        },
+        {
+            id: "monthly_post_10_stories",
+            title: "Content Creator",
+            description: "Post 10 stories this month",
+            icon: "image-multiple",
+            cadence: "monthly",
+            type: "post_story",
+            target: 10,
+            rewardTokens: 120,
+            active: true,
+            sortOrder: 4,
+        },
+        {
+            id: "monthly_view_50_stories",
+            title: "Story Binge",
+            description: "View 50 stories this month",
+            icon: "eye-check",
+            cadence: "monthly",
+            type: "view_story",
+            target: 50,
+            rewardTokens: 80,
+            active: true,
+            sortOrder: 5,
+        },
+        {
+            id: "monthly_add_3_friends",
+            title: "Expanding Circles",
+            description: "Add 3 new friends this month",
+            icon: "account-group",
+            cadence: "monthly",
+            type: "add_friend",
+            target: 3,
+            rewardTokens: 100,
+            active: true,
+            sortOrder: 6,
+        },
+        {
+            id: "monthly_7_day_streak",
+            title: "Streak Master",
+            description: "Maintain a 7-day login streak",
+            icon: "fire",
+            cadence: "monthly",
+            type: "maintain_streak",
+            target: 7,
+            rewardTokens: 250,
+            active: true,
+            sortOrder: 7,
+        },
+    ];
+    const batch = db.batch();
+    for (const task of monthlyTasks) {
+        const taskRef = db.collection("Tasks").doc(task.id);
+        batch.set(taskRef, {
+            ...task,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    await batch.commit();
+    console.log(`✅ Seeded ${monthlyTasks.length} monthly tasks`);
+    res.json({ success: true, tasksCreated: monthlyTasks.length });
 });
 /**
  * Initialize wallet for existing users who don't have one

@@ -332,7 +332,7 @@ export default function PremiumShopScreen() {
         Token Packs
       </Text>
       <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-        Get tokens to spend in the Points Shop
+        Get tokens to spend in the Shop
       </Text>
 
       <View style={styles.tokenPacksGrid}>

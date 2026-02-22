@@ -1,8 +1,9 @@
 import { IncomingCallOverlay } from "@/components/calls";
-import { CALL_FEATURES } from "@/constants/featureFlags";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import InAppToast from "@/components/InAppToast";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 import { CallProvider } from "@/contexts/CallContext";
+import { loadCustomFonts } from "@/fonts/fontLoader";
 import { useOutboxProcessor } from "@/hooks/useOutboxProcessor";
 import { lockToPortrait } from "@/hooks/useScreenOrientation";
 import RootNavigator from "@/navigation/RootNavigator";
@@ -25,8 +26,8 @@ import {
   NavigationContainerRef,
 } from "@react-navigation/native";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
-import React, { useCallback, useEffect, useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { PaperProvider } from "react-native-paper";
@@ -55,6 +56,24 @@ function AppContent() {
   const { theme, isDark, colors } = useAppTheme();
   const navigationRef =
     useRef<NavigationContainerRef<RootStackParamList>>(null);
+
+  // ── Font loading gate ───────────────────────────────────────────────────
+  const [fontsReady, setFontsReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    loadCustomFonts().then((ok) => {
+      if (mounted) setFontsReady(true);
+      if (!ok && __DEV__) {
+        console.warn(
+          "[App] Custom fonts failed to load — using system defaults",
+        );
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Defer call bootstrap work until after first render, and only if calls
   // are feature-enabled.
@@ -92,6 +111,15 @@ function AppContent() {
     },
     [],
   );
+
+  // Show a minimal loading view while fonts are loading
+  if (!fontsReady) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <PaperProvider theme={theme.paper}>

@@ -9,6 +9,7 @@
  * - Role management (owner only)
  */
 
+import AppImage from "@/components/AppImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ErrorState, LoadingState } from "@/components/ui";
 import { getFriends, getUserProfileByUid } from "@/services/friends";
@@ -33,7 +34,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -196,7 +196,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
                 return {
                   ...member,
                   profilePictureUrl: profile.profilePicture?.url || null,
-                  decorationId: profile.avatarDecoration?.equippedId || null,
+                  decorationId: profile.avatarDecoration?.decorationId || null,
                 };
               }
             } catch {
@@ -247,7 +247,7 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             username: profile.username,
             avatarConfig: profile.avatarConfig,
             profilePictureUrl: profile.profilePicture?.url || null,
-            decorationId: profile.avatarDecoration?.equippedId || null,
+            decorationId: profile.avatarDecoration?.decorationId || null,
           };
         }),
       );
@@ -567,9 +567,10 @@ export default function GroupChatInfoScreen({ route, navigation }: any) {
             style={styles.groupAvatarContainer}
           >
             {group.avatarUrl ? (
-              <Image
+              <AppImage
                 source={{ uri: group.avatarUrl }}
                 style={styles.groupAvatarImage}
+                debugLabel="GroupInfoAvatar"
               />
             ) : (
               <View

@@ -72,6 +72,15 @@ interface SendMessageV2Params {
   createdAt?: number;
   /** Client-generated trace ID for cross-system log correlation (Segment 8) */
   traceId?: string;
+  /** Sender's chat style snapshot stamped on each message */
+  senderStyle?: {
+    bubbleColorId?: string | null;
+    bubbleColorHex?: string | null;
+    fontId?: string | null;
+    fontKey?: string | null;
+    animalThemeId?: string | null;
+    v: 1;
+  };
 }
 
 /** Response from sendMessageV2 Cloud Function */
@@ -206,6 +215,14 @@ export async function sendMessageWithOutbox(params: {
   replyTo?: ReplyToMetadata;
   mentionUids?: string[];
   mentionSpans?: MentionSpan[];
+  senderStyle?: {
+    bubbleColorId?: string | null;
+    bubbleColorHex?: string | null;
+    fontId?: string | null;
+    fontKey?: string | null;
+    animalThemeId?: string | null;
+    v: 1;
+  };
 }): Promise<SendWithOutboxResult> {
   // 1. Enqueue to outbox first (ensures persistence)
   const outboxItem = await enqueueMessage({
@@ -250,6 +267,7 @@ export async function sendMessageWithOutbox(params: {
         messageId: outboxItem.messageId,
         createdAt: outboxItem.createdAt,
         traceId: outboxItem.traceId,
+        senderStyle: params.senderStyle,
       });
 
       if (result.success) {

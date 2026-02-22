@@ -1,0 +1,394 @@
+{
+  "$schema": "Canonical pricing table for all purchasable cosmetics. Used by BOTH client catalog and server purchase function. To add a new item: add it here FIRST, then add client metadata in the appropriate catalog file.",
+  "items": [
+    {
+      "id": "bg_donut_wallpaper",
+      "type": "background",
+      "name": "Donut Wallpaper",
+      "priceTokens": 500
+    },
+    {
+      "id": "bg_lofi_alleyway",
+      "type": "background",
+      "name": "Lofi Alleyway",
+      "priceTokens": 600
+    },
+    {
+      "id": "bg_magical_forest",
+      "type": "background",
+      "name": "Magical Forest",
+      "priceTokens": 800
+    },
+    {
+      "id": "bg_pixel_cafe",
+      "type": "background",
+      "name": "Pixel Café",
+      "priceTokens": 500
+    },
+    {
+      "id": "bg_pixel_neo_tokyo",
+      "type": "background",
+      "name": "Pixel Neo Tokyo",
+      "priceTokens": 800
+    },
+    {
+      "id": "bg_scary_forest",
+      "type": "background",
+      "name": "Scary Forest",
+      "priceTokens": 500
+    },
+    {
+      "id": "bg_sketched_alleyway",
+      "type": "background",
+      "name": "Sketched Alleyway",
+      "priceTokens": 500
+    },
+    {
+      "id": "bg_steampunk_city",
+      "type": "background",
+      "name": "Steampunk City",
+      "priceTokens": 900
+    },
+    {
+      "id": "bg_galaxy",
+      "type": "background",
+      "name": "Galaxy",
+      "priceTokens": 1200
+    },
+
+    {
+      "id": "premium_chess",
+      "type": "decoration",
+      "name": "Chess Frame",
+      "priceTokens": 500
+    },
+    {
+      "id": "premium_chicago",
+      "type": "decoration",
+      "name": "Chicago Skyline",
+      "priceTokens": 600
+    },
+    {
+      "id": "premium_chicken_sketch",
+      "type": "decoration",
+      "name": "Chicken Sketch",
+      "priceTokens": 300
+    },
+    {
+      "id": "premium_cozy_cat",
+      "type": "decoration",
+      "name": "Cozy Cat",
+      "priceTokens": 500
+    },
+    {
+      "id": "premium_donut",
+      "type": "decoration",
+      "name": "Donut Frame",
+      "priceTokens": 400
+    },
+    {
+      "id": "premium_fox_ears",
+      "type": "decoration",
+      "name": "Fox Ears",
+      "priceTokens": 500
+    },
+    {
+      "id": "premium_kindergarten_scribble",
+      "type": "decoration",
+      "name": "Kindergarten Scribble",
+      "priceTokens": 300
+    },
+    {
+      "id": "premium_lofi_city",
+      "type": "decoration",
+      "name": "Lofi City",
+      "priceTokens": 600
+    },
+    {
+      "id": "premium_mini_golf",
+      "type": "decoration",
+      "name": "Mini Golf",
+      "priceTokens": 400
+    },
+    {
+      "id": "premium_retro_arcade",
+      "type": "decoration",
+      "name": "Retro Arcade",
+      "priceTokens": 600
+    },
+
+    {
+      "id": "amoled",
+      "type": "theme",
+      "name": "AMOLED Black",
+      "priceTokens": 500
+    },
+    {
+      "id": "amoled-oled-blue",
+      "type": "theme",
+      "name": "AMOLED Blue",
+      "priceTokens": 500
+    },
+    {
+      "id": "amoled-blood-moon",
+      "type": "theme",
+      "name": "Blood Moon",
+      "priceTokens": 500
+    },
+    {
+      "id": "amoled-emerald",
+      "type": "theme",
+      "name": "AMOLED Emerald",
+      "priceTokens": 500
+    },
+    {
+      "id": "amoled-royal-purple",
+      "type": "theme",
+      "name": "AMOLED Royal",
+      "priceTokens": 500
+    },
+    {
+      "id": "amoled-sunset-orange",
+      "type": "theme",
+      "name": "AMOLED Sunset",
+      "priceTokens": 500
+    },
+    {
+      "id": "neo-tokyo",
+      "type": "theme",
+      "name": "Neo Tokyo",
+      "priceTokens": 500
+    },
+    {
+      "id": "retro-wave",
+      "type": "theme",
+      "name": "Retro Wave",
+      "priceTokens": 500
+    },
+    { "id": "aura", "type": "theme", "name": "Aura", "priceTokens": 500 },
+    {
+      "id": "jellyfish",
+      "type": "theme",
+      "name": "Jellyfish",
+      "priceTokens": 500
+    },
+    {
+      "id": "vaporwave",
+      "type": "theme",
+      "name": "Vaporwave",
+      "priceTokens": 500
+    },
+    {
+      "id": "aurora-borealis",
+      "type": "theme",
+      "name": "Aurora Borealis",
+      "priceTokens": 500
+    },
+    {
+      "id": "neon-sunset",
+      "type": "theme",
+      "name": "Neon Sunset",
+      "priceTokens": 500
+    },
+    {
+      "id": "electric-lime",
+      "type": "theme",
+      "name": "Electric Lime",
+      "priceTokens": 500
+    },
+    {
+      "id": "galaxy-purple",
+      "type": "theme",
+      "name": "Galaxy Purple",
+      "priceTokens": 500
+    },
+    {
+      "id": "mint-fresh",
+      "type": "theme",
+      "name": "Mint Fresh",
+      "priceTokens": 350
+    },
+    {
+      "id": "sunset-glow",
+      "type": "theme",
+      "name": "Sunset Glow",
+      "priceTokens": 350
+    },
+    {
+      "id": "lavender-dream",
+      "type": "theme",
+      "name": "Lavender Dream",
+      "priceTokens": 350
+    },
+    {
+      "id": "peach-blossom",
+      "type": "theme",
+      "name": "Peach Blossom",
+      "priceTokens": 350
+    },
+    {
+      "id": "sky-cotton",
+      "type": "theme",
+      "name": "Sky Cotton",
+      "priceTokens": 350
+    },
+    {
+      "id": "honeydew-mint",
+      "type": "theme",
+      "name": "Honeydew Mint",
+      "priceTokens": 350
+    },
+    {
+      "id": "gruvbox-dark",
+      "type": "theme",
+      "name": "Gruvbox Dark",
+      "priceTokens": 200
+    },
+    {
+      "id": "night-owl",
+      "type": "theme",
+      "name": "Night Owl",
+      "priceTokens": 200
+    },
+
+    {
+      "id": "bubble_teal",
+      "type": "chat_bubble_color",
+      "name": "Teal Vibes",
+      "priceTokens": 150
+    },
+    {
+      "id": "bubble_green",
+      "type": "chat_bubble_color",
+      "name": "Forest Green",
+      "priceTokens": 150
+    },
+    {
+      "id": "bubble_slate",
+      "type": "chat_bubble_color",
+      "name": "Slate",
+      "priceTokens": 150
+    },
+    {
+      "id": "bubble_red",
+      "type": "chat_bubble_color",
+      "name": "Ruby Red",
+      "priceTokens": 250
+    },
+    {
+      "id": "bubble_orange",
+      "type": "chat_bubble_color",
+      "name": "Sunset Orange",
+      "priceTokens": 250
+    },
+    {
+      "id": "bubble_pink",
+      "type": "chat_bubble_color",
+      "name": "Hot Pink",
+      "priceTokens": 250
+    },
+    {
+      "id": "bubble_cyan",
+      "type": "chat_bubble_color",
+      "name": "Electric Cyan",
+      "priceTokens": 250
+    },
+    {
+      "id": "bubble_indigo",
+      "type": "chat_bubble_color",
+      "name": "Indigo Night",
+      "priceTokens": 400
+    },
+    {
+      "id": "bubble_amber",
+      "type": "chat_bubble_color",
+      "name": "Golden Amber",
+      "priceTokens": 400
+    },
+    {
+      "id": "bubble_deep_purple",
+      "type": "chat_bubble_color",
+      "name": "Deep Purple",
+      "priceTokens": 400
+    },
+    {
+      "id": "bubble_lime",
+      "type": "chat_bubble_color",
+      "name": "Electric Lime",
+      "priceTokens": 400
+    },
+    {
+      "id": "bubble_rose",
+      "type": "chat_bubble_color",
+      "name": "Rose Gold",
+      "priceTokens": 600
+    },
+    {
+      "id": "bubble_midnight",
+      "type": "chat_bubble_color",
+      "name": "Midnight Blue",
+      "priceTokens": 600
+    },
+    {
+      "id": "bubble_coral",
+      "type": "chat_bubble_color",
+      "name": "Living Coral",
+      "priceTokens": 600
+    },
+
+    {
+      "id": "font_monospace",
+      "type": "chat_font",
+      "name": "Monospace",
+      "priceTokens": 200
+    },
+    {
+      "id": "font_serif",
+      "type": "chat_font",
+      "name": "Classic Serif",
+      "priceTokens": 200
+    },
+    {
+      "id": "font_rounded",
+      "type": "chat_font",
+      "name": "Rounded",
+      "priceTokens": 350
+    },
+    {
+      "id": "font_handwritten",
+      "type": "chat_font",
+      "name": "Handwritten",
+      "priceTokens": 350
+    },
+    {
+      "id": "font_retro",
+      "type": "chat_font",
+      "name": "Retro Pixel",
+      "priceTokens": 500
+    },
+    {
+      "id": "font_elegant",
+      "type": "chat_font",
+      "name": "Elegant Script",
+      "priceTokens": 500
+    },
+    {
+      "id": "font_comic",
+      "type": "chat_font",
+      "name": "Comic Pop",
+      "priceTokens": 750
+    },
+    {
+      "id": "animal_bear",
+      "type": "chat_animal_theme",
+      "name": "Bear",
+      "priceTokens": 500
+    },
+    {
+      "id": "animal_wolf",
+      "type": "chat_animal_theme",
+      "name": "Wolf",
+      "priceTokens": 750
+    }
+  ]
+}

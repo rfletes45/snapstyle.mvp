@@ -48,7 +48,6 @@ import { isUserBlocked } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 import { getUserProfileByUid } from "./friends";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/groups");
 
@@ -138,7 +137,7 @@ export async function createGroup(
     username: creatorProfile.username,
     avatarConfig: creatorProfile.avatarConfig,
     profilePictureUrl: creatorProfile.profilePicture?.url || null,
-    decorationId: creatorProfile.avatarDecoration?.equippedId || null,
+    decorationId: creatorProfile.avatarDecoration?.decorationId || null,
   };
   batch.set(creatorMemberRef, { uid: creatorUid, ...creatorMemberData });
 
@@ -411,9 +410,9 @@ export async function acceptGroupInvite(
   const expiresAt =
     typeof invite.expiresAt === "number"
       ? invite.expiresAt
-      : (invite.expiresAt as DateLikeTimestamp | undefined)?.toMillis?.() ??
+      : ((invite.expiresAt as DateLikeTimestamp | undefined)?.toMillis?.() ??
         (invite.expiresAt as DateLikeTimestamp | undefined)?.getTime?.() ??
-        0;
+        0);
 
   if (Date.now() > expiresAt) {
     logger.error("❌ [acceptGroupInvite] Invite expired");
@@ -472,7 +471,7 @@ export async function acceptGroupInvite(
     username: userProfile.username,
     avatarConfig: userProfile.avatarConfig,
     profilePictureUrl: userProfile.profilePicture?.url || null,
-    decorationId: userProfile.avatarDecoration?.equippedId || null,
+    decorationId: userProfile.avatarDecoration?.decorationId || null,
   };
   batch.set(memberRef, memberData);
 

@@ -140,8 +140,8 @@ function EnhancedGamesProfileHeaderBase() {
   }, [navigation]);
 
   const navigateShop = useCallback(() => {
-    // PointsShop is a root-level MainStack screen
-    navigation.dispatch(CommonActions.navigate({ name: "PointsShop" }));
+    // CosmeticsShop is a root-level MainStack screen
+    navigation.dispatch(CommonActions.navigate({ name: "CosmeticsShop" }));
   }, [navigation]);
 
   const navigateCustomize = useCallback(() => {

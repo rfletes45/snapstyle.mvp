@@ -132,6 +132,20 @@ export interface MessageV2 {
   /** Denormalized reaction counts: { "🔥": 2, "❤️": 1 } */
   reactionsSummary?: Record<string, number>;
 
+  /**
+   * Snapshot of the sender's chat style at send time.
+   * Used by recipients to render the sender's bubble color, font, etc.
+   * Missing on historical messages — fall back to sender profile lookup.
+   */
+  senderStyle?: {
+    bubbleColorId?: string | null;
+    bubbleColorHex?: string | null;
+    fontId?: string | null;
+    fontKey?: string | null;
+    animalThemeId?: string | null;
+    v: 1;
+  };
+
   // =========================================================================
   // Legacy Compatibility Fields (deprecated)
   // =========================================================================
@@ -712,7 +726,8 @@ export function decodeMessageRequest(
 
   const messagePreview =
     typeof raw.messagePreview === "string" ? raw.messagePreview : "";
-  const messageKind = typeof raw.messageKind === "string" ? raw.messageKind : "text";
+  const messageKind =
+    typeof raw.messageKind === "string" ? raw.messageKind : "text";
 
   return {
     chatId,
@@ -867,6 +882,13 @@ export interface MemberStatePrivate {
    * Used with soft delete to restore on new activity
    */
   hiddenUntilNewMessage?: boolean;
+
+  /**
+   * Show other members' custom chat styles (bubble colors, fonts).
+   * When false, all incoming messages render with theme defaults.
+   * @default true
+   */
+  showMemberChatStyles?: boolean;
 }
 
 // =============================================================================

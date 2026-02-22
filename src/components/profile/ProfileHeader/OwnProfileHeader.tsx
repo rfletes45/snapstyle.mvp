@@ -9,12 +9,20 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo } from "react";
-import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
+import React, { memo, useMemo } from "react";
+import {
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  ViewStyle,
+} from "react-native";
 import { Text } from "react-native-paper";
 
 import { LevelProgress } from "@/components/profile/LevelProgress";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
+import type { CosmeticImageSource } from "@/cosmetics/types";
 import { useColors } from "@/store/ThemeContext";
 import type { LevelInfo } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
@@ -33,6 +41,8 @@ export interface OwnProfileHeaderProps {
   pictureUrl: string | null;
   /** Equipped decoration ID (null if none) */
   decorationId: string | null;
+  /** Equipped background ID (null if none) */
+  backgroundId?: string | null;
   /** User's bio */
   bio?: ProfileBio | null;
   /** User's current status */
@@ -60,6 +70,7 @@ function OwnProfileHeaderBase({
   username,
   pictureUrl,
   decorationId,
+  backgroundId,
   bio,
   status,
   level,
@@ -71,123 +82,172 @@ function OwnProfileHeaderBase({
 }: OwnProfileHeaderProps) {
   const colors = useColors();
 
+  // Resolve the background image source from the asset registry
+  const backgroundSource: CosmeticImageSource | null = useMemo(() => {
+    if (!backgroundId) return null;
+    return getCosmeticAsset("background", backgroundId);
+  }, [backgroundId]);
+
   // Check if status is expired
   const isStatusActive =
     status && (!status.expiresAt || status.expiresAt > Date.now());
   const moodConfig = status?.mood ? MOOD_CONFIG[status.mood] : null;
 
-  return (
-    <View style={[styles.container, style]}>
-      {/* Profile Picture with Decoration */}
-      <View style={styles.pictureSection}>
-        <ProfilePictureWithDecoration
-          pictureUrl={pictureUrl}
-          name={displayName}
-          decorationId={decorationId}
-          size={120}
-          onPress={onEditPicturePress}
-          showEditIndicator
-        />
-      </View>
+  // Text colors adapt when background is present
+  const primaryTextColor = backgroundSource ? "#FFFFFF" : colors.text;
+  const secondaryTextColor = backgroundSource
+    ? "rgba(255,255,255,0.85)"
+    : colors.textSecondary;
+  const textShadow = backgroundSource
+    ? {
+        textShadowColor: "rgba(0,0,0,0.6)",
+        textShadowOffset: { width: 0, height: 1 } as const,
+        textShadowRadius: 3,
+      }
+    : {};
 
-      {/* Name and Username */}
-      <View style={styles.nameSection}>
-        <TouchableOpacity
-          onPress={onEditNamePress}
-          activeOpacity={0.7}
-          style={styles.nameRow}
-        >
-          <Text style={[styles.displayName, { color: colors.text }]}>
-            {displayName}
-          </Text>
-          {onEditNamePress && (
+  return (
+    <View style={[styles.outerWrapper, style]}>
+      {/* Header region with overflow hidden for background crop */}
+      <View style={styles.headerRegion}>
+        {/* Background Image (fills entire header region, cropped at level bar) */}
+        {backgroundSource && (
+          <Image
+            source={backgroundSource}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          />
+        )}
+
+        {/* Scrim overlay for text readability when background is present */}
+        {backgroundSource && <View style={styles.backgroundScrim} />}
+
+        {/* Foreground content */}
+        <View style={styles.foregroundContent}>
+          {/* Profile Picture with Decoration */}
+          <View style={styles.pictureSection}>
+            <ProfilePictureWithDecoration
+              pictureUrl={pictureUrl}
+              name={displayName}
+              decorationId={decorationId}
+              size={120}
+              onPress={onEditPicturePress}
+              showEditIndicator
+            />
+          </View>
+
+          {/* Name and Username */}
+          <View style={styles.nameSection}>
+            <TouchableOpacity
+              onPress={onEditNamePress}
+              activeOpacity={0.7}
+              style={styles.nameRow}
+            >
+              <Text
+                style={[
+                  styles.displayName,
+                  { color: primaryTextColor },
+                  textShadow,
+                ]}
+              >
+                {displayName}
+              </Text>
+              {onEditNamePress && (
+                <MaterialCommunityIcons
+                  name="pencil-outline"
+                  size={16}
+                  color={secondaryTextColor}
+                  style={styles.editIcon}
+                />
+              )}
+            </TouchableOpacity>
+            <Text
+              style={[
+                styles.username,
+                { color: secondaryTextColor },
+                textShadow,
+              ]}
+            >
+              @{username}
+            </Text>
+          </View>
+
+          {/* Status Indicator */}
+          {isStatusActive && moodConfig && (
+            <TouchableOpacity
+              onPress={onEditStatusPress}
+              activeOpacity={0.7}
+              style={[
+                styles.statusContainer,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
+              <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
+              <Text style={[styles.statusText, { color: colors.text }]}>
+                {status.text || moodConfig.label}
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={16}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+
+          {/* Add Status Button (if no active status) */}
+          {!isStatusActive && onEditStatusPress && (
+            <TouchableOpacity
+              onPress={onEditStatusPress}
+              activeOpacity={0.7}
+              style={[styles.addStatusButton, { borderColor: colors.outline }]}
+            >
+              <MaterialCommunityIcons
+                name="emoticon-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={[styles.addStatusText, { color: colors.primary }]}>
+                Set status
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Bio Section */}
+          <TouchableOpacity
+            onPress={onEditBioPress}
+            activeOpacity={0.7}
+            style={[
+              styles.bioContainer,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+          >
+            {bio?.text ? (
+              <Text
+                style={[styles.bioText, { color: colors.text }]}
+                numberOfLines={3}
+              >
+                {bio.text}
+              </Text>
+            ) : (
+              <Text
+                style={[styles.bioPlaceholder, { color: colors.textSecondary }]}
+              >
+                Add a bio to tell people about yourself...
+              </Text>
+            )}
             <MaterialCommunityIcons
               name="pencil-outline"
-              size={16}
+              size={14}
               color={colors.textSecondary}
-              style={styles.editIcon}
+              style={styles.bioEditIcon}
             />
-          )}
-        </TouchableOpacity>
-        <Text style={[styles.username, { color: colors.textSecondary }]}>
-          @{username}
-        </Text>
-      </View>
+          </TouchableOpacity>
 
-      {/* Status Indicator */}
-      {isStatusActive && moodConfig && (
-        <TouchableOpacity
-          onPress={onEditStatusPress}
-          activeOpacity={0.7}
-          style={[
-            styles.statusContainer,
-            { backgroundColor: colors.surfaceVariant },
-          ]}
-        >
-          <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
-          <Text style={[styles.statusText, { color: colors.text }]}>
-            {status.text || moodConfig.label}
-          </Text>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={16}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      )}
-
-      {/* Add Status Button (if no active status) */}
-      {!isStatusActive && onEditStatusPress && (
-        <TouchableOpacity
-          onPress={onEditStatusPress}
-          activeOpacity={0.7}
-          style={[styles.addStatusButton, { borderColor: colors.outline }]}
-        >
-          <MaterialCommunityIcons
-            name="emoticon-outline"
-            size={18}
-            color={colors.primary}
-          />
-          <Text style={[styles.addStatusText, { color: colors.primary }]}>
-            Set status
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Bio Section */}
-      <TouchableOpacity
-        onPress={onEditBioPress}
-        activeOpacity={0.7}
-        style={[
-          styles.bioContainer,
-          { backgroundColor: colors.surfaceVariant },
-        ]}
-      >
-        {bio?.text ? (
-          <Text
-            style={[styles.bioText, { color: colors.text }]}
-            numberOfLines={3}
-          >
-            {bio.text}
-          </Text>
-        ) : (
-          <Text
-            style={[styles.bioPlaceholder, { color: colors.textSecondary }]}
-          >
-            Add a bio to tell people about yourself...
-          </Text>
-        )}
-        <MaterialCommunityIcons
-          name="pencil-outline"
-          size={14}
-          color={colors.textSecondary}
-          style={styles.bioEditIcon}
-        />
-      </TouchableOpacity>
-
-      {/* Level Progress */}
-      <View style={styles.levelContainer}>
-        <LevelProgress level={level} />
+          {/* Level Progress */}
+          <View style={styles.levelContainer}>
+            <LevelProgress level={level} compact={!!backgroundSource} />
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -198,10 +258,30 @@ function OwnProfileHeaderBase({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
+  outerWrapper: {
+    width: "100%",
+  },
+  headerRegion: {
+    overflow: "hidden",
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    minHeight: 220,
+    justifyContent: "flex-end",
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  backgroundScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
+  foregroundContent: {
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
   },
   pictureSection: {
     marginBottom: 16,

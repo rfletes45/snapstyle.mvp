@@ -51,6 +51,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.grantItem = exports.purchaseWithTokens = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+/** Read canonical token balance with legacy fallback */
+function getTokenBalance(wallet) {
+    return wallet.tokensBalance ?? wallet.tokens ?? 0;
+}
 // =============================================================================
 // Error Codes
 // =============================================================================
@@ -189,15 +193,16 @@ exports.purchaseWithTokens = functions.https.onCall(async (data, context) => {
             // ---------------------------------------------------------------------
             // 4. Check balance
             // ---------------------------------------------------------------------
-            if (wallet.tokens < item.priceTokens) {
+            const balance = getTokenBalance(wallet);
+            if (balance < item.priceTokens) {
                 functions.logger.info("[shop] Insufficient funds:", {
                     uid,
-                    balance: wallet.tokens,
+                    balance,
                     price: item.priceTokens,
                 });
                 return {
                     success: false,
-                    error: `You need ${item.priceTokens - wallet.tokens} more tokens`,
+                    error: `You need ${item.priceTokens - balance} more tokens`,
                     errorCode: ShopErrorCode.INSUFFICIENT_FUNDS,
                 };
             }
@@ -262,10 +267,11 @@ exports.purchaseWithTokens = functions.https.onCall(async (data, context) => {
             // ---------------------------------------------------------------------
             const transactionId = generateTransactionId();
             const now = admin.firestore.Timestamp.now();
-            const newBalance = wallet.tokens - item.priceTokens;
-            // Deduct tokens from wallet
+            const newBalance = balance - item.priceTokens;
+            // Deduct tokens from wallet (write both canonical + legacy fields)
             transaction.update(walletRef, {
-                tokens: newBalance,
+                tokensBalance: newBalance,
+                tokens: newBalance, // back-compat
                 totalSpent: admin.firestore.FieldValue.increment(item.priceTokens),
                 lastUpdated: now,
             });

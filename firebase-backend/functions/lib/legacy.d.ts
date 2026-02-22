@@ -15,7 +15,7 @@
  * - Structured logging includes context for debugging/audit
  */
 import * as functions from "firebase-functions";
-import { cleanupOldGameSessions, cleanupOldGames, cleanupResolvedInvites, cleanupStaleMatchmakingEntries, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame } from "./games";
+import { cleanupOldGameSessions, cleanupOldGames, cleanupResolvedInvites, cleanupStaleMatchmakingEntries, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, processRealtimeGameCompletion, resignGame } from "./games";
 import { migrateGameInvites, migrateGameInvitesDryRun, rollbackGameInvitesMigration } from "./migrations/migrateGameInvites";
 import { grantItem, purchaseWithTokens } from "./shop";
 import { getPurchaseHistory, restorePurchases, validateReceipt } from "./iap";
@@ -26,7 +26,7 @@ export declare const sendMessageV2: functions.HttpsFunction & functions.Runnable
 export declare const editMessageV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const deleteMessageForAllV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const toggleReactionV2: functions.HttpsFunction & functions.Runnable<any>;
-export { cleanupOldGameSessions, cleanupOldGames, cleanupResolvedInvites, cleanupStaleMatchmakingEntries, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, resignGame, };
+export { cleanupOldGameSessions, cleanupOldGames, cleanupResolvedInvites, cleanupStaleMatchmakingEntries, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, processRealtimeGameCompletion, resignGame, };
 export { migrateGameInvites, migrateGameInvitesDryRun, rollbackGameInvitesMigration, };
 export { grantItem, purchaseWithTokens };
 export { getPurchaseHistory, restorePurchases, validateReceipt };
@@ -112,7 +112,8 @@ export declare const cleanupOldScheduledMessages: functions.CloudFunction<unknow
 export declare const onGameSessionCreated: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
 /**
  * onStreakUpdated: Check for streak achievements when streak changes
- * This extends the existing streak update logic
+ * V1 DISABLED — streak achievements are now handled by V2 evaluator.
+ * Keeping the export to avoid breaking deployed Cloud Functions references.
  */
 export declare const onStreakAchievementCheck: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
 /**
@@ -161,6 +162,11 @@ export declare const recordDailyLogin: functions.HttpsFunction & functions.Runna
  * This creates default task definitions
  */
 export declare const seedDailyTasks: functions.HttpsFunction;
+/**
+ * Seed monthly tasks into the Tasks collection
+ * Run once from admin panel to populate monthly challenges
+ */
+export declare const seedMonthlyTasks: functions.HttpsFunction;
 /**
  * Initialize wallet for existing users who don't have one
  * Run once via admin to migrate existing users

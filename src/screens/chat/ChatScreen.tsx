@@ -17,6 +17,7 @@
  * - Jump-back button after scrolling to a reply target
  */
 
+import { usePrefetchChatImages } from "@/utils/imagePrefetch";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import React, {
@@ -40,6 +41,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Auth & notifications
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
+import { useUser } from "@/store/UserContext";
 
 // Unified chat hooks (UNI-04, UNI-05)
 import { useAttachmentPicker } from "@/hooks/useAttachmentPicker";
@@ -100,7 +102,9 @@ import { CallButtonGroup } from "@/components/calls";
 // Types & Utils
 import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
-import { playQuack } from "@/services/chat/quackService";
+import { getAnimalEmoji } from "@/cosmetics/animalAssets";
+import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
+import { playAnimalSound } from "@/services/chat/animalSoundService";
 import type { AttachmentV2, ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
 import {
@@ -161,7 +165,18 @@ export default function ChatScreen({
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const { setCurrentChatId } = useInAppNotifications();
+  const { profile } = useUser();
   const uid = currentFirebaseUser?.uid;
+  const chatAppearance = profile?.chatAppearance ?? null;
+
+  // Build sender style snapshot for stamping on outgoing messages
+  const senderStyle = useMemo(() => {
+    const style = buildSenderStyle(chatAppearance);
+    console.log(
+      `[MSG_SEND_STYLE] DM: chatAppearance=${JSON.stringify(chatAppearance)} → senderStyle=${JSON.stringify(style)}`,
+    );
+    return style;
+  }, [chatAppearance]);
 
   // OPTIMIZATION: Extract initial data passed from inbox for instant display
   const { friendUid, initialData } = route.params as ChatScreenParams;
@@ -247,8 +262,12 @@ export default function ChatScreen({
     enableMentions: false,
     enableScheduledMessages: true,
     onSchedulePress: () => setScheduleModalVisible(true),
+    senderStyle,
     debug: DEBUG_CHAT,
   });
+
+  // Warm image cache for recent chat images
+  usePrefetchChatImages(screen.messages?.slice(0, 20));
 
   // ==========================================================================
   // Camera & attachment actions are handled through unified chat screen hooks.
@@ -892,22 +911,23 @@ export default function ChatScreen({
     setGamePickerVisible(true);
   }, []);
 
-  // Duck button press handler — sends a duck bubble + quack sound
-  const handleDuckPress = useCallback(async () => {
+  // Animal button press handler — sends an animal bubble + plays animal sound
+  const handleAnimalPress = useCallback(async () => {
     if (!uid || !chatId) return;
+    const animalId = chatAppearance?.animalThemeId ?? null;
     try {
-      // Play quack sound + haptic (fire and forget but still catch errors)
-      await playQuack();
+      // Play animal sound + haptic (fire and forget but still catch errors)
+      await playAnimalSound(animalId);
     } catch (e) {
-      logger.warn("❌ [ChatScreen] Quack sound error:", e);
+      logger.warn("❌ [ChatScreen] Animal sound error:", e);
     }
     try {
-      // Send the duck marker as a text message
-      await screen.chat.sendMessage("🦆", {});
+      // Send the animal's emoji marker as a text message
+      await screen.chat.sendMessage(getAnimalEmoji(animalId), {});
     } catch (error) {
-      logger.error("❌ [ChatScreen] Duck send error:", error);
+      logger.error("❌ [ChatScreen] Animal send error:", error);
     }
-  }, [uid, chatId, screen.chat]);
+  }, [uid, chatId, chatAppearance?.animalThemeId, screen.chat]);
 
   // Handle single-player game selection - navigate directly to game
   const handleSinglePlayerGame = useCallback(
@@ -1044,6 +1064,7 @@ export default function ChatScreen({
         currentUid={uid}
         chatId={chatId}
         friendProfile={friendProfile}
+        chatAppearance={chatAppearance}
         onReply={handleReply}
         onLongPress={handleMessageLongPress}
         onScrollToMessage={scrollToMessage}
@@ -1058,6 +1079,7 @@ export default function ChatScreen({
       uid,
       chatId,
       friendProfile,
+      chatAppearance,
       handleReply,
       handleMessageLongPress,
       scrollToMessage,
@@ -1202,7 +1224,8 @@ export default function ChatScreen({
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
-          onDuckPress={handleDuckPress}
+          onAnimalPress={handleAnimalPress}
+          animalThemeId={chatAppearance?.animalThemeId}
           onGamePress={handleGamePress}
           voiceButtonComponent={
             voiceRecorder.isAvailable &&

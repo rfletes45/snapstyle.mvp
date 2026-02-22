@@ -4,12 +4,24 @@
  * Displays a 320x320 PNG/GIF decoration asset as an overlay.
  * Supports both static and animated decorations.
  *
+ * Resolution order for assets:
+ *   1. Legacy avatarDecorations data (full metadata + asset)
+ *   2. Unified cosmetics asset registry (covers new catalog IDs)
+ *
  * @module components/profile/ProfilePicture/DecorationOverlay
  */
 
+import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
+import { getCosmeticById } from "@/cosmetics/catalog";
 import { getDecorationById } from "@/data/avatarDecorations";
 import React, { useMemo } from "react";
-import { Image, StyleSheet, View, ViewStyle } from "react-native";
+import {
+  Image,
+  ImageSourcePropType,
+  StyleSheet,
+  View,
+  ViewStyle,
+} from "react-native";
 
 export interface DecorationOverlayProps {
   /** Decoration ID to display */
@@ -39,10 +51,29 @@ export function DecorationOverlay({
   style,
   visible = true,
 }: DecorationOverlayProps) {
-  // Get decoration data
-  const decoration = useMemo(() => {
+  // Resolve decoration data: legacy first, then cosmetics registry fallback
+  const decoration = useMemo<{
+    assetPath: ImageSourcePropType | null;
+    rarity: keyof typeof RARITY_COLORS;
+  } | null>(() => {
     if (!decorationId) return null;
-    return getDecorationById(decorationId);
+
+    // 1) Try legacy avatarDecorations (has full metadata + asset)
+    const legacy = getDecorationById(decorationId);
+    if (legacy?.assetPath) {
+      return { assetPath: legacy.assetPath, rarity: legacy.rarity };
+    }
+
+    // 2) Fall back to unified cosmetics asset registry
+    const asset = getCosmeticAsset("decoration", decorationId);
+    if (asset) {
+      const catalogDef = getCosmeticById(decorationId);
+      const rarity = (catalogDef?.rarity ??
+        "common") as keyof typeof RARITY_COLORS;
+      return { assetPath: asset as ImageSourcePropType, rarity };
+    }
+
+    return null;
   }, [decorationId]);
 
   // Don't render if no decoration, not visible, or no asset

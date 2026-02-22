@@ -112,7 +112,10 @@ export function validateAvatarConfig(config: AvatarConfig): AvatarConfig {
   if (config.glasses !== undefined && typeof config.glasses !== "string") {
     throw new Error("Avatar glasses must be a string");
   }
-  if (config.background !== undefined && typeof config.background !== "string") {
+  if (
+    config.background !== undefined &&
+    typeof config.background !== "string"
+  ) {
     throw new Error("Avatar background must be a string");
   }
   return config;
@@ -170,6 +173,7 @@ export function hydrateProfileData(
       updatedAt: now,
     },
     privacy,
+    equippedBackgroundId: source.equippedBackgroundId ?? null,
     ownedDecorations: source.ownedDecorations || [],
     ownedThemes: source.ownedThemes || [DEFAULT_THEME_ID],
     createdAt: source.createdAt || now,

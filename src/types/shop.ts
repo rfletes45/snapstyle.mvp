@@ -1009,7 +1009,6 @@ export interface WishlistItem {
  */
 export type ShopStackParamList = {
   ShopHub: undefined;
-  PointsShop: { initialCategory?: string } | undefined;
   PremiumShop: { initialTab?: string } | undefined;
   PurchaseHistory: undefined;
   ItemDetail: { itemId: string; shopType: ShopType };

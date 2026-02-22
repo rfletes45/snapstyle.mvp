@@ -9,11 +9,13 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { memo } from "react";
-import { StyleSheet, View, ViewStyle } from "react-native";
+import React, { memo, useMemo } from "react";
+import { Image, StyleSheet, View, ViewStyle } from "react-native";
 import { Text } from "react-native-paper";
 
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
+import type { CosmeticImageSource } from "@/cosmetics/types";
 import { useColors } from "@/store/ThemeContext";
 import type {
   FriendshipDetails,
@@ -35,6 +37,8 @@ export interface UserProfileHeaderProps {
   pictureUrl: string | null;
   /** Equipped decoration ID (null if none) */
   decorationId: string | null;
+  /** Equipped background ID (null if none) */
+  backgroundId?: string | null;
   /** User's bio (may be hidden by privacy settings) */
   bio?: ProfileBio | null;
   /** User's current status (may be hidden by privacy settings) */
@@ -100,6 +104,7 @@ function UserProfileHeaderBase({
   username,
   pictureUrl,
   decorationId,
+  backgroundId,
   bio,
   status,
   lastActive,
@@ -108,6 +113,12 @@ function UserProfileHeaderBase({
   style,
 }: UserProfileHeaderProps) {
   const colors = useColors();
+
+  // Resolve the background image source from the asset registry
+  const backgroundSource: CosmeticImageSource | null = useMemo(() => {
+    if (!backgroundId) return null;
+    return getCosmeticAsset("background", backgroundId);
+  }, [backgroundId]);
 
   // Check if status is expired
   const isStatusActive =
@@ -118,114 +129,159 @@ function UserProfileHeaderBase({
   const hasStreak =
     friendshipDetails?.streakCount && friendshipDetails.streakCount > 0;
 
+  // Text colors adapt when background is present
+  const primaryTextColor = backgroundSource ? "#FFFFFF" : colors.text;
+  const secondaryTextColor = backgroundSource
+    ? "rgba(255,255,255,0.85)"
+    : colors.textSecondary;
+  const textShadow = backgroundSource
+    ? {
+        textShadowColor: "rgba(0,0,0,0.6)",
+        textShadowOffset: { width: 0, height: 1 } as const,
+        textShadowRadius: 3,
+      }
+    : {};
+
   return (
-    <View style={[styles.container, style]}>
-      {/* Profile Picture with Decoration */}
-      <View style={styles.pictureSection}>
-        <ProfilePictureWithDecoration
-          pictureUrl={pictureUrl}
-          name={displayName}
-          decorationId={decorationId}
-          size={120}
-          onPress={onPicturePress}
-        />
-      </View>
+    <View style={[styles.outerWrapper, style]}>
+      {/* Header region with overflow hidden for background crop */}
+      <View style={styles.headerRegion}>
+        {/* Background Image */}
+        {backgroundSource && (
+          <Image
+            source={backgroundSource}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          />
+        )}
 
-      {/* Name and Username */}
-      <View style={styles.nameSection}>
-        <Text style={[styles.displayName, { color: colors.text }]}>
-          {displayName}
-        </Text>
-        <Text style={[styles.username, { color: colors.textSecondary }]}>
-          @{username}
-        </Text>
-      </View>
+        {/* Scrim overlay for text readability */}
+        {backgroundSource && <View style={styles.backgroundScrim} />}
 
-      {/* Status Indicator */}
-      {isStatusActive && moodConfig && (
-        <View
-          style={[
-            styles.statusContainer,
-            { backgroundColor: colors.surfaceVariant },
-          ]}
-        >
-          <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
-          <Text style={[styles.statusText, { color: colors.text }]}>
-            {status.text || moodConfig.label}
-          </Text>
-        </View>
-      )}
+        {/* Foreground content */}
+        <View style={styles.foregroundContent}>
+          {/* Profile Picture with Decoration */}
+          <View style={styles.pictureSection}>
+            <ProfilePictureWithDecoration
+              pictureUrl={pictureUrl}
+              name={displayName}
+              decorationId={decorationId}
+              size={120}
+              onPress={onPicturePress}
+            />
+          </View>
 
-      {/* Last Active (if not showing status) */}
-      {!isStatusActive && lastActive && (
-        <Text style={[styles.lastActive, { color: colors.textSecondary }]}>
-          {formatLastActive(lastActive)}
-        </Text>
-      )}
+          {/* Name and Username */}
+          <View style={styles.nameSection}>
+            <Text
+              style={[
+                styles.displayName,
+                { color: primaryTextColor },
+                textShadow,
+              ]}
+            >
+              {displayName}
+            </Text>
+            <Text
+              style={[
+                styles.username,
+                { color: secondaryTextColor },
+                textShadow,
+              ]}
+            >
+              @{username}
+            </Text>
+          </View>
 
-      {/* Friendship Info */}
-      {friendshipDetails && (
-        <View
-          style={[
-            styles.friendshipContainer,
-            { backgroundColor: colors.surfaceVariant },
-          ]}
-        >
-          {/* Streak */}
-          {hasStreak && (
-            <View style={styles.friendshipItem}>
-              <Text style={styles.streakEmoji}>🔥</Text>
-              <Text style={[styles.friendshipValue, { color: colors.text }]}>
-                {friendshipDetails.streakCount}
-              </Text>
-              <Text
-                style={[
-                  styles.friendshipLabel,
-                  { color: colors.textSecondary },
-                ]}
-              >
-                day streak
+          {/* Status Indicator */}
+          {isStatusActive && moodConfig && (
+            <View
+              style={[
+                styles.statusContainer,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
+              <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
+              <Text style={[styles.statusText, { color: colors.text }]}>
+                {status.text || moodConfig.label}
               </Text>
             </View>
           )}
 
-          {/* Duration */}
-          {friendshipDetails.friendsSince && (
-            <View style={styles.friendshipItem}>
-              <MaterialCommunityIcons
-                name="account-heart"
-                size={18}
-                color={colors.primary}
-              />
+          {/* Last Active (if not showing status) */}
+          {!isStatusActive && lastActive && (
+            <Text style={[styles.lastActive, { color: colors.textSecondary }]}>
+              {formatLastActive(lastActive)}
+            </Text>
+          )}
+
+          {/* Friendship Info */}
+          {friendshipDetails && (
+            <View
+              style={[
+                styles.friendshipContainer,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
+              {/* Streak */}
+              {hasStreak && (
+                <View style={styles.friendshipItem}>
+                  <Text style={styles.streakEmoji}>🔥</Text>
+                  <Text
+                    style={[styles.friendshipValue, { color: colors.text }]}
+                  >
+                    {friendshipDetails.streakCount}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.friendshipLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    day streak
+                  </Text>
+                </View>
+              )}
+
+              {/* Duration */}
+              {friendshipDetails.friendsSince && (
+                <View style={styles.friendshipItem}>
+                  <MaterialCommunityIcons
+                    name="account-heart"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.friendshipDuration,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {formatFriendshipDuration(friendshipDetails.friendsSince)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Bio Section */}
+          {bio?.text && (
+            <View
+              style={[
+                styles.bioContainer,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
               <Text
-                style={[
-                  styles.friendshipDuration,
-                  { color: colors.textSecondary },
-                ]}
+                style={[styles.bioText, { color: colors.text }]}
+                numberOfLines={4}
               >
-                {formatFriendshipDuration(friendshipDetails.friendsSince)}
+                {bio.text}
               </Text>
             </View>
           )}
         </View>
-      )}
-
-      {/* Bio Section */}
-      {bio?.text && (
-        <View
-          style={[
-            styles.bioContainer,
-            { backgroundColor: colors.surfaceVariant },
-          ]}
-        >
-          <Text
-            style={[styles.bioText, { color: colors.text }]}
-            numberOfLines={4}
-          >
-            {bio.text}
-          </Text>
-        </View>
-      )}
+      </View>
     </View>
   );
 }
@@ -235,10 +291,30 @@ function UserProfileHeaderBase({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
+  outerWrapper: {
+    width: "100%",
+  },
+  headerRegion: {
+    overflow: "hidden",
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    minHeight: 220,
+    justifyContent: "flex-end",
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  backgroundScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
+  foregroundContent: {
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
   },
   pictureSection: {
     marginBottom: 16,

@@ -500,6 +500,7 @@ export async function pullMessages(
         linkPreview: data.linkPreview || null,
         clientId: data.clientId || "",
         idempotencyKey: data.idempotencyKey || docSnap.id,
+        senderStyle: data.senderStyle || undefined,
       };
 
       upsertMessageFromServer(message);
@@ -636,6 +637,7 @@ export async function fullSyncConversation(
           linkPreview: data.linkPreview || null,
           clientId: data.clientId || "",
           idempotencyKey: data.idempotencyKey || docSnap.id,
+          senderStyle: data.senderStyle || undefined,
         };
       }
 
@@ -776,6 +778,7 @@ export function subscribeToConversation(
               linkPreview: data.linkPreview || null,
               clientId: data.clientId || "",
               idempotencyKey: data.idempotencyKey || change.doc.id,
+              senderStyle: data.senderStyle || undefined,
             };
           }
 

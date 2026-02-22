@@ -796,6 +796,83 @@ export const processGameCompletion = functions.firestore
     }
   });
 
+// =============================================================================
+// Realtime Game Completion & Stats Update
+// =============================================================================
+
+/**
+ * Process realtime game completion (Sketch Party, Mini Golf, etc.)
+ *
+ * Fires when a Colyseus room persists a finished game to RealtimeGameSessions.
+ * Mirrors processGameCompletion's v2 achievement logic:
+ *   1. Determine per-player outcome (win / loss / draw)
+ *   2. Call updatePerGameStatsV2 with score + gameSpecific
+ *   3. Run evaluateAchievementsV2 for each player
+ */
+export const processRealtimeGameCompletion = functions.firestore
+  .document("RealtimeGameSessions/{sessionId}")
+  .onCreate(async (snap, context) => {
+    const data = snap.data();
+    if (!data) return;
+
+    const gameType: string = data.gameType;
+    const winnerId: string = data.winnerId || "";
+    const players: Array<{
+      uid: string;
+      displayName: string;
+      score: number;
+      playerIndex: number;
+      gameSpecific?: Record<string, number>;
+    }> = data.players || [];
+
+    if (players.length === 0) {
+      functions.logger.warn("[RealtimeCompletion] No players in record", {
+        sessionId: context.params.sessionId,
+      });
+      return;
+    }
+
+    functions.logger.info("[RealtimeCompletion] Processing", {
+      sessionId: context.params.sessionId,
+      gameType,
+      winnerId,
+      playerCount: players.length,
+    });
+
+    for (const player of players) {
+      try {
+        // Determine outcome
+        let outcome: "win" | "loss" | "draw";
+        if (!winnerId) {
+          outcome = "draw";
+        } else {
+          outcome = winnerId === player.uid ? "win" : "loss";
+        }
+
+        await updatePerGameStatsV2(
+          player.uid,
+          gameType,
+          outcome,
+          player.score,
+          player.gameSpecific,
+        );
+        await evaluateAchievementsV2(player.uid);
+      } catch (err) {
+        // Non-critical — don't fail the whole batch
+        functions.logger.warn("[RealtimeCompletion] Player eval failed", {
+          playerId: player.uid,
+          gameType,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    functions.logger.info("[RealtimeCompletion] Done", {
+      sessionId: context.params.sessionId,
+      gameType,
+    });
+  });
+
 /**
  * Update invite status when the associated game completes
  */

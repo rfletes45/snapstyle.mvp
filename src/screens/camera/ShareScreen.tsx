@@ -4,13 +4,17 @@
  * Uses CameraContext for state (no Redux).
  */
 
+import AppImage from "@/components/AppImage";
+import { useSnapSharing, useSnapUpload } from "@/hooks/camera/useCameraHooks";
+import { useAuth } from "@/store/AuthContext";
+import { useSnapState } from "@/store/CameraContext";
+import type { Snap } from "@/types/camera";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Dimensions,
   FlatList,
-  Image,
   ScrollView,
   StyleSheet,
   Switch,
@@ -19,14 +23,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  useSnapSharing,
-  useSnapUpload,
-} from "@/hooks/camera/useCameraHooks";
-import { useAuth } from "@/store/AuthContext";
-import { useSnapState } from "@/store/CameraContext";
-import type { Snap } from "@/types/camera";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/camera/ShareScreen");
@@ -168,10 +164,11 @@ const ShareScreen: React.FC = () => {
       {/* Header with preview */}
       <View style={styles.previewSection}>
         {currentShareSnap && (
-          <Image
+          <AppImage
             source={{ uri: currentShareSnap.mediaUrl }}
             style={styles.snapPreview}
-            resizeMode="cover"
+            contentFit="cover"
+            debugLabel="SharePreview"
           />
         )}
       </View>

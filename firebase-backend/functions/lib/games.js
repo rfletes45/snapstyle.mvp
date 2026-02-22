@@ -46,10 +46,12 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
+exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processRealtimeGameCompletion = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-admin/firestore");
 const functions = __importStar(require("firebase-functions"));
+const achievementsV2Evaluator_1 = require("./achievementsV2Evaluator");
+const socialGameStatsHelpers_1 = require("./socialGameStatsHelpers");
 // Initialize if not already
 if (!admin.apps.length) {
     admin.initializeApp();
@@ -319,6 +321,17 @@ exports.onUniversalInviteUpdate = functions.firestore
         beforeStatus,
         afterStatus,
     });
+    // ── Achievements V2: Social counters ────────────────────────────
+    // Track invites sent (first slot = host creating invite)
+    if (beforeSlotCount === 0 && afterSlotCount >= 1 && after.senderId) {
+        await (0, socialGameStatsHelpers_1.incrementInvitesSent)(after.senderId).catch(() => { });
+    }
+    // Track invites accepted (new non-host slot claimed)
+    if (afterSlotCount > beforeSlotCount &&
+        afterSlotCount > 1 &&
+        after.senderId) {
+        await (0, socialGameStatsHelpers_1.incrementInvitesAccepted)(after.senderId).catch(() => { });
+    }
     // CASE 1: Status changed to ready - create the game
     if (afterStatus === "ready" && beforeStatus !== "ready") {
         await createGameFromUniversalInvite(change.after.ref, after);
@@ -506,9 +519,32 @@ exports.processGameCompletion = functions.firestore
     const isTerminal = terminalStates.includes(after.status);
     if (wasActive && isTerminal) {
         try {
-            // Update player stats and check achievements
+            // Update player stats (shared)
             await updatePlayerStats(after);
-            await checkAchievements(after);
+            // V1 achievements disabled — V2 evaluator handles all achievement logic
+            // await checkAchievements(after);
+            // ── Achievements V2 ──────────────────────────────────
+            // Update per-game stats and run v2 evaluator for each player
+            const playerIds = [after.players.player1.id, after.players.player2.id];
+            const winnerId = after.winner?.playerId;
+            for (const pid of playerIds) {
+                try {
+                    const outcome = !winnerId
+                        ? "draw"
+                        : winnerId === pid
+                            ? "win"
+                            : "loss";
+                    await (0, achievementsV2Evaluator_1.updatePerGameStatsV2)(pid, after.gameType, outcome);
+                    await (0, achievementsV2Evaluator_1.evaluateAchievementsV2)(pid);
+                }
+                catch (v2Err) {
+                    // Non-critical — don't fail the whole completion
+                    functions.logger.warn("[AchievementsV2] Player eval failed", {
+                        playerId: pid,
+                        error: v2Err,
+                    });
+                }
+            }
             // Update invite status to "completed" if game was created from an invite
             if (after.inviteId) {
                 await updateInviteStatusOnGameCompletion(after.inviteId, after.status);
@@ -531,6 +567,66 @@ exports.processGameCompletion = functions.firestore
             });
         }
     }
+});
+// =============================================================================
+// Realtime Game Completion & Stats Update
+// =============================================================================
+/**
+ * Process realtime game completion (Sketch Party, Mini Golf, etc.)
+ *
+ * Fires when a Colyseus room persists a finished game to RealtimeGameSessions.
+ * Mirrors processGameCompletion's v2 achievement logic:
+ *   1. Determine per-player outcome (win / loss / draw)
+ *   2. Call updatePerGameStatsV2 with score + gameSpecific
+ *   3. Run evaluateAchievementsV2 for each player
+ */
+exports.processRealtimeGameCompletion = functions.firestore
+    .document("RealtimeGameSessions/{sessionId}")
+    .onCreate(async (snap, context) => {
+    const data = snap.data();
+    if (!data)
+        return;
+    const gameType = data.gameType;
+    const winnerId = data.winnerId || "";
+    const players = data.players || [];
+    if (players.length === 0) {
+        functions.logger.warn("[RealtimeCompletion] No players in record", {
+            sessionId: context.params.sessionId,
+        });
+        return;
+    }
+    functions.logger.info("[RealtimeCompletion] Processing", {
+        sessionId: context.params.sessionId,
+        gameType,
+        winnerId,
+        playerCount: players.length,
+    });
+    for (const player of players) {
+        try {
+            // Determine outcome
+            let outcome;
+            if (!winnerId) {
+                outcome = "draw";
+            }
+            else {
+                outcome = winnerId === player.uid ? "win" : "loss";
+            }
+            await (0, achievementsV2Evaluator_1.updatePerGameStatsV2)(player.uid, gameType, outcome, player.score, player.gameSpecific);
+            await (0, achievementsV2Evaluator_1.evaluateAchievementsV2)(player.uid);
+        }
+        catch (err) {
+            // Non-critical — don't fail the whole batch
+            functions.logger.warn("[RealtimeCompletion] Player eval failed", {
+                playerId: player.uid,
+                gameType,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    functions.logger.info("[RealtimeCompletion] Done", {
+        sessionId: context.params.sessionId,
+        gameType,
+    });
 });
 /**
  * Update invite status when the associated game completes

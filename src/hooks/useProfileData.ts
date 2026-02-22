@@ -29,7 +29,6 @@ import type {
 import { calculateLevelFromXp, normalizeAvatarConfig } from "@/types/profile";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useProfileData");
 // =============================================================================
@@ -218,6 +217,7 @@ export function useProfileData(
         profileFrame: avatarConfig.profileFrame,
         chatBubble: avatarConfig.chatBubble,
       },
+      equippedBackgroundId: baseProfile.equippedBackgroundId ?? null,
     };
   }, [
     baseProfile,

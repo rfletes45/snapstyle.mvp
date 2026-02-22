@@ -16,6 +16,7 @@
  * @module components/chat/MediaViewerModal
  */
 
+import AppImage from "@/components/AppImage";
 import { AttachmentV2 } from "@/types/messaging";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useRef, useState } from "react";
@@ -24,7 +25,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Linking,
   Modal,
   NativeScrollEvent,
@@ -48,7 +48,6 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/chat/MediaViewerModal");
@@ -184,7 +183,12 @@ const ZoomableImage = memo(function ZoomableImage({
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View style={[styles.mediaContainer, animatedStyle]}>
-        <Image source={{ uri }} style={styles.image} resizeMode="contain" />
+        <AppImage
+          source={{ uri }}
+          style={styles.image}
+          contentFit="contain"
+          debugLabel="MediaViewer"
+        />
       </Animated.View>
     </GestureDetector>
   );

@@ -13,6 +13,7 @@
  * @module components/chat/LinkPreviewCard
  */
 
+import AppImage from "@/components/AppImage";
 import {
   getDomainFromUrl,
   isDisplayablePreview,
@@ -23,7 +24,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Linking,
   StyleSheet,
   Text,
@@ -31,7 +31,6 @@ import {
   View,
 } from "react-native";
 import { useTheme } from "react-native-paper";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/chat/LinkPreviewCard");
@@ -164,16 +163,17 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
       {/* Preview Image */}
       {hasImage && (
         <View style={styles.imageContainer}>
-          <Image
+          <AppImage
             source={{ uri: preview.imageUrl }}
             style={styles.image}
-            resizeMode="cover"
+            contentFit="cover"
             onLoadStart={() => setImageLoading(true)}
             onLoadEnd={() => setImageLoading(false)}
             onError={() => {
               setImageError(true);
               setImageLoading(false);
             }}
+            debugLabel="LinkPreview"
           />
           {imageLoading && (
             <View style={styles.imagePlaceholder}>

@@ -33,8 +33,8 @@ export { PlaySearchBar } from "./PlaySearchBar";
 export { ModernGameCard } from "./ModernGameCard";
 export type { GameCardVariant, ModernGameCardProps } from "./ModernGameCard";
 
-export { GameQuickActionsModal } from "./GameQuickActionsModal";
-export type { GameQuickActionsModalProps } from "./GameQuickActionsModal";
+export { GameLongPressSheet } from "./GameLongPressSheet";
+export type { GameLongPressSheetProps } from "./GameLongPressSheet";
 
 export { CarouselGameTile } from "./CarouselGameTile";
 export type { CarouselGameTileProps } from "./CarouselGameTile";

@@ -280,6 +280,7 @@ async function getUserProfile(uid) {
     return {
         displayName: data.displayName,
         avatarConfig: data.avatarConfig,
+        chatAppearance: data.chatAppearance,
     };
 }
 // =============================================================================
@@ -359,7 +360,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("unauthenticated", "Must be logged in to send messages");
     }
     const senderId = context.auth.uid;
-    const { conversationId, scope, kind, text, replyTo, mentionUids, mentionSpans, attachments, stagedAttachments, clientId, messageId, createdAt, traceId, } = data;
+    const { conversationId, scope, kind, text, replyTo, mentionUids, mentionSpans, attachments, stagedAttachments, clientId, messageId, createdAt, traceId, senderStyle, } = data;
     // Segment 8: Log traceId if present (for cross-system correlation)
     const logTraceId = traceId || `srv-${messageId?.substring(0, 12) || "unknown"}`;
     console.log(`[sendMessageV2] Request from ${senderId.substring(0, 8)}:`, sanitizeForLog({
@@ -560,6 +561,17 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (attachments && attachments.length > 0) {
         messageData.attachments = attachments;
     }
+    // Stamp sender's chat style if provided by client
+    if (senderStyle && typeof senderStyle === "object" && senderStyle.v === 1) {
+        messageData.senderStyle = {
+            bubbleColorId: senderStyle.bubbleColorId ?? null,
+            bubbleColorHex: senderStyle.bubbleColorHex ?? null,
+            fontId: senderStyle.fontId ?? null,
+            fontKey: senderStyle.fontKey ?? null,
+            animalThemeId: senderStyle.animalThemeId ?? null,
+            v: 1,
+        };
+    }
     // Segment 3: Staged media pipeline — commit staged attachments to final
     // paths, strip download tokens, and store path-only references.
     if (stagedAttachments && stagedAttachments.length > 0) {
@@ -574,6 +586,30 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
             messageData.senderName = senderProfile.displayName;
             messageData.senderDisplayName = senderProfile.displayName; // Legacy field
             messageData.senderAvatarConfig = senderProfile.avatarConfig;
+            // Server-side fallback: if client didn't send senderStyle, build it
+            // from the sender's chatAppearance profile field.
+            if (!messageData.senderStyle && senderProfile.chatAppearance) {
+                const ca = senderProfile.chatAppearance;
+                messageData.senderStyle = {
+                    bubbleColorId: ca.bubbleColorId ?? null,
+                    fontId: ca.fontId ?? null,
+                    animalThemeId: ca.animalThemeId ?? null,
+                    v: 1,
+                };
+            }
+        }
+    }
+    // For DMs: server-side fallback for senderStyle when not provided by client
+    if (scope === "dm" && !messageData.senderStyle) {
+        const senderProfile = await getUserProfile(senderId);
+        if (senderProfile?.chatAppearance) {
+            const ca = senderProfile.chatAppearance;
+            messageData.senderStyle = {
+                bubbleColorId: ca.bubbleColorId ?? null,
+                fontId: ca.fontId ?? null,
+                animalThemeId: ca.animalThemeId ?? null,
+                v: 1,
+            };
         }
     }
     // 9. Write message document

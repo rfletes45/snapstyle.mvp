@@ -10,13 +10,13 @@
  * @module components/chat/AttachmentTray
  */
 
+import AppImage from "@/components/AppImage";
 import { AttachmentUploadProgress } from "@/hooks/useAttachmentPicker";
 import { LocalAttachment } from "@/services/storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback } from "react";
 import {
   ActivityIndicator,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -78,14 +78,15 @@ const AttachmentThumbnail = memo(function AttachmentThumbnail({
   return (
     <View style={styles.thumbnailContainer}>
       {/* Image */}
-      <Image
+      <AppImage
         source={{ uri: attachment.uri }}
         style={[
           styles.thumbnail,
           isUploading && styles.thumbnailUploading,
           isError && styles.thumbnailError,
         ]}
-        resizeMode="cover"
+        contentFit="cover"
+        debugLabel="AttachmentTray"
       />
 
       {/* Upload overlay */}

@@ -58,11 +58,17 @@ interface PointsShopItemData {
 }
 
 interface WalletData {
-  tokens: number;
+  tokensBalance?: number;
+  tokens?: number; // legacy field — prefer tokensBalance
   premiumTokens: number;
   totalEarned?: number;
   totalSpent?: number;
   lastUpdated: admin.firestore.Timestamp;
+}
+
+/** Read canonical token balance with legacy fallback */
+function getTokenBalance(wallet: WalletData): number {
+  return wallet.tokensBalance ?? wallet.tokens ?? 0;
 }
 
 // =============================================================================
@@ -237,15 +243,17 @@ export const purchaseWithTokens = functions.https.onCall(
         // 4. Check balance
         // ---------------------------------------------------------------------
 
-        if (wallet.tokens < item.priceTokens) {
+        const balance = getTokenBalance(wallet);
+
+        if (balance < item.priceTokens) {
           functions.logger.info("[shop] Insufficient funds:", {
             uid,
-            balance: wallet.tokens,
+            balance,
             price: item.priceTokens,
           });
           return {
             success: false,
-            error: `You need ${item.priceTokens - wallet.tokens} more tokens`,
+            error: `You need ${item.priceTokens - balance} more tokens`,
             errorCode: ShopErrorCode.INSUFFICIENT_FUNDS,
           };
         }
@@ -322,11 +330,12 @@ export const purchaseWithTokens = functions.https.onCall(
 
         const transactionId = generateTransactionId();
         const now = admin.firestore.Timestamp.now();
-        const newBalance = wallet.tokens - item.priceTokens;
+        const newBalance = balance - item.priceTokens;
 
-        // Deduct tokens from wallet
+        // Deduct tokens from wallet (write both canonical + legacy fields)
         transaction.update(walletRef, {
-          tokens: newBalance,
+          tokensBalance: newBalance,
+          tokens: newBalance, // back-compat
           totalSpent: admin.firestore.FieldValue.increment(item.priceTokens),
           lastUpdated: now,
         });

@@ -10,7 +10,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { Platform } from "react-native";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/database/index");
 // =============================================================================
@@ -18,7 +17,7 @@ const logger = createLogger("services/database/index");
 // =============================================================================
 
 const DATABASE_NAME = "snapstyle.db";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 /**
  * Check if SQLite is available on this platform
@@ -87,6 +86,22 @@ function initializeSchema(database: SQLiteDatabase): void {
     database.getFirstSync<{ user_version: number }>("PRAGMA user_version")
       ?.user_version ?? 0;
 
+  // ---- Migration from v1 → v2: add sender_style_json column ----
+  if (currentVersion === 1) {
+    try {
+      database.execSync(
+        `ALTER TABLE messages ADD COLUMN sender_style_json TEXT;`,
+      );
+      logger.info("[Database] Migrated v1 → v2: added sender_style_json");
+    } catch (e: unknown) {
+      // Column may already exist if a prior migration was interrupted
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("duplicate column")) {
+        throw e;
+      }
+    }
+  }
+
   if (currentVersion < DATABASE_VERSION) {
     database.execSync(`
       -- Conversations table
@@ -127,6 +142,7 @@ function initializeSchema(database: SQLiteDatabase): void {
         deleted_at INTEGER,
         hidden_for_json TEXT,
         link_preview_json TEXT,
+        sender_style_json TEXT,
         sync_status TEXT DEFAULT 'pending' CHECK(sync_status IN ('pending', 'synced', 'failed', 'conflict')),
         sync_error TEXT,
         retry_count INTEGER DEFAULT 0,

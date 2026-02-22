@@ -139,6 +139,13 @@ function docToMessage(doc: DocumentSnapshot): MessageV2 | null {
       ? data.editedAt.toMillis()
       : data.editedAt;
 
+  const resolvedSenderStyle = data.senderStyle || undefined;
+
+  // Unconditional log: show senderStyle status for every message
+  console.log(
+    `[MSG_READ] id=${doc.id} sender=${data.senderId} senderStyle=${JSON.stringify(resolvedSenderStyle ?? null)}`,
+  );
+
   return {
     id: doc.id,
     scope: data.scope,
@@ -161,6 +168,7 @@ function docToMessage(doc: DocumentSnapshot): MessageV2 | null {
     linkPreview: data.linkPreview,
     clientId: data.clientId,
     idempotencyKey: data.idempotencyKey,
+    senderStyle: resolvedSenderStyle,
     // Legacy compatibility
     content: data.content,
     type: data.type,

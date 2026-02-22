@@ -14,6 +14,7 @@
  * @see docs/PLAY_SCREEN_OVERHAUL_PLAN.md - Phase 2
  */
 
+import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { useAppTheme } from "@/store/ThemeContext";
 import { ExtendedGameType } from "@/types/games";
 import React, { memo, useCallback } from "react";
@@ -26,7 +27,6 @@ import {
   ViewStyle,
 } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { PLAY_SCREEN_TOKENS } from "@/constants/gamesTheme";
 import { ModernGameCard } from "./ModernGameCard";
 
 const { spacing, typography } = PLAY_SCREEN_TOKENS;
@@ -44,6 +44,8 @@ export interface SearchResultsViewProps {
   highScores?: Map<string, string>;
   /** Called when a game is pressed */
   onGamePress: (gameType: ExtendedGameType) => void;
+  /** Called when a game is long-pressed */
+  onGameLongPress?: (gameType: ExtendedGameType) => void;
   /** Whether search is in progress */
   isSearching?: boolean;
   /** Additional container styles */
@@ -61,6 +63,7 @@ function SearchResultsViewComponent({
   results,
   highScores,
   onGamePress,
+  onGameLongPress,
   isSearching = false,
   style,
   testID,
@@ -77,6 +80,9 @@ function SearchResultsViewComponent({
           gameType={gameType}
           personalBest={personalBest}
           onPress={() => onGamePress(gameType)}
+          onLongPress={
+            onGameLongPress ? () => onGameLongPress(gameType) : undefined
+          }
           variant="default"
           showPlayButton={true}
           style={styles.gameCard}
@@ -84,7 +90,7 @@ function SearchResultsViewComponent({
         />
       );
     },
-    [highScores, onGamePress, testID],
+    [highScores, onGamePress, onGameLongPress, testID],
   );
 
   // Key extractor

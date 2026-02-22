@@ -56,11 +56,7 @@ export function AppGate({
     loading: authLoading,
     isHydrated: authHydrated,
   } = useAuth();
-  const {
-    profile,
-    loading: profileLoading,
-    isHydrated: profileHydrated,
-  } = useUser();
+  const { profile, isHydrated: profileHydrated } = useUser();
 
   // Ban state
   const [ban, setBan] = useState<Ban | null>(null);
@@ -112,8 +108,11 @@ export function AppGate({
       };
     }
 
-    // User exists but profile still loading or ban not checked
-    if (profileLoading || !profileHydrated || !banChecked) {
+    // User exists but profile never loaded yet, or ban not checked.
+    // IMPORTANT: Once profileHydrated is true we do NOT fall back to
+    // "loading" on a subsequent refreshProfile() call — that would unmount
+    // the entire navigation tree and reset the user to the Inbox tab.
+    if (!profileHydrated || !banChecked) {
       return {
         hydrationState: "loading",
         isHydrated: false,
@@ -167,7 +166,6 @@ export function AppGate({
     authLoading,
     authHydrated,
     currentFirebaseUser,
-    profileLoading,
     profileHydrated,
     profile,
     ban,

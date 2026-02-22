@@ -31,6 +31,16 @@ export declare const onUniversalInviteUpdate: functions.CloudFunction<functions.
  */
 export declare const processGameCompletion: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
 /**
+ * Process realtime game completion (Sketch Party, Mini Golf, etc.)
+ *
+ * Fires when a Colyseus room persists a finished game to RealtimeGameSessions.
+ * Mirrors processGameCompletion's v2 achievement logic:
+ *   1. Determine per-player outcome (win / loss / draw)
+ *   2. Call updatePerGameStatsV2 with score + gameSpecific
+ *   3. Run evaluateAchievementsV2 for each player
+ */
+export declare const processRealtimeGameCompletion: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
+/**
  * Create GameHistory record when a game completes
  *
  * Triggers when a TurnBasedGame document's status changes to a terminal state.

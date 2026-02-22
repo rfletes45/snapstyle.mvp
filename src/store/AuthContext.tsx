@@ -13,11 +13,11 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { Platform } from "react-native";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("store/AuthContext");
@@ -209,19 +209,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        currentFirebaseUser,
-        loading,
-        isHydrated,
-        error: null,
-        customClaims,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      currentFirebaseUser,
+      loading,
+      isHydrated,
+      error: null as string | null,
+      customClaims,
+    }),
+    [currentFirebaseUser, loading, isHydrated, customClaims],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextType {

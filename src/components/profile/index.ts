@@ -37,6 +37,15 @@ export type {
 } from "./ProfileHeader";
 
 // =============================================================================
+// Profile Header Visual (Shared visual w/ background & preview support)
+// =============================================================================
+export { ProfileHeaderVisual } from "./ProfileHeaderVisual";
+export type {
+  HeaderPreviewOverrides,
+  ProfileHeaderVisualProps,
+} from "./ProfileHeaderVisual";
+
+// =============================================================================
 // Phase 3 - Profile Bio Components
 // =============================================================================
 export { ProfileBio, ProfileBioEditor, ProfileStatus } from "./ProfileBio";

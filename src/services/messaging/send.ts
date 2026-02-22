@@ -40,6 +40,7 @@
  */
 
 import { DEBUG_UNIFIED_MESSAGING } from "@/constants/featureFlags";
+import type { SenderStyle } from "@/cosmetics/types";
 import {
   AttachmentV2,
   LocalAttachment,
@@ -120,6 +121,12 @@ export interface SendMessageParams {
    * Note: Attachments are uploaded during send process
    */
   localAttachments?: LocalAttachment[];
+
+  /**
+   * Sender's chat style snapshot (bubble color, font, animal theme).
+   * Stamped on each message so recipients can render sender styling.
+   */
+  senderStyle?: SenderStyle;
 }
 
 /**
@@ -221,6 +228,7 @@ export async function sendMessage(
     replyTo: params.replyTo,
     mentionUids: params.mentionUids,
     mentionSpans: params.mentionSpans,
+    senderStyle: params.senderStyle,
   });
 }
 

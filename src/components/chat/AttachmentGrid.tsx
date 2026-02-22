@@ -10,10 +10,11 @@
  * @module components/chat/AttachmentGrid
  */
 
+import AppImage from "@/components/AppImage";
 import { AttachmentV2 } from "@/types/messaging";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTheme } from "react-native-paper";
 
 // =============================================================================
@@ -162,10 +163,12 @@ const GridItem = memo(function GridItem({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <Image
+      <AppImage
         source={{ uri: imageUrl }}
         style={[styles.gridImage, borderRadius]}
-        resizeMode="cover"
+        contentFit="cover"
+        recyclingKey={attachment.id}
+        debugLabel="AttachmentGrid"
       />
 
       {/* Video indicator */}

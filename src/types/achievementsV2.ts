@@ -45,7 +45,16 @@ export type AchievementV2ProgressType =
   | "threshold" // reach a threshold value (score >= X)
   | "streak" // consecutive streak
   | "instant" // unlocked immediately on first trigger
-  | "pct_of_max"; // percentage of score limit max
+  | "pct_of_max" // percentage of score limit max
+  | "stat_threshold"; // reach a game-specific stat threshold (e.g. maxTile >= 2048)
+
+/** Rewards granted when an achievement is unlocked */
+export interface AchievementRewards {
+  /** Tokens added to Wallets/{uid}.tokensBalance */
+  tokens?: number;
+  /** Cosmetic entitlement IDs to grant (e.g. "badge_2048_master") */
+  entitlements?: string[];
+}
 
 /** Achievement definition — static catalog entry */
 export interface AchievementDef {
@@ -84,6 +93,12 @@ export interface AchievementDef {
 
   /** Coin reward on unlock */
   coinReward: number;
+
+  /** Structured rewards granted on unlock (tokens, entitlements) */
+  rewards?: AchievementRewards;
+
+  /** Key into PerGameStatsDoc.gameSpecific for stat_threshold progress */
+  statKey?: string;
 
   /** Hidden/secret achievement */
   secret?: boolean;
@@ -197,6 +212,9 @@ export interface UserAchievementDoc {
   /** Where this was evaluated: "server" | "migration" | "client" */
   source: "server" | "migration" | "client";
 
+  /** Whether rewards (tokens/entitlements) have been granted for this unlock */
+  rewardsGranted?: boolean;
+
   /** Last evaluation timestamp */
   updatedAt: number;
 
@@ -246,6 +264,9 @@ export interface PerGameStatsDoc {
 
   /** Last updated */
   updatedAt: number;
+
+  /** Game-specific stats (e.g. maxTile for 2048, highestLevel for brick_breaker) */
+  gameSpecific?: Record<string, number>;
 }
 
 /**

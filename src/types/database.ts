@@ -59,6 +59,7 @@ export interface MessageRow {
   deleted_at: number | null;
   hidden_for_json: string | null; // JSON string
   link_preview_json: string | null; // JSON string
+  sender_style_json: string | null; // JSON string — SenderStyle
   sync_status: MessageSyncStatus;
   sync_error: string | null;
   retry_count: number;

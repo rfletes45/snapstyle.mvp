@@ -15,24 +15,7 @@
  * @see docs/SHOP_OVERHAUL_PLAN.md Section 10.4
  */
 
-import { useAppTheme } from "@/store/ThemeContext";
-import { Ionicons } from "@expo/vector-icons";
-import { DocumentSnapshot } from "firebase/firestore";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import AppImage from "@/components/AppImage";
 import {
   formatPurchaseDate,
   formatPurchasePrice,
@@ -47,7 +30,23 @@ import {
   PurchaseStats,
   searchPurchases,
 } from "@/services/purchaseHistory";
-
+import { useAppTheme } from "@/store/ThemeContext";
+import { Ionicons } from "@expo/vector-icons";
+import { DocumentSnapshot } from "firebase/firestore";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/shop/PurchaseHistoryScreen");
@@ -246,14 +245,17 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
         {/* Item Image */}
         <View style={[styles.itemImageContainer, { borderColor: rarityColor }]}>
           {item.itemImagePath ? (
-            <Image
+            <AppImage
               source={{ uri: item.itemImagePath }}
               style={styles.itemImage}
-              resizeMode="cover"
+              contentFit="cover"
+              debugLabel="PurchaseItem"
             />
           ) : (
             <Ionicons
-              name={getPurchaseTypeIcon(item.type) as keyof typeof Ionicons.glyphMap}
+              name={
+                getPurchaseTypeIcon(item.type) as keyof typeof Ionicons.glyphMap
+              }
               size={28}
               color={typeColor}
             />

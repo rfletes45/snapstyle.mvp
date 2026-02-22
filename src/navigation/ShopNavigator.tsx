@@ -2,8 +2,7 @@
  * Shop Navigator
  *
  * Stack navigator for the shop system providing navigation between:
- * - ShopHubScreen: Entry point with Points Shop and Premium Shop options
- * - PointsShopScreen: Browse and purchase items with tokens
+ * - ShopHubScreen: Entry point with Cosmetics Shop and Premium Shop options
  * - PremiumShopScreen: Browse and purchase items with real money
  * - PurchaseHistoryScreen: View past purchases
  *
@@ -17,7 +16,6 @@ import { useAppTheme } from "@/store/ThemeContext";
 import type { ShopStackParamList } from "@/types/shop";
 
 // Screens
-import PointsShopScreen from "@/screens/shop/PointsShopScreen";
 import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
 import ShopHubScreen from "@/screens/shop/ShopHubScreen";
 // Phase 4 screens
@@ -30,7 +28,7 @@ const Stack = createNativeStackNavigator<ShopStackParamList>();
  *
  * Provides navigation stack for the shop system.
  * Entry point is ShopHubScreen which allows users to choose between
- * Points Shop (tokens) and Premium Shop (real money).
+ * Cosmetics Shop (tokens) and Premium Shop (real money).
  */
 export default function ShopNavigator() {
   const { colors } = useAppTheme();
@@ -58,15 +56,6 @@ export default function ShopNavigator() {
       <Stack.Screen
         name="ShopHub"
         component={ShopHubScreen}
-        options={{
-          headerShown: false,
-        }}
-      />
-
-      {/* Points Shop - Token Purchases */}
-      <Stack.Screen
-        name="PointsShop"
-        component={PointsShopScreen}
         options={{
           headerShown: false,
         }}

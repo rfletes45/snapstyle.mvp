@@ -2,7 +2,7 @@
  * Shop Hub Screen
  *
  * Entry point to the shop system with clear navigation to:
- * - Points Shop: Purchase items with tokens (virtual currency)
+ * - Cosmetics Shop: Purchase cosmetics with tokens
  * - Premium Shop: Purchase items with real money (IAP)
  *
  * @see docs/SHOP_OVERHAUL_PLAN.md
@@ -38,7 +38,7 @@ const logger = createLogger("screens/shop/ShopHubScreen");
 type NavigationProp = any;
 
 interface ShopOption {
-  id: "points" | "premium";
+  id: "cosmetics" | "premium";
   title: string;
   subtitle: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -52,7 +52,7 @@ interface ShopOption {
 // =============================================================================
 
 const SHOP_GRADIENTS = {
-  points: ["#FFD700", "#FFA500"] as const, // Gold to Orange
+  cosmetics: ["#00BCD4", "#2196F3"] as const, // Teal to Blue
   premium: ["#9C27B0", "#E91E63"] as const, // Purple to Pink
 } as const;
 
@@ -96,13 +96,12 @@ export default function ShopHubScreen() {
   }, [user?.uid]);
 
   // Navigation handlers
-  const handlePointsShop = useCallback(() => {
-    // Navigate to Points Shop (reuses existing ShopScreen)
-    navigation.navigate("PointsShop");
-  }, [navigation]);
-
   const handlePremiumShop = useCallback(() => {
     navigation.navigate("PremiumShop");
+  }, [navigation]);
+
+  const handleCosmeticsShop = useCallback(() => {
+    navigation.navigate("CosmeticsShop");
   }, [navigation]);
 
   const handlePurchaseHistory = useCallback(() => {
@@ -119,17 +118,18 @@ export default function ShopHubScreen() {
   const shopOptions = useMemo<ShopOption[]>(
     () => [
       {
-        id: "points",
-        title: "Points Shop",
-        subtitle: "Spend your tokens on cosmetics",
-        icon: "star-circle",
+        id: "cosmetics",
+        title: "Cosmetics",
+        subtitle: "Decorations, backgrounds & themes",
+        icon: "palette",
         features: [
-          "Avatar items",
           "Profile decorations",
-          "Chat customizations",
+          "Backgrounds & themes",
+          "Featured items",
+          "Bundle deals",
         ],
-        gradient: SHOP_GRADIENTS.points,
-        onPress: handlePointsShop,
+        gradient: SHOP_GRADIENTS.cosmetics,
+        onPress: handleCosmeticsShop,
       },
       {
         id: "premium",
@@ -146,7 +146,7 @@ export default function ShopHubScreen() {
         onPress: handlePremiumShop,
       },
     ],
-    [handlePointsShop, handlePremiumShop],
+    [handleCosmeticsShop, handlePremiumShop],
   );
 
   return (

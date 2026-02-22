@@ -296,18 +296,18 @@ export const openGift = functions.https.onCall(
         // Handle different product types
         switch (gift.itemType) {
           case "tokenPack":
-            // Grant tokens
+            // Grant tokens to canonical wallet
             tokensReceived = (product.tokens || 0) + (product.bonusTokens || 0);
             if (tokensReceived > 0) {
               await db
-                .collection("Users")
+                .collection("Wallets")
                 .doc(uid)
-                .collection("wallet")
-                .doc("tokens")
                 .set(
                   {
-                    balance:
+                    tokensBalance:
                       admin.firestore.FieldValue.increment(tokensReceived),
+                    tokens:
+                      admin.firestore.FieldValue.increment(tokensReceived), // back-compat
                     lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
                   },
                   { merge: true },
@@ -324,14 +324,14 @@ export const openGift = functions.https.onCall(
             if (product.bonusTokens) {
               tokensReceived = product.bonusTokens;
               await db
-                .collection("Users")
+                .collection("Wallets")
                 .doc(uid)
-                .collection("wallet")
-                .doc("tokens")
                 .set(
                   {
-                    balance:
+                    tokensBalance:
                       admin.firestore.FieldValue.increment(tokensReceived),
+                    tokens:
+                      admin.firestore.FieldValue.increment(tokensReceived), // back-compat
                     lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
                   },
                   { merge: true },

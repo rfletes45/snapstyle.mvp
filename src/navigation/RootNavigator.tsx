@@ -9,7 +9,7 @@ import {
   NavigationContainerRef,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import React from "react";
+import React, { useMemo } from "react";
 
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
@@ -62,7 +62,9 @@ import StarforgeGameScreen from "@/screens/games/StarforgeGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
 import WordMasterGameScreen from "@/screens/games/WordMasterGameScreen";
 // Phase 3 game screens
+import { CustomizationHubScreen } from "@/screens/customization";
 import CrosswordGameScreen from "@/screens/games/CrosswordGameScreen";
+import GameDetailsScreen from "@/screens/games/GameDetailsScreen";
 import PongGameScreen from "@/screens/games/PongGameScreen";
 import ReversiGameScreen from "@/screens/games/ReversiGameScreen";
 import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
@@ -74,7 +76,6 @@ import UserProfileScreen from "@/screens/profile/UserProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
-import ThemeSettingsScreen from "@/screens/settings/ThemeSettingsScreen";
 import StoriesScreen from "@/screens/stories/StoriesScreen";
 import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
 // DebugScreens only loaded in development
@@ -88,7 +89,7 @@ const LocalStorageDebugScreen = __DEV__
 import TasksScreen from "@/screens/tasks/TasksScreen";
 import WalletScreen from "@/screens/wallet/WalletScreen";
 
-import PointsShopScreen from "@/screens/shop/PointsShopScreen";
+import CosmeticsShopScreen from "@/screens/shop/CosmeticsShopScreen";
 import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
 import PurchaseHistoryScreen from "@/screens/shop/PurchaseHistoryScreen";
 import ShopHubScreen from "@/screens/shop/ShopHubScreen";
@@ -158,6 +159,7 @@ const SafeGamesHub = withErrorBoundary(GamesHubScreen);
 const SafeLeaderboard = withErrorBoundary(LeaderboardScreen);
 const SafeAchievements = withErrorBoundary(AchievementsScreen);
 const SafeGameHistory = withErrorBoundary(GameHistoryScreen);
+const SafeGameDetails = withErrorBoundary(GameDetailsScreen);
 const SafeSpectatorView = withErrorBoundary(SpectatorViewScreen);
 /**
  * Routes that should hide the bottom tab bar.
@@ -192,6 +194,7 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "Leaderboard",
   "Achievements",
   "GameHistory",
+  "GameDetails",
 ]);
 
 /**
@@ -532,6 +535,11 @@ function PlayStack() {
         }}
       />
       <PlayStack_Nav.Screen
+        name="GameDetails"
+        component={SafeGameDetails}
+        options={{ headerShown: false }}
+      />
+      <PlayStack_Nav.Screen
         name="Leaderboard"
         component={SafeLeaderboard}
         options={{ headerShown: false }}
@@ -582,6 +590,11 @@ function ProfileStack() {
         component={ProfileMainScreen}
         options={{ headerShown: false }}
       />
+      <ProfileStack_Nav.Screen
+        name="Customization"
+        component={CustomizationHubScreen}
+        options={{ headerShown: false }}
+      />
       {/* Debug screens only available in development */}
       {__DEV__ && (
         <ProfileStack_Nav.Screen
@@ -616,11 +629,6 @@ function ProfileStack() {
         name="Settings"
         component={SettingsScreen}
         options={{ title: "Settings" }}
-      />
-      <ProfileStack_Nav.Screen
-        name="ThemeSettings"
-        component={ThemeSettingsScreen}
-        options={{ headerShown: false }}
       />
       <ProfileStack_Nav.Screen
         name="Wallet"
@@ -933,8 +941,8 @@ function MainStack() {
 
       {/* Shop Overhaul Screens - accessible from Shop tab */}
       <MainStack_Nav.Screen
-        name="PointsShop"
-        component={PointsShopScreen}
+        name="CosmeticsShop"
+        component={CosmeticsShopScreen}
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen
@@ -945,6 +953,13 @@ function MainStack() {
       <MainStack_Nav.Screen
         name="PurchaseHistory"
         component={PurchaseHistoryScreen}
+        options={{ headerShown: false }}
+      />
+
+      {/* Customization Hub — elevated to root for cross-tab navigation (e.g. achievements → equip badge) */}
+      <MainStack_Nav.Screen
+        name="Customization"
+        component={CustomizationHubScreen}
         options={{ headerShown: false }}
       />
 
@@ -995,50 +1010,55 @@ export default function RootNavigator({
   // Use external ref if provided, otherwise use the shared global one
   const navRef = externalRef || navigationRef;
 
-  // For web, we need a linking configuration
-  const linking = {
-    prefixes: ["exp://", "exp-app://", "vibe://", "http://", "https://"],
-    config: {
-      screens: {
-        Welcome: "welcome",
-        Login: "login",
-        Signup: "signup",
-        ForgotPassword: "forgot-password",
-        ProfileSetup: "profile-setup",
-        MainTabs: {
-          screens: {
-            Shop: "shop",
-            Play: {
-              screens: {
-                GamesHub: "play",
-                Leaderboard: "leaderboard",
-                Achievements: "achievements",
+  // Memoize linking config so NavigationContainer doesn't receive a new
+  // object reference on every render (theme changes, profile refreshes, etc.).
+  // A fresh reference can cause React Navigation to re-process URL state.
+  const linking = useMemo(
+    () => ({
+      prefixes: ["exp://", "exp-app://", "vibe://", "http://", "https://"],
+      config: {
+        screens: {
+          Welcome: "welcome",
+          Login: "login",
+          Signup: "signup",
+          ForgotPassword: "forgot-password",
+          ProfileSetup: "profile-setup",
+          MainTabs: {
+            screens: {
+              Shop: "shop",
+              Play: {
+                screens: {
+                  GamesHub: "play",
+                  Leaderboard: "leaderboard",
+                  Achievements: "achievements",
+                },
               },
-            },
-            Inbox: {
-              screens: {
-                ChatList: "inbox",
+              Inbox: {
+                screens: {
+                  ChatList: "inbox",
+                },
               },
-            },
-            Moments: "moments",
-            Profile: {
-              screens: {
-                ProfileMain: "profile",
-                Settings: "settings",
-                BadgeCollection: "badges",
-                Wallet: "wallet",
+              Moments: "moments",
+              Profile: {
+                screens: {
+                  ProfileMain: "profile",
+                  Settings: "settings",
+                  BadgeCollection: "badges",
+                  Wallet: "wallet",
+                },
               },
             },
           },
+          Connections: "connections",
+          ChatDetail: "chat/:friendUid",
+          GroupChat: "group/:groupId",
+          UserProfile: "user/:userId",
+          ActivityFeed: "activity",
         },
-        Connections: "connections",
-        ChatDetail: "chat/:friendUid",
-        GroupChat: "group/:groupId",
-        UserProfile: "user/:userId",
-        ActivityFeed: "activity",
       },
-    },
-  };
+    }),
+    [],
+  );
 
   return (
     <AppGate loadingMessage="Just a moment...">

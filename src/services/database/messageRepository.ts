@@ -83,6 +83,7 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
     deleted_at: null,
     hidden_for_json: null,
     link_preview_json: null,
+    sender_style_json: null,
     sync_status: params.skipSync ? "synced" : "pending",
     sync_error: null,
     retry_count: 0,
@@ -96,8 +97,9 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
         id, conversation_id, scope, sender_id, sender_name, kind, text,
         created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
         mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
-        hidden_for_json, link_preview_json, sync_status, sync_error, retry_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        hidden_for_json, link_preview_json, sender_style_json,
+        sync_status, sync_error, retry_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.conversation_id,
@@ -118,6 +120,7 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
         row.deleted_at,
         row.hidden_for_json,
         row.link_preview_json,
+        row.sender_style_json,
         row.sync_status,
         row.sync_error,
         row.retry_count,
@@ -188,6 +191,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           reactions_json = ?,
           hidden_for_json = ?,
           link_preview_json = ?,
+          sender_style_json = ?,
           deleted_for_all = ?,
           deleted_by = ?,
           deleted_at = ?,
@@ -208,6 +212,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
             : null,
           message.hiddenFor ? JSON.stringify(message.hiddenFor) : null,
           message.linkPreview ? JSON.stringify(message.linkPreview) : null,
+          message.senderStyle ? JSON.stringify(message.senderStyle) : null,
           deletedForAll ? 1 : 0,
           deletedForAll?.by || null,
           deletedForAll?.at || null,
@@ -235,8 +240,9 @@ export function upsertMessageFromServer(message: MessageV2): void {
           id, conversation_id, scope, sender_id, sender_name, kind, text,
           created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
           mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
-          hidden_for_json, link_preview_json, sync_status, sync_error, retry_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0)`,
+          hidden_for_json, link_preview_json, sender_style_json,
+          sync_status, sync_error, retry_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0)`,
         [
           id,
           conversationId,
@@ -259,6 +265,7 @@ export function upsertMessageFromServer(message: MessageV2): void {
           deletedForAll?.at || null,
           message.hiddenFor ? JSON.stringify(message.hiddenFor) : null,
           message.linkPreview ? JSON.stringify(message.linkPreview) : null,
+          message.senderStyle ? JSON.stringify(message.senderStyle) : null,
         ],
       );
 
@@ -863,6 +870,14 @@ export function rowToMessageV2(
     return null;
   }
 
+  const parsedSenderStyle = parseJsonColumn(row.sender_style_json, undefined);
+
+  if (__DEV__ && parsedSenderStyle) {
+    logger.debug(
+      `[MSG_RENDER_STYLE] id=${row.id} sender=${row.sender_id} senderStyle=${JSON.stringify(parsedSenderStyle)}`,
+    );
+  }
+
   return {
     id: row.id,
     scope: row.scope as "dm" | "group",
@@ -894,6 +909,7 @@ export function rowToMessageV2(
       : undefined,
     hiddenFor: hiddenFor.length > 0 ? hiddenFor : undefined,
     linkPreview: parseJsonColumn(row.link_preview_json, undefined),
+    senderStyle: parsedSenderStyle,
     clientId: "", // Not stored locally
     idempotencyKey: row.id, // Use message ID
     // UI-specific fields for sync status display
@@ -962,6 +978,9 @@ export function messageV2ToRow(
       : null,
     link_preview_json: message.linkPreview
       ? JSON.stringify(message.linkPreview)
+      : null,
+    sender_style_json: message.senderStyle
+      ? JSON.stringify(message.senderStyle)
       : null,
     sync_status: "synced",
     sync_error: null,

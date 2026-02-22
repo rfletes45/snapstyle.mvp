@@ -403,6 +403,9 @@ export interface ExtendedUserProfile {
   level: LevelInfo;
   featuredBadges: UserBadge[];
   equippedCosmetics: Partial<Record<ExtendedCosmeticSlot, string>>;
+
+  /** Equipped background cosmetic ID */
+  equippedBackgroundId: string | null;
 }
 
 // =============================================================================

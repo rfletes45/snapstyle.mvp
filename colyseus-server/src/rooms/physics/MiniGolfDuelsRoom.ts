@@ -168,6 +168,10 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
   // --- Ordered UID list for turn alternation ---
   private playerUids: string[] = [];
 
+  // ── Per-player achievement stats (flushed to game result at dispose) ────
+  private holesInOneByUid = new Map<string, number>();
+  private underParHolesByUid = new Map<string, number>();
+
   // ===========================================================================
   // Auth
   // ===========================================================================
@@ -432,7 +436,20 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
         (pseudoState.players as MapSchema).set(p.sessionId, cp);
       });
 
-      await persistGameResult(pseudoState, this.state.elapsed);
+      // Build per-player gameSpecific stats for achievement evaluation
+      const perPlayerStats: Record<string, Record<string, number>> = {};
+      for (const uid of this.playerUids) {
+        const totalStrokes = this.state.strokesTotalByUid.get(uid) ?? 0;
+        perPlayerStats[uid] = {
+          bestTotalStrokes: totalStrokes,
+          holesInOne: this.holesInOneByUid.get(uid) ?? 0,
+          underParHoles: this.underParHolesByUid.get(uid) ?? 0,
+          holesPlayed: this.state.holesTotal,
+          bestScore: totalStrokes,
+        };
+      }
+
+      await persistGameResult(pseudoState, this.state.elapsed, perPlayerStats);
     }
 
     if (this.engine) {
@@ -1020,6 +1037,19 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
     br.stopped = true;
     br.stopCount = STOP_FRAMES;
 
+    // ── Achievement stats: track hole-in-one / under-par ────────────────
+    const holeStrokes = this.state.strokesHoleByUid.get(uid) ?? 0;
+    if (holeStrokes === 1) {
+      this.holesInOneByUid.set(uid, (this.holesInOneByUid.get(uid) ?? 0) + 1);
+    }
+    const par = this.holeConfig.par ?? 3;
+    if (holeStrokes < par) {
+      this.underParHolesByUid.set(
+        uid,
+        (this.underParHolesByUid.get(uid) ?? 0) + 1,
+      );
+    }
+
     this.broadcast("ball_holed", { uid });
     this.roomLog.info(
       `Ball holed: ${uid} (strokes: ${this.state.strokesHoleByUid.get(uid)})`,
@@ -1323,6 +1353,10 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
       this.state.strokesHoleByUid.set(uid, 0);
       this.state.holedByUid.set(uid, 0);
     });
+
+    // Reset achievement tracking
+    this.holesInOneByUid.clear();
+    this.underParHolesByUid.clear();
 
     this.state.players.forEach((p: MiniGolfPlayer) => {
       p.ready = false;

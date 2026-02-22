@@ -17,6 +17,7 @@
  * Uses CameraContext for state (no Redux).
  */
 
+import AppImage from "@/components/AppImage";
 import DrawingCanvas, {
   type DrawnPath,
 } from "@/components/camera/DrawingCanvas";
@@ -43,7 +44,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
@@ -568,10 +568,11 @@ const EditorScreen: React.FC = () => {
           onPress={() => handleSelectFilter(item)}
           activeOpacity={0.7}
         >
-          <Image
+          <AppImage
             source={{ uri: snap.uri }}
             style={styles.filterThumbImage}
-            resizeMode="cover"
+            contentFit="cover"
+            debugLabel="FilterThumb"
           />
           <View
             style={[

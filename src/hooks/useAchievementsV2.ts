@@ -164,17 +164,25 @@ export function useAchievementsV2(
     });
   }, [isV2Active, userDocs, options?.gameType, options?.category]);
 
-  // Unlocked IDs
+  // Unlocked IDs (scoped to gameType when provided)
   const unlockedIds = useMemo(() => {
     if (!isV2Active) return EMPTY_SET;
-    return getUnlockedIds(userDocs);
-  }, [isV2Active, userDocs]);
+    return getUnlockedIds(userDocs, options?.gameType);
+  }, [isV2Active, userDocs, options?.gameType]);
 
-  // Summary
+  // Summary (scoped to gameType when provided)
   const summary = useMemo(() => {
     if (!isV2Active) return EMPTY_SUMMARY;
-    return computeLocalSummary(userDocs);
-  }, [isV2Active, userDocs]);
+    if (options?.gameType) {
+      logger.debug(`[summary] Scoped to gameType=${options.gameType}`);
+    } else {
+      logger.warn(
+        "[summary] No gameType provided — returning global counts. " +
+          "Pass { gameType } to scope achievements to a specific game.",
+      );
+    }
+    return computeLocalSummary(userDocs, options?.gameType);
+  }, [isV2Active, userDocs, options?.gameType]);
 
   // Is unlocked check
   const isUnlocked = useCallback(

@@ -13,10 +13,14 @@
 
 import { SinglePlayerGameType } from "@/types/games";
 import {
+  BounceBlitzStats,
+  BrickBreakerStats,
   LeaderboardPeriod,
+  Play2048Stats,
   SinglePlayerGameSession,
   SinglePlayerGameStats,
   SinglePlayerLeaderboardEntry,
+  WordMasterStats,
 } from "@/types/singlePlayerGames";
 import { generateId } from "@/utils/ids";
 import { createLogger } from "@/utils/log";
@@ -34,7 +38,12 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { getAuthInstance, getFirestoreInstance } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import {
+  getAuthInstance,
+  getFirestoreInstance,
+  getFunctionsInstance,
+} from "./firebase";
 
 const log = createLogger("singlePlayerSessions");
 
@@ -187,6 +196,12 @@ export async function recordSinglePlayerSession(
     }
 
     log.info("Session recorded", { data: { sessionId } });
+
+    // Fire-and-forget: trigger server-side achievement evaluation & rewards
+    triggerAchievementEvaluation(input, session).catch((err) =>
+      log.warn("Achievement evaluation failed (non-blocking)", err),
+    );
+
     return session;
   } catch (error: any) {
     log.error("Error recording session", error);
@@ -496,6 +511,97 @@ function getDayKey(): string {
 function getMonthKey(): string {
   const now = new Date();
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+}
+
+// =============================================================================
+// Server Achievement Evaluation Bridge
+// =============================================================================
+
+/**
+ * Extract game-specific stat fields that the achievement evaluator uses.
+ * These map to `PerGameStatsDoc.gameSpecific` keys on the server.
+ */
+function extractGameSpecificStats(
+  stats: SinglePlayerGameStats,
+): Record<string, number> | undefined {
+  switch (stats.gameType) {
+    case "play_2048": {
+      const s = stats as Play2048Stats;
+      return {
+        maxTile: s.bestTile,
+        bestWinMoveCount: s.didWin ? s.moveCount : 0,
+        totalMerges: s.mergeCount,
+      };
+    }
+    case "brick_breaker": {
+      const s = stats as BrickBreakerStats;
+      return {
+        highestLevel: s.levelsCompleted,
+        perfectLevels: s.perfectLevels,
+        totalBricksDestroyed: s.bricksDestroyed,
+        maxMultiBall: s.maxMultiBall,
+      };
+    }
+    case "bounce_blitz": {
+      const s = stats as BounceBlitzStats;
+      return {
+        highestLevel: s.levelReached,
+        totalBlocksDestroyed: s.blocksDestroyed,
+        totalBounces: s.totalBounces,
+      };
+    }
+    case "word_master": {
+      const s = stats as WordMasterStats;
+      return {
+        bestAttempts: s.wordGuessed ? s.attemptsUsed : 0,
+        hintsUsed: s.hintsUsed,
+        streakDay: s.streakDay,
+      };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Fire-and-forget call to the server-side achievement evaluator.
+ * This triggers stat updates + achievement evaluation + reward granting.
+ */
+async function triggerAchievementEvaluation(
+  input: RecordSessionInput,
+  session: SinglePlayerGameSession,
+): Promise<void> {
+  try {
+    const functions = getFunctionsInstance();
+    const callable = httpsCallable<
+      {
+        gameType: string;
+        score: number;
+        outcome: string;
+        gameSpecific?: Record<string, number>;
+      },
+      { success: boolean; newUnlocks: string[]; rewardsGranted: number }
+    >(functions, "processSinglePlayerCompletion");
+
+    const result = await callable({
+      gameType: input.gameType,
+      score: input.finalScore,
+      outcome: "completed",
+      gameSpecific: extractGameSpecificStats(input.stats),
+    });
+
+    if (result.data.newUnlocks.length > 0) {
+      log.info("Achievements unlocked!", {
+        data: {
+          unlocks: result.data.newUnlocks,
+          rewardsGranted: result.data.rewardsGranted,
+        },
+      });
+    }
+  } catch (error) {
+    // Non-fatal — the session was already recorded client-side
+    log.warn("processSinglePlayerCompletion callable failed", error);
+  }
 }
 
 // =============================================================================

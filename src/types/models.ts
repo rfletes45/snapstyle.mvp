@@ -1,5 +1,7 @@
 // User model
 
+import type { ChatAppearance } from "@/cosmetics/types";
+
 export interface User {
   uid: string;
   usernameLower: string;
@@ -9,6 +11,12 @@ export interface User {
   expoPushToken?: string;
   createdAt: number;
   lastActive: number;
+
+  /** Equipped background cosmetic ID (unified cosmetics system) */
+  equippedBackgroundId?: string | null;
+
+  /** Chat cosmetics: bubble color, font, animal theme */
+  chatAppearance?: ChatAppearance;
 }
 
 export interface AvatarConfig {

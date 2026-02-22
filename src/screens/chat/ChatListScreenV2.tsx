@@ -27,6 +27,7 @@ import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import type { GroupInvite, ReportReason } from "@/types/models";
+import { usePrefetchProfileImages } from "@/utils/imagePrefetch";
 import { log } from "@/utils/log";
 import {
   useFocusEffect,
@@ -103,6 +104,17 @@ export default function ChatListScreen() {
     refresh,
     markConversationReadOptimistic,
   } = useInboxData(uid);
+
+  // Warm image cache for conversation avatars
+  usePrefetchProfileImages(
+    [...(pinnedConversations || []), ...(regularConversations || [])].map(
+      (c) =>
+        ({
+          avatarUrl: c.avatarUrl,
+          profilePictureUrl: c.profilePictureUrl,
+        }) as { avatarUrl?: string | null; profilePictureUrl?: string | null },
+    ),
+  );
 
   // Actions from useConversationActions hook
   // Pass refresh callback to trigger UI update after actions

@@ -68,6 +68,8 @@ export function messageV2ToWithProfile(
     ...(type === "image" && msg.attachments?.[0]?.url
       ? { imageUrl: msg.attachments[0].url }
       : {}),
+    // Sender's chat style snapshot (bubble color, font, etc.)
+    senderStyle: msg.senderStyle ?? null,
   };
 }
 

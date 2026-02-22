@@ -35,7 +35,7 @@ import { IconButton, Text, useTheme } from "react-native-paper";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import DuckIcon from "./DuckIcon";
+import { AnimalIcon } from "./AnimalIcon";
 import { ReplyPreviewBar } from "./ReplyPreviewBar";
 import { VoiceRecordButton } from "./VoiceRecordButton";
 
@@ -89,8 +89,10 @@ export interface ChatComposerProps {
   onVoiceCancelled?: () => void;
   /** Maximum voice recording duration in ms (default: 60000 = 60s) */
   maxVoiceDuration?: number;
-  /** Duck button handler (sends a duck bubble) */
-  onDuckPress?: () => void;
+  /** Animal button handler (sends an animal bubble based on equipped theme) */
+  onAnimalPress?: () => void;
+  /** The equipped animal theme ID (e.g. "animal_duck", "animal_bear") */
+  animalThemeId?: string | null;
   /** Game button handler (opens game picker) */
   onGamePress?: () => void;
   /** Upload progress indicator (shown when uploading) */
@@ -144,7 +146,8 @@ export function ChatComposer({
   onVoiceComplete,
   onVoiceCancelled,
   maxVoiceDuration = 60000,
-  onDuckPress,
+  onAnimalPress,
+  animalThemeId,
   onGamePress,
   uploadProgress,
   mentionAutocomplete,
@@ -366,16 +369,16 @@ export function ChatComposer({
           />
         )}
 
-        {/* Duck button - sends a duck bubble */}
-        {onDuckPress && (
+        {/* Animal button - sends an animal bubble based on equipped theme */}
+        {onAnimalPress && (
           <TouchableOpacity
-            onPress={onDuckPress}
+            onPress={onAnimalPress}
             activeOpacity={0.7}
-            style={styles.duckButton}
-            accessibilityLabel="Send duck"
+            style={styles.animalButton}
+            accessibilityLabel="Send animal"
             accessibilityRole="button"
           >
-            <DuckIcon size={25} wide />
+            <AnimalIcon animalId={animalThemeId} size={25} wide />
           </TouchableOpacity>
         )}
       </View>
@@ -444,7 +447,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
   },
-  duckButton: {
+  animalButton: {
     margin: 0,
     width: 36,
     height: 28,

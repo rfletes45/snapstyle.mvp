@@ -22,8 +22,9 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import AppImage from "@/components/AppImage";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
-import DuckBubble from "@/components/chat/DuckBubble";
+import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import ScorecardBubble from "@/components/ScorecardBubble";
@@ -31,10 +32,15 @@ import SpectatorInviteBubble, {
   parseSpectatorInviteContent,
 } from "@/components/SpectatorInviteBubble";
 import { Spacing } from "@/constants/theme";
+import { detectAnimalEmoji } from "@/cosmetics/animalAssets";
+import {
+  resolveIncomingBubbleStyle,
+  resolveOutgoingChatStyle,
+} from "@/cosmetics/chatAppearanceResolver";
+import type { ChatAppearance, SenderStyle } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReplyToMetadata } from "@/types/messaging";
-import { Image } from "react-native";
 
 // Parse scorecard content helper
 function parseScorecardContent(content: string) {
@@ -61,6 +67,8 @@ export interface MessageWithProfile {
   voiceDurationMs?: number;
   /** Image attachment URL (for media messages) */
   imageUrl?: string;
+  /** Sender's chat style snapshot (bubble color, font, etc.) */
+  senderStyle?: SenderStyle | null;
 }
 
 interface DMMessageItemProps {
@@ -76,6 +84,8 @@ interface DMMessageItemProps {
     username?: string;
     avatarConfig?: { baseColor: string };
   } | null;
+  /** User's chat cosmetics (bubble color, font) */
+  chatAppearance?: ChatAppearance | null;
   /** Callback when user swipes to reply */
   onReply: (replyMetadata: ReplyToMetadata) => void;
   /** Callback when user long-presses the message */
@@ -104,6 +114,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     currentUid,
     chatId,
     friendProfile,
+    chatAppearance,
     onReply,
     onLongPress,
     onScrollToMessage,
@@ -116,6 +127,50 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     const theme = useTheme();
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     const isSentByMe = message.sender === currentUid;
+
+    // Resolve outgoing chat cosmetics (bubble color, text color, font)
+    const chatStyle = React.useMemo(
+      () =>
+        resolveOutgoingChatStyle({
+          chatAppearance: chatAppearance ?? null,
+          appearanceMode: theme.dark ? "dark" : "light",
+        }),
+      [chatAppearance, theme.dark],
+    );
+
+    // Resolve incoming sender style from the message's senderStyle snapshot
+    const incomingStyle = React.useMemo(() => {
+      if (isSentByMe) return null;
+      const resolved = resolveIncomingBubbleStyle({
+        senderStyle: message.senderStyle ?? null,
+        appearanceMode: theme.dark ? "dark" : "light",
+        defaultBgColor: theme.colors.surfaceVariant,
+        defaultTextColor: theme.colors.onSurface,
+      });
+      console.log(
+        `[DM_RENDER_STYLE] id=${message.id} sender=${message.sender} senderStyle=${JSON.stringify(message.senderStyle ?? null)} resolvedBg=${resolved.bubbleBgColor}`,
+      );
+      return resolved;
+    }, [
+      isSentByMe,
+      message.senderStyle,
+      message.id,
+      message.sender,
+      theme.dark,
+      theme.colors.surfaceVariant,
+      theme.colors.onSurface,
+    ]);
+
+    // Unified style: outgoing uses viewer's chatStyle, incoming uses sender's stamped style
+    const bubbleBgColor = isSentByMe
+      ? chatStyle.bubbleBgColor
+      : incomingStyle!.bubbleBgColor;
+    const bubbleTextColor = isSentByMe
+      ? chatStyle.bubbleTextColor
+      : incomingStyle!.bubbleTextColor;
+    const bubbleFontFamily = isSentByMe
+      ? chatStyle.fontFamily
+      : incomingStyle!.fontFamily;
 
     // Link preview support for text messages
     const messagesForPreview = React.useMemo(
@@ -267,9 +322,12 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
 
     // Render message content
     const renderContent = () => {
-      // Duck message — single 🦆 emoji means a duck bubble
-      if (message.type === "text" && message.content.trim() === "🦆") {
-        return <DuckBubble isMine={isSentByMe} />;
+      // Animal message — detect any animal emoji (duck/turtle/bear/wolf)
+      if (message.type === "text") {
+        const animalId = detectAnimalEmoji(message.content);
+        if (animalId) {
+          return <AnimalBubble animalId={animalId} isMine={isSentByMe} />;
+        }
       }
 
       if (message.type === "voice") {
@@ -285,10 +343,11 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       if (message.type === "image") {
         if (message.imageUrl) {
           return (
-            <Image
+            <AppImage
               source={{ uri: message.imageUrl }}
               style={styles.standaloneImage}
-              resizeMode="cover"
+              contentFit="cover"
+              debugLabel="DMMessageImage"
             />
           );
         }
@@ -336,9 +395,10 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
           <Text
             style={[
               styles.messageText,
-              isSentByMe
-                ? { color: theme.colors.onPrimary }
-                : { color: theme.colors.onSurface },
+              {
+                color: bubbleTextColor,
+                ...(bubbleFontFamily ? { fontFamily: bubbleFontFamily } : {}),
+              },
             ]}
           >
             {message.content}
@@ -359,8 +419,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       );
     };
 
-    // Is this a duck message?
-    const isDuck = message.type === "text" && message.content.trim() === "🦆";
+    // Is this an animal message?
+    const isAnimal =
+      message.type === "text" && detectAnimalEmoji(message.content) !== null;
 
     // Create SwipeableMessage format - convert Date to timestamp
     const createdAtTimestamp =
@@ -449,21 +510,22 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                   <View
                     style={[
                       styles.messageBubble,
-                      !isDuck &&
+                      !isAnimal &&
                         (isSentByMe
                           ? [
                               styles.sentBubble,
-                              { backgroundColor: theme.colors.primary },
+                              { backgroundColor: bubbleBgColor },
                             ]
                           : [
                               styles.receivedBubble,
                               {
-                                backgroundColor: theme.dark
-                                  ? theme.colors.surfaceVariant
-                                  : theme.colors.surfaceVariant,
+                                backgroundColor: bubbleBgColor,
                               },
                             ]),
-                      isDuck && { padding: 0, backgroundColor: "transparent" },
+                      isAnimal && {
+                        padding: 0,
+                        backgroundColor: "transparent",
+                      },
                       message.type === "image" &&
                         message.imageUrl &&
                         styles.imageOnlyBubble,

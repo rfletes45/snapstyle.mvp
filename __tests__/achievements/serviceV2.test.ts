@@ -168,12 +168,10 @@ describe("Achievements V2 Client Service", () => {
       const items = buildV2DisplayItems(new Map(), {
         gameType: "bounce_blitz",
       });
-      // Items with a gameType should only be bounce_blitz
-      // (global items without gameType also pass through)
+      // When scoped to a game, ONLY that game's achievements are included
+      // (global items without gameType are excluded)
       for (const item of items) {
-        if (item.gameType) {
-          expect(item.gameType).toBe("bounce_blitz");
-        }
+        expect(item.gameType).toBe("bounce_blitz");
       }
     });
 

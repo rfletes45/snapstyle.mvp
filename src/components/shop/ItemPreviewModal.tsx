@@ -15,6 +15,14 @@
  * @see docs/SHOP_OVERHAUL_PLAN.md Section 10.6
  */
 
+import AppImage from "@/components/AppImage";
+import {
+  ItemVariation,
+  getPerspective,
+  getPreviewImageUrl,
+  getRotationTransform,
+  useItemPreview,
+} from "@/hooks/useItemPreview";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { PointsShopItem } from "@/types/shop";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,7 +32,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Animated,
   Dimensions,
-  Image,
   Modal,
   Platform,
   ScrollView,
@@ -34,14 +41,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  ItemVariation,
-  getPerspective,
-  getPreviewImageUrl,
-  getRotationTransform,
-  useItemPreview,
-} from "@/hooks/useItemPreview";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/shop/ItemPreviewModal");
@@ -212,11 +211,12 @@ export function ItemPreviewModal({
                 },
               ]}
             >
-              <Image
+              <AppImage
                 source={{ uri: previewImage || item.imagePath }}
                 style={styles.previewImage}
-                resizeMode="contain"
+                contentFit="contain"
                 onLoad={() => setImageLoaded(true)}
+                debugLabel="ShopPreview"
               />
             </Animated.View>
 
@@ -306,9 +306,10 @@ export function ItemPreviewModal({
                         ]}
                       />
                     ) : (
-                      <Image
+                      <AppImage
                         source={{ uri: variation.imagePath }}
                         style={styles.variationImage}
+                        debugLabel="ShopVariation"
                       />
                     )}
                     <Text

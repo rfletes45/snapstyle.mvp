@@ -44,14 +44,18 @@ export interface SerializedGameState {
   [key: string]: any; // Game-specific fields
 }
 
+export interface GameResultPlayerEntry {
+  uid: string;
+  displayName: string;
+  score: number;
+  playerIndex: number;
+  /** Per-player game-specific stats for achievement evaluation */
+  gameSpecific?: Record<string, number>;
+}
+
 export interface GameResultRecord {
   gameType: string;
-  players: Array<{
-    uid: string;
-    displayName: string;
-    score: number;
-    playerIndex: number;
-  }>;
+  players: GameResultPlayerEntry[];
   winnerId: string;
   winReason: string;
   turnCount: number;
@@ -201,10 +205,11 @@ export async function loadGameState(
 export async function persistGameResult(
   state: BaseGameState,
   gameDurationMs?: number,
+  perPlayerStats?: Record<string, Record<string, number>>,
 ): Promise<void> {
   const db = getFirestoreDb();
   if (!db) {
-    log.warn("[Persistence] No Firestore â€” cannot persist game result");
+    log.warn("[Persistence] No Firestore - cannot persist game result");
     return;
   }
 
@@ -215,6 +220,9 @@ export async function persistGameResult(
       displayName: player.displayName,
       score: player.score,
       playerIndex: player.playerIndex,
+      ...(perPlayerStats?.[player.uid]
+        ? { gameSpecific: perPlayerStats[player.uid] }
+        : {}),
     });
   });
 

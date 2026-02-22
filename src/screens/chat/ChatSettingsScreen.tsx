@@ -25,6 +25,7 @@ import {
   setGroupMuted,
   setGroupNotifyLevel,
   setGroupReadReceipts,
+  setGroupShowMemberChatStyles,
 } from "@/services/groupMembers";
 import { useAuth } from "@/store/AuthContext";
 import { MemberStatePrivate } from "@/types/messaging";
@@ -259,6 +260,29 @@ export default function ChatSettingsScreen({
     groupId,
   ]);
 
+  // Handle show member chat styles toggle (groups only)
+  const handleShowMemberChatStylesToggle = useCallback(async () => {
+    if (!groupId || !uid || chatType !== "group") return;
+
+    const newValue = settings?.showMemberChatStyles === false ? true : false;
+    setSaving(true);
+
+    try {
+      await setGroupShowMemberChatStyles(groupId, uid, newValue);
+      setSettings((prev) =>
+        prev ? { ...prev, showMemberChatStyles: newValue } : null,
+      );
+    } catch (error) {
+      logger.error(
+        "[ChatSettingsScreen] Failed to update show member chat styles:",
+        error,
+      );
+      Alert.alert("Error", "Failed to update chat styles setting");
+    } finally {
+      setSaving(false);
+    }
+  }, [groupId, uid, chatType, settings?.showMemberChatStyles]);
+
   // Handle notify level change
   const handleNotifyLevelChange = useCallback(
     async (level: "all" | "mentions" | "none") => {
@@ -446,6 +470,32 @@ export default function ChatSettingsScreen({
             titleStyle={{ color: colors.text, fontSize: 16 }}
             descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
           />
+
+          {/* Show Member Chat Styles (groups only) */}
+          {chatType === "group" && (
+            <List.Item
+              title="Show Member Chat Styles"
+              description="See members' custom bubble colors and fonts"
+              left={(props) => (
+                <List.Icon
+                  {...props}
+                  icon="palette-outline"
+                  color={colors.textSecondary}
+                />
+              )}
+              right={() => (
+                <Switch
+                  value={settings?.showMemberChatStyles !== false}
+                  onValueChange={handleShowMemberChatStylesToggle}
+                  disabled={saving}
+                  color={theme.colors.primary}
+                />
+              )}
+              style={{ backgroundColor: colors.surface, paddingVertical: 4 }}
+              titleStyle={{ color: colors.text, fontSize: 16 }}
+              descriptionStyle={{ color: colors.textSecondary, fontSize: 13 }}
+            />
+          )}
         </List.Section>
 
         {/* Chat Management Section */}

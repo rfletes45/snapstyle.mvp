@@ -44,6 +44,7 @@ export type PlayStackParamList = {
   StarforgeGame: OptionalRouteParams;
   SketchPartyGameScreen: OptionalRouteParams;
   MiniGolfDuelsGame: OptionalRouteParams;
+  GameDetails: { gameId: string };
   Leaderboard: { gameId?: string } | undefined;
   Achievements: { gameId?: string } | undefined;
   GameHistory: OptionalRouteParams;
@@ -51,13 +52,13 @@ export type PlayStackParamList = {
 
 export type ProfileTabStackParamList = {
   ProfileMain: undefined;
+  Customization: { initialTab?: string } | undefined;
   Debug: undefined;
   LocalStorageDebug: undefined;
   BlockedUsers: undefined;
   PrivacySettings: undefined;
   BadgeCollection: undefined;
   Settings: undefined;
-  ThemeSettings: undefined;
   Wallet: undefined;
   Tasks: { tab?: "daily" | "monthly" } | undefined;
   Shop: undefined;
@@ -100,9 +101,10 @@ export type MainStackParamList = {
     | { userId: string; targetUserId: string }
     | { userId: string }
     | undefined;
-  PointsShop: { initialCategory?: string } | undefined;
   PremiumShop: { initialTab?: string } | undefined;
   PurchaseHistory: undefined;
+  CosmeticsShop: undefined;
+  Customization: { initialTab?: string } | undefined;
   ActivityFeed: undefined;
   SpectatorView: OptionalRouteParams;
 };

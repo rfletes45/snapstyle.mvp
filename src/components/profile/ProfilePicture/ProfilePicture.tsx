@@ -7,15 +7,10 @@
  * @module components/profile/ProfilePicture/ProfilePicture
  */
 
+import AppImage from "@/components/AppImage";
 import { useColors } from "@/store/ThemeContext";
 import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  StyleSheet,
-  View,
-  ViewStyle,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, View, ViewStyle } from "react-native";
 import { InitialsAvatar } from "./InitialsAvatar";
 
 export interface ProfilePictureProps {
@@ -87,7 +82,7 @@ export function ProfilePicture({
         style,
       ]}
     >
-      <Image
+      <AppImage
         source={{ uri: imageUrl }}
         style={[
           styles.image,
@@ -99,7 +94,9 @@ export function ProfilePicture({
         ]}
         onLoad={handleLoad}
         onError={handleError}
-        resizeMode="cover"
+        contentFit="cover"
+        debugLabel="ProfilePicture"
+        priority="high"
       />
 
       {/* Loading overlay */}

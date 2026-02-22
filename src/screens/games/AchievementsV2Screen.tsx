@@ -97,11 +97,21 @@ type Props = NativeStackScreenProps<PlayStackParamList, "Achievements">;
 // =============================================================================
 
 /** Individual achievement card */
-function V2AchievementCard({ item }: { item: V2AchievementDisplayItem }) {
+function V2AchievementCard({
+  item,
+  onEquipPress,
+}: {
+  item: V2AchievementDisplayItem;
+  onEquipPress?: () => void;
+}) {
   const theme = useTheme();
   const tierColor = TIER_COLORS[item.tier];
   const isUnlocked = item.state === "unlocked";
   const hasProgress = item.state === "progress";
+  const hasEntitlementRewards =
+    isUnlocked &&
+    item.rewards?.entitlements &&
+    item.rewards.entitlements.length > 0;
 
   return (
     <Card
@@ -135,15 +145,24 @@ function V2AchievementCard({ item }: { item: V2AchievementDisplayItem }) {
         {/* Details */}
         <View style={styles.detailsContainer}>
           <View style={styles.titleRow}>
-            <Text
-              style={[
-                styles.achievementName,
-                item.state === "locked" && styles.lockedText,
-              ]}
-              numberOfLines={1}
+            <View
+              style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
             >
-              {item.name}
-            </Text>
+              <Text
+                style={[
+                  styles.achievementName,
+                  item.state === "locked" && styles.lockedText,
+                ]}
+                numberOfLines={1}
+              >
+                {item.name}
+              </Text>
+              {item.secret && (
+                <Text style={{ fontSize: 12, marginLeft: 4 }}>
+                  {isUnlocked ? "🌟" : "🔒"}
+                </Text>
+              )}
+            </View>
             <Chip
               style={[styles.rarityChip, { backgroundColor: tierColor + "20" }]}
               textStyle={{ color: tierColor, fontSize: 10 }}
@@ -179,9 +198,37 @@ function V2AchievementCard({ item }: { item: V2AchievementDisplayItem }) {
           {/* Rewards */}
           <View style={styles.rewardsRow}>
             <Text style={styles.rewardText}>
-              🪙 {item.coinReward} • ⭐ {item.xpReward} XP
+              {item.rewards?.tokens
+                ? `🪙 ${item.rewards.tokens} tokens`
+                : `🪙 ${item.coinReward}`}
+              {" • "}⭐ {item.xpReward} XP
             </Text>
           </View>
+
+          {/* Equip CTA for unlocked entitlement rewards */}
+          {hasEntitlementRewards && (
+            <Pressable
+              onPress={onEquipPress}
+              style={({ pressed }) => [
+                styles.equipRow,
+                { backgroundColor: tierColor + (pressed ? "25" : "15") },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="star-circle"
+                size={14}
+                color={tierColor}
+              />
+              <Text style={[styles.equipText, { color: tierColor }]}>
+                Badge unlocked — Equip now!
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={16}
+                color={tierColor}
+              />
+            </Pressable>
+          )}
 
           {isUnlocked && item.unlockedAt && (
             <Text style={styles.earnedDate}>
@@ -425,6 +472,11 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     });
   }, []);
 
+  // Navigate to Customization Hub (badges tab) when user taps "Equip now!"
+  const handleEquipBadgePress = useCallback(() => {
+    (navigation as any).navigate("Customization", { initialTab: "badge" });
+  }, [navigation]);
+
   // Expand/collapse all
   const toggleAll = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -617,7 +669,11 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
 
                     {/* Achievement cards */}
                     {sectionData.items.map((item) => (
-                      <V2AchievementCard key={item.id} item={item} />
+                      <V2AchievementCard
+                        key={item.id}
+                        item={item}
+                        onEquipPress={handleEquipBadgePress}
+                      />
                     ))}
                   </View>
                 )}
@@ -893,6 +949,20 @@ const styles = StyleSheet.create({
   earnedDate: {
     fontSize: 11,
     marginTop: Spacing.xs,
+  },
+  equipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: Spacing.xs,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: BorderRadius.sm,
+    alignSelf: "flex-start",
+  },
+  equipText: {
+    fontSize: 11,
+    fontWeight: "700",
   },
   statusContainer: {
     alignItems: "center",

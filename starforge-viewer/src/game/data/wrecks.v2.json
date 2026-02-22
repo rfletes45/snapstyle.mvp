@@ -1,4 +1,4 @@
-﻿{
+{
   "schemaVersion": "starforge.wrecks.v2",
   "spawn": {
     "minGapSec": 18,
@@ -57,15 +57,15 @@
       "common": 0.02,
       "uncommon": 0.06,
       "rare": 0.12,
-      "epic": 0.20,
+      "epic": 0.2,
       "ancient": 0.35
     },
     "alloyMicroPerDropBase": 350,
     "signalChanceByRarity": {
-      "common": 0.00,
+      "common": 0.0,
       "uncommon": 0.02,
       "rare": 0.06,
-      "epic": 0.10,
+      "epic": 0.1,
       "ancient": 0.18
     },
     "signalMicroPerDropBase": 120

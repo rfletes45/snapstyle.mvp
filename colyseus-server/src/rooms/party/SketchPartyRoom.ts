@@ -24,8 +24,8 @@ import { SketchPartyPlayer, SketchPartyState } from "../../schemas/sketchParty";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import { persistGameResult } from "../../services/persistence";
-import { createServerLogger } from "../../utils/logger";
 import type { ServerLogger } from "../../utils/logger";
+import { createServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
 
 const log = createServerLogger("SketchPartyRoom");
@@ -208,6 +208,41 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
   private revealTimer: any = null;
   private hintTimers: any[] = [];
   private roomLog: ServerLogger = log;
+
+  // ── Per-player cumulative stats (for achievement evaluation) ──────────
+  /**
+   * Accumulated stats per player UID, tracked across *all* turns.
+   * These are flushed to the game result at onDispose so the Cloud Function
+   * trigger can feed them into `updatePerGameStatsV2(…, gameSpecific)`.
+   */
+  private playerAchievementStats = new Map<
+    string,
+    {
+      correctGuesses: number;
+      drawingTurns: number;
+      perfectDrawerTurns: number;
+      fastestGuessMs: number;
+      totalGuesserPoints: number;
+      totalDrawerPoints: number;
+      firstGuessCount: number; // times this player guessed 1st
+    }
+  >();
+
+  /** Initialise stat entry for a player (idempotent). */
+  private _ensureStats(uid: string) {
+    if (!this.playerAchievementStats.has(uid)) {
+      this.playerAchievementStats.set(uid, {
+        correctGuesses: 0,
+        drawingTurns: 0,
+        perfectDrawerTurns: 0,
+        fastestGuessMs: 0,
+        totalGuesserPoints: 0,
+        totalDrawerPoints: 0,
+        firstGuessCount: 0,
+      });
+    }
+    return this.playerAchievementStats.get(uid)!;
+  }
 
   // =========================================================================
   // Auth (Firebase ID token verification — existing pattern)
@@ -429,7 +464,9 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
         if (player) {
           player.connected = true;
         }
-        this.roomLog.info(`[sketch_party] Player reconnected: ${client.sessionId}`);
+        this.roomLog.info(
+          `[sketch_party] Player reconnected: ${client.sessionId}`,
+        );
         return;
       } catch {
         // Reconnection timed out
@@ -443,7 +480,9 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     this.sessionToUid.delete(client.sessionId);
     if (uid) this.uidToSessionId.delete(uid);
 
-    this.roomLog.info(`[sketch_party] Player left permanently: ${client.sessionId}`);
+    this.roomLog.info(
+      `[sketch_party] Player left permanently: ${client.sessionId}`,
+    );
 
     // If game is active, handle drawer leaving or insufficient players
     if (this.state.phase === "playing" || this.state.phase === "countdown") {
@@ -473,12 +512,33 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
         const duration = this.gameStartedAt
           ? Date.now() - this.gameStartedAt
           : 0;
+
+        // Build per-player gameSpecific stats for achievement evaluation
+        const perPlayerStats: Record<string, Record<string, number>> = {};
+        this.state.spPlayers.forEach((p: SketchPartyPlayer) => {
+          const s = this.playerAchievementStats.get(p.uid);
+          perPlayerStats[p.uid] = {
+            correctGuesses: s?.correctGuesses ?? 0,
+            drawingTurns: s?.drawingTurns ?? 0,
+            perfectDrawerTurns: s?.perfectDrawerTurns ?? 0,
+            fastestGuessMs: s?.fastestGuessMs ?? 0,
+            totalGuesserPoints: s?.totalGuesserPoints ?? 0,
+            totalDrawerPoints: s?.totalDrawerPoints ?? 0,
+            firstGuessCount: s?.firstGuessCount ?? 0,
+            bestScore: p.score,
+          };
+        });
+
         await persistGameResult(
           this.state as unknown as BaseGameState,
           duration,
+          perPlayerStats,
         );
       } catch (err) {
-        this.roomLog.error("[sketch_party] Failed to persist game result:", err);
+        this.roomLog.error(
+          "[sketch_party] Failed to persist game result:",
+          err,
+        );
       }
     }
     this.roomLog.info(`[sketch_party] Room disposed: ${this.roomId}`);
@@ -845,7 +905,9 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     // Choose timeout: auto-pick first word
     this.chooseTimer = this.clock.setTimeout(() => {
       if (this.state.turnSubphase === "choosing") {
-        this.roomLog.info("[sketch_party] Choose timeout — auto-picking word 0");
+        this.roomLog.info(
+          "[sketch_party] Choose timeout — auto-picking word 0",
+        );
         this._beginDrawing(this.wordChoices[0]);
       }
     }, DEFAULT_CHOOSE_TIME_SEC * 1000);
@@ -966,6 +1028,16 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     const guesserPoints = this._calcGuesserPoints(now, player.guessRank);
     player.score += guesserPoints;
 
+    // ── Achievement stats: guesser ──────────────────────────────────────
+    const gStats = this._ensureStats(player.uid);
+    gStats.correctGuesses++;
+    gStats.totalGuesserPoints += guesserPoints;
+    if (player.guessRank === 1) gStats.firstGuessCount++;
+    const guessMs = player.guessedAtMs; // ms since turn start
+    if (gStats.fastestGuessMs === 0 || guessMs < gStats.fastestGuessMs) {
+      gStats.fastestGuessMs = guessMs;
+    }
+
     // Broadcast
     this.broadcast("player_guessed", {
       uid: player.uid,
@@ -1029,6 +1101,18 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
       if (drawer) {
         drawer.score += drawerPoints;
       }
+    }
+
+    // ── Achievement stats: drawer ──────────────────────────────────────
+    const dStats = this._ensureStats(this.state.currentDrawerUid);
+    dStats.drawingTurns++;
+    dStats.totalDrawerPoints += drawerPoints;
+    // Perfect turn = every non-drawer guessed
+    const nonDrawers = this._getActivePlayers().filter(
+      (p) => p.uid !== this.state.currentDrawerUid,
+    );
+    if (nonDrawers.length > 0 && nonDrawers.every((p) => p.hasGuessed)) {
+      dStats.perfectDrawerTurns++;
     }
 
     // Build score deltas for broadcast

@@ -2,22 +2,22 @@
  * Achievements V2 — Server-Side Evaluator
  *
  * Deterministic achievement evaluation engine for Cloud Functions.
- * Reads trusted stats, computes achievement progress, and writes
- * canonical v2 achievement docs.
+ * Reads trusted stats, computes achievement progress, writes
+ * canonical v2 achievement docs, and grants rewards atomically.
+ *
+ * v2 Changes:
+ * - stat_threshold progress type for game-specific stat milestones
+ * - gameSpecific field on PerGameStats for per-game metrics
+ * - Reward granting: tokens → Wallets/{uid}, entitlements → Entitlements/{id}
+ * - Secret achievement support
+ * - processSinglePlayerCompletion callable for SP games
  *
  * Firestore paths written:
  *   /users/{uid}/achievements/{achievementId}
  *   /users/{uid}/achievementSummary
- *
- * Firestore paths read:
- *   /PlayerGameStats/{playerId}
- *   /users/{uid}/socialGameStats
- *
- * Design principles:
- *   - Idempotent: running multiple times never reduces progress/unlocks
- *   - Server-authoritative: source = "server"
- *   - Minimal reads: only reads stats relevant to active achievements
- *   - Batch writes: groups updates into a single batch
+ *   /Wallets/{uid}                          (token rewards)
+ *   /Users/{uid}/Entitlements/{cosmeticId}  (cosmetic rewards)
+ *   /Users/{uid}/Transactions/{txnId}       (reward audit log)
  *
  * @module achievementsV2Evaluator
  */
@@ -47,8 +47,14 @@ type AchievementV2ProgressType =
   | "threshold"
   | "streak"
   | "instant"
-  | "pct_of_max";
+  | "pct_of_max"
+  | "stat_threshold";
 type AchievementState = "locked" | "progress" | "unlocked";
+
+interface AchievementRewards {
+  tokens?: number;
+  entitlements?: string[];
+}
 
 interface AchievementDef {
   id: string;
@@ -63,6 +69,8 @@ interface AchievementDef {
   pctThreshold?: number;
   xpReward: number;
   coinReward: number;
+  rewards?: AchievementRewards;
+  statKey?: string;
   secret?: boolean;
   isEnabledByDefault: boolean;
   version: number;
@@ -78,6 +86,7 @@ interface UserAchievementDoc {
   unlockedAt: number | null;
   version: number;
   source: "server" | "migration" | "client";
+  rewardsGranted?: boolean;
   updatedAt: number;
   createdAt: number;
 }
@@ -95,6 +104,7 @@ interface PerGameStats {
   lastPlayedAt: number;
   firstPlayedAt: number;
   updatedAt: number;
+  gameSpecific?: Record<string, number>;
 }
 
 interface SocialGameStats {
@@ -131,6 +141,7 @@ interface EvaluationResult {
   newUnlocks: AchievementEvalResult[];
   errors: Array<{ achievementId: string; error: string }>;
   legacySynced: boolean;
+  rewardsGranted: number;
   timestamp: number;
 }
 
@@ -170,21 +181,16 @@ const SCORE_LIMITS: Record<string, GameScoreLimits> = {
   minigolf_duels: { minScore: 0, maxScore: 999, scoreDirection: "lower" },
 };
 
-/**
- * Check if a score is suspicious (out of valid range).
- */
 function isScoreSuspicious(score: number, gameType: string): boolean {
   const limits = SCORE_LIMITS[gameType];
-  if (!limits) return false; // Unknown game, can't validate
+  if (!limits) return false;
   return score < limits.minScore || score > limits.maxScore;
 }
 
 // =============================================================================
-// Achievements Catalog (server-side copy)
+// Achievements Catalog (server-side v2)
 // =============================================================================
 
-/** Games available in the system (server-side truth).
- *  Matches client GAME_METADATA availability. */
 const AVAILABLE_GAMES = new Set([
   "bounce_blitz",
   "play_2048",
@@ -202,9 +208,10 @@ const AVAILABLE_GAMES = new Set([
   "gomoku_master",
   "reversi_game",
   "crossword_puzzle",
+  "sketch_party_game",
+  "minigolf_duels",
 ]);
 
-// Build catalog
 function buildCatalog(): AchievementDef[] {
   const catalog: AchievementDef[] = [];
 
@@ -221,8 +228,9 @@ function buildCatalog(): AchievementDef[] {
       target: 1,
       xpReward: 25,
       coinReward: 10,
+      rewards: { tokens: 10 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.ten_games",
@@ -235,8 +243,9 @@ function buildCatalog(): AchievementDef[] {
       target: 10,
       xpReward: 50,
       coinReward: 25,
+      rewards: { tokens: 25 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.hundred_games",
@@ -249,8 +258,9 @@ function buildCatalog(): AchievementDef[] {
       target: 100,
       xpReward: 100,
       coinReward: 50,
+      rewards: { tokens: 75 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.first_win",
@@ -263,8 +273,9 @@ function buildCatalog(): AchievementDef[] {
       target: 1,
       xpReward: 25,
       coinReward: 10,
+      rewards: { tokens: 10 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.ten_wins",
@@ -277,8 +288,9 @@ function buildCatalog(): AchievementDef[] {
       target: 10,
       xpReward: 50,
       coinReward: 25,
+      rewards: { tokens: 25 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.first_invite_sent",
@@ -292,7 +304,7 @@ function buildCatalog(): AchievementDef[] {
       xpReward: 25,
       coinReward: 10,
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.first_invite_accepted",
@@ -306,7 +318,7 @@ function buildCatalog(): AchievementDef[] {
       xpReward: 50,
       coinReward: 25,
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.global.spectator_first_watch",
@@ -320,16 +332,302 @@ function buildCatalog(): AchievementDef[] {
       xpReward: 25,
       coinReward: 10,
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
   );
 
-  // ── Single-player achievements ────────────────────────────────────
-  const spGames = [
+  // ── 2048 Achievements — tile milestones ───────────────────────────
+  catalog.push(
+    {
+      id: "achv.game.play_2048.first_play",
+      name: "Number Cruncher",
+      description: "Play 2048 for the first time",
+      icon: "🔢",
+      category: "single_player",
+      tier: "bronze",
+      gameType: "play_2048",
+      progressType: "count",
+      target: 1,
+      xpReward: 25,
+      coinReward: 10,
+      rewards: { tokens: 10 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.play_2048.tile_256",
+      name: "Getting Warmer",
+      description: "Reach the 256 tile",
+      icon: "🔢",
+      category: "single_player",
+      tier: "bronze",
+      gameType: "play_2048",
+      progressType: "stat_threshold",
+      statKey: "maxTile",
+      target: 256,
+      xpReward: 25,
+      coinReward: 15,
+      rewards: { tokens: 15 },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.play_2048.tiles",
+    },
+    {
+      id: "achv.game.play_2048.tile_512",
+      name: "Halfway There",
+      description: "Reach the 512 tile",
+      icon: "🔢",
+      category: "single_player",
+      tier: "silver",
+      gameType: "play_2048",
+      progressType: "stat_threshold",
+      statKey: "maxTile",
+      target: 512,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.play_2048.tiles",
+    },
+    {
+      id: "achv.game.play_2048.tile_1024",
+      name: "Power of Two",
+      description: "Reach the 1024 tile",
+      icon: "🔢",
+      category: "single_player",
+      tier: "gold",
+      gameType: "play_2048",
+      progressType: "stat_threshold",
+      statKey: "maxTile",
+      target: 1024,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50, entitlements: ["badge_2048_gold"] },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.play_2048.tiles",
+    },
+    {
+      id: "achv.game.play_2048.tile_2048",
+      name: "2048 Champion",
+      description: "Reach the legendary 2048 tile",
+      icon: "🔢",
+      category: "single_player",
+      tier: "platinum",
+      gameType: "play_2048",
+      progressType: "stat_threshold",
+      statKey: "maxTile",
+      target: 2048,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 150, entitlements: ["badge_2048_master"] },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.play_2048.tiles",
+    },
+    {
+      id: "achv.game.play_2048.tile_4096",
+      name: "Beyond Infinity",
+      description: "???",
+      icon: "✨",
+      category: "single_player",
+      tier: "diamond",
+      gameType: "play_2048",
+      progressType: "stat_threshold",
+      statKey: "maxTile",
+      target: 4096,
+      xpReward: 500,
+      coinReward: 250,
+      rewards: { tokens: 300, entitlements: ["badge_2048_legend"] },
+      secret: true,
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.play_2048.tiles",
+    },
+    {
+      id: "achv.game.play_2048.games_10",
+      name: "2048 Regular",
+      description: "Play 10 games of 2048",
+      icon: "🔢",
+      category: "single_player",
+      tier: "silver",
+      gameType: "play_2048",
+      progressType: "count",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.play_2048.under_500_moves",
+      name: "Efficient Slider",
+      description: "Reach 2048 in under 500 moves",
+      icon: "⚡",
+      category: "single_player",
+      tier: "platinum",
+      gameType: "play_2048",
+      progressType: "stat_threshold",
+      statKey: "bestWinMoveCount",
+      target: 1,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 100 },
+      secret: true,
+      isEnabledByDefault: true,
+      version: 2,
+    },
+  );
+
+  // ── Brick Breaker — level milestones ──────────────────────────────
+  catalog.push(
+    {
+      id: "achv.game.brick_breaker.first_play",
+      name: "Brick Layer",
+      description: "Play Brick Breaker for the first time",
+      icon: "🧱",
+      category: "single_player",
+      tier: "bronze",
+      gameType: "brick_breaker",
+      progressType: "count",
+      target: 1,
+      xpReward: 25,
+      coinReward: 10,
+      rewards: { tokens: 10 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.brick_breaker.level_5",
+      name: "Breaking Through",
+      description: "Reach level 5",
+      icon: "🧱",
+      category: "single_player",
+      tier: "bronze",
+      gameType: "brick_breaker",
+      progressType: "stat_threshold",
+      statKey: "highestLevel",
+      target: 5,
+      xpReward: 25,
+      coinReward: 15,
+      rewards: { tokens: 15 },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.brick_breaker.levels",
+    },
+    {
+      id: "achv.game.brick_breaker.level_10",
+      name: "Demolition Expert",
+      description: "Reach level 10",
+      icon: "🧱",
+      category: "single_player",
+      tier: "silver",
+      gameType: "brick_breaker",
+      progressType: "stat_threshold",
+      statKey: "highestLevel",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.brick_breaker.levels",
+    },
+    {
+      id: "achv.game.brick_breaker.level_20",
+      name: "Wrecking Ball",
+      description: "Reach level 20",
+      icon: "🧱",
+      category: "single_player",
+      tier: "gold",
+      gameType: "brick_breaker",
+      progressType: "stat_threshold",
+      statKey: "highestLevel",
+      target: 20,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50, entitlements: ["badge_breaker_gold"] },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.brick_breaker.levels",
+    },
+    {
+      id: "achv.game.brick_breaker.level_30",
+      name: "Brick Breaker Master",
+      description: "Reach level 30",
+      icon: "🧱",
+      category: "single_player",
+      tier: "platinum",
+      gameType: "brick_breaker",
+      progressType: "stat_threshold",
+      statKey: "highestLevel",
+      target: 30,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 150, entitlements: ["badge_breaker_master"] },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.brick_breaker.levels",
+    },
+    {
+      id: "achv.game.brick_breaker.perfect_level",
+      name: "Not a Scratch",
+      description: "???",
+      icon: "💎",
+      category: "single_player",
+      tier: "diamond",
+      gameType: "brick_breaker",
+      progressType: "stat_threshold",
+      statKey: "perfectLevels",
+      target: 1,
+      xpReward: 500,
+      coinReward: 250,
+      rewards: { tokens: 300, entitlements: ["badge_breaker_perfect"] },
+      secret: true,
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.brick_breaker.games_10",
+      name: "Brick Enthusiast",
+      description: "Play 10 games of Brick Breaker",
+      icon: "🧱",
+      category: "single_player",
+      tier: "silver",
+      gameType: "brick_breaker",
+      progressType: "count",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.brick_breaker.score_50000",
+      name: "High Scorer",
+      description: "Score 50,000 points in a single game",
+      icon: "🧱",
+      category: "single_player",
+      tier: "gold",
+      gameType: "brick_breaker",
+      progressType: "stat_threshold",
+      statKey: "bestScore",
+      target: 50000,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+  );
+
+  // ── Other single-player (pct_of_max games) ────────────────────────
+  const otherSpGames = [
     { gt: "bounce_blitz", icon: "⚪" },
-    { gt: "brick_breaker", icon: "🧱" },
     { gt: "pong_game", icon: "🏓" },
-    { gt: "play_2048", icon: "🔢" },
     { gt: "minesweeper_classic", icon: "💣" },
     { gt: "lights_out", icon: "💡" },
   ];
@@ -337,14 +635,15 @@ function buildCatalog(): AchievementDef[] {
     suffix: string;
     pct: number;
     tier: AchievementV2Tier;
+    tokenReward: number;
   }> = [
-    { suffix: "bronze", pct: 0.25, tier: "bronze" },
-    { suffix: "silver", pct: 0.5, tier: "silver" },
-    { suffix: "gold", pct: 0.75, tier: "gold" },
-    { suffix: "platinum", pct: 0.9, tier: "platinum" },
+    { suffix: "bronze", pct: 0.25, tier: "bronze", tokenReward: 10 },
+    { suffix: "silver", pct: 0.5, tier: "silver", tokenReward: 25 },
+    { suffix: "gold", pct: 0.75, tier: "gold", tokenReward: 50 },
+    { suffix: "platinum", pct: 0.9, tier: "platinum", tokenReward: 100 },
   ];
 
-  for (const g of spGames) {
+  for (const g of otherSpGames) {
     catalog.push({
       id: `achv.game.${g.gt}.first_play`,
       name: `First ${g.gt}`,
@@ -357,8 +656,9 @@ function buildCatalog(): AchievementDef[] {
       target: 1,
       xpReward: 25,
       coinReward: 10,
+      rewards: { tokens: 10 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     });
     for (const st of scoreTiers) {
       catalog.push({
@@ -388,8 +688,9 @@ function buildCatalog(): AchievementDef[] {
               : st.tier === "gold"
                 ? 50
                 : 100,
+        rewards: { tokens: st.tokenReward },
         isEnabledByDefault: true,
-        version: 1,
+        version: 2,
         group: `achv.game.${g.gt}.score`,
       });
     }
@@ -409,8 +710,9 @@ function buildCatalog(): AchievementDef[] {
       target: 1,
       xpReward: 25,
       coinReward: 10,
+      rewards: { tokens: 10 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.game.word_master.streak_7",
@@ -424,8 +726,9 @@ function buildCatalog(): AchievementDef[] {
       target: 7,
       xpReward: 100,
       coinReward: 50,
+      rewards: { tokens: 50 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
   );
 
@@ -454,8 +757,9 @@ function buildCatalog(): AchievementDef[] {
         target: 1,
         xpReward: 25,
         coinReward: 10,
+        rewards: { tokens: 10 },
         isEnabledByDefault: true,
-        version: 1,
+        version: 2,
       },
       {
         id: `achv.tb.${gt}.first_win`,
@@ -469,8 +773,9 @@ function buildCatalog(): AchievementDef[] {
         target: 1,
         xpReward: 25,
         coinReward: 10,
+        rewards: { tokens: 10 },
         isEnabledByDefault: true,
-        version: 1,
+        version: 2,
       },
       {
         id: `achv.tb.${gt}.wins_10`,
@@ -484,8 +789,9 @@ function buildCatalog(): AchievementDef[] {
         target: 10,
         xpReward: 50,
         coinReward: 25,
+        rewards: { tokens: 25 },
         isEnabledByDefault: true,
-        version: 1,
+        version: 2,
       },
       {
         id: `achv.tb.${gt}.matches_25`,
@@ -499,8 +805,9 @@ function buildCatalog(): AchievementDef[] {
         target: 25,
         xpReward: 100,
         coinReward: 50,
+        rewards: { tokens: 50 },
         isEnabledByDefault: true,
-        version: 1,
+        version: 2,
       },
     );
   }
@@ -515,8 +822,9 @@ function buildCatalog(): AchievementDef[] {
     target: 5,
     xpReward: 50,
     coinReward: 25,
+    rewards: { tokens: 25 },
     isEnabledByDefault: true,
-    version: 1,
+    version: 2,
   });
 
   // ── Real-time achievements ────────────────────────────────────────
@@ -533,8 +841,9 @@ function buildCatalog(): AchievementDef[] {
       target: 1,
       xpReward: 25,
       coinReward: 10,
+      rewards: { tokens: 10 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
     },
     {
       id: "achv.rt.crossword_puzzle.streak_7",
@@ -548,8 +857,468 @@ function buildCatalog(): AchievementDef[] {
       target: 7,
       xpReward: 100,
       coinReward: 50,
+      rewards: { tokens: 50 },
       isEnabledByDefault: true,
-      version: 1,
+      version: 2,
+    },
+  );
+
+  // ── Bounce Blitz stat-based achievements ──────────────────────────
+  catalog.push(
+    {
+      id: "achv.game.bounce_blitz.level_10",
+      name: "Rising Bouncer",
+      description: "Reach level 10 in Bounce Blitz",
+      icon: "⚪",
+      category: "single_player",
+      tier: "silver",
+      gameType: "bounce_blitz",
+      progressType: "stat_threshold",
+      statKey: "highestLevel",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.bounce_blitz.levels",
+    },
+    {
+      id: "achv.game.bounce_blitz.level_25",
+      name: "Bounce Master",
+      description: "Reach level 25 in Bounce Blitz",
+      icon: "⚪",
+      category: "single_player",
+      tier: "gold",
+      gameType: "bounce_blitz",
+      progressType: "stat_threshold",
+      statKey: "highestLevel",
+      target: 25,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50, entitlements: ["badge_bounce_gold"] },
+      isEnabledByDefault: true,
+      version: 2,
+      group: "achv.game.bounce_blitz.levels",
+    },
+    {
+      id: "achv.game.bounce_blitz.blocks_500",
+      name: "Block Buster",
+      description: "Destroy 500 blocks total",
+      icon: "💥",
+      category: "single_player",
+      tier: "gold",
+      gameType: "bounce_blitz",
+      progressType: "stat_threshold",
+      statKey: "totalBlocksDestroyed",
+      target: 500,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+  );
+
+  // ── Word Master stat-based achievements ───────────────────────────
+  catalog.push(
+    {
+      id: "achv.game.word_master.no_hints",
+      name: "No Peeking",
+      description: "???",
+      icon: "🧠",
+      category: "single_player",
+      tier: "gold",
+      gameType: "word_master",
+      progressType: "stat_threshold",
+      statKey: "bestAttempts",
+      target: 1,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      secret: true,
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.word_master.streak_30",
+      name: "Monthly Wordsmiths",
+      description: "Solve the daily word 30 days in a row",
+      icon: "🔥",
+      category: "single_player",
+      tier: "platinum",
+      gameType: "word_master",
+      progressType: "stat_threshold",
+      statKey: "streakDay",
+      target: 30,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 150, entitlements: ["badge_wordsmith_platinum"] },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.game.word_master.games_50",
+      name: "Word Enthusiast",
+      description: "Play 50 games of Word Master",
+      icon: "📝",
+      category: "single_player",
+      tier: "gold",
+      gameType: "word_master",
+      progressType: "count",
+      target: 50,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+  );
+
+  // ── Crossword Puzzle additional achievements ──────────────────────
+  catalog.push(
+    {
+      id: "achv.rt.crossword_puzzle.puzzles_10",
+      name: "Puzzle Collector",
+      description: "Complete 10 crossword puzzles",
+      icon: "📰",
+      category: "real_time",
+      tier: "silver",
+      gameType: "crossword_puzzle",
+      progressType: "count",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.crossword_puzzle.puzzles_50",
+      name: "Crossword Master",
+      description: "Complete 50 crossword puzzles",
+      icon: "📰",
+      category: "real_time",
+      tier: "gold",
+      gameType: "crossword_puzzle",
+      progressType: "count",
+      target: 50,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 75, entitlements: ["badge_crossword_master"] },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+  );
+
+  // ── Turn-based win streak + extra milestones ──────────────────────
+  for (const gt of tbGames) {
+    catalog.push(
+      {
+        id: `achv.tb.${gt}.win_streak_5`,
+        name: `${gt} hot streak`,
+        description: `Win 5 ${gt} matches in a row`,
+        icon: "🔥",
+        category: "turn_based",
+        tier: "gold",
+        gameType: gt,
+        progressType: "streak",
+        target: 5,
+        xpReward: 100,
+        coinReward: 50,
+        rewards: { tokens: 50 },
+        isEnabledByDefault: true,
+        version: 2,
+      },
+      {
+        id: `achv.tb.${gt}.wins_50`,
+        name: `${gt} champion`,
+        description: `Win 50 ${gt} matches`,
+        icon: "👑",
+        category: "turn_based",
+        tier: "platinum",
+        gameType: gt,
+        progressType: "count",
+        target: 50,
+        xpReward: 250,
+        coinReward: 100,
+        rewards: { tokens: 150 },
+        isEnabledByDefault: true,
+        version: 2,
+      },
+    );
+  }
+
+  // ── Sketch Party achievements ─────────────────────────────────────
+  catalog.push(
+    {
+      id: "achv.rt.sketch_party_game.first_match",
+      name: "Party Starter",
+      description: "Play your first Sketch Party game",
+      icon: "🎨",
+      category: "real_time",
+      tier: "bronze",
+      gameType: "sketch_party_game",
+      progressType: "count",
+      target: 1,
+      xpReward: 25,
+      coinReward: 10,
+      rewards: { tokens: 10 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.first_win",
+      name: "Artistic Triumph",
+      description: "Win a Sketch Party game",
+      icon: "🏆",
+      category: "real_time",
+      tier: "bronze",
+      gameType: "sketch_party_game",
+      progressType: "count",
+      target: 1,
+      xpReward: 25,
+      coinReward: 10,
+      rewards: { tokens: 10 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.wins_10",
+      name: "Sketch Prodigy",
+      description: "Win 10 Sketch Party games",
+      icon: "🎨",
+      category: "real_time",
+      tier: "silver",
+      gameType: "sketch_party_game",
+      progressType: "count",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.matches_25",
+      name: "Sketch Veteran",
+      description: "Play 25 Sketch Party games",
+      icon: "🎨",
+      category: "real_time",
+      tier: "gold",
+      gameType: "sketch_party_game",
+      progressType: "count",
+      target: 25,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.correct_100",
+      name: "Sharp Eye",
+      description: "Guess 100 words correctly across all games",
+      icon: "👁️",
+      category: "real_time",
+      tier: "gold",
+      gameType: "sketch_party_game",
+      progressType: "stat_threshold",
+      statKey: "correctGuesses",
+      target: 100,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 75, entitlements: ["badge_sketch_guesser"] },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.perfect_drawer_5",
+      name: "Picasso",
+      description: "Have everyone guess your drawing 5 times",
+      icon: "🖌️",
+      category: "real_time",
+      tier: "gold",
+      gameType: "sketch_party_game",
+      progressType: "stat_threshold",
+      statKey: "perfectDrawerTurns",
+      target: 5,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 75, entitlements: ["badge_sketch_artist"] },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.first_guess_10",
+      name: "Speed Guesser",
+      description: "Be the first to guess the word 10 times",
+      icon: "⚡",
+      category: "real_time",
+      tier: "silver",
+      gameType: "sketch_party_game",
+      progressType: "stat_threshold",
+      statKey: "firstGuessCount",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.sketch_party_game.score_5000",
+      name: "Sketch Legend",
+      description: "???",
+      icon: "✨",
+      category: "real_time",
+      tier: "platinum",
+      gameType: "sketch_party_game",
+      progressType: "stat_threshold",
+      statKey: "bestScore",
+      target: 5000,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 150, entitlements: ["badge_sketch_legend"] },
+      secret: true,
+      isEnabledByDefault: true,
+      version: 2,
+    },
+  );
+
+  // ── Mini-Golf Duels achievements ──────────────────────────────────
+  catalog.push(
+    {
+      id: "achv.rt.minigolf_duels.first_match",
+      name: "Tee Time",
+      description: "Play your first Mini-Golf Duels match",
+      icon: "⛳",
+      category: "real_time",
+      tier: "bronze",
+      gameType: "minigolf_duels",
+      progressType: "count",
+      target: 1,
+      xpReward: 25,
+      coinReward: 10,
+      rewards: { tokens: 10 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.first_win",
+      name: "Fairway Victor",
+      description: "Win a Mini-Golf Duels match",
+      icon: "🏆",
+      category: "real_time",
+      tier: "bronze",
+      gameType: "minigolf_duels",
+      progressType: "count",
+      target: 1,
+      xpReward: 25,
+      coinReward: 10,
+      rewards: { tokens: 10 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.wins_10",
+      name: "Golf Pro",
+      description: "Win 10 Mini-Golf Duels matches",
+      icon: "⛳",
+      category: "real_time",
+      tier: "silver",
+      gameType: "minigolf_duels",
+      progressType: "count",
+      target: 10,
+      xpReward: 50,
+      coinReward: 25,
+      rewards: { tokens: 25 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.matches_25",
+      name: "Golf Enthusiast",
+      description: "Play 25 Mini-Golf Duels matches",
+      icon: "⛳",
+      category: "real_time",
+      tier: "gold",
+      gameType: "minigolf_duels",
+      progressType: "count",
+      target: 25,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.hole_in_one",
+      name: "Ace!",
+      description: "Get a hole-in-one",
+      icon: "🕳️",
+      category: "real_time",
+      tier: "gold",
+      gameType: "minigolf_duels",
+      progressType: "stat_threshold",
+      statKey: "holesInOne",
+      target: 1,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 75, entitlements: ["badge_golf_ace"] },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.holes_in_one_5",
+      name: "Aces High",
+      description: "Get 5 holes-in-one across all matches",
+      icon: "🕳️",
+      category: "real_time",
+      tier: "platinum",
+      gameType: "minigolf_duels",
+      progressType: "stat_threshold",
+      statKey: "holesInOne",
+      target: 5,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 150, entitlements: ["badge_golf_master"] },
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.under_par_9",
+      name: "Under Par Pro",
+      description: "Finish 9 holes under par in a single match",
+      icon: "📉",
+      category: "real_time",
+      tier: "platinum",
+      gameType: "minigolf_duels",
+      progressType: "stat_threshold",
+      statKey: "underParHoles",
+      target: 9,
+      xpReward: 250,
+      coinReward: 100,
+      rewards: { tokens: 150 },
+      secret: true,
+      isEnabledByDefault: true,
+      version: 2,
+    },
+    {
+      id: "achv.rt.minigolf_duels.win_streak_5",
+      name: "Golf Streak",
+      description: "Win 5 Mini-Golf matches in a row",
+      icon: "🔥",
+      category: "real_time",
+      tier: "gold",
+      gameType: "minigolf_duels",
+      progressType: "streak",
+      target: 5,
+      xpReward: 100,
+      coinReward: 50,
+      rewards: { tokens: 50 },
+      isEnabledByDefault: true,
+      version: 2,
     },
   );
 
@@ -572,20 +1341,15 @@ function getActiveServerAchievements(): AchievementDef[] {
 // =============================================================================
 
 interface EvalContext {
-  /** Overall stats from PlayerGameStats */
   totalGamesPlayed: number;
   totalWins: number;
-  /** Per-game stats keyed by gameType */
   perGame: Record<string, PerGameStats>;
-  /** Social counters */
   social: SocialGameStats;
-  /** Existing v2 achievement docs (keyed by achievementId) */
   existing: Map<string, UserAchievementDoc>;
 }
 
 /**
- * Compute the current progress value for a single achievement
- * given the evaluation context.
+ * Compute the current progress value for a single achievement.
  */
 function computeProgress(def: AchievementDef, ctx: EvalContext): number {
   switch (def.id) {
@@ -620,12 +1384,23 @@ function computeProgress(def: AchievementDef, ctx: EvalContext): number {
     const stats = ctx.perGame[def.gameType];
     if (!stats) return 0;
 
+    // stat_threshold: read from gameSpecific map
+    if (def.progressType === "stat_threshold" && def.statKey) {
+      const value = stats.gameSpecific?.[def.statKey] ?? 0;
+      return value;
+    }
+
     // Single-player first play
     if (def.id.endsWith(".first_play") || def.id.endsWith(".first_solve")) {
       return stats.played > 0 ? 1 : 0;
     }
 
-    // Single-player score tiers (pct_of_max)
+    // Games played count (e.g. games_10, games_50)
+    if (def.id.match(/\.games_\d+$/)) {
+      return stats.played;
+    }
+
+    // pct_of_max score tiers
     if (def.progressType === "pct_of_max" && def.pctThreshold !== undefined) {
       const limits = SCORE_LIMITS[def.gameType];
       if (!limits) return 0;
@@ -635,8 +1410,6 @@ function computeProgress(def: AchievementDef, ctx: EvalContext): number {
       if (limits.scoreDirection === "higher") {
         return stats.highScore >= threshold ? 1 : 0;
       } else {
-        // Lower is better: score <= threshold means achievement
-        // But only if user has actually played (highScore > 0)
         return stats.highScore > 0 && stats.highScore <= threshold ? 1 : 0;
       }
     }
@@ -656,14 +1429,19 @@ function computeProgress(def: AchievementDef, ctx: EvalContext): number {
       return stats.wins;
     }
 
-    // Turn-based wins_10
-    if (def.id.endsWith(".wins_10")) {
+    // Wins count (wins_10, wins_50, etc.)
+    if (def.id.match(/\.wins_\d+$/)) {
       return stats.wins;
     }
 
-    // Turn-based matches_25
-    if (def.id.endsWith(".matches_25")) {
+    // Matches count (matches_25, etc.)
+    if (def.id.match(/\.matches_\d+$/)) {
       return stats.matches > 0 ? stats.matches : stats.played;
+    }
+
+    // Puzzles count (crossword puzzles_10, puzzles_50)
+    if (def.id.match(/\.puzzles_\d+$/)) {
+      return stats.completed > 0 ? stats.completed : stats.solved;
     }
 
     // Real-time first complete
@@ -676,18 +1454,15 @@ function computeProgress(def: AchievementDef, ctx: EvalContext): number {
 }
 
 /**
- * Evaluate a single achievement against context.
- * Returns the eval result. Never reduces progress or revokes unlocks.
+ * Evaluate a single achievement. Never reduces progress or revokes unlocks.
  */
 function evaluateOne(
   def: AchievementDef,
   ctx: EvalContext,
 ): AchievementEvalResult {
-  const now = Date.now();
   const existing = ctx.existing.get(def.id);
   const previousState: AchievementState = existing?.state ?? "locked";
 
-  // If already unlocked, don't re-evaluate
   if (previousState === "unlocked") {
     return {
       achievementId: def.id,
@@ -700,7 +1475,6 @@ function evaluateOne(
   }
 
   const rawProgress = computeProgress(def, ctx);
-  // Never reduce progress (idempotency)
   const progress = Math.max(rawProgress, existing?.progress ?? 0);
 
   let newState: AchievementState;
@@ -747,7 +1521,6 @@ async function readPlayerGameStats(userId: string): Promise<{
 async function readPerGameStats(
   userId: string,
 ): Promise<Record<string, PerGameStats>> {
-  // First try the new v2 subcollection path
   const v2Ref = db.collection("users").doc(userId).collection("statsPerGame");
   const v2Snap = await v2Ref.get();
 
@@ -759,7 +1532,7 @@ async function readPerGameStats(
     return result;
   }
 
-  // Fall back to PlayerGameStats.gameStats and convert
+  // Fall back to PlayerGameStats.gameStats
   const pgStats = await readPlayerGameStats(userId);
   const result: Record<string, PerGameStats> = {};
   const now = Date.now();
@@ -817,20 +1590,127 @@ async function readExistingV2Achievements(
 }
 
 // =============================================================================
+// Reward Granting
+// =============================================================================
+
+/**
+ * Grant achievement rewards (tokens + entitlements) atomically.
+ * Uses the canonical Wallets/{uid}.tokensBalance field.
+ * Writes Entitlements via Users/{uid}/Entitlements/{cosmeticId}.
+ * Records a transaction log entry for audit.
+ *
+ * Idempotent: checks rewardsGranted flag on the achievement doc.
+ */
+async function grantAchievementRewards(
+  userId: string,
+  achievementId: string,
+  rewards: AchievementRewards,
+): Promise<boolean> {
+  try {
+    const achievementRef = db
+      .collection("users")
+      .doc(userId)
+      .collection("achievements")
+      .doc(achievementId);
+
+    // Check idempotency
+    const achSnap = await achievementRef.get();
+    if (achSnap.exists && achSnap.data()?.rewardsGranted) {
+      return false; // Already granted
+    }
+
+    const batch = db.batch();
+    const now = Timestamp.now();
+
+    // Grant tokens
+    if (rewards.tokens && rewards.tokens > 0) {
+      const walletRef = db.collection("Wallets").doc(userId);
+      batch.set(
+        walletRef,
+        {
+          tokensBalance: admin.firestore.FieldValue.increment(rewards.tokens),
+          // Back-compat: also increment tokens field
+          tokens: admin.firestore.FieldValue.increment(rewards.tokens),
+          totalEarned: admin.firestore.FieldValue.increment(rewards.tokens),
+          lastUpdated: now,
+        },
+        { merge: true },
+      );
+
+      // Transaction log
+      const txnId = `achv_${achievementId}_${Date.now().toString(36)}`;
+      const txnRef = db
+        .collection("Users")
+        .doc(userId)
+        .collection("Transactions")
+        .doc(txnId);
+      batch.set(txnRef, {
+        type: "achievement_reward",
+        achievementId,
+        amount: rewards.tokens,
+        timestamp: now,
+        source: "achievement",
+      });
+    }
+
+    // Grant entitlements
+    if (rewards.entitlements && rewards.entitlements.length > 0) {
+      for (const cosmeticId of rewards.entitlements) {
+        const entRef = db
+          .collection("Users")
+          .doc(userId)
+          .collection("Entitlements")
+          .doc(cosmeticId);
+        batch.set(
+          entRef,
+          {
+            cosmeticId,
+            type: "badge",
+            grantedAt: now,
+            source: "achievement",
+            metadata: { achievementId },
+          },
+          { merge: true },
+        );
+      }
+    }
+
+    // Mark rewards as granted (idempotency flag)
+    batch.update(achievementRef, { rewardsGranted: true });
+
+    await batch.commit();
+
+    functions.logger.info("[AchievementsV2] Rewards granted", {
+      userId,
+      achievementId,
+      tokens: rewards.tokens ?? 0,
+      entitlements: rewards.entitlements?.length ?? 0,
+    });
+
+    return true;
+  } catch (err) {
+    functions.logger.error("[AchievementsV2] Reward grant failed", {
+      userId,
+      achievementId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+// =============================================================================
 // Main Evaluator Entry Point
 // =============================================================================
 
 /**
  * Run the achievements v2 evaluator for a single user.
  *
- * This function:
  * 1. Reads all relevant stats
  * 2. Evaluates all active achievements
  * 3. Writes/updates v2 achievement docs
- * 4. Updates achievement summary
- * 5. Syncs legacy PlayerAchievements and Users/{uid}/Achievements if needed
- *
- * Designed to be called from processGameCompletion or a dedicated trigger.
+ * 4. Grants rewards for newly unlocked achievements
+ * 5. Updates achievement summary
+ * 6. Syncs legacy
  */
 export async function evaluateAchievementsV2(
   userId: string,
@@ -842,6 +1722,7 @@ export async function evaluateAchievementsV2(
     newUnlocks: [],
     errors: [],
     legacySynced: false,
+    rewardsGranted: 0,
     timestamp,
   };
 
@@ -887,7 +1768,6 @@ export async function evaluateAchievementsV2(
     for (const evalResult of evalResults) {
       const existingDoc = existing.get(evalResult.achievementId);
 
-      // Skip if nothing changed
       if (existingDoc) {
         if (
           existingDoc.state === evalResult.newState &&
@@ -899,7 +1779,6 @@ export async function evaluateAchievementsV2(
         evalResult.newState === "locked" &&
         evalResult.progress === 0
       ) {
-        // Don't create docs for achievements with zero progress
         continue;
       }
 
@@ -920,6 +1799,7 @@ export async function evaluateAchievementsV2(
         version:
           SERVER_CATALOG_BY_ID.get(evalResult.achievementId)?.version ?? 1,
         source: "server",
+        rewardsGranted: existingDoc?.rewardsGranted ?? false,
         updatedAt: now,
         createdAt: existingDoc?.createdAt ?? now,
       };
@@ -956,7 +1836,6 @@ export async function evaluateAchievementsV2(
       }
     }
 
-    // Also include existing unlocked achievements not in active catalog
     for (const [id, doc] of existing) {
       if (doc.state === "unlocked" && !allUnlockedIds.includes(id)) {
         allUnlockedIds.push(id);
@@ -989,7 +1868,7 @@ export async function evaluateAchievementsV2(
     batch.set(summaryRef, summary, { merge: true });
     batchCount++;
 
-    // 5. Legacy sync — write unlocked IDs to PlayerAchievements
+    // Legacy sync
     if (allUnlockedIds.length > 0) {
       await syncLegacyAchievements(userId, allUnlockedIds);
       result.legacySynced = true;
@@ -1000,11 +1879,25 @@ export async function evaluateAchievementsV2(
       await batch.commit();
     }
 
+    // 5. Grant rewards for newly unlocked achievements (after batch commit)
+    for (const unlock of result.newUnlocks) {
+      const def = SERVER_CATALOG_BY_ID.get(unlock.achievementId);
+      if (def?.rewards) {
+        const granted = await grantAchievementRewards(
+          userId,
+          unlock.achievementId,
+          def.rewards,
+        );
+        if (granted) result.rewardsGranted++;
+      }
+    }
+
     functions.logger.info("[AchievementsV2] Evaluation complete", {
       userId,
       evaluated: result.evaluated,
       newUnlocks: result.newUnlocks.length,
       totalUnlocked: allUnlockedIds.length,
+      rewardsGranted: result.rewardsGranted,
       errors: result.errors.length,
     });
   } catch (err) {
@@ -1022,18 +1915,11 @@ export async function evaluateAchievementsV2(
 // Legacy Sync
 // =============================================================================
 
-/**
- * Sync unlocked v2 achievement IDs into the legacy PlayerAchievements doc
- * and Users/{uid}/Achievements subcollection.
- *
- * This ensures old UI/logic that reads from these paths continues to work.
- */
 async function syncLegacyAchievements(
   userId: string,
   unlockedIds: string[],
 ): Promise<void> {
   try {
-    // Update PlayerAchievements doc progress map
     const paRef = db.collection("PlayerAchievements").doc(userId);
     const paSnap = await paRef.get();
 
@@ -1077,7 +1963,6 @@ async function syncLegacyAchievements(
       );
     }
   } catch (err) {
-    // Non-critical — log but don't fail
     functions.logger.warn("[AchievementsV2] Legacy sync failed", {
       userId,
       error: err instanceof Error ? err.message : String(err),
@@ -1089,11 +1974,6 @@ async function syncLegacyAchievements(
 // Migration Helper
 // =============================================================================
 
-/**
- * Migrate existing legacy achievements to v2 docs.
- * Creates v2 unlocked docs for achievement IDs found in
- * PlayerAchievements/{playerId} with source="migration".
- */
 export async function migrateExistingAchievements(
   userId: string,
 ): Promise<number> {
@@ -1111,7 +1991,6 @@ export async function migrateExistingAchievements(
     const prog = p as any;
     if (!prog.unlocked) continue;
 
-    // Check if v2 doc already exists
     const v2Ref = db
       .collection("users")
       .doc(userId)
@@ -1128,6 +2007,7 @@ export async function migrateExistingAchievements(
       unlockedAt: prog.unlockedAt?.toMillis?.() ?? now,
       version: 1,
       source: "migration",
+      rewardsGranted: false,
       updatedAt: now,
       createdAt: now,
     };
@@ -1149,18 +2029,20 @@ export async function migrateExistingAchievements(
 }
 
 // =============================================================================
-// Per-Game Stats Writer (called from game completion)
+// Per-Game Stats Writer
 // =============================================================================
 
 /**
  * Update the v2 per-game stats subcollection.
- * Called from processGameCompletion alongside existing updatePlayerStats.
+ * Accepts optional gameSpecific stats for game-specific metrics
+ * (e.g. maxTile for 2048, highestLevel for brick_breaker).
  */
 export async function updatePerGameStatsV2(
   userId: string,
   gameType: string,
   outcome: "win" | "loss" | "draw" | "completed" | "solved",
   score?: number,
+  gameSpecific?: Record<string, number>,
 ): Promise<void> {
   const docRef = db
     .collection("users")
@@ -1230,8 +2112,6 @@ export async function updatePerGameStatsV2(
         if (limits.scoreDirection === "higher") {
           stats.highScore = Math.max(stats.highScore, score);
         } else {
-          // Lower is better — only update if it's a better (lower) score
-          // or if no score recorded yet
           if (stats.highScore === 0 || score < stats.highScore) {
             stats.highScore = score;
           }
@@ -1239,6 +2119,113 @@ export async function updatePerGameStatsV2(
       }
     }
 
+    // Merge game-specific stats (always take the max)
+    if (gameSpecific) {
+      if (!stats.gameSpecific) stats.gameSpecific = {};
+      for (const [key, value] of Object.entries(gameSpecific)) {
+        const current = stats.gameSpecific[key] ?? 0;
+        stats.gameSpecific[key] = Math.max(current, value);
+      }
+    }
+
     transaction.set(docRef, stats);
   });
 }
+
+// =============================================================================
+// Single-Player Completion Callable
+// =============================================================================
+
+interface SPCompletionData {
+  gameType: string;
+  score: number;
+  outcome: "completed" | "win" | "loss";
+  gameSpecific?: Record<string, number>;
+}
+
+/**
+ * Called by the client after recording a single-player session.
+ * Bridges SP games into the server-authoritative achievement + stats system.
+ */
+export const processSinglePlayerCompletion = functions.https.onCall(
+  async (data: SPCompletionData, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Must be logged in",
+      );
+    }
+
+    const uid = context.auth.uid;
+    const { gameType, score, outcome, gameSpecific } = data;
+
+    // Validate input
+    if (!gameType || typeof gameType !== "string") {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "gameType required",
+      );
+    }
+    if (typeof score !== "number" || score < 0) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "valid score required",
+      );
+    }
+
+    // Anti-cheat: validate score range
+    if (isScoreSuspicious(score, gameType)) {
+      functions.logger.warn("[SPCompletion] Suspicious score rejected", {
+        uid,
+        gameType,
+        score,
+      });
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Score out of valid range",
+      );
+    }
+
+    try {
+      // Inject score into gameSpecific so stat_threshold achievements
+      // like score_50000 can read it via gameSpecific.bestScore
+      const mergedGameSpecific: Record<string, number> = {
+        ...(gameSpecific || {}),
+        bestScore: score,
+      };
+
+      // 1. Update per-game stats (with game-specific stats)
+      await updatePerGameStatsV2(
+        uid,
+        gameType,
+        outcome || "completed",
+        score,
+        mergedGameSpecific,
+      );
+
+      // 2. Run achievement evaluator
+      const evalResult = await evaluateAchievementsV2(uid);
+
+      functions.logger.info("[SPCompletion] Processed", {
+        uid,
+        gameType,
+        score,
+        newUnlocks: evalResult.newUnlocks.length,
+        rewardsGranted: evalResult.rewardsGranted,
+      });
+
+      return {
+        success: true,
+        newUnlocks: evalResult.newUnlocks.map((u) => u.achievementId),
+        rewardsGranted: evalResult.rewardsGranted,
+      };
+    } catch (err) {
+      functions.logger.error("[SPCompletion] Failed", {
+        uid,
+        gameType,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new functions.https.HttpsError("internal", "Processing failed");
+    }
+  },
+);

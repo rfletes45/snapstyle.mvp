@@ -106,7 +106,7 @@ import {
   GameCategoryCarousel,
   GameFilterBar,
   GameInvitesBanner,
-  GameQuickActionsModal,
+  GameLongPressSheet,
   ModernGameCard,
   PlayHeader,
   PlaySearchBar,
@@ -622,16 +622,19 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     setSelectedGameForQuickActions(null);
   }, []);
 
-  const handleQuickActionsLeaderboard = useCallback(
+  const handleViewMore = useCallback(
     (gameId: ExtendedGameType) => {
-      navigation.navigate("Leaderboard", { gameId });
+      navigation.navigate("GameDetails", { gameId });
     },
     [navigation],
   );
 
-  const handleQuickActionsAchievements = useCallback(
+  const handleSheetPlay = useCallback(
     (gameId: ExtendedGameType) => {
-      navigation.navigate("Achievements", { gameId });
+      const screen = GAME_SCREEN_MAP[gameId];
+      if (screen) {
+        navigation.navigate(screen);
+      }
     },
     [navigation],
   );
@@ -971,6 +974,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
           results={searchResults}
           highScores={highScoresFormatted}
           onGamePress={navigateToGame}
+          onGameLongPress={handleGameLongPress}
           style={styles.searchResults}
           testID="play-search-results"
         />
@@ -1345,14 +1349,14 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
         </ScrollView>
       )}
 
-      {/* Game Quick Actions Modal */}
+      {/* Game Long Press Sheet */}
       {selectedGameForQuickActions && (
-        <GameQuickActionsModal
+        <GameLongPressSheet
           visible={quickActionsVisible}
           gameType={selectedGameForQuickActions}
           onClose={handleQuickActionsClose}
-          onLeaderboard={handleQuickActionsLeaderboard}
-          onAchievements={handleQuickActionsAchievements}
+          onViewMore={handleViewMore}
+          onPlay={handleSheetPlay}
         />
       )}
     </View>

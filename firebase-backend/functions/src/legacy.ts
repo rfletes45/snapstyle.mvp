@@ -42,6 +42,7 @@ import {
   onUniversalInviteUpdate,
   processGameCompletion,
   processMatchmakingQueue,
+  processRealtimeGameCompletion,
   resignGame,
 } from "./games";
 
@@ -111,6 +112,7 @@ export {
   onUniversalInviteUpdate,
   processGameCompletion,
   processMatchmakingQueue,
+  processRealtimeGameCompletion,
   resignGame,
 };
 

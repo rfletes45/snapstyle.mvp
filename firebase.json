@@ -8,7 +8,8 @@
         ".git",
         "firebase-debug.log",
         "firebase-functions-debug.log"
-      ]
+      ],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
     }
   ],
   "firestore": {

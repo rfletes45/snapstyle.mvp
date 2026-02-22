@@ -10,6 +10,7 @@
  * - Handles expired stories gracefully
  */
 
+import AppImage from "@/components/AppImage";
 import { compressImage, downloadSnapImage } from "@/services/storage";
 import {
   deleteStory,
@@ -22,12 +23,12 @@ import {
   postStory,
 } from "@/services/stories";
 import { useAuth } from "@/store/AuthContext";
+import { useColors } from "@/store/ThemeContext";
 import { Story } from "@/types/models";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -36,8 +37,6 @@ import {
 } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useColors } from "@/store/ThemeContext";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/stories/StoryViewerScreen");
@@ -369,13 +368,14 @@ export default function StoryViewerScreen({
       onPress={handleStoryTap}
     >
       {displayImage && (
-        <Image
+        <AppImage
           source={{ uri: displayImage }}
           style={{
             width: "100%",
             height: "100%",
-            resizeMode: "contain",
           }}
+          contentFit="contain"
+          debugLabel="StoryViewer"
         />
       )}
 

@@ -5,6 +5,7 @@
  * Handles download, display, and cleanup
  */
 
+import AppImage from "@/components/AppImage";
 import { markSnapOpened } from "@/services/snaps";
 import { deleteSnapImage, downloadSnapImage } from "@/services/storage";
 import { useAuth } from "@/store/AuthContext";
@@ -12,7 +13,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -131,10 +131,11 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
           accessibilityLabel="Dismiss snap"
         >
           {imageUri && (
-            <Image
+            <AppImage
               source={{ uri: imageUri }}
               style={styles.snapImage}
               accessibilityLabel="Snap photo"
+              debugLabel="SnapViewer"
             />
           )}
         </Pressable>
@@ -147,10 +148,11 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
           accessibilityLabel="Tap to dismiss snap"
         >
           {imageUri && (
-            <Image
+            <AppImage
               source={{ uri: imageUri }}
               style={styles.snapImage}
               accessibilityLabel="Snap photo"
+              debugLabel="SnapViewer"
             />
           )}
         </TouchableOpacity>

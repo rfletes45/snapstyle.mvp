@@ -11,6 +11,7 @@
  * - Moment expiration handling
  */
 
+import AppImage from "@/components/AppImage";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { getFriends } from "@/services/friends";
@@ -35,7 +36,6 @@ import {
   ActionSheetIOS,
   Alert,
   FlatList,
-  Image,
   Platform,
   StyleSheet,
   TouchableOpacity,
@@ -432,91 +432,92 @@ export default function StoriesScreen({ navigation }: StoriesScreenProps) {
           renderItem={({ item: story }) => {
             const storyImageUri = getPreloadedImageUrl(story.id);
             return (
-            <TouchableOpacity
-              style={[
-                styles.storyCard,
-                { backgroundColor: theme.colors.surfaceVariant },
-                !viewedStories.has(story.id) && [
-                  styles.unviewedStoryCard,
-                  { borderColor: theme.colors.primary },
-                ],
-              ]}
-              onPress={() => handleStoryPress(story)}
-              accessibilityLabel={`View moment with ${story.viewCount} ${story.viewCount === 1 ? "view" : "views"}${viewedStories.has(story.id) ? ", already viewed" : ", new"}`}
-              accessibilityRole="button"
-            >
-              <View style={styles.storyImageContainer}>
-                {/* Moment thumbnail image */}
-                {storyImageUri ? (
-                  <Image
-                    source={{ uri: storyImageUri }}
-                    style={[
-                      styles.storyImage,
-                      !viewedStories.has(story.id) && {
-                        borderColor: theme.colors.primary,
-                        borderWidth: 2,
-                      },
-                    ]}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.storyImagePlaceholder,
-                      { backgroundColor: theme.colors.surfaceDisabled },
-                      !viewedStories.has(story.id) && {
-                        backgroundColor: theme.colors.primaryContainer,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.storyInitial,
-                        { color: theme.colors.onPrimaryContainer },
-                      ]}
-                    >
-                      {story.authorId.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Viewed indicator */}
-                {viewedStories.has(story.id) && (
-                  <View
-                    style={[
-                      styles.viewedBadge,
-                      { backgroundColor: theme.colors.tertiary },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.viewedText,
-                        { color: theme.colors.onTertiary },
-                      ]}
-                    >
-                      ✓
-                    </Text>
-                  </View>
-                )}
-
-                {/* Time remaining badge */}
-                <View style={styles.timeRemainingBadge}>
-                  <Text style={styles.timeRemainingText}>
-                    {getStoryTimeRemaining(story.expiresAt)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* View count */}
-              <Text
+              <TouchableOpacity
                 style={[
-                  styles.storyViewCount,
-                  { color: theme.colors.onSurfaceVariant },
+                  styles.storyCard,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                  !viewedStories.has(story.id) && [
+                    styles.unviewedStoryCard,
+                    { borderColor: theme.colors.primary },
+                  ],
                 ]}
+                onPress={() => handleStoryPress(story)}
+                accessibilityLabel={`View moment with ${story.viewCount} ${story.viewCount === 1 ? "view" : "views"}${viewedStories.has(story.id) ? ", already viewed" : ", new"}`}
+                accessibilityRole="button"
               >
-                {story.viewCount} {story.viewCount === 1 ? "view" : "views"}
-              </Text>
-            </TouchableOpacity>
+                <View style={styles.storyImageContainer}>
+                  {/* Moment thumbnail image */}
+                  {storyImageUri ? (
+                    <AppImage
+                      source={{ uri: storyImageUri }}
+                      style={[
+                        styles.storyImage,
+                        !viewedStories.has(story.id) && {
+                          borderColor: theme.colors.primary,
+                          borderWidth: 2,
+                        },
+                      ]}
+                      contentFit="cover"
+                      debugLabel="StoryThumb"
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.storyImagePlaceholder,
+                        { backgroundColor: theme.colors.surfaceDisabled },
+                        !viewedStories.has(story.id) && {
+                          backgroundColor: theme.colors.primaryContainer,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.storyInitial,
+                          { color: theme.colors.onPrimaryContainer },
+                        ]}
+                      >
+                        {story.authorId.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Viewed indicator */}
+                  {viewedStories.has(story.id) && (
+                    <View
+                      style={[
+                        styles.viewedBadge,
+                        { backgroundColor: theme.colors.tertiary },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.viewedText,
+                          { color: theme.colors.onTertiary },
+                        ]}
+                      >
+                        ✓
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Time remaining badge */}
+                  <View style={styles.timeRemainingBadge}>
+                    <Text style={styles.timeRemainingText}>
+                      {getStoryTimeRemaining(story.expiresAt)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* View count */}
+                <Text
+                  style={[
+                    styles.storyViewCount,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  {story.viewCount} {story.viewCount === 1 ? "view" : "views"}
+                </Text>
+              </TouchableOpacity>
             );
           }}
         />

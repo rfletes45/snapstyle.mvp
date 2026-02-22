@@ -11,10 +11,10 @@
       "behaviorType": "CUTTER",
       "slotPreference": "module",
       "fixedSlotId": "SLOT_A",
-      "fixedSlotIdSecondary": "SLOT_A2",
-      "footprint": { "w": 1, "h": 2 },
       "cost": { "baseFluxMicro": 500, "growth": 1.18 },
-      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 0 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 0 }]
+      },
       "tier": {
         "maxTier": 3,
         "tierMult": { "1": 1.0, "2": 1.35, "3": 1.85 }
@@ -33,10 +33,11 @@
       "converter": false,
       "behaviorType": "HOPPER",
       "slotPreference": "module",
-      "fixedSlotId": "SLOT_C",
-      "footprint": { "w": 1, "h": 1 },
+      "fixedSlotId": "SLOT_B",
       "cost": { "baseFluxMicro": 1200, "growth": 1.17 },
-      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 2 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 2 }]
+      },
       "tier": {
         "maxTier": 3,
         "tierMult": { "1": 1.0, "2": 1.4, "3": 2.0 }
@@ -56,9 +57,10 @@
       "behaviorType": "DRONE_FETCH",
       "slotPreference": "utility",
       "fixedSlotId": "UTILITY_1",
-      "footprint": { "w": 1, "h": 1 },
       "cost": { "baseFluxMicro": 12000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 10 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 10 }]
+      },
       "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
       "params": {
         "baseCooldownSec": 10
@@ -73,11 +75,11 @@
       "converter": false,
       "behaviorType": "CRANE",
       "slotPreference": "module",
-      "fixedSlotId": "SLOT_B",
-      "fixedSlotIdSecondary": "SLOT_B2",
-      "footprint": { "w": 1, "h": 2 },
+      "fixedSlotId": "SLOT_E",
       "cost": { "baseFluxMicro": 18000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }]
+      },
       "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
       "params": {
         "transitTicksMult": 0.7,
@@ -93,10 +95,11 @@
       "converter": false,
       "behaviorType": "BATTERY",
       "slotPreference": "module",
-      "fixedSlotId": "SLOT_D",
-      "footprint": { "w": 1, "h": 1 },
+      "fixedSlotId": "SLOT_C",
       "cost": { "baseFluxMicro": 3500, "growth": 1.15 },
-      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "OWN_MACHINE_COUNT", "code": "DRONES_MAG", "gte": 1 }]
+      },
       "tier": { "maxTier": 3, "tierMult": { "1": 1.0, "2": 1.25, "3": 1.6 } },
       "params": {
         "droneCooldownMultPerUnit": 0.97
@@ -113,7 +116,6 @@
       "behaviorType": "SCANNER",
       "slotPreference": "utility",
       "fixedSlotId": "UTILITY_2",
-      "footprint": { "w": 1, "h": 1 },
       "cost": { "baseFluxMicro": 15000, "growth": 1.0 },
       "visibilityUnlock": { "all": [{ "t": "TOTAL_CUT_TAPS", "gte": 40 }] },
       "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
@@ -131,10 +133,11 @@
       "converter": false,
       "behaviorType": "LAB",
       "slotPreference": "module",
-      "fixedSlotId": "SLOT_E",
-      "footprint": { "w": 1, "h": 1 },
+      "fixedSlotId": "SLOT_D",
       "cost": { "baseFluxMicro": 22000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "SCANNER", "gte": 1 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "OWN_MACHINE_COUNT", "code": "SCANNER", "gte": 1 }]
+      },
       "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
       "params": {
         "yieldMult": 1.1
@@ -149,10 +152,11 @@
       "converter": false,
       "behaviorType": "SIGNAL",
       "slotPreference": "module",
-      "fixedSlotId": "SLOT_F",
-      "footprint": { "w": 1, "h": 1 },
+      "fixedSlotId": "SLOT_E",
       "cost": { "baseFluxMicro": 16000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "LAB", "gte": 1 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "OWN_MACHINE_COUNT", "code": "LAB", "gte": 1 }]
+      },
       "tier": { "maxTier": 3, "tierMult": { "1": 1.0, "2": 1.5, "3": 2.2 } },
       "params": {
         "signalPerSecMicroBase": 45
@@ -168,10 +172,11 @@
       "converter": false,
       "behaviorType": "ASSEMBLER",
       "slotPreference": "module",
-      "fixedSlotId": "SLOT_G",
-      "footprint": { "w": 1, "h": 1 },
+      "fixedSlotId": "SLOT_E",
       "cost": { "baseFluxMicro": 30000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 25 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "TOTAL_WRECKS_DESTROYED", "gte": 25 }]
+      },
       "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
       "params": {
         "upgradeCostMult": 0.92
@@ -187,9 +192,10 @@
       "behaviorType": "CONVERTER_ALLOY_TO_FLUX",
       "slotPreference": "module",
       "fixedSlotId": "SLOT_C",
-      "footprint": { "w": 1, "h": 1 },
       "cost": { "baseFluxMicro": 26000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "ASSEMBLER", "gte": 1 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "OWN_MACHINE_COUNT", "code": "ASSEMBLER", "gte": 1 }]
+      },
       "tier": { "maxTier": 3, "tierMult": { "1": 1.0, "2": 1.45, "3": 2.1 } },
       "params": {
         "alloyToFluxRatePerSecMicroBase": 120
@@ -205,9 +211,10 @@
       "behaviorType": "SLOT_UNLOCK_PROGRESS",
       "slotPreference": "module",
       "fixedSlotId": "SLOT_D",
-      "footprint": { "w": 1, "h": 1 },
       "cost": { "baseFluxMicro": 24000, "growth": 1.0 },
-      "visibilityUnlock": { "all": [{ "t": "OWN_MACHINE_COUNT", "code": "NANOFORGE", "gte": 1 }] },
+      "visibilityUnlock": {
+        "all": [{ "t": "OWN_MACHINE_COUNT", "code": "NANOFORGE", "gte": 1 }]
+      },
       "tier": { "maxTier": 1, "tierMult": { "1": 1.0 } },
       "params": {
         "progressPerWreckDestroyed": 1,
@@ -225,8 +232,6 @@
       "behaviorType": "DYSON",
       "slotPreference": "cosmic",
       "fixedSlotId": "COSMIC_1",
-      "fixedSlotIdSecondary": "COSMIC_2",
-      "footprint": { "w": 1, "h": 2 },
       "cost": { "baseFluxMicro": 120000, "growth": 1.0 },
       "visibilityUnlock": {
         "all": [

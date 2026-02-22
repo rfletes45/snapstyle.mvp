@@ -18,6 +18,7 @@ import {
   getSectionsForCategory,
 } from "@/config/achievementsCatalog";
 import type {
+  AchievementRewards,
   AchievementSectionWithProgress,
   AchievementSummaryDoc,
   AchievementV2Category,
@@ -159,6 +160,8 @@ export interface V2AchievementDisplayItem {
   xpReward: number;
   /** Coin reward */
   coinReward: number;
+  /** Token / entitlement rewards (from catalog) */
+  rewards?: AchievementRewards;
   /** Sort order */
   sortOrder: number;
 }
@@ -182,12 +185,9 @@ export function buildV2DisplayItems(
   const items: V2AchievementDisplayItem[] = [];
 
   for (const def of catalog) {
-    // Apply filters
-    if (
-      options?.gameType &&
-      def.gameType &&
-      def.gameType !== options.gameType
-    ) {
+    // Apply filters — when scoped to a game, only include defs that
+    // explicitly belong to that game (exclude global/untyped defs)
+    if (options?.gameType && def.gameType !== options.gameType) {
       continue;
     }
     if (options?.category && def.category !== options.category) {
@@ -203,11 +203,14 @@ export function buildV2DisplayItems(
       continue;
     }
 
+    // Mask name AND description for locked secrets
+    const isHiddenSecret = def.secret && state === "locked";
+
     items.push({
       id: def.id,
-      name: def.name,
-      description: state === "locked" && def.secret ? "???" : def.description,
-      icon: def.icon,
+      name: isHiddenSecret ? "???" : def.name,
+      description: isHiddenSecret ? "???" : def.description,
+      icon: isHiddenSecret ? "🔒" : def.icon,
       category: def.category,
       tier: def.tier,
       gameType: def.gameType,
@@ -219,6 +222,7 @@ export function buildV2DisplayItems(
       secret: def.secret ?? false,
       xpReward: def.xpReward,
       coinReward: def.coinReward,
+      rewards: def.rewards,
       sortOrder: def.sortOrder ?? 999,
     });
   }
@@ -243,13 +247,21 @@ export function buildV2DisplayItems(
 
 /**
  * Get unlocked achievement IDs from user docs.
+ * When `gameType` is provided, only includes IDs whose catalog definition
+ * belongs to that game.
  */
 export function getUnlockedIds(
   userDocs: Map<string, UserAchievementDoc>,
+  gameType?: ExtendedGameType,
 ): Set<string> {
   const ids = new Set<string>();
   for (const [id, doc] of userDocs) {
     if (doc.state === "unlocked") {
+      if (gameType) {
+        const def = ACHIEVEMENTS_BY_ID.get(id);
+        // Strict match: only include if def exists and its gameType matches exactly
+        if (!def || def.gameType !== gameType) continue;
+      }
       ids.add(id);
     }
   }
@@ -268,9 +280,11 @@ export function isAchievementUnlocked(
 
 /**
  * Get summary statistics from user docs.
+ * When `gameType` is provided, only counts achievements belonging to that game.
  */
 export function computeLocalSummary(
   userDocs: Map<string, UserAchievementDoc>,
+  gameType?: ExtendedGameType,
 ): {
   totalUnlocked: number;
   totalAvailable: number;
@@ -291,8 +305,12 @@ export function computeLocalSummary(
 
   for (const [id, uDoc] of userDocs) {
     if (uDoc.state === "unlocked") {
-      totalUnlocked++;
       const def = ACHIEVEMENTS_BY_ID.get(id);
+      // When scoped to a game, only count achievements that explicitly belong to it
+      if (gameType && (!def || def.gameType !== gameType)) {
+        continue;
+      }
+      totalUnlocked++;
       if (def) {
         tiers[def.tier]++;
         totalXp += def.xpReward;
@@ -301,9 +319,15 @@ export function computeLocalSummary(
     }
   }
 
+  // Compute totalAvailable scoped to the game when filtered
+  const catalog = getActiveAchievements();
+  const totalAvailable = gameType
+    ? catalog.filter((d) => d.gameType === gameType).length
+    : catalog.length;
+
   return {
     totalUnlocked,
-    totalAvailable: getActiveAchievements().length,
+    totalAvailable,
     unlockedByTier: tiers,
     totalXpEarned: totalXp,
     totalCoinsEarned: totalCoins,

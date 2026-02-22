@@ -10,7 +10,7 @@
  */
 
 import { logout } from "@/services/auth";
-import { updateDisplayName } from "@/services/profileService";
+import { equipTheme, updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useSnackbar } from "@/store/SnackbarContext";
@@ -63,22 +63,11 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { currentFirebaseUser, customClaims } = useAuth();
   const { profile, refreshProfile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
-  const {
-    themeId,
-    setTheme,
-    isDark,
-    useSystemTheme,
-    setUseSystemTheme,
-    toggleDarkMode,
-    availableThemes,
-  } = useAppTheme();
+  const { setTheme, isDark, useSystemTheme, setUseSystemTheme } = useAppTheme();
   const {
     enabled: inAppNotificationsEnabled,
     setEnabled: setInAppNotificationsEnabled,
   } = useInAppNotifications();
-
-  // Get current theme info
-  const currentThemeMeta = availableThemes.find((t) => t.id === themeId);
 
   // Notification toggles (persisted to AsyncStorage)
   const [notifications, setNotifications] = useState<NotificationSettings>({
@@ -280,28 +269,15 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       <List.Section>
         <List.Subheader style={styles.sectionHeader}>Appearance</List.Subheader>
 
-        <List.Item
-          title="Theme"
-          description={
-            useSystemTheme
-              ? `System (${currentThemeMeta?.name || "Auto"})`
-              : currentThemeMeta?.name || "Custom"
-          }
-          left={(props) => (
-            <List.Icon
-              {...props}
-              icon={isDark ? "weather-night" : "weather-sunny"}
-            />
-          )}
-          right={(props) => <List.Icon {...props} icon="chevron-right" />}
-          onPress={() => navigation.navigate("ThemeSettings")}
-        />
-
         <View style={styles.themeButtonsContainer}>
           <Button
             mode={!useSystemTheme && !isDark ? "contained" : "outlined"}
             onPress={() => {
               setTheme("catppuccin-latte");
+              if (currentFirebaseUser?.uid)
+                equipTheme(currentFirebaseUser.uid, "catppuccin-latte").catch(
+                  () => {},
+                );
               showSuccess("Light theme enabled");
             }}
             style={styles.themeButton}
@@ -314,6 +290,10 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             mode={!useSystemTheme && isDark ? "contained" : "outlined"}
             onPress={() => {
               setTheme("catppuccin-mocha");
+              if (currentFirebaseUser?.uid)
+                equipTheme(currentFirebaseUser.uid, "catppuccin-mocha").catch(
+                  () => {},
+                );
               showSuccess("Dark theme enabled");
             }}
             style={styles.themeButton}
@@ -326,6 +306,10 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             mode={useSystemTheme ? "contained" : "outlined"}
             onPress={() => {
               setUseSystemTheme(true);
+              // Sync the resolved system theme to Firestore
+              const resolved = isDark ? "catppuccin-mocha" : "catppuccin-latte";
+              if (currentFirebaseUser?.uid)
+                equipTheme(currentFirebaseUser.uid, resolved).catch(() => {});
               showSuccess("System theme enabled");
             }}
             style={styles.themeButton}
