@@ -302,7 +302,8 @@ export const MentionAutocomplete = memo(function MentionAutocomplete({
         {
           backgroundColor: theme.colors.surface,
           borderColor: theme.colors.outlineVariant,
-          bottom: bottomOffset,
+          bottom: "100%",
+          marginBottom: bottomOffset,
           maxHeight,
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }],
@@ -487,6 +488,7 @@ const styles = StyleSheet.create({
     right: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
+    zIndex: 10,
     ...Platform.select({
       ios: {
         shadowColor: "#000",

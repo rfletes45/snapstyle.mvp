@@ -9,4 +9,5 @@ export {
   onUserCreated,
   recordDailyLogin,
   seedDailyTasks,
+  seedMonthlyTasks,
 } from "./legacy";

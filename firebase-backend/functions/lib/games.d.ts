@@ -135,3 +135,5 @@ export declare const makeMove: functions.HttpsFunction & functions.Runnable<any>
  * Resign from a game
  */
 export declare const resignGame: functions.HttpsFunction & functions.Runnable<any>;
+export declare const onGameResult: functions.HttpsFunction & functions.Runnable<any>;
+export declare const claimLevelReward: functions.HttpsFunction & functions.Runnable<any>;

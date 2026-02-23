@@ -39,6 +39,8 @@ export interface InsertMessageParams {
   kind: MessageRow["kind"];
   text?: string;
   replyTo?: ReplyToMetadata;
+  /** Thread root message ID (for threaded replies) */
+  threadRootId?: string;
   mentions?: string[];
   attachments?: AttachmentV2[];
   /** Local attachments pending upload */
@@ -76,6 +78,9 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
     edited_at: null,
     reply_to_id: params.replyTo?.messageId || null,
     reply_to_preview: params.replyTo ? JSON.stringify(params.replyTo) : null,
+    thread_root_id: params.threadRootId || null,
+    reply_count: 0,
+    last_reply_at: null,
     mentions_json: params.mentions ? JSON.stringify(params.mentions) : null,
     reactions_json: null,
     deleted_for_all: 0,
@@ -96,10 +101,11 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
       `INSERT INTO messages (
         id, conversation_id, scope, sender_id, sender_name, kind, text,
         created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
+        thread_root_id, reply_count, last_reply_at,
         mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
         hidden_for_json, link_preview_json, sender_style_json,
         sync_status, sync_error, retry_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.conversation_id,
@@ -113,6 +119,9 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
         row.edited_at,
         row.reply_to_id,
         row.reply_to_preview,
+        row.thread_root_id,
+        row.reply_count,
+        row.last_reply_at,
         row.mentions_json,
         row.reactions_json,
         row.deleted_for_all,
@@ -149,6 +158,14 @@ export function insertMessage(params: InsertMessageParams): MessageRow {
       params.text || "",
       now,
     );
+
+    // Optimistically increment reply_count on the thread root message
+    if (params.threadRootId) {
+      db.runSync(
+        `UPDATE messages SET reply_count = reply_count + 1, last_reply_at = ? WHERE id = ?`,
+        [now, params.threadRootId],
+      );
+    }
   });
 
   return row;
@@ -178,6 +195,31 @@ export function upsertMessageFromServer(message: MessageV2): void {
       // Update existing - server wins for ALL content fields
       // This ensures edits, mention changes, and deletion metadata
       // are reflected locally after sync.
+      //
+      // REPLY PROTECTION: If the server message has no replyTo but the
+      // local row already does (because we set it before sync), keep the
+      // local reply data.  This prevents the server-wins strategy from
+      // wiping reply metadata that the sync engine failed to send as a
+      // full object.
+      let replyToId: string | null = message.replyTo?.messageId || null;
+      let replyToPreview: string | null = message.replyTo
+        ? JSON.stringify(message.replyTo)
+        : null;
+
+      if (!replyToId) {
+        // Server lacks reply data – check if local row already has it
+        const localRow = db.getFirstSync<{
+          reply_to_id: string | null;
+          reply_to_preview: string | null;
+        }>("SELECT reply_to_id, reply_to_preview FROM messages WHERE id = ?", [
+          message.id,
+        ]);
+        if (localRow?.reply_to_id) {
+          replyToId = localRow.reply_to_id;
+          replyToPreview = localRow.reply_to_preview;
+        }
+      }
+
       db.runSync(
         `UPDATE messages SET
           server_received_at = ?,
@@ -188,6 +230,9 @@ export function upsertMessageFromServer(message: MessageV2): void {
           mentions_json = ?,
           reply_to_id = ?,
           reply_to_preview = ?,
+          thread_root_id = COALESCE(?, thread_root_id),
+          reply_count = MAX(reply_count, ?),
+          last_reply_at = MAX(COALESCE(last_reply_at, 0), COALESCE(?, 0)),
           reactions_json = ?,
           hidden_for_json = ?,
           link_preview_json = ?,
@@ -200,13 +245,19 @@ export function upsertMessageFromServer(message: MessageV2): void {
         WHERE id = ?`,
         [
           message.serverReceivedAt,
-          message.text ?? null,
+          // For animal messages, store animalId in text column
+          message.kind === "animal"
+            ? message.animalId || message.text || null
+            : (message.text ?? null),
           message.kind || "text",
           message.senderName || null,
           message.editedAt || null,
           message.mentionUids ? JSON.stringify(message.mentionUids) : null,
-          message.replyTo?.messageId || null,
-          message.replyTo ? JSON.stringify(message.replyTo) : null,
+          replyToId,
+          replyToPreview,
+          message.threadRootId || null,
+          message.replyCount ?? 0,
+          message.lastReplyAt || null,
           message.reactionsSummary
             ? JSON.stringify(message.reactionsSummary)
             : null,
@@ -239,10 +290,11 @@ export function upsertMessageFromServer(message: MessageV2): void {
         `INSERT INTO messages (
           id, conversation_id, scope, sender_id, sender_name, kind, text,
           created_at, server_received_at, edited_at, reply_to_id, reply_to_preview,
+          thread_root_id, reply_count, last_reply_at,
           mentions_json, reactions_json, deleted_for_all, deleted_by, deleted_at,
           hidden_for_json, link_preview_json, sender_style_json,
           sync_status, sync_error, retry_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, 0)`,
         [
           id,
           conversationId,
@@ -250,12 +302,18 @@ export function upsertMessageFromServer(message: MessageV2): void {
           senderId,
           message.senderName || null,
           kind,
-          message.text || null,
+          // For animal messages, store animalId in text column
+          kind === "animal"
+            ? message.animalId || message.text || null
+            : message.text || null,
           createdAt,
           serverReceivedAt,
           message.editedAt || null,
           message.replyTo?.messageId || null,
           message.replyTo ? JSON.stringify(message.replyTo) : null,
+          message.threadRootId || null,
+          message.replyCount ?? 0,
+          message.lastReplyAt || null,
           message.mentionUids ? JSON.stringify(message.mentionUids) : null,
           message.reactionsSummary
             ? JSON.stringify(message.reactionsSummary)
@@ -301,6 +359,25 @@ export function upsertMessageFromServer(message: MessageV2): void {
 // =============================================================================
 // Query Operations
 // =============================================================================
+
+/**
+ * Get all replies in a thread (messages whose thread_root_id matches the given rootMessageId).
+ * Returns them in chronological order (oldest first) so the UI can render top-to-bottom.
+ */
+export function getThreadMessages(
+  rootMessageId: string,
+  limit: number = 200,
+): MessageWithAttachments[] {
+  const db = getDatabase();
+  const messages = db.getAllSync<MessageRow>(
+    `SELECT * FROM messages
+     WHERE thread_root_id = ? AND deleted_for_all = 0
+     ORDER BY COALESCE(server_received_at, created_at) ASC
+     LIMIT ?`,
+    [rootMessageId, limit],
+  );
+  return attachBatchAttachments(messages);
+}
 
 /**
  * Get messages for a specific conversation (simpler API for useLocalMessages)
@@ -885,7 +962,9 @@ export function rowToMessageV2(
     senderId: row.sender_id,
     senderName: row.sender_name || undefined,
     kind: row.kind as MessageV2["kind"],
-    text: row.text || undefined,
+    text: row.kind === "animal" ? undefined : row.text || undefined,
+    // For animal messages, animalId is stored in the text column
+    animalId: row.kind === "animal" ? row.text || undefined : undefined,
     attachments: row.attachments.map(attRowToAttachmentV2),
     createdAt: row.created_at,
     serverReceivedAt: row.server_received_at || row.created_at,
@@ -896,6 +975,9 @@ export function rowToMessageV2(
           undefined as unknown as ReplyToMetadata,
         )
       : undefined,
+    threadRootId: row.thread_root_id || undefined,
+    replyCount: row.reply_count || undefined,
+    lastReplyAt: row.last_reply_at || undefined,
     mentionUids: parseJsonColumn<string[]>(
       row.mentions_json,
       undefined as unknown as string[],
@@ -958,7 +1040,11 @@ export function messageV2ToRow(
     sender_id: message.senderId,
     sender_name: message.senderName || null,
     kind: message.kind,
-    text: message.text || null,
+    // For animal messages, store animalId in text column
+    text:
+      message.kind === "animal"
+        ? message.animalId || message.text || null
+        : message.text || null,
     created_at: message.createdAt,
     server_received_at: message.serverReceivedAt,
     edited_at: message.editedAt || null,

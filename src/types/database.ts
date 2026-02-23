@@ -45,13 +45,17 @@ export interface MessageRow {
     | "file"
     | "system"
     | "scorecard"
-    | "game_invite";
+    | "game_invite"
+    | "animal";
   text: string | null;
   created_at: number;
   server_received_at: number | null;
   edited_at: number | null;
   reply_to_id: string | null;
   reply_to_preview: string | null; // JSON string
+  thread_root_id: string | null;
+  reply_count: number;
+  last_reply_at: number | null;
   mentions_json: string | null; // JSON string
   reactions_json: string | null; // JSON string
   deleted_for_all: 0 | 1;

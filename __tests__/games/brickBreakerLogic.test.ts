@@ -1025,3 +1025,189 @@ describe("Visual Helpers", () => {
     });
   });
 });
+
+// =============================================================================
+// Sub-stepped Physics — Anti-tunneling & Double-hit Tests
+// =============================================================================
+
+describe("Sub-stepped Physics", () => {
+  it("should NOT tunnel through a brick at high velocity", () => {
+    // Place a single brick and fire a fast ball straight at it
+    let state = createBrickBreakerState("test-user");
+    const targetRow = 3;
+    const targetCol = 4;
+    const brick: BrickState = {
+      id: "tunnel-brick",
+      row: targetRow,
+      col: targetCol,
+      type: "standard",
+      hitsRemaining: 1,
+      hasPowerUp: false,
+    };
+    state = { ...state, bricks: [brick] };
+
+    // Compute brick top edge
+    const brickTopY =
+      targetRow * (CONFIG.brickHeight + CONFIG.brickPadding) +
+      CONFIG.brickTopOffset;
+    const brickX =
+      targetCol * (CONFIG.brickWidth + CONFIG.brickPadding) +
+      CONFIG.brickPadding +
+      CONFIG.brickWidth / 2;
+
+    // Ball right above the brick, speed 25 > brickHeight (16).
+    // Without sub-stepping this would tunnel; with sub-stepping it must collide.
+    state = {
+      ...state,
+      balls: [
+        {
+          id: "fast-ball",
+          x: brickX,
+          y: brickTopY - CONFIG.ballRadius - 2, // 2 px gap
+          vx: 0,
+          vy: 25,
+          radius: CONFIG.ballRadius,
+          isStuck: false,
+        },
+      ],
+      phase: "playing",
+    };
+
+    const result = updateBallPhysics(state);
+
+    // The brick should have been destroyed (not tunneled through)
+    expect(result.newState.bricks.length).toBe(0);
+    expect(result.events.some((e) => e.type === "brick_destroyed")).toBe(true);
+  });
+
+  it("should destroy exactly one brick per sub-step (no double-hit)", () => {
+    // Place two bricks side by side; shoot ball at the boundary
+    let state = createBrickBreakerState("test-user");
+    const brickA: BrickState = {
+      id: "brick-a",
+      row: 3,
+      col: 3,
+      type: "standard",
+      hitsRemaining: 1,
+      hasPowerUp: false,
+    };
+    const brickB: BrickState = {
+      id: "brick-b",
+      row: 3,
+      col: 4,
+      type: "standard",
+      hitsRemaining: 1,
+      hasPowerUp: false,
+    };
+    state = { ...state, bricks: [brickA, brickB] };
+
+    // Position ball right at brickA's right edge / brickB's left edge
+    const brickARight =
+      brickA.col * (CONFIG.brickWidth + CONFIG.brickPadding) +
+      CONFIG.brickPadding +
+      CONFIG.brickWidth;
+    const brickY =
+      brickA.row * (CONFIG.brickHeight + CONFIG.brickPadding) +
+      CONFIG.brickTopOffset +
+      CONFIG.brickHeight / 2;
+
+    state = {
+      ...state,
+      balls: [
+        {
+          id: "edge-ball",
+          x: brickARight,
+          y: brickY - 30,
+          vx: 0,
+          vy: 8,
+          radius: CONFIG.ballRadius,
+          isStuck: false,
+        },
+      ],
+      phase: "playing",
+    };
+
+    const result = updateBallPhysics(state);
+
+    // At most one brick should be destroyed in a single physics tick
+    const destroyedCount = result.events.filter(
+      (e) => e.type === "brick_destroyed",
+    ).length;
+    expect(destroyedCount).toBeLessThanOrEqual(1);
+  });
+
+  it("should separate ball from brick after collision (epsilon push)", () => {
+    let state = createBrickBreakerState("test-user");
+    const brick: BrickState = {
+      id: "sep-brick",
+      row: 3,
+      col: 4,
+      type: "silver", // 2 hits — survives first hit
+      hitsRemaining: 2,
+      hasPowerUp: false,
+    };
+    state = { ...state, bricks: [brick] };
+
+    const brickX =
+      brick.col * (CONFIG.brickWidth + CONFIG.brickPadding) +
+      CONFIG.brickPadding +
+      CONFIG.brickWidth / 2;
+    const brickTopY =
+      brick.row * (CONFIG.brickHeight + CONFIG.brickPadding) +
+      CONFIG.brickTopOffset;
+
+    // Ball moving down, just above the brick
+    state = {
+      ...state,
+      balls: [
+        {
+          id: "sep-ball",
+          x: brickX,
+          y: brickTopY - CONFIG.ballRadius - 1,
+          vx: 0,
+          vy: 5,
+          radius: CONFIG.ballRadius,
+          isStuck: false,
+        },
+      ],
+      phase: "playing",
+    };
+
+    const result = updateBallPhysics(state);
+    const ball = result.newState.balls[0];
+
+    // Ball should be above the brick (separated) and moving upward
+    expect(ball.vy).toBeLessThan(0);
+    expect(ball.y + ball.radius).toBeLessThanOrEqual(brickTopY);
+  });
+
+  it("should produce consistent paddle bounce angle", () => {
+    let state = createBrickBreakerState("test-user");
+    state = {
+      ...state,
+      bricks: [], // no bricks
+      balls: [
+        {
+          id: "paddle-ball",
+          x: state.paddle.x + state.paddle.width / 2, // center of paddle
+          y: CONFIG.paddleY - CONFIG.ballRadius - 2,
+          vx: 0,
+          vy: 5,
+          radius: CONFIG.ballRadius,
+          isStuck: false,
+        },
+      ],
+      phase: "playing",
+    };
+
+    const result = updateBallPhysics(state);
+    const ball = result.newState.balls[0];
+
+    // Should bounce upward
+    expect(ball.vy).toBeLessThan(0);
+    // Hit center of paddle — vx should be near zero
+    expect(Math.abs(ball.vx)).toBeLessThan(1);
+    // paddle_hit event should be emitted
+    expect(result.events.some((e) => e.type === "paddle_hit")).toBe(true);
+  });
+});

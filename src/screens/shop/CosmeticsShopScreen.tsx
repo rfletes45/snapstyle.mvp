@@ -28,7 +28,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -39,6 +38,7 @@ import {
 import { ActivityIndicator, Appbar, Searchbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { getAnimalImage } from "@/cosmetics/animalAssets";
 import { getCosmeticAsset, hasCosmeticAsset } from "@/cosmetics/assetRegistry";
 import { getCosmeticById } from "@/cosmetics/catalog";
@@ -59,6 +59,7 @@ import {
   useCosmeticsShop,
 } from "@/hooks/useCosmeticsShop";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
+import { prefetchShopCategory } from "@/services/cosmeticsAssetCache";
 import { formatTokenAmount } from "@/services/economy";
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
@@ -170,10 +171,11 @@ const ShopGridItem = React.memo(function ShopGridItem({
     >
       {/* Image or placeholder */}
       {assetSource ? (
-        <Image
+        <CosmeticImage
           source={assetSource}
           style={styles.gridItemImage}
-          resizeMode="cover"
+          recyclingKey={item.id}
+          debugLabel={`shop-grid-${item.id}`}
         />
       ) : (
         <View
@@ -715,10 +717,10 @@ const FeaturedCard = React.memo(function FeaturedCard({
       ]}
     >
       {assetSource ? (
-        <Image
+        <CosmeticImage
           source={assetSource}
           style={styles.featuredCardImage}
-          resizeMode="cover"
+          debugLabel={`shop-featured-${cosmetic.id}`}
         />
       ) : (
         <View
@@ -844,10 +846,10 @@ const BundleCard = React.memo(function BundleCard({
       {/* Preview image */}
       <View style={styles.bundleImageWrapper}>
         {assetSource ? (
-          <Image
+          <CosmeticImage
             source={assetSource}
             style={styles.bundleImage}
-            resizeMode="cover"
+            debugLabel={`shop-bundle-${bundle.id}`}
           />
         ) : (
           <View
@@ -963,6 +965,25 @@ export default function CosmeticsShopScreen() {
 
   const shop = useCosmeticsShop(uid);
 
+  // ── Dev-only diagnostics: log shop item counts to catch empty catalog ──
+  useEffect(() => {
+    if (__DEV__) {
+      console.log("[CosmeticsShop] uid:", uid ?? "(not signed in)");
+      console.log("[CosmeticsShop] loading:", shop.loading);
+      console.log("[CosmeticsShop] shopItems count:", shop.shopItems.length);
+      if (shop.shopItems.length > 0) {
+        const types = new Map<string, number>();
+        for (const item of shop.shopItems) {
+          types.set(item.type, (types.get(item.type) ?? 0) + 1);
+        }
+        console.log(
+          "[CosmeticsShop] items by type:",
+          Object.fromEntries(types),
+        );
+      }
+    }
+  }, [uid, shop.loading, shop.shopItems.length]);
+
   // ── Dev-only performance metrics ──
   const mountTimeRef = useRef(Date.now());
   const renderCountRef = useRef(0);
@@ -975,6 +996,14 @@ export default function CosmeticsShopScreen() {
       }
     }
   });
+
+  // ── Prefetch cosmetic assets on mount for fast grid rendering ──
+  useEffect(() => {
+    prefetchShopCategory("background");
+    prefetchShopCategory("decoration");
+    prefetchShopCategory("badge");
+    prefetchShopCategory("chat_animal_theme");
+  }, []);
 
   // ── Section state (Profile / Chat) ───────────────────────────────────
   const [shopSection, setShopSection] = useState<ShopSection>("profile");
@@ -1667,10 +1696,10 @@ function CosmeticPurchaseSheet({
             ) : item.type === "chat_animal_theme" ? (
               /* Animal theme preview: image + play sound button */
               <View style={styles.sheetAnimalPreview}>
-                <Image
+                <CosmeticImage
                   source={getAnimalImage(item.id)}
                   style={styles.sheetAnimalImage}
-                  resizeMode="cover"
+                  debugLabel={`shop-animal-${item.id}`}
                 />
                 <TouchableOpacity
                   onPress={() => playAnimalSound(item.id)}
@@ -1689,13 +1718,14 @@ function CosmeticPurchaseSheet({
                 </TouchableOpacity>
               </View>
             ) : assetSource ? (
-              <Image
+              <CosmeticImage
                 source={assetSource}
                 style={[
                   styles.sheetImage,
                   item.type === "background" && styles.sheetImageWide,
                 ]}
-                resizeMode="contain"
+                contentFit="contain"
+                debugLabel={`shop-detail-${item.id}`}
               />
             ) : (
               <View

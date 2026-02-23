@@ -31,12 +31,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { useRoute } from "@react-navigation/native";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import {
   Appbar,
   Button,
@@ -372,10 +367,7 @@ export default function TasksScreen({ navigation }: { navigation: any }) {
       <Appbar.BackAction onPress={() => navigation.goBack()} />
       <Appbar.Content
         title="Tasks"
-        titleStyle={[
-          styles.appbarTitle,
-          { color: theme.colors.onBackground },
-        ]}
+        titleStyle={[styles.appbarTitle, { color: theme.colors.onBackground }]}
       />
       <View
         style={[
@@ -388,9 +380,7 @@ export default function TasksScreen({ navigation }: { navigation: any }) {
           size={16}
           color={theme.colors.primary}
         />
-        <Text
-          style={[styles.balanceText, { color: theme.colors.onSurface }]}
-        >
+        <Text style={[styles.balanceText, { color: theme.colors.onSurface }]}>
           {wallet ? formatTokenAmount(wallet.tokensBalance) : "0"}
         </Text>
       </View>
@@ -607,13 +597,11 @@ export default function TasksScreen({ navigation }: { navigation: any }) {
             subtitle={
               activeTab === "daily"
                 ? "Check back later for new daily tasks!"
-                : "Monthly challenges coming soon!"
+                : "No monthly challenges right now. Check back soon!"
             }
           />
         ) : (
-          <View style={styles.tasksList}>
-            {sortedTasks.map(renderTask)}
-          </View>
+          <View style={styles.tasksList}>{sortedTasks.map(renderTask)}</View>
         )}
       </ScrollView>
 

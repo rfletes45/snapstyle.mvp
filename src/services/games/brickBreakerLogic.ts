@@ -647,8 +647,28 @@ export function launchBall(state: BrickBreakerState): BrickBreakerState {
   };
 }
 
+// ── Physics constants ──
+const EPSILON = 1; // px separation after collision to prevent re-collision
+const MAX_SUB_STEPS = 8; // cap to keep performance safe on mobile
+
 /**
- * Update ball position and handle collisions
+ * Calculate how many sub-steps are needed so the ball never moves
+ * more than half the smallest brick dimension per step.
+ */
+function getSubStepCount(vx: number, vy: number): number {
+  const speed = Math.sqrt(vx * vx + vy * vy);
+  const minDim = Math.min(CONFIG.brickWidth, CONFIG.brickHeight); // 16
+  return Math.min(MAX_SUB_STEPS, Math.max(1, Math.ceil(speed / (minDim / 2))));
+}
+
+/**
+ * Update ball positions and handle collisions.
+ *
+ * Uses sub-stepping to prevent tunneling: each frame is split into N
+ * smaller movement steps so the ball never travels further than half
+ * a brick per step.  A per-step hit-set prevents double-counting the
+ * same brick, and epsilon separation pushes the ball outside any
+ * surface it collides with.
  */
 export function updateBallPhysics(state: BrickBreakerState): {
   newState: BrickBreakerState;
@@ -656,9 +676,9 @@ export function updateBallPhysics(state: BrickBreakerState): {
 } {
   const events: GameEvent[] = [];
   let newState = { ...state };
-  let newBalls: BrickBallState[] = [];
-  let bricksToRemove: string[] = [];
-  let explosionBricks: string[] = [];
+  const newBalls: BrickBallState[] = [];
+  const bricksToRemove: string[] = [];
+  const explosionBricks: string[] = [];
   let scoreIncrease = 0;
   let bricksDestroyed = 0;
 
@@ -669,108 +689,132 @@ export function updateBallPhysics(state: BrickBreakerState): {
     }
 
     let newBall = { ...ball };
-    newBall.x += newBall.vx;
-    newBall.y += newBall.vy;
+    const subSteps = getSubStepCount(newBall.vx, newBall.vy);
+    let ballLost = false;
 
-    // Wall collisions
-    if (newBall.x - newBall.radius <= 0) {
-      newBall.x = newBall.radius;
-      newBall.vx = Math.abs(newBall.vx);
-      events.push({ type: "wall_hit" });
-    } else if (newBall.x + newBall.radius >= CONFIG.canvasWidth) {
-      newBall.x = CONFIG.canvasWidth - newBall.radius;
-      newBall.vx = -Math.abs(newBall.vx);
-      events.push({ type: "wall_hit" });
-    }
+    for (let step = 0; step < subSteps; step++) {
+      if (ballLost || newBall.isStuck) break;
 
-    // Ceiling collision
-    if (newBall.y - newBall.radius <= 0) {
-      newBall.y = newBall.radius;
-      newBall.vy = Math.abs(newBall.vy);
-      events.push({ type: "wall_hit" });
-    }
+      // Move by 1/N of current velocity (velocity may change mid-frame)
+      newBall.x += newBall.vx / subSteps;
+      newBall.y += newBall.vy / subSteps;
 
-    // Paddle collision
-    const paddleCollision = checkPaddleCollision(newBall, state.paddle);
-    if (paddleCollision.hit) {
-      if (state.paddle.hasSticky) {
-        newBall.isStuck = true;
-        newBall.y = CONFIG.paddleY - newBall.radius - 2;
-        newBall.vx = 0;
-        newBall.vy = 0;
-        events.push({ type: "ball_stuck" });
-
-        // Decrease sticky uses
-        newState = decreaseStickyUses(newState);
-      } else {
-        newBall.vy = paddleCollision.newVy;
-        newBall.vx = paddleCollision.newVx;
-        newBall.y = CONFIG.paddleY - newBall.radius - 2;
+      // ── Wall collisions (with epsilon separation) ──
+      if (newBall.x - newBall.radius <= 0) {
+        newBall.x = newBall.radius + EPSILON;
+        newBall.vx = Math.abs(newBall.vx);
+        events.push({ type: "wall_hit" });
+      } else if (newBall.x + newBall.radius >= CONFIG.canvasWidth) {
+        newBall.x = CONFIG.canvasWidth - newBall.radius - EPSILON;
+        newBall.vx = -Math.abs(newBall.vx);
+        events.push({ type: "wall_hit" });
       }
-      events.push({ type: "paddle_hit" });
-    }
 
-    // Ball fell off screen
-    if (newBall.y + newBall.radius > CONFIG.canvasHeight) {
-      events.push({ type: "ball_lost", ballId: ball.id });
-      continue; // Don't add this ball to newBalls
-    }
+      // ── Ceiling collision ──
+      if (newBall.y - newBall.radius <= 0) {
+        newBall.y = newBall.radius + EPSILON;
+        newBall.vy = Math.abs(newBall.vy);
+        events.push({ type: "wall_hit" });
+      }
 
-    // Brick collisions
-    for (const brick of newState.bricks) {
-      if (bricksToRemove.includes(brick.id)) continue;
-
-      const collision = checkBrickCollision(newBall, brick);
-      if (collision.hit) {
-        // Apply bounce
-        if (collision.side === "top" || collision.side === "bottom") {
-          newBall.vy = -newBall.vy;
+      // ── Paddle collision ──
+      const paddleCollision = checkPaddleCollision(newBall, newState.paddle);
+      if (paddleCollision.hit) {
+        if (newState.paddle.hasSticky) {
+          newBall.isStuck = true;
+          newBall.y = CONFIG.paddleY - newBall.radius - 2;
+          newBall.vx = 0;
+          newBall.vy = 0;
+          events.push({ type: "ball_stuck" });
+          newState = decreaseStickyUses(newState);
         } else {
-          newBall.vx = -newBall.vx;
+          newBall.vx = paddleCollision.newVx;
+          newBall.vy = paddleCollision.newVy;
+          newBall.y = CONFIG.paddleY - newBall.radius - 2;
         }
+        events.push({ type: "paddle_hit" });
+        // Velocity changed — remaining sub-steps will use new direction
+        continue;
+      }
 
-        // Handle brick hit
-        if (brick.type !== "indestructible") {
-          const newHits = brick.hitsRemaining - 1;
-          if (newHits <= 0) {
-            bricksToRemove.push(brick.id);
-            scoreIncrease += CONFIG.brickPoints[brick.type];
-            bricksDestroyed++;
+      // ── Ball fell off screen ──
+      if (newBall.y + newBall.radius > CONFIG.canvasHeight) {
+        ballLost = true;
+        events.push({ type: "ball_lost", ballId: ball.id });
+        break;
+      }
 
-            if (brick.type === "explosive") {
-              explosionBricks.push(brick.id);
-            }
+      // ── Brick collisions (one per sub-step, with separation) ──
+      const hitThisStep = new Set<string>();
 
-            if (brick.hasPowerUp) {
-              const powerUp = createRandomPowerUp(brick);
+      for (const brick of newState.bricks) {
+        if (bricksToRemove.includes(brick.id)) continue;
+        if (hitThisStep.has(brick.id)) continue;
+
+        const collision = checkBrickCollision(newBall, brick);
+        if (collision.hit) {
+          hitThisStep.add(brick.id);
+
+          // ── Epsilon separation to stop re-collision ──
+          const bPos = getBrickPosition(brick);
+          if (collision.side === "top") {
+            newBall.vy = -Math.abs(newBall.vy);
+            newBall.y = bPos.y - newBall.radius - EPSILON;
+          } else if (collision.side === "bottom") {
+            newBall.vy = Math.abs(newBall.vy);
+            newBall.y = bPos.y + bPos.height + newBall.radius + EPSILON;
+          } else if (collision.side === "left") {
+            newBall.vx = -Math.abs(newBall.vx);
+            newBall.x = bPos.x - newBall.radius - EPSILON;
+          } else {
+            newBall.vx = Math.abs(newBall.vx);
+            newBall.x = bPos.x + bPos.width + newBall.radius + EPSILON;
+          }
+
+          // Handle brick hit
+          if (brick.type !== "indestructible") {
+            const newHits = brick.hitsRemaining - 1;
+            if (newHits <= 0) {
+              bricksToRemove.push(brick.id);
+              scoreIncrease += CONFIG.brickPoints[brick.type];
+              bricksDestroyed++;
+
+              if (brick.type === "explosive") {
+                explosionBricks.push(brick.id);
+              }
+
+              if (brick.hasPowerUp) {
+                const powerUp = createRandomPowerUp(brick);
+                newState = {
+                  ...newState,
+                  powerUps: [...newState.powerUps, powerUp],
+                };
+              }
+
+              events.push({
+                type: "brick_destroyed",
+                brickId: brick.id,
+                brickType: brick.type,
+              });
+            } else {
               newState = {
                 ...newState,
-                powerUps: [...newState.powerUps, powerUp],
+                bricks: newState.bricks.map((b) =>
+                  b.id === brick.id ? { ...b, hitsRemaining: newHits } : b,
+                ),
               };
+              events.push({ type: "brick_hit", brickId: brick.id });
             }
-
-            events.push({
-              type: "brick_destroyed",
-              brickId: brick.id,
-              brickType: brick.type,
-            });
-          } else {
-            // Update brick hits
-            newState = {
-              ...newState,
-              bricks: newState.bricks.map((b) =>
-                b.id === brick.id ? { ...b, hitsRemaining: newHits } : b,
-              ),
-            };
-            events.push({ type: "brick_hit", brickId: brick.id });
           }
-        }
 
-        break; // Only process one brick collision per frame
+          break; // One brick per sub-step; next step can hit another
+        }
       }
     }
 
-    newBalls.push(newBall);
+    if (!ballLost) {
+      newBalls.push(newBall);
+    }
   }
 
   // Handle explosive chain reactions

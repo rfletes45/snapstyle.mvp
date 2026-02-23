@@ -29,7 +29,8 @@ export type MessageKind =
   | "file"
   | "system"
   | "scorecard"
-  | "game_invite";
+  | "game_invite"
+  | "animal";
 
 /** Attachment content type */
 export type AttachmentKind = "image" | "video" | "audio" | "file";
@@ -85,6 +86,9 @@ export interface MessageV2 {
     metadata?: Record<string, unknown>;
   };
 
+  /** Animal theme ID (for kind: "animal") — e.g. "animal_duck", "animal_bear" */
+  animalId?: string;
+
   /** Client-side timestamp when user tapped send (for intent/UI) */
   createdAt: number;
 
@@ -99,6 +103,20 @@ export interface MessageV2 {
 
   /** Reply-to metadata for threading */
   replyTo?: ReplyToMetadata;
+
+  /**
+   * Thread root message ID.
+   * Set when this message is part of a reply thread.
+   * Points to the top-level message that started the thread.
+   * If a user replies to a reply, this still points to the original root.
+   */
+  threadRootId?: string | null;
+
+  /** Number of replies in the thread (only set on the root message) */
+  replyCount?: number;
+
+  /** Timestamp of the most recent reply (only set on the root message) */
+  lastReplyAt?: number;
 
   /** Soft delete marker for delete-for-everyone */
   deletedForAll?: {

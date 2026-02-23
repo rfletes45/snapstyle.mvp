@@ -13,6 +13,7 @@
  */
 
 import { useBadges } from "@/hooks/useBadges";
+import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   getCached,
   invalidateCacheForEvent,
@@ -155,23 +156,60 @@ export function useProfileData(
   }, [baseProfile, uid, badgeStats, cachedStats]);
 
   // =============================================================================
+  // Live XP from game results (updates immediately when XP is awarded)
+  // =============================================================================
+
+  const [liveXpDelta, setLiveXpDelta] = useState(0);
+
+  // When baseProfile updates (e.g. from Firestore refresh), reset liveXpDelta
+  // because baseProfile.gameXp now contains the authoritative server total.
+  const lastKnownFirestoreXp = useRef<number>(0);
+  useEffect(() => {
+    const firestoreXp = baseProfile?.gameXp ?? 0;
+    if (firestoreXp > lastKnownFirestoreXp.current) {
+      // Firestore has caught up — reset the live delta
+      lastKnownFirestoreXp.current = firestoreXp;
+      setLiveXpDelta(0);
+    }
+  }, [baseProfile?.gameXp]);
+
+  useEffect(() => {
+    const unsub = onGameResultNotification((notification) => {
+      if (notification.xpEarned > 0) {
+        setLiveXpDelta((prev) => prev + notification.xpEarned);
+        logger.info(
+          `[useProfileData] XP notification: +${notification.xpEarned}`,
+        );
+        // Trigger a background profile refresh so Firestore gameXp is re-read.
+        // Once baseProfile updates with the new gameXp, the effect above
+        // resets liveXpDelta to prevent double-counting.
+        refreshProfile().catch(() => {});
+      }
+    });
+    return unsub;
+  }, [refreshProfile]);
+
+  // =============================================================================
   // Computed Level (Memoized)
   // =============================================================================
 
   const computedLevel = useMemo<LevelInfo | null>(() => {
     if (!uid) return cachedLevel;
 
-    // In production, fetch XP from user document
-    const totalXp = cachedLevel?.totalXp ?? 0;
+    // Read XP from the actual Firestore user profile (written by onGameResult callable).
+    // baseProfile.gameXp is the authoritative server-written total XP.
+    // liveXpDelta adds any XP earned this session that hasn't been re-fetched yet.
+    const firestoreXp = baseProfile?.gameXp ?? 0;
+    const totalXp = firestoreXp + liveXpDelta;
     const level = calculateLevelFromXp(totalXp);
 
-    // Update cache asynchronously
+    // Update cache asynchronously so other consumers see it
     setCached(uid, "level", level).catch((err) => {
       logger.warn("[useProfileData] Failed to cache level:", err);
     });
 
     return level;
-  }, [uid, cachedLevel]);
+  }, [uid, baseProfile, liveXpDelta, cachedLevel]);
 
   // =============================================================================
   // Extended Profile (Memoized)

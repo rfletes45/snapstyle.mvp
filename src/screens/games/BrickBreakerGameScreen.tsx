@@ -16,9 +16,15 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
-import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import ScoreRaceOverlay, {
+  type ScoreRaceOverlayPhase,
+} from "@/components/ScoreRaceOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { GameOverModal } from "@/components/games/GameOverModal";
+import {
+  PhysicsDebugOverlay,
+  usePhysicsDebug,
+} from "@/components/games/PhysicsDebugOverlay";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
@@ -26,6 +32,7 @@ import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useScoreRace } from "@/hooks/useScoreRace";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
 import { sendScorecard } from "@/services/games";
 import {
   advanceToNextLevel,
@@ -103,10 +110,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/BrickBreakerGameScreen");
 // =============================================================================
 // Types
@@ -461,7 +467,9 @@ ActiveEffectsDisplay.displayName = "ActiveEffectsDisplay";
 function BrickBreakerGameScreen({
   navigation,
 }: BrickBreakerGameScreenProps): React.ReactElement {
-  const __codexGameCompletion = useGameCompletion({ gameType: "brick_breaker" });
+  const __codexGameCompletion = useGameCompletion({
+    gameType: "brick_breaker",
+  });
   void __codexGameCompletion;
 
   const theme = useTheme();
@@ -507,6 +515,23 @@ function BrickBreakerGameScreen({
   const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
     useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "brick_breaker") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Auto-start spectator hosting so invites can be sent before game starts
   useEffect(() => {
     spectatorHost.startHosting();
@@ -519,6 +544,9 @@ function BrickBreakerGameScreen({
   const gameStateRef = useRef<BrickBreakerState | null>(null);
   const gameLoopRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
+
+  // Physics debug harness (__DEV__ only)
+  const physicsDebug = usePhysicsDebug();
   const laserCooldownRef = useRef<number>(0);
 
   // Shared value for smooth paddle movement (UI thread)
@@ -646,6 +674,27 @@ function BrickBreakerGameScreen({
     const ballResult = updateBallPhysics(newState);
     newState = ballResult.newState;
     allEvents.push(...ballResult.events);
+
+    // Feed debug harness
+    if (__DEV__ && physicsDebug.enabled) {
+      for (const ev of ballResult.events) {
+        if (
+          ev.type === "brick_hit" ||
+          ev.type === "brick_destroyed" ||
+          ev.type === "paddle_hit" ||
+          ev.type === "wall_hit"
+        ) {
+          const b = newState.balls[0];
+          if (b) physicsDebug.recordCollision(b.x, b.y);
+        }
+      }
+      const lead = newState.balls.find((b) => !b.isStuck);
+      if (lead) {
+        physicsDebug.setBallSpeed(
+          Math.sqrt(lead.vx * lead.vx + lead.vy * lead.vy),
+        );
+      }
+    }
 
     // Handle ball lost events
     const ballLostEvents = allEvents.filter((e) => e.type === "ball_lost");
@@ -836,6 +885,9 @@ function BrickBreakerGameScreen({
   const handlePlayAgain = useCallback(() => {
     setShowGameOverModal(false);
     setShowLevelCompleteDialog(false);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
     startGame();
   }, [startGame]);
 
@@ -1053,6 +1105,15 @@ function BrickBreakerGameScreen({
                     />
                   </RoundedRect>
                 </Canvas>
+                {/* Physics Debug Overlay */}
+                {__DEV__ && (
+                  <PhysicsDebugOverlay
+                    debug={physicsDebug}
+                    width={SCALED_WIDTH}
+                    height={SCALED_HEIGHT}
+                  />
+                )}
+
                 {/* Bricks */}
                 {gameState.bricks.map((brick) => (
                   <Brick
@@ -1228,6 +1289,9 @@ function BrickBreakerGameScreen({
             personalBest: highScore,
             isNewBest: (gameState?.score || 0) > highScore && highScore > 0,
             moves: gameState?.bricksDestroyed || 0,
+            xpEarned: xpEarned || undefined,
+            didLevelUp: didLevelUp || undefined,
+            newLevel: newLevel || undefined,
           }}
           onRematch={handlePlayAgain}
           onShare={handleShare}

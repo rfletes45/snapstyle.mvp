@@ -9,44 +9,43 @@ const log = createServerLogger("StarforgeRoom");
  * processes InputCommands via applyInput.
  */
 
-import { IncrementalRoom } from "../incremental/IncrementalRoom";
-import type { IncrementalAuth } from "../incremental/IncrementalRoom";
 import {
-  StarforgeState,
-  StarforgeMachineStack,
-  StarforgeWreck,
-  StarforgeWreckResources,
   StarforgeActiveContract,
   StarforgeActiveEvent,
-  StarforgeProdBoost,
   StarforgeCapBoost,
   StarforgeCoopPresence,
+  StarforgeMachineStack,
+  StarforgeProdBoost,
+  StarforgeState,
+  StarforgeWreck,
 } from "../../schemas/starforge";
 import { loadStarforgeCatalogs } from "../../starforge/dataLoader";
-import type { SimStateV1, InputCommand } from "../../starforge/sim/types";
 import {
   applyInput,
   createFreshState,
   setBalance,
-  setMachinesCatalog,
-  setUpgradesCatalog,
   setContractsCatalog,
   setEventsCatalog,
+  setMachinesCatalog,
   setMilestonesCatalog,
-  setWrecksCatalog,
   setTierUnlocksCatalog,
+  setUpgradesCatalog,
+  setWrecksCatalog,
 } from "../../starforge/sim/reducer";
 import {
-  stepTick,
-  setSimCatalog,
   setSimBalance,
-  setSimUpgradesCatalog,
+  setSimCatalog,
   setSimContractsCatalog,
   setSimEventsCatalog,
-  setSimMilestonesCatalog,
-  setSimWrecksCatalog,
   setSimHz,
+  setSimMilestonesCatalog,
+  setSimUpgradesCatalog,
+  setSimWrecksCatalog,
+  stepTick,
 } from "../../starforge/sim/sim";
+import type { InputCommand, SimStateV1 } from "../../starforge/sim/types";
+import type { IncrementalAuth } from "../incremental/IncrementalRoom";
+import { IncrementalRoom } from "../incremental/IncrementalRoom";
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -97,7 +96,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     // 4. Sync initial state to schema
     this.syncToSchema();
 
-    this.roomLog.info(`StarforgeRoom initSim (seed=${seed}, hz=${this.simHz})`);
+    log.info(`StarforgeRoom initSim (seed=${seed}, hz=${this.simHz})`);
   }
 
   protected stepSim(_dt: number): void {
@@ -113,14 +112,14 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
   ): boolean {
     const type = cmd.t as string;
     if (!type) {
-      this.roomLog.warn(`No command type from ${sessionId}`);
+      log.warn(`No command type from ${sessionId}`);
       return false;
     }
 
     // Build a typed InputCommand from the raw message
     const inputCmd = this.parseInputCommand(cmd);
     if (!inputCmd) {
-      this.roomLog.warn(`Invalid command: ${type} from ${sessionId}`);
+      log.warn(`Invalid command: ${type} from ${sessionId}`);
       return false;
     }
 
@@ -134,20 +133,17 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
 
       // Broadcast the action to co-op partners (not back to sender)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this as any).broadcast(
-        "coop_action",
-        {
-          sessionId,
-          displayName: this.sessionAuth.get(sessionId)?.displayName ?? "Unknown",
-          action: type,
-          tick: this.sim.tick,
-        },
-      );
+      (this as any).broadcast("coop_action", {
+        sessionId,
+        displayName: this.sessionAuth.get(sessionId)?.displayName ?? "Unknown",
+        action: type,
+        tick: this.sim.tick,
+      });
 
-      this.roomLog.debug(`${type} from ${sessionId} applied (tick=${this.sim.tick})`);
+      log.debug(`${type} from ${sessionId} applied (tick=${this.sim.tick})`);
       return true;
     } catch (err) {
-      this.roomLog.error(`Error applying ${type} from ${sessionId}:`, err);
+      log.error(`Error applying ${type} from ${sessionId}:`, err);
       return false;
     }
   }
@@ -160,7 +156,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     this.loadCatalogs();
     this.sim = data as unknown as SimStateV1;
     this.syncToSchema();
-    this.roomLog.info(`Hydrated from snapshot (tick=${this.sim.tick})`);
+    log.info(`Hydrated from snapshot (tick=${this.sim.tick})`);
   }
 
   // ── Internals ─────────────────────────────────────────────
@@ -184,7 +180,9 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     presence.online = true;
     this.state.coopPresence.set(sessionId, presence);
 
-    this.roomLog.info(`Co-op presence added for ${auth.displayName} (session=${sessionId})`);
+    log.info(
+      `Co-op presence added for ${auth.displayName} (session=${sessionId})`,
+    );
   }
 
   protected onPlayerLeft(sessionId: string): void {
@@ -194,7 +192,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     }
     this.sessionAuth.delete(sessionId);
     this.sessionInputCounts.delete(sessionId);
-    this.roomLog.info(`Co-op presence removed for session=${sessionId}`);
+    log.info(`Co-op presence removed for session=${sessionId}`);
   }
 
   /** Track a player's input for co-op presence display. */
@@ -237,7 +235,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
     setSimHz(this.simHz);
 
     this.catalogsLoaded = true;
-    this.roomLog.info("Starforge catalogs loaded");
+    log.info("Starforge catalogs loaded");
   }
 
   /**
@@ -392,7 +390,10 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
 
     // Milestones
     this.syncStringArray(s.milestones.claimed, sim.milestones.claimed);
-    this.syncStringArray(s.milestones.pendingToast, sim.milestones.pendingToast);
+    this.syncStringArray(
+      s.milestones.pendingToast,
+      sim.milestones.pendingToast,
+    );
 
     // Upgrades purchased
     this.syncStringArray(s.upgradesPurchased, sim.upgradesPurchased);
@@ -430,9 +431,7 @@ export class StarforgeRoom extends IncrementalRoom<{ state: StarforgeState }> {
    * Parse a raw message object into a typed InputCommand.
    * Returns null if the command type is unrecognized.
    */
-  private parseInputCommand(
-    cmd: Record<string, unknown>,
-  ): InputCommand | null {
+  private parseInputCommand(cmd: Record<string, unknown>): InputCommand | null {
     const t = cmd.t as string;
     const atTick = (cmd.atTick as number) ?? this.sim.tick;
 

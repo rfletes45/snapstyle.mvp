@@ -40,6 +40,11 @@ import {
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSketchPartyGame } from "@/hooks/useSketchPartyGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
@@ -179,6 +184,23 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "sketch_party_game") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   const canvasRef = useRef<SketchCanvasRef>(null);
 
   // Responsive breakpoint
@@ -190,6 +212,22 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (sp.phase === "finished" && sp.gameOverData) {
       setShowGameOver(true);
+      // Submit to XP pipeline
+      if (currentFirebaseUser) {
+        const myScore =
+          sp.players.find((p) => p.sessionId === sp.mySessionId)?.score ?? 0;
+        submitGameResult(
+          buildGameResultEvent({
+            gameId: "sketch_party_game",
+            mode: "realtime",
+            outcome: sp.gameOverData.winnerId === myUid ? "win" : "lose",
+            score: myScore,
+            durationMs: 0,
+            userId: currentFirebaseUser.uid,
+            displayName: currentFirebaseUser.displayName || "Player",
+          }),
+        ).catch(() => {});
+      }
     }
   }, [sp.phase, sp.gameOverData]);
 
@@ -924,6 +962,9 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
         stats={{
           score: sp.players.find((p) => p.sessionId === sp.mySessionId)?.score,
           opponentName: winnerPlayer?.displayName,
+          xpEarned: xpEarned || undefined,
+          didLevelUp: didLevelUp || undefined,
+          newLevel: newLevel || undefined,
         }}
         onExit={() => {
           setShowGameOver(false);

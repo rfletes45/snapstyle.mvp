@@ -334,6 +334,7 @@ export function toGroupMessage(msg: MessageV2): GroupMessage {
     system: "system",
     file: "text", // No file type in legacy format
     game_invite: "scorecard", // Game invites map to scorecard in legacy format
+    animal: "text", // Animal signal messages map to text in legacy format
   };
 
   const groupMessage: GroupMessage = {

@@ -17,6 +17,20 @@ export interface User {
 
   /** Chat cosmetics: bubble color, font, animal theme */
   chatAppearance?: ChatAppearance;
+
+  // ── XP / Leveling (written by onGameResult Cloud Function) ──
+  /** Total game XP earned across all games */
+  gameXp?: number;
+  /** Current game level */
+  gameLevel?: number;
+  /** XP progress within the current level */
+  gameLevelXp?: number;
+  /** XP required to reach the next level */
+  gameXpToNextLevel?: number;
+  /** Array of level reward levels already claimed */
+  claimedLevels?: number[];
+  /** Cosmetic points balance */
+  cosmeticPoints?: number;
 }
 
 export interface AvatarConfig {
@@ -618,6 +632,7 @@ export type TaskCadence = "daily" | "weekly" | "monthly" | "one_time";
 export type TaskType =
   | "send_message" // Send X messages
   | "send_picture" // Send X pictures (image messages)
+  | "send_snap" // Send X snaps (alias used by triggers)
   | "view_story" // View X stories
   | "post_story" // Post X stories
   | "play_game" // Play X games

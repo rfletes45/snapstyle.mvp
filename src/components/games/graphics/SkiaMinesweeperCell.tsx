@@ -42,7 +42,7 @@ export function SkiaMinesweeperCell({
   const inset = 1;
 
   return (
-    <View style={{ width: size, height: size }}>
+    <View style={{ width: size, height: size }} pointerEvents="none">
       <Canvas style={StyleSheet.absoluteFill}>
         {revealed ? (
           <>

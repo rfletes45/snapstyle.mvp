@@ -77,20 +77,15 @@ export function useChatKeyboard(
     useReanimatedKeyboardAnimation();
 
   // Derived value: list bottom inset (composer height + keyboard or safe area)
-  // This value animates smoothly with the keyboard for the message list padding
-  // Note: keyboardHeight is NEGATIVE when keyboard is open
+  // This value animates smoothly with the keyboard for the message list padding.
+  // Uses Math.max to avoid a discontinuity at the keyboard open/close boundary:
+  // when keyboard is closed (kbHeight=0) we still need safeAreaBottom worth of space,
+  // and as the keyboard opens the height smoothly exceeds safeAreaBottom.
   const listBottomInset = useDerivedValue(() => {
     "worklet";
     // -keyboardHeight.value gives positive value when keyboard is open
-    const kbHeight = -keyboardHeight.value;
-
-    if (kbHeight > 0) {
-      // Keyboard is open: use keyboard height + composer height
-      return kbHeight + composerHeight;
-    } else {
-      // Keyboard is closed: use safe area + composer height
-      return safeAreaBottom + composerHeight;
-    }
+    const kbHeight = Math.max(-keyboardHeight.value, safeAreaBottom);
+    return kbHeight + composerHeight;
   }, [keyboardHeight, composerHeight, safeAreaBottom]);
 
   // Callback to update JS state from worklet

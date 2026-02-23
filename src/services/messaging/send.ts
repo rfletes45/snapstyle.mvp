@@ -97,6 +97,11 @@ export interface SendMessageParams {
   kind: MessageKind;
 
   /**
+   * Animal theme ID (required when kind="animal")
+   */
+  animalId?: string;
+
+  /**
    * Message text content
    */
   text?: string;
@@ -225,6 +230,7 @@ export async function sendMessage(
     scope: params.scope,
     kind: params.kind,
     text: params.text,
+    animalId: params.animalId,
     replyTo: params.replyTo,
     mentionUids: params.mentionUids,
     mentionSpans: params.mentionSpans,

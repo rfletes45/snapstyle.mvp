@@ -22,6 +22,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getShopCosmetics } from "@/cosmetics/catalog";
 import { subscribeToWallet } from "@/services/economy";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -43,6 +44,7 @@ interface ShopOption {
   subtitle: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   features: string[];
+  itemCount?: number;
   gradient: readonly [string, string];
   onPress: () => void;
 }
@@ -114,6 +116,15 @@ export default function ShopHubScreen() {
     }
   }, [navigation]);
 
+  // Compute cosmetics item count from the static catalog
+  const cosmeticsItemCount = useMemo(() => {
+    try {
+      return getShopCosmetics().length;
+    } catch {
+      return 0;
+    }
+  }, []);
+
   // Shop options configuration (memoized to avoid recreating on every render)
   const shopOptions = useMemo<ShopOption[]>(
     () => [
@@ -128,6 +139,7 @@ export default function ShopHubScreen() {
           "Featured items",
           "Bundle deals",
         ],
+        itemCount: cosmeticsItemCount,
         gradient: SHOP_GRADIENTS.cosmetics,
         onPress: handleCosmeticsShop,
       },
@@ -142,11 +154,12 @@ export default function ShopHubScreen() {
           "Limited exclusives",
           "Gift items",
         ],
+        itemCount: 15,
         gradient: SHOP_GRADIENTS.premium,
         onPress: handlePremiumShop,
       },
     ],
-    [handleCosmeticsShop, handlePremiumShop],
+    [handleCosmeticsShop, handlePremiumShop, cosmeticsItemCount],
   );
 
   return (
@@ -361,14 +374,23 @@ function ShopOptionCard({
               ))}
             </View>
 
-            {/* Enter Button */}
-            <View style={styles.enterButton}>
-              <Text style={styles.enterButtonText}>Enter Shop</Text>
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={20}
-                color="rgba(255, 255, 255, 0.95)"
-              />
+            {/* Enter Button with item count */}
+            <View style={styles.enterRow}>
+              {option.itemCount != null && option.itemCount > 0 && (
+                <View style={styles.itemCountBadge}>
+                  <Text style={styles.itemCountText}>
+                    {option.itemCount} items
+                  </Text>
+                </View>
+              )}
+              <View style={styles.enterButton}>
+                <Text style={styles.enterButtonText}>Enter Shop</Text>
+                <MaterialCommunityIcons
+                  name="arrow-right"
+                  size={20}
+                  color="rgba(255, 255, 255, 0.95)"
+                />
+              </View>
             </View>
           </View>
         </LinearGradient>
@@ -481,6 +503,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  enterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  itemCountBadge: {
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  itemCountText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.9)",
   },
   historyButton: {
     flexDirection: "row",

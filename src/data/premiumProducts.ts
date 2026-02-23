@@ -112,237 +112,257 @@ export const TOKEN_PACKS: Omit<TokenPack, "localizedPrice">[] = [
 /**
  * Premium bundle definitions
  *
- * Each bundle includes:
- * - Multiple exclusive cosmetic items
- * - Bonus tokens
- * - Significant savings over individual purchase
+ * Each bundle grants real cosmetic entitlements from the catalog.
+ * Item IDs MUST match entries in src/cosmetics/catalog.ts.
  */
 export const PREMIUM_BUNDLES: Omit<
   PremiumBundle,
   "localizedPrice" | "owned" | "purchasesRemaining"
 >[] = [
-  // === STARTER BUNDLES ===
+  // === STARTER PACK ===
   {
-    id: "bundle_starter",
-    productId: "com.snapstyle.bundle.starter",
-    name: "Starter Pack",
+    id: "bundle_starter_premium",
+    productId: "com.snapstyle.bundle.starter_premium",
+    name: "Starter Premium Pack",
     description:
-      "Perfect for new players! Get a head start with essential items.",
+      "The perfect intro to premium! One background, one PFP frame, and 200 bonus tokens.",
     items: [
       {
-        itemId: "starter_hat_cap",
-        name: "Classic Cap",
-        slot: "hat",
+        itemId: "bg_lofi_alleyway",
+        name: "Lofi Alleyway",
+        slot: "background",
         rarity: "rare",
-        imagePath: "🧢",
+        imagePath: "",
       },
       {
-        itemId: "starter_glasses_cool",
-        name: "Cool Shades",
-        slot: "glasses",
-        rarity: "rare",
-        imagePath: "😎",
-      },
-      {
-        itemId: "starter_frame_simple",
-        name: "Simple Frame",
-        slot: "profile_frame",
-        rarity: "rare",
-        imagePath: "🖼️",
+        itemId: "premium_chicken_sketch",
+        name: "Chicken Sketch",
+        slot: "decoration",
+        rarity: "uncommon",
+        imagePath: "",
       },
     ],
-    bonusTokens: 100,
-    basePriceUSD: 2.99,
-    valueUSD: 5.99,
-    savingsPercent: 50,
-    imagePath: "📦",
+    bonusTokens: 200,
+    basePriceUSD: 3.99,
+    valueUSD: 6.5,
+    savingsPercent: 39,
+    imagePath: "",
     theme: "starter",
-    featured: false,
+    featured: true,
     sortOrder: 1,
     limitedTime: false,
   },
 
-  // === PREMIUM BUNDLES ===
+  // === BACKGROUND COLLECTION ===
   {
-    id: "bundle_style_master",
-    productId: "com.snapstyle.bundle.style_master",
-    name: "Style Master Pack",
-    description:
-      "Elevate your look with this premium collection of stylish items.",
+    id: "bundle_background_pack",
+    productId: "com.snapstyle.bundle.background_pack",
+    name: "Background Collection",
+    description: "Three stunning profile backgrounds in one pack. Great value!",
     items: [
       {
-        itemId: "style_hat_fedora",
-        name: "Classic Fedora",
-        slot: "hat",
-        rarity: "epic",
-        imagePath: "🎩",
+        itemId: "bg_galaxy",
+        name: "Galaxy",
+        slot: "background",
+        rarity: "legendary",
+        imagePath: "",
       },
       {
-        itemId: "style_glasses_aviator",
-        name: "Aviator Glasses",
-        slot: "glasses",
+        itemId: "bg_steampunk_city",
+        name: "Steampunk City",
+        slot: "background",
         rarity: "epic",
-        imagePath: "🕶️",
+        imagePath: "",
       },
       {
-        itemId: "style_top_blazer",
-        name: "Sharp Blazer",
-        slot: "clothing_top",
+        itemId: "bg_glitched_tokyo",
+        name: "Glitched Tokyo",
+        slot: "background",
         rarity: "epic",
-        imagePath: "🧥",
-      },
-      {
-        itemId: "style_frame_elegant",
-        name: "Elegant Frame",
-        slot: "profile_frame",
-        rarity: "epic",
-        imagePath: "✨",
+        imagePath: "",
       },
     ],
-    bonusTokens: 300,
-    basePriceUSD: 9.99,
-    valueUSD: 18.99,
-    savingsPercent: 47,
-    imagePath: "👔",
+    bonusTokens: 100,
+    basePriceUSD: 7.99,
+    valueUSD: 14.0,
+    savingsPercent: 43,
+    imagePath: "",
     theme: "premium",
     featured: true,
     sortOrder: 2,
     limitedTime: false,
   },
+
+  // === DECORATION COLLECTION ===
   {
-    id: "bundle_chat_master",
-    productId: "com.snapstyle.bundle.chat_master",
-    name: "Chat Master Pack",
-    description:
-      "Stand out in conversations with exclusive chat customizations.",
+    id: "bundle_decoration_pack",
+    productId: "com.snapstyle.bundle.decoration_pack",
+    name: "Decoration Collection",
+    description: "Four unique PFP decorations to stand out from the crowd.",
     items: [
       {
-        itemId: "chat_bubble_neon",
-        name: "Neon Bubble",
-        slot: "chat_bubble",
-        rarity: "epic",
-        imagePath: "💬",
+        itemId: "premium_fox_ears",
+        name: "Fox Ears",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
       },
       {
-        itemId: "chat_bubble_gradient",
-        name: "Gradient Bubble",
-        slot: "chat_bubble",
-        rarity: "epic",
-        imagePath: "🌈",
+        itemId: "premium_retro_arcade",
+        name: "Retro Arcade",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
       },
       {
-        itemId: "chat_name_glow",
-        name: "Glowing Name",
-        slot: "name_effect",
-        rarity: "epic",
-        imagePath: "✨",
+        itemId: "premium_cozy_cat",
+        name: "Cozy Cat",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
+      },
+      {
+        itemId: "premium_lofi_city",
+        name: "Lofi City",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
       },
     ],
-    bonusTokens: 200,
-    basePriceUSD: 7.99,
-    valueUSD: 14.99,
-    savingsPercent: 47,
-    imagePath: "💬",
+    bonusTokens: 0,
+    basePriceUSD: 5.99,
+    valueUSD: 10.0,
+    savingsPercent: 40,
+    imagePath: "",
     theme: "premium",
     featured: false,
     sortOrder: 3,
     limitedTime: false,
   },
 
-  // === LEGENDARY BUNDLES ===
+  // === CYBER DELUXE BUNDLE ===
   {
-    id: "bundle_legendary",
-    productId: "com.snapstyle.bundle.legendary",
-    name: "Legendary Collection",
+    id: "bundle_cyber_deluxe",
+    productId: "com.snapstyle.bundle.cyber_deluxe",
+    name: "Cyber Deluxe Bundle",
     description:
-      "The ultimate bundle with legendary items and massive token bonus!",
+      "The ultimate cyberpunk set: two neon backgrounds, a PFP frame, and 500 bonus tokens.",
     items: [
       {
-        itemId: "legend_hat_crown",
-        name: "Golden Crown",
-        slot: "hat",
-        rarity: "legendary",
-        imagePath: "👑",
+        itemId: "bg_cyber_aesthetic",
+        name: "Cyber Aesthetic",
+        slot: "background",
+        rarity: "epic",
+        imagePath: "",
       },
       {
-        itemId: "legend_glasses_diamond",
-        name: "Diamond Shades",
-        slot: "glasses",
-        rarity: "legendary",
-        imagePath: "💎",
+        itemId: "bg_pixel_neo_tokyo",
+        name: "Pixel Neo Tokyo",
+        slot: "background",
+        rarity: "epic",
+        imagePath: "",
       },
       {
-        itemId: "legend_frame_animated",
-        name: "Animated Frame",
-        slot: "profile_frame",
-        rarity: "legendary",
-        imagePath: "🌟",
-      },
-      {
-        itemId: "legend_theme_royal",
-        name: "Royal Theme",
-        slot: "profile_theme",
-        rarity: "legendary",
-        imagePath: "🏰",
-      },
-      {
-        itemId: "legend_bubble_premium",
-        name: "Premium Bubble",
-        slot: "chat_bubble",
-        rarity: "legendary",
-        imagePath: "💬",
+        itemId: "premium_chicago",
+        name: "Chicago Skyline",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
       },
     ],
-    bonusTokens: 1000,
-    basePriceUSD: 24.99,
-    valueUSD: 49.99,
-    savingsPercent: 50,
-    imagePath: "👑",
+    bonusTokens: 500,
+    basePriceUSD: 12.99,
+    valueUSD: 22.0,
+    savingsPercent: 41,
+    imagePath: "",
     theme: "legendary",
-    featured: false,
+    featured: true,
     sortOrder: 4,
     limitedTime: false,
   },
 
-  // === SEASONAL/LIMITED BUNDLES ===
+  // === MYSTIC SEASONAL PACK ===
   {
-    id: "bundle_holiday_winter",
-    productId: "com.snapstyle.bundle.holiday_winter",
-    name: "Winter Wonderland Pack",
-    description: "Limited time holiday bundle with festive items!",
+    id: "bundle_seasonal_mystic",
+    productId: "com.snapstyle.bundle.seasonal_mystic",
+    name: "Mystic Seasonal Pack",
+    description:
+      "Limited-time mystical collection: arcane backgrounds, a chess frame, and bonus tokens.",
     items: [
       {
-        itemId: "winter_hat_santa",
-        name: "Santa Hat",
-        slot: "hat",
-        rarity: "epic",
-        imagePath: "🎅",
-      },
-      {
-        itemId: "winter_bg_snow",
-        name: "Snowy Background",
+        itemId: "bg_arcane_circles",
+        name: "Arcane Circles",
         slot: "background",
         rarity: "epic",
-        imagePath: "❄️",
+        imagePath: "",
       },
       {
-        itemId: "winter_frame_festive",
-        name: "Festive Frame",
-        slot: "profile_frame",
+        itemId: "bg_magical_forest",
+        name: "Magical Forest",
+        slot: "background",
         rarity: "epic",
-        imagePath: "🎄",
+        imagePath: "",
+      },
+      {
+        itemId: "premium_chess",
+        name: "Chess Frame",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
       },
     ],
-    bonusTokens: 250,
-    basePriceUSD: 6.99,
-    valueUSD: 12.99,
-    savingsPercent: 46,
-    imagePath: "❄️",
-    theme: "premium",
+    bonusTokens: 300,
+    basePriceUSD: 9.99,
+    valueUSD: 17.0,
+    savingsPercent: 41,
+    imagePath: "",
+    theme: "mythic",
     featured: false,
-    sortOrder: 10,
+    sortOrder: 5,
     limitedTime: true,
     purchaseLimit: 1,
+  },
+
+  // === FOUNDERS PACK ===
+  {
+    id: "bundle_founders",
+    productId: "com.snapstyle.bundle.founders",
+    name: "Founders Pack",
+    description:
+      "Exclusive founders bundle with the Galaxy background, premium decorations, and 1 000 bonus tokens. Limited to 500.",
+    items: [
+      {
+        itemId: "bg_galaxy",
+        name: "Galaxy",
+        slot: "background",
+        rarity: "legendary",
+        imagePath: "",
+      },
+      {
+        itemId: "premium_retro_arcade",
+        name: "Retro Arcade",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
+      },
+      {
+        itemId: "premium_fox_ears",
+        name: "Fox Ears",
+        slot: "decoration",
+        rarity: "rare",
+        imagePath: "",
+      },
+    ],
+    bonusTokens: 1000,
+    basePriceUSD: 14.99,
+    valueUSD: 28.0,
+    savingsPercent: 46,
+    imagePath: "",
+    theme: "legendary",
+    featured: true,
+    sortOrder: 6,
+    limitedTime: false,
+    purchaseLimit: 500,
   },
 ];
 
@@ -353,9 +373,10 @@ export const PREMIUM_BUNDLES: Omit<
 /**
  * Premium exclusive items
  *
- * These items can ONLY be purchased with real money.
- * They are NOT available in the points shop.
- * Higher rarity = higher price and more exclusive.
+ * These cosmetics are ONLY available via real-money purchase.
+ * They are NOT purchasable in the points/token shop.
+ * Each exclusive has a matching entry in the cosmetics catalog
+ * with source: "exclusive".
  */
 export const PREMIUM_EXCLUSIVES: Omit<
   PremiumExclusiveItem,
@@ -363,139 +384,50 @@ export const PREMIUM_EXCLUSIVES: Omit<
 >[] = [
   // === LEGENDARY EXCLUSIVES ===
   {
-    id: "exclusive_crown_diamond",
-    productId: "com.snapstyle.exclusive.diamond_crown",
-    name: "Diamond Crown",
-    description: "The ultimate status symbol. A crown encrusted with diamonds.",
-    slot: "hat",
+    id: "exclusive_galaxy_bg",
+    productId: "com.snapstyle.exclusive.galaxy_bg",
+    name: "Galaxy Premium",
+    description:
+      "A premium-exclusive variant of the Galaxy background with enhanced cosmic details.",
+    slot: "background",
     rarity: "legendary",
-    imagePath: "💎👑",
-    basePriceUSD: 9.99,
+    imagePath: "",
+    basePriceUSD: 4.99,
     premiumExclusive: true,
     limitedEdition: false,
     featured: true,
     sortOrder: 1,
   },
   {
-    id: "exclusive_glasses_hologram",
-    productId: "com.snapstyle.exclusive.holo_glasses",
-    name: "Hologram Visor",
-    description: "Futuristic holographic visor with animated display.",
-    slot: "glasses",
-    rarity: "legendary",
-    imagePath: "🥽✨",
-    basePriceUSD: 7.99,
+    id: "exclusive_neon_crown",
+    productId: "com.snapstyle.exclusive.neon_crown",
+    name: "Neon Crown Frame",
+    description:
+      "An animated neon crown PFP decoration — only available in the Premium Shop.",
+    slot: "decoration",
+    rarity: "mythic",
+    imagePath: "",
+    basePriceUSD: 6.99,
     premiumExclusive: true,
-    limitedEdition: false,
-    featured: false,
+    limitedEdition: true,
+    totalSupply: 200,
+    featured: true,
     sortOrder: 2,
   },
   {
-    id: "exclusive_frame_animated",
-    productId: "com.snapstyle.exclusive.holo_frame",
-    name: "Holographic Frame",
-    description: "Eye-catching animated holographic profile frame.",
-    slot: "profile_frame",
-    rarity: "legendary",
-    imagePath: "🖼️✨",
+    id: "exclusive_synthwave_deluxe",
+    productId: "com.snapstyle.exclusive.synthwave_deluxe",
+    name: "Synthwave Deluxe",
+    description:
+      "A premium synthwave background with animated grid and sunset. Premium exclusive.",
+    slot: "background",
+    rarity: "mythic",
+    imagePath: "",
     basePriceUSD: 7.99,
     premiumExclusive: true,
     limitedEdition: false,
     featured: false,
     sortOrder: 3,
-  },
-  {
-    id: "exclusive_theme_aurora",
-    productId: "com.snapstyle.exclusive.aurora_theme",
-    name: "Aurora Theme",
-    description: "Mesmerizing Northern Lights theme for your profile.",
-    slot: "profile_theme",
-    rarity: "legendary",
-    imagePath: "🌌",
-    basePriceUSD: 12.99,
-    premiumExclusive: true,
-    limitedEdition: false,
-    featured: false,
-    sortOrder: 4,
-  },
-
-  // === MYTHIC EXCLUSIVES ===
-  {
-    id: "exclusive_mythic_crown",
-    productId: "com.snapstyle.exclusive.mythic_crown",
-    name: "Ethereal Crown",
-    description:
-      "A mystical crown that shifts between dimensions. The rarest headwear.",
-    slot: "hat",
-    rarity: "mythic",
-    imagePath: "👑🔮",
-    basePriceUSD: 19.99,
-    premiumExclusive: true,
-    limitedEdition: false,
-    featured: false,
-    sortOrder: 10,
-  },
-  {
-    id: "exclusive_mythic_frame",
-    productId: "com.snapstyle.exclusive.mythic_frame",
-    name: "Dimensional Rift Frame",
-    description:
-      "A frame that tears through reality itself. Constantly shifting.",
-    slot: "profile_frame",
-    rarity: "mythic",
-    imagePath: "🌀",
-    basePriceUSD: 14.99,
-    premiumExclusive: true,
-    limitedEdition: false,
-    featured: false,
-    sortOrder: 11,
-  },
-  {
-    id: "exclusive_mythic_theme",
-    productId: "com.snapstyle.exclusive.cosmic_theme",
-    name: "Cosmic Void Theme",
-    description:
-      "Your profile floats in the vast cosmic void. Stars and galaxies swirl.",
-    slot: "profile_theme",
-    rarity: "mythic",
-    imagePath: "🌌✨",
-    basePriceUSD: 24.99,
-    premiumExclusive: true,
-    limitedEdition: false,
-    featured: false,
-    sortOrder: 12,
-  },
-
-  // === LIMITED EDITION EXCLUSIVES ===
-  {
-    id: "exclusive_founders_badge",
-    productId: "com.snapstyle.exclusive.founders",
-    name: "Founders Frame",
-    description:
-      "Exclusive to early supporters. Limited to first 1000 purchases.",
-    slot: "profile_frame",
-    rarity: "mythic",
-    imagePath: "🏆",
-    basePriceUSD: 19.99,
-    premiumExclusive: true,
-    limitedEdition: true,
-    totalSupply: 1000,
-    featured: false,
-    sortOrder: 20,
-  },
-  {
-    id: "exclusive_anniversary_set",
-    productId: "com.snapstyle.exclusive.anniversary",
-    name: "Anniversary Crown",
-    description: "Celebrating our first year! Available for limited time only.",
-    slot: "hat",
-    rarity: "mythic",
-    imagePath: "🎂👑",
-    basePriceUSD: 14.99,
-    premiumExclusive: true,
-    limitedEdition: true,
-    featured: false,
-    sortOrder: 21,
   },
 ];
 
@@ -516,22 +448,18 @@ export const ANDROID_PRODUCT_IDS: Record<string, string> = {
   "com.snapstyle.tokens.12000": "snapstyle_tokens_12000",
 
   // Bundles
-  "com.snapstyle.bundle.starter": "snapstyle_bundle_starter",
-  "com.snapstyle.bundle.style_master": "snapstyle_bundle_style_master",
-  "com.snapstyle.bundle.chat_master": "snapstyle_bundle_chat_master",
-  "com.snapstyle.bundle.legendary": "snapstyle_bundle_legendary",
-  "com.snapstyle.bundle.holiday_winter": "snapstyle_bundle_holiday_winter",
+  "com.snapstyle.bundle.starter_premium": "snapstyle_bundle_starter_premium",
+  "com.snapstyle.bundle.background_pack": "snapstyle_bundle_background_pack",
+  "com.snapstyle.bundle.decoration_pack": "snapstyle_bundle_decoration_pack",
+  "com.snapstyle.bundle.cyber_deluxe": "snapstyle_bundle_cyber_deluxe",
+  "com.snapstyle.bundle.seasonal_mystic": "snapstyle_bundle_seasonal_mystic",
+  "com.snapstyle.bundle.founders": "snapstyle_bundle_founders",
 
   // Exclusives
-  "com.snapstyle.exclusive.diamond_crown": "snapstyle_exclusive_diamond_crown",
-  "com.snapstyle.exclusive.holo_glasses": "snapstyle_exclusive_holo_glasses",
-  "com.snapstyle.exclusive.holo_frame": "snapstyle_exclusive_holo_frame",
-  "com.snapstyle.exclusive.aurora_theme": "snapstyle_exclusive_aurora_theme",
-  "com.snapstyle.exclusive.mythic_crown": "snapstyle_exclusive_mythic_crown",
-  "com.snapstyle.exclusive.mythic_frame": "snapstyle_exclusive_mythic_frame",
-  "com.snapstyle.exclusive.cosmic_theme": "snapstyle_exclusive_cosmic_theme",
-  "com.snapstyle.exclusive.founders": "snapstyle_exclusive_founders",
-  "com.snapstyle.exclusive.anniversary": "snapstyle_exclusive_anniversary",
+  "com.snapstyle.exclusive.galaxy_bg": "snapstyle_exclusive_galaxy_bg",
+  "com.snapstyle.exclusive.neon_crown": "snapstyle_exclusive_neon_crown",
+  "com.snapstyle.exclusive.synthwave_deluxe":
+    "snapstyle_exclusive_synthwave_deluxe",
 };
 
 // =============================================================================
@@ -585,13 +513,54 @@ export function getExclusiveById(
 }
 
 /**
- * Calculate total value of a bundle's contents
+ * All cosmetic IDs granted by a specific premium bundle.
+ */
+export function getBundleGrantedIds(bundleId: string): string[] {
+  const bundle = PREMIUM_BUNDLES.find((b) => b.id === bundleId);
+  return bundle ? bundle.items.map((i) => i.itemId) : [];
+}
+
+/**
+ * Look up a premium product (any type) by ID.
+ */
+export function getPremiumProductById(
+  id: string,
+):
+  | Omit<TokenPack, "localizedPrice">
+  | Omit<PremiumBundle, "localizedPrice" | "owned" | "purchasesRemaining">
+  | Omit<PremiumExclusiveItem, "localizedPrice" | "owned">
+  | undefined {
+  return (
+    TOKEN_PACKS.find((p) => p.id === id) ??
+    PREMIUM_BUNDLES.find((b) => b.id === id) ??
+    PREMIUM_EXCLUSIVES.find((e) => e.id === id)
+  );
+}
+
+/**
+ * All cosmetic item IDs referenced across every premium bundle & exclusive.
+ */
+export function getAllPremiumCosmeticIds(): string[] {
+  const ids = new Set<string>();
+  for (const b of PREMIUM_BUNDLES) {
+    for (const item of b.items) {
+      ids.add(item.itemId);
+    }
+  }
+  for (const e of PREMIUM_EXCLUSIVES) {
+    ids.add(e.id);
+  }
+  return Array.from(ids);
+}
+
+/**
+ * Calculate total value of a bundle's contents based on item rarities.
  */
 export function calculateBundleValue(
   bundle: (typeof PREMIUM_BUNDLES)[number],
 ): number {
-  // Estimated value based on item rarities and tokens
   const itemValues: Record<string, number> = {
+    uncommon: 1.49,
     rare: 2.99,
     epic: 4.99,
     legendary: 7.99,

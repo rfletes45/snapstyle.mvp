@@ -59,6 +59,11 @@ import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import { getGroupMembers } from "@/services/groups";
 import {
   endMatch,
@@ -359,6 +364,23 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newXpLevel, setNewXpLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "tic_tac_toe") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewXpLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("tic_tac_toe_game");
 
@@ -460,6 +482,26 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
         Vibration.vibrate(
           gameState.winner === "draw" ? 100 : [0, 100, 50, 100],
         );
+
+        // Submit to XP pipeline
+        if (currentFirebaseUser) {
+          const didWin =
+            gameState.winner !== "draw" &&
+            ((gameState.winner === "X" && mySymbol === "X") ||
+              (gameState.winner === "O" && mySymbol === "O"));
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "tic_tac_toe",
+              mode: "turnBased",
+              outcome:
+                gameState.winner === "draw" ? "draw" : didWin ? "win" : "lose",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
 
         // Phase 7: Check achievements on game completion
         handleGameCompletion(
@@ -583,6 +625,20 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
           }));
           setShowGameOverModal(true);
           Vibration.vibrate([0, 100, 50, 100]);
+          // Submit local win to XP pipeline
+          if (currentFirebaseUser) {
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "tic_tac_toe",
+                mode: "solo",
+                outcome: "win",
+                score: 0,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
+          }
           return;
         }
 
@@ -592,6 +648,20 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
           setScores((prev) => ({ ...prev, draws: prev.draws + 1 }));
           setShowGameOverModal(true);
           Vibration.vibrate(100);
+          // Submit local draw to XP pipeline
+          if (currentFirebaseUser) {
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "tic_tac_toe",
+                mode: "solo",
+                outcome: "draw",
+                score: 0,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
+          }
           return;
         }
 
@@ -1059,6 +1129,14 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
                 : `${winner} Wins!`
               : "🤝 Draw!"}
           </Text>
+          {xpEarned > 0 && (
+            <Text
+              style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+            >
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newXpLevel}!` : ""}
+            </Text>
+          )}
 
           {winner && (
             <Text style={[styles.modalEmoji]}>

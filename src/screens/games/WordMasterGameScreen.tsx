@@ -17,9 +17,13 @@
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
 import {
   GuessRow,
@@ -30,11 +34,13 @@ import {
   loadDailyGameState,
   saveDailyGameState,
 } from "@/services/dailyGamePersistence";
+import { onGameResultNotification } from "@/services/gameResultEvents";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Canvas,
@@ -63,11 +69,6 @@ import Animated, {
   withSequence,
   withTiming,
 } from "react-native-reanimated";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { createLogger } from "@/utils/log";
 
 // =============================================================================
 // Types
@@ -744,9 +745,7 @@ const KEYBOARD_ROWS = [
 // Component
 // =============================================================================
 
-function WordMasterGameScreen({
-  navigation,
-}: WordMasterGameScreenProps) {
+function WordMasterGameScreen({ navigation }: WordMasterGameScreenProps) {
   const __codexGameCompletion = useGameCompletion({ gameType: "word_master" });
   void __codexGameCompletion;
   const __codexGameHaptics = useGameHaptics();
@@ -786,6 +785,23 @@ function WordMasterGameScreen({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "word_master") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Spectator hosting — allows friends to watch via SpectatorRoom
   const spectatorHost = useSpectator({
@@ -1962,6 +1978,17 @@ function WordMasterGameScreen({
                   ? `🎉 You got it in ${currentRow + 1}!`
                   : `The word was: ${targetWord}`}
               </Text>
+              {xpEarned > 0 && (
+                <Text
+                  style={[
+                    styles.resultText,
+                    { color: "#fbbf24", marginTop: 4 },
+                  ]}
+                >
+                  ⭐ +{xpEarned} XP
+                  {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+                </Text>
+              )}
               <View style={styles.resultButtons}>
                 <Button
                   mode="contained"

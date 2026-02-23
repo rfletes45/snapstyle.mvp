@@ -460,7 +460,8 @@ export const COSMETIC_BUNDLES: CosmeticBundle[] = [
   },
 
   // =====================
-  // PREMIUM BUNDLES
+  // PREMIUM BUNDLES (moved to Premium Shop — see src/data/premiumProducts.ts)
+  // These remain here for reference but are no longer purchasable with tokens.
   // =====================
   {
     id: "legendary_collection",
@@ -511,16 +512,16 @@ export const COSMETIC_BUNDLES: CosmeticBundle[] = [
         priceTokens: 400,
       },
     ],
-    priceTokens: 2200,
+    priceTokens: 0, // Moved to premium — purchase via IAP only
     originalPriceTokens: 3000,
     discountPercent: 27,
     priceUSD: 19.99,
     imagePath: "👑",
-    badgeText: "Premium",
+    badgeText: "Premium Shop",
     highlightColor: "#FFD700",
-    featured: true,
+    featured: false, // No longer featured in token shop
     sortOrder: 30,
-    tags: ["premium", "legendary", "exclusive"],
+    tags: ["premium", "legendary", "exclusive", "premium_shop_only"],
   },
 
   {
@@ -556,22 +557,22 @@ export const COSMETIC_BUNDLES: CosmeticBundle[] = [
         priceTokens: 1500,
       },
     ],
-    priceTokens: 3200,
+    priceTokens: 0, // Moved to premium — purchase via IAP only
     originalPriceTokens: 4200,
     discountPercent: 24,
     priceUSD: 29.99,
     imagePath: "🌌",
-    badgeText: "Ultra Rare",
+    badgeText: "Premium Shop",
     highlightColor: "#E91E63",
-    featured: true,
+    featured: false, // No longer featured in token shop
     limitedQuantity: 100,
     purchaseCount: 0,
     sortOrder: 31,
-    tags: ["premium", "mythic", "exclusive", "limited"],
+    tags: ["premium", "mythic", "exclusive", "limited", "premium_shop_only"],
   },
 
   // =====================
-  // LIMITED BUNDLES
+  // LIMITED BUNDLES (moved to Premium Shop)
   // =====================
   {
     id: "founders_pack",
@@ -605,18 +606,18 @@ export const COSMETIC_BUNDLES: CosmeticBundle[] = [
         priceTokens: 800,
       },
     ],
-    priceTokens: 1500,
+    priceTokens: 0, // Moved to premium — purchase via IAP only
     originalPriceTokens: 1800,
     discountPercent: 17,
     priceUSD: 14.99,
     imagePath: "🏆",
-    badgeText: "Limited Edition",
+    badgeText: "Premium Shop",
     highlightColor: "#FFD700",
-    featured: true,
+    featured: false, // No longer featured in token shop
     limitedQuantity: 500,
     purchaseCount: 0,
     sortOrder: 40,
-    tags: ["limited", "founders", "exclusive"],
+    tags: ["limited", "founders", "exclusive", "premium_shop_only"],
   },
 
   // =====================
@@ -742,11 +743,14 @@ export function getFeaturedBundles(): CosmeticBundle[] {
 }
 
 /**
- * Get currently available bundles (not expired, not sold out)
+ * Get currently available bundles (not expired, not sold out, not premium-only)
  */
 export function getAvailableBundles(): CosmeticBundle[] {
   const now = Date.now();
   return COSMETIC_BUNDLES.filter((b) => {
+    // Exclude bundles moved to Premium Shop
+    if (b.tags?.includes("premium_shop_only")) return false;
+
     // Check time availability
     if (b.availableFrom && now < b.availableFrom) return false;
     if (b.availableTo && now > b.availableTo) return false;
@@ -778,9 +782,12 @@ export function getAchievementBundles(): CosmeticBundle[] {
 }
 
 /**
- * Check if bundle is available for purchase
+ * Check if bundle is available for purchase in the token shop
  */
 export function isBundleAvailable(bundle: CosmeticBundle): boolean {
+  // Premium-shop-only bundles are not available in token shop
+  if (bundle.tags?.includes("premium_shop_only")) return false;
+
   const now = Date.now();
 
   if (bundle.availableFrom && now < bundle.availableFrom) return false;

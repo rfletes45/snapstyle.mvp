@@ -10,6 +10,7 @@
  * - OR-divider and link to Login
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { signUp } from "@/services/auth";
 import { isValidEmail, isValidPassword } from "@/utils/validators";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -25,14 +26,11 @@ import {
 } from "react-native";
 import {
   Button,
-  Checkbox,
   IconButton,
   Text,
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/auth/SignupScreen");
@@ -314,26 +312,56 @@ export default function SignupScreen({ navigation }: any) {
           )}
 
           {/* Terms of Service Checkbox */}
-          <View style={styles.tosRow}>
-            <Checkbox
-              status={tosAccepted ? "checked" : "unchecked"}
-              onPress={() => setTosAccepted(!tosAccepted)}
-              disabled={loading}
-            />
-            <Text
-              variant="bodySmall"
-              style={[styles.tosText, { color: theme.colors.onSurfaceVariant }]}
-            >
-              I agree to the{" "}
-              <Text style={{ color: theme.colors.primary, fontWeight: "600" }}>
-                Terms of Service
-              </Text>{" "}
-              and{" "}
-              <Text style={{ color: theme.colors.primary, fontWeight: "600" }}>
-                Privacy Policy
+          <TouchableWithoutFeedback
+            onPress={() => !loading && setTosAccepted(!tosAccepted)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: tosAccepted }}
+            accessibilityLabel="I agree to the Terms of Service and Privacy Policy"
+          >
+            <View style={styles.tosRow}>
+              <View
+                style={[
+                  styles.tosCheckbox,
+                  {
+                    borderColor: tosAccepted
+                      ? theme.colors.primary
+                      : theme.colors.onSurfaceVariant,
+                    backgroundColor: tosAccepted
+                      ? theme.colors.primary
+                      : "transparent",
+                  },
+                ]}
+              >
+                {tosAccepted && (
+                  <MaterialCommunityIcons
+                    name="check"
+                    size={16}
+                    color={theme.colors.onPrimary}
+                  />
+                )}
+              </View>
+              <Text
+                variant="bodySmall"
+                style={[
+                  styles.tosText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                I agree to the{" "}
+                <Text
+                  style={{ color: theme.colors.primary, fontWeight: "600" }}
+                >
+                  Terms of Service
+                </Text>{" "}
+                and{" "}
+                <Text
+                  style={{ color: theme.colors.primary, fontWeight: "600" }}
+                >
+                  Privacy Policy
+                </Text>
               </Text>
-            </Text>
-          </View>
+            </View>
+          </TouchableWithoutFeedback>
 
           {/* Error Message */}
           {error ? (
@@ -460,7 +488,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: Spacing.lg,
-    marginLeft: -Spacing.sm,
+    minHeight: 44,
+  },
+  tosCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: Spacing.sm,
   },
   tosText: {
     flex: 1,

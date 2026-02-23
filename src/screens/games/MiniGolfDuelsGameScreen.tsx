@@ -41,6 +41,11 @@ import {
   sendUniversalInvite,
   subscribeToUniversalInvite,
 } from "@/services/gameInvites";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
@@ -197,6 +202,23 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showGameOver, setShowGameOver] = useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newXpLevel, setNewXpLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "minigolf_duels") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewXpLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Aim state
   const [isAiming, setIsAiming] = useState(false);
   const [aimAngle, setAimAngle] = useState(0);
@@ -230,6 +252,26 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (mg.phase === "finished" && mg.gameOverData) {
       setShowGameOver(true);
+      // Submit to XP pipeline
+      if (currentFirebaseUser) {
+        const myTotal = mg.strokesTotalByUid[mg.myUid] ?? 0;
+        submitGameResult(
+          buildGameResultEvent({
+            gameId: "minigolf_duels",
+            mode: "realtime",
+            outcome:
+              mg.gameOverData.winnerId === mg.myUid
+                ? "win"
+                : mg.gameOverData.winnerId === ""
+                  ? "draw"
+                  : "lose",
+            score: myTotal,
+            durationMs: 0,
+            userId: currentFirebaseUser.uid,
+            displayName: currentFirebaseUser.displayName || "Player",
+          }),
+        ).catch(() => {});
+      }
     }
   }, [mg.phase, mg.gameOverData]);
 
@@ -683,7 +725,12 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
       <GameOverModal
         visible={showGameOver}
         result={gameResult}
-        stats={gameOverStats}
+        stats={{
+          ...gameOverStats,
+          xpEarned: xpEarned || undefined,
+          didLevelUp: didLevelUp || undefined,
+          newLevel: newXpLevel || undefined,
+        }}
         onRematch={() => {
           mg.sendRematch();
           setShowGameOver(false);

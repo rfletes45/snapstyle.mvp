@@ -16,6 +16,10 @@
 import type { AchievementTriggerResult } from "@/services/achievementTriggers";
 import { calculateUserStats } from "@/services/gameHistory";
 import { completeGameInvite } from "@/services/gameInvites";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import { useAuth } from "@/store/AuthContext";
 import type {
   AchievementNotification,
@@ -270,6 +274,38 @@ export function useGameCompletion(
           xpEarned: 0,
           coinsEarned: 0,
         };
+
+        // Fire-and-forget: submit to universal GameResult pipeline for XP/level
+        const gameOutcome = isDraw
+          ? ("draw" as const)
+          : isWinner
+            ? ("win" as const)
+            : ("lose" as const);
+
+        submitGameResult(
+          buildGameResultEvent({
+            gameId: match.gameType as any,
+            mode: "turnBased",
+            outcome: gameOutcome,
+            score: null,
+            durationMs,
+            userId,
+            displayName: currentFirebaseUser?.displayName || "Player",
+            inviteId: match.inviteId,
+          }),
+        )
+          .then((xpResult) => {
+            if (xpResult) {
+              result.xpEarned = xpResult.xpEarned;
+              setLastResult({ ...result, xpEarned: xpResult.xpEarned });
+            }
+          })
+          .catch((err) =>
+            logger.warn(
+              "[useGameCompletion] GameResult submission failed (non-blocking)",
+              err,
+            ),
+          );
 
         setLastResult(result);
 

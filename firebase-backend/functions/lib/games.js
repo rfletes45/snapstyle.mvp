@@ -46,7 +46,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processRealtimeGameCompletion = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
+exports.claimLevelReward = exports.onGameResult = exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processRealtimeGameCompletion = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-admin/firestore");
 const functions = __importStar(require("firebase-functions"));
@@ -57,6 +57,10 @@ if (!admin.apps.length) {
     admin.initializeApp();
 }
 const db = admin.firestore();
+// =============================================================================
+// Removed Games — reject any invites/results for these IDs
+// =============================================================================
+const REMOVED_GAME_IDS = new Set([]);
 // =============================================================================
 // ELO Calculation
 // =============================================================================
@@ -219,6 +223,15 @@ exports.createGameFromInvite = functions.firestore
     // Only process when status changes to 'accepted'
     if (before.status === "pending" && after.status === "accepted") {
         const invite = after;
+        // Reject invites for removed games
+        if (REMOVED_GAME_IDS.has(invite.gameType)) {
+            console.warn(`Rejecting invite for removed game: ${invite.gameType}`);
+            await change.after.ref.update({
+                status: "declined",
+                declineReason: "game_removed",
+            });
+            return;
+        }
         try {
             // Get player ratings
             const [senderStats, receiverStats] = await Promise.all([
@@ -536,6 +549,11 @@ exports.processGameCompletion = functions.firestore
                             : "loss";
                     await (0, achievementsV2Evaluator_1.updatePerGameStatsV2)(pid, after.gameType, outcome);
                     await (0, achievementsV2Evaluator_1.evaluateAchievementsV2)(pid);
+                    // Award XP via universal pipeline
+                    const xpOutcome = outcome === "loss"
+                        ? "lose"
+                        : outcome;
+                    await awardGameXp(pid, after.gameType, xpOutcome, undefined, "turnBased");
                 }
                 catch (v2Err) {
                     // Non-critical — don't fail the whole completion
@@ -613,6 +631,19 @@ exports.processRealtimeGameCompletion = functions.firestore
             }
             await (0, achievementsV2Evaluator_1.updatePerGameStatsV2)(player.uid, gameType, outcome, player.score, player.gameSpecific);
             await (0, achievementsV2Evaluator_1.evaluateAchievementsV2)(player.uid);
+            // Award XP via universal pipeline
+            try {
+                const xpOutcome = outcome === "loss"
+                    ? "lose"
+                    : outcome;
+                await awardGameXp(player.uid, gameType, xpOutcome, player.score, "realtime");
+            }
+            catch (xpErr) {
+                functions.logger.warn("[RealtimeCompletion] XP award failed", {
+                    playerId: player.uid,
+                    error: xpErr instanceof Error ? xpErr.message : String(xpErr),
+                });
+            }
         }
         catch (err) {
             // Non-critical — don't fail the whole batch
@@ -1915,5 +1946,371 @@ exports.resignGame = functions.https.onCall(async (data, context) => {
         functions.logger.error("resignGame error", { gameId, error });
         throw new functions.https.HttpsError("internal", "Failed to resign");
     }
+});
+const XP_BASE = {
+    arcade: 15,
+    puzzle: 20,
+    board: 25,
+    card: 20,
+    party: 15,
+    daily: 25,
+};
+const XP_OUTCOME_MULTIPLIER = {
+    win: 2.0,
+    completed: 1.5,
+    draw: 1.2,
+    lose: 0.5,
+};
+const XP_BONUSES = {
+    firstWinOfDay: 25,
+    newHighScore: 15,
+    multiplayerBonus: 10,
+};
+const XP_CAP_PER_MATCH = 100;
+const GAME_XP_CATEGORY = {
+    bounce_blitz: "arcade",
+    play_2048: "puzzle",
+    word_master: "daily",
+    brick_breaker: "arcade",
+    minesweeper_classic: "puzzle",
+    pong_game: "arcade",
+    chess: "board",
+    checkers: "board",
+    crazy_eights: "card",
+    tic_tac_toe: "board",
+    connect_four: "board",
+    dot_match: "board",
+    gomoku_master: "board",
+    reversi_game: "board",
+    crossword_puzzle: "daily",
+    starforge_game: "arcade",
+    sketch_party_game: "party",
+    lights_out: "puzzle",
+    minigolf_duels: "arcade",
+};
+/**
+ * Level calculation — mirrors src/types/profile.ts calculateLevelFromXp
+ */
+function calculateLevelFromXp(totalXp) {
+    let level = 1;
+    let xpUsed = 0;
+    while (true) {
+        const xpForNextLevel = level * 100;
+        if (xpUsed + xpForNextLevel > totalXp)
+            break;
+        xpUsed += xpForNextLevel;
+        level++;
+    }
+    return {
+        level,
+        levelXp: totalXp - xpUsed,
+        xpToNextLevel: level * 100,
+        totalXp,
+    };
+}
+/**
+ * Universal callable — single entry-point for every game completion.
+ *
+ * Pipeline:
+ *   1. Validate + dedup
+ *   2. Compute XP
+ *   3. Write XP/level to Firestore (atomic increment)
+ *   4. Evaluate achievements (via existing V2 evaluator)
+ *   5. Update per-game stats
+ *   6. Return XP/level/achievements
+ */
+/**
+ * Shared helper: award XP and update level for a single player.
+ * Called from onGameResult (callable), processGameCompletion, and
+ * processRealtimeGameCompletion triggers.
+ */
+async function awardGameXp(uid, gameId, outcome, score, mode) {
+    const category = GAME_XP_CATEGORY[gameId];
+    if (!category) {
+        return {
+            xpEarned: 0,
+            totalXp: 0,
+            level: 1,
+            previousLevel: 1,
+            didLevelUp: false,
+        };
+    }
+    const baseXp = XP_BASE[category];
+    const multiplier = XP_OUTCOME_MULTIPLIER[outcome];
+    let xpEarned = Math.round(baseXp * multiplier);
+    // Multiplayer bonus
+    if (mode && mode !== "solo") {
+        xpEarned += XP_BONUSES.multiplayerBonus;
+    }
+    // High score bonus
+    if (score !== null && score !== undefined) {
+        const statsRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("perGameStatsV2")
+            .doc(gameId);
+        const statsSnap = await statsRef.get();
+        const prevHighScore = statsSnap.exists
+            ? (statsSnap.data()?.highScore ?? 0)
+            : 0;
+        if (score > prevHighScore) {
+            xpEarned += XP_BONUSES.newHighScore;
+        }
+    }
+    // First win of day bonus
+    if (outcome === "win" || outcome === "completed") {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const metaRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("gameResultMeta")
+            .doc("daily");
+        const metaSnap = await metaRef.get();
+        const lastWinDate = metaSnap.exists ? metaSnap.data()?.lastWinDate : null;
+        if (lastWinDate !== todayStr) {
+            xpEarned += XP_BONUSES.firstWinOfDay;
+            await metaRef.set({ lastWinDate: todayStr }, { merge: true });
+        }
+    }
+    // Cap
+    xpEarned = Math.min(xpEarned, XP_CAP_PER_MATCH);
+    // Atomic XP + level write
+    const profileRef = db.collection("Users").doc(uid);
+    let totalXp = 0;
+    let previousLevel = 1;
+    let newLevelInfo;
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(profileRef);
+        const data = snap.data() || {};
+        const currentXp = data.gameXp ?? 0;
+        previousLevel = data.gameLevel ?? calculateLevelFromXp(currentXp).level;
+        totalXp = currentXp + xpEarned;
+        newLevelInfo = calculateLevelFromXp(totalXp);
+        // Use set+merge so it works even if the user doc doesn't have gameXp yet
+        tx.set(profileRef, {
+            gameXp: totalXp,
+            gameLevel: newLevelInfo.level,
+            gameLevelXp: newLevelInfo.levelXp,
+            gameXpToNextLevel: newLevelInfo.xpToNextLevel,
+            updatedAt: firestore_1.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+    newLevelInfo = newLevelInfo;
+    const didLevelUp = newLevelInfo.level > previousLevel;
+    functions.logger.info("[awardGameXp]", {
+        uid,
+        gameId,
+        outcome,
+        xpEarned,
+        totalXp,
+        level: newLevelInfo.level,
+        didLevelUp,
+    });
+    return {
+        xpEarned,
+        totalXp,
+        level: newLevelInfo.level,
+        previousLevel,
+        didLevelUp,
+    };
+}
+exports.onGameResult = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+    }
+    const uid = context.auth.uid;
+    const { gameId, mode, outcome, score, durationMs, participants, meta, idempotencyKey, } = data;
+    // ── Validate ──────────────────────────────────────────────────
+    if (!gameId || typeof gameId !== "string") {
+        throw new functions.https.HttpsError("invalid-argument", "gameId required");
+    }
+    if (REMOVED_GAME_IDS.has(gameId)) {
+        throw new functions.https.HttpsError("failed-precondition", `Game "${gameId}" has been removed`);
+    }
+    const category = GAME_XP_CATEGORY[gameId];
+    if (!category) {
+        throw new functions.https.HttpsError("invalid-argument", `Unknown gameId: ${gameId}`);
+    }
+    if (!["solo", "turnBased", "realtime"].includes(mode)) {
+        throw new functions.https.HttpsError("invalid-argument", "Invalid mode");
+    }
+    if (!["win", "lose", "draw", "completed"].includes(outcome)) {
+        throw new functions.https.HttpsError("invalid-argument", "Invalid outcome");
+    }
+    if (!participants ||
+        !Array.isArray(participants) ||
+        participants.length === 0) {
+        throw new functions.https.HttpsError("invalid-argument", "At least one participant required");
+    }
+    // Verify caller is a participant
+    const callerParticipant = participants.find((p) => p.userId === uid);
+    if (!callerParticipant) {
+        throw new functions.https.HttpsError("permission-denied", "Caller must be a participant");
+    }
+    // ── Idempotency ──────────────────────────────────────────────
+    if (idempotencyKey) {
+        const dedupRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("gameResultDedup")
+            .doc(idempotencyKey);
+        const dedupSnap = await dedupRef.get();
+        if (dedupSnap.exists) {
+            // Already processed — return cached response
+            functions.logger.info("[onGameResult] Duplicate skipped", {
+                uid,
+                idempotencyKey,
+            });
+            return dedupSnap.data();
+        }
+    }
+    // ── Compute & Award XP ────────────────────────────────────
+    const xpResult = await awardGameXp(uid, gameId, outcome, score ?? undefined, mode);
+    const { xpEarned, totalXp, level: newLevel, previousLevel, didLevelUp, } = xpResult;
+    // ── Achievements + Stats ────────────────────────────────────
+    let achievementsUnlocked = [];
+    try {
+        // Map outcome to V2 evaluator format
+        const v2Outcome = outcome === "lose"
+            ? "loss"
+            : outcome === "completed"
+                ? "completed"
+                : outcome;
+        // Build gameSpecific with score for stat_threshold achievements
+        const gameSpecific = {
+            ...(meta || {}),
+        };
+        if (score !== null && score !== undefined) {
+            gameSpecific.bestScore = score;
+        }
+        await (0, achievementsV2Evaluator_1.updatePerGameStatsV2)(uid, gameId, v2Outcome, score ?? undefined, gameSpecific);
+        const evalResult = await (0, achievementsV2Evaluator_1.evaluateAchievementsV2)(uid);
+        achievementsUnlocked = evalResult.newUnlocks.map((u) => u.achievementId);
+    }
+    catch (err) {
+        // Non-critical — XP was already written
+        functions.logger.warn("[onGameResult] Achievement eval failed", {
+            uid,
+            gameId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    // ── Build Response ──────────────────────────────────────────
+    const levelInfo = calculateLevelFromXp(totalXp);
+    const response = {
+        success: true,
+        xpEarned,
+        totalXp,
+        level: newLevel,
+        levelXp: levelInfo.levelXp,
+        xpToNextLevel: levelInfo.xpToNextLevel,
+        didLevelUp,
+        previousLevel,
+        achievementsUnlocked,
+        leaderboardUpdated: false, // Leaderboards updated via existing triggers
+    };
+    // ── Cache for idempotency ───────────────────────────────────
+    if (idempotencyKey) {
+        const dedupRef = db
+            .collection("Users")
+            .doc(uid)
+            .collection("gameResultDedup")
+            .doc(idempotencyKey);
+        await dedupRef.set({
+            ...response,
+            processedAt: firestore_1.FieldValue.serverTimestamp(),
+        });
+    }
+    functions.logger.info("[onGameResult] Processed", {
+        uid,
+        gameId,
+        mode,
+        outcome,
+        xpEarned,
+        totalXp,
+        level: newLevel,
+        didLevelUp,
+        achievementsUnlocked: achievementsUnlocked.length,
+    });
+    return response;
+});
+// =============================================================================
+// claimLevelReward — server-validated level reward claiming
+// =============================================================================
+const MAX_REWARD_LEVEL = 50;
+/** Milestone levels give larger cosmetic-point rewards. */
+function getRewardAmountForLevel(level) {
+    const milestones = {
+        5: 200,
+        10: 400,
+        15: 600,
+        20: 800,
+        25: 1000,
+        30: 1200,
+        35: 1400,
+        40: 1600,
+        45: 1800,
+        50: 2000,
+    };
+    return milestones[level] ?? 50; // non-milestone: 50 cosmetic points
+}
+exports.claimLevelReward = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+    }
+    const uid = context.auth.uid;
+    const { level } = data;
+    // ── Validate input ─────────────────────────────────────────────
+    if (typeof level !== "number" ||
+        !Number.isInteger(level) ||
+        level < 1 ||
+        level > MAX_REWARD_LEVEL) {
+        throw new functions.https.HttpsError("invalid-argument", `level must be an integer between 1 and ${MAX_REWARD_LEVEL}`);
+    }
+    const userRef = db.collection("Users").doc(uid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+        throw new functions.https.HttpsError("not-found", "User not found");
+    }
+    const userData = userSnap.data();
+    // ── Check user has reached this level ──────────────────────────
+    const totalXp = userData.gameXp ?? 0;
+    const levelInfo = calculateLevelFromXp(totalXp);
+    if (levelInfo.level < level) {
+        throw new functions.https.HttpsError("failed-precondition", `You are level ${levelInfo.level}; level ${level} not yet reached`);
+    }
+    // ── Check not already claimed ──────────────────────────────────
+    const claimedLevels = userData.claimedLevels ?? [];
+    if (claimedLevels.includes(level)) {
+        throw new functions.https.HttpsError("already-exists", `Level ${level} reward already claimed`);
+    }
+    // ── Award reward ───────────────────────────────────────────────
+    const amount = getRewardAmountForLevel(level);
+    const isMilestone = level % 5 === 0;
+    // Credit both the User doc (legacy cosmeticPoints) and the Wallet doc
+    const walletRef = db.collection("Wallets").doc(uid);
+    const batch = db.batch();
+    batch.update(userRef, {
+        claimedLevels: firestore_1.FieldValue.arrayUnion(level),
+        cosmeticPoints: firestore_1.FieldValue.increment(amount),
+    });
+    // Upsert wallet — use set with merge to create if missing
+    batch.set(walletRef, { tokensBalance: firestore_1.FieldValue.increment(amount) }, { merge: true });
+    await batch.commit();
+    functions.logger.info("[claimLevelReward] Claimed", {
+        uid,
+        level,
+        amount,
+        isMilestone,
+    });
+    return {
+        success: true,
+        level,
+        rewardType: isMilestone ? "milestone" : "small",
+        amount,
+        message: isMilestone
+            ? `Milestone! +${amount} Tokens`
+            : `+${amount} Tokens`,
+    };
 });
 //# sourceMappingURL=games.js.map

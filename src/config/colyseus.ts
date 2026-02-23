@@ -112,9 +112,6 @@ export const COLYSEUS_ROOM_NAMES: Record<string, string> = {
 
   // Party
   sketch_party_game: "sketch_party",
-
-  // Physics — Mini-Golf
-  minigolf_duels: "minigolf_duels",
 };
 
 /**
@@ -218,9 +215,6 @@ export const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
 
   // Party
   sketch_party_game: "party",
-
-  // Physics — Mini-Golf
-  minigolf_duels: "physics",
 };
 
 /**

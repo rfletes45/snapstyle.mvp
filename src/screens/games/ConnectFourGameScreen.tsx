@@ -38,6 +38,11 @@ import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -330,6 +335,23 @@ function ConnectFourGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "connect_four") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
   const [aiThinking, setAiThinking] = useState(false);
 
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -440,6 +462,9 @@ function ConnectFourGameScreen({
     setIsDraw(false);
     isDrawRef.current = false;
     setAiThinking(false);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
     setGameState("playing");
     gameStateRef.current = "playing";
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -540,7 +565,32 @@ function ConnectFourGameScreen({
                 showSuccess("🎉 New win streak!");
               }
             });
+            // Submit win to XP pipeline
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "connect_four",
+                mode: "solo",
+                outcome: "win",
+                score: newWins,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
           }
+        } else if (currentFirebaseUser) {
+          // AI won — submit loss to XP pipeline
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "connect_four",
+              mode: "solo",
+              outcome: "lose",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
         }
         return;
       }
@@ -550,6 +600,20 @@ function ConnectFourGameScreen({
         isDrawRef.current = true;
         setGameState("result");
         gameStateRef.current = "result";
+        // Submit draw to XP pipeline
+        if (currentFirebaseUser) {
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "connect_four",
+              mode: "solo",
+              outcome: "draw",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
         return;
       }
 
@@ -828,6 +892,12 @@ function ConnectFourGameScreen({
             </Text>
             {wins > 0 && (
               <Text style={{ marginTop: 8 }}>Win Streak: {wins}</Text>
+            )}
+            {xpEarned > 0 && (
+              <Text style={{ color: "#fbbf24", marginTop: 8 }}>
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+              </Text>
             )}
           </Dialog.Content>
           <Dialog.Actions>

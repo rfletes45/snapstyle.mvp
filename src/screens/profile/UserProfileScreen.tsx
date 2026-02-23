@@ -31,6 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
+import { BadgeShowcase } from "@/components/badges";
 import {
   FriendshipInfoCard,
   GameScoresDisplay,
@@ -46,6 +47,7 @@ import {
 import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
 import { CALL_FEATURES, PROFILE_V2_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
+import { useBadges } from "@/hooks/useBadges";
 import { useScoreComparison } from "@/hooks/useGameScores";
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
@@ -153,6 +155,9 @@ function UserProfileScreenContent({
     viewerId: currentUserId || "",
     autoFetch: true,
   });
+
+  // Badges hook — subscribes to the viewed user's badges
+  const { featuredBadges } = useBadges(userId);
 
   // ==========================================================================
   // Load Profile Data
@@ -775,6 +780,23 @@ function UserProfileScreenContent({
           <View
             style={[styles.sectionDivider, { backgroundColor: colors.divider }]}
           />
+
+          {/* Featured Badges */}
+          {featuredBadges.length > 0 &&
+            profile.privacy.showBadges !== "nobody" && (
+              <>
+                <BadgeShowcase
+                  badges={featuredBadges}
+                  onBadgePress={() => {}}
+                />
+                <View
+                  style={[
+                    styles.sectionDivider,
+                    { backgroundColor: colors.divider },
+                  ]}
+                />
+              </>
+            )}
 
           {/* Game Scores Display */}
           {profile.gameScores?.enabled !== false &&

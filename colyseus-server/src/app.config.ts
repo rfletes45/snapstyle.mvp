@@ -43,7 +43,6 @@ import { CrazyEightsRoom } from "./rooms/turnbased/CrazyEightsRoom";
 // ---------------------------------------------------------------------------
 import { BounceBlitzRoom } from "./rooms/physics/BounceBlitzRoom";
 import { BrickBreakerRoom } from "./rooms/physics/BrickBreakerRoom";
-import { MiniGolfDuelsRoom } from "./rooms/physics/MiniGolfDuelsRoom";
 import { PongRoom } from "./rooms/physics/PongRoom";
 
 // ---------------------------------------------------------------------------
@@ -111,7 +110,6 @@ const serverConfig = defineServer({
     pong: defineRoom(PongRoom).filterBy(["firestoreGameId"]),
     bounce_blitz: defineRoom(BounceBlitzRoom).filterBy(["firestoreGameId"]),
     brick_breaker: defineRoom(BrickBreakerRoom).filterBy(["firestoreGameId"]),
-    minigolf_duels: defineRoom(MiniGolfDuelsRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
     // Tier 3: Cooperative / Creative — Phase 5 (LIVE)

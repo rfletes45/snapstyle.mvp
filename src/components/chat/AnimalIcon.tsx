@@ -9,8 +9,9 @@
  */
 
 import React from "react";
-import { Image, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { getAnimalImage } from "@/cosmetics/animalAssets";
 
 interface AnimalIconProps {
@@ -43,14 +44,14 @@ const AnimalIcon: React.FC<AnimalIconProps> = ({
         },
       ]}
     >
-      <Image
+      <CosmeticImage
         source={imageSource}
         style={{
           width: w,
           height: h,
           borderRadius: radius,
         }}
-        resizeMode="cover"
+        debugLabel={`animal-icon-${animalId}`}
       />
     </View>
   );

@@ -62,6 +62,11 @@ import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   createChessMove,
   createInitialChessState,
@@ -510,6 +515,23 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newXpLevel, setNewXpLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "chess") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewXpLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("chess_game");
 
@@ -652,6 +674,21 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
         setGameResult(didWin ? "win" : typedMatch.winnerId ? "loss" : "draw");
         setShowGameOverModal(true);
         haptics.gameOverPattern(didWin);
+
+        // Submit to XP pipeline
+        if (currentFirebaseUser) {
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "chess",
+              mode: "turnBased",
+              outcome: didWin ? "win" : typedMatch.winnerId ? "lose" : "draw",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
 
         // Phase 7: Check achievements on game completion
         handleGameCompletion(
@@ -923,6 +960,9 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
 
   const handleGameOver = async (finalState: ChessGameState) => {
     setShowGameOverModal(true);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewXpLevel(0);
 
     if (finalState.isCheckmate) {
       const winner = finalState.currentTurn === "white" ? "black" : "white";
@@ -931,6 +971,20 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
       // Determine result from player perspective
       if (gameMode === "local") {
         setGameResult("win"); // Local always shows winner info
+        // Submit local game to XP pipeline
+        if (currentFirebaseUser) {
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "chess",
+              mode: "solo",
+              outcome: "win",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
       } else if (myColor === winner) {
         setGameResult("win");
         haptics.celebrationPattern();
@@ -1456,6 +1510,9 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
           moves: moveHistory.length,
           winMethod: winMethod,
           opponentName: gameMode === "online" ? opponentName : undefined,
+          xpEarned: xpEarned || undefined,
+          didLevelUp: didLevelUp || undefined,
+          newLevel: newXpLevel || undefined,
         }}
         onRematch={handlePlayAgain}
         onExit={() => {

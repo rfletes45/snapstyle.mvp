@@ -63,6 +63,8 @@ interface SendMessageV2Params {
   scope: "dm" | "group";
   kind: MessageKind;
   text?: string;
+  /** Animal theme ID (required when kind="animal") */
+  animalId?: string;
   replyTo?: ReplyToMetadata;
   mentionUids?: string[];
   mentionSpans?: MentionSpan[];
@@ -212,6 +214,7 @@ export async function sendMessageWithOutbox(params: {
   scope: "dm" | "group";
   kind: MessageKind;
   text?: string;
+  animalId?: string;
   replyTo?: ReplyToMetadata;
   mentionUids?: string[];
   mentionSpans?: MentionSpan[];
@@ -259,6 +262,7 @@ export async function sendMessageWithOutbox(params: {
         scope: params.scope,
         kind: params.kind,
         text: params.text,
+        animalId: params.animalId,
         replyTo: params.replyTo,
         mentionUids: params.mentionUids,
         mentionSpans: params.mentionSpans,

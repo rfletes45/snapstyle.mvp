@@ -11,8 +11,6 @@
  * @see docs/PROMPT_GAMES_EXPANSION.md for full implementation plan
  */
 
-import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
-
 // =============================================================================
 // Game Type Unions
 // =============================================================================
@@ -26,8 +24,8 @@ export type SinglePlayerGameType =
   | "word_master" // Daily word puzzle (Wordle-style)
   | "brick_breaker" // Classic Breakout/Arkanoid
   | "minesweeper_classic" // Classic Minesweeper
-  | "lights_out" // Lights Out puzzle
-  | "pong_game"; // Pong with AI
+  | "pong_game" // Pong with AI
+  | "lights_out"; // Lights Out puzzle
 
 /**
  * Turn-based multiplayer games
@@ -251,31 +249,6 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     ],
     tags: ["Puzzle", "Solo", "Speed"],
     scoringType: "time_low",
-  },
-  lights_out: {
-    id: "lights_out",
-    name: "Lights",
-    shortName: "Lights",
-    description: "Toggle all the lights off!",
-    icon: "💡",
-    category: "puzzle",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
-    hasLeaderboard: true,
-    hasAchievements: true,
-    isAvailable: true,
-    isNew: true,
-    tagline: "Turn off every light with logic",
-    longDescription:
-      "Each tap toggles a light and its neighbors. Your goal is to switch every light off using the fewest moves possible. Simple rules, surprisingly tricky solutions — a perfect brain teaser.",
-    howToPlay: [
-      "Tap a light to toggle it and its neighbors",
-      "Turn all lights off to win",
-      "Fewer moves = higher rank",
-    ],
-    tags: ["Puzzle", "Solo", "Logic"],
-    scoringType: "moves_low",
   },
 
   pong_game: {
@@ -593,12 +566,37 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     tags: ["Party", "Drawing", "2-10 Players"],
     scoringType: "points",
   },
+  lights_out: {
+    id: "lights_out",
+    name: "Lights Out",
+    shortName: "Lights",
+    description: "Toggle lights to turn them all off.",
+    icon: "💡",
+    category: "puzzle",
+    minPlayers: 1,
+    maxPlayers: 1,
+    isMultiplayer: false,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: false,
+    comingSoon: false,
+    tagline: "Switch off every light",
+    longDescription:
+      "Toggle lights on a grid to turn them all off. Each press flips the target and its neighbors. Solve the puzzle in the fewest moves.",
+    howToPlay: [
+      "Tap a cell to toggle it and its neighbors",
+      "Turn all lights off to win",
+      "Try to solve it in the fewest moves",
+    ],
+    tags: ["Puzzle", "Solo"],
+    scoringType: "moves_low",
+  },
   minigolf_duels: {
     id: "minigolf_duels",
     name: "Mini-Golf Duels",
     shortName: "Golf",
-    description:
-      "Sink the putt. Beat your rival across 9 holes of tricky mini-golf.",
+    description: "Sink putts head-to-head in real-time.",
     icon: "⛳",
     category: "multiplayer",
     minPlayers: 2,
@@ -606,19 +604,19 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     isMultiplayer: true,
     hasLeaderboard: false,
     hasAchievements: true,
-    isAvailable: COLYSEUS_FEATURES.PHYSICS_ENABLED,
+    isAvailable: true,
     isNew: true,
-    tagline: "Putt your way to victory in 9 holes",
+    comingSoon: false,
+    tagline: "Putt against a friend",
     longDescription:
-      "Challenge a friend to 9 holes of physics-based mini-golf. Aim your shot, set your power, and navigate obstacles, ramps, and tricky greens. Lowest total strokes after 9 holes wins the duel.",
+      "Real-time mini-golf duels. Take turns sinking putts across creative holes. Lowest total strokes wins.",
     howToPlay: [
-      "Drag to aim your shot direction",
-      "Pull back to set power, release to putt",
-      "Navigate obstacles and slopes",
-      "Lowest total strokes wins",
+      "Aim and set power to putt the ball",
+      "Take turns on each hole",
+      "Lowest total strokes wins the match",
     ],
-    tags: ["Sports", "2-Player", "Physics"],
-    scoringType: "high_score",
+    tags: ["Multiplayer", "Real-Time", "2 Players"],
+    scoringType: "moves_low",
   },
 };
 
@@ -666,11 +664,6 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     minScore: 1,
     maxScore: 9999,
     scoreDirection: "lower", // Fewer seconds is better
-  },
-  lights_out: {
-    minScore: 1,
-    maxScore: 999,
-    scoreDirection: "lower", // Fewer moves is better
   },
 
   // Multiplayer games (score = wins for leaderboard)
@@ -737,10 +730,15 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 99999,
     scoreDirection: "higher", // Points accumulated
   },
+  lights_out: {
+    minScore: 1,
+    maxScore: 9999,
+    scoreDirection: "lower", // Fewer moves = better
+  },
   minigolf_duels: {
-    minScore: 0,
+    minScore: 1,
     maxScore: 999,
-    scoreDirection: "lower", // Fewer total strokes is better
+    scoreDirection: "lower", // Fewer strokes = better
   },
 };
 
@@ -798,8 +796,6 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
       return score === 1 ? "1 guess" : `${score} guesses`;
     case "minesweeper_classic":
       return `${score}s`;
-    case "lights_out":
-      return score === 1 ? "1 move" : `${score} moves`;
     case "dot_match":
       return `${score} boxes`;
     case "crossword_puzzle":

@@ -1,35 +1,51 @@
 {
   "schemaVersion": "starforge.rebirth.v1",
-  "shardFormula": {
-    "fluxDivisor": 5000,
-    "fluxExponent": 0.65,
-    "rarityBonus": {
-      "rare": 1,
-      "epic": 3,
-      "ancient": 10
-    }
+  "shards": {
+    "fluxDivisor": 500,
+    "fluxExponent": 0.55,
+    "rarityBonus": { "rare": 1, "epic": 3, "ancient": 10 }
   },
   "gates": [
     {
-      "minRebirthCount": 0,
-      "requires": {
-        "totalFluxEarnedMicro": 25000,
-        "wrecksDestroyedTotal": 10
-      }
+      "rebirthIndex": 0,
+      "label": "Starlift Calibration",
+      "any": [
+        { "t": "TOTAL_WRECKS_DESTROYED", "gte": 20 },
+        { "t": "TOTAL_FLUX_EARNED", "gteMicro": 500000 }
+      ]
     },
     {
-      "minRebirthCount": 1,
-      "requires": {
-        "totalFluxEarnedMicro": 80000,
-        "wrecksDestroyedTotal": 30
-      }
+      "rebirthIndex": 1,
+      "label": "Sector Jump I",
+      "all": [
+        { "t": "DESTROY_RARITY", "rarity": "rare", "gte": 1 },
+        { "t": "TOTAL_FLUX_EARNED", "gteMicro": 2000000 }
+      ]
     },
     {
-      "minRebirthCount": 3,
-      "requires": {
-        "totalFluxEarnedMicro": 200000,
-        "wrecksDestroyedTotal": 80
-      }
+      "rebirthIndex": 2,
+      "label": "Sector Jump II",
+      "any": [
+        { "t": "DESTROY_RARITY", "rarity": "epic", "gte": 1 },
+        { "t": "TOTAL_FLUX_EARNED", "gteMicro": 10000000 }
+      ]
+    },
+    {
+      "rebirthIndex": 3,
+      "label": "Sector Jump III",
+      "any": [
+        { "t": "DESTROY_RARITY", "rarity": "ancient", "gte": 1 },
+        { "t": "TOTAL_FLUX_EARNED", "gteMicro": 50000000 }
+      ]
+    },
+    {
+      "rebirthIndex": 4,
+      "label": "Deep Sector",
+      "all": [
+        { "t": "DESTROY_RARITY", "rarity": "epic", "gte": 3 },
+        { "t": "TOTAL_WRECKS_DESTROYED", "gte": 200 },
+        { "t": "TOTAL_FLUX_EARNED", "gteMicro": 150000000 }
+      ]
     }
   ]
 }

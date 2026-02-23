@@ -122,7 +122,6 @@ const SINGLE_PLAYER_GAME_TYPES = new Set<SinglePlayerGameType>([
   "word_master",
   "brick_breaker",
   "minesweeper_classic",
-  "lights_out",
   "pong_game",
 ]);
 
@@ -820,7 +819,7 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
     [],
   );
   const puzzleGames = useMemo<ExtendedGameType[]>(
-    () => ["play_2048", "minesweeper_classic", "lights_out"],
+    () => ["play_2048", "minesweeper_classic"],
     [],
   );
   const dailyGames = useMemo<ExtendedGameType[]>(
@@ -839,7 +838,6 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       "reversi_game",
       "starforge_game",
       "sketch_party_game",
-      "minigolf_duels",
     ],
     [],
   );
@@ -1180,6 +1178,29 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
                       ]}
                     >
                       Monthly Tasks
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.profileCardButton,
+                      {
+                        backgroundColor: theme.colors.tertiaryContainer,
+                      },
+                    ]}
+                    onPress={() => navigation.navigate("LevelRewards" as any)}
+                  >
+                    <MaterialCommunityIcons
+                      name="trophy-award"
+                      size={14}
+                      color={theme.colors.onTertiaryContainer}
+                    />
+                    <Text
+                      style={[
+                        styles.profileCardButtonText,
+                        { color: theme.colors.onTertiaryContainer },
+                      ]}
+                    >
+                      Rewards
                     </Text>
                   </TouchableOpacity>
                 </View>

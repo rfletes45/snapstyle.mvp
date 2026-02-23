@@ -48,6 +48,7 @@ import {
 } from "@/components/profile/ProfilePicture";
 import { LoadingState } from "@/components/ui";
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 
 import { useFullProfileData } from "@/hooks/useFullProfileData";
 import { useGameScores } from "@/hooks/useGameScores";
@@ -139,6 +140,17 @@ export default function OwnProfileScreen({
       }
     };
   }, []);
+
+  // Prefetch equipped cosmetic assets so profile renders instantly
+  useEffect(() => {
+    const bgId = profile?.equippedBackgroundId;
+    if (bgId || decorationId) {
+      prefetchCriticalProfileAssets({
+        backgroundId: bgId,
+        decorationId,
+      });
+    }
+  }, [profile?.equippedBackgroundId, decorationId]);
 
   // ==========================================================================
   // Handlers
@@ -325,6 +337,7 @@ export default function OwnProfileScreen({
             onEditBioPress={handleEditBio}
             onEditStatusPress={handleEditStatus}
             onEditNamePress={handleEditName}
+            onLevelPress={() => navigation.navigate("LevelRewards")}
           />
 
           <View

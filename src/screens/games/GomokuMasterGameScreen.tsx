@@ -37,6 +37,11 @@ import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -322,6 +327,23 @@ function GomokuMasterGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "gomoku_master") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const scheduleTimeout = useCallback(
     (callback: () => void, delayMs: number) => {
@@ -421,6 +443,9 @@ function GomokuMasterGameScreen({
     setWinLine(null);
     setIsDraw(false);
     setLastMove(null);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
     setGameState("playing");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
@@ -471,7 +496,32 @@ function GomokuMasterGameScreen({
                 showSuccess("🎉 New personal best!");
               }
             });
+            // Submit win to XP pipeline
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "gomoku_master",
+                mode: "solo",
+                outcome: "win",
+                score: newWins,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
           }
+        } else if (currentFirebaseUser) {
+          // AI won — submit loss to XP pipeline
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "gomoku_master",
+              mode: "solo",
+              outcome: "lose",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
         }
         return;
       }
@@ -480,6 +530,20 @@ function GomokuMasterGameScreen({
       if (isBoardFull(newBoard)) {
         setIsDraw(true);
         setGameState("result");
+        // Submit draw to XP pipeline
+        if (currentFirebaseUser) {
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "gomoku_master",
+              mode: "solo",
+              outcome: "draw",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
         return;
       }
 
@@ -941,6 +1005,12 @@ function GomokuMasterGameScreen({
             </Text>
             {wins > 0 && (
               <Text style={{ marginTop: 8 }}>Win Streak: {wins}</Text>
+            )}
+            {xpEarned > 0 && (
+              <Text style={{ color: "#fbbf24", marginTop: 8 }}>
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+              </Text>
             )}
           </Dialog.Content>
           <Dialog.Actions>

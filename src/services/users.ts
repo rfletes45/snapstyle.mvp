@@ -1,7 +1,9 @@
+import { Latte } from "@/constants/theme";
 import { User } from "@/types/models";
 import {
   collection,
   doc,
+  limit as firestoreLimit,
   getDoc,
   getDocs,
   query,
@@ -10,9 +12,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { Latte } from "@/constants/theme";
 import { getFirestoreInstance } from "./firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/users");
@@ -220,5 +220,132 @@ export async function setupNewUser(
   } catch (error) {
     logger.error("Error setting up new user:", error);
     throw error;
+  }
+}
+
+// =============================================================================
+// User search result type
+// =============================================================================
+
+export interface UserSearchResult {
+  uid: string;
+  username: string;
+  displayName: string;
+  avatarConfig: User["avatarConfig"];
+  profilePictureUrl?: string | null;
+  decorationId?: string | null;
+}
+
+/**
+ * Search for users by username or display name prefix.
+ *
+ * Ranking (applied client-side after Firestore fetch):
+ *  1. exact username match
+ *  2. username startsWith
+ *  3. displayName startsWith
+ *  4. username contains
+ *  5. displayName contains
+ *
+ * @param queryText  Text the user typed (min 1 char after trim)
+ * @param currentUid UID of the signed-in user (excluded from results)
+ * @param maxResults Cap returned results (default 20)
+ * @returns Ranked array of UserSearchResult
+ */
+export async function searchUsers(
+  queryText: string,
+  currentUid: string,
+  maxResults = 20,
+): Promise<UserSearchResult[]> {
+  const trimmed = queryText.trim().toLowerCase();
+  if (trimmed.length === 0) return [];
+
+  const db = getFirestoreInstance();
+  const usersRef = collection(db, "Users");
+
+  // Firestore prefix range for usernameLower
+  const prefixEnd = trimmed + "\uf8ff";
+
+  try {
+    // 1) Prefix query on usernameLower (cheap, indexed)
+    const prefixQ = query(
+      usersRef,
+      where("usernameLower", ">=", trimmed),
+      where("usernameLower", "<=", prefixEnd),
+      firestoreLimit(50),
+    );
+
+    const prefixSnap = await getDocs(prefixQ);
+    const seen = new Set<string>();
+    const rawResults: Array<{
+      uid: string;
+      username: string;
+      usernameLower: string;
+      displayName: string;
+      displayNameLower: string;
+      avatarConfig: User["avatarConfig"];
+      profilePictureUrl?: string | null;
+      decorationId?: string | null;
+    }> = [];
+
+    const addDoc = (docSnap: any) => {
+      const d = docSnap.data();
+      const uid = docSnap.id;
+      if (uid === currentUid || seen.has(uid)) return;
+      seen.add(uid);
+      rawResults.push({
+        uid,
+        username: d.username ?? "",
+        usernameLower: (d.usernameLower ?? d.username ?? "").toLowerCase(),
+        displayName: d.displayName ?? "",
+        displayNameLower: (d.displayName ?? "").toLowerCase(),
+        avatarConfig: d.avatarConfig ?? { baseColor: "#ccc" },
+        profilePictureUrl: d.profilePicture?.url ?? null,
+        decorationId: d.avatarDecoration?.decorationId ?? null,
+      });
+    };
+
+    prefixSnap.forEach(addDoc);
+
+    // 2) Rank results
+    const scored = rawResults.map((r) => {
+      let score = 5; // default: displayName contains fallback
+      if (r.usernameLower === trimmed) {
+        score = 1; // exact
+      } else if (r.usernameLower.startsWith(trimmed)) {
+        score = 2; // username startsWith
+      } else if (r.displayNameLower.startsWith(trimmed)) {
+        score = 3; // displayName startsWith
+      } else if (r.usernameLower.includes(trimmed)) {
+        score = 4; // username contains
+      } else if (r.displayNameLower.includes(trimmed)) {
+        score = 5; // displayName contains
+      }
+      return { ...r, score };
+    });
+
+    // Filter out results that don't match at all on username or displayName
+    const filtered = scored.filter(
+      (r) =>
+        r.usernameLower.includes(trimmed) ||
+        r.displayNameLower.includes(trimmed),
+    );
+
+    // Sort by score then alphabetical
+    filtered.sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      return a.usernameLower.localeCompare(b.usernameLower);
+    });
+
+    return filtered.slice(0, maxResults).map((r) => ({
+      uid: r.uid,
+      username: r.username,
+      displayName: r.displayName,
+      avatarConfig: r.avatarConfig,
+      profilePictureUrl: r.profilePictureUrl,
+      decorationId: r.decorationId,
+    }));
+  } catch (error) {
+    logger.error("Error searching users:", error);
+    return [];
   }
 }

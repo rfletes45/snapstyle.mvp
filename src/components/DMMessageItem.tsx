@@ -26,13 +26,13 @@ import AppImage from "@/components/AppImage";
 import { ReplyBubble, SwipeableMessage } from "@/components/chat";
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
+import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
 import ScorecardBubble from "@/components/ScorecardBubble";
 import SpectatorInviteBubble, {
   parseSpectatorInviteContent,
 } from "@/components/SpectatorInviteBubble";
 import { Spacing } from "@/constants/theme";
-import { detectAnimalEmoji } from "@/cosmetics/animalAssets";
 import {
   resolveIncomingBubbleStyle,
   resolveOutgoingChatStyle,
@@ -55,7 +55,7 @@ export interface MessageWithProfile {
   id: string;
   sender: string;
   content: string;
-  type: "text" | "image" | "scorecard" | "voice";
+  type: "text" | "image" | "scorecard" | "voice" | "animal";
   createdAt: Date;
   status?: "sending" | "sent" | "delivered" | "read" | "failed";
   /** Server received timestamp for read receipt calculation */
@@ -69,6 +69,10 @@ export interface MessageWithProfile {
   imageUrl?: string;
   /** Sender's chat style snapshot (bubble color, font, etc.) */
   senderStyle?: SenderStyle | null;
+  /** Thread reply count (for thread indicator) */
+  replyCount?: number;
+  /** Animal theme ID (for animal signal messages) */
+  animalId?: string;
 }
 
 interface DMMessageItemProps {
@@ -322,12 +326,19 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
 
     // Render message content
     const renderContent = () => {
-      // Animal message — detect any animal emoji (duck/turtle/bear/wolf)
-      if (message.type === "text") {
-        const animalId = detectAnimalEmoji(message.content);
-        if (animalId) {
-          return <AnimalBubble animalId={animalId} isMine={isSentByMe} />;
+      // Animal message — check kind-based animal signal
+      if (message.type === "animal") {
+        if (message.animalId) {
+          return (
+            <AnimalBubble animalId={message.animalId} isMine={isSentByMe} />
+          );
         }
+        // Fallback: animal message with missing animalId
+        return (
+          <Text style={{ fontSize: 13, fontStyle: "italic", opacity: 0.5 }}>
+            (Animal unavailable)
+          </Text>
+        );
       }
 
       if (message.type === "voice") {
@@ -420,8 +431,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
     };
 
     // Is this an animal message?
-    const isAnimal =
-      message.type === "text" && detectAnimalEmoji(message.content) !== null;
+    const isAnimal = message.type === "animal" && !!message.animalId;
 
     // Create SwipeableMessage format - convert Date to timestamp
     const createdAtTimestamp =
@@ -571,6 +581,21 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
             </View>
           </View>
         </View>
+
+        {/* Thread indicator — show when this message is the root of a thread */}
+        {!!message.replyCount && message.replyCount > 0 && (
+          <ThreadIndicator
+            replyCount={message.replyCount}
+            isOutgoing={isSentByMe}
+            onPress={() =>
+              navigation.navigate("ThreadView", {
+                conversationId: chatId,
+                scope: "dm" as const,
+                rootMessageId: message.id,
+              })
+            }
+          />
+        )}
       </SwipeableMessage>
     );
   },

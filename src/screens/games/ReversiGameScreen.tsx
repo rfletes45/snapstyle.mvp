@@ -38,6 +38,11 @@ import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -249,6 +254,23 @@ function ReversiGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "reversi_game") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
   const [lastMove, setLastMove] = useState<[number, number] | null>(null);
 
   // Colyseus multiplayer hook (declared before lobby controller so room is available)
@@ -396,6 +418,9 @@ function ReversiGameScreen({
       setIsDraw(false);
       setScores({ p1: 2, p2: 2 });
       setLastMove(null);
+      setXpEarned(0);
+      setDidLevelUp(false);
+      setNewLevel(0);
       setScreenState("playing");
       updateValidMoves(b, 1);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -429,11 +454,51 @@ function ReversiGameScreen({
               score: newWins,
               duration: 0,
             });
+            // Submit win to XP pipeline
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "reversi_game",
+                mode: "solo",
+                outcome: "win",
+                score: p1,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
           }
         } else if (p2 > p1) {
           setWinner(2);
+          // Submit loss to XP pipeline
+          if (currentFirebaseUser) {
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "reversi_game",
+                mode: "solo",
+                outcome: "lose",
+                score: p1,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
+          }
         } else {
           setIsDraw(true);
+          // Submit draw to XP pipeline
+          if (currentFirebaseUser) {
+            submitGameResult(
+              buildGameResultEvent({
+                gameId: "reversi_game",
+                mode: "solo",
+                outcome: "draw",
+                score: p1,
+                durationMs: 0,
+                userId: currentFirebaseUser.uid,
+                displayName: currentFirebaseUser.displayName || "Player",
+              }),
+            ).catch(() => {});
+          }
         }
         setScreenState("result");
         return true;
@@ -782,6 +847,14 @@ function ReversiGameScreen({
             <Text style={{ color: colors.textSecondary, textAlign: "center" }}>
               Black: {scores.p1} — White: {scores.p2}
             </Text>
+            {xpEarned > 0 && (
+              <Text
+                style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+              >
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+              </Text>
+            )}
           </Dialog.Content>
           <Dialog.Actions style={styles.dialogActions}>
             <Button onPress={() => startGame(gameMode)}>Play Again</Button>

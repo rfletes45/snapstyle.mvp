@@ -16,6 +16,7 @@ import {
   sendFriendRequest,
 } from "@/services/friends";
 import { submitReport } from "@/services/reporting";
+import { searchUsers, type UserSearchResult } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useUser } from "@/store/UserContext";
@@ -33,13 +34,24 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from "react-native";
 import {
@@ -100,9 +112,14 @@ export default function FriendsScreen({ navigation }: any) {
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
-  const [addFriendUsername, setAddFriendUsername] = useState("");
-  const [addFriendLoading, setAddFriendLoading] = useState(false);
+  const [addFriendQuery, setAddFriendQuery] = useState("");
+  const [addFriendResults, setAddFriendResults] = useState<UserSearchResult[]>(
+    [],
+  );
+  const [addFriendSearching, setAddFriendSearching] = useState(false);
+  const [addFriendSending, setAddFriendSending] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Block/Report state
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
@@ -351,28 +368,90 @@ export default function FriendsScreen({ navigation }: any) {
     setRefreshing(false);
   }, [loadData]);
 
-  const handleAddFriend = useCallback(async () => {
-    if (!uid || !addFriendUsername.trim()) {
-      Alert.alert("Error", "Please enter a username");
-      return;
-    }
+  // ---- Add Friend autocomplete search ----
+  const handleAddFriendQueryChange = useCallback(
+    (text: string) => {
+      setAddFriendQuery(text);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
 
-    try {
-      setAddFriendLoading(true);
-      await sendFriendRequest(uid, addFriendUsername.trim());
-      Alert.alert("Success", "Connection request sent!");
-      setAddFriendUsername("");
-      setAddFriendModalVisible(false);
-      await loadData();
-    } catch (error: any) {
-      Alert.alert(
-        "Error",
-        error.message || "Failed to send connection request",
+      if (!text.trim()) {
+        setAddFriendResults([]);
+        setAddFriendSearching(false);
+        return;
+      }
+
+      setAddFriendSearching(true);
+      searchTimerRef.current = setTimeout(async () => {
+        if (!uid) return;
+        try {
+          const results = await searchUsers(text, uid);
+          setAddFriendResults(results);
+        } catch {
+          setAddFriendResults([]);
+        } finally {
+          setAddFriendSearching(false);
+        }
+      }, 200);
+    },
+    [uid],
+  );
+
+  // Cleanup debounce timer
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, []);
+
+  // Determine friend status for a given uid
+  const getFriendStatus = useCallback(
+    (targetUid: string): "friends" | "requested" | "incoming" | "none" => {
+      // Already friends?
+      const isFriend = friends.some((f) => f.users.includes(targetUid));
+      if (isFriend) return "friends";
+
+      // Sent request?
+      const sentReq = pendingRequests.find(
+        (r) => r.from === uid && r.to === targetUid && r.status === "pending",
       );
-    } finally {
-      setAddFriendLoading(false);
-    }
-  }, [uid, addFriendUsername, loadData]);
+      if (sentReq) return "requested";
+
+      // Incoming request?
+      const inReq = pendingRequests.find(
+        (r) => r.to === uid && r.from === targetUid && r.status === "pending",
+      );
+      if (inReq) return "incoming";
+
+      return "none";
+    },
+    [friends, pendingRequests, uid],
+  );
+
+  const handleSendRequestFromSearch = useCallback(
+    async (targetUsername: string, targetUid: string) => {
+      if (!uid) return;
+      try {
+        setAddFriendSending(targetUid);
+        await sendFriendRequest(uid, targetUsername);
+        await loadData();
+      } catch (error: any) {
+        Alert.alert(
+          "Error",
+          error.message || "Failed to send connection request",
+        );
+      } finally {
+        setAddFriendSending(null);
+      }
+    },
+    [uid, loadData],
+  );
+
+  const handleCloseAddFriendModal = useCallback(() => {
+    setAddFriendModalVisible(false);
+    setAddFriendQuery("");
+    setAddFriendResults([]);
+    setAddFriendSearching(false);
+  }, []);
 
   const handleAcceptRequest = useCallback(
     async (requestId: string) => {
@@ -515,7 +594,9 @@ export default function FriendsScreen({ navigation }: any) {
     return friends.filter((f) => {
       const name = f.otherUserProfile?.username?.toLowerCase() || "";
       const display = f.otherUserProfile?.displayName?.toLowerCase() || "";
-      return name.includes(normalizedQuery) || display.includes(normalizedQuery);
+      return (
+        name.includes(normalizedQuery) || display.includes(normalizedQuery)
+      );
     });
   }, [friends, normalizedQuery]);
 
@@ -524,7 +605,9 @@ export default function FriendsScreen({ navigation }: any) {
     return receivedRequests.filter((r) => {
       const name = r.otherUserProfile?.username?.toLowerCase() || "";
       const display = r.otherUserProfile?.displayName?.toLowerCase() || "";
-      return name.includes(normalizedQuery) || display.includes(normalizedQuery);
+      return (
+        name.includes(normalizedQuery) || display.includes(normalizedQuery)
+      );
     });
   }, [receivedRequests, normalizedQuery]);
 
@@ -883,65 +966,220 @@ export default function FriendsScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* Add Connection Modal */}
+      {/* Add Connection Modal — Live Autocomplete */}
       <Modal
         visible={addFriendModalVisible}
-        onRequestClose={() => setAddFriendModalVisible(false)}
+        onRequestClose={handleCloseAddFriendModal}
         transparent
         animationType="fade"
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
           <View
             style={[
               styles.modalContent,
               { backgroundColor: theme.colors.surface },
             ]}
           >
-            <View style={styles.modalInner}>
+            {/* Header row */}
+            <View style={styles.modalHeaderRow}>
               <Text
                 variant="headlineSmall"
                 style={[styles.modalTitle, { color: theme.colors.onSurface }]}
               >
                 Add Connection
               </Text>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.modalSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Enter their username
-              </Text>
-
-              <Searchbar
-                placeholder="Username..."
-                value={addFriendUsername}
-                onChangeText={setAddFriendUsername}
-                style={styles.modalInput}
-                editable={!addFriendLoading}
+              <IconButton
+                icon="close"
+                size={22}
+                onPress={handleCloseAddFriendModal}
+                accessibilityLabel="Close"
               />
+            </View>
 
-              <View style={styles.modalActions}>
-                <Button
-                  mode="text"
-                  onPress={() => setAddFriendModalVisible(false)}
-                  disabled={addFriendLoading}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  mode="contained"
-                  onPress={handleAddFriend}
-                  loading={addFriendLoading}
-                  disabled={addFriendLoading || !addFriendUsername.trim()}
-                >
-                  Send Request
-                </Button>
-              </View>
+            {/* Search input */}
+            <Searchbar
+              placeholder="Search by username…"
+              value={addFriendQuery}
+              onChangeText={handleAddFriendQueryChange}
+              style={styles.modalSearchbar}
+              autoFocus
+            />
+
+            {/* Results area */}
+            <View style={styles.modalResultsContainer}>
+              {addFriendSearching && addFriendResults.length === 0 && (
+                <View style={styles.modalLoadingContainer}>
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.colors.primary}
+                  />
+                  <Text
+                    variant="bodySmall"
+                    style={[
+                      styles.modalLoadingText,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    Searching…
+                  </Text>
+                </View>
+              )}
+
+              {!addFriendSearching &&
+                addFriendQuery.trim().length > 0 &&
+                addFriendResults.length === 0 && (
+                  <View style={styles.modalEmptyContainer}>
+                    <IconButton
+                      icon="account-search-outline"
+                      size={40}
+                      iconColor={theme.colors.onSurfaceVariant}
+                    />
+                    <Text
+                      variant="bodyMedium"
+                      style={{
+                        color: theme.colors.onSurfaceVariant,
+                        textAlign: "center",
+                      }}
+                    >
+                      No users found for "{addFriendQuery.trim()}"
+                    </Text>
+                  </View>
+                )}
+
+              {addFriendQuery.trim().length === 0 && (
+                <View style={styles.modalEmptyContainer}>
+                  <IconButton
+                    icon="magnify"
+                    size={40}
+                    iconColor={theme.colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="bodyMedium"
+                    style={{
+                      color: theme.colors.onSurfaceVariant,
+                      textAlign: "center",
+                    }}
+                  >
+                    Type a username to find people
+                  </Text>
+                </View>
+              )}
+
+              <FlatList
+                data={addFriendResults}
+                keyExtractor={(item) => item.uid}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const status = getFriendStatus(item.uid);
+                  const isSending = addFriendSending === item.uid;
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.searchResultRow,
+                        { borderBottomColor: theme.colors.outlineVariant },
+                      ]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (status === "none") {
+                          handleSendRequestFromSearch(item.username, item.uid);
+                        }
+                      }}
+                      disabled={status !== "none" || isSending}
+                    >
+                      <ProfilePictureWithDecoration
+                        pictureUrl={item.profilePictureUrl}
+                        name={item.displayName || item.username}
+                        decorationId={item.decorationId}
+                        size={40}
+                      />
+                      <View style={styles.searchResultInfo}>
+                        <Text
+                          variant="bodyMedium"
+                          style={[
+                            styles.searchResultName,
+                            { color: theme.colors.onSurface },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.displayName || item.username}
+                        </Text>
+                        <Text
+                          variant="bodySmall"
+                          style={{ color: theme.colors.onSurfaceVariant }}
+                          numberOfLines={1}
+                        >
+                          @{item.username}
+                        </Text>
+                      </View>
+                      <View style={styles.searchResultAction}>
+                        {isSending ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={theme.colors.primary}
+                          />
+                        ) : status === "friends" ? (
+                          <Chip
+                            compact
+                            style={{
+                              backgroundColor: theme.colors.secondaryContainer,
+                            }}
+                            textStyle={{ fontSize: 11 }}
+                          >
+                            Friends
+                          </Chip>
+                        ) : status === "requested" ? (
+                          <Chip
+                            compact
+                            style={{
+                              backgroundColor: theme.colors.surfaceVariant,
+                            }}
+                            textStyle={{ fontSize: 11 }}
+                          >
+                            Requested
+                          </Chip>
+                        ) : status === "incoming" ? (
+                          <Button
+                            mode="contained"
+                            compact
+                            labelStyle={{ fontSize: 11 }}
+                            onPress={() => {
+                              const req = pendingRequests.find(
+                                (r) =>
+                                  r.from === item.uid &&
+                                  r.to === uid &&
+                                  r.status === "pending",
+                              );
+                              if (req) handleAcceptRequest(req.id);
+                            }}
+                          >
+                            Accept
+                          </Button>
+                        ) : (
+                          <Button
+                            mode="contained"
+                            compact
+                            labelStyle={{ fontSize: 11 }}
+                            onPress={() =>
+                              handleSendRequestFromSearch(
+                                item.username,
+                                item.uid,
+                              )
+                            }
+                          >
+                            Add
+                          </Button>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Block User Modal */}
@@ -1179,40 +1417,80 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "flex-end",
   },
 
   modalContent: {
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    width: "85%",
-    minHeight: 250,
+    borderTopLeftRadius: BorderRadius.lg,
+    borderTopRightRadius: BorderRadius.lg,
+    paddingBottom: Spacing.lg,
+    maxHeight: "85%",
+    minHeight: 340,
   },
 
-  modalInner: {
-    flex: 1,
-    justifyContent: "center",
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
   },
 
   modalTitle: {
     fontWeight: "600",
+  },
+
+  modalSearchbar: {
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
     marginBottom: Spacing.sm,
-    textAlign: "center",
+    borderRadius: BorderRadius.md,
+    elevation: 0,
   },
 
-  modalSubtitle: {
-    marginBottom: Spacing.md,
-    textAlign: "center",
+  modalResultsContainer: {
+    flex: 1,
+    minHeight: 180,
   },
 
-  modalInput: {
-    marginBottom: Spacing.lg,
-  },
-
-  modalActions: {
+  modalLoadingContainer: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.lg,
     gap: Spacing.sm,
+  },
+
+  modalLoadingText: {
+    fontSize: 14,
+  },
+
+  modalEmptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.xl,
+  },
+
+  searchResultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+
+  searchResultInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+
+  searchResultName: {
+    fontWeight: "500",
+  },
+
+  searchResultAction: {
+    marginLeft: Spacing.sm,
+    minWidth: 80,
+    alignItems: "flex-end",
   },
 });

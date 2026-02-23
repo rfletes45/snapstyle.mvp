@@ -2121,22 +2121,10 @@ export const onGamePlayedTaskProgress = functions.firestore
       // Update "play_game" tasks
       await updateTaskProgress(playerId, "play_game");
 
-      // For "win_game" tasks, check if score meets threshold
-      // This requires checking the task definition for the threshold
-      const winTasksQuery = await db
-        .collection("Tasks")
-        .where("active", "==", true)
-        .where("type", "==", "win_game")
-        .get();
-
-      for (const taskDoc of winTasksQuery.docs) {
-        const task = taskDoc.data();
-        const isWin = false;
-
-        if (isWin) {
-          await updateTaskProgress(playerId, "win_game");
-          break; // Only count once per game session
-        }
+      // For "win_game" tasks, any valid session with score > 0 counts as a win.
+      // Invalid scores are already filtered by onGameSessionCreated.
+      if (score > 0) {
+        await updateTaskProgress(playerId, "win_game");
       }
     } catch (error) {
       console.error("❌ [onGamePlayedTaskProgress] Error:", error);

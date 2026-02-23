@@ -17,7 +17,7 @@ const logger = createLogger("services/database/index");
 // =============================================================================
 
 const DATABASE_NAME = "snapstyle.db";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 /**
  * Check if SQLite is available on this platform
@@ -102,6 +102,31 @@ function initializeSchema(database: SQLiteDatabase): void {
     }
   }
 
+  // ---- Migration from v2 → v3: add thread columns ----
+  if (currentVersion <= 2 && currentVersion >= 1) {
+    try {
+      database.execSync(`ALTER TABLE messages ADD COLUMN thread_root_id TEXT;`);
+      database.execSync(
+        `ALTER TABLE messages ADD COLUMN reply_count INTEGER DEFAULT 0;`,
+      );
+      database.execSync(
+        `ALTER TABLE messages ADD COLUMN last_reply_at INTEGER;`,
+      );
+      database.execSync(
+        `CREATE INDEX IF NOT EXISTS idx_messages_thread
+         ON messages(thread_root_id, server_received_at DESC);`,
+      );
+      logger.info(
+        "[Database] Migrated v2 → v3: added thread_root_id, reply_count, last_reply_at",
+      );
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("duplicate column")) {
+        throw e;
+      }
+    }
+  }
+
   if (currentVersion < DATABASE_VERSION) {
     database.execSync(`
       -- Conversations table
@@ -135,6 +160,9 @@ function initializeSchema(database: SQLiteDatabase): void {
         edited_at INTEGER,
         reply_to_id TEXT,
         reply_to_preview TEXT,
+        thread_root_id TEXT,
+        reply_count INTEGER DEFAULT 0,
+        last_reply_at INTEGER,
         mentions_json TEXT,
         reactions_json TEXT,
         deleted_for_all INTEGER DEFAULT 0,
@@ -199,6 +227,8 @@ function initializeSchema(database: SQLiteDatabase): void {
         ON messages(sync_status) WHERE sync_status != 'synced';
       CREATE INDEX IF NOT EXISTS idx_messages_created 
         ON messages(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_thread
+        ON messages(thread_root_id, server_received_at DESC);
       CREATE INDEX IF NOT EXISTS idx_attachments_message 
         ON attachments(message_id);
       CREATE INDEX IF NOT EXISTS idx_attachments_download 

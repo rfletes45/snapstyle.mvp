@@ -10,9 +10,10 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useMemo } from "react";
-import { Image, StyleSheet, View, ViewStyle } from "react-native";
+import { StyleSheet, View, ViewStyle } from "react-native";
 import { Text } from "react-native-paper";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
 import type { CosmeticImageSource } from "@/cosmetics/types";
@@ -148,10 +149,11 @@ function UserProfileHeaderBase({
       <View style={styles.headerRegion}>
         {/* Background Image */}
         {backgroundSource && (
-          <Image
+          <CosmeticImage
             source={backgroundSource}
             style={styles.backgroundImage}
-            resizeMode="cover"
+            debugLabel="user-profile-bg"
+            transition={0}
           />
         )}
 

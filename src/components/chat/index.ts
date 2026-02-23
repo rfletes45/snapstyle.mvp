@@ -144,6 +144,10 @@ export { ReactionDetailSheet } from "./ReactionDetailSheet";
 // Seen By Sheet (group read receipts)
 export { SeenBySheet } from "./SeenBySheet";
 
+// Thread Indicator (reply thread navigation)
+export { ThreadIndicator } from "./ThreadIndicator";
+export type { ThreadIndicatorProps } from "./ThreadIndicator";
+
 // Duck Feature (legacy — kept for backward compat)
 export { default as DuckBubble } from "./DuckBubble";
 export { DUCK_BG, DUCK_FG, default as DuckIcon } from "./DuckIcon";

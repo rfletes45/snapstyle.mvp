@@ -11,11 +11,21 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useCrosswordMultiplayer } from "@/hooks/useCrosswordMultiplayer";
+import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -52,11 +62,6 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
 
 // =============================================================================
 // Constants
@@ -286,8 +291,8 @@ function CrosswordGameScreen({
   const spectatorCount =
     spectatorSession.spectatorCount > 0
       ? spectatorSession.spectatorCount
-      : (cmp.rawState as { spectatorCount?: number } | null)?.spectatorCount ??
-        0;
+      : ((cmp.rawState as { spectatorCount?: number } | null)?.spectatorCount ??
+        0);
 
   const puzzle = useMemo(() => getDailyPuzzle(), []);
   const [userGrid, setUserGrid] = useState<(string | null)[][]>(() =>
@@ -303,6 +308,23 @@ function CrosswordGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "crossword_puzzle") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
 
   const inputRef = useRef<TextInput>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>(null!);
@@ -406,6 +428,18 @@ function CrosswordGameScreen({
             score: time,
             duration: time * 1000,
           });
+          // Submit to XP pipeline
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "crossword_puzzle",
+              mode: "solo",
+              outcome: "win",
+              score: time,
+              durationMs: time * 1000,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
         }
       }
     },
@@ -1155,6 +1189,18 @@ function CrosswordGameScreen({
                     }}
                   >
                     Best: {formatTime(personalBest.bestScore)}
+                  </Text>
+                )}
+                {xpEarned > 0 && (
+                  <Text
+                    style={{
+                      color: "#fbbf24",
+                      textAlign: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    ⭐ +{xpEarned} XP
+                    {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
                   </Text>
                 )}
               </Dialog.Content>

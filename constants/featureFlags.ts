@@ -88,13 +88,6 @@ export const DAILY_GAMES: string[] = ["word_master"];
 // =============================================================================
 
 /**
- * Show Mini-Golf debug overlay with wall segment centers,
- * corner plugs, cup radius, tee marker, and bounds rectangle.
- * Dev-only — renders as a transparent overlay on top of the game canvas.
- */
-export const DEBUG_MINIGOLF_OVERLAY = __DEV__;
-
-/**
  * Log V2 message events to console
  */
 export const DEBUG_CHAT_V2 = __DEV__;

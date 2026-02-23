@@ -153,6 +153,10 @@ function EnhancedGamesProfileHeaderBase() {
     );
   }, [navigation]);
 
+  const navigateRewards = useCallback(() => {
+    navigation.navigate("LevelRewards" as any);
+  }, [navigation]);
+
   // --- loading ---
   if (loading && !summary.uid) {
     return <HeaderSkeleton />;
@@ -208,7 +212,14 @@ function EnhancedGamesProfileHeaderBase() {
               {summary.playerTitle}
             </Text>
           ) : null}
-          <XpBar level={summary.level} compact={Platform.OS !== "web"} />
+          <TouchableOpacity
+            onPress={navigateRewards}
+            activeOpacity={0.7}
+            accessibilityLabel="View level rewards"
+            accessibilityRole="button"
+          >
+            <XpBar level={summary.level} compact={Platform.OS !== "web"} />
+          </TouchableOpacity>
         </View>
 
         {/* Right: Economy + Quick Actions */}

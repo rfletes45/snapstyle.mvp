@@ -169,6 +169,7 @@ function docToMessage(doc: DocumentSnapshot): MessageV2 | null {
     clientId: data.clientId,
     idempotencyKey: data.idempotencyKey,
     senderStyle: resolvedSenderStyle,
+    animalId: data.animalId,
     // Legacy compatibility
     content: data.content,
     type: data.type,

@@ -22,8 +22,10 @@ export function messageV2ToWithProfile(
   friendProfile: { displayName?: string; username?: string } | null,
 ): MessageWithProfile {
   // Determine message type from V2 kind
-  let type: "text" | "image" | "scorecard" | "voice" = "text";
-  if (msg.kind === "voice") {
+  let type: "text" | "image" | "scorecard" | "voice" | "animal" = "text";
+  if (msg.kind === "animal") {
+    type = "animal";
+  } else if (msg.kind === "voice") {
     type = "voice";
   } else if (msg.kind === "media") {
     type = "image";
@@ -70,6 +72,10 @@ export function messageV2ToWithProfile(
       : {}),
     // Sender's chat style snapshot (bubble color, font, etc.)
     senderStyle: msg.senderStyle ?? null,
+    // Thread reply count
+    replyCount: msg.replyCount,
+    // Animal theme ID (for animal signal messages)
+    ...(type === "animal" && msg.animalId ? { animalId: msg.animalId } : {}),
   };
 }
 
@@ -148,8 +154,20 @@ export function messageWithProfileToV2(
       message.sender === currentUid
         ? "You"
         : friendProfile?.displayName || "User",
-    kind: message.type === "image" ? "media" : "text",
+    kind:
+      message.type === "image"
+        ? "media"
+        : message.type === "animal"
+          ? "animal"
+          : message.type === "scorecard"
+            ? "scorecard"
+            : message.type === "voice"
+              ? "voice"
+              : "text",
     text: message.type === "text" ? message.content : undefined,
+    ...(message.type === "animal" && message.animalId
+      ? { animalId: message.animalId }
+      : {}),
     attachments:
       message.type === "image"
         ? [

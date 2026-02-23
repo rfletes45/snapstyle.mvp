@@ -56,6 +56,42 @@
             "priceTokens": 1200
         },
         {
+            "id": "bg_arcane_circles",
+            "type": "background",
+            "name": "Arcane Circles",
+            "priceTokens": 800
+        },
+        {
+            "id": "bg_circling_waves",
+            "type": "background",
+            "name": "Circling Waves",
+            "priceTokens": 500
+        },
+        {
+            "id": "bg_cyber_aesthetic",
+            "type": "background",
+            "name": "Cyber Aesthetic",
+            "priceTokens": 900
+        },
+        {
+            "id": "bg_cyber_screens",
+            "type": "background",
+            "name": "Cyber Screens",
+            "priceTokens": 600
+        },
+        {
+            "id": "bg_glitched_tokyo",
+            "type": "background",
+            "name": "Glitched Tokyo",
+            "priceTokens": 900
+        },
+        {
+            "id": "bg_sketched_lofi_alleyway",
+            "type": "background",
+            "name": "Sketched Lofi Alleyway",
+            "priceTokens": 550
+        },
+        {
             "id": "premium_chess",
             "type": "decoration",
             "name": "Chess Frame",

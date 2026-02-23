@@ -102,8 +102,8 @@ import { CallButtonGroup } from "@/components/calls";
 // Types & Utils
 import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
-import { getAnimalEmoji } from "@/cosmetics/animalAssets";
 import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
+import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 import type { AttachmentV2, ReplyToMetadata } from "@/types/messaging";
 import type { ReportReason, ScheduledMessage } from "@/types/models";
@@ -165,9 +165,12 @@ export default function ChatScreen({
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
   const { setCurrentChatId } = useInAppNotifications();
-  const { profile } = useUser();
+  const { profile, refreshProfile } = useUser();
   const uid = currentFirebaseUser?.uid;
   const chatAppearance = profile?.chatAppearance ?? null;
+
+  // Animal entitlement gating
+  const animalEntitlement = useAnimalEntitlement(uid, chatAppearance);
 
   // Build sender style snapshot for stamping on outgoing messages
   const senderStyle = useMemo(() => {
@@ -206,6 +209,7 @@ export default function ChatScreen({
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
+  const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
 
   // Message actions state
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
@@ -911,23 +915,39 @@ export default function ChatScreen({
     setGamePickerVisible(true);
   }, []);
 
-  // Animal button press handler — sends an animal bubble + plays animal sound
+  // Animal button press handler — sends a structured animal signal message
   const handleAnimalPress = useCallback(async () => {
     if (!uid || !chatId) return;
-    const animalId = chatAppearance?.animalThemeId ?? null;
+    const { equippedAnimalId, canSend } = animalEntitlement;
+    if (!canSend || !equippedAnimalId) return;
+
     try {
       // Play animal sound + haptic (fire and forget but still catch errors)
-      await playAnimalSound(animalId);
+      await playAnimalSound(equippedAnimalId);
     } catch (e) {
       logger.warn("❌ [ChatScreen] Animal sound error:", e);
     }
     try {
-      // Send the animal's emoji marker as a text message
-      await screen.chat.sendMessage(getAnimalEmoji(animalId), {});
+      // Send structured animal signal message (kind: "animal", animalId)
+      await screen.chat.sendMessage("", {
+        kind: "animal",
+        animalId: equippedAnimalId,
+      });
     } catch (error) {
       logger.error("❌ [ChatScreen] Animal send error:", error);
     }
-  }, [uid, chatId, chatAppearance?.animalThemeId, screen.chat]);
+  }, [uid, chatId, animalEntitlement, screen.chat]);
+
+  // Animal picker equip handler — refresh profile so the button updates
+  const handleAnimalEquipped = useCallback(
+    (animalId: string) => {
+      setAnimalPickerVisible(false);
+      // Profile uses one-shot reads; must explicitly refresh so
+      // useAnimalEntitlement picks up the new chatAppearance.animalThemeId
+      refreshProfile();
+    },
+    [refreshProfile],
+  );
 
   // Handle single-player game selection - navigate directly to game
   const handleSinglePlayerGame = useCallback(
@@ -1225,7 +1245,13 @@ export default function ChatScreen({
           onCancelReply={handleCancelReply}
           currentUid={uid}
           onAnimalPress={handleAnimalPress}
-          animalThemeId={chatAppearance?.animalThemeId}
+          animalThemeId={animalEntitlement.equippedAnimalId}
+          animalLocked={!animalEntitlement.canSend}
+          animalPickerVisible={animalPickerVisible}
+          onAnimalLongPress={() => setAnimalPickerVisible(true)}
+          onAnimalPickerClose={() => setAnimalPickerVisible(false)}
+          currentUserId={uid}
+          onAnimalEquipped={handleAnimalEquipped}
           onGamePress={handleGamePress}
           voiceButtonComponent={
             voiceRecorder.isAvailable &&
@@ -1241,6 +1267,7 @@ export default function ChatScreen({
             ) : undefined
           }
           keyboardHeight={screen.keyboard.keyboardHeight}
+          keyboardProgress={screen.keyboard.keyboardProgress}
           safeAreaBottom={insets.bottom}
           absolutePosition={true}
         />

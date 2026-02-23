@@ -1,3 +1,4 @@
+import { GameResultToastManager } from "@/components/GameResultToastManager";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   BottomTabNavigationOptions,
@@ -40,6 +41,7 @@ import ChatListScreen from "@/screens/chat/ChatListScreenV2";
 import ChatScreen from "@/screens/chat/ChatScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
 import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
+import ThreadScreen from "@/screens/chat/ThreadScreen";
 import FriendsScreen from "@/screens/friends/FriendsScreen";
 import AchievementsScreen from "@/screens/games/AchievementsScreen";
 import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
@@ -53,9 +55,8 @@ import GameHistoryScreen from "@/screens/games/GameHistoryScreen";
 import GamesHubScreen from "@/screens/games/GamesHubScreen";
 import GomokuMasterGameScreen from "@/screens/games/GomokuMasterGameScreen";
 import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
-import LightsOutGameScreen from "@/screens/games/LightsOutGameScreen";
+import LevelRewardsScreen from "@/screens/games/LevelRewardsScreen";
 import MinesweeperGameScreen from "@/screens/games/MinesweeperGameScreen";
-import MiniGolfDuelsGameScreen from "@/screens/games/MiniGolfDuelsGameScreen";
 import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
 import SketchPartyGameScreen from "@/screens/games/SketchPartyGameScreen";
 import StarforgeGameScreen from "@/screens/games/StarforgeGameScreen";
@@ -76,7 +77,7 @@ import UserProfileScreen from "@/screens/profile/UserProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
-import StoriesScreen from "@/screens/stories/StoriesScreen";
+import MomentsUnderConstructionScreen from "@/screens/stories/MomentsUnderConstructionScreen";
 import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
 // DebugScreens only loaded in development
 const DebugScreen = __DEV__
@@ -93,7 +94,6 @@ import CosmeticsShopScreen from "@/screens/shop/CosmeticsShopScreen";
 import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
 import PurchaseHistoryScreen from "@/screens/shop/PurchaseHistoryScreen";
 import ShopHubScreen from "@/screens/shop/ShopHubScreen";
-import ShopScreen from "@/screens/shop/ShopScreen";
 
 import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
@@ -146,7 +146,6 @@ const SafeWordGame = withErrorBoundary(WordMasterGameScreen);
 const SafeFourGame = withErrorBoundary(ConnectFourGameScreen);
 const SafeMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
 const SafeDotsGame = withErrorBoundary(DotMatchGameScreen);
-const SafeLightsGame = withErrorBoundary(LightsOutGameScreen);
 const SafeGomokuGame = withErrorBoundary(GomokuMasterGameScreen);
 // Phase 3 safe wrappers
 const SafePongGame = withErrorBoundary(PongGameScreen);
@@ -154,11 +153,11 @@ const SafeReversiGame = withErrorBoundary(ReversiGameScreen);
 const SafeCrosswordGame = withErrorBoundary(CrosswordGameScreen);
 const SafeStarforgeGame = withErrorBoundary(StarforgeGameScreen);
 const SafeSketchPartyGame = withErrorBoundary(SketchPartyGameScreen);
-const SafeMiniGolfDuelsGame = withErrorBoundary(MiniGolfDuelsGameScreen);
 const SafeGamesHub = withErrorBoundary(GamesHubScreen);
 const SafeLeaderboard = withErrorBoundary(LeaderboardScreen);
 const SafeAchievements = withErrorBoundary(AchievementsScreen);
 const SafeGameHistory = withErrorBoundary(GameHistoryScreen);
+const SafeLevelRewards = withErrorBoundary(LevelRewardsScreen);
 const SafeGameDetails = withErrorBoundary(GameDetailsScreen);
 const SafeSpectatorView = withErrorBoundary(SpectatorViewScreen);
 /**
@@ -183,7 +182,6 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "FourGame",
   "MinesweeperGame",
   "DotsGame",
-  "LightsGame",
   "GomokuGame",
   // Phase 3 game screens
   "PongGame",
@@ -329,8 +327,8 @@ function MomentsStack() {
     >
       <MomentsStack_Nav.Screen
         name="StoriesList"
-        component={StoriesScreen}
-        options={{ title: "Moments" }}
+        component={MomentsUnderConstructionScreen}
+        options={{ headerShown: false }}
       />
       <MomentsStack_Nav.Screen
         name="StoryViewer"
@@ -466,14 +464,6 @@ function PlayStack() {
         }}
       />
       <PlayStack_Nav.Screen
-        name="LightsGame"
-        component={SafeLightsGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
         name="GomokuGame"
         component={SafeGomokuGame}
         options={{
@@ -526,15 +516,6 @@ function PlayStack() {
         }}
       />
       <PlayStack_Nav.Screen
-        name="MiniGolfDuelsGame"
-        component={SafeMiniGolfDuelsGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
         name="GameDetails"
         component={SafeGameDetails}
         options={{ headerShown: false }}
@@ -552,6 +533,11 @@ function PlayStack() {
       <PlayStack_Nav.Screen
         name="GameHistory"
         component={SafeGameHistory}
+        options={{ headerShown: false }}
+      />
+      <PlayStack_Nav.Screen
+        name="LevelRewards"
+        component={SafeLevelRewards}
         options={{ headerShown: false }}
       />
     </PlayStack_Nav.Navigator>
@@ -642,7 +628,7 @@ function ProfileStack() {
       />
       <ProfileStack_Nav.Screen
         name="Shop"
-        component={ShopScreen}
+        component={ShopHubScreen}
         options={{ headerShown: false }}
       />
       <ProfileStack_Nav.Screen
@@ -650,13 +636,18 @@ function ProfileStack() {
         component={AdminReportsQueueScreen}
         options={{ headerShown: false }}
       />
+      <ProfileStack_Nav.Screen
+        name="LevelRewards"
+        component={SafeLevelRewards}
+        options={{ headerShown: false }}
+      />
     </ProfileStack_Nav.Navigator>
   );
 }
 
 /**
- * Main App Tabs - Rebranded
- * Shop | Play | Inbox | Moments | Profile
+ * Main App Tabs
+ * Shop | Inbox | Play | Moments | Profile
  */
 function AppTabs() {
   const { colors } = useAppTheme();
@@ -727,20 +718,20 @@ function AppTabs() {
         options={{ headerShown: false }}
       />
       <Tab.Screen
-        name="Play"
-        component={PlayStack}
-        options={({ route }) => ({
-          headerShown: false,
-          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
-        })}
-      />
-      <Tab.Screen
         name="Inbox"
         component={InboxStack}
         options={{
           headerShown: false,
           // Tab bar always visible - chat screens slide over from root level
         }}
+      />
+      <Tab.Screen
+        name="Play"
+        component={PlayStack}
+        options={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
+        })}
       />
       <Tab.Screen
         name="Moments"
@@ -810,6 +801,14 @@ function MainStack() {
         component={GroupChatScreen}
         options={{
           headerShown: false,
+        }}
+      />
+      <MainStack_Nav.Screen
+        name="ThreadView"
+        component={ThreadScreen}
+        options={{
+          headerShown: false,
+          animation: "slide_from_right",
         }}
       />
       <MainStack_Nav.Screen
@@ -1072,6 +1071,7 @@ export default function RootNavigator({
             <>
               <MainStack />
               <WarningModal />
+              <GameResultToastManager />
             </>
           ) : hydrationState === "needs_profile" ? (
             <ProfileSetupStack_Nav.Navigator

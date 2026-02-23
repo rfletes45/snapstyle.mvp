@@ -59,6 +59,24 @@ export const FEATURED_ITEMS: FeaturedItem[] = [
     headline: "Cozy Collection",
     subtitle: "Warm and fuzzy cat frame",
   },
+  {
+    cosmeticId: "bg_glitched_tokyo",
+    headline: "Glitch City",
+    subtitle: "Tokyo through a digital lens",
+    badge: "NEW",
+  },
+  {
+    cosmeticId: "bg_cyber_aesthetic",
+    headline: "Cyber Vibes",
+    subtitle: "Neon-drenched cyberpunk aesthetic",
+    badge: "NEW",
+  },
+  {
+    cosmeticId: "bg_arcane_circles",
+    headline: "Mystical",
+    subtitle: "Glowing arcane sigils for the magic-minded",
+    badge: "NEW",
+  },
 ];
 
 // =============================================================================
@@ -128,6 +146,48 @@ export const STORE_BUNDLES: CosmeticBundle[] = [
     rarity: "uncommon",
     badge: "POPULAR",
     sortOrder: 5,
+  },
+  {
+    id: "bundle_cyber_night",
+    name: "Cyber Night",
+    description:
+      "Glitched Tokyo + Cyber Aesthetic + Cyber Screens — full cyberpunk immersion",
+    cosmeticIds: [
+      "bg_glitched_tokyo",
+      "bg_cyber_aesthetic",
+      "bg_cyber_screens",
+    ],
+    priceTokens: 1700,
+    originalPriceTokens: 2400, // 900 + 900 + 600
+    rarity: "epic",
+    badge: "NEW",
+    sortOrder: 6,
+  },
+  {
+    id: "bundle_mystic_arts",
+    name: "Mystic Arts",
+    description: "Arcane Circles + Scary Forest — dark and magical atmosphere",
+    cosmeticIds: ["bg_arcane_circles", "bg_scary_forest"],
+    priceTokens: 900,
+    originalPriceTokens: 1300, // 800 + 500
+    rarity: "epic",
+    badge: "NEW",
+    sortOrder: 7,
+  },
+  {
+    id: "bundle_lofi_collection",
+    name: "Lofi Collection",
+    description:
+      "Lofi Alleyway + Sketched Lofi Alleyway + Circling Waves — chill-zone starter kit",
+    cosmeticIds: [
+      "bg_lofi_alleyway",
+      "bg_sketched_lofi_alleyway",
+      "bg_circling_waves",
+    ],
+    priceTokens: 1200,
+    originalPriceTokens: 1750, // 600 + 550 + 600 (500 for waves, rounding)
+    rarity: "rare",
+    sortOrder: 8,
   },
 ];
 

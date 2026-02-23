@@ -10,13 +10,24 @@
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
-import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import ScoreRaceOverlay, {
+  type ScoreRaceOverlayPhase,
+} from "@/components/ScoreRaceOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
+import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { usePhysicsGame } from "@/hooks/usePhysicsGame";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -47,10 +58,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-} from "react-native-reanimated";
 import {
   Dimensions,
   Platform,
@@ -58,12 +65,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Button, Dialog, Portal, Text } from "react-native-paper";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 
 // =============================================================================
 // Constants
@@ -146,6 +153,23 @@ function PongGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "pong_game") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Spectator hosting
   const spectatorHost = useSpectator({
@@ -328,6 +352,20 @@ function PongGameScreen({
       if (aiScoreRef.current >= WIN_SCORE) {
         setGameState("result");
         spectatorHost.endHosting(playerScoreRef.current);
+        // Submit loss to XP pipeline
+        if (currentFirebaseUser) {
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "pong_game",
+              mode: "solo",
+              outcome: "lose",
+              score: playerScoreRef.current,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
         return;
       }
       resetBall();
@@ -355,6 +393,18 @@ function PongGameScreen({
             score: newWins,
             duration: 0,
           });
+          // Submit win to XP pipeline
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "pong_game",
+              mode: "solo",
+              outcome: "win",
+              score: newWins,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
         }
         return;
       }
@@ -418,6 +468,9 @@ function PongGameScreen({
       setAiScore(0);
       playerScoreRef.current = 0;
       aiScoreRef.current = 0;
+      setXpEarned(0);
+      setDidLevelUp(false);
+      setNewLevel(0);
       playerX.current = COURT_W / 2 - PADDLE_W / 2;
       aiX.current = COURT_W / 2 - PADDLE_W / 2;
       playerPaddleX.value = playerX.current;
@@ -445,7 +498,10 @@ function PongGameScreen({
     (moveX: number) => {
       const newX = Math.max(
         0,
-        Math.min(COURT_W - playerPaddleW.current, moveX - 16 - playerPaddleW.current / 2),
+        Math.min(
+          COURT_W - playerPaddleW.current,
+          moveX - 16 - playerPaddleW.current / 2,
+        ),
       );
       playerX.current = newX;
       playerPaddleX.value = newX;
@@ -548,259 +604,280 @@ function PongGameScreen({
             <View
               style={[styles.court, { borderColor: "rgba(255,255,255,0.15)" }]}
             >
-            {/* Skia court background + center line */}
-            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-              {/* Court gradient */}
-              <RoundedRect x={0} y={0} width={COURT_W} height={COURT_H} r={10}>
-                <LinearGradient
-                  start={vec(0, 0)}
-                  end={vec(0, COURT_H)}
-                  colors={["#1A2332", "#0F1923", "#0A1118"]}
-                />
-                <Shadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
-              </RoundedRect>
-              {/* Top/bottom goal zone highlights */}
-              <RoundedRect x={4} y={4} width={COURT_W - 8} height={30} r={6}>
-                <LinearGradient
-                  start={vec(0, 4)}
-                  end={vec(0, 34)}
-                  colors={["rgba(231,76,60,0.12)", "rgba(231,76,60,0)"]}
-                />
-              </RoundedRect>
-              <RoundedRect
-                x={4}
-                y={COURT_H - 34}
-                width={COURT_W - 8}
-                height={30}
-                r={6}
-              >
-                <LinearGradient
-                  start={vec(0, COURT_H - 4)}
-                  end={vec(0, COURT_H - 34)}
-                  colors={["rgba(52,152,219,0.12)", "rgba(52,152,219,0)"]}
-                />
-              </RoundedRect>
-              {/* Center dashed line */}
-              <SkiaLine
-                p1={vec(16, COURT_H / 2)}
-                p2={vec(COURT_W - 16, COURT_H / 2)}
-                color="rgba(255,255,255,0.15)"
-                strokeWidth={2}
-                style="stroke"
-              >
-                <DashPathEffect intervals={[8, 8]} />
-              </SkiaLine>
-              {/* Center circle */}
-              <Circle
-                cx={COURT_W / 2}
-                cy={COURT_H / 2}
-                r={30}
-                color="rgba(255,255,255,0.06)"
-                style="stroke"
-                strokeWidth={1.5}
-              />
-            </Canvas>
-
-            {/* AI paddle — Skia metallic */}
-            <Animated.View
-              style={[
-                styles.paddle,
-                {
-                  width: PADDLE_W,
-                  top: 10,
-                },
-                aiPaddleStyle,
-              ]}
-            >
-              <Canvas style={{ width: PADDLE_W, height: PADDLE_H }}>
+              {/* Skia court background + center line */}
+              <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+                {/* Court gradient */}
                 <RoundedRect
                   x={0}
                   y={0}
-                  width={PADDLE_W}
-                  height={PADDLE_H}
-                  r={7}
+                  width={COURT_W}
+                  height={COURT_H}
+                  r={10}
                 >
                   <LinearGradient
                     start={vec(0, 0)}
-                    end={vec(0, PADDLE_H)}
-                    colors={["#FF6B6B", "#E74C3C", "#C0392B"]}
-                  />
-                  <Shadow dx={0} dy={2} blur={6} color="rgba(231,76,60,0.5)" />
-                </RoundedRect>
-                {/* Top highlight */}
-                <RoundedRect
-                  x={2}
-                  y={1}
-                  width={PADDLE_W - 4}
-                  height={3}
-                  r={1.5}
-                >
-                  <LinearGradient
-                    start={vec(0, 1)}
-                    end={vec(0, 4)}
-                    colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0)"]}
-                  />
-                </RoundedRect>
-              </Canvas>
-            </Animated.View>
-
-            {/* Ball — Skia glowing sphere */}
-            <Animated.View
-              style={[
-                styles.ball,
-                {
-                  width: ball.current.r * 2,
-                  height: ball.current.r * 2,
-                },
-                ballStyle,
-              ]}
-            >
-              <Canvas
-                style={{
-                  width: ball.current.r * 2,
-                  height: ball.current.r * 2,
-                }}
-              >
-                {/* Glow halo */}
-                <Circle
-                  cx={ball.current.r}
-                  cy={ball.current.r}
-                  r={ball.current.r}
-                >
-                  <RadialGradient
-                    c={vec(ball.current.r, ball.current.r)}
-                    r={ball.current.r}
-                    colors={[
-                      colors.primary,
-                      `${colors.primary}44`,
-                      `${colors.primary}00`,
-                    ]}
-                  />
-                </Circle>
-                {/* Ball body */}
-                <Circle
-                  cx={ball.current.r}
-                  cy={ball.current.r}
-                  r={ball.current.r * 0.75}
-                >
-                  <RadialGradient
-                    c={vec(ball.current.r * 0.7, ball.current.r * 0.6)}
-                    r={ball.current.r * 0.75}
-                    colors={["#FFFFFF", colors.primary, `${colors.primary}CC`]}
-                  />
-                  <Shadow
-                    dx={0}
-                    dy={1}
-                    blur={4}
-                    color={`${colors.primary}88`}
-                  />
-                </Circle>
-              </Canvas>
-            </Animated.View>
-
-            {/* Power-up */}
-            {powerUp.current?.active && (
-              <View
-                style={[
-                  styles.powerUp,
-                  {
-                    left: powerUp.current.x - 15,
-                    top: powerUp.current.y - 15,
-                  },
-                ]}
-              >
-                <Canvas style={{ width: 30, height: 30 }}>
-                  {/* Glow */}
-                  <Circle cx={15} cy={15} r={15}>
-                    <RadialGradient
-                      c={vec(15, 15)}
-                      r={15}
-                      colors={[
-                        powerUp.current.type === "speed"
-                          ? "rgba(243,156,18,0.6)"
-                          : powerUp.current.type === "big"
-                            ? "rgba(46,204,113,0.6)"
-                            : "rgba(231,76,60,0.6)",
-                        "rgba(0,0,0,0)",
-                      ]}
-                    />
-                  </Circle>
-                  {/* Body */}
-                  <Circle cx={15} cy={15} r={12}>
-                    <RadialGradient
-                      c={vec(12, 10)}
-                      r={12}
-                      colors={
-                        powerUp.current.type === "speed"
-                          ? ["#FFC048", "#F39C12", "#D68910"]
-                          : powerUp.current.type === "big"
-                            ? ["#5DFFBA", "#2ECC71", "#1E8449"]
-                            : ["#FF7979", "#E74C3C", "#C0392B"]
-                      }
-                    />
-                    <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.3)" />
-                  </Circle>
-                </Canvas>
-                <Text style={styles.powerUpText}>
-                  {powerUp.current.type === "speed"
-                    ? "⚡"
-                    : powerUp.current.type === "big"
-                      ? "📏"
-                      : "🔻"}
-                </Text>
-              </View>
-            )}
-
-            {/* Player paddle — Skia metallic */}
-            <Animated.View
-              style={[
-                styles.paddle,
-                {
-                  width: playerPaddleW.current,
-                  bottom: 10,
-                  position: "absolute",
-                },
-                playerPaddleStyle,
-              ]}
-            >
-              <Canvas
-                style={{ width: playerPaddleW.current, height: PADDLE_H }}
-              >
-                <RoundedRect
-                  x={0}
-                  y={0}
-                  width={playerPaddleW.current}
-                  height={PADDLE_H}
-                  r={7}
-                >
-                  <LinearGradient
-                    start={vec(0, 0)}
-                    end={vec(0, PADDLE_H)}
-                    colors={["#5DADE2", colors.primary, "#2471A3"]}
+                    end={vec(0, COURT_H)}
+                    colors={["#1A2332", "#0F1923", "#0A1118"]}
                   />
                   <Shadow
                     dx={0}
                     dy={2}
-                    blur={6}
-                    color={`${colors.primary}88`}
+                    blur={8}
+                    color="rgba(0,0,0,0.5)"
+                    inner
                   />
                 </RoundedRect>
-                {/* Top highlight */}
+                {/* Top/bottom goal zone highlights */}
+                <RoundedRect x={4} y={4} width={COURT_W - 8} height={30} r={6}>
+                  <LinearGradient
+                    start={vec(0, 4)}
+                    end={vec(0, 34)}
+                    colors={["rgba(231,76,60,0.12)", "rgba(231,76,60,0)"]}
+                  />
+                </RoundedRect>
                 <RoundedRect
-                  x={2}
-                  y={1}
-                  width={playerPaddleW.current - 4}
-                  height={3}
-                  r={1.5}
+                  x={4}
+                  y={COURT_H - 34}
+                  width={COURT_W - 8}
+                  height={30}
+                  r={6}
                 >
                   <LinearGradient
-                    start={vec(0, 1)}
-                    end={vec(0, 4)}
-                    colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0)"]}
+                    start={vec(0, COURT_H - 4)}
+                    end={vec(0, COURT_H - 34)}
+                    colors={["rgba(52,152,219,0.12)", "rgba(52,152,219,0)"]}
                   />
                 </RoundedRect>
+                {/* Center dashed line */}
+                <SkiaLine
+                  p1={vec(16, COURT_H / 2)}
+                  p2={vec(COURT_W - 16, COURT_H / 2)}
+                  color="rgba(255,255,255,0.15)"
+                  strokeWidth={2}
+                  style="stroke"
+                >
+                  <DashPathEffect intervals={[8, 8]} />
+                </SkiaLine>
+                {/* Center circle */}
+                <Circle
+                  cx={COURT_W / 2}
+                  cy={COURT_H / 2}
+                  r={30}
+                  color="rgba(255,255,255,0.06)"
+                  style="stroke"
+                  strokeWidth={1.5}
+                />
               </Canvas>
-            </Animated.View>
+
+              {/* AI paddle — Skia metallic */}
+              <Animated.View
+                style={[
+                  styles.paddle,
+                  {
+                    width: PADDLE_W,
+                    top: 10,
+                  },
+                  aiPaddleStyle,
+                ]}
+              >
+                <Canvas style={{ width: PADDLE_W, height: PADDLE_H }}>
+                  <RoundedRect
+                    x={0}
+                    y={0}
+                    width={PADDLE_W}
+                    height={PADDLE_H}
+                    r={7}
+                  >
+                    <LinearGradient
+                      start={vec(0, 0)}
+                      end={vec(0, PADDLE_H)}
+                      colors={["#FF6B6B", "#E74C3C", "#C0392B"]}
+                    />
+                    <Shadow
+                      dx={0}
+                      dy={2}
+                      blur={6}
+                      color="rgba(231,76,60,0.5)"
+                    />
+                  </RoundedRect>
+                  {/* Top highlight */}
+                  <RoundedRect
+                    x={2}
+                    y={1}
+                    width={PADDLE_W - 4}
+                    height={3}
+                    r={1.5}
+                  >
+                    <LinearGradient
+                      start={vec(0, 1)}
+                      end={vec(0, 4)}
+                      colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0)"]}
+                    />
+                  </RoundedRect>
+                </Canvas>
+              </Animated.View>
+
+              {/* Ball — Skia glowing sphere */}
+              <Animated.View
+                style={[
+                  styles.ball,
+                  {
+                    width: ball.current.r * 2,
+                    height: ball.current.r * 2,
+                  },
+                  ballStyle,
+                ]}
+              >
+                <Canvas
+                  style={{
+                    width: ball.current.r * 2,
+                    height: ball.current.r * 2,
+                  }}
+                >
+                  {/* Glow halo */}
+                  <Circle
+                    cx={ball.current.r}
+                    cy={ball.current.r}
+                    r={ball.current.r}
+                  >
+                    <RadialGradient
+                      c={vec(ball.current.r, ball.current.r)}
+                      r={ball.current.r}
+                      colors={[
+                        colors.primary,
+                        `${colors.primary}44`,
+                        `${colors.primary}00`,
+                      ]}
+                    />
+                  </Circle>
+                  {/* Ball body */}
+                  <Circle
+                    cx={ball.current.r}
+                    cy={ball.current.r}
+                    r={ball.current.r * 0.75}
+                  >
+                    <RadialGradient
+                      c={vec(ball.current.r * 0.7, ball.current.r * 0.6)}
+                      r={ball.current.r * 0.75}
+                      colors={[
+                        "#FFFFFF",
+                        colors.primary,
+                        `${colors.primary}CC`,
+                      ]}
+                    />
+                    <Shadow
+                      dx={0}
+                      dy={1}
+                      blur={4}
+                      color={`${colors.primary}88`}
+                    />
+                  </Circle>
+                </Canvas>
+              </Animated.View>
+
+              {/* Power-up */}
+              {powerUp.current?.active && (
+                <View
+                  style={[
+                    styles.powerUp,
+                    {
+                      left: powerUp.current.x - 15,
+                      top: powerUp.current.y - 15,
+                    },
+                  ]}
+                >
+                  <Canvas style={{ width: 30, height: 30 }}>
+                    {/* Glow */}
+                    <Circle cx={15} cy={15} r={15}>
+                      <RadialGradient
+                        c={vec(15, 15)}
+                        r={15}
+                        colors={[
+                          powerUp.current.type === "speed"
+                            ? "rgba(243,156,18,0.6)"
+                            : powerUp.current.type === "big"
+                              ? "rgba(46,204,113,0.6)"
+                              : "rgba(231,76,60,0.6)",
+                          "rgba(0,0,0,0)",
+                        ]}
+                      />
+                    </Circle>
+                    {/* Body */}
+                    <Circle cx={15} cy={15} r={12}>
+                      <RadialGradient
+                        c={vec(12, 10)}
+                        r={12}
+                        colors={
+                          powerUp.current.type === "speed"
+                            ? ["#FFC048", "#F39C12", "#D68910"]
+                            : powerUp.current.type === "big"
+                              ? ["#5DFFBA", "#2ECC71", "#1E8449"]
+                              : ["#FF7979", "#E74C3C", "#C0392B"]
+                        }
+                      />
+                      <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.3)" />
+                    </Circle>
+                  </Canvas>
+                  <Text style={styles.powerUpText}>
+                    {powerUp.current.type === "speed"
+                      ? "⚡"
+                      : powerUp.current.type === "big"
+                        ? "📏"
+                        : "🔻"}
+                  </Text>
+                </View>
+              )}
+
+              {/* Player paddle — Skia metallic */}
+              <Animated.View
+                style={[
+                  styles.paddle,
+                  {
+                    width: playerPaddleW.current,
+                    bottom: 10,
+                    position: "absolute",
+                  },
+                  playerPaddleStyle,
+                ]}
+              >
+                <Canvas
+                  style={{ width: playerPaddleW.current, height: PADDLE_H }}
+                >
+                  <RoundedRect
+                    x={0}
+                    y={0}
+                    width={playerPaddleW.current}
+                    height={PADDLE_H}
+                    r={7}
+                  >
+                    <LinearGradient
+                      start={vec(0, 0)}
+                      end={vec(0, PADDLE_H)}
+                      colors={["#5DADE2", colors.primary, "#2471A3"]}
+                    />
+                    <Shadow
+                      dx={0}
+                      dy={2}
+                      blur={6}
+                      color={`${colors.primary}88`}
+                    />
+                  </RoundedRect>
+                  {/* Top highlight */}
+                  <RoundedRect
+                    x={2}
+                    y={1}
+                    width={playerPaddleW.current - 4}
+                    height={3}
+                    r={1.5}
+                  >
+                    <LinearGradient
+                      start={vec(0, 1)}
+                      end={vec(0, 4)}
+                      colors={["rgba(255,255,255,0.4)", "rgba(255,255,255,0)"]}
+                    />
+                  </RoundedRect>
+                </Canvas>
+              </Animated.View>
             </View>
           </GestureDetector>
         </View>
@@ -824,80 +901,102 @@ function PongGameScreen({
             <View
               style={[styles.court, { borderColor: "rgba(255,255,255,0.15)" }]}
             >
-            {/* Court background */}
-            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-              <RoundedRect x={0} y={0} width={COURT_W} height={COURT_H} r={10}>
-                <LinearGradient
-                  start={vec(0, 0)}
-                  end={vec(0, COURT_H)}
-                  colors={["#1A2332", "#0F1923", "#0A1118"]}
+              {/* Court background */}
+              <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+                <RoundedRect
+                  x={0}
+                  y={0}
+                  width={COURT_W}
+                  height={COURT_H}
+                  r={10}
+                >
+                  <LinearGradient
+                    start={vec(0, 0)}
+                    end={vec(0, COURT_H)}
+                    colors={["#1A2332", "#0F1923", "#0A1118"]}
+                  />
+                  <Shadow
+                    dx={0}
+                    dy={2}
+                    blur={8}
+                    color="rgba(0,0,0,0.5)"
+                    inner
+                  />
+                </RoundedRect>
+                <SkiaLine
+                  p1={vec(16, COURT_H / 2)}
+                  p2={vec(COURT_W - 16, COURT_H / 2)}
+                  color="rgba(255,255,255,0.15)"
+                  strokeWidth={2}
+                  style="stroke"
+                >
+                  <DashPathEffect intervals={[8, 8]} />
+                </SkiaLine>
+                <Circle
+                  cx={COURT_W / 2}
+                  cy={COURT_H / 2}
+                  r={30}
+                  color="rgba(255,255,255,0.06)"
+                  style="stroke"
+                  strokeWidth={1.5}
                 />
-                <Shadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
-              </RoundedRect>
-              <SkiaLine
-                p1={vec(16, COURT_H / 2)}
-                p2={vec(COURT_W - 16, COURT_H / 2)}
-                color="rgba(255,255,255,0.15)"
-                strokeWidth={2}
-                style="stroke"
-              >
-                <DashPathEffect intervals={[8, 8]} />
-              </SkiaLine>
-              <Circle
-                cx={COURT_W / 2}
-                cy={COURT_H / 2}
-                r={30}
-                color="rgba(255,255,255,0.06)"
-                style="stroke"
-                strokeWidth={1.5}
-              />
 
-              {/* Opponent paddle (top) — scale from server 400x600 → court */}
-              <RoundedRect
-                x={(mp.opponentPaddle.x / mp.fieldWidth) * COURT_W}
-                y={10}
-                width={(mp.opponentPaddle.width / mp.fieldWidth) * COURT_W}
-                height={PADDLE_H}
-                r={7}
-              >
-                <LinearGradient
-                  start={vec(0, 0)}
-                  end={vec(0, PADDLE_H)}
-                  colors={["#FF6B6B", "#E74C3C", "#C0392B"]}
-                />
-                <Shadow dx={0} dy={2} blur={6} color="rgba(231,76,60,0.5)" />
-              </RoundedRect>
+                {/* Opponent paddle (top) — scale from server 400x600 → court */}
+                <RoundedRect
+                  x={(mp.opponentPaddle.x / mp.fieldWidth) * COURT_W}
+                  y={10}
+                  width={(mp.opponentPaddle.width / mp.fieldWidth) * COURT_W}
+                  height={PADDLE_H}
+                  r={7}
+                >
+                  <LinearGradient
+                    start={vec(0, 0)}
+                    end={vec(0, PADDLE_H)}
+                    colors={["#FF6B6B", "#E74C3C", "#C0392B"]}
+                  />
+                  <Shadow dx={0} dy={2} blur={6} color="rgba(231,76,60,0.5)" />
+                </RoundedRect>
 
-              {/* My paddle (bottom) — scale from server */}
-              <RoundedRect
-                x={(mp.myPaddle.x / mp.fieldWidth) * COURT_W}
-                y={COURT_H - PADDLE_H - 10}
-                width={(mp.myPaddle.width / mp.fieldWidth) * COURT_W}
-                height={PADDLE_H}
-                r={7}
-              >
-                <LinearGradient
-                  start={vec(0, 0)}
-                  end={vec(0, PADDLE_H)}
-                  colors={["#5DADE2", colors.primary, "#2471A3"]}
-                />
-                <Shadow dx={0} dy={2} blur={6} color={`${colors.primary}88`} />
-              </RoundedRect>
+                {/* My paddle (bottom) — scale from server */}
+                <RoundedRect
+                  x={(mp.myPaddle.x / mp.fieldWidth) * COURT_W}
+                  y={COURT_H - PADDLE_H - 10}
+                  width={(mp.myPaddle.width / mp.fieldWidth) * COURT_W}
+                  height={PADDLE_H}
+                  r={7}
+                >
+                  <LinearGradient
+                    start={vec(0, 0)}
+                    end={vec(0, PADDLE_H)}
+                    colors={["#5DADE2", colors.primary, "#2471A3"]}
+                  />
+                  <Shadow
+                    dx={0}
+                    dy={2}
+                    blur={6}
+                    color={`${colors.primary}88`}
+                  />
+                </RoundedRect>
 
-              {/* Ball — scale from server */}
-              <Circle
-                cx={(mp.ball.x / mp.fieldWidth) * COURT_W}
-                cy={(mp.ball.y / mp.fieldHeight) * COURT_H}
-                r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
-              >
-                <RadialGradient
-                  c={vec(0, 0)}
+                {/* Ball — scale from server */}
+                <Circle
+                  cx={(mp.ball.x / mp.fieldWidth) * COURT_W}
+                  cy={(mp.ball.y / mp.fieldHeight) * COURT_H}
                   r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
-                  colors={["#FFFFFF", colors.primary, `${colors.primary}CC`]}
-                />
-                <Shadow dx={0} dy={1} blur={4} color={`${colors.primary}88`} />
-              </Circle>
-            </Canvas>
+                >
+                  <RadialGradient
+                    c={vec(0, 0)}
+                    r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
+                    colors={["#FFFFFF", colors.primary, `${colors.primary}CC`]}
+                  />
+                  <Shadow
+                    dx={0}
+                    dy={1}
+                    blur={4}
+                    color={`${colors.primary}88`}
+                  />
+                </Circle>
+              </Canvas>
             </View>
           </GestureDetector>
         </View>
@@ -917,6 +1016,14 @@ function PongGameScreen({
             <Text style={{ color: colors.textSecondary, textAlign: "center" }}>
               {playerScore} — {aiScore}
             </Text>
+            {xpEarned > 0 && (
+              <Text
+                style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+              >
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+              </Text>
+            )}
           </Dialog.Content>
           <Dialog.Actions style={styles.dialogActions}>
             <Button onPress={() => startGame(difficulty)}>Play Again</Button>

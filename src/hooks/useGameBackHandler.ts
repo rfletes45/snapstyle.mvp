@@ -23,7 +23,7 @@
 
 import { DAILY_GAMES } from "@/constants/featureFlags";
 import { CommonActions, useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert, BackHandler } from "react-native";
 
 /**
@@ -56,10 +56,6 @@ const TURN_BASED_SAVE_GAMES: string[] = [
 const REAL_TIME_MULTIPLAYER_GAMES: string[] = [
   "dot_match",
   "dot_match_game",
-  "mini_golf",
-  "mini_golf_game",
-  "mini_golf_duels",
-  "mini_golf_duels_game",
   "pong",
   "pong_game",
   "bounce_blitz",
@@ -120,6 +116,10 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
   } = options;
   const navigation = useNavigation<any>();
 
+  // Guard flag: when true, the user already confirmed leaving via handleBack's
+  // Alert — let beforeRemove pass through without showing a second dialog.
+  const leavingRef = useRef(false);
+
   const isDaily = DAILY_GAMES.includes(gameType);
   const isTurnBasedSaveable =
     isMultiplayer && TURN_BASED_SAVE_GAMES.includes(gameType);
@@ -135,6 +135,9 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
    * 3. Default → GamesHub (never falls to Shop or random stack state)
    */
   const navigateToOrigin = useCallback(async () => {
+    // Mark as intentionally leaving so beforeRemove doesn't show a 2nd dialog
+    leavingRef.current = true;
+
     if (onBeforeLeave) {
       await onBeforeLeave();
     }
@@ -296,6 +299,9 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
   // ── React Navigation beforeRemove (iOS swipe, header back) ───────────
   useEffect(() => {
     const unsub = navigation.addListener("beforeRemove", (e: any) => {
+      // If we already confirmed via handleBack, allow navigation immediately
+      if (leavingRef.current) return;
+
       // If game is over, daily, or in lobby, let navigation proceed
       // immediately — no game-in-progress to save.
       if (isGameOver || isDaily || isInLobby) return;

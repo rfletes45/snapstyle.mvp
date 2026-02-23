@@ -34,6 +34,7 @@ import {
 } from "@/types/playerSummary";
 import type { LevelInfo } from "@/types/profile";
 import { calculateLevelFromXp } from "@/types/profile";
+import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useProfileData } from "./useProfileData";
@@ -70,7 +71,12 @@ export function usePlayerSummary(): UsePlayerSummaryReturn {
   const uid = currentFirebaseUser?.uid;
 
   // --- existing hooks ---
-  const { levelInfo, stats, loading: profileLoading } = useProfileData(uid);
+  const {
+    levelInfo,
+    stats,
+    profile,
+    loading: profileLoading,
+  } = useProfileData(uid);
   const { picture, decoration } = useProfilePicture({
     userId: uid || "",
   });
@@ -148,6 +154,15 @@ export function usePlayerSummary(): UsePlayerSummaryReturn {
     fetchTasks();
   }, [fetchTasks]);
 
+  // --- re-fetch tasks on screen focus (clears stale dots) ---
+  const navigation = useNavigation();
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      fetchTasks();
+    });
+    return unsubscribe;
+  }, [navigation, fetchTasks]);
+
   // --- expanded panel data (lazy) ---
   const [expandedLoaded, setExpandedLoaded] = useState(false);
   const [miniStats, setMiniStats] = useState<MiniStats>(DEFAULT_MINI_STATS);
@@ -185,7 +200,10 @@ export function usePlayerSummary(): UsePlayerSummaryReturn {
     return {
       uid,
       displayName:
-        currentFirebaseUser?.displayName ?? DEFAULT_PLAYER_SUMMARY.displayName,
+        profile?.displayName ||
+        currentFirebaseUser?.displayName ||
+        profile?.username ||
+        DEFAULT_PLAYER_SUMMARY.displayName,
       photoURL: picture?.url ?? null,
       playerTitle: null, // not in current schema
       level,
@@ -205,6 +223,8 @@ export function usePlayerSummary(): UsePlayerSummaryReturn {
     };
   }, [
     uid,
+    profile?.displayName,
+    profile?.username,
     currentFirebaseUser?.displayName,
     levelInfo,
     picture?.url,

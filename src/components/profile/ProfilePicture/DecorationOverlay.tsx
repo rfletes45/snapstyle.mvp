@@ -11,17 +11,12 @@
  * @module components/profile/ProfilePicture/DecorationOverlay
  */
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
 import { getCosmeticById } from "@/cosmetics/catalog";
 import { getDecorationById } from "@/data/avatarDecorations";
 import React, { useMemo } from "react";
-import {
-  Image,
-  ImageSourcePropType,
-  StyleSheet,
-  View,
-  ViewStyle,
-} from "react-native";
+import { ImageSourcePropType, StyleSheet, View, ViewStyle } from "react-native";
 
 export interface DecorationOverlayProps {
   /** Decoration ID to display */
@@ -115,7 +110,7 @@ export function DecorationOverlay({
       )}
 
       {/* Decoration image */}
-      <Image
+      <CosmeticImage
         source={decoration.assetPath}
         style={[
           styles.decoration,
@@ -124,7 +119,9 @@ export function DecorationOverlay({
             height: size,
           },
         ]}
-        resizeMode="contain"
+        contentFit="contain"
+        debugLabel={`decoration-${decorationId}`}
+        transition={0}
       />
     </View>
   );

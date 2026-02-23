@@ -850,7 +850,6 @@ describe("Smoke Test: Multi-Game Type Sweep", () => {
     "connect_four",
     "gomoku_master",
     "reversi_game",
-    "minigolf_duels",
     "sketch_party_game",
   ];
 

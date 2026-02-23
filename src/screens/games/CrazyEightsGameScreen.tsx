@@ -60,6 +60,11 @@ import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   calculateHandScore,
   createInitialCrazyEightsState,
@@ -553,6 +558,23 @@ function CrazyEightsGameScreen({
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [gameResult, setGameResult] = useState<GameResult>("draw");
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newXpLevel, setNewXpLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "crazy_eights") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewXpLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // ==========================================================================
   // Online Game Subscription
   // ==========================================================================
@@ -629,6 +651,21 @@ function CrazyEightsGameScreen({
         const didWin = typedMatch.winnerId === currentFirebaseUser?.uid;
         setGameResult(didWin ? "win" : "loss");
         setShowGameOverModal(true);
+
+        // Submit to XP pipeline
+        if (currentFirebaseUser) {
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "crazy_eights",
+              mode: "turnBased",
+              outcome: didWin ? "win" : "lose",
+              score: scores[currentFirebaseUser.uid] || 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
 
         // Phase 7: Check achievements on game completion
         handleGameCompletion(
@@ -1017,6 +1054,21 @@ function CrazyEightsGameScreen({
 
     setGameResult(didWin ? "win" : "loss");
     setShowGameOverModal(true);
+
+    // Submit to XP pipeline (local mode)
+    if (gameMode === "local" && currentFirebaseUser) {
+      submitGameResult(
+        buildGameResultEvent({
+          gameId: "crazy_eights",
+          mode: "solo",
+          outcome: didWin ? "win" : "lose",
+          score: 0,
+          durationMs: 0,
+          userId: currentFirebaseUser.uid,
+          displayName: currentFirebaseUser.displayName || "Player",
+        }),
+      ).catch(() => {});
+    }
 
     // Calculate scores based on remaining cards
     if (localState) {
@@ -1430,8 +1482,8 @@ function CrazyEightsGameScreen({
               ]}
             >
               • Match the top card by suit or rank{"\n"}• 8s are wild - play
-              anytime, choose next suit{"\n"}• Draw if you can&apos;t play{"\n"}•
-              First to empty their hand wins!
+              anytime, choose next suit{"\n"}• Draw if you can&apos;t play{"\n"}
+              • First to empty their hand wins!
             </Text>
           </View>
         </View>
@@ -1748,6 +1800,9 @@ function CrazyEightsGameScreen({
         stats={{
           score: scores["player1"] || 0,
           opponentName: gameMode === "online" ? opponentName : "Player 2",
+          xpEarned: xpEarned || undefined,
+          didLevelUp: didLevelUp || undefined,
+          newLevel: newXpLevel || undefined,
         }}
         showRematch={gameMode === "local"}
         onRematch={gameMode === "local" ? resetGame : undefined}

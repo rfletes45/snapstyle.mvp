@@ -77,7 +77,7 @@ import {
 import { LocalAttachment } from "@/services/storage";
 import { AttachmentV2, ReplyToMetadata } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   useAttachmentPicker,
   UseAttachmentPickerReturn,
@@ -372,8 +372,13 @@ export function useChatComposer(
   // Text State
   // -------------------------------------------------------------------------
   const [text, setTextState] = useState("");
-  const [cursorPosition, setCursorPosition] = useState(0);
+  const [cursorPosition, setCursorPositionState] = useState(0);
   const [sending, setSending] = useState(false);
+
+  // Refs for latest values – avoids stale closures between
+  // onChangeText (fires first) and onSelectionChange (fires second)
+  const textRef = useRef(text);
+  const cursorRef = useRef(cursorPosition);
   const [mentionUidsState, setMentionUids] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -446,11 +451,11 @@ export function useChatComposer(
   const setText = useCallback(
     (newText: string) => {
       setTextState(newText);
+      textRef.current = newText;
 
-      // Update mention autocomplete
+      // Update mention autocomplete using cursorRef for latest cursor
       if (enableMentions) {
-        mentionsHook.onTextChange(newText, cursorPosition);
-        // Re-extract mention UIDs to keep state in sync when text is edited
+        mentionsHook.onTextChange(newText, cursorRef.current);
         const { mentionUids: freshUids } = extractMentionsExact(
           newText,
           mentionableMembers,
@@ -458,20 +463,41 @@ export function useChatComposer(
         setMentionUids(freshUids);
       }
     },
-    [enableMentions, mentionsHook, cursorPosition, mentionableMembers],
+    [enableMentions, mentionsHook, mentionableMembers],
+  );
+
+  /**
+   * Update the cursor position. Also re-runs mention trigger detection
+   * with the latest text (from ref) so an existing "@" is detected
+   * even when only the cursor moves (e.g. tap repositioning).
+   */
+  const setCursorPosition = useCallback(
+    (pos: number) => {
+      setCursorPositionState(pos);
+      cursorRef.current = pos;
+
+      if (enableMentions) {
+        mentionsHook.onTextChange(textRef.current, pos);
+      }
+    },
+    [enableMentions, mentionsHook],
   );
 
   const onTextChange = useCallback(
     (newText: string, newCursorPosition?: number) => {
       setTextState(newText);
+      textRef.current = newText;
       if (newCursorPosition !== undefined) {
-        setCursorPosition(newCursorPosition);
+        setCursorPositionState(newCursorPosition);
+        cursorRef.current = newCursorPosition;
       }
 
       // Update mention autocomplete
       if (enableMentions) {
-        mentionsHook.onTextChange(newText, newCursorPosition ?? cursorPosition);
-        // Re-extract mention UIDs to keep state in sync when text is edited
+        mentionsHook.onTextChange(
+          newText,
+          newCursorPosition ?? cursorRef.current,
+        );
         const { mentionUids: freshUids } = extractMentionsExact(
           newText,
           mentionableMembers,
@@ -479,12 +505,14 @@ export function useChatComposer(
         setMentionUids(freshUids);
       }
     },
-    [enableMentions, mentionsHook, cursorPosition, mentionableMembers],
+    [enableMentions, mentionsHook, mentionableMembers],
   );
 
   const clearText = useCallback(() => {
     setTextState("");
-    setCursorPosition(0);
+    setCursorPositionState(0);
+    textRef.current = "";
+    cursorRef.current = 0;
     setMentionUids([]);
     if (enableMentions) {
       mentionsHook.reset();
@@ -501,12 +529,14 @@ export function useChatComposer(
 
       const result: InsertMentionResult = mentionsHook.onSelectMember(
         member,
-        text,
-        cursorPosition,
+        textRef.current,
+        cursorRef.current,
       );
 
       setTextState(result.newText);
-      setCursorPosition(result.newCursorPosition);
+      textRef.current = result.newText;
+      setCursorPositionState(result.newCursorPosition);
+      cursorRef.current = result.newCursorPosition;
 
       // Track mention UID
       setMentionUids((prev) =>
@@ -523,7 +553,7 @@ export function useChatComposer(
         });
       }
     },
-    [enableMentions, mentionsHook, text, cursorPosition, debug],
+    [enableMentions, mentionsHook, debug],
   );
 
   // -------------------------------------------------------------------------

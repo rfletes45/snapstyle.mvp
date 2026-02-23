@@ -76,8 +76,6 @@ function getSpectatorGameName(gameId: string): string {
     minesweeper_game: "Minesweeper",
     number_master: "Number Master",
     number_master_game: "Number Master",
-    lights_out: "Lights Out",
-    lights_out_game: "Lights Out",
     pong_game: "Pong",
   };
   return names[gameId] || gameId;
@@ -106,8 +104,6 @@ function getSpectatorGameIcon(gameId: string): string {
     minesweeper_game: "mine",
     number_master: "calculator",
     number_master_game: "calculator",
-    lights_out: "lightbulb-outline",
-    lights_out_game: "lightbulb-outline",
     pong_game: "table-tennis",
   };
   return icons[gameId] || "gamepad-variant";

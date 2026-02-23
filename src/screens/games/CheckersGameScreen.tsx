@@ -57,6 +57,11 @@ import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import { getGroupMembers } from "@/services/groups";
 import {
   endMatch,
@@ -465,6 +470,23 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newXpLevel, setNewXpLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "checkers") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewXpLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("checkers_game");
 
@@ -573,6 +595,22 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
         setWinner(winnerColor);
         setShowGameOverModal(true);
         Vibration.vibrate([0, 100, 50, 100]);
+
+        // Submit to XP pipeline
+        if (currentFirebaseUser) {
+          const didWin = typedMatch.winnerId === currentFirebaseUser.uid;
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "checkers",
+              mode: "turnBased",
+              outcome: didWin ? "win" : "lose",
+              score: 0,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
+        }
 
         // Phase 7: Check achievements on game completion
         handleGameCompletion(
@@ -857,11 +895,29 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
   ) => {
     setWinner(winnerColor);
     setShowGameOverModal(true);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewXpLevel(0);
     setScores((prev) => ({
       ...prev,
       [winnerColor]: prev[winnerColor] + 1,
     }));
     Vibration.vibrate([0, 100, 50, 100]);
+
+    // Submit local game to XP pipeline
+    if (gameMode === "local" && currentFirebaseUser) {
+      submitGameResult(
+        buildGameResultEvent({
+          gameId: "checkers",
+          mode: "solo",
+          outcome: "win",
+          score: 0,
+          durationMs: 0,
+          userId: currentFirebaseUser.uid,
+          displayName: currentFirebaseUser.displayName || "Player",
+        }),
+      ).catch(() => {});
+    }
 
     // End online match
     if (gameMode === "online" && matchId && match) {
@@ -1386,6 +1442,14 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
                   : "😔 Defeat"
                 : `${winner === "red" ? "🔴 Red" : "⬛ Black"} Wins!`)}
           </Text>
+          {xpEarned > 0 && (
+            <Text
+              style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+            >
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newXpLevel}!` : ""}
+            </Text>
+          )}
 
           <View style={styles.modalButtons}>
             <Button

@@ -36,18 +36,17 @@ export type PlayStackParamList = {
   FourGame: OptionalRouteParams;
   MinesweeperGame: OptionalRouteParams;
   DotsGame: OptionalRouteParams;
-  LightsGame: OptionalRouteParams;
   GomokuGame: OptionalRouteParams;
   PongGame: OptionalRouteParams;
   ReversiGame: OptionalRouteParams;
   CrosswordGame: OptionalRouteParams;
   StarforgeGame: OptionalRouteParams;
   SketchPartyGameScreen: OptionalRouteParams;
-  MiniGolfDuelsGame: OptionalRouteParams;
   GameDetails: { gameId: string };
   Leaderboard: { gameId?: string } | undefined;
   Achievements: { gameId?: string } | undefined;
   GameHistory: OptionalRouteParams;
+  LevelRewards: undefined;
 };
 
 export type ProfileTabStackParamList = {
@@ -63,6 +62,7 @@ export type ProfileTabStackParamList = {
   Tasks: { tab?: "daily" | "monthly" } | undefined;
   Shop: undefined;
   AdminReports: undefined;
+  LevelRewards: undefined;
 };
 
 export type AppTabsParamList = {
@@ -83,6 +83,11 @@ export type MainStackParamList = {
       }
     | undefined;
   GroupChat: { groupId: string; groupName?: string } | undefined;
+  ThreadView: {
+    conversationId: string;
+    scope: "dm" | "group";
+    rootMessageId: string;
+  };
   GroupChatCreate: undefined;
   GroupChatInfo: { groupId: string } | undefined;
   ChatSettings: OptionalRouteParams;

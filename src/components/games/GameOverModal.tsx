@@ -35,12 +35,7 @@ import Animated, {
   ZoomIn,
 } from "react-native-reanimated";
 
-import {
-  AchievementNotification,
-  GameAchievementDefinition,
-} from "@/types/achievements";
 import { SkiaParticleBurst } from "@/components/games/graphics/SkiaParticleBurst";
-import { formatDurationSeconds as formatTime } from "@/utils/time";
 import {
   ACHIEVEMENT_TIER_COLORS,
   GAME_ANIMATIONS,
@@ -50,6 +45,11 @@ import {
   GAME_STATUS_COLORS,
   GAME_TYPOGRAPHY,
 } from "@/constants/gamesTheme";
+import {
+  AchievementNotification,
+  GameAchievementDefinition,
+} from "@/types/achievements";
+import { formatDurationSeconds as formatTime } from "@/utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -78,6 +78,12 @@ export interface GameOverStats {
   opponentName?: string;
   /** Win method (e.g., "Checkmate", "Resignation") */
   winMethod?: string;
+  /** XP earned this session (from GameResult pipeline) */
+  xpEarned?: number;
+  /** Whether the player leveled up */
+  didLevelUp?: boolean;
+  /** New level after XP award */
+  newLevel?: number;
 }
 
 export interface GameOverModalProps {
@@ -556,6 +562,27 @@ export function GameOverModal({
                 )}
               </View>
 
+              {/* XP Earned */}
+              {stats.xpEarned !== undefined && stats.xpEarned > 0 && (
+                <View style={styles.xpSection}>
+                  <View style={styles.xpRow}>
+                    <Text style={styles.xpLabel}>⭐ XP Earned</Text>
+                    <Text
+                      style={[styles.xpValue, { color: theme.colors.primary }]}
+                    >
+                      +{stats.xpEarned}
+                    </Text>
+                  </View>
+                  {stats.didLevelUp && stats.newLevel !== undefined && (
+                    <View style={styles.levelUpRow}>
+                      <Text style={styles.levelUpText}>
+                        🎉 Level Up! You are now Level {stats.newLevel}!
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
               {/* Achievements */}
               {achievements.length > 0 && (
                 <View style={styles.achievementsSection}>
@@ -743,6 +770,36 @@ const styles = StyleSheet.create({
   },
   statValue: {
     ...GAME_TYPOGRAPHY.statValue,
+  },
+  xpSection: {
+    marginTop: GAME_SPACING.md,
+    paddingTop: GAME_SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  xpRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  xpLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ccc",
+  },
+  xpValue: {
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  levelUpRow: {
+    marginTop: GAME_SPACING.xs,
+    alignItems: "center",
+  },
+  levelUpText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFD700",
+    textAlign: "center",
   },
   achievementsSection: {
     marginTop: GAME_SPACING.md,

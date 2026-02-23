@@ -495,15 +495,6 @@ const SP_SCORE_GAMES: Array<{
     scoreTierName: "Sweep Expert",
     scoreTierGroup: "achv.game.minesweeper_classic.score",
   },
-  {
-    gameType: "lights_out",
-    name: "Lights Out",
-    firstPlayName: "Light Switch",
-    firstPlayDesc: "Play Lights Out for the first time",
-    firstPlayIcon: "💡",
-    scoreTierName: "Lights Wizard",
-    scoreTierGroup: "achv.game.lights_out.score",
-  },
 ];
 
 /** Score tiers as pct of maxScore */
@@ -1145,157 +1136,6 @@ function buildRealTimeAchievements(): AchievementDef[] {
     sortOrder: sortOrder++,
   });
 
-  // ---------------------------------------------------------------------------
-  // MiniGolf Duels
-  // ---------------------------------------------------------------------------
-  result.push({
-    id: "achv.rt.minigolf_duels.first_match",
-    name: "Tee Time",
-    description: "Play your first MiniGolf Duels match",
-    icon: "⛳",
-    category: "real_time",
-    tier: "bronze",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "count",
-    target: 1,
-    xpReward: 25,
-    coinReward: 10,
-    rewards: { tokens: 10 },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.first_win",
-    name: "MiniGolf Victor",
-    description: "Win your first MiniGolf Duels match",
-    icon: "⛳",
-    category: "real_time",
-    tier: "bronze",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "count",
-    target: 1,
-    xpReward: 25,
-    coinReward: 10,
-    rewards: { tokens: 10 },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.wins_10",
-    name: "MiniGolf Expert",
-    description: "Win 10 MiniGolf Duels matches",
-    icon: "⛳",
-    category: "real_time",
-    tier: "silver",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "count",
-    target: 10,
-    xpReward: 50,
-    coinReward: 25,
-    rewards: { tokens: 25 },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.matches_25",
-    name: "MiniGolf Enthusiast",
-    description: "Play 25 MiniGolf Duels matches",
-    icon: "⛳",
-    category: "real_time",
-    tier: "gold",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "count",
-    target: 25,
-    xpReward: 100,
-    coinReward: 50,
-    rewards: { tokens: 50 },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.hole_in_one",
-    name: "Ace!",
-    description: "Score a hole-in-one",
-    icon: "🏌️",
-    category: "real_time",
-    tier: "silver",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "stat_threshold",
-    statKey: "holesInOne",
-    target: 1,
-    xpReward: 50,
-    coinReward: 25,
-    rewards: { tokens: 25, entitlements: ["badge_golf_ace"] },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.holes_in_one_5",
-    name: "Hole-in-One Master",
-    description: "Score 5 holes-in-one",
-    icon: "🏌️",
-    category: "real_time",
-    tier: "gold",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "stat_threshold",
-    statKey: "holesInOne",
-    target: 5,
-    xpReward: 100,
-    coinReward: 50,
-    rewards: { tokens: 50, entitlements: ["badge_golf_master"] },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.under_par_9",
-    name: "Under Par Perfection",
-    description: "Finish 9 holes under par in a single match",
-    icon: "🎯",
-    category: "real_time",
-    tier: "diamond",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "stat_threshold",
-    statKey: "underParHoles",
-    target: 9,
-    xpReward: 200,
-    coinReward: 100,
-    rewards: { tokens: 100 },
-    isEnabledByDefault: true,
-    secret: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
-  result.push({
-    id: "achv.rt.minigolf_duels.win_streak_5",
-    name: "MiniGolf Streak",
-    description: "Win 5 MiniGolf Duels matches in a row",
-    icon: "🔥",
-    category: "real_time",
-    tier: "gold",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    progressType: "streak",
-    target: 5,
-    xpReward: 100,
-    coinReward: 50,
-    rewards: { tokens: 50 },
-    isEnabledByDefault: true,
-    version: 2,
-    sortOrder: sortOrder++,
-  });
-
   return result;
 }
 
@@ -1499,19 +1339,6 @@ const RT_SECTIONS: AchievementSection[] = [
       tier: "diamond",
     },
     sortOrder: 1,
-  },
-  {
-    id: "rt_minigolf_duels",
-    name: "MiniGolf Duels",
-    icon: "⛳",
-    category: "real_time",
-    gameType: "minigolf_duels" as ExtendedGameType,
-    badge: {
-      name: "MiniGolf Champion",
-      icon: "⛳",
-      tier: "diamond",
-    },
-    sortOrder: 2,
   },
 ];
 

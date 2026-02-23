@@ -14,6 +14,7 @@ import { getGameAchievementById } from "@/data/gameAchievements";
 import {
   doc,
   getDoc,
+  increment,
   onSnapshot,
   runTransaction,
   setDoc,
@@ -834,6 +835,8 @@ export async function claimAchievementRewards(
   }
 
   const docRef = doc(getDb(), COLLECTION_NAME, playerId);
+  const walletRef = doc(getDb(), "Wallets", playerId);
+  const userRef = doc(getDb(), "Users", playerId);
 
   return await runTransaction(getDb(), async (transaction) => {
     const docSnap = await transaction.get(docRef);
@@ -861,6 +864,24 @@ export async function claimAchievementRewards(
     achievementsDoc.updatedAt = Timestamp.now();
 
     transaction.set(docRef, achievementsDoc);
+
+    // Credit tokens to wallet (merge to create if missing)
+    if (achievement.coinReward > 0) {
+      transaction.set(
+        walletRef,
+        { tokensBalance: increment(achievement.coinReward) },
+        { merge: true },
+      );
+    }
+
+    // Credit XP to user
+    if (achievement.xpReward > 0) {
+      transaction.set(
+        userRef,
+        { gameXp: increment(achievement.xpReward) },
+        { merge: true },
+      );
+    }
 
     return {
       coins: achievement.coinReward,

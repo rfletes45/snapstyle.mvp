@@ -88,8 +88,11 @@ export function SkiaGameBoard({
   }
 
   return (
-    <View style={[styles.container, { width: totalW, height: totalH }]}>
-      <Canvas style={StyleSheet.absoluteFill}>
+    <View
+      style={[styles.container, { width: totalW, height: totalH }]}
+      collapsable={false}
+    >
+      <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
         {/* Outer border */}
         <RoundedRect
           x={0}
@@ -149,6 +152,7 @@ export function SkiaGameBoard({
             borderRadius,
           },
         ]}
+        collapsable={false}
       >
         {children}
       </View>

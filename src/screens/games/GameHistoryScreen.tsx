@@ -55,7 +55,6 @@ import {
 } from "@/types/singlePlayerGames";
 import { TurnBasedGameType } from "@/types/turnBased";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/GameHistoryScreen");
 // =============================================================================
@@ -99,7 +98,6 @@ const SINGLEPLAYER_GAMES: {
   { type: "play_2048", label: "2048", icon: "ðŸ”¢" },
   { type: "brick_breaker", label: "Brick Breaker", icon: "🧱" },
   { type: "minesweeper_classic", label: "Minesweeper", icon: "💣" },
-  { type: "lights_out", label: "Lights Out", icon: "💡" },
   { type: "pong_game", label: "Pong", icon: "🏓" },
 ];
 
@@ -1082,4 +1080,3 @@ const styles = StyleSheet.create({
 });
 
 export default GameHistoryScreen;
-

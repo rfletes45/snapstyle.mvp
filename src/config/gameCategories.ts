@@ -145,7 +145,6 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   // Puzzle
   play_2048: "Play2048Game",
   minesweeper_classic: "MinesweeperGame",
-  lights_out: "LightsGame",
   // Daily
   word_master: "WordGame",
   crossword_puzzle: "CrosswordGame",
@@ -160,5 +159,4 @@ export const GAME_SCREEN_MAP: Record<ExtendedGameType, string> = {
   reversi_game: "ReversiGame",
   starforge_game: "StarforgeGame",
   sketch_party_game: "SketchPartyGameScreen",
-  minigolf_duels: "MiniGolfDuelsGame",
 };

@@ -14,10 +14,16 @@
  */
 
 import { LoadingState } from "@/components/ui";
+import { getMasterBadgeForSection } from "@/config/masterBadges";
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { useAchievementsV2 } from "@/hooks/useAchievementsV2";
 import type { V2AchievementDisplayItem } from "@/services/achievementsV2";
 import { buildSectionsWithProgress } from "@/services/achievementsV2";
+import {
+  batchGetMasterBadgeStatuses,
+  claimMasterBadge,
+  type MasterBadgeStatus,
+} from "@/services/masterBadgeClaim";
 import { useAuth } from "@/store/AuthContext";
 import type {
   AchievementSectionWithProgress,
@@ -28,7 +34,13 @@ import { GAME_METADATA } from "@/types/games";
 import type { PlayStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -197,12 +209,20 @@ function V2AchievementCard({
 
           {/* Rewards */}
           <View style={styles.rewardsRow}>
+            <MaterialCommunityIcons
+              name="star-circle"
+              size={13}
+              color="#FFD700"
+            />
             <Text style={styles.rewardText}>
+              {" "}
               {item.rewards?.tokens
-                ? `🪙 ${item.rewards.tokens} tokens`
-                : `🪙 ${item.coinReward}`}
-              {" • "}⭐ {item.xpReward} XP
+                ? `${item.rewards.tokens} tokens`
+                : `${item.coinReward}`}
+              {"  • "}
             </Text>
+            <Text style={{ fontSize: 12 }}>⭐</Text>
+            <Text style={styles.rewardText}> {item.xpReward} XP</Text>
           </View>
 
           {/* Equip CTA for unlocked entitlement rewards */}
@@ -264,34 +284,154 @@ function V2AchievementCard({
   );
 }
 
-/** Section completion badge display */
+/** Section completion badge display with master badge claim status */
 function SectionBadgeIndicator({
   sectionData,
+  masterBadgeStatus,
+  onClaimPress,
+  onEquipPress,
+  isClaiming,
 }: {
   sectionData: AchievementSectionWithProgress;
+  masterBadgeStatus?: MasterBadgeStatus;
+  onClaimPress?: () => void;
+  onEquipPress?: () => void;
+  isClaiming?: boolean;
 }) {
   const theme = useTheme();
-  const { section, isComplete } = sectionData;
+  const { section, isComplete, unlockedCount, totalCount } = sectionData;
   const badgeTierColor = TIER_COLORS[section.badge.tier];
+  const masterBadge = getMasterBadgeForSection(section.id);
+
+  // Show locked master badge info when section is NOT complete
+  if (!isComplete && masterBadge) {
+    return (
+      <View
+        style={[
+          styles.sectionBadge,
+          {
+            backgroundColor: theme.colors.surfaceVariant,
+            borderColor: theme.colors.outlineVariant,
+          },
+        ]}
+      >
+        <MaterialCommunityIcons
+          name="lock"
+          size={16}
+          color={theme.colors.onSurfaceVariant}
+        />
+        <Text
+          style={[
+            styles.sectionBadgeText,
+            { color: theme.colors.onSurfaceVariant },
+          ]}
+        >
+          {masterBadge.displayName} — Complete all {totalCount} achievements to
+          unlock
+        </Text>
+      </View>
+    );
+  }
 
   if (!isComplete) return null;
 
+  // Section is complete — show status-dependent UI
+  const status = masterBadgeStatus ?? "claimable";
+
+  if (status === "claimed") {
+    // Already claimed — show claimed + Equip button
+    return (
+      <View
+        style={[
+          styles.sectionBadge,
+          {
+            backgroundColor: badgeTierColor + "25",
+            borderColor: badgeTierColor,
+          },
+        ]}
+      >
+        <Text style={{ fontSize: 16 }}>{section.badge.icon}</Text>
+        <Text style={[styles.sectionBadgeText, { color: badgeTierColor }]}>
+          {section.badge.name}
+        </Text>
+        <MaterialCommunityIcons
+          name="check-decagram"
+          size={16}
+          color={badgeTierColor}
+        />
+        {onEquipPress && (
+          <Pressable
+            onPress={onEquipPress}
+            style={({ pressed }) => [
+              styles.masterBadgeButton,
+              {
+                backgroundColor: badgeTierColor + (pressed ? "40" : "20"),
+                borderColor: badgeTierColor,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="star-circle"
+              size={14}
+              color={badgeTierColor}
+            />
+            <Text
+              style={[styles.masterBadgeButtonText, { color: badgeTierColor }]}
+            >
+              Equip
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
+
+  // Claimable — show claim button
   return (
     <View
       style={[
         styles.sectionBadge,
-        { backgroundColor: badgeTierColor + "25", borderColor: badgeTierColor },
+        {
+          backgroundColor: badgeTierColor + "15",
+          borderColor: badgeTierColor,
+        },
       ]}
     >
       <Text style={{ fontSize: 16 }}>{section.badge.icon}</Text>
       <Text style={[styles.sectionBadgeText, { color: badgeTierColor }]}>
         {section.badge.name}
       </Text>
-      <MaterialCommunityIcons
-        name="check-decagram"
-        size={16}
-        color={badgeTierColor}
-      />
+      <Pressable
+        onPress={onClaimPress}
+        disabled={isClaiming}
+        style={({ pressed }) => [
+          styles.masterBadgeButton,
+          {
+            backgroundColor: isClaiming
+              ? theme.colors.surfaceDisabled
+              : badgeTierColor + (pressed ? "50" : "30"),
+            borderColor: badgeTierColor,
+          },
+        ]}
+      >
+        <MaterialCommunityIcons
+          name={isClaiming ? "loading" : "gift"}
+          size={14}
+          color={isClaiming ? theme.colors.onSurfaceDisabled : badgeTierColor}
+        />
+        <Text
+          style={[
+            styles.masterBadgeButtonText,
+            {
+              color: isClaiming
+                ? theme.colors.onSurfaceDisabled
+                : badgeTierColor,
+            },
+          ]}
+        >
+          {isClaiming ? "Claiming..." : "Claim Master Badge"}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -421,6 +561,9 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     new Set(),
   );
 
+  // Track whether sections have been initialized (default all collapsed)
+  const sectionsInitializedRef = useRef(false);
+
   // Filter by category based on active tab (or game filter)
   const categoryFilter = filterGameId ? undefined : activeTab;
 
@@ -452,6 +595,14 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     return buildSectionsWithProgress(displayItems, effectiveCategory);
   }, [displayItems, effectiveCategory]);
 
+  // Default all sections collapsed on initial load
+  useEffect(() => {
+    if (!sectionsInitializedRef.current && sections.length > 0) {
+      sectionsInitializedRef.current = true;
+      setCollapsedSections(new Set(sections.map((s) => s.section.id)));
+    }
+  }, [sections]);
+
   // Count completed sections for the summary
   const completedSectionCount = useMemo(
     () => sections.filter((s) => s.isComplete).length,
@@ -477,6 +628,57 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     (navigation as any).navigate("Customization", { initialTab: "badge" });
   }, [navigation]);
 
+  // ── Master Badge State ──────────────────────────────────
+  const [masterBadgeStatuses, setMasterBadgeStatuses] = useState<
+    Record<string, MasterBadgeStatus>
+  >({});
+  const [claimingSectionId, setClaimingSectionId] = useState<string | null>(
+    null,
+  );
+
+  // Load master badge statuses when sections change
+  useEffect(() => {
+    if (!userId || sections.length === 0) return;
+
+    const sectionInfos = sections.map((s) => ({
+      sectionId: s.section.id,
+      isComplete: s.isComplete,
+    }));
+
+    batchGetMasterBadgeStatuses(userId, sectionInfos)
+      .then(setMasterBadgeStatuses)
+      .catch(() => {
+        // On error, default all complete sections to claimable
+        const fallback: Record<string, MasterBadgeStatus> = {};
+        for (const s of sections) {
+          fallback[s.section.id] = s.isComplete ? "claimable" : "locked";
+        }
+        setMasterBadgeStatuses(fallback);
+      });
+  }, [userId, sections]);
+
+  // Handle master badge claim
+  const handleClaimMasterBadge = useCallback(
+    async (sectionId: string, isComplete: boolean) => {
+      if (!userId || claimingSectionId) return;
+
+      setClaimingSectionId(sectionId);
+      try {
+        const result = await claimMasterBadge(userId, sectionId, isComplete);
+        if (result.success) {
+          setMasterBadgeStatuses((prev) => ({
+            ...prev,
+            [sectionId]: "claimed",
+          }));
+        }
+      } catch {
+        // Silently fail — user can retry
+      } finally {
+        setClaimingSectionId(null);
+      }
+    },
+    [userId, claimingSectionId],
+  );
   // Expand/collapse all
   const toggleAll = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -554,8 +756,8 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
                 ]}
                 onPress={() => {
                   setActiveTab(tab.id);
-                  // Reset collapsed state on tab change
-                  setCollapsedSections(new Set());
+                  // Default all collapsed on tab change (IDs update via effect)
+                  sectionsInitializedRef.current = false;
                 }}
               >
                 <MaterialCommunityIcons
@@ -664,8 +866,21 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
 
                 {isExpanded && (
                   <View style={styles.sectionBody}>
-                    {/* Badge indicator when section is complete */}
-                    <SectionBadgeIndicator sectionData={sectionData} />
+                    {/* Master badge indicator — shows locked/claimable/claimed */}
+                    <SectionBadgeIndicator
+                      sectionData={sectionData}
+                      masterBadgeStatus={
+                        masterBadgeStatuses[sectionData.section.id]
+                      }
+                      onClaimPress={() =>
+                        handleClaimMasterBadge(
+                          sectionData.section.id,
+                          sectionData.isComplete,
+                        )
+                      }
+                      onEquipPress={handleEquipBadgePress}
+                      isClaiming={claimingSectionId === sectionData.section.id}
+                    />
 
                     {/* Achievement cards */}
                     {sectionData.items.map((item) => (
@@ -884,6 +1099,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // Master badge claim/equip buttons
+  masterBadgeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+  },
+  masterBadgeButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
   // Achievement cards
   achievementCard: {
     marginBottom: Spacing.sm,
@@ -939,6 +1169,7 @@ const styles = StyleSheet.create({
   },
   rewardsRow: {
     flexDirection: "row",
+    alignItems: "center",
     marginTop: Spacing.xs,
   },
   rewardText: {

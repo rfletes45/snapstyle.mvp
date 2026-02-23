@@ -16,9 +16,10 @@
  */
 
 import React, { memo, useMemo } from "react";
-import { Image, StyleSheet, View, ViewStyle } from "react-native";
+import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
 import { Text } from "react-native-paper";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { LevelProgress } from "@/components/profile/LevelProgress";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
@@ -59,6 +60,8 @@ export interface ProfileHeaderVisualProps {
   showEditIndicator?: boolean;
   /** Handler for picture press */
   onPicturePress?: () => void;
+  /** Handler for level bar press (navigates to level rewards) */
+  onLevelPress?: () => void;
   /** Custom container style */
   style?: ViewStyle;
 }
@@ -77,6 +80,7 @@ function ProfileHeaderVisualBase({
   previewOverrides,
   showEditIndicator = false,
   onPicturePress,
+  onLevelPress,
   style,
 }: ProfileHeaderVisualProps) {
   const colors = useColors();
@@ -110,10 +114,11 @@ function ProfileHeaderVisualBase({
       <View style={styles.headerRegion}>
         {/* Background Image (fills entire header region) */}
         {backgroundSource && (
-          <Image
+          <CosmeticImage
             source={backgroundSource}
             style={styles.backgroundImage}
-            resizeMode="cover"
+            debugLabel="visual-bg"
+            transition={0}
           />
         )}
 
@@ -175,9 +180,16 @@ function ProfileHeaderVisualBase({
           </View>
 
           {/* Level Progress */}
-          <View style={styles.levelContainer}>
+          <TouchableOpacity
+            style={styles.levelContainer}
+            onPress={onLevelPress}
+            activeOpacity={0.7}
+            disabled={!onLevelPress}
+            accessibilityLabel="View level rewards"
+            accessibilityRole="button"
+          >
             <LevelProgress level={level} compact={!!backgroundSource} />
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
     </View>

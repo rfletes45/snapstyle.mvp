@@ -412,8 +412,11 @@ interface SendMessageV2Input {
     | "file"
     | "system"
     | "scorecard"
-    | "game_invite";
+    | "game_invite"
+    | "animal";
   text?: string;
+  /** Animal theme ID (required when kind="animal") */
+  animalId?: string;
   replyTo?: {
     messageId: string;
     senderId: string;
@@ -463,6 +466,8 @@ interface SendMessageV2Input {
   clientId: string;
   messageId: string;
   createdAt?: number;
+  /** Thread root message ID for reply threading */
+  threadRootId?: string;
   /** Client-generated trace ID for cross-system log correlation (Segment 8) */
   traceId?: string;
   /** Sender's chat style snapshot (bubble color, font, animal theme) */
@@ -518,6 +523,7 @@ export const sendMessageV2 = functions.https.onCall(
       kind,
       text,
       replyTo,
+      threadRootId,
       mentionUids,
       mentionSpans,
       attachments,
@@ -527,6 +533,7 @@ export const sendMessageV2 = functions.https.onCall(
       createdAt,
       traceId,
       senderStyle,
+      animalId,
     } = data;
 
     // Segment 8: Log traceId if present (for cross-system correlation)
@@ -568,6 +575,7 @@ export const sendMessageV2 = functions.https.onCall(
         "system",
         "scorecard",
         "game_invite",
+        "animal",
       ].includes(kind)
     ) {
       throw new functions.https.HttpsError(
@@ -612,6 +620,48 @@ export const sendMessageV2 = functions.https.onCall(
         "invalid-argument",
         "Maximum 5 mentions per message",
       );
+    }
+
+    // === Animal message entitlement enforcement ===
+    if (kind === "animal") {
+      if (!animalId || typeof animalId !== "string" || animalId.length < 1) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Animal messages must include a valid animalId",
+        );
+      }
+
+      // Verify the sender owns the animal cosmetic (entitlement check)
+      const entitlementSnap = await getDb()
+        .collection("Users")
+        .doc(senderId)
+        .collection("Entitlements")
+        .doc(animalId)
+        .get();
+
+      // Also allow free/starter animals (animal_duck, animal_turtle) via catalog
+      const FREE_ANIMALS = ["animal_duck", "animal_turtle"];
+      if (!entitlementSnap.exists && !FREE_ANIMALS.includes(animalId)) {
+        console.warn(
+          `[sendMessageV2] Animal entitlement denied: ${senderId.substring(0, 8)} does not own ${animalId}`,
+        );
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "You do not own this animal theme",
+        );
+      }
+
+      // Verify the animal is currently equipped
+      const senderProfile = await getUserProfile(senderId);
+      if (senderProfile?.chatAppearance?.animalThemeId !== animalId) {
+        console.warn(
+          `[sendMessageV2] Animal equip denied: ${senderId.substring(0, 8)} has ${senderProfile?.chatAppearance?.animalThemeId} equipped, tried ${animalId}`,
+        );
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "This animal theme is not equipped",
+        );
+      }
     }
 
     // Validate attachments
@@ -819,6 +869,15 @@ export const sendMessageV2 = functions.https.onCall(
       messageData.replyTo = replyTo;
     }
 
+    if (threadRootId) {
+      messageData.threadRootId = threadRootId;
+    }
+
+    // Stamp animalId for animal messages
+    if (kind === "animal" && animalId) {
+      messageData.animalId = animalId;
+    }
+
     if (mentionUids && mentionUids.length > 0) {
       messageData.mentionUids = mentionUids;
     }
@@ -907,6 +966,27 @@ export const sendMessageV2 = functions.https.onCall(
       `[sendMessageV2] Creating message ${messageId.substring(0, 8)}`,
     );
     await db.collection(collectionPath).doc(messageId).set(messageData);
+
+    // 9b. If this message belongs to a thread, atomically update the root
+    //     message's replyCount and lastReplyAt so clients can display
+    //     "View thread (X replies)" badges.
+    if (threadRootId) {
+      try {
+        await db
+          .collection(collectionPath)
+          .doc(threadRootId)
+          .update({
+            replyCount: admin.firestore.FieldValue.increment(1),
+            lastReplyAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+      } catch (threadErr) {
+        // Non-fatal: root message may have been deleted; log and continue
+        console.warn(
+          `[sendMessageV2] Failed to update thread root ${threadRootId.substring(0, 8)}:`,
+          threadErr,
+        );
+      }
+    }
 
     // 10. Update conversation preview (lastMessage fields)
     const previewText = getPreviewText(
@@ -1004,6 +1084,7 @@ function getPreviewText(
     }
   }
   if (kind === "game_invite") return "🎮 Game invite";
+  if (kind === "animal") return "🐾 Animal sticker";
 
   return text || "";
 }

@@ -15,6 +15,11 @@ import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -35,12 +40,7 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Dimensions,
   Platform,
@@ -49,13 +49,17 @@ import {
   View,
 } from "react-native";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
-
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
+import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/LightsOutGameScreen");
 // =============================================================================
 // Types & Constants
@@ -288,11 +292,7 @@ function LightCell({ isOn, onPress, disabled }: LightCellProps) {
 // Component
 // =============================================================================
 
-function LightsOutGameScreen({
-  navigation,
-}: {
-  navigation: any;
-}) {
+function LightsOutGameScreen({ navigation }: { navigation: any }) {
   const __codexGameCompletion = useGameCompletion({ gameType: "lights_out" });
   void __codexGameCompletion;
   const __codexGameHaptics = useGameHaptics();
@@ -322,6 +322,23 @@ function LightsOutGameScreen({
   const [isNewBest, setIsNewBest] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "lights_out") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Spectator hosting
   const spectatorHost = useSpectator({
     mode: "sp-host",
@@ -340,9 +357,7 @@ function LightsOutGameScreen({
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
-        setPersonalBest,
-      );
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(setPersonalBest);
     }
   }, [currentFirebaseUser]);
 
@@ -357,6 +372,9 @@ function LightsOutGameScreen({
     setLevel(lvl);
     setWon(false);
     setIsNewBest(false);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
     setPhase("playing");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
@@ -407,6 +425,18 @@ function LightsOutGameScreen({
             .catch((error) => {
               logger.error("Error recording game session:", error);
             });
+          // Submit to XP pipeline
+          submitGameResult(
+            buildGameResultEvent({
+              gameId: "lights_out",
+              mode: "solo",
+              outcome: "win",
+              score: nextMoves,
+              durationMs: 0,
+              userId: currentFirebaseUser.uid,
+              displayName: currentFirebaseUser.displayName || "Player",
+            }),
+          ).catch(() => {});
         }
       }
     },
@@ -675,6 +705,14 @@ function LightsOutGameScreen({
                 style={[styles.resultBest, { color: colors.textSecondary }]}
               >
                 Personal Best: {personalBest.bestScore} moves
+              </Text>
+            )}
+            {xpEarned > 0 && (
+              <Text
+                style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+              >
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
               </Text>
             )}
           </Dialog.Content>

@@ -667,11 +667,6 @@
       ]
     },
     {
-      "collectionGroup": "Inbox",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "lastActivityAt", "order": "DESCENDING" }]
-    },
-    {
       "collectionGroup": "MessageRequests",
       "queryScope": "COLLECTION",
       "fields": [
@@ -685,6 +680,14 @@
       "fields": [
         { "fieldPath": "senderId", "order": "ASCENDING" },
         { "fieldPath": "serverReceivedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "Messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "threadRootId", "order": "ASCENDING" },
+        { "fieldPath": "serverReceivedAt", "order": "ASCENDING" }
       ]
     },
     {

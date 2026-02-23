@@ -113,7 +113,7 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
     subtitle: "Test your brain",
     icon: "puzzle",
     accentColor: "#4ECDC4",
-    games: ["play_2048", "minesweeper_classic", "lights_out"],
+    games: ["play_2048", "minesweeper_classic"],
     layout: "carousel",
   },
   {
@@ -133,7 +133,6 @@ export const CATEGORY_CONFIGS: GameCategoryConfig[] = [
       "reversi_game",
       "starforge_game",
       "sketch_party_game",
-      "minigolf_duels",
     ],
     layout: "carousel",
   },

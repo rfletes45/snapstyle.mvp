@@ -21,12 +21,19 @@
  *         This guarantees every tile starts its animation from the correct
  *         previousPosition without stale shared-value state.
  *
+ * MOBILE FIX: Animations are started in the component body (not useEffect)
+ * so they begin BEFORE the first native paint. This prevents the 1-frame
+ * "teleport" flash on mobile where tiles briefly appear at their start
+ * position before the animation kicks in. The Skia Canvas is set to
+ * `pointerEvents="none"` so pan gestures pass through to GestureDetector.
+ *
  * The rendering layer uses React Native + Reanimated and the app's standard
  * game-screen patterns (header, scores, GameOverModal, FriendPickerModal,
  * haptics, single-player session recording).
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
+import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
 import { GameOverModal } from "@/components/games/GameOverModal";
 import { Skia2048Tile, SkiaGameBoard } from "@/components/games/graphics";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
@@ -35,6 +42,7 @@ import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
@@ -49,15 +57,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  Dimensions,
-  Platform,
-  StyleSheet,
-  View,
-} from "react-native";
-import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
-import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { Dimensions, Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -603,39 +605,40 @@ function AnimatedTile({ tile }: { tile: RenderTile }) {
   const translateY = useSharedValue(startY);
   const scale = useSharedValue(tile.anim === "slide" ? 1 : 0);
 
-  useEffect(() => {
-    // ── Slide: transition 100ms ease-in-out (matches original CSS) ──
-    translateX.value = withTiming(endX, SLIDE_CONFIG);
-    translateY.value = withTiming(endY, SLIDE_CONFIG);
+  // ── Start animations immediately on mount ──────────────────────
+  // Setting shared values in the component body (not useEffect) ensures
+  // animations begin BEFORE the first native paint, preventing the 1-frame
+  // "teleport" flash that occurs when useEffect fires after paint.
+  //
+  // This is safe because each AnimatedTile is fresh-mounted per move
+  // (via the moveId-based React key), so this code runs exactly once.
+  //
+  // ── Slide: transition 100ms ease-in-out (matches original CSS) ──
+  translateX.value = withTiming(endX, SLIDE_CONFIG);
+  translateY.value = withTiming(endY, SLIDE_CONFIG);
 
-    if (tile.anim === "appear") {
-      // ── @keyframes appear: opacity 0→1, scale 0→1, 200ms ease ──
-      // Original CSS: animation: appear 200ms ease $transition-speed
-      // $transition-speed = 100ms delay (waits for slides to finish)
-      scale.value = withDelay(
-        TRANSITION_SPEED,
-        withTiming(1, {
-          duration: APPEAR_DURATION,
+  if (tile.anim === "appear") {
+    // ── @keyframes appear: scale 0→1, 200ms ease, delayed 100ms ──
+    scale.value = withDelay(
+      TRANSITION_SPEED,
+      withTiming(1, {
+        duration: APPEAR_DURATION,
+        easing: Easing.out(Easing.ease),
+      }),
+    );
+  } else if (tile.anim === "pop") {
+    // ── @keyframes pop: scale 0→1.2→1, 200ms ease, delayed 100ms ──
+    scale.value = withDelay(
+      TRANSITION_SPEED,
+      withSequence(
+        withTiming(1.2, {
+          duration: APPEAR_DURATION / 2,
           easing: Easing.out(Easing.ease),
         }),
-      );
-    } else if (tile.anim === "pop") {
-      // ── @keyframes pop: scale 0→1.2→1, 200ms ease ──
-      // Original CSS: animation: pop 200ms ease $transition-speed
-      // z-index: 20 on .tile-merged .tile-inner
-      scale.value = withDelay(
-        TRANSITION_SPEED,
-        withSequence(
-          withTiming(1.2, {
-            duration: APPEAR_DURATION / 2,
-            easing: Easing.out(Easing.ease),
-          }),
-          withSpring(1, { damping: 14, stiffness: 200 }),
-        ),
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+        withSpring(1, { damping: 14, stiffness: 200 }),
+      ),
+    );
+  }
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [
@@ -671,9 +674,7 @@ interface Play2048GameScreenProps {
   navigation: any;
 }
 
-function Play2048GameScreen({
-  navigation,
-}: Play2048GameScreenProps) {
+function Play2048GameScreen({ navigation }: Play2048GameScreenProps) {
   const __codexGameCompletion = useGameCompletion({ gameType: "play_2048" });
   void __codexGameCompletion;
   const theme = useTheme();
@@ -704,6 +705,23 @@ function Play2048GameScreen({
   const [showWinDialog, setShowWinDialog] = useState(false);
   const [hasShownWinDialog, setHasShownWinDialog] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "play_2048") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Back navigation with confirmation dialog
   const { handleBack } = useGameBackHandler({
@@ -845,7 +863,14 @@ function Play2048GameScreen({
         isProcessingRef.current = false;
       }, TRANSITION_SPEED + 50);
     },
-    [highScore, hasShownWinDialog, haptics, handleGameOver, actuate, scheduleTimeout],
+    [
+      highScore,
+      hasShownWinDialog,
+      haptics,
+      handleGameOver,
+      actuate,
+      scheduleTimeout,
+    ],
   );
 
   const handleSwipeRef = useRef(handleSwipe);
@@ -860,14 +885,14 @@ function Play2048GameScreen({
     () =>
       Gesture.Pan()
         .runOnJS(true)
+        .minDistance(SWIPE_THRESHOLD)
         .onEnd((event) => {
           const dx = event.translationX;
           const dy = event.translationY;
           const absDx = Math.abs(dx);
           const absDy = Math.abs(dy);
 
-          // Original uses threshold of 10; we use 30 for mobile
-          if (Math.max(absDx, absDy) < SWIPE_THRESHOLD) return;
+          // Minimum travel already enforced by minDistance — no need for threshold check
 
           // (right : left) : (down : up)  — exact same logic as original
           const direction: Direction =
@@ -888,6 +913,9 @@ function Play2048GameScreen({
     setHasShownWinDialog(false);
     setShowWinDialog(false);
     setShowGameOverModal(false);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
     isProcessingRef.current = false;
     startTimeRef.current = Date.now();
     spectatorHost.startHosting();
@@ -1103,7 +1131,7 @@ function Play2048GameScreen({
           borderWidth={2}
           innerShadowBlur={6}
         >
-          <View style={[styles.board]}>
+          <View style={[styles.board]} collapsable={false}>
             {gridCells}
 
             {/*
@@ -1179,6 +1207,9 @@ function Play2048GameScreen({
           personalBest: highScore,
           isNewBest: score > highScore,
           moves: totalMoves,
+          xpEarned: xpEarned || undefined,
+          didLevelUp: didLevelUp || undefined,
+          newLevel: newLevel || undefined,
         }}
         onRematch={startNewGame}
         onShare={handleShare}

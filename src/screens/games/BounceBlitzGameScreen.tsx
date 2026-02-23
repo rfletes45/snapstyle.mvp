@@ -17,7 +17,9 @@
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
-import ScoreRaceOverlay, { type ScoreRaceOverlayPhase } from "@/components/ScoreRaceOverlay";
+import ScoreRaceOverlay, {
+  type ScoreRaceOverlayPhase,
+} from "@/components/ScoreRaceOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
@@ -49,12 +51,15 @@ import {
 } from "react-native";
 import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
 
-
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
+import {
+  PhysicsDebugOverlay,
+  usePhysicsDebug,
+} from "@/components/games/PhysicsDebugOverlay";
+import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import { createLogger } from "@/utils/log";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 const logger = createLogger("screens/games/BounceBlitzGameScreen");
 // =============================================================================
@@ -158,16 +163,7 @@ function BounceBlitzGameScreen({
   navigation,
   route,
 }: BounceBlitzGameScreenProps & { route: any }) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "bounce_blitz" });
-  void __codexGameCompletion;
-
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
-
+  const haptics = useGameHaptics();
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
@@ -277,6 +273,24 @@ function BounceBlitzGameScreen({
   const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
     useState(false);
 
+  // GameOverModal / XP state
+  const [showGameOverModal, setShowGameOverModal] = useState(false);
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "bounce_blitz") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Spectator hosting — allows friends to watch via SpectatorRoom
   const spectatorHost = useSpectator({
     mode: "sp-host",
@@ -297,8 +311,9 @@ function BounceBlitzGameScreen({
   const blockIdCounter = useRef(0); // Unique ID counter for blocks
   const [renderTrigger, setRenderTrigger] = useState(0);
   const spectatorFrameCount = useRef(0);
-  // Track recently hit blocks to prevent multi-hit (blockId -> frames since hit)
-  const recentlyHitBlocks = useRef<Map<number, number>>(new Map());
+
+  // Physics debug harness (__DEV__ only)
+  const physicsDebug = usePhysicsDebug();
 
   // Generate blocks for a new level
   const generateBlocks = useCallback((levelNum: number): Block[] => {
@@ -386,9 +401,18 @@ function BounceBlitzGameScreen({
     }, 50);
   }, [initGame, scheduleTimeout]);
 
+  // Safety timeout ref to prevent infinite shooting loops
+  const shootingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Launch balls
   const launchBalls = useCallback(
     (angle: number) => {
+      // Pre-shot game-over check: blocks already at loss threshold
+      if (blocks.current.some((b) => b.row >= ROWS)) {
+        endGameRef.current();
+        return;
+      }
+
       setStatus("shooting");
       statusRef.current = "shooting";
       ballsReturned.current = 0;
@@ -418,9 +442,26 @@ function BounceBlitzGameScreen({
         }
       }, 80);
 
-      // Game loop - check if we should continue after each update
+      // Safety timeout: force-end game if shooting takes longer than 30s
+      if (shootingTimeoutRef.current) clearTimeout(shootingTimeoutRef.current);
+      shootingTimeoutRef.current = setTimeout(() => {
+        if (statusRef.current === "shooting") {
+          logger.warn(
+            "[BounceBlitz] Shooting safety timeout reached — forcing game over",
+          );
+          // Force all balls inactive
+          balls.current = balls.current.map((b) => ({ ...b, active: false }));
+          if (gameLoopRef.current) {
+            cancelAnimationFrame(gameLoopRef.current);
+            gameLoopRef.current = null;
+          }
+          endGameRef.current();
+        }
+      }, 30000);
+
+      // Game loop - use ref to always call latest updateGame (avoids stale closures)
       const gameLoop = () => {
-        updateGame();
+        updateGameRef.current();
         // Only schedule next frame if we're still in shooting state
         // The updateGame function sets gameLoopRef.current to null when done
         if (gameLoopRef.current !== null && statusRef.current === "shooting") {
@@ -432,6 +473,12 @@ function BounceBlitzGameScreen({
     [ballCount, launchX],
   );
 
+  // Ref to store latest updateGame function to avoid stale closures in game loop
+  const updateGameRef = useRef(updateGame);
+  useEffect(() => {
+    updateGameRef.current = updateGame;
+  }, [updateGame]);
+
   // Ref to store latest launchBalls function for aim gesture
   const launchBallsRef = useRef(launchBalls);
   useEffect(() => {
@@ -442,7 +489,7 @@ function BounceBlitzGameScreen({
   const endingGameRef = useRef(false);
 
   // End game - uses refs to get current values, avoiding stale closures
-  const endGame = useCallback(async () => {
+  const endGame = useCallback(() => {
     // Prevent multiple calls
     if (endingGameRef.current || statusRef.current === "gameOver") {
       logger.info(
@@ -457,14 +504,25 @@ function BounceBlitzGameScreen({
       cancelAnimationFrame(gameLoopRef.current);
       gameLoopRef.current = null;
     }
+    // Clear safety timeout
+    if (shootingTimeoutRef.current) {
+      clearTimeout(shootingTimeoutRef.current);
+      shootingTimeoutRef.current = null;
+    }
 
     setStatus("gameOver");
     statusRef.current = "gameOver";
     spectatorHost.endHosting(scoreRef.current);
 
+    // Reset XP state before new run
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
+
     if (Platform.OS !== "web") {
       Vibration.vibrate([0, 100, 50, 100]);
     }
+    haptics.gameOver();
 
     // Use refs to get current values
     const currentScore = scoreRef.current;
@@ -489,37 +547,48 @@ function BounceBlitzGameScreen({
       showSuccess("🎉 New High Score!");
     }
 
-    // Record session
+    // Show the game-over modal immediately (don't block on session recording)
+    setShowGameOverModal(true);
+
+    // Record session in the background (non-blocking)
     if (currentFirebaseUser) {
-      try {
-        logger.info(
-          "[BounceBlitz] Recording session for user:",
-          currentFirebaseUser.uid,
-        );
-        await recordSinglePlayerSession(currentFirebaseUser.uid, {
+      logger.info(
+        "[BounceBlitz] Recording session for user:",
+        currentFirebaseUser.uid,
+      );
+      recordSinglePlayerSession(currentFirebaseUser.uid, {
+        gameType: "bounce_blitz",
+        finalScore: currentScore,
+        stats: {
           gameType: "bounce_blitz",
-          finalScore: currentScore,
-          stats: {
-            gameType: "bounce_blitz",
-            levelReached: currentLevel,
-            blocksDestroyed: currentBlocksDestroyed,
-            ballsLaunched: currentBallCount,
-            totalBounces: currentBounces,
-          },
-        });
-        logger.info("[BounceBlitz] Session recorded successfully");
-      } catch (error) {
-        logger.error("[BounceBlitz] Error recording session:", error);
-      }
+          levelReached: currentLevel,
+          blocksDestroyed: currentBlocksDestroyed,
+          ballsLaunched: currentBallCount,
+          totalBounces: currentBounces,
+        },
+      })
+        .then(() => logger.info("[BounceBlitz] Session recorded successfully"))
+        .catch((error) =>
+          logger.error("[BounceBlitz] Error recording session:", error),
+        );
     }
 
     // Reset the ending flag after a short delay
     endingGameRef.current = false;
-  }, [currentFirebaseUser, showSuccess]);
+  }, [currentFirebaseUser, showSuccess, haptics]);
 
-  // Update game physics
+  // Ref to store latest endGame function for use in launchBalls safety checks
+  const endGameRef = useRef(endGame);
+  useEffect(() => {
+    endGameRef.current = endGame;
+  }, [endGame]);
+
+  // ── Physics constants ──
+  const BB_EPSILON = 1; // px separation after collision
+  const BB_MAX_SUB_STEPS = 8;
+
+  // Update game physics — sub-stepped to prevent tunneling & double-hits
   const updateGame = useCallback(() => {
-    // Only process if we're in shooting state
     if (statusRef.current !== "shooting") {
       return;
     }
@@ -529,140 +598,147 @@ function BounceBlitzGameScreen({
 
     balls.current = balls.current.map((ball) => {
       if (!ball.active) {
-        // Ball already returned, skip processing
         return ball;
       }
 
       anyBallActive = true;
 
-      // Update position
-      let newX = ball.x + ball.vx;
-      let newY = ball.y + ball.vy;
+      let newX = ball.x;
+      let newY = ball.y;
       let newVx = ball.vx;
       let newVy = ball.vy;
 
-      // Wall collisions
-      if (newX - BALL_RADIUS < 0) {
-        newX = BALL_RADIUS;
-        newVx = -newVx * BOUNCE_DAMPING;
-        bounceOccurred = true;
-      } else if (newX + BALL_RADIUS > GAME_WIDTH) {
-        newX = GAME_WIDTH - BALL_RADIUS;
-        newVx = -newVx * BOUNCE_DAMPING;
-        bounceOccurred = true;
-      }
+      // Calculate sub-steps based on speed vs cell size
+      const speed = Math.sqrt(newVx * newVx + newVy * newVy);
+      const subSteps = Math.min(
+        BB_MAX_SUB_STEPS,
+        Math.max(1, Math.ceil(speed / (CELL_SIZE / 2))),
+      );
 
-      // Ceiling collision
-      if (newY - BALL_RADIUS < 0) {
-        newY = BALL_RADIUS;
-        newVy = -newVy * BOUNCE_DAMPING;
-        bounceOccurred = true;
-      }
+      let ballReturned = false;
 
-      // Floor collision (ball returned)
-      if (newY + BALL_RADIUS > GAME_HEIGHT - 10) {
-        // First ball sets new launch position
-        if (ballsReturned.current === 0) {
-          newLaunchX.current = newX;
+      for (let step = 0; step < subSteps; step++) {
+        if (ballReturned) break;
+
+        // Move by 1/N of current velocity
+        newX += newVx / subSteps;
+        newY += newVy / subSteps;
+
+        // ── Wall collisions ──
+        if (newX - BALL_RADIUS < 0) {
+          newX = BALL_RADIUS + BB_EPSILON;
+          newVx = Math.abs(newVx) * BOUNCE_DAMPING;
+          bounceOccurred = true;
+        } else if (newX + BALL_RADIUS > GAME_WIDTH) {
+          newX = GAME_WIDTH - BALL_RADIUS - BB_EPSILON;
+          newVx = -Math.abs(newVx) * BOUNCE_DAMPING;
+          bounceOccurred = true;
         }
-        ballsReturned.current++;
-        return { ...ball, active: false };
-      }
 
-      // Block collisions - track if we hit a block this frame to prevent multi-hits
-      let hitBlockThisFrame = false;
-
-      // Decrement cooldowns and remove expired entries
-      recentlyHitBlocks.current.forEach((frames, blockId) => {
-        if (frames <= 1) {
-          recentlyHitBlocks.current.delete(blockId);
-        } else {
-          recentlyHitBlocks.current.set(blockId, frames - 1);
+        // ── Ceiling collision ──
+        if (newY - BALL_RADIUS < 0) {
+          newY = BALL_RADIUS + BB_EPSILON;
+          newVy = Math.abs(newVy) * BOUNCE_DAMPING;
+          bounceOccurred = true;
         }
-      });
 
-      blocks.current = blocks.current.map((block) => {
-        // Skip if we already hit a block this frame
-        if (hitBlockThisFrame) return block;
+        // ── Floor collision (ball returned) ──
+        if (newY + BALL_RADIUS > GAME_HEIGHT - 10) {
+          if (ballsReturned.current === 0) {
+            newLaunchX.current = newX;
+          }
+          ballsReturned.current++;
+          ballReturned = true;
+          break;
+        }
 
-        // Skip if this block was recently hit (cooldown to prevent multi-hit)
-        if (recentlyHitBlocks.current.has(block.id)) return block;
+        // ── Block collisions (one per sub-step with epsilon separation) ──
+        const hitThisStep = new Set<number>();
 
-        // Extra ball pickups are pass-through (no collision/bounce)
-        if (block.type === "extra_ball") {
-          // Check if ball center is within pickup radius (circle collision)
-          const blockCenterX = block.col * CELL_SIZE + CELL_SIZE / 2;
-          const blockCenterY = (block.row + 1) * CELL_SIZE + CELL_SIZE / 2;
-          const pickupRadius = BLOCK_SIZE / 2;
+        for (let bi = 0; bi < blocks.current.length; bi++) {
+          const block = blocks.current[bi];
+          if (block.health <= 0) continue;
+          if (hitThisStep.has(block.id)) continue;
 
-          const distX = newX - blockCenterX;
-          const distY = newY - blockCenterY;
+          // Extra ball pickups — pass-through (circle collision, no bounce)
+          if (block.type === "extra_ball") {
+            const bCx = block.col * CELL_SIZE + CELL_SIZE / 2;
+            const bCy = (block.row + 1) * CELL_SIZE + CELL_SIZE / 2;
+            const pickupR = BLOCK_SIZE / 2;
+            const dx = newX - bCx;
+            const dy = newY - bCy;
+            if (Math.sqrt(dx * dx + dy * dy) < pickupR + BALL_RADIUS) {
+              setBallCount((b) => b + 1);
+              setScore((s) => s + 10);
+              blocks.current[bi] = { ...block, health: 0 };
+            }
+            continue;
+          }
+
+          // Full cell bounds (no gaps)
+          const cellLeft = block.col * CELL_SIZE;
+          const cellRight = cellLeft + CELL_SIZE;
+          const cellTop = (block.row + 1) * CELL_SIZE;
+          const cellBottom = cellTop + CELL_SIZE;
+
+          const closestX = Math.max(cellLeft, Math.min(newX, cellRight));
+          const closestY = Math.max(cellTop, Math.min(newY, cellBottom));
+          const distX = newX - closestX;
+          const distY = newY - closestY;
           const distance = Math.sqrt(distX * distX + distY * distY);
 
-          if (distance < pickupRadius + BALL_RADIUS) {
-            // Collect the extra ball - no bounce!
-            setBallCount((b) => b + 1);
-            setScore((s) => s + 10);
-            return { ...block, health: 0 };
+          if (distance < BALL_RADIUS) {
+            hitThisStep.add(block.id);
+            bounceOccurred = true;
+
+            // Epsilon separation — push ball fully outside the cell
+            const overlapX = BALL_RADIUS - Math.abs(distX);
+            const overlapY = BALL_RADIUS - Math.abs(distY);
+
+            if (overlapX < overlapY) {
+              newVx = distX >= 0 ? Math.abs(newVx) : -Math.abs(newVx);
+              newX +=
+                distX >= 0 ? overlapX + BB_EPSILON : -(overlapX + BB_EPSILON);
+            } else {
+              newVy = distY >= 0 ? Math.abs(newVy) : -Math.abs(newVy);
+              newY +=
+                distY >= 0 ? overlapY + BB_EPSILON : -(overlapY + BB_EPSILON);
+            }
+
+            // Damage block
+            const newHealth = block.health - 1;
+            if (newHealth <= 0) {
+              setScore((s) => s + (block.type === "bonus" ? 20 : 10));
+              setTotalBlocksDestroyed((t) => t + 1);
+            }
+            blocks.current[bi] = {
+              ...block,
+              health: newHealth,
+              color:
+                block.type === "bonus" ? "#9C27B0" : getBlockColor(newHealth),
+            };
+
+            // Feed debug harness
+            if (__DEV__ && physicsDebug.enabled) {
+              physicsDebug.recordCollision(newX, newY);
+            }
+
+            break; // One block per sub-step; next step can hit another
           }
-          return block;
         }
+      }
 
-        // Use full cell bounds for collision (no gaps between blocks)
-        // This prevents balls from slipping through diagonal gaps
-        const cellLeft = block.col * CELL_SIZE;
-        const cellRight = cellLeft + CELL_SIZE;
-        const cellTop = (block.row + 1) * CELL_SIZE;
-        const cellBottom = cellTop + CELL_SIZE;
-
-        // Check collision against full cell
-        const closestX = Math.max(cellLeft, Math.min(newX, cellRight));
-        const closestY = Math.max(cellTop, Math.min(newY, cellBottom));
-        const distX = newX - closestX;
-        const distY = newY - closestY;
-        const distance = Math.sqrt(distX * distX + distY * distY);
-
-        if (distance < BALL_RADIUS) {
-          hitBlockThisFrame = true;
-          bounceOccurred = true;
-
-          // Add to recently hit blocks with cooldown (prevents re-hitting for 3 frames)
-          recentlyHitBlocks.current.set(block.id, 3);
-
-          // Determine collision side and push ball out more aggressively
-          const overlapX = BALL_RADIUS - Math.abs(distX);
-          const overlapY = BALL_RADIUS - Math.abs(distY);
-
-          // Add extra push distance to ensure ball fully exits the block
-          const pushExtra = 2;
-
-          if (overlapX < overlapY) {
-            newVx = -newVx;
-            newX += distX > 0 ? overlapX + pushExtra : -(overlapX + pushExtra);
-          } else {
-            newVy = -newVy;
-            newY += distY > 0 ? overlapY + pushExtra : -(overlapY + pushExtra);
-          }
-
-          // Handle block hit (normal and bonus blocks only)
-          const newHealth = block.health - 1;
-          if (newHealth <= 0) {
-            setScore((s) => s + (block.type === "bonus" ? 20 : 10));
-            setTotalBlocksDestroyed((t) => t + 1);
-          }
-          return {
-            ...block,
-            health: newHealth,
-            color:
-              block.type === "bonus" ? "#9C27B0" : getBlockColor(newHealth),
-          };
-        }
-        return block;
-      });
-
-      // Remove destroyed blocks
+      // Remove destroyed blocks after all sub-steps
       blocks.current = blocks.current.filter((b) => b.health > 0);
 
+      // Feed ball speed to debug harness
+      if (__DEV__ && physicsDebug.enabled && !ballReturned) {
+        physicsDebug.setBallSpeed(Math.sqrt(newVx * newVx + newVy * newVy));
+      }
+
+      if (ballReturned) {
+        return { ...ball, active: false };
+      }
       return { ...ball, x: newX, y: newY, vx: newVx, vy: newVy };
     });
 
@@ -670,7 +746,7 @@ function BounceBlitzGameScreen({
       setTotalBounces((t) => t + 1);
     }
 
-    // Check if all balls have returned (none are active and all have been launched)
+    // Check if all balls have returned
     const allBallsReturned =
       !anyBallActive &&
       balls.current.length > 0 &&
@@ -681,6 +757,11 @@ function BounceBlitzGameScreen({
       if (gameLoopRef.current) {
         cancelAnimationFrame(gameLoopRef.current);
         gameLoopRef.current = null;
+      }
+      // Clear safety timeout — turn ended normally
+      if (shootingTimeoutRef.current) {
+        clearTimeout(shootingTimeoutRef.current);
+        shootingTimeoutRef.current = null;
       }
 
       // Move blocks down
@@ -1007,289 +1088,229 @@ function BounceBlitzGameScreen({
         <View
           style={[styles.gameArea, { width: GAME_WIDTH, height: GAME_HEIGHT }]}
         >
-        {/* Skia background gradient */}
-        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-          <RoundedRect
-            x={0}
-            y={0}
-            width={GAME_WIDTH}
-            height={GAME_HEIGHT}
-            r={16}
-          >
-            <LinearGradient
-              start={vec(0, 0)}
-              end={vec(0, GAME_HEIGHT)}
-              colors={["#1A2744", "#16213E", "#0F1A2E"]}
+          {/* Skia background gradient */}
+          {/* Physics Debug Overlay */}
+          {__DEV__ && (
+            <PhysicsDebugOverlay
+              debug={physicsDebug}
+              width={GAME_WIDTH}
+              height={GAME_HEIGHT}
             />
-            <Shadow dx={0} dy={2} blur={10} color="rgba(0,0,0,0.5)" inner />
-          </RoundedRect>
-          {/* Subtle grid lines */}
-          {Array.from({ length: 8 }).map((_, i) => {
-            const x = (i + 1) * CELL_SIZE;
-            return (
-              <RoundedRect
-                key={`vg-${i}`}
-                x={x}
-                y={0}
-                width={0.5}
-                height={GAME_HEIGHT}
-                r={0}
-              >
-                <LinearGradient
-                  start={vec(x, 0)}
-                  end={vec(x, GAME_HEIGHT)}
-                  colors={[
-                    "rgba(255,255,255,0)",
-                    "rgba(255,255,255,0.03)",
-                    "rgba(255,255,255,0)",
-                  ]}
-                />
-              </RoundedRect>
-            );
-          })}
-        </Canvas>
-
-        {/* Blocks */}
-        {blocks.current.map((block) => (
-          <View
-            key={block.id}
-            style={[
-              block.type === "extra_ball"
-                ? styles.extraBallPickup
-                : styles.block,
-              block.type === "extra_ball"
-                ? {
-                    left:
-                      block.col * CELL_SIZE + CELL_SIZE / 2 - BLOCK_SIZE / 2,
-                    top:
-                      (block.row + 1) * CELL_SIZE +
-                      CELL_SIZE / 2 -
-                      BLOCK_SIZE / 2,
-                    width: BLOCK_SIZE,
-                    height: BLOCK_SIZE,
-                  }
-                : {
-                    left: block.col * CELL_SIZE + BLOCK_PADDING,
-                    top: (block.row + 1) * CELL_SIZE + BLOCK_PADDING,
-                    width: BLOCK_SIZE,
-                    height: BLOCK_SIZE,
-                  },
-            ]}
-          >
-            {block.type === "extra_ball" ? (
-              <MaterialCommunityIcons
-                name="plus-circle"
-                size={BLOCK_SIZE}
-                color="#FFFC00"
+          )}
+          <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+            <RoundedRect
+              x={0}
+              y={0}
+              width={GAME_WIDTH}
+              height={GAME_HEIGHT}
+              r={16}
+            >
+              <LinearGradient
+                start={vec(0, 0)}
+                end={vec(0, GAME_HEIGHT)}
+                colors={["#1A2744", "#16213E", "#0F1A2E"]}
               />
-            ) : (
-              <>
-                <Canvas style={{ width: BLOCK_SIZE, height: BLOCK_SIZE }}>
-                  <RoundedRect
-                    x={0}
-                    y={0}
-                    width={BLOCK_SIZE}
-                    height={BLOCK_SIZE}
-                    r={6}
-                  >
-                    <LinearGradient
-                      start={vec(0, 0)}
-                      end={vec(0, BLOCK_SIZE)}
-                      colors={[
-                        lightenColor(block.color, 30),
-                        block.color,
-                        darkenColor(block.color, 30),
-                      ]}
-                    />
-                    <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.3)" />
-                  </RoundedRect>
-                  {/* Top highlight */}
-                  <RoundedRect
-                    x={2}
-                    y={1}
-                    width={BLOCK_SIZE - 4}
-                    height={4}
-                    r={2}
-                  >
-                    <LinearGradient
-                      start={vec(0, 1)}
-                      end={vec(0, 5)}
-                      colors={["rgba(255,255,255,0.35)", "rgba(255,255,255,0)"]}
-                    />
-                  </RoundedRect>
-                </Canvas>
-                <Text style={[styles.blockText, { position: "absolute" }]}>
-                  {block.health}
-                </Text>
-              </>
-            )}
-          </View>
-        ))}
+              <Shadow dx={0} dy={2} blur={10} color="rgba(0,0,0,0.5)" inner />
+            </RoundedRect>
+            {/* Subtle grid lines */}
+            {Array.from({ length: 8 }).map((_, i) => {
+              const x = (i + 1) * CELL_SIZE;
+              return (
+                <RoundedRect
+                  key={`vg-${i}`}
+                  x={x}
+                  y={0}
+                  width={0.5}
+                  height={GAME_HEIGHT}
+                  r={0}
+                >
+                  <LinearGradient
+                    start={vec(x, 0)}
+                    end={vec(x, GAME_HEIGHT)}
+                    colors={[
+                      "rgba(255,255,255,0)",
+                      "rgba(255,255,255,0.03)",
+                      "rgba(255,255,255,0)",
+                    ]}
+                  />
+                </RoundedRect>
+              );
+            })}
+          </Canvas>
 
-        {/* Balls — Skia glowing */}
-        {balls.current.map((ball) =>
-          ball.active ? (
+          {/* Blocks */}
+          {blocks.current.map((block) => (
             <View
-              key={ball.id}
+              key={block.id}
               style={[
-                styles.ball,
-                {
-                  left: ball.x - BALL_RADIUS - 2,
-                  top: ball.y - BALL_RADIUS - 2,
-                  width: (BALL_RADIUS + 2) * 2,
-                  height: (BALL_RADIUS + 2) * 2,
-                },
+                block.type === "extra_ball"
+                  ? styles.extraBallPickup
+                  : styles.block,
+                block.type === "extra_ball"
+                  ? {
+                      left:
+                        block.col * CELL_SIZE + CELL_SIZE / 2 - BLOCK_SIZE / 2,
+                      top:
+                        (block.row + 1) * CELL_SIZE +
+                        CELL_SIZE / 2 -
+                        BLOCK_SIZE / 2,
+                      width: BLOCK_SIZE,
+                      height: BLOCK_SIZE,
+                    }
+                  : {
+                      left: block.col * CELL_SIZE + BLOCK_PADDING,
+                      top: (block.row + 1) * CELL_SIZE + BLOCK_PADDING,
+                      width: BLOCK_SIZE,
+                      height: BLOCK_SIZE,
+                    },
               ]}
             >
-              <Canvas
-                style={{
-                  width: (BALL_RADIUS + 2) * 2,
-                  height: (BALL_RADIUS + 2) * 2,
-                }}
-              >
-                {/* Glow halo */}
-                <SkiaCircle
-                  cx={BALL_RADIUS + 2}
-                  cy={BALL_RADIUS + 2}
-                  r={BALL_RADIUS + 2}
-                >
-                  <RadialGradient
-                    c={vec(BALL_RADIUS + 2, BALL_RADIUS + 2)}
-                    r={BALL_RADIUS + 2}
-                    colors={["rgba(255,252,0,0.4)", "rgba(255,252,0,0)"]}
-                  />
-                </SkiaCircle>
-                {/* Ball body */}
-                <SkiaCircle
-                  cx={BALL_RADIUS + 2}
-                  cy={BALL_RADIUS + 2}
-                  r={BALL_RADIUS}
-                >
-                  <RadialGradient
-                    c={vec(BALL_RADIUS, BALL_RADIUS - 1)}
-                    r={BALL_RADIUS}
-                    colors={["#FFFFFF", "#E8E8E8", "#CCCCCC"]}
-                  />
-                  <Shadow dx={0} dy={1} blur={3} color="rgba(255,252,0,0.6)" />
-                </SkiaCircle>
-              </Canvas>
-            </View>
-          ) : null,
-        )}
-
-        {/* Launch indicator */}
-        {status === "aiming" && (
-          <View
-            style={[
-              styles.launchIndicator,
-              { left: launchX - BALL_RADIUS, bottom: 10 },
-            ]}
-          >
-            <View style={styles.launchBall} />
-            <Text style={styles.ballCountIndicator}>x{ballCount}</Text>
-          </View>
-        )}
-
-        {/* Aim line */}
-        {renderAimLine()}
-
-        {/* Idle overlay */}
-        {status === "idle" && (
-          <View style={styles.overlay}>
-            <MaterialCommunityIcons name="circle" size={64} color="#FFFC00" />
-            <Text style={styles.overlayTitle}>Bounce Blitz</Text>
-            <Text style={styles.overlaySubtitle}>
-              Swipe to aim, release to shoot!
-            </Text>
-            <Button
-              mode="contained"
-              onPress={startGame}
-              style={styles.startButton}
-              buttonColor="#FFFC00"
-              textColor="#1a1a2e"
-            >
-              Start Game
-            </Button>
-          </View>
-        )}
-
-        {/* Game Over overlay */}
-        {status === "gameOver" && (
-          <View style={styles.overlay}>
-            <MaterialCommunityIcons
-              name="emoticon-sad"
-              size={64}
-              color="#FF5722"
-            />
-            <Text style={styles.overlayTitle}>Game Over!</Text>
-
-            <View style={styles.statsContainer}>
-              <Text style={styles.finalScore}>{score}</Text>
-              <Text style={styles.finalScoreLabel}>points</Text>
-
-              {isNewBest && (
-                <View style={styles.newBestBadge}>
-                  <MaterialCommunityIcons
-                    name="star"
-                    size={16}
-                    color="#FFD700"
-                  />
-                  <Text style={styles.newBestText}>New Best!</Text>
-                </View>
-              )}
-
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statItemValue}>{level}</Text>
-                  <Text style={styles.statItemLabel}>Level</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statItemValue}>
-                    {totalBlocksDestroyed}
+              {block.type === "extra_ball" ? (
+                <MaterialCommunityIcons
+                  name="plus-circle"
+                  size={BLOCK_SIZE}
+                  color="#FFFC00"
+                />
+              ) : (
+                <>
+                  <Canvas style={{ width: BLOCK_SIZE, height: BLOCK_SIZE }}>
+                    <RoundedRect
+                      x={0}
+                      y={0}
+                      width={BLOCK_SIZE}
+                      height={BLOCK_SIZE}
+                      r={6}
+                    >
+                      <LinearGradient
+                        start={vec(0, 0)}
+                        end={vec(0, BLOCK_SIZE)}
+                        colors={[
+                          lightenColor(block.color, 30),
+                          block.color,
+                          darkenColor(block.color, 30),
+                        ]}
+                      />
+                      <Shadow dx={0} dy={1} blur={3} color="rgba(0,0,0,0.3)" />
+                    </RoundedRect>
+                    {/* Top highlight */}
+                    <RoundedRect
+                      x={2}
+                      y={1}
+                      width={BLOCK_SIZE - 4}
+                      height={4}
+                      r={2}
+                    >
+                      <LinearGradient
+                        start={vec(0, 1)}
+                        end={vec(0, 5)}
+                        colors={[
+                          "rgba(255,255,255,0.35)",
+                          "rgba(255,255,255,0)",
+                        ]}
+                      />
+                    </RoundedRect>
+                  </Canvas>
+                  <Text style={[styles.blockText, { position: "absolute" }]}>
+                    {block.health}
                   </Text>
-                  <Text style={styles.statItemLabel}>Blocks</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statItemValue}>{ballCount}</Text>
-                  <Text style={styles.statItemLabel}>Balls</Text>
-                </View>
-              </View>
+                </>
+              )}
             </View>
+          ))}
 
-            <View style={styles.buttonRow}>
+          {/* Balls — Skia glowing */}
+          {balls.current.map((ball) =>
+            ball.active ? (
+              <View
+                key={ball.id}
+                style={[
+                  styles.ball,
+                  {
+                    left: ball.x - BALL_RADIUS - 2,
+                    top: ball.y - BALL_RADIUS - 2,
+                    width: (BALL_RADIUS + 2) * 2,
+                    height: (BALL_RADIUS + 2) * 2,
+                  },
+                ]}
+              >
+                <Canvas
+                  style={{
+                    width: (BALL_RADIUS + 2) * 2,
+                    height: (BALL_RADIUS + 2) * 2,
+                  }}
+                >
+                  {/* Glow halo */}
+                  <SkiaCircle
+                    cx={BALL_RADIUS + 2}
+                    cy={BALL_RADIUS + 2}
+                    r={BALL_RADIUS + 2}
+                  >
+                    <RadialGradient
+                      c={vec(BALL_RADIUS + 2, BALL_RADIUS + 2)}
+                      r={BALL_RADIUS + 2}
+                      colors={["rgba(255,252,0,0.4)", "rgba(255,252,0,0)"]}
+                    />
+                  </SkiaCircle>
+                  {/* Ball body */}
+                  <SkiaCircle
+                    cx={BALL_RADIUS + 2}
+                    cy={BALL_RADIUS + 2}
+                    r={BALL_RADIUS}
+                  >
+                    <RadialGradient
+                      c={vec(BALL_RADIUS, BALL_RADIUS - 1)}
+                      r={BALL_RADIUS}
+                      colors={["#FFFFFF", "#E8E8E8", "#CCCCCC"]}
+                    />
+                    <Shadow
+                      dx={0}
+                      dy={1}
+                      blur={3}
+                      color="rgba(255,252,0,0.6)"
+                    />
+                  </SkiaCircle>
+                </Canvas>
+              </View>
+            ) : null,
+          )}
+
+          {/* Launch indicator */}
+          {status === "aiming" && (
+            <View
+              style={[
+                styles.launchIndicator,
+                { left: launchX - BALL_RADIUS, bottom: 10 },
+              ]}
+            >
+              <View style={styles.launchBall} />
+              <Text style={styles.ballCountIndicator}>x{ballCount}</Text>
+            </View>
+          )}
+
+          {/* Aim line */}
+          {renderAimLine()}
+
+          {/* Idle overlay */}
+          {status === "idle" && (
+            <View style={styles.overlay}>
+              <MaterialCommunityIcons name="circle" size={64} color="#FFFC00" />
+              <Text style={styles.overlayTitle}>Bounce Blitz</Text>
+              <Text style={styles.overlaySubtitle}>
+                Swipe to aim, release to shoot!
+              </Text>
               <Button
                 mode="contained"
                 onPress={startGame}
-                style={styles.playAgainButton}
-                buttonColor="#4CAF50"
-              >
-                Play Again
-              </Button>
-              <Button
-                mode="contained"
-                icon="share"
-                onPress={handleShare}
-                style={styles.shareButton}
+                style={styles.startButton}
                 buttonColor="#FFFC00"
                 textColor="#1a1a2e"
               >
-                Share
+                Start Game
               </Button>
-              {spectatorHost.spectatorRoomId && (
-                <Button
-                  mode="contained"
-                  icon="eye"
-                  onPress={() => setShowSpectatorInvitePicker(true)}
-                  style={styles.shareButton}
-                  buttonColor="#9C27B0"
-                  textColor="white"
-                >
-                  Watch Me
-                </Button>
-              )}
             </View>
-          </View>
-        )}
+          )}
+
+          {/* Game Over — handled by GameOverModal outside game area */}
         </View>
       </GestureDetector>
 
@@ -1301,6 +1322,30 @@ function BounceBlitzGameScreen({
           </Text>
         </View>
       )}
+
+      {/* Game Over Modal */}
+      <GameOverModal
+        visible={showGameOverModal}
+        result={isNewBest ? "win" : "loss"}
+        stats={{
+          score,
+          personalBest: highScore,
+          isNewBest,
+          moves: totalBlocksDestroyed,
+          xpEarned: xpEarned || undefined,
+          didLevelUp: didLevelUp || undefined,
+          newLevel: newLevel || undefined,
+        }}
+        onRematch={() => {
+          setShowGameOverModal(false);
+          startGame();
+        }}
+        onShare={handleShare}
+        onExit={handleBack}
+        showRematch={true}
+        showShare={true}
+        title={`Game Over — Level ${level}`}
+      />
 
       {/* Share Dialog */}
       <Portal>
@@ -1501,63 +1546,6 @@ const styles = StyleSheet.create({
   },
   startButton: {
     minWidth: 150,
-  },
-  statsContainer: {
-    alignItems: "center",
-    marginTop: 16,
-  },
-  finalScore: {
-    color: "#FFFC00",
-    fontSize: 64,
-    fontWeight: "bold",
-  },
-  finalScoreLabel: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 16,
-    marginTop: -8,
-  },
-  newBestBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 215, 0, 0.2)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginTop: 8,
-    gap: 4,
-  },
-  newBestText: {
-    color: "#FFD700",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: 32,
-    marginTop: 20,
-  },
-  statItem: {
-    alignItems: "center",
-  },
-  statItemValue: {
-    color: "white",
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  statItemLabel: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 12,
-  },
-  buttonRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginTop: 24,
-  },
-  playAgainButton: {
-    minWidth: 120,
-  },
-  shareButton: {
-    minWidth: 100,
   },
   instructions: {
     marginTop: 20,

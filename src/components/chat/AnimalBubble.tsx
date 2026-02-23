@@ -9,8 +9,9 @@
  */
 
 import React from "react";
-import { Dimensions, Image, StyleSheet, View } from "react-native";
+import { Dimensions, StyleSheet, View } from "react-native";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { getAnimalImage } from "@/cosmetics/animalAssets";
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -39,7 +40,11 @@ const AnimalBubble: React.FC<AnimalBubbleProps> = ({
         isMine ? styles.containerMine : styles.containerOther,
       ]}
     >
-      <Image source={imageSource} style={styles.image} resizeMode="cover" />
+      <CosmeticImage
+        source={imageSource}
+        style={styles.image}
+        debugLabel={`animal-bubble-${animalId}`}
+      />
     </View>
   );
 };

@@ -27,7 +27,6 @@ import {
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -38,6 +37,7 @@ import { Appbar, Searchbar, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimalIcon } from "@/components/chat/AnimalIcon";
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { ProfileHeaderVisual } from "@/components/profile/ProfileHeaderVisual";
 import { BorderRadius, Spacing, THEME_METADATA } from "@/constants/theme";
 import { getAnimalImage } from "@/cosmetics/animalAssets";
@@ -58,6 +58,7 @@ import {
 } from "@/hooks/useCustomizationHub";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
+import { prefetchCustomizationCategory } from "@/services/cosmeticsAssetCache";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme, useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
@@ -140,10 +141,11 @@ const GridItem = React.memo(function GridItem({
     >
       {/* Image or placeholder */}
       {assetSource ? (
-        <Image
+        <CosmeticImage
           source={assetSource}
           style={styles.gridItemImage}
-          resizeMode="cover"
+          recyclingKey={item.id}
+          debugLabel={`custom-grid-${item.id}`}
         />
       ) : (
         <View
@@ -513,10 +515,10 @@ const AnimalThemeCard = React.memo(function AnimalThemeCard({
       {/* Animal image preview */}
       <View style={styles.animalImageWrap}>
         {imageSource ? (
-          <Image
+          <CosmeticImage
             source={imageSource}
             style={styles.animalImage}
-            resizeMode="cover"
+            debugLabel={`custom-animal-${item.id}`}
           />
         ) : (
           <MaterialCommunityIcons
@@ -736,6 +738,15 @@ export default function CustomizationHubScreen({
       }
     }
   });
+
+  // ── Prefetch cosmetic assets on mount for fast grid rendering ──
+  useEffect(() => {
+    prefetchCustomizationCategory("background");
+    prefetchCustomizationCategory("decoration");
+    prefetchCustomizationCategory("badge");
+    prefetchCustomizationCategory("chat_animal_theme");
+  }, []);
+
   useEffect(() => {
     if (__DEV__) {
       console.log(

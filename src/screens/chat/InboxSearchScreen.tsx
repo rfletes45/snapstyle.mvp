@@ -30,6 +30,8 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -314,7 +316,11 @@ export default function InboxSearchScreen() {
   const showEmpty = showResults && results.length === 0 && !searching;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
+    >
       {/* Header with Search */}
       <Appbar.Header style={{ backgroundColor: colors.surface }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
@@ -405,7 +411,9 @@ export default function InboxSearchScreen() {
           keyExtractor={(item) =>
             `${item.conversation.type}-${item.conversation.id}`
           }
-          contentContainerStyle={{ paddingBottom: insets.bottom }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}
           ListHeaderComponent={
             results.length > 0 ? (
               <View style={styles.resultsHeader}>
@@ -470,7 +478,7 @@ export default function InboxSearchScreen() {
           </Text>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

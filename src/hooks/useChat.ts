@@ -55,6 +55,7 @@ import {
   getOrCreateGroupConversation,
 } from "@/services/database/conversationRepository";
 import {
+  getMessageById,
   insertMessage,
   rowToMessageV2,
 } from "@/services/database/messageRepository";
@@ -131,6 +132,8 @@ export interface SendMessageOptions {
   attachments?: LocalAttachment[];
   /** Message kind (default: "text") */
   kind?: MessageKind;
+  /** Animal theme ID (required when kind="animal") */
+  animalId?: string;
   /** Clear reply state after sending (default: true) */
   clearReplyOnSend?: boolean;
 }
@@ -428,13 +431,15 @@ export function useChat(config: UseChatConfig): UseChatReturn {
         mentionSpans,
         attachments,
         kind = "text",
+        animalId,
         clearReplyOnSend = true,
       } = options;
 
       // Use options.replyTo if provided, otherwise use hook state
       const replyToUse = optionsReplyTo ?? replyTo;
 
-      if (!text.trim() && !attachments?.length) {
+      // Animal messages don't require text content
+      if (kind !== "animal" && !text.trim() && !attachments?.length) {
         return { success: false, error: "Message cannot be empty" };
       }
 
@@ -465,14 +470,30 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           }
 
           // Insert message into SQLite first (optimistic)
+          // Compute threadRootId: if replying, thread root = replied-to msg's
+          // own threadRootId (if it's already a thread reply) OR the replied-to
+          // msg's ID itself (it *is* the root).
+          let threadRootId: string | undefined;
+          if (replyToUse) {
+            const parentRow = getMessageById(replyToUse.messageId);
+            if (parentRow) {
+              threadRootId = parentRow.thread_root_id || replyToUse.messageId;
+            } else {
+              // Fallback: treat replied-to message as root
+              threadRootId = replyToUse.messageId;
+            }
+          }
+
           const messageRow = insertMessage({
             conversationId,
             scope,
             senderId: currentUid,
             senderName: currentUserName,
             kind,
-            text: text.trim(),
+            // For animal messages, store animalId in text column
+            text: kind === "animal" && animalId ? animalId : text.trim(),
             replyTo: replyToUse ?? undefined,
+            threadRootId,
             mentions: mentionUids,
             localAttachments: attachments, // Pass local attachments for upload
           });
@@ -505,6 +526,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
           conversationId,
           kind,
           text: text.trim(),
+          animalId,
           replyTo: replyToUse ?? undefined,
           mentionUids,
           mentionSpans,

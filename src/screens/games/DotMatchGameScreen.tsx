@@ -35,6 +35,11 @@ import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -441,6 +446,23 @@ function DotMatchGameScreen({
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "dot_match") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
   const [linesDrawn, setLinesDrawn] = useState(0);
 
   const timeoutIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -481,6 +503,9 @@ function DotMatchGameScreen({
     setPlayerScore(0);
     setAiScore(0);
     setLinesDrawn(0);
+    setXpEarned(0);
+    setDidLevelUp(false);
+    setNewLevel(0);
     setGameState("playing");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
@@ -510,6 +535,18 @@ function DotMatchGameScreen({
             showSuccess("🎉 New personal best!");
           }
         });
+        // Submit to XP pipeline
+        submitGameResult(
+          buildGameResultEvent({
+            gameId: "dot_match",
+            mode: "solo",
+            outcome: pScore > TOTAL_BOXES / 2 ? "win" : "lose",
+            score: pScore,
+            durationMs: 0,
+            userId: currentFirebaseUser.uid,
+            displayName: currentFirebaseUser.displayName || "Player",
+          }),
+        ).catch(() => {});
       }
     },
     [currentFirebaseUser, showSuccess],
@@ -1150,6 +1187,12 @@ function DotMatchGameScreen({
                 ? `P1: ${playerScore} ${playerScore === 1 ? "box" : "boxes"} vs P2: ${aiScore} ${aiScore === 1 ? "box" : "boxes"}`
                 : `You captured ${playerScore} ${playerScore === 1 ? "box" : "boxes"} vs AI's ${aiScore}.`}
             </Text>
+            {xpEarned > 0 && (
+              <Text style={{ color: "#fbbf24", marginTop: 8 }}>
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+              </Text>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setGameState("menu")}>Menu</Button>

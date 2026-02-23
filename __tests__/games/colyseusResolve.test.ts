@@ -38,10 +38,6 @@ describe("resolveColyseusRoomName", () => {
     expect(resolveColyseusRoomName("pong_game")).toBe("pong");
   });
 
-  it("resolves minigolf_duels (no _game suffix in map)", () => {
-    expect(resolveColyseusRoomName("minigolf_duels")).toBe("minigolf_duels");
-  });
-
   it("throws GameError for unknown game type", () => {
     try {
       resolveColyseusRoomName("nonexistent_foo");

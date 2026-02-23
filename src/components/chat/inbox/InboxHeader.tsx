@@ -13,6 +13,7 @@
  */
 
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
+import { Spacing } from "@/constants/theme";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -23,7 +24,6 @@ import React, { useCallback } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Appbar, IconButton } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -94,73 +94,87 @@ export function InboxHeader({
     );
   }, [navigation]);
 
+  // Ensure at least 59 px for Dynamic Island devices (iPhone 14 Pro+)
+  const safeTop = Math.max(insets.top, 0);
+  const headerContentHeight = 48;
+
   return (
-    <Appbar.Header
+    <View
       style={[
         styles.header,
         {
           backgroundColor: colors.surface,
-          paddingTop: insets.top,
-          height: 48 + insets.top,
-          minHeight: 48 + insets.top,
+          paddingTop: safeTop,
+          height: headerContentHeight + safeTop,
+          minHeight: headerContentHeight + safeTop,
         },
       ]}
-      statusBarHeight={0}
     >
-      {/* Left: User Avatar + Search Button */}
-      <TouchableOpacity
-        onPress={handleAvatarPress}
-        style={styles.avatarContainer}
-        accessibilityLabel="Go to profile"
-        accessibilityRole="button"
+      {/* Absolutely centered title — pinned to content area below safe-area inset */}
+      <View
+        style={[styles.titleOverlay, { top: safeTop + 8, bottom: 0 }]}
+        pointerEvents="none"
       >
-        <ProfilePictureWithDecoration
-          pictureUrl={picture?.url || null}
-          name={profile?.displayName || ""}
-          decorationId={decoration?.decorationId || null}
-          size={32}
-        />
-      </TouchableOpacity>
-      <IconButton
-        icon="magnify"
-        iconColor={colors.textSecondary}
-        size={24}
-        onPress={handleSearchPress}
-        accessibilityLabel="Search conversations"
-        style={styles.searchButton}
-      />
-
-      {/* Center: Title */}
-      <View style={styles.titleContainer}>
         <Appbar.Content
           title={showArchived ? "Archive" : "Inbox"}
           titleStyle={[styles.title, { color: colors.text }]}
+          style={styles.titleContent}
         />
       </View>
 
+      {/* Left: User Avatar + Search Button */}
+      <View style={styles.leftContainer}>
+        <TouchableOpacity
+          onPress={handleAvatarPress}
+          style={styles.avatarContainer}
+          accessibilityLabel="Go to profile"
+          accessibilityRole="button"
+        >
+          <ProfilePictureWithDecoration
+            pictureUrl={picture?.url || null}
+            name={profile?.displayName || ""}
+            decorationId={decoration?.decorationId || null}
+            size={32}
+          />
+        </TouchableOpacity>
+        <IconButton
+          icon="magnify"
+          iconColor={colors.textSecondary}
+          size={24}
+          onPress={handleSearchPress}
+          accessibilityLabel="Search conversations"
+          style={styles.searchButton}
+        />
+      </View>
+
+      {/* Spacer */}
+      <View style={styles.spacer} />
+
       {/* Right: Actions */}
-      <IconButton
-        icon="account-group-outline"
-        iconColor={colors.textSecondary}
-        size={24}
-        onPress={handleConnectionsPress}
-        accessibilityLabel="Connections"
-      />
-      <IconButton
-        icon="cog"
-        iconColor={colors.textSecondary}
-        size={24}
-        onPress={handleSettingsPress}
-        accessibilityLabel="Inbox settings"
-      />
-      <IconButton
-        icon={showArchived ? "inbox" : "archive"}
-        iconColor={colors.textSecondary}
-        size={24}
-        onPress={handleArchiveToggle}
-        accessibilityLabel={showArchived ? "Show inbox" : "Show archive"}
-      />
-    </Appbar.Header>
+      <View style={styles.rightContainer}>
+        <IconButton
+          icon="account-group-outline"
+          iconColor={colors.textSecondary}
+          size={24}
+          onPress={handleConnectionsPress}
+          accessibilityLabel="Connections"
+        />
+        <IconButton
+          icon="cog"
+          iconColor={colors.textSecondary}
+          size={24}
+          onPress={handleSettingsPress}
+          accessibilityLabel="Inbox settings"
+        />
+        <IconButton
+          icon={showArchived ? "inbox" : "archive"}
+          iconColor={colors.textSecondary}
+          size={24}
+          onPress={handleArchiveToggle}
+          accessibilityLabel={showArchived ? "Show inbox" : "Show archive"}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -170,9 +184,24 @@ export function InboxHeader({
 
 const styles = StyleSheet.create({
   header: {
+    flexDirection: "row",
+    alignItems: "center",
     elevation: 0,
     shadowOpacity: 0,
     paddingBottom: 0,
+  },
+  leftContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 1,
+  },
+  rightContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 1,
+  },
+  spacer: {
+    flex: 1,
   },
   avatarContainer: {
     marginLeft: Spacing.md,
@@ -181,9 +210,14 @@ const styles = StyleSheet.create({
   searchButton: {
     marginRight: 0,
   },
-  titleContainer: {
-    flex: 1,
+  titleOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
     justifyContent: "center",
+    alignItems: "center",
+  },
+  titleContent: {
     alignItems: "center",
   },
   avatarPlaceholder: {

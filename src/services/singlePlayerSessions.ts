@@ -44,6 +44,7 @@ import {
   getFirestoreInstance,
   getFunctionsInstance,
 } from "./firebase";
+import { buildGameResultEvent, submitGameResult } from "./gameResultService";
 
 const log = createLogger("singlePlayerSessions");
 
@@ -200,6 +201,22 @@ export async function recordSinglePlayerSession(
     // Fire-and-forget: trigger server-side achievement evaluation & rewards
     triggerAchievementEvaluation(input, session).catch((err) =>
       log.warn("Achievement evaluation failed (non-blocking)", err),
+    );
+
+    // Fire-and-forget: submit to universal GameResult pipeline for XP/level
+    submitGameResult(
+      buildGameResultEvent({
+        gameId: input.gameType,
+        mode: "solo",
+        outcome: session.isNewHighScore ? "win" : "completed",
+        score: input.finalScore,
+        durationMs: (input.duration || 0) * 1000,
+        userId: playerId,
+        displayName: currentUser.displayName || "Player",
+        meta: input.stats as unknown as Record<string, unknown>,
+      }),
+    ).catch((err) =>
+      log.warn("GameResult submission failed (non-blocking)", err),
     );
 
     return session;

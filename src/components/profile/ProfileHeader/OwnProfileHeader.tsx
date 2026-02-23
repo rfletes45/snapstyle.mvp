@@ -10,15 +10,10 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useMemo } from "react";
-import {
-  Image,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  ViewStyle,
-} from "react-native";
+import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
 import { Text } from "react-native-paper";
 
+import { CosmeticImage } from "@/components/CosmeticImage";
 import { LevelProgress } from "@/components/profile/LevelProgress";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
@@ -57,6 +52,8 @@ export interface OwnProfileHeaderProps {
   onEditStatusPress?: () => void;
   /** Handler for name edit (navigates to settings) */
   onEditNamePress?: () => void;
+  /** Handler for level bar press (navigates to level rewards) */
+  onLevelPress?: () => void;
   /** Custom container style */
   style?: ViewStyle;
 }
@@ -78,6 +75,7 @@ function OwnProfileHeaderBase({
   onEditBioPress,
   onEditStatusPress,
   onEditNamePress,
+  onLevelPress,
   style,
 }: OwnProfileHeaderProps) {
   const colors = useColors();
@@ -112,10 +110,11 @@ function OwnProfileHeaderBase({
       <View style={styles.headerRegion}>
         {/* Background Image (fills entire header region, cropped at level bar) */}
         {backgroundSource && (
-          <Image
+          <CosmeticImage
             source={backgroundSource}
             style={styles.backgroundImage}
-            resizeMode="cover"
+            debugLabel="profile-bg"
+            transition={0}
           />
         )}
 
@@ -244,9 +243,16 @@ function OwnProfileHeaderBase({
           </TouchableOpacity>
 
           {/* Level Progress */}
-          <View style={styles.levelContainer}>
+          <TouchableOpacity
+            style={styles.levelContainer}
+            onPress={onLevelPress}
+            activeOpacity={0.7}
+            disabled={!onLevelPress}
+            accessibilityLabel="View level rewards"
+            accessibilityRole="button"
+          >
             <LevelProgress level={level} compact={!!backgroundSource} />
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
     </View>

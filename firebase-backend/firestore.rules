@@ -762,7 +762,7 @@ service cloud.firestore {
                         // V1 type validation OR V2 kind validation
                         // Voice messages use type='voice' (H11)
                         (request.resource.data.type in ['text', 'image', 'scorecard', 'voice'] ||
-                         request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system']) &&
+                         request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system', 'animal']) &&
                         // Content length limits (V1 content or V2 text)
                         (!request.resource.data.keys().hasAll(['content']) ||
                          request.resource.data.type == 'image' ||
@@ -1415,7 +1415,7 @@ service cloud.firestore {
                         // V1 type validation OR V2 kind validation
                         // Voice messages use type='voice' (H11)
                         (request.resource.data.type in ['text', 'image', 'system', 'voice', 'scorecard'] ||
-                         request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system']) &&
+                         request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system', 'animal']) &&
                         // Validate content length
                         (request.resource.data.type == 'image' ||
                          request.resource.data.type == 'system' ||

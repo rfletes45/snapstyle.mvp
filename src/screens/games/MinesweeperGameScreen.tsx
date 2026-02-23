@@ -16,6 +16,11 @@ import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useSpectator } from "@/hooks/useSpectator";
+import { onGameResultNotification } from "@/services/gameResultEvents";
+import {
+  buildGameResultEvent,
+  submitGameResult,
+} from "@/services/gameResultService";
 import {
   getPersonalBest,
   PersonalBest,
@@ -46,17 +51,17 @@ import {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Button, Dialog, Portal, Text } from "react-native-paper";
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 
-
-import { createLogger } from "@/utils/log";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
+import { GameOverModal } from "@/components/games/GameOverModal";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
-import { GameOverModal } from "@/components/games/GameOverModal";
+import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/MinesweeperGameScreen");
 // =============================================================================
 // Types & Constants
@@ -265,9 +270,7 @@ interface MinesweeperGameScreenProps {
   navigation: any;
 }
 
-function MinesweeperGameScreen({
-  navigation,
-}: MinesweeperGameScreenProps) {
+function MinesweeperGameScreen({ navigation }: MinesweeperGameScreenProps) {
   const __codexGameCompletion = useGameCompletion({ gameType: "minesweeper" });
   void __codexGameCompletion;
   const __codexGameHaptics = useGameHaptics();
@@ -298,6 +301,23 @@ function MinesweeperGameScreen({
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
+  // XP state (populated via GameResult notification)
+  const [xpEarned, setXpEarned] = useState(0);
+  const [didLevelUp, setDidLevelUp] = useState(false);
+  const [newLevel, setNewLevel] = useState(0);
+
+  // Listen for game result notifications (XP + achievements)
+  useEffect(() => {
+    const unsub = onGameResultNotification((n) => {
+      if (n.gameId === "minesweeper_classic") {
+        setXpEarned(n.xpEarned);
+        setDidLevelUp(n.didLevelUp);
+        setNewLevel(n.newLevel);
+      }
+    });
+    return unsub;
+  }, []);
+
   // Spectator hosting
   const spectatorHost = useSpectator({
     mode: "sp-host",
@@ -321,9 +341,7 @@ function MinesweeperGameScreen({
 
   useEffect(() => {
     if (currentFirebaseUser) {
-      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(
-        setPersonalBest,
-      );
+      getPersonalBest(currentFirebaseUser.uid, GAME_TYPE).then(setPersonalBest);
     }
   }, [currentFirebaseUser]);
 
@@ -401,6 +419,18 @@ function MinesweeperGameScreen({
           score: elapsedSeconds,
           duration: elapsedSeconds,
         });
+        // Submit to XP pipeline
+        submitGameResult(
+          buildGameResultEvent({
+            gameId: "minesweeper_classic",
+            mode: "solo",
+            outcome: "win",
+            score: elapsedSeconds,
+            durationMs: elapsedSeconds * 1000,
+            userId: currentFirebaseUser.uid,
+            displayName: currentFirebaseUser.displayName || "Player",
+          }),
+        ).catch(() => {});
         // Check if new best (lower is better)
         if (!personalBest || elapsedSeconds < personalBest.bestScore) {
           setIsNewBest(true);
@@ -427,8 +457,22 @@ function MinesweeperGameScreen({
       timerRef.current = null;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    // Submit loss to XP pipeline
+    if (currentFirebaseUser?.uid) {
+      submitGameResult(
+        buildGameResultEvent({
+          gameId: "minesweeper_classic",
+          mode: "solo",
+          outcome: "lose",
+          score: elapsedSeconds,
+          durationMs: elapsedSeconds * 1000,
+          userId: currentFirebaseUser.uid,
+          displayName: currentFirebaseUser.displayName || "Player",
+        }),
+      ).catch(() => {});
+    }
     setPhase("result");
-  }, []);
+  }, [currentFirebaseUser, elapsedSeconds]);
 
   const handleCellPress = useCallback(
     (row: number, col: number) => {
@@ -595,6 +639,8 @@ function MinesweeperGameScreen({
 
   const boardPixelWidth = difficulty.cols * cellSize;
   const boardPixelHeight = difficulty.rows * cellSize;
+  const maxBoardViewHeight = Dimensions.get("window").height * 0.55;
+  const [zoomed, setZoomed] = useState(false);
 
   // Reset zoom when difficulty changes
   useEffect(() => {
@@ -604,6 +650,7 @@ function MinesweeperGameScreen({
     translateY.value = 0;
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
+    setZoomed(false);
   }, [difficulty]);
 
   const pinchGesture = Gesture.Pinch()
@@ -613,6 +660,7 @@ function MinesweeperGameScreen({
     })
     .onEnd(() => {
       savedScale.value = scale.value;
+      runOnJS(setZoomed)(scale.value > 1.05);
       // Clamp translation after pinch
       const maxTx = Math.max(
         0,
@@ -620,9 +668,7 @@ function MinesweeperGameScreen({
       );
       const maxTy = Math.max(
         0,
-        (boardPixelHeight * scale.value -
-          Dimensions.get("window").height * 0.55) /
-          2,
+        (boardPixelHeight * scale.value - maxBoardViewHeight) / 2,
       );
       translateX.value = withTiming(
         Math.min(Math.max(translateX.value, -maxTx), maxTx),
@@ -650,9 +696,7 @@ function MinesweeperGameScreen({
       );
       const maxTy = Math.max(
         0,
-        (boardPixelHeight * scale.value -
-          Dimensions.get("window").height * 0.55) /
-          2,
+        (boardPixelHeight * scale.value - maxBoardViewHeight) / 2,
       );
       translateX.value = Math.min(
         Math.max(savedTranslateX.value + e.translationX, -maxTx),
@@ -669,32 +713,36 @@ function MinesweeperGameScreen({
     })
     .minPointers(2);
 
-  const doubleTapGesture = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      if (scale.value > 1) {
-        scale.value = withTiming(1, { duration: 250 });
-        savedScale.value = 1;
-        translateX.value = withTiming(0, { duration: 250 });
-        translateY.value = withTiming(0, { duration: 250 });
-        savedTranslateX.value = 0;
-        savedTranslateY.value = 0;
-      } else {
-        scale.value = withTiming(2, { duration: 250 });
-        savedScale.value = 2;
-      }
-    });
+  // Zoom toggle (replaces double-tap which blocked single-tap cell presses)
+  const toggleZoom = useCallback(() => {
+    if (scale.value > 1) {
+      scale.value = withTiming(1, { duration: 250 });
+      savedScale.value = 1;
+      translateX.value = withTiming(0, { duration: 250 });
+      translateY.value = withTiming(0, { duration: 250 });
+      savedTranslateX.value = 0;
+      savedTranslateY.value = 0;
+      setZoomed(false);
+    } else {
+      scale.value = withTiming(2, { duration: 250 });
+      savedScale.value = 2;
+      setZoomed(true);
+    }
+  }, []);
 
-  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
-  const allGestures = Gesture.Exclusive(doubleTapGesture, composedGesture);
+  // Only pinch + pan (both require 2+ fingers) — single taps pass through to Pressable
+  const allGestures = Gesture.Simultaneous(pinchGesture, panGesture);
 
-  const animatedBoardStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-  }));
+  const animatedBoardStyle = useAnimatedStyle(() => {
+    // Guard against NaN/Infinity that could crash the native layout engine
+    const s =
+      scale.value !== scale.value ? 1 : Math.min(Math.max(scale.value, 0.1), 5);
+    const tx = translateX.value !== translateX.value ? 0 : translateX.value;
+    const ty = translateY.value !== translateY.value ? 0 : translateY.value;
+    return {
+      transform: [{ translateX: tx }, { translateY: ty }, { scale: s }],
+    };
+  });
 
   const needsZoom = difficulty.cols > 9;
 
@@ -954,14 +1002,27 @@ function MinesweeperGameScreen({
                 ))}
               </View>
             </Animated.View>
-            {/* Zoom hint */}
-            {scale.value <= 1 && phase === "playing" && (
+            {/* Zoom hint + toggle button */}
+            {phase === "playing" && (
               <View style={styles.zoomHint}>
-                <Text
-                  style={[styles.zoomHintText, { color: colors.textSecondary }]}
+                <TouchableOpacity
+                  onPress={toggleZoom}
+                  style={styles.zoomButton}
                 >
-                  Pinch to zoom • Double-tap to toggle
-                </Text>
+                  <MaterialCommunityIcons
+                    name={zoomed ? "magnify-minus" : "magnify-plus"}
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.zoomHintText,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {zoomed ? "Reset Zoom" : "Pinch or tap to zoom"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
           </Animated.View>
@@ -1054,6 +1115,14 @@ function MinesweeperGameScreen({
                   Time: {formatTime(elapsedSeconds)} — {difficulty.label}
                 </Text>
               </>
+            )}
+            {xpEarned > 0 && (
+              <Text
+                style={[styles.resultLine, { color: "#fbbf24", marginTop: 8 }]}
+              >
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+              </Text>
             )}
           </Dialog.Content>
           <Dialog.Actions>
@@ -1257,6 +1326,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  zoomButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   zoomHintText: {
     fontSize: 12,

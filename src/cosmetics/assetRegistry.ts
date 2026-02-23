@@ -38,6 +38,7 @@ export const badgeAssets: Record<string, CosmeticImageSource> = {
 // =============================================================================
 
 export const backgroundAssets: Record<string, CosmeticImageSource> = {
+  // ── Existing ─────────────────────────────────────────
   bg_donut_wallpaper: require("../../assets/cosmetics/backgrounds/Donut_Wallpaper.jpg"),
   bg_galaxy: require("../../assets/themes/backgrounds/galaxy_bg.jpg"),
   bg_lofi_alleyway: require("../../assets/cosmetics/backgrounds/Lofi_Alleyway.png"),
@@ -47,6 +48,17 @@ export const backgroundAssets: Record<string, CosmeticImageSource> = {
   bg_scary_forest: require("../../assets/cosmetics/backgrounds/Scary_forest.png"),
   bg_sketched_alleyway: require("../../assets/cosmetics/backgrounds/Sketched_Alleyway.jpg"),
   bg_steampunk_city: require("../../assets/cosmetics/backgrounds/Steampunk_City.png"),
+  // ── New (Phase 3) ────────────────────────────────────
+  bg_arcane_circles: require("../../assets/cosmetics/backgrounds/Arcane_Circles.png"),
+  bg_aurora_borealis: require("../../assets/cosmetics/backgrounds/Aurora_Borealis.png"),
+  bg_circling_waves: require("../../assets/cosmetics/backgrounds/Circling_Waves.jpg"),
+  bg_cyber_aesthetic: require("../../assets/cosmetics/backgrounds/Cyber_Aesthetic.png"),
+  bg_cyber_screens: require("../../assets/cosmetics/backgrounds/Cyber_Screens.jpg"),
+  bg_glitched_tokyo: require("../../assets/cosmetics/backgrounds/Glitched_Tokyo.png"),
+  bg_rune_circles: require("../../assets/cosmetics/backgrounds/Rune_Circles.png"),
+  bg_sketched_lofi_alleyway: require("../../assets/cosmetics/backgrounds/Sketched_Lofi_Alleyway.png"),
+  bg_synthwave: require("../../assets/cosmetics/backgrounds/Synthwave.png"),
+  bg_synthwave_videogame: require("../../assets/cosmetics/backgrounds/Synthwave_Videogame.png"),
 } as const;
 
 // =============================================================================

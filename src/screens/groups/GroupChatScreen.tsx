@@ -88,6 +88,7 @@ import {
   ReplyBubble,
   ScrollReturnButton,
   SwipeableMessage,
+  ThreadIndicator,
   VoiceMessagePlayer,
   VoiceRecordButton,
 } from "@/components/chat";
@@ -125,7 +126,7 @@ import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import SpectatorInviteBubble, {
   parseSpectatorInviteContent,
 } from "@/components/SpectatorInviteBubble";
-import { detectAnimalEmoji, getAnimalEmoji } from "@/cosmetics/animalAssets";
+import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 
 // Group Calls (Phase 3) - lazy loaded to avoid native module issues
@@ -192,7 +193,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
   const { setCurrentChatId } = useInAppNotifications();
-  const { profile } = useUser();
+  const { profile, refreshProfile } = useUser();
+  const animalEntitlement = useAnimalEntitlement(
+    uid,
+    profile?.chatAppearance ?? null,
+  );
 
   // Resolve outgoing chat cosmetics (bubble color, text color, font)
   const chatStyle = useMemo(
@@ -269,6 +274,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [gamePickerVisible, setGamePickerVisible] = useState(false);
+  const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
   >([]);
@@ -801,27 +807,38 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     setGamePickerVisible(true);
   }, []);
 
-  // Animal button press handler — sends an animal bubble + plays animal sound
+  // Animal button press handler — sends a structured animal signal message
   const handleAnimalPress = useCallback(async () => {
-    if (!uid || !groupId || screen.sending) return;
-    const animalId = profile?.chatAppearance?.animalThemeId ?? null;
+    if (!uid || !groupId) return;
+    const { equippedAnimalId, canSend } = animalEntitlement;
+    if (!canSend || !equippedAnimalId) return;
+
     try {
-      await playAnimalSound(animalId);
+      await playAnimalSound(equippedAnimalId);
     } catch (e) {
       logger.warn("❌ [GroupChatScreen] Animal sound error:", e);
     }
     try {
-      await screen.chat.sendMessage(getAnimalEmoji(animalId), {});
+      // Send structured animal signal message (kind: "animal", animalId)
+      await screen.chat.sendMessage("", {
+        kind: "animal",
+        animalId: equippedAnimalId,
+      });
     } catch (error) {
       logger.error("❌ [GroupChatScreen] Animal send error:", error);
     }
-  }, [
-    uid,
-    groupId,
-    profile?.chatAppearance?.animalThemeId,
-    screen.chat,
-    screen.sending,
-  ]);
+  }, [uid, groupId, animalEntitlement, screen.chat]);
+
+  // Animal picker equip handler — refresh profile so the button updates
+  const handleAnimalEquipped = useCallback(
+    (animalId: string) => {
+      setAnimalPickerVisible(false);
+      // Profile uses one-shot reads; must explicitly refresh so
+      // useAnimalEntitlement picks up the new chatAppearance.animalThemeId
+      refreshProfile();
+    },
+    [refreshProfile],
+  );
 
   // Handle single-player game selection - navigate directly to game
   const handleSinglePlayerGame = useCallback(
@@ -1269,18 +1286,34 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 >
                   {/* Animal message — render data-driven AnimalBubble */}
                   {(() => {
-                    const detectedAnimalId = item.text
-                      ? detectAnimalEmoji(item.text)
-                      : null;
-                    return detectedAnimalId &&
-                      item.kind !== "media" &&
-                      item.kind !== "voice" &&
-                      item.kind !== "scorecard" ? (
-                      <AnimalBubble
-                        animalId={detectedAnimalId}
-                        isMine={isOwnMessage}
-                      />
-                    ) : (
+                    if (item.kind === "animal") {
+                      return item.animalId ? (
+                        <AnimalBubble
+                          animalId={item.animalId}
+                          isMine={isOwnMessage}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.messageBubble,
+                            isOwnMessage
+                              ? styles.ownMessage
+                              : styles.otherMessage,
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontStyle: "italic",
+                              opacity: 0.5,
+                            }}
+                          >
+                            (Animal unavailable)
+                          </Text>
+                        </View>
+                      );
+                    }
+                    return (
                       <View
                         style={[
                           styles.messageBubble,
@@ -1448,6 +1481,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                   .map((r) => r.emoji)}
                 compact
                 onPress={() => handleMessageLongPress(item)}
+              />
+            )}
+
+            {/* Thread indicator — show when this message is the root of a thread */}
+            {!!item.replyCount && item.replyCount > 0 && (
+              <ThreadIndicator
+                replyCount={item.replyCount}
+                isOutgoing={isOwnMessage}
+                onPress={() =>
+                  navigation.navigate("ThreadView", {
+                    conversationId: groupId,
+                    scope: "group" as const,
+                    rootMessageId: item.id,
+                  })
+                }
               />
             )}
           </View>
@@ -1627,6 +1675,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           scope="group"
           value={screen.composer.text}
           onChangeText={screen.composer.setText}
+          onCursorChange={screen.composer.setCursorPosition}
           onSend={handleSendMessage}
           hasAttachments={attachmentPicker.attachments.length > 0}
           sendDisabled={
@@ -1695,9 +1744,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           onCancelReply={handleCancelReply}
           currentUid={uid}
           onAnimalPress={handleAnimalPress}
-          animalThemeId={profile?.chatAppearance?.animalThemeId}
+          animalThemeId={animalEntitlement.equippedAnimalId}
+          animalLocked={!animalEntitlement.canSend}
+          animalPickerVisible={animalPickerVisible}
+          onAnimalLongPress={() => setAnimalPickerVisible(true)}
+          onAnimalPickerClose={() => setAnimalPickerVisible(false)}
+          currentUserId={uid}
+          onAnimalEquipped={handleAnimalEquipped}
           onGamePress={handleGamePress}
           keyboardHeight={screen.keyboard.keyboardHeight}
+          keyboardProgress={screen.keyboard.keyboardProgress}
           safeAreaBottom={insets.bottom}
           textInputRef={textInputRef}
           absolutePosition={true}

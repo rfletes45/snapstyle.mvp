@@ -39,7 +39,7 @@ import {
   isLegacyGroupMessage,
 } from "@/services/messaging/adapters/groupAdapter";
 import { LocalAttachment, uploadMultipleAttachments } from "@/services/storage";
-import { AttachmentV2, MessageV2 } from "@/types/messaging";
+import { AttachmentV2, MessageV2, ReplyToMetadata } from "@/types/messaging";
 import type { GroupMessage } from "@/types/models";
 import { toTimestamp } from "@/utils/dates";
 import { Platform } from "react-native";
@@ -67,8 +67,14 @@ interface SendMessagePayload {
   conversationId: string;
   kind: string;
   text?: string;
+  /** Animal theme ID (required when kind="animal") */
+  animalId?: string;
   attachments?: AttachmentV2[];
   replyToId?: string;
+  /** Full reply metadata – required by sendMessageV2 Cloud Function */
+  replyTo?: ReplyToMetadata;
+  /** Thread root message ID for threading */
+  threadRootId?: string;
   mentionUids?: string[];
   createdAt?: number;
 }
@@ -359,6 +365,29 @@ async function syncSingleMessage(
       uploadedAttachments = [...uploadedAttachments, ...alreadyUploaded];
     }
 
+    // Parse full replyTo metadata from the JSON stored in SQLite
+    let replyToMeta: ReplyToMetadata | undefined;
+    if (message.reply_to_preview) {
+      try {
+        replyToMeta = JSON.parse(message.reply_to_preview) as ReplyToMetadata;
+      } catch {
+        // Fallback: build a minimal object from just the ID
+        if (message.reply_to_id) {
+          replyToMeta = {
+            messageId: message.reply_to_id,
+            senderId: "",
+            kind: "text" as any,
+          };
+        }
+      }
+    } else if (message.reply_to_id) {
+      replyToMeta = {
+        messageId: message.reply_to_id,
+        senderId: "",
+        kind: "text" as any,
+      };
+    }
+
     // Build payload for Cloud Function
     const payload: SendMessagePayload = {
       messageId: message.id,
@@ -366,15 +395,33 @@ async function syncSingleMessage(
       scope: message.scope,
       conversationId: message.conversation_id,
       kind: message.kind,
-      text: message.text || undefined,
+      text: message.kind === "animal" ? undefined : message.text || undefined,
+      // For animal messages, the animalId is stored in the text column
+      animalId:
+        message.kind === "animal" ? message.text || undefined : undefined,
       attachments:
         uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
       replyToId: message.reply_to_id || undefined,
+      replyTo: replyToMeta,
+      threadRootId: message.thread_root_id || undefined,
       mentionUids: message.mentions_json
         ? JSON.parse(message.mentions_json)
         : undefined,
       createdAt: message.created_at,
     };
+
+    // Guard: block send if animal message has no animalId
+    if (message.kind === "animal" && !payload.animalId) {
+      logger.error(
+        "[SyncEngine] Animal message missing animalId, aborting send",
+        message.id,
+      );
+      markMessagePermanentlyFailed(
+        message.id,
+        "Animal message missing animalId",
+      );
+      return;
+    }
 
     // Debug logging for sync
     logger.info(`[SyncEngine] Attempting to sync message:`, {
@@ -407,7 +454,9 @@ async function syncSingleMessage(
       errorMessage.includes("NOT_FOUND") ||
       errorMessage.includes("unauthenticated") ||
       errorMessage.includes("UNAUTHENTICATED") ||
-      errorMessage.includes("without a conversation ID");
+      errorMessage.includes("without a conversation ID") ||
+      errorMessage.includes("Invalid message kind") ||
+      errorMessage.includes("Animal messages must include");
 
     if (isPermanentError) {
       logger.warn(
@@ -488,6 +537,7 @@ export async function pullMessages(
         senderName: data.senderName || null,
         kind: data.kind || "text",
         text: data.text || null,
+        animalId: data.animalId || undefined,
         attachments: data.attachments || null,
         createdAt: createdAtNum,
         serverReceivedAt: serverReceivedAtNum,
@@ -625,6 +675,7 @@ export async function fullSyncConversation(
           senderName: data.senderName || data.senderDisplayName || null,
           kind: data.kind || data.type || "text",
           text: data.text || data.content || null,
+          animalId: data.animalId || undefined,
           attachments: data.attachments || null,
           createdAt: createdAtNum,
           serverReceivedAt: serverReceivedAtNum,
@@ -766,6 +817,7 @@ export function subscribeToConversation(
               senderName: data.senderName || data.senderDisplayName || null,
               kind: data.kind || data.type || "text",
               text: data.text || data.content || null,
+              animalId: data.animalId || undefined,
               attachments: data.attachments || null,
               createdAt: createdAtNum,
               serverReceivedAt: serverReceivedAtNum,

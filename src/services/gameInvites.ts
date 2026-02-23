@@ -210,11 +210,6 @@ const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
     timeControl: { type: "none", seconds: 0 },
     chatEnabled: true,
   },
-  minigolf_duels: {
-    isRated: false,
-    timeControl: { type: "none", seconds: 0 },
-    chatEnabled: true,
-  },
 };
 
 // =============================================================================
@@ -315,11 +310,6 @@ export function getDefaultInviteSettings(
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
-    minigolf_duels: {
-      isRated: false,
-      timeControl: { type: "none", seconds: 0 },
-      chatEnabled: true,
-    },
   };
   return defaults[gameType] || { isRated: false, chatEnabled: true };
 }
@@ -342,7 +332,6 @@ function usesExternalSessionId(gameType: InviteGameType): boolean {
   return (
     gameType === "starforge_game" ||
     gameType === "sketch_party_game" ||
-    gameType === "minigolf_duels" ||
     gameType === "crossword_puzzle"
   );
 }
@@ -550,6 +539,14 @@ export async function sendUniversalInvite(
     settings: customSettings,
     expirationMinutes = 60,
   } = params;
+
+  // Reject invites for removed games
+  const REMOVED_GAMES = new Set(["lights_out", "minigolf_duels"]);
+  if (REMOVED_GAMES.has(gameType)) {
+    throw new Error(
+      `Game "${gameType}" has been removed and cannot be played.`,
+    );
+  }
 
   // ── Idempotency check ──────────────────────────────────────────────
   // If the same host already has a waiting/filling/ready invite for the

@@ -22,7 +22,6 @@ import { CrosswordSpectatorRenderer } from "./CrosswordSpectatorRenderer";
 import { DotMatchSpectatorRenderer } from "./DotMatchSpectatorRenderer";
 import { GomokuSpectatorRenderer } from "./GomokuSpectatorRenderer";
 import { HexSpectatorRenderer } from "./HexSpectatorRenderer";
-import { LightsOutSpectatorRenderer } from "./LightsOutSpectatorRenderer";
 import { MinesweeperSpectatorRenderer } from "./MinesweeperSpectatorRenderer";
 import { Play2048SpectatorRenderer } from "./Play2048SpectatorRenderer";
 import { PongSpectatorRenderer } from "./PongSpectatorRenderer";
@@ -47,7 +46,6 @@ const RENDERERS: Record<string, React.ComponentType<SpectatorRendererProps>> = {
   play_2048: Play2048SpectatorRenderer,
   pong_game: PongSpectatorRenderer,
   word_master: WordMasterSpectatorRenderer,
-  lights_out: LightsOutSpectatorRenderer,
   minesweeper_classic: MinesweeperSpectatorRenderer,
   bounce_blitz: BounceBlitzSpectatorRenderer,
 };

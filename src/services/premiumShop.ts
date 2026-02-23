@@ -21,6 +21,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  setDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { Platform } from "react-native";
@@ -41,6 +42,13 @@ import {
 } from "@/types/shop";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 
+import { getCosmeticById } from "@/cosmetics/catalog";
+import type { CosmeticRarity, CosmeticType } from "@/cosmetics/types";
+import {
+  PREMIUM_BUNDLES as FALLBACK_BUNDLES,
+  PREMIUM_EXCLUSIVES as FALLBACK_EXCLUSIVES,
+  TOKEN_PACKS as FALLBACK_TOKEN_PACKS,
+} from "@/data/premiumProducts";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/premiumShop");
@@ -198,7 +206,34 @@ function mapToTokenPack(doc: PremiumProductDoc): TokenPack {
 }
 
 /**
+ * Resolve a cosmetic type to a bundle-friendly slot label.
+ */
+function cosmeticTypeToSlot(type: CosmeticType): string {
+  switch (type) {
+    case "background":
+      return "background";
+    case "decoration":
+      return "decoration";
+    case "badge":
+      return "badge";
+    case "theme":
+      return "theme";
+    case "chat_bubble_color":
+      return "chat_bubble";
+    case "chat_font":
+      return "chat_font";
+    case "chat_animal_theme":
+      return "chat_theme";
+    default:
+      return "item";
+  }
+}
+
+/**
  * Map document to PremiumBundle
+ *
+ * Resolves item metadata (name, slot, rarity) from the cosmetics catalog
+ * so bundle UIs display accurate info.
  */
 function mapToBundle(doc: PremiumProductDoc): PremiumBundle {
   return {
@@ -206,13 +241,16 @@ function mapToBundle(doc: PremiumProductDoc): PremiumBundle {
     productId: getPlatformProductId(doc.productId),
     name: doc.name,
     description: doc.description || "",
-    items: (doc.rewards?.itemIds || []).map((itemId) => ({
-      itemId,
-      name: itemId, // Will be resolved later
-      slot: "hat", // Will be resolved later
-      rarity: "rare",
-      imagePath: "",
-    })),
+    items: (doc.rewards?.itemIds || []).map((itemId) => {
+      const catalogEntry = getCosmeticById(itemId);
+      return {
+        itemId,
+        name: catalogEntry?.name ?? itemId,
+        slot: catalogEntry ? cosmeticTypeToSlot(catalogEntry.type) : "item",
+        rarity: (catalogEntry?.rarity as CosmeticRarity) ?? "rare",
+        imagePath: "",
+      };
+    }),
     bonusTokens: doc.rewards?.bonusTokens || 0,
     basePriceUSD: doc.basePriceUSD,
     valueUSD: doc.valueUSD || doc.basePriceUSD * 1.5,
@@ -267,6 +305,63 @@ function mapToGiftable(doc: PremiumProductDoc): GiftableItem {
           : "exclusive",
     basePriceUSD: doc.basePriceUSD,
     giftMessage: doc.giftMessage || `Here's a gift for you!`,
+  };
+}
+
+// =============================================================================
+// Fallback Catalog (client-side defaults)
+// =============================================================================
+
+/**
+ * Build a PremiumShopCatalog from the client-side product definitions.
+ * Used when Firestore is empty or unreachable.
+ */
+function buildFallbackCatalog(): PremiumShopCatalog {
+  const tokenPacks: TokenPack[] = FALLBACK_TOKEN_PACKS.map((p) => ({
+    ...p,
+    productId: getPlatformProductId(p.productId),
+  })) as TokenPack[];
+
+  const bundles: PremiumBundle[] = FALLBACK_BUNDLES.map((b) => ({
+    ...b,
+    productId: getPlatformProductId(b.productId),
+  })) as PremiumBundle[];
+
+  const exclusives: PremiumExclusiveItem[] = FALLBACK_EXCLUSIVES.map((e) => ({
+    ...e,
+    productId: getPlatformProductId(e.productId),
+  })) as PremiumExclusiveItem[];
+
+  const giftable: GiftableItem[] = [
+    ...tokenPacks.map((p) => ({
+      id: p.id,
+      productId: p.productId,
+      name: p.name,
+      type: "tokenPack" as const,
+      basePriceUSD: p.basePriceUSD,
+      giftMessage: "Here's a gift for you!",
+    })),
+    ...bundles.map((b) => ({
+      id: b.id,
+      productId: b.productId,
+      name: b.name,
+      type: "bundle" as const,
+      basePriceUSD: b.basePriceUSD,
+      giftMessage: "Here's a gift for you!",
+    })),
+  ];
+
+  const featuredBundle = bundles.find((b) => b.featured);
+  const featuredExclusive = exclusives.find((e) => e.featured);
+
+  return {
+    tokenPacks,
+    bundles,
+    exclusives,
+    giftable,
+    featuredBundle,
+    featuredExclusive,
+    lastUpdated: Date.now(),
   };
 }
 
@@ -353,6 +448,20 @@ export async function getPremiumShopCatalog(
     bundles.sort((a, b) => a.sortOrder - b.sortOrder);
     exclusives.sort((a, b) => a.sortOrder - b.sortOrder);
 
+    // ── Fallback: if Firestore returned nothing, use client-side defaults ──
+    if (
+      tokenPacks.length === 0 &&
+      bundles.length === 0 &&
+      exclusives.length === 0
+    ) {
+      logger.info(
+        "[premiumShop] Firestore catalog empty — loading client-side fallback products",
+      );
+      const fallback = buildFallbackCatalog();
+      catalogCache = { data: fallback, timestamp: now };
+      return fallback;
+    }
+
     const catalog: PremiumShopCatalog = {
       tokenPacks,
       bundles,
@@ -375,7 +484,11 @@ export async function getPremiumShopCatalog(
     return catalog;
   } catch (error) {
     logger.error("[premiumShop] Error fetching catalog:", error);
-    throw error;
+    // Fall back to client-side catalog on network/Firestore errors
+    logger.info("[premiumShop] Using client-side fallback due to error");
+    const fallback = buildFallbackCatalog();
+    catalogCache = { data: fallback, timestamp: Date.now() };
+    return fallback;
   }
 }
 
@@ -661,7 +774,11 @@ export async function validateReceipt(
 }
 
 /**
- * Mock purchase for development
+ * Mock purchase for development.
+ *
+ * In __DEV__ mode this writes real Entitlement documents for granted items
+ * so the rest of the app (inventory, equipped items) sees the cosmetics.
+ * Tokens are logged but not persisted (token ledger is server-side).
  */
 async function mockPurchase(
   productId: string,
@@ -673,9 +790,41 @@ async function mockPurchase(
   // Simulate network delay
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  // In dev mode, simulate successful purchase
-  // The actual granting should happen server-side
-  // This is just for UI testing
+  // Best-effort: write entitlements for granted items
+  if (items && items.length > 0) {
+    try {
+      // Dynamically import to avoid circular deps at module level
+      const { getAuth } = await import("firebase/auth");
+      const auth = getAuth();
+      const uid = auth.currentUser?.uid;
+
+      if (uid) {
+        const db = getFirestoreInstance();
+        for (const cosmeticId of items) {
+          const catalogEntry = getCosmeticById(cosmeticId);
+          const entDoc = {
+            cosmeticId,
+            type: catalogEntry?.type ?? "decoration",
+            grantedAt: Date.now(),
+            source: "purchase",
+          };
+          const entRef = doc(db, "Users", uid, "Entitlements", cosmeticId);
+          await setDoc(entRef, entDoc, { merge: true });
+          logger.info("[premiumShop] Dev-granted entitlement:", cosmeticId);
+        }
+      } else {
+        logger.warn(
+          "[premiumShop] No authenticated user — skipping entitlement writes",
+        );
+      }
+    } catch (err) {
+      logger.warn("[premiumShop] Failed to write dev entitlements:", err);
+    }
+  }
+
+  if (tokens > 0) {
+    logger.info(`[premiumShop] Mock granted ${tokens} tokens (not persisted)`);
+  }
 
   return {
     success: true,
@@ -747,6 +896,21 @@ export function subscribeToPremiumCatalog(
           }
         });
 
+        // ── Fallback: if Firestore returned nothing, use client-side defaults ──
+        if (
+          tokenPacks.length === 0 &&
+          bundles.length === 0 &&
+          exclusives.length === 0
+        ) {
+          logger.info(
+            "[premiumShop] Subscription: Firestore catalog empty — loading client-side fallback products",
+          );
+          const fallback = buildFallbackCatalog();
+          catalogCache = { data: fallback, timestamp: Date.now() };
+          onUpdate(fallback);
+          return;
+        }
+
         const catalog: PremiumShopCatalog = {
           tokenPacks,
           bundles,
@@ -766,12 +930,25 @@ export function subscribeToPremiumCatalog(
         onUpdate(catalog);
       } catch (error) {
         logger.error("[premiumShop] Error processing snapshot:", error);
-        onError?.(error as Error);
+        // On error, try fallback so the UI isn't empty
+        try {
+          const fallback = buildFallbackCatalog();
+          onUpdate(fallback);
+        } catch {
+          onError?.(error as Error);
+        }
       }
     },
     (error) => {
       logger.error("[premiumShop] Subscription error:", error);
-      onError?.(error);
+      // On subscription error, try fallback so the UI isn't empty
+      try {
+        const fallback = buildFallbackCatalog();
+        catalogCache = { data: fallback, timestamp: Date.now() };
+        onUpdate(fallback);
+      } catch {
+        onError?.(error);
+      }
     },
   );
 

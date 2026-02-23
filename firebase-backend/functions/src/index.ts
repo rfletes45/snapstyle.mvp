@@ -10,6 +10,7 @@ import {
 
 // Games
 import {
+  claimLevelReward,
   cleanupOldGameSessions,
   cleanupOldGames,
   cleanupResolvedInvites,
@@ -21,6 +22,7 @@ import {
   makeMove,
   onGameCompletedCreateHistory,
   onGameHistoryCreatedUpdateLeaderboard,
+  onGameResult,
   onUniversalInviteUpdate,
   processGameCompletion,
   processMatchmakingQueue,
@@ -84,6 +86,7 @@ import {
   onUserCreated,
   recordDailyLogin,
   seedDailyTasks,
+  seedMonthlyTasks,
 } from "./economy";
 import {
   onGameSessionCreated,
@@ -167,6 +170,7 @@ export {
   adminSetAdminClaim,
   adminSetBan,
   checkMessageRateLimit,
+  claimLevelReward,
   claimTaskReward,
   cleanupCallSignaling,
   cleanupExpiredPushTokens,
@@ -209,6 +213,7 @@ export {
   onGameCompletedCreateHistory,
   onGameHistoryCreatedUpdateLeaderboard,
   onGamePlayedTaskProgress,
+  onGameResult,
   onGameSessionCreated,
   onGroupMessageInbox,
   onMessageSentTaskProgress,
@@ -240,6 +245,7 @@ export {
   restorePurchases,
   rollbackGameInvitesMigration,
   seedDailyTasks,
+  seedMonthlyTasks,
   seedShopCatalog,
   sendFriendRequestWithRateLimit,
   sendGift,

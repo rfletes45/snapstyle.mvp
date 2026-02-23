@@ -25,14 +25,6 @@ export {
   TropicalFishingState,
 } from "./tropicalFishing";
 
-// Mini-golf schemas (Phase 4.2)
-export {
-  GolfBall,
-  KinematicObstacle,
-  MiniGolfPlayer,
-  MiniGolfState,
-} from "./minigolf";
-
 // Turn-based game schemas (Phase 2–3)
 export {
   GridCell,
