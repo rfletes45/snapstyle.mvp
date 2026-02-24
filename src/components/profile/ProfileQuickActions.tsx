@@ -1,7 +1,7 @@
 /**
- * ProfileActions Component
+ * ProfileQuickActions
  *
- * List of action buttons for profile navigation.
+ * Own-profile action list used on ProfileMain.
  */
 
 import { useColors } from "@/store/ThemeContext";
@@ -12,7 +12,6 @@ import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Badge, Text } from "react-native-paper";
 
 export interface ProfileActionsProps {
-  /** List of actions */
   actions: ProfileAction[];
 }
 
@@ -45,9 +44,7 @@ function ProfileActionsBase({ actions }: ProfileActionsProps) {
               ]}
             >
               <MaterialCommunityIcons
-                name={
-                  action.icon as keyof typeof MaterialCommunityIcons.glyphMap
-                }
+                name={action.icon as keyof typeof MaterialCommunityIcons.glyphMap}
                 size={22}
                 color={action.color || colors.primary}
               />
@@ -113,3 +110,4 @@ const styles = StyleSheet.create({
 
 export const ProfileActions = memo(ProfileActionsBase);
 export default ProfileActions;
+

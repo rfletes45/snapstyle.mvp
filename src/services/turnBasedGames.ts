@@ -7,7 +7,7 @@
  * - Real-time subscriptions
  * - Matchmaking queue
  *
- * @see docs/06_GAMES_RESEARCH.md Section 5
+ * @see docs/GAMES_SYSTEM.md
  */
 
 import {
@@ -46,7 +46,6 @@ import {
   DotsGameState,
   FourGameState,
   GameEndReason,
-  GameInvite,
   GomokuGameState,
   MatchChatMessage,
   MatchmakingQueueEntry,
@@ -68,7 +67,6 @@ const logger = createLogger("services/turnBasedGames");
 
 const COLLECTIONS = {
   matches: "TurnBasedGames",
-  invites: "GameInvites",
   queue: "MatchmakingQueue",
   ratings: "PlayerRatings",
   chat: "MatchChat",
@@ -79,40 +77,6 @@ const COLLECTIONS = {
  */
 function getDb() {
   return getFirestoreInstance();
-}
-
-/**
- * Convert Firestore Timestamp to milliseconds number
- * Handles both Firestore Timestamp objects and plain numbers
- */
-function toMillis(value: unknown): number {
-  if (typeof value === "number") {
-    return value;
-  }
-  if (value && typeof value === "object" && "toMillis" in value) {
-    const ts = value as { toMillis(): number };
-    if (typeof ts.toMillis === "function") {
-      return ts.toMillis();
-    }
-  }
-  // Fallback - try to parse as Date
-  return new Date(value as string | number).getTime() || Date.now();
-}
-
-/**
- * Convert invite document data to properly typed GameInvite
- * Converts Firestore Timestamps to millisecond numbers
- */
-function parseInviteDoc(
-  docId: string,
-  data: Record<string, unknown>,
-): GameInvite {
-  return {
-    ...data,
-    id: docId,
-    createdAt: toMillis(data.createdAt),
-    expiresAt: toMillis(data.expiresAt),
-  } as GameInvite;
 }
 
 /**
@@ -1030,8 +994,8 @@ export async function getMatchHistory(
 
 // =============================================================================
 // Game Invites
-// NOTE: All invite functions have been moved to gameInvites.ts.
-// Use gameInvites.sendGameInvite() or sendUniversalInvite() instead.
+// NOTE: Invite operations moved to src/services/gameInvites.ts.
+// Use sendUniversalInvite()/claimInviteSlot()/cancelUniversalInvite().
 // =============================================================================
 
 // =============================================================================

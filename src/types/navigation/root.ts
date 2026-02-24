@@ -28,6 +28,7 @@ export type PlayStackParamList = {
   BounceBlitzGame: OptionalRouteParams;
   WordGame: OptionalRouteParams;
   Play2048Game: OptionalRouteParams;
+  LightsOutGame: OptionalRouteParams;
   BrickBreakerGame: OptionalRouteParams;
   TicTacToeGame: OptionalRouteParams;
   CheckersGame: OptionalRouteParams;
@@ -42,16 +43,25 @@ export type PlayStackParamList = {
   CrosswordGame: OptionalRouteParams;
   StarforgeGame: OptionalRouteParams;
   SketchPartyGameScreen: OptionalRouteParams;
+  MiniGolfDuelsGame: OptionalRouteParams;
+  BattleshipGame: OptionalRouteParams;
   GameDetails: { gameId: string };
   Leaderboard: { gameId?: string } | undefined;
-  Achievements: { gameId?: string } | undefined;
+  Achievements:
+    | {
+        gameId?: string;
+        targetAchievementId?: string;
+      }
+    | undefined;
   GameHistory: OptionalRouteParams;
   LevelRewards: undefined;
 };
 
 export type ProfileTabStackParamList = {
   ProfileMain: undefined;
-  Customization: { initialTab?: string } | undefined;
+  Customization:
+    | { initialTab?: string; initialSection?: "profile" | "chat" }
+    | undefined;
   Debug: undefined;
   LocalStorageDebug: undefined;
   BlockedUsers: undefined;
@@ -109,7 +119,9 @@ export type MainStackParamList = {
   PremiumShop: { initialTab?: string } | undefined;
   PurchaseHistory: undefined;
   CosmeticsShop: undefined;
-  Customization: { initialTab?: string } | undefined;
+  Customization:
+    | { initialTab?: string; initialSection?: "profile" | "chat" }
+    | undefined;
   ActivityFeed: undefined;
   SpectatorView: OptionalRouteParams;
 };

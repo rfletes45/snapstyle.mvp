@@ -28,6 +28,8 @@ If you are new to the repo, read in this order:
   - Game catalog, invite lifecycle, multiplayer runtime split, spectator/leaderboard wiring.
 - `docs/features/profile-economy.md`
   - Profile data/privacy contracts, relationship/moderation flows, wallet/tasks/shop behavior.
+- `docs/PROFILE_SYSTEM.md`
+  - Canonical profile cosmetics architecture: data model, entitlements, equip and rendering flow.
 - `docs/operations/runbook.md`
   - Local setup, startup sequence, health checks, deploy commands.
 - `docs/operations/testing.md`

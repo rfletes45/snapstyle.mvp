@@ -1,19 +1,27 @@
 /**
- * PongGameScreen — Classic Pong with AI
+ * PongGameScreen — Classic Pong with AI + Friend Invite Multiplayer
+ *
+ * Modes:
+ * - AI: Single-player against computer (easy/medium/hard)
+ * - Friend Invite: Real-time 1v1 via Colyseus (invite a friend to play)
  *
  * How to play:
  * 1. Drag your paddle (bottom) to hit the ball
  * 2. Score when the ball passes the opponent's paddle
- * 3. First to 7 wins! Power-ups change ball speed/size.
- *
- * Supports: Single-player vs AI
+ * 3. First to 7 wins!
  */
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
 import { GameOverModal } from "@/components/games/GameOverModal";
+import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
+import InvitePickerModal, {
+  type FriendItem,
+  type GroupItem,
+} from "@/components/InvitePickerModal";
 import ScoreRaceOverlay, {
+  ScoreRaceScoreBar,
   type ScoreRaceOverlayPhase,
 } from "@/components/ScoreRaceOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
@@ -21,6 +29,7 @@ import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { usePhysicsGame } from "@/hooks/usePhysicsGame";
 import { useSpectator } from "@/hooks/useSpectator";
 import { onGameResultNotification } from "@/services/gameResultEvents";
@@ -34,6 +43,7 @@ import {
   recordGameSession,
   sendScorecard,
 } from "@/services/games";
+import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
@@ -44,10 +54,11 @@ import {
   Circle,
   DashPathEffect,
   LinearGradient,
+  Path,
   RadialGradient,
   RoundedRect,
   Shadow,
-  Line as SkiaLine,
+  Skia,
   vec,
 } from "@shopify/react-native-skia";
 import * as Haptics from "expo-haptics";
@@ -85,7 +96,13 @@ const BALL_R = 10;
 const WIN_SCORE = 7;
 const GAME_TYPE = "pong_game";
 
-type GameState = "menu" | "playing" | "paused" | "result" | "colyseus";
+type GameState =
+  | "menu"
+  | "lobby"
+  | "playing"
+  | "paused"
+  | "result"
+  | "colyseus";
 
 interface Ball {
   x: number;
@@ -129,24 +146,115 @@ function PongGameScreen({
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
 
+  // Spectator mode — passed from chat invite "Spectate" button
+  const isSpectatorMode = route?.params?.spectatorMode === true;
+
   // Colyseus multiplayer hook
+  const mp = usePhysicsGame({ gameType: GAME_TYPE });
+
+  // Determine initial mode: lobby (from invite) or menu
+  const initialMode: GameState = route?.params?.inviteId ? "lobby" : "menu";
+  const [gameState, setGameState] = useState<GameState>(initialMode);
+  const [showInvitePicker, setShowInvitePicker] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+
+  // ── Lobby Controller (invite-only multiplayer) ──────────────────────
+  const lobbyController = useGameLobbyController({
+    gameType: "pong_game",
+    inviteId: route?.params?.inviteId,
+    entryPoint: route?.params?.entryPoint,
+    isTurnBased: false,
+    onGameReady: (gameId: string) => {
+      setGameState("colyseus");
+      mp.startMultiplayer({
+        firestoreGameId: gameId,
+        spectator: isSpectatorMode,
+      });
+    },
+    onLeaveLobby: () => {
+      setGameState("menu");
+    },
+    // Bridge Colyseus room state into controller
+    room: mp.room,
+    roomPhase: mp.phase,
+    roomReconnecting: mp.reconnecting,
+    roomOpponentDisconnected: mp.opponentDisconnected,
+    roomError: mp.error,
+  });
+
+  // Also support direct matchId joins (from chat "Play" button on existing invite)
   const { resolvedMode, firestoreGameId } = useGameConnection(
     GAME_TYPE,
     route?.params?.matchId,
   );
-  const mp = usePhysicsGame({
-    gameType: GAME_TYPE,
-    firestoreGameId: firestoreGameId ?? undefined,
-  });
-
-  const [gameState, setGameState] = useState<GameState>("menu");
-
   useEffect(() => {
+    // Skip when lobby is handling the invite flow
+    if (route?.params?.inviteId) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameState("colyseus");
-      mp.startMultiplayer();
+      mp.startMultiplayer({ firestoreGameId });
     }
-  }, [resolvedMode, firestoreGameId]);
+  }, [resolvedMode, firestoreGameId, route?.params?.inviteId]);
+
+  // Auto-send ready once connected in multiplayer — Pong starts immediately
+  // when both players are present (no lobby/ready-up screen needed)
+  // Spectators never send ready.
+  useEffect(() => {
+    if (
+      gameState === "colyseus" &&
+      mp.phase === "waiting" &&
+      mp.connected &&
+      !isSpectatorMode
+    ) {
+      mp.sendReady();
+    }
+  }, [gameState, mp.phase, mp.connected, isSpectatorMode]);
+
+  // ── Invite handlers ─────────────────────────────────────────────────
+  const handleInviteFriend = () => {
+    setGameState("lobby");
+  };
+
+  const handleSelectInviteFriend = async (friend: FriendItem) => {
+    setShowInvitePicker(false);
+    if (!currentFirebaseUser || !profile) return;
+    setInviteLoading(true);
+    try {
+      await lobbyController.lobby.sendFriendInvite(
+        friend.friendUid,
+        friend.displayName || friend.username,
+        undefined,
+      );
+    } catch (error: any) {
+      showError(
+        error?.message || "Failed to send game invite. Please try again.",
+      );
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleSelectInviteGroup = async (group: GroupItem) => {
+    setShowInvitePicker(false);
+    if (!currentFirebaseUser || !profile) return;
+    setInviteLoading(true);
+    try {
+      const members = await getGroupMembers(group.groupId);
+      const memberIds = members.map((m) => m.uid);
+      await lobbyController.lobby.sendGroupInvite(
+        group.groupId,
+        group.name,
+        memberIds,
+      );
+    } catch (error: any) {
+      showError(
+        error?.message || "Failed to send group game invite. Please try again.",
+      );
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   const [playerScore, setPlayerScore] = useState(0);
   const [aiScore, setAiScore] = useState(0);
   const [wins, setWins] = useState(0);
@@ -171,7 +279,7 @@ function PongGameScreen({
     return unsub;
   }, []);
 
-  // Spectator hosting
+  // Spectator hosting (only for SP host mode — skip when joining as spectator)
   const spectatorHost = useSpectator({
     mode: "sp-host",
     gameType: "pong_game",
@@ -179,14 +287,32 @@ function PongGameScreen({
   const [showSpectatorInvitePicker, setShowSpectatorInvitePicker] =
     useState(false);
 
-  // Auto-start spectator hosting so invites can be sent before game starts
+  // Auto-start spectator hosting for single-player AI mode only.
+  // Skip when:
+  //  - joining as a spectator (isSpectatorMode)
+  //  - joining via a multiplayer invite (inviteId present)
+  //  - joining via a direct matchId
+  const isMultiplayerJoin = !!(
+    route?.params?.inviteId || route?.params?.matchId
+  );
   useEffect(() => {
-    spectatorHost.startHosting();
-  }, []);
+    if (!isSpectatorMode && !isMultiplayerJoin) {
+      spectatorHost.startHosting();
+    }
+  }, [isSpectatorMode, isMultiplayerJoin]);
 
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
     "medium",
   );
+
+  // Pre-built Skia path for the dashed center line (avoids the
+  // undefined-at-runtime <Line> component from react-native-skia v2)
+  const centerLinePath = useMemo(() => {
+    const p = Skia.Path.Make();
+    p.moveTo(16, COURT_H / 2);
+    p.lineTo(COURT_W - 16, COURT_H / 2);
+    return p;
+  }, []);
 
   const playerX = useRef(COURT_W / 2 - PADDLE_W / 2);
   const aiX = useRef(COURT_W / 2 - PADDLE_W / 2);
@@ -203,6 +329,7 @@ function PongGameScreen({
   const frameId = useRef<number>(0);
   const lastTime = useRef(0);
   const spectatorFrameCount = useRef(0);
+  const gameStartTime = useRef<number>(0);
 
   // Reanimated values for high-frequency render updates
   const ballX = useSharedValue(COURT_W / 2);
@@ -360,7 +487,7 @@ function PongGameScreen({
               mode: "solo",
               outcome: "lose",
               score: playerScoreRef.current,
-              durationMs: 0,
+              durationMs: Date.now() - gameStartTime.current,
               userId: currentFirebaseUser.uid,
               displayName: currentFirebaseUser.displayName || "Player",
             }),
@@ -391,7 +518,7 @@ function PongGameScreen({
           recordGameSession(currentFirebaseUser.uid, {
             gameId: GAME_TYPE,
             score: newWins,
-            duration: 0,
+            duration: Math.round((Date.now() - gameStartTime.current) / 1000),
           });
           // Submit win to XP pipeline
           submitGameResult(
@@ -400,7 +527,7 @@ function PongGameScreen({
               mode: "solo",
               outcome: "win",
               score: newWins,
-              durationMs: 0,
+              durationMs: Date.now() - gameStartTime.current,
               userId: currentFirebaseUser.uid,
               displayName: currentFirebaseUser.displayName || "Player",
             }),
@@ -479,6 +606,7 @@ function PongGameScreen({
       powerUp.current = null;
       resetBall();
       setGameState("playing");
+      gameStartTime.current = Date.now();
       spectatorHost.startHosting();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     },
@@ -518,7 +646,11 @@ function PongGameScreen({
     () =>
       Gesture.Pan()
         .runOnJS(true)
-        .enabled(gameState === "playing" || gameState === "colyseus")
+        .enabled(
+          (gameState === "playing" ||
+            (gameState === "colyseus" && mp.phase === "playing")) &&
+            !isSpectatorMode,
+        )
         .onBegin((event) => {
           handlePaddleMove(event.absoluteX);
         })
@@ -534,7 +666,39 @@ function PongGameScreen({
   const { handleBack } = useGameBackHandler({
     gameType: "pong_game",
     isGameOver: gameState === "result" || gameState === "menu",
+    isInLobby: gameState === "lobby",
+    entryPoint: route?.params?.entryPoint,
   });
+
+  // ── Lobby Screen ──────────────────────────────────────────────────────
+  if (gameState === "lobby") {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <MultiplayerLobbyOverlay
+          controller={lobbyController}
+          gameTitle="Pong"
+          gameIcon="🏓"
+          onInvitePress={() => setShowInvitePicker(true)}
+          onLeave={() => {
+            lobbyController.lobby.leaveLobby();
+            setGameState("menu");
+          }}
+          showReadyButton={false}
+        >
+          <View style={{ flex: 1 }} />
+        </MultiplayerLobbyOverlay>
+
+        <InvitePickerModal
+          visible={showInvitePicker}
+          onDismiss={() => setShowInvitePicker(false)}
+          onSelectFriend={handleSelectInviteFriend}
+          onSelectGroup={handleSelectInviteGroup}
+          currentUserId={currentFirebaseUser?.uid || ""}
+          title="Challenge a Friend"
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -571,6 +735,28 @@ function PongGameScreen({
               Best: {personalBest.bestScore} wins
             </Text>
           )}
+
+          {/* Invite Friend */}
+          <Button
+            mode="contained"
+            onPress={handleInviteFriend}
+            style={[styles.onlineBtn, { backgroundColor: "#9C27B0" }]}
+            labelStyle={{ color: "#fff", fontWeight: "700", fontSize: 16 }}
+            icon="account-plus"
+            loading={inviteLoading}
+          >
+            Invite Friend
+          </Button>
+
+          <Text
+            style={[
+              styles.sectionLabel,
+              { color: colors.textSecondary, marginTop: 24 },
+            ]}
+          >
+            — or play vs AI —
+          </Text>
+
           <View style={styles.diffButtons}>
             {(["easy", "medium", "hard"] as const).map((d) => (
               <Button
@@ -649,15 +835,14 @@ function PongGameScreen({
                   />
                 </RoundedRect>
                 {/* Center dashed line */}
-                <SkiaLine
-                  p1={vec(16, COURT_H / 2)}
-                  p2={vec(COURT_W - 16, COURT_H / 2)}
+                <Path
+                  path={centerLinePath}
                   color="rgba(255,255,255,0.15)"
                   strokeWidth={2}
                   style="stroke"
                 >
                   <DashPathEffect intervals={[8, 8]} />
-                </SkiaLine>
+                </Path>
                 {/* Center circle */}
                 <Circle
                   cx={COURT_W / 2}
@@ -883,20 +1068,20 @@ function PongGameScreen({
         </View>
       )}
 
-      {/* Colyseus multiplayer court */}
-      {gameState === "colyseus" && mp.phase === "playing" && (
+      {/* Colyseus multiplayer court — renders for ALL multiplayer phases */}
+      {gameState === "colyseus" && (
         <View style={styles.courtContainer}>
-          {/* Score */}
-          <View style={styles.scoreRow}>
-            <Text style={[styles.scoreText, { color: colors.textSecondary }]}>
-              {mp.opponentName}: {mp.opponentScore}
-            </Text>
-            <Text style={[styles.scoreText, { color: colors.primary }]}>
-              You: {mp.myScore}
-            </Text>
-          </View>
+          {/* Score bar during playing phase */}
+          {mp.phase === "playing" && (
+            <ScoreRaceScoreBar
+              opponentName={mp.opponentName}
+              opponentScore={mp.opponentScore}
+              myScore={mp.myScore}
+              opponentDisconnected={mp.opponentDisconnected}
+            />
+          )}
 
-          {/* Court */}
+          {/* Court — always visible so overlays have a background */}
           <GestureDetector gesture={paddleGesture}>
             <View
               style={[styles.court, { borderColor: "rgba(255,255,255,0.15)" }]}
@@ -923,15 +1108,14 @@ function PongGameScreen({
                     inner
                   />
                 </RoundedRect>
-                <SkiaLine
-                  p1={vec(16, COURT_H / 2)}
-                  p2={vec(COURT_W - 16, COURT_H / 2)}
+                <Path
+                  path={centerLinePath}
                   color="rgba(255,255,255,0.15)"
                   strokeWidth={2}
                   style="stroke"
                 >
                   <DashPathEffect intervals={[8, 8]} />
-                </SkiaLine>
+                </Path>
                 <Circle
                   cx={COURT_W / 2}
                   cy={COURT_H / 2}
@@ -978,24 +1162,35 @@ function PongGameScreen({
                   />
                 </RoundedRect>
 
-                {/* Ball — scale from server */}
-                <Circle
-                  cx={(mp.ball.x / mp.fieldWidth) * COURT_W}
-                  cy={(mp.ball.y / mp.fieldHeight) * COURT_H}
-                  r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
-                >
-                  <RadialGradient
-                    c={vec(0, 0)}
+                {/* Ball — scale from server (only during active play) */}
+                {(mp.phase === "playing" ||
+                  mp.phase === "countdown" ||
+                  mp.phase === "finished") && (
+                  <Circle
+                    cx={(mp.ball.x / mp.fieldWidth) * COURT_W}
+                    cy={(mp.ball.y / mp.fieldHeight) * COURT_H}
                     r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
-                    colors={["#FFFFFF", colors.primary, `${colors.primary}CC`]}
-                  />
-                  <Shadow
-                    dx={0}
-                    dy={1}
-                    blur={4}
-                    color={`${colors.primary}88`}
-                  />
-                </Circle>
+                  >
+                    <RadialGradient
+                      c={vec(
+                        (mp.ball.x / mp.fieldWidth) * COURT_W,
+                        (mp.ball.y / mp.fieldHeight) * COURT_H,
+                      )}
+                      r={(mp.ball.radius / mp.fieldWidth) * COURT_W}
+                      colors={[
+                        "#FFFFFF",
+                        colors.primary,
+                        `${colors.primary}CC`,
+                      ]}
+                    />
+                    <Shadow
+                      dx={0}
+                      dy={1}
+                      blur={4}
+                      color={`${colors.primary}88`}
+                    />
+                  </Circle>
+                )}
               </Canvas>
             </View>
           </GestureDetector>
@@ -1049,7 +1244,7 @@ function PongGameScreen({
           opponentName={mp.opponentName}
           isWinner={mp.isWinner}
           isTie={mp.isTie}
-          winnerName={mp.isWinner ? mp.myName : mp.opponentName}
+          winnerName={mp.isTie ? "" : mp.isWinner ? mp.myName : mp.opponentName}
           onReady={() => mp.sendReady()}
           onRematch={() => mp.sendRematch()}
           onAcceptRematch={() => mp.acceptRematch()}
@@ -1060,12 +1255,23 @@ function PongGameScreen({
           rematchRequested={mp.rematchRequested}
           reconnecting={mp.reconnecting}
           opponentDisconnected={mp.opponentDisconnected}
+          isSpectator={isSpectatorMode}
+          spectatorCount={mp.spectatorCount}
+          myName={mp.myName}
         />
       )}
 
-      {/* Spectator overlay — shows count of watchers */}
-      {spectatorHost.spectatorCount > 0 && (
-        <SpectatorOverlay spectatorCount={spectatorHost.spectatorCount} />
+      {/* Spectator overlay — shows count (SP host or MP Colyseus) */}
+      {(gameState === "colyseus"
+        ? mp.spectatorCount > 0
+        : spectatorHost.spectatorCount > 0) && (
+        <SpectatorOverlay
+          spectatorCount={
+            gameState === "colyseus"
+              ? mp.spectatorCount
+              : spectatorHost.spectatorCount
+          }
+        />
       )}
 
       {/* Friend picker for sharing score */}
@@ -1140,6 +1346,8 @@ const styles = StyleSheet.create({
   menuTitle: { fontSize: 32, fontWeight: "800", marginBottom: 8 },
   menuSub: { fontSize: 16, marginBottom: 16 },
   bestText: { fontSize: 14, fontWeight: "600", marginBottom: 24 },
+  onlineBtn: { minWidth: 200, borderRadius: 24, paddingVertical: 4 },
+  sectionLabel: { fontSize: 14, fontWeight: "500", marginBottom: 12 },
   diffButtons: { flexDirection: "row", gap: 12 },
   diffBtn: { minWidth: 90 },
   courtContainer: { flex: 1, alignItems: "center", paddingTop: 8 },

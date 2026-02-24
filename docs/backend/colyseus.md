@@ -1,6 +1,6 @@
 # Colyseus Multiplayer Server
 
-Last verified: 2026-02-22
+Last verified: 2026-02-24
 
 ## Server Entry and Runtime
 
@@ -26,6 +26,7 @@ Registered room names:
 - Physics/realtime: `pong`, `bounce_blitz`, `brick_breaker`, `minigolf_duels`
 - Cooperative: `word_master`, `crossword`
 - Incremental/party: `starforge`, `sketch_party`
+- Strategy/naval: `battleship`
 - Spectator: `spectator`
 
 Room source families:

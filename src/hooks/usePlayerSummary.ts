@@ -210,11 +210,12 @@ export function usePlayerSummary(): UsePlayerSummaryReturn {
       balances,
       tasks: tasksSummary,
       equippedDecor: {
-        frameId: null,
-        auraId: null,
-        badgeId: null,
-        overlayId: null,
-        backplateId: null,
+        // Map header slots from currently equipped profile data.
+        frameId: profile?.avatarConfig?.profileFrame ?? null,
+        auraId: profile?.avatarConfig?.nameEffect ?? null,
+        badgeId: profile?.featuredBadges?.[0]?.badgeId ?? null,
+        overlayId: profile?.avatarConfig?.profileBanner ?? null,
+        backplateId: profile?.equippedBackgroundId ?? null,
       },
       decorationId: decoration?.decorationId ?? null,
       presence: undefined,

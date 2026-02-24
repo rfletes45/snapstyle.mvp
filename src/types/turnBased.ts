@@ -4,8 +4,13 @@
  * Type definitions for turn-based multiplayer games including:
  * - Chess, Checkers, Tic-Tac-Toe, Crazy Eights
  *
- * @see docs/06_GAMES_RESEARCH.md Section 5
+ * @see docs/GAMES_SYSTEM.md
  */
+
+import type {
+  TurnBasedGameType as CatalogTurnBasedGameType,
+  RealTimeGameType,
+} from "@/types/games";
 
 // =============================================================================
 // Generic Turn-Based Types
@@ -95,17 +100,9 @@ export interface TurnBasedMatch<
 }
 
 /**
- * Turn-based game types
+ * Turn-based game IDs are defined in the canonical game registry.
  */
-export type TurnBasedGameType =
-  | "chess"
-  | "checkers"
-  | "tic_tac_toe"
-  | "crazy_eights"
-  | "connect_four"
-  | "dot_match"
-  | "gomoku_master"
-  | "reversi_game";
+export type TurnBasedGameType = CatalogTurnBasedGameType;
 
 /**
  * Match status
@@ -393,6 +390,7 @@ export interface Card {
 
 /**
  * Crazy Eights game configuration
+ * @deprecated Use CRAZY_CARDS_CONFIG instead — kept for backward compatibility
  */
 export const CRAZY_EIGHTS_CONFIG = {
   /** Initial hand size for each player */
@@ -400,20 +398,63 @@ export const CRAZY_EIGHTS_CONFIG = {
   /** Maximum number of draws per turn (typically 1) */
   maxDrawsPerTurn: 1,
   /** Minimum players for a game */
-  minPlayers: 2,
+  minPlayers: 1,
   /** Maximum players for a game */
-  maxPlayers: 7,
+  maxPlayers: 5,
   /** The rank that allows suit declaration */
   wildRank: "8" as CardRank,
 } as const;
 
+// =============================================================================
+// Crazy Cards (UNO-Inspired) Types — replaces legacy Crazy Eights
+// =============================================================================
+
+/** Card color — "wild" for Wild and Wild Draw Four */
+export type CrazyCardColor = "red" | "yellow" | "green" | "blue" | "wild";
+
+/** Card type — actions and wilds */
+export type CrazyCardType =
+  | "number"
+  | "skip"
+  | "reverse"
+  | "draw_two"
+  | "wild"
+  | "wild_draw_four";
+
+/** A single Crazy Cards card */
+export interface CrazyCard {
+  /** Unique identifier (e.g. "red_7_1", "wild_0") */
+  id: string;
+  /** Card color */
+  color: CrazyCardColor;
+  /** Card type */
+  type: CrazyCardType;
+  /** Numeric value 0–9 for number cards, null for actions/wilds */
+  value: number | null;
+}
+
+/** Crazy Cards game configuration */
+export const CRAZY_CARDS_CONFIG = {
+  initialHandSize: 7,
+  maxDrawsPerTurn: 1,
+  minPlayers: 1,
+  maxPlayers: 5,
+  deckSize: 108,
+  /** Display name (internal gameId stays "crazy_eights") */
+  displayName: "Crazy Cards",
+} as const;
+
 /**
- * Crazy Eights move
+ * Crazy Eights move (now supports UNO-style actions)
  */
 export interface CrazyEightsMove {
-  type: "play" | "draw" | "pass";
+  type: "play" | "draw" | "pass" | "call_uno" | "challenge_uno";
   card?: Card;
-  declaredSuit?: CardSuit; // When playing an 8
+  /** Crazy Cards: card ID for Colyseus play action */
+  cardId?: string;
+  declaredSuit?: CardSuit; // Legacy: When playing an 8
+  chosenColor?: CrazyCardColor; // New: When playing a wild
+  targetSessionId?: string; // For challenge_uno
   timestamp: number;
 }
 
@@ -426,22 +467,26 @@ export interface CrazyEightsPlayerState {
 }
 
 /**
- * Crazy Eights game state
+ * Crazy Eights game state (updated for Crazy Cards / UNO-inspired rules)
  */
 export interface CrazyEightsGameState {
   discardPile: Card[];
-  deckSize: number; // Cards remaining in draw pile
+  deckSize: number;
   topCard: Card;
-  currentSuit: CardSuit; // May differ from top card if 8 was played
+  currentSuit: CardSuit; // Legacy compat
+  currentColor?: CrazyCardColor; // New: active color for Crazy Cards mode
   currentTurn: string; // userId
-  direction: 1 | -1; // For turn direction in multiplayer
-  drawCount: number; // Cards drawn this turn (max 1, then must play or pass)
-  mustDraw: boolean; // If player cannot play
-  hasDrawnThisTurn: boolean; // Prevents unlimited draws - player draws once then must play or pass
+  direction: 1 | -1;
+  drawCount: number;
+  mustDraw: boolean;
+  hasDrawnThisTurn: boolean;
+  // Crazy Cards specific
+  pendingDrawCount?: number; // Cards next player must draw (+2/+4)
+  pendingSkip?: boolean;
   // Online game data (stored in Firestore)
-  hands?: Record<string, Card[]>; // Player hands keyed by playerId
-  deck?: Card[]; // Remaining deck for online games
-  playerOrder?: string[]; // Order of players for turn management (2-7 players)
+  hands?: Record<string, Card[]>;
+  deck?: Card[];
+  playerOrder?: string[];
 }
 
 /**
@@ -634,11 +679,6 @@ export interface GameInvite {
   matchId?: string; // Set when accepted
 }
 
-/**
- * Real-time game types (for invites)
- */
-export type RealTimeGameType = "sketch_party_game";
-
 // =============================================================================
 // Universal Game Invite Types (NEW)
 // =============================================================================
@@ -657,6 +697,33 @@ export type UniversalInviteStatus =
   | "declined" // Recipient declined (DM/specific only)
   | "expired" // Time limit exceeded
   | "cancelled"; // Sender cancelled
+
+/**
+ * Canonical status transition graph for universal invites.
+ * Keep service and backend lifecycle logic aligned with this map.
+ */
+export const UNIVERSAL_INVITE_STATUS_TRANSITIONS: Record<
+  UniversalInviteStatus,
+  readonly UniversalInviteStatus[]
+> = {
+  pending: ["filling", "ready", "starting", "cancelled", "expired", "declined"],
+  filling: ["pending", "ready", "starting", "cancelled", "expired", "declined"],
+  ready: ["filling", "pending", "starting", "active", "cancelled", "expired"],
+  starting: ["active", "ready", "completed"],
+  active: ["completed"],
+  completed: [],
+  declined: [],
+  expired: [],
+  cancelled: [],
+};
+
+export function canTransitionUniversalInviteStatus(
+  from: UniversalInviteStatus,
+  to: UniversalInviteStatus,
+): boolean {
+  if (from === to) return true;
+  return UNIVERSAL_INVITE_STATUS_TRANSITIONS[from].includes(to);
+}
 
 /** A claimed player slot in the invite */
 export interface PlayerSlot {
@@ -737,6 +804,12 @@ export interface UniversalGameInvite {
   // ============= SPECTATING =============
   /** Is spectating enabled? Default true */
   spectatingEnabled: boolean;
+  /** Spectator-only invites bypass player slots (reserved for future use). */
+  spectatorOnly?: boolean;
+  /** Current spectators watching the active game (if tracked on invite doc). */
+  spectators?: SpectatorEntry[];
+  /** Optional cap on concurrent spectators. */
+  maxSpectators?: number;
 
   // ============= STATUS =============
   status: UniversalInviteStatus;

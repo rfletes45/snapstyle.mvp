@@ -19,6 +19,7 @@ import { generateId } from "@/utils/ids";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -520,8 +521,7 @@ export async function updateSpectatorInviteToFinished(
     const messageRef = doc(db, collectionPath, ref.messageId);
 
     // Read the existing message to preserve the original invite fields
-    const { getDoc: getDocFn } = await import("firebase/firestore");
-    const snap = await getDocFn(messageRef);
+    const snap = await getDoc(messageRef);
     if (!snap.exists()) {
       logger.warn("[games] Spectator invite message not found:", ref.messageId);
       return false;

@@ -41,7 +41,8 @@ export function GameResultToastManager(): null {
           entityId: achievementId,
           fromUserId: "",
           navigateTo: {
-            screen: "Profile",
+            // Achievements lives in PlayStack, not ProfileStack.
+            screen: "Play",
             params: {
               screen: "Achievements",
               params: { targetAchievementId: achievementId },

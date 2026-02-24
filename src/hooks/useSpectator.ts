@@ -532,7 +532,12 @@ function useSpHost(params: SpHostParams): UseSpectatorReturn {
     try {
       const token = await getFirebaseToken();
       const client = getColyseusClient();
-      const newRoom = await client.joinOrCreate("spectator", {
+      // Always CREATE a new room — never joinOrCreate.
+      // joinOrCreate can accidentally match an existing SpectatorRoom
+      // (e.g. when two users play the same gameType concurrently),
+      // causing one host to land inside another's SpectatorRoom as a
+      // spectator instead of hosting their own.
+      const newRoom = await client.create("spectator", {
         gameType,
         token,
         protocolVersion: GAME_PROTOCOL_VERSION,

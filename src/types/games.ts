@@ -7,8 +7,7 @@
  * - Real-time multiplayer types (Starforge, Sketch Party)
  * - Game metadata and configuration
  *
- * @see docs/06_GAMES_RESEARCH.md for physics research
- * @see docs/PROMPT_GAMES_EXPANSION.md for full implementation plan
+ * @see docs/GAMES_SYSTEM.md for canonical system contracts
  */
 
 // =============================================================================
@@ -24,7 +23,6 @@ export type SinglePlayerGameType =
   | "word_master" // Daily word puzzle (Wordle-style)
   | "brick_breaker" // Classic Breakout/Arkanoid
   | "minesweeper_classic" // Classic Minesweeper
-  | "pong_game" // Pong with AI
   | "lights_out"; // Lights Out puzzle
 
 /**
@@ -47,7 +45,9 @@ export type RealTimeGameType =
   | "crossword_puzzle" // Daily mini crossword
   | "starforge_game" // Starforge incremental
   | "sketch_party_game" // Sketch Party (skribbl-style)
-  | "minigolf_duels"; // Mini-Golf Duels
+  | "pong_game" // Pong (AI + online multiplayer)
+  | "minigolf_duels" // Mini-Golf Duels
+  | "battleship"; // Battleship (naval warfare)
 
 /**
  * All game types combined
@@ -61,6 +61,16 @@ export type ExtendedGameType =
  * Game category for UI grouping
  */
 export type GameCategory = "quick_play" | "puzzle" | "multiplayer" | "daily";
+
+/**
+ * Runtime category used by invite orchestration and room routing.
+ *
+ * Note:
+ * - This is about backend/runtime transport behavior, not UI genre.
+ * - `crazy_eights` is currently Colyseus/external-session driven, so it is
+ *   treated as `realtime` for invite/game creation flow.
+ */
+export type GameRuntimeType = "solo" | "turnBased" | "realtime";
 
 // =============================================================================
 // Game Metadata
@@ -202,7 +212,7 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     id: "brick_breaker",
     name: "Brick Breaker",
     shortName: "Bricks",
-    description: "Bounce the ball to destroy all bricks!",
+    description: "Classic Atari Breakout — clear two walls of bricks!",
     icon: "🧱",
     category: "quick_play",
     minPlayers: 1,
@@ -212,14 +222,14 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     hasAchievements: true,
     isAvailable: true,
     isNew: true,
-    tagline: "Classic brick-breaking arcade action",
+    tagline: "Atari Breakout arcade action",
     longDescription:
-      "Control a paddle at the bottom of the screen and keep the ball in play to smash every brick. Some bricks need multiple hits, and power-ups fall from destroyed bricks. Clear every level to prove your reflexes.",
+      "A faithful replica of the 1976 Atari Breakout arcade game. Bounce the ball off your paddle to destroy 8 rows of colored bricks — yellow, green, orange, and red — across two walls. Score varies by color, speed increases with hits, and the paddle shrinks after breaking through the red row.",
     howToPlay: [
+      "Tap to launch the ball from the paddle",
       "Drag left/right to move your paddle",
-      "Keep the ball from falling off-screen",
-      "Break all bricks to clear the level",
-      "Catch power-ups for extra balls, lasers, and more",
+      "Destroy all 112 bricks per wall (2 walls total)",
+      "Score by color: yellow=1, green=3, orange=5, red=7",
     ],
     tags: ["Arcade", "Solo", "High Score"],
     scoringType: "high_score",
@@ -255,26 +265,26 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     id: "pong_game",
     name: "Pong",
     shortName: "Pong",
-    description: "Classic Pong — drag your paddle to win!",
+    description: "Classic Pong — play online or vs AI!",
     icon: "🏓",
-    category: "quick_play",
-    minPlayers: 1,
-    maxPlayers: 1,
-    isMultiplayer: false,
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 2,
+    isMultiplayer: true,
     hasLeaderboard: true,
     hasAchievements: true,
     isAvailable: true,
     isNew: true,
-    tagline: "Retro paddle action against the AI",
+    tagline: "Challenge friends or the AI to classic paddle action",
     longDescription:
-      "The original arcade classic, reimagined for mobile. Drag your paddle to return the ball and outscore the AI opponent. The ball speeds up after every rally — how many wins can you rack up?",
+      "The original arcade classic, reimagined for mobile. Play online against friends or test your skills vs AI. Drag your paddle to return the ball and outscore your opponent. First to 7 wins!",
     howToPlay: [
-      "Drag your paddle up/down to hit the ball",
-      "Score when the ball passes the AI's paddle",
+      "Drag your paddle to hit the ball",
+      "Score when the ball passes your opponent's paddle",
       "Ball speeds up after each rally",
-      "Win as many rounds as you can",
+      "First to 7 points wins",
     ],
-    tags: ["Arcade", "Solo", "Retro"],
+    tags: ["Arcade", "Multiplayer", "Real-Time"],
     scoringType: "wins",
   },
 
@@ -331,27 +341,28 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
   },
   crazy_eights: {
     id: "crazy_eights",
-    name: "Crazy Eights",
-    shortName: "Crazy 8s",
-    description: "Match cards by suit or rank!",
-    icon: "🎴",
+    name: "Crazy Cards",
+    shortName: "Crazy Cards",
+    description: "Match by color or number — action cards change everything!",
+    icon: "🃏",
     category: "multiplayer",
-    minPlayers: 2,
-    maxPlayers: 4,
+    minPlayers: 1,
+    maxPlayers: 5,
     isMultiplayer: true,
-    hasLeaderboard: false,
+    hasLeaderboard: true,
     hasAchievements: true,
     isAvailable: true,
-    tagline: "Play your cards right — eights are wild!",
+    tagline: "Skip, Reverse, Draw Two — empty your hand first!",
     longDescription:
-      "A fast-paced card game for 2-4 players. Match the top card by suit or rank, or play an 8 to change the suit. Be the first to empty your hand to win the round. Simple to learn, full of twists.",
+      "An UNO-inspired card game for 1-5 players. Match by color or number, unleash Skip, Reverse, and Draw Two cards, or go wild to choose any color. Call UNO when you're down to one card — or get caught and draw two! Play solo against AI or with up to 4 friends.",
     howToPlay: [
-      "Match the top card by suit or rank",
-      "Play an 8 to choose any suit",
-      "Draw from the deck if you can't play",
-      "First player to empty their hand wins",
+      "Match the top card by color or number",
+      "Play action cards: Skip, Reverse, +2",
+      "Wild cards let you choose any color",
+      "Call UNO with one card left or draw 2!",
+      "First to empty their hand wins",
     ],
-    tags: ["Cards", "2-4 Players", "Turn-Based"],
+    tags: ["Cards", "1-5 Players", "UNO-Style"],
     scoringType: "wins",
   },
   tic_tac_toe: {
@@ -618,6 +629,32 @@ export const GAME_METADATA: Record<ExtendedGameType, GameMetadata> = {
     tags: ["Multiplayer", "Real-Time", "2 Players"],
     scoringType: "moves_low",
   },
+  battleship: {
+    id: "battleship",
+    name: "Battleship",
+    shortName: "Battle",
+    description: "Sink your opponent's fleet on a 10×10 grid!",
+    icon: "🚢",
+    category: "multiplayer",
+    minPlayers: 2,
+    maxPlayers: 2,
+    isMultiplayer: true,
+    hasLeaderboard: true,
+    hasAchievements: true,
+    isAvailable: true,
+    isNew: true,
+    tagline: "Hunt, fire, and sink the enemy fleet",
+    longDescription:
+      "The classic naval strategy game. Place your fleet of five ships on a 10×10 grid, then take turns firing shots at your opponent's grid. Hits reveal ship positions; sink all five enemy ships to win. Features fog-of-war — your opponent never sees your placements until they score a hit.",
+    howToPlay: [
+      "Place your 5 ships on the grid (horizontal or vertical)",
+      "Take turns firing shots at the enemy grid",
+      "Hits are marked red, misses are marked white",
+      "Sink all 5 enemy ships to win",
+    ],
+    tags: ["Strategy", "2-Player", "Turn-Based"],
+    scoringType: "wins",
+  },
 };
 
 // =============================================================================
@@ -657,7 +694,7 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
   },
   brick_breaker: {
     minScore: 0,
-    maxScore: 999999,
+    maxScore: 896,
     scoreDirection: "higher",
   },
   minesweeper_classic: {
@@ -705,8 +742,8 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
 
   pong_game: {
     minScore: 0,
-    maxScore: 999,
-    scoreDirection: "higher", // Games won vs AI
+    maxScore: 7,
+    scoreDirection: "higher", // Per-match score (first to 7)
   },
 
   // Phase 3: New multiplayer games
@@ -740,6 +777,43 @@ export const EXTENDED_GAME_SCORE_LIMITS: Record<
     maxScore: 999,
     scoreDirection: "lower", // Fewer strokes = better
   },
+  battleship: {
+    minScore: 0,
+    maxScore: 9999,
+    scoreDirection: "higher", // Wins
+  },
+};
+
+/**
+ * Canonical runtime classification for every game ID.
+ * Keep this in sync with invite orchestration and Colyseus mapping.
+ */
+export const GAME_RUNTIME_TYPE: Record<ExtendedGameType, GameRuntimeType> = {
+  // Solo
+  bounce_blitz: "solo",
+  play_2048: "solo",
+  word_master: "solo",
+  brick_breaker: "solo",
+  minesweeper_classic: "solo",
+  lights_out: "solo",
+
+  // Firestore-backed turn-based
+  chess: "turnBased",
+  checkers: "turnBased",
+  tic_tac_toe: "turnBased",
+  connect_four: "turnBased",
+  dot_match: "turnBased",
+  gomoku_master: "turnBased",
+  reversi_game: "turnBased",
+
+  // Realtime / Colyseus external-session orchestration
+  crazy_eights: "realtime",
+  crossword_puzzle: "realtime",
+  starforge_game: "realtime",
+  sketch_party_game: "realtime",
+  pong_game: "realtime",
+  minigolf_duels: "realtime",
+  battleship: "realtime",
 };
 
 // =============================================================================
@@ -784,6 +858,25 @@ export function getGameMetadata(type: ExtendedGameType): GameMetadata {
 }
 
 /**
+ * Canonical runtime classifier for invite/game orchestration.
+ */
+export function getGameRuntimeType(gameId: ExtendedGameType): GameRuntimeType {
+  return GAME_RUNTIME_TYPE[gameId];
+}
+
+export function isSoloRuntimeGame(gameId: ExtendedGameType): boolean {
+  return getGameRuntimeType(gameId) === "solo";
+}
+
+export function isTurnBasedRuntimeGame(gameId: ExtendedGameType): boolean {
+  return getGameRuntimeType(gameId) === "turnBased";
+}
+
+export function isRealtimeRuntimeGame(gameId: ExtendedGameType): boolean {
+  return getGameRuntimeType(gameId) === "realtime";
+}
+
+/**
  * Format score for display based on game type
  */
 export function formatGameScore(type: ExtendedGameType, score: number): string {
@@ -812,6 +905,7 @@ export function formatGameScore(type: ExtendedGameType, score: number): string {
     case "connect_four":
     case "gomoku_master":
     case "reversi_game":
+    case "battleship":
       return `${score} wins`;
     case "sketch_party_game":
       return `${score.toLocaleString()} pts`;

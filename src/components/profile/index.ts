@@ -181,10 +181,7 @@ export type {
 } from "./ProfileModeration";
 
 // =============================================================================
-// Legacy Components (Backward Compatibility)
+// Own Profile Quick Actions
 // =============================================================================
-export { ProfileHeader } from "./LegacyProfileHeader";
-export type { ProfileHeaderProps } from "./LegacyProfileHeader";
-
-export { ProfileActions } from "./LegacyProfileActions";
-export type { ProfileActionsProps } from "./LegacyProfileActions";
+export { ProfileActions } from "./ProfileQuickActions";
+export type { ProfileActionsProps } from "./ProfileQuickActions";

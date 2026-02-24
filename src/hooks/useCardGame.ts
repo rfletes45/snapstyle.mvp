@@ -9,7 +9,7 @@
  *   - Syncs shared state (top card, hand sizes, phase, etc.)
  *   - Exposes actions: playCard, drawCard, pass, resign, etc.
  *
- * Used by: CrazyEightsGameScreen
+ * Used by: CrazyCardsGameScreen
  *
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md §8
  */
@@ -38,6 +38,23 @@ export type CardGamePhase =
 export interface CardInfo {
   suit: string;
   rank: string;
+  /** Crazy Cards fields (UNO-inspired) — present when game is crazy_eights */
+  id?: string;
+  color?: string;
+  type?: string;
+  value?: number | null;
+}
+
+/** Info about a single opponent, used by multi-opponent UI */
+export interface OpponentInfo {
+  sessionId: string;
+  displayName: string;
+  avatarUrl: string;
+  score: number;
+  handSize: number;
+  isTheirTurn: boolean;
+  connected: boolean;
+  playerIndex: number;
 }
 
 export interface CardGameState {
@@ -88,6 +105,9 @@ export interface CardGameState {
 
   /** Opponent hand size */
   opponentHandSize: number;
+
+  /** All opponents (for 3+ player games) */
+  opponents: OpponentInfo[];
 
   /** Top discard card (face-up) */
   topCard: CardInfo | null;
@@ -141,6 +161,25 @@ export interface CardGameState {
 
   /** Latest raw room state snapshot for spectator/session consumers */
   rawState: unknown | null;
+
+  // ── Crazy Cards (UNO-inspired) extended state ──
+
+  /** Whether local player should be prompted to call UNO */
+  unoPromptActive: boolean;
+
+  /** Session ID of a player with 1 card who hasn't called UNO (challengeable) */
+  unoChallengeTarget: string | null;
+
+  /** Play direction: 1 = clockwise, -1 = counter-clockwise */
+  direction: 1 | -1;
+
+  /** The last card played event (for animation) */
+  lastCardPlayed: {
+    playerId: string;
+    card: CardInfo;
+    chosenColor?: string;
+    effect?: string;
+  } | null;
 }
 
 export interface CardGameActions {
@@ -148,7 +187,12 @@ export interface CardGameActions {
   startMultiplayer: (
     options?:
       | string
-      | { roomId?: string; firestoreGameId?: string; spectator?: boolean },
+      | {
+          roomId?: string;
+          firestoreGameId?: string;
+          spectator?: boolean;
+          practice?: boolean;
+        },
   ) => Promise<void>;
 
   /** Alias for startMultiplayer */
@@ -161,7 +205,11 @@ export interface CardGameActions {
   sendReady: () => void;
 
   /** Play a card (Crazy Eights) */
-  playCard: (card: CardInfo, declaredSuit?: string) => void;
+  playCard: (
+    card: CardInfo,
+    declaredSuit?: string,
+    calledUno?: boolean,
+  ) => void;
 
   /** Draw a card (Crazy Eights) */
   drawCard: () => void;
@@ -171,6 +219,12 @@ export interface CardGameActions {
 
   /** Send any game action */
   sendAction: (type: string, payload?: any) => void;
+
+  /** Call UNO (when you have 1 card) */
+  callUno: () => void;
+
+  /** Challenge an opponent who didn't call UNO */
+  challengeUno: (targetSessionId: string) => void;
 
   /** Resign */
   resign: () => void;
@@ -208,6 +262,7 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
   const [opponentScore, setOpponentScore] = useState(0);
   const [myHandSize, setMyHandSize] = useState(0);
   const [opponentHandSize, setOpponentHandSize] = useState(0);
+  const [opponents, setOpponents] = useState<OpponentInfo[]>([]);
   const [topCard, setTopCard] = useState<CardInfo | null>(null);
   const [currentSuit, setCurrentSuit] = useState("");
   const [deckSize, setDeckSize] = useState(0);
@@ -225,6 +280,15 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
   const [error, setError] = useState<string | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
   const [rawState, setRawState] = useState<unknown | null>(null);
+
+  // Crazy Cards (UNO-inspired) extended state
+  const [unoPromptActive, setUnoPromptActive] = useState(false);
+  const [unoChallengeTarget, setUnoChallengeTarget] = useState<string | null>(
+    null,
+  );
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const [lastCardPlayed, setLastCardPlayed] =
+    useState<CardGameState["lastCardPlayed"]>(null);
 
   const roomRef = useRef<any>(null);
   const mountedRef = useRef(true);
@@ -264,13 +328,22 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     // Players (using cardPlayers map)
     if (state.cardPlayers) {
       let me: any = null;
-      let opponent: any = null;
+      const opponentList: OpponentInfo[] = [];
 
       state.cardPlayers.forEach((player: any) => {
         if (player.sessionId === mySessionId) {
           me = player;
         } else {
-          opponent = player;
+          opponentList.push({
+            sessionId: player.sessionId,
+            displayName: player.displayName ?? "Opponent",
+            avatarUrl: player.avatarUrl ?? "",
+            score: player.score ?? 0,
+            handSize: player.handSize ?? 0,
+            isTheirTurn: state.currentTurnPlayerId === player.sessionId,
+            connected: player.connected !== false,
+            playerIndex: player.playerIndex ?? 0,
+          });
         }
       });
 
@@ -281,12 +354,18 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
         setMyScore(me.score ?? 0);
         setMyHandSize(me.handSize ?? 0);
       }
-      if (opponent) {
-        setOpponentName(opponent.displayName ?? "Opponent");
-        setOpponentAvatar(opponent.avatarUrl ?? "");
-        setOpponentScore(opponent.score ?? 0);
-        setOpponentHandSize(opponent.handSize ?? 0);
-        setOpponentDisconnected(!opponent.connected);
+
+      // Multi-opponent array
+      setOpponents(opponentList);
+
+      // Backward-compatible single-opponent fields (first opponent)
+      const firstOpp = opponentList[0];
+      if (firstOpp) {
+        setOpponentName(firstOpp.displayName);
+        setOpponentAvatar(firstOpp.avatarUrl);
+        setOpponentScore(firstOpp.score);
+        setOpponentHandSize(firstOpp.handSize);
+        setOpponentDisconnected(!firstOpp.connected);
       }
 
       // Turn detection
@@ -393,6 +472,11 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
                 data.cards.map((c: any) => ({
                   suit: c.suit,
                   rank: c.rank,
+                  // Preserve CrazyCard fields when present
+                  ...(c.id ? { id: c.id } : {}),
+                  ...(c.color ? { color: c.color } : {}),
+                  ...(c.type ? { type: c.type } : {}),
+                  ...(c.value !== undefined ? { value: c.value } : {}),
                 })),
               );
             }
@@ -401,6 +485,61 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
           // ── Rematch ──
           room?.onMessage("rematch_request", () => {
             if (mountedRef.current) setRematchRequested(true);
+          });
+
+          // ── Crazy Cards UNO-specific messages ──
+          room?.onMessage("uno_prompt", () => {
+            if (mountedRef.current) {
+              setUnoPromptActive(true);
+              // Auto-dismiss after timeout
+              setTimeout(() => {
+                if (mountedRef.current) setUnoPromptActive(false);
+              }, 3200);
+            }
+          });
+
+          room?.onMessage("uno_called", () => {
+            if (mountedRef.current) {
+              setUnoPromptActive(false);
+              setUnoChallengeTarget(null);
+            }
+          });
+
+          room?.onMessage("uno_penalty", (data: any) => {
+            if (mountedRef.current) {
+              setUnoChallengeTarget(null);
+              logger.warn(
+                `[CardGame] UNO penalty: ${data.targetName} draws ${data.penaltyCards}`,
+              );
+            }
+          });
+
+          room?.onMessage("card_played", (data: any) => {
+            if (mountedRef.current) {
+              setLastCardPlayed({
+                playerId: data.playerId,
+                card: data.card,
+                chosenColor: data.chosenColor,
+                effect: data.effect,
+              });
+              if (data.direction !== undefined) {
+                setDirection(data.direction);
+              }
+              // Check if any opponent has 1 card and might be challengeable
+              // (the server handles validation, client just tracks potential targets)
+            }
+          });
+
+          room?.onMessage("draw_result", () => {
+            // Draw result handled by hand update
+          });
+
+          room?.onMessage("forced_draw", () => {
+            // Forced draw — hand update will follow
+          });
+
+          room?.onMessage("game_result", () => {
+            // Game result — phase change will trigger via state sync
           });
 
           // ── Server errors ──
@@ -427,7 +566,12 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     async (
       options?:
         | string
-        | { roomId?: string; firestoreGameId?: string; spectator?: boolean },
+        | {
+            roomId?: string;
+            firestoreGameId?: string;
+            spectator?: boolean;
+            practice?: boolean;
+          },
     ) => {
       if (!isAvailable) {
         setError("Card game multiplayer is not available");
@@ -453,6 +597,8 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
           roomId: options.roomId,
           ...(options.spectator ? { spectator: true } : {}),
         });
+      } else if (options?.practice) {
+        await joinRoom({ practice: true });
       } else {
         await joinRoom();
       }
@@ -471,6 +617,7 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     setHand([]);
     setRematchRequested(false);
     setOpponentDisconnected(false);
+    setOpponents([]);
     setRawState(null);
     setRoom(null);
   }, []);
@@ -479,13 +626,17 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     roomRef.current?.send?.("ready", {});
   }, []);
 
-  const playCard = useCallback((card: CardInfo, declaredSuit?: string) => {
-    roomRef.current?.send?.("game_action", {
-      type: "play",
-      card,
-      declaredSuit,
-    });
-  }, []);
+  const playCard = useCallback(
+    (card: CardInfo, declaredSuit?: string, calledUno?: boolean) => {
+      roomRef.current?.send?.("game_action", {
+        type: "play",
+        cardId: card.id ?? card.rank,
+        chosenColor: declaredSuit,
+        calledUno: !!calledUno,
+      });
+    },
+    [],
+  );
 
   const drawCard = useCallback(() => {
     roomRef.current?.send?.("game_action", { type: "draw" });
@@ -497,6 +648,19 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
 
   const sendAction = useCallback((type: string, payload?: any) => {
     roomRef.current?.send?.("game_action", { type, ...payload });
+  }, []);
+
+  const callUno = useCallback(() => {
+    roomRef.current?.send?.("game_action", { type: "call_uno" });
+    setUnoPromptActive(false);
+  }, []);
+
+  const challengeUno = useCallback((targetSessionId: string) => {
+    roomRef.current?.send?.("game_action", {
+      type: "challenge_uno",
+      targetSessionId,
+    });
+    setUnoChallengeTarget(null);
   }, []);
 
   const resign = useCallback(() => {
@@ -549,6 +713,7 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     opponentScore,
     myHandSize,
     opponentHandSize,
+    opponents,
     topCard,
     currentSuit,
     deckSize,
@@ -566,6 +731,10 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     error,
     room,
     rawState,
+    unoPromptActive,
+    unoChallengeTarget,
+    direction,
+    lastCardPlayed,
     // Actions
     startMultiplayer,
     findMatch: startMultiplayer,
@@ -575,6 +744,8 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     drawCard,
     pass,
     sendAction,
+    callUno,
+    challengeUno,
     resign,
     requestRematch,
     acceptRematch,

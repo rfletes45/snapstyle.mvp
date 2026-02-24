@@ -150,6 +150,36 @@ export class PongRoom extends PhysicsRoom {
   }
 
   // ---------------------------------------------------------------------------
+  // Per-player stats for achievement evaluation
+  // ---------------------------------------------------------------------------
+
+  protected getPerPlayerStats():
+    | Record<string, Record<string, number>>
+    | undefined {
+    if (!this.state.winnerId) return undefined;
+
+    const stats: Record<string, Record<string, number>> = {};
+    let loserScore = 0;
+
+    this.state.players.forEach((p: PhysicsPlayer) => {
+      if (p.uid !== this.state.winnerId) {
+        loserScore = p.score;
+      }
+    });
+
+    // Shutout: winner scored WIN_SCORE and loser scored 0
+    if (loserScore === 0) {
+      this.state.players.forEach((p: PhysicsPlayer) => {
+        if (p.uid === this.state.winnerId) {
+          stats[p.uid] = { shutouts: 1 };
+        }
+      });
+    }
+
+    return Object.keys(stats).length > 0 ? stats : undefined;
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -198,4 +228,3 @@ export class PongRoom extends PhysicsRoom {
     return found;
   }
 }
-

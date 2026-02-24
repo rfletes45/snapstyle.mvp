@@ -9,7 +9,7 @@
  * - Matchmaking background processing
  * - Daily cleanup tasks
  *
- * @see docs/07_GAMES_ARCHITECTURE.md Section 5
+ * @see docs/GAMES_SYSTEM.md
  */
 
 import * as admin from "firebase-admin";
@@ -47,8 +47,18 @@ type TurnBasedGameType =
   | "checkers"
   | "tic_tac_toe"
   | "crazy_eights"
-  | "snap_reversi"
-  | "snap_war";
+  | "connect_four"
+  | "dot_match"
+  | "gomoku_master"
+  | "reversi_game";
+type RealtimeInviteGameType =
+  | "starforge_game"
+  | "sketch_party_game"
+  | "crossword_puzzle"
+  | "pong_game"
+  | "minigolf_duels"
+  | "battleship";
+type UniversalInviteGameType = TurnBasedGameType | RealtimeInviteGameType;
 type GameStatus = "invited" | "active" | "completed" | "abandoned";
 type GameOutcome = "win" | "loss" | "draw";
 
@@ -129,7 +139,7 @@ interface SpectatorEntry {
 
 interface UniversalGameInvite {
   id: string;
-  gameType: TurnBasedGameType;
+  gameType: UniversalInviteGameType;
   senderId: string;
   senderName: string;
   senderAvatar?: string;
@@ -146,8 +156,8 @@ interface UniversalGameInvite {
   claimedSlots: PlayerSlot[];
   filledAt?: number;
   spectatingEnabled: boolean;
-  spectatorOnly: boolean;
-  spectators: SpectatorEntry[];
+  spectatorOnly?: boolean;
+  spectators?: SpectatorEntry[];
   maxSpectators?: number;
   status: string;
   gameId?: string;
@@ -279,22 +289,31 @@ function getInitialGameState(gameType: TurnBasedGameType): any {
         player2Hand: [],
       };
 
-    // Phase 3 turn-based games
-    case "snap_reversi":
+    case "connect_four":
+      return {
+        board: Array.from({ length: 6 }, () => Array(7).fill(null)),
+        columnHeights: Array(7).fill(0),
+      };
+
+    case "dot_match":
+      return {
+        hLines: Array.from({ length: 5 }, () => Array(4).fill(false)),
+        vLines: Array.from({ length: 4 }, () => Array(5).fill(false)),
+        boxes: Array.from({ length: 4 }, () => Array(4).fill(0)),
+        scores: { player1: 0, player2: 0 },
+      };
+
+    case "gomoku_master":
+      return {
+        board: Array.from({ length: 15 }, () => Array(15).fill(null)),
+        lastMove: null,
+      };
+
+    case "reversi_game":
       return {
         board: createInitialReversiBoard(),
         consecutivePasses: 0,
-        flippedThisTurn: [],
-      };
-
-    case "snap_war":
-      return {
-        player1Deck: [],
-        player2Deck: [],
-        player1WarPile: [],
-        player2WarPile: [],
-        isWar: false,
-        roundNumber: 0,
+        scores: { player1: 2, player2: 2 },
       };
 
     default:
@@ -309,10 +328,6 @@ function createInitialReversiBoard(): number[][] {
   board[4][3] = 1;
   board[4][4] = 2;
   return board;
-}
-
-function createInitialWordsBoard(): string[][] {
-  return Array.from({ length: 9 }, () => Array(9).fill(""));
 }
 
 function getInitialChessBoard(): string[][] {
@@ -352,26 +367,6 @@ function getInitialCheckersBoard(): (string | null)[][] {
   }
 
   return board;
-}
-
-function getInitialPoolBalls(): any[] {
-  // Simplified initial state
-  const balls = [];
-
-  // Cue ball
-  balls.push({ id: 0, x: 80, y: 80, pocketed: false });
-
-  // Numbered balls (1-15)
-  for (let i = 1; i <= 15; i++) {
-    balls.push({
-      id: i,
-      x: 240 + (i % 5) * 12,
-      y: 80 + Math.floor(i / 5) * 12,
-      pocketed: false,
-    });
-  }
-
-  return balls;
 }
 
 // =============================================================================
@@ -514,6 +509,8 @@ export const onUniversalInviteUpdate = functions.firestore
 
     const beforeSlotCount = before?.claimedSlots?.length ?? 0;
     const afterSlotCount = after.claimedSlots.length;
+    const beforeSpectators = before?.spectators ?? [];
+    const afterSpectators = after.spectators ?? [];
     const beforeStatus = before?.status;
     const afterStatus = after.status;
 
@@ -546,11 +543,11 @@ export const onUniversalInviteUpdate = functions.firestore
     }
 
     // CASE 2: New spectator joined - sync to game document
-    if (
-      after.gameId &&
-      after.spectators.length > (before?.spectators?.length ?? 0)
-    ) {
-      const newSpectator = after.spectators[after.spectators.length - 1];
+    if (after.gameId && afterSpectators.length > beforeSpectators.length) {
+      const newSpectator = afterSpectators[afterSpectators.length - 1];
+      if (!newSpectator) {
+        return;
+      }
 
       try {
         await db
@@ -575,14 +572,10 @@ export const onUniversalInviteUpdate = functions.firestore
     }
 
     // CASE 3: Spectator left - sync removal to game document
-    if (
-      after.gameId &&
-      before?.spectators &&
-      after.spectators.length < before.spectators.length
-    ) {
+    if (after.gameId && afterSpectators.length < beforeSpectators.length) {
       // Find who left by comparing spectator arrays
-      const beforeIds = new Set(before.spectators.map((s) => s.userId));
-      const afterIds = new Set(after.spectators.map((s) => s.userId));
+      const beforeIds = new Set(beforeSpectators.map((s) => s.userId));
+      const afterIds = new Set(afterSpectators.map((s) => s.userId));
       const leftIds = [...beforeIds].filter((id) => !afterIds.has(id));
 
       try {
@@ -616,10 +609,55 @@ export const onUniversalInviteUpdate = functions.firestore
  * This is called when the invite status changes to 'ready'.
  * It builds the game document from the claimed slots and starts the game.
  */
+// Games orchestrated as external Colyseus sessions (no TurnBasedGames doc).
+// Keep aligned with client runtime classification in src/types/games.ts.
+type ExternalColyseusInviteGameType = RealtimeInviteGameType | "crazy_eights";
+const EXTERNAL_COLYSEUS_INVITE_GAMES = new Set<ExternalColyseusInviteGameType>([
+  "crazy_eights",
+  "starforge_game",
+  "sketch_party_game",
+  "crossword_puzzle",
+  "pong_game",
+  "minigolf_duels",
+  "battleship",
+]);
+
+function isExternalColyseusInviteGame(
+  gameType: UniversalInviteGameType,
+): gameType is ExternalColyseusInviteGameType {
+  return EXTERNAL_COLYSEUS_INVITE_GAMES.has(
+    gameType as ExternalColyseusInviteGameType,
+  );
+}
+
 async function createGameFromUniversalInvite(
   inviteRef: FirebaseFirestore.DocumentReference,
   invite: UniversalGameInvite,
 ): Promise<void> {
+  // ── Real-time Colyseus games: skip TurnBasedGames creation ──────────
+  // These games use Colyseus rooms; the session ID is derived from the
+  // invite ID so both players independently resolve the same room key.
+  if (isExternalColyseusInviteGame(invite.gameType)) {
+    const externalId = `ext_${invite.gameType}_${invite.id}`;
+    const now = Timestamp.now();
+
+    functions.logger.info(
+      "Skipping TurnBasedGames creation for real-time Colyseus game",
+      {
+        inviteId: invite.id,
+        gameType: invite.gameType,
+        externalId,
+      },
+    );
+
+    await inviteRef.update({
+      status: "active",
+      gameId: externalId,
+      updatedAt: now.toMillis(),
+    });
+    return;
+  }
+
   const gameId = `game_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
   const now = Timestamp.now();
 
@@ -657,17 +695,6 @@ async function createGameFromUniversalInvite(
     // Get initial game state
     const gameState = getInitialGameState(invite.gameType);
 
-    // For multi-player card games, add player order to state
-    if (invite.gameType === "crazy_eights" && gameState) {
-      gameState.playerOrder = turnOrder;
-      gameState.playerCount = playerIds.length;
-
-      // Initialize hands for each player
-      for (let i = 0; i < playerIds.length; i++) {
-        gameState[`player${i + 1}Hand`] = [];
-      }
-    }
-
     // Build the game document
     // Use type assertion since we're extending the interface
     const game: TurnBasedGame = {
@@ -687,7 +714,7 @@ async function createGameFromUniversalInvite(
       startedAt: now,
       // Extended fields for universal invites
       inviteId: invite.id,
-      spectatorIds: invite.spectators.map((s) => s.userId),
+      spectatorIds: (invite.spectators ?? []).map((s) => s.userId),
       turnOrder,
       playerCount: playerIds.length,
     };
@@ -718,7 +745,7 @@ async function createGameFromUniversalInvite(
       gameId,
       inviteId: invite.id,
       players: playerIds,
-      spectators: invite.spectators.map((s) => s.userId),
+      spectators: (invite.spectators ?? []).map((s) => s.userId),
     });
 
     // NOTE: Send push notifications to all players
@@ -914,6 +941,64 @@ export const processRealtimeGameCompletion = functions.firestore
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    // ── Create GameHistory record for leaderboard / game-history UI ──
+    try {
+      const completedAt = data.completedAt?.toMillis?.()
+        ? data.completedAt.toMillis()
+        : Date.now();
+      const gameDurationMs: number = data.gameDurationMs || 0;
+      const startedAt = gameDurationMs
+        ? completedAt - gameDurationMs
+        : completedAt;
+
+      const historyPlayers = players.map(
+        (p: {
+          uid: string;
+          displayName: string;
+          score: number;
+          playerIndex: number;
+        }) => ({
+          userId: p.uid,
+          displayName: p.displayName,
+          avatarUrl: "",
+          isWinner: winnerId === p.uid,
+          finalScore: p.score,
+          movesPlayed: 0,
+        }),
+      );
+
+      const historyRecord = {
+        gameType,
+        matchId: context.params.sessionId,
+        players: historyPlayers,
+        playerIds: players.map((p: { uid: string }) => p.uid),
+        winnerId: winnerId || null,
+        status: winnerId ? "completed" : "draw",
+        endReason: data.winReason || "completion",
+        startedAt,
+        completedAt,
+        duration: gameDurationMs,
+        totalMoves: data.turnCount || 0,
+        isRated: data.isRated || false,
+        createdAt: Date.now(),
+      };
+
+      const historyRef = db.collection("GameHistory").doc();
+      await historyRef.set({ ...historyRecord, id: historyRef.id });
+
+      functions.logger.info(
+        `[RealtimeCompletion] GameHistory created: ${historyRef.id}`,
+        { gameType, winnerId },
+      );
+    } catch (histErr) {
+      functions.logger.warn(
+        "[RealtimeCompletion] GameHistory creation failed",
+        {
+          error: histErr instanceof Error ? histErr.message : String(histErr),
+        },
+      );
     }
 
     functions.logger.info("[RealtimeCompletion] Done", {
@@ -2097,101 +2182,6 @@ export const cleanupResolvedInvites = functions.pubsub
   });
 
 /**
- * Clean up stale "active" or "starting" invites whose game has finished.
- *
- * This is a safety net: normally the client propagates game completion back
- * to the invite via `completeGameInvite()`.  If the client crashes or the
- * user force-quits, this function catches orphaned active invites.
- * Runs daily at 02:45 (between cleanupResolvedInvites and matchmaking).
- */
-const cleanupStaleActiveInvites = functions.pubsub
-  .schedule("every day 02:45")
-  .onRun(async () => {
-    const STALE_STATUSES = ["active", "starting"];
-    let totalFixed = 0;
-
-    for (const status of STALE_STATUSES) {
-      const snapshot = await db
-        .collection("GameInvites")
-        .where("status", "==", status)
-        .limit(500)
-        .get();
-
-      for (const inviteDoc of snapshot.docs) {
-        const invite = inviteDoc.data() as UniversalGameInvite;
-
-        // "starting" invites older than 5 minutes are stuck — roll back to ready
-        if (
-          status === "starting" &&
-          Date.now() - invite.updatedAt > 5 * 60 * 1000
-        ) {
-          await inviteDoc.ref.update({
-            status: "ready",
-            updatedAt: Timestamp.now(),
-          });
-          totalFixed++;
-          continue;
-        }
-
-        // "active" invites — check if the game has actually finished
-        if (status === "active" && invite.gameId) {
-          try {
-            const gameDoc = await db
-              .collection("TurnBasedGames")
-              .doc(invite.gameId)
-              .get();
-
-            if (!gameDoc.exists) {
-              // Game doc deleted — mark invite completed
-              await inviteDoc.ref.update({
-                status: "completed",
-                completedAt: Date.now(),
-                winReason: "game_not_found",
-                updatedAt: Timestamp.now(),
-              });
-              totalFixed++;
-              continue;
-            }
-
-            const game = gameDoc.data();
-            const terminalGameStatuses = [
-              "completed",
-              "resigned",
-              "draw",
-              "timeout",
-              "abandoned",
-            ];
-
-            if (game && terminalGameStatuses.includes(game.status)) {
-              await inviteDoc.ref.update({
-                status: "completed",
-                completedAt: Date.now(),
-                winnerId: game.winner?.playerId || null,
-                winReason: game.winner?.reason || game.status,
-                updatedAt: Timestamp.now(),
-              });
-              totalFixed++;
-            }
-          } catch (err) {
-            functions.logger.warn(
-              `Failed to check game for stale invite ${invite.id}`,
-              err,
-            );
-          }
-        }
-      }
-    }
-
-    if (totalFixed > 0) {
-      functions.logger.info("Cleaned up stale active invites", {
-        count: totalFixed,
-      });
-    }
-
-    return null;
-  });
-
-/**
  * Clean up stale matchmaking queue entries.
  *
  * `expireMatchmakingEntries` marks entries as "expired" but never deletes them,
@@ -2594,6 +2584,7 @@ const GAME_XP_CATEGORY: Record<string, GameXpCategory> = {
   sketch_party_game: "party",
   lights_out: "puzzle",
   minigolf_duels: "arcade",
+  battleship: "board",
 };
 
 /**
@@ -2973,7 +2964,16 @@ export const onGameResult = functions.https.onCall(
 
 const MAX_REWARD_LEVEL = 50;
 
-/** Milestone levels give larger cosmetic-point rewards. */
+/** Milestone levels that grant real background entitlements. */
+const MILESTONE_BACKGROUND_BY_LEVEL: Record<number, string | undefined> = {
+  5: "bg_circling_waves",
+  10: "bg_aurora_borealis",
+  20: "bg_rune_circles",
+  30: "bg_synthwave",
+  50: "bg_synthwave_videogame",
+};
+
+/** Milestone levels give larger token rewards. */
 function getRewardAmountForLevel(level: number): number {
   const milestones: Record<number, number> = {
     5: 200,
@@ -3047,6 +3047,9 @@ export const claimLevelReward = functions.https.onCall(
     // ── Award reward ───────────────────────────────────────────────
     const amount = getRewardAmountForLevel(level);
     const isMilestone = level % 5 === 0;
+    const milestoneBackgroundId = isMilestone
+      ? (MILESTONE_BACKGROUND_BY_LEVEL[level] ?? null)
+      : null;
 
     // Credit both the User doc (legacy cosmeticPoints) and the Wallet doc
     const walletRef = db.collection("Wallets").doc(uid);
@@ -3061,6 +3064,22 @@ export const claimLevelReward = functions.https.onCall(
       { tokensBalance: FieldValue.increment(amount) },
       { merge: true },
     );
+    if (milestoneBackgroundId) {
+      const entitlementRef = userRef
+        .collection("Entitlements")
+        .doc(milestoneBackgroundId);
+      batch.set(
+        entitlementRef,
+        {
+          cosmeticId: milestoneBackgroundId,
+          type: "background",
+          grantedAt: Timestamp.now(),
+          source: "milestone",
+          metadata: { level },
+        },
+        { merge: true },
+      );
+    }
     await batch.commit();
 
     functions.logger.info("[claimLevelReward] Claimed", {
@@ -3068,16 +3087,18 @@ export const claimLevelReward = functions.https.onCall(
       level,
       amount,
       isMilestone,
+      milestoneBackgroundId,
     });
 
     return {
       success: true,
       level,
-      rewardType: isMilestone ? "milestone" : "small",
+      rewardType: milestoneBackgroundId ? "background_entitlement" : isMilestone ? "milestone" : "small",
       amount,
       message: isMilestone
         ? `Milestone! +${amount} Tokens`
         : `+${amount} Tokens`,
+      ...(milestoneBackgroundId ? { cosmeticId: milestoneBackgroundId } : {}),
     };
   },
 );

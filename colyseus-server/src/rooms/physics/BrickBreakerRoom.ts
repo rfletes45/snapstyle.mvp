@@ -9,8 +9,8 @@ const log = createServerLogger("BrickBreakerRoom");
  * score, lives, and level progress. First to lose all lives or
  * lower score when both finish wins.
  *
- * Architecture: Score-race style â€” physics runs client-side (pure
- * functions in brickBreakerLogic), server validates and compares.
+ * Architecture: Score-race style — physics runs client-side (Planck.js
+ * engine in src/games/brickBreaker/), server validates and compares.
  *
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md â€” Phase 4.4
  */

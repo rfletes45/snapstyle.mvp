@@ -126,7 +126,7 @@ const LEADERBOARD_GAMES: LeaderboardGame[] = [
   },
   {
     id: "crazy_eights",
-    name: "Crazy 8s",
+    name: "Crazy Cards",
     icon: "cards-playing-outline",
     category: "multiplayer",
   },

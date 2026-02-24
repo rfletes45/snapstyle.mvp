@@ -49,74 +49,46 @@ export interface BaseSinglePlayerState {
 // =============================================================================
 
 /**
- * Bounce Blitz game state (Ballz-style)
+ * Bounce Blitz 2.0 game state (Ballz-style)
+ *
+ * The actual game simulation lives in src/games/bounceBlitz/BounceBlitzEngine.ts
+ * using Planck.js physics. This interface is retained for Colyseus multiplayer
+ * state and spectator rendering compatibility.
  */
 export interface BounceBlitzState extends BaseSinglePlayerState {
   gameType: "bounce_blitz";
   category: "quick_play";
 
-  // Ball state
-  ball: {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    radius: number;
-  };
-
-  // Level info
+  // Round / level (= score in Ballz-style: rounds survived)
   currentLevel: number;
-  totalLevels: number;
 
-  // Platforms
-  platforms: BouncePlatform[];
+  // Ball chain
+  ballCount: number;
+  ballsReturned: number;
 
-  // Collectibles
-  collectibles: BounceCollectible[];
-  collectedCount: number;
-  totalCollectibles: number;
+  // Grid state
+  bricks: BounceBlitzBrick[];
 
-  // Stars earned this level
-  stars: 0 | 1 | 2 | 3;
+  // Launch position (px)
+  launchX: number;
 
-  // Time tracking
-  levelTime: number;
-  parTime: number; // Target time for 3 stars
-
-  // Bounces
-  bounceCount: number;
-  maxBouncesForBonus?: number;
+  // Speed multiplier (1 or 2)
+  speedMultiplier: number;
 }
 
-/**
- * Platform in Bounce Master
- */
-export interface BouncePlatform {
+/** Brick on the Bounce Blitz grid */
+export interface BounceBlitzBrick {
   id: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  type: "normal" | "bouncy" | "sticky" | "breaking" | "moving";
-
-  // For moving platforms
-  movement?: {
-    axis: "x" | "y";
-    speed: number;
-    minPos: number;
-    maxPos: number;
-  };
-
-  // For breaking platforms
-  breakState?: "solid" | "cracking" | "broken";
-
-  // Bounce modifier
-  bounciness: number; // 1 = normal, 2 = super bouncy, 0.5 = reduced
+  row: number;
+  col: number;
+  hp: number;
+  type: "normal" | "extra_ball";
 }
 
-/**
- * Collectible item
- */
+// Legacy type aliases (kept to avoid breaking unused imports elsewhere)
+/** @deprecated Use BounceBlitzBrick instead */
+export type BouncePlatform = BounceBlitzBrick;
+/** @deprecated Removed in v2 */
 export interface BounceCollectible {
   id: number;
   x: number;
@@ -127,29 +99,14 @@ export interface BounceCollectible {
 }
 
 /**
- * Bounce Master constants
+ * Bounce Blitz 2.0 config constants
  */
 export const BOUNCE_MASTER_CONFIG = {
-  // Physics
-  gravity: 0.3,
-  airResistance: 0.99,
-  normalBounciness: 0.8,
-  superBounciness: 1.5,
-
-  // Ball
-  defaultBallRadius: 12,
-
-  // Scoring
-  collectibleBase: 10,
-  timeBonus: 100, // Per second under par
-  bounceBonus: 50, // For under max bounces
-
-  // Stars
-  starThresholds: {
-    one: 0.3, // 30% of max score
-    two: 0.6, // 60%
-    three: 0.9, // 90%
-  },
+  cols: 7,
+  rows: 10,
+  ballRadius: 6,
+  ballSpeed: 14,
+  ballStaggerMs: 80,
 };
 
 // =============================================================================
@@ -412,207 +369,23 @@ export interface Play2048Stats {
 }
 
 // =============================================================================
-// Brick Breaker (New Game)
+// Brick Breaker — Atari Breakout Rebuild
 // =============================================================================
 
 /**
- * Brick type in the game
- */
-export type BrickType =
-  | "standard"
-  | "silver"
-  | "gold"
-  | "indestructible"
-  | "explosive"
-  | "mystery";
-
-/**
- * Power-up type
- */
-export type BrickPowerUpType =
-  | "expand"
-  | "shrink"
-  | "multi_ball"
-  | "laser"
-  | "slow"
-  | "fast"
-  | "sticky"
-  | "extra_life";
-
-/**
- * Paddle state
- */
-export interface BrickPaddleState {
-  x: number;
-  width: number;
-  baseWidth: number;
-  hasSticky: boolean;
-  hasLaser: boolean;
-}
-
-/**
- * Ball state
- */
-export interface BrickBallState {
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  radius: number;
-  isStuck: boolean;
-}
-
-/**
- * Brick state
- */
-export interface BrickState {
-  id: string;
-  row: number;
-  col: number;
-  type: BrickType;
-  hitsRemaining: number;
-  hasPowerUp: boolean;
-}
-
-/**
- * Falling power-up
- */
-export interface FallingPowerUp {
-  id: string;
-  type: BrickPowerUpType;
-  x: number;
-  y: number;
-  vy: number;
-}
-
-/**
- * Laser projectile
- */
-export interface LaserState {
-  id: string;
-  x: number;
-  y: number;
-  vy: number;
-}
-
-/**
- * Active effect on paddle/ball
- */
-export interface ActiveEffect {
-  type: BrickPowerUpType;
-  expiresAt: number;
-  usesRemaining?: number;
-}
-
-/**
- * Brick Breaker game state
- */
-export interface BrickBreakerState extends BaseSinglePlayerState {
-  gameType: "brick_breaker";
-  category: "quick_play";
-
-  // Game objects
-  paddle: BrickPaddleState;
-  balls: BrickBallState[];
-  bricks: BrickState[];
-  powerUps: FallingPowerUp[];
-  lasers: LaserState[];
-
-  // Progress
-  currentLevel: number;
-  lives: number;
-  maxLives: number;
-
-  // Active effects
-  activeEffects: ActiveEffect[];
-
-  // Stats
-  bricksDestroyed: number;
-  powerUpsCollected: number;
-  maxCombo: number;
-  perfectLevels: number;
-
-  // Game phase
-  phase: "ready" | "playing" | "levelComplete" | "gameOver";
-}
-
-/**
- * Brick Breaker stats for session recording
+ * Brick Breaker stats for session recording (Atari Breakout rebuild)
+ *
+ * Game logic lives in src/games/brickBreaker/ (Planck.js engine).
+ * Only the stats interface is kept here for session recording compatibility.
  */
 export interface BrickBreakerStats {
   gameType: "brick_breaker";
-  levelsCompleted: number;
+  wallsCleared: number;
   bricksDestroyed: number;
-  powerUpsCollected: number;
-  perfectLevels: number;
-  maxMultiBall: number;
+  maxSpeedTier: number;
+  paddleShrinkTriggered: boolean;
+  livesRemaining: number;
 }
-
-/**
- * Brick Breaker configuration constants
- */
-export const BRICK_BREAKER_CONFIG = {
-  // Canvas dimensions
-  canvasWidth: 360,
-  canvasHeight: 640,
-
-  // Paddle
-  paddleWidth: 80,
-  paddleHeight: 12,
-  paddleY: 580,
-  paddleSpeed: 15,
-  expandedWidth: 120,
-  shrunkWidth: 56,
-
-  // Ball
-  ballRadius: 8,
-  ballBaseSpeed: 5,
-  maxBallSpeed: 12,
-  maxBalls: 5,
-
-  // Bricks
-  brickRows: 6,
-  brickCols: 8,
-  brickWidth: 40,
-  brickHeight: 16,
-  brickPadding: 4,
-  brickTopOffset: 60,
-
-  // Power-ups
-  powerUpSpeed: 3,
-  powerUpSize: 24,
-  effectDurations: {
-    expand: 15000,
-    shrink: 15000,
-    laser: 20000,
-    slow: 12000,
-    fast: 12000,
-    sticky: 3, // uses
-  },
-
-  // Physics
-  speedIncreasePerLevel: 0.5,
-  bounceVariation: 0.2,
-
-  // Game
-  totalLevels: 30,
-  startingLives: 3,
-
-  // Scoring
-  brickPoints: {
-    standard: 10,
-    silver: 25,
-    gold: 50,
-    explosive: 15,
-    mystery: 20,
-    indestructible: 0,
-  },
-  levelCompleteBonus: 100,
-  noMissBonus: 200,
-  speedBonus: 150,
-  multiBallMultiplier: 1.5,
-};
 
 // =============================================================================
 // Game Session Management

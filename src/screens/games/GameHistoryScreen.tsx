@@ -83,7 +83,8 @@ const MULTIPLAYER_GAMES: {
   { type: "chess", label: "Chess", icon: "â™Ÿï¸" },
   { type: "checkers", label: "Checkers", icon: "âš«" },
   { type: "tic_tac_toe", label: "Tic-Tac-Toe", icon: "â­•" },
-  { type: "crazy_eights", label: "Crazy Eights", icon: "ðŸŽ´" },
+  { type: "crazy_eights", label: "Crazy Cards", icon: "🃏" },
+  { type: "pong_game", label: "Pong", icon: "🏓" },
 ];
 
 // Single-player games for filtering
@@ -98,7 +99,6 @@ const SINGLEPLAYER_GAMES: {
   { type: "play_2048", label: "2048", icon: "ðŸ”¢" },
   { type: "brick_breaker", label: "Brick Breaker", icon: "🧱" },
   { type: "minesweeper_classic", label: "Minesweeper", icon: "💣" },
-  { type: "pong_game", label: "Pong", icon: "🏓" },
 ];
 
 // =============================================================================
@@ -633,7 +633,7 @@ export function GameHistoryScreen() {
       }
       case "brick_breaker": {
         const bb = stats as BrickBreakerStats;
-        return `🧱 ${bb.levelsCompleted} levels • ${bb.bricksDestroyed} bricks`;
+        return `🧱 ${bb.wallsCleared} wall${bb.wallsCleared !== 1 ? "s" : ""} • ${bb.bricksDestroyed} bricks`;
       }
       default:
         return item.singlePlayerScore !== undefined

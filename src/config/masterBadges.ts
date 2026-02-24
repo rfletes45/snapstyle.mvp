@@ -25,7 +25,7 @@ export interface MasterBadgeDefinition {
   /** Achievement section ID (e.g. "sp_play_2048") */
   sectionId: string;
 
-  /** Cosmetic badge ID — must exist in catalog + asset registry */
+  /** Cosmetic badge ID â€” must exist in catalog + asset registry */
   badgeId: string;
 
   /** Human-readable display name */
@@ -55,13 +55,13 @@ export interface MasterBadgeDefinition {
  * When all achievements in the section are unlocked, the user can claim this badge.
  */
 export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
-  // ── Single Player ─────────────────────────────────────
+  // â”€â”€ Single Player â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   sp_play_2048: {
     sectionId: "sp_play_2048",
     badgeId: "badge_2048_master",
     displayName: "2048 Master",
     gameType: "play_2048",
-    icon: "🔢",
+    icon: "ðŸ”¢",
     rarity: "epic",
     tier: "diamond",
   },
@@ -70,7 +70,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_brick_breaker_master",
     displayName: "Brick Breaker Master",
     gameType: "brick_breaker",
-    icon: "🧱",
+    icon: "ðŸ§±",
     rarity: "epic",
     tier: "diamond",
   },
@@ -79,7 +79,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_bounce_blitz_master",
     displayName: "Bounce Blitz Master",
     gameType: "bounce_blitz",
-    icon: "⚪",
+    icon: "âšª",
     rarity: "epic",
     tier: "platinum",
   },
@@ -88,7 +88,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_pong_master",
     displayName: "Pong Master",
     gameType: "pong_game",
-    icon: "🏓",
+    icon: "ðŸ“",
     rarity: "epic",
     tier: "platinum",
   },
@@ -97,7 +97,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_minesweeper_master",
     displayName: "Minesweeper Master",
     gameType: "minesweeper_classic",
-    icon: "💣",
+    icon: "ðŸ’£",
     rarity: "epic",
     tier: "platinum",
   },
@@ -106,18 +106,18 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_word_master",
     displayName: "Word Master Champion",
     gameType: "word_master",
-    icon: "📝",
+    icon: "ðŸ“",
     rarity: "epic",
     tier: "gold",
   },
 
-  // ── Turn-Based ────────────────────────────────────────
+  // â”€â”€ Turn-Based â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   tb_tic_tac_toe: {
     sectionId: "tb_tic_tac_toe",
     badgeId: "badge_ttt_master",
     displayName: "Tic-Tac-Toe Master",
     gameType: "tic_tac_toe",
-    icon: "❌",
+    icon: "âŒ",
     rarity: "epic",
     tier: "platinum",
   },
@@ -126,7 +126,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_chess_master",
     displayName: "Chess Master",
     gameType: "chess",
-    icon: "♟️",
+    icon: "â™Ÿï¸",
     rarity: "legendary",
     tier: "platinum",
   },
@@ -135,16 +135,16 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_checkers_master",
     displayName: "Checkers Master",
     gameType: "checkers",
-    icon: "⬛",
+    icon: "â¬›",
     rarity: "epic",
     tier: "platinum",
   },
   tb_crazy_eights: {
     sectionId: "tb_crazy_eights",
     badgeId: "badge_crazy_eights_master",
-    displayName: "Crazy Eights Master",
+    displayName: "Crazy Cards Master",
     gameType: "crazy_eights",
-    icon: "🎴",
+    icon: "🃏",
     rarity: "epic",
     tier: "platinum",
   },
@@ -153,7 +153,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_four_master",
     displayName: "Connect Four Master",
     gameType: "connect_four",
-    icon: "🔴",
+    icon: "ðŸ”´",
     rarity: "epic",
     tier: "platinum",
   },
@@ -162,7 +162,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_gomoku_master",
     displayName: "Gomoku Master",
     gameType: "gomoku_master",
-    icon: "⚫",
+    icon: "âš«",
     rarity: "epic",
     tier: "platinum",
   },
@@ -171,7 +171,7 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_reversi_master",
     displayName: "Reversi Master",
     gameType: "reversi_game",
-    icon: "⚪",
+    icon: "âšª",
     rarity: "epic",
     tier: "platinum",
   },
@@ -180,18 +180,18 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_dots_and_boxes_master",
     displayName: "Dots & Boxes Master",
     gameType: "dot_match",
-    icon: "⬜",
+    icon: "â¬œ",
     rarity: "epic",
     tier: "platinum",
   },
 
-  // ── Real-Time ─────────────────────────────────────────
+  // â”€â”€ Real-Time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   rt_crossword_puzzle: {
     sectionId: "rt_crossword_puzzle",
     badgeId: "badge_crossword_master",
     displayName: "Crossword Master",
     gameType: "crossword_puzzle",
-    icon: "📰",
+    icon: "ðŸ“°",
     rarity: "epic",
     tier: "gold",
   },
@@ -200,18 +200,18 @@ export const MASTER_BADGES: Record<string, MasterBadgeDefinition> = {
     badgeId: "badge_sketch_master",
     displayName: "Sketch Party Master",
     gameType: "sketch_party_game",
-    icon: "🎨",
+    icon: "ðŸŽ¨",
     rarity: "epic",
     tier: "diamond",
   },
 
-  // ── Global ────────────────────────────────────────────
+  // â”€â”€ Global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   global_general: {
     sectionId: "global_general",
     badgeId: "badge_all_rounder",
     displayName: "All-Rounder",
-    gameType: "bounce_blitz", // placeholder — global section has no single game
-    icon: "🌟",
+    gameType: "bounce_blitz", // placeholder â€” global section has no single game
+    icon: "ðŸŒŸ",
     rarity: "legendary",
     tier: "gold",
   },

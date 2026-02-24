@@ -71,45 +71,45 @@ const MILESTONE_REWARDS: Record<
   },
   10: {
     label: "Aurora Borealis Background",
-    points: 300,
+    points: 400,
     cosmeticId: "bg_aurora_borealis",
     rewardType: "background_entitlement",
   },
   15: {
     label: "Placeholder: Name Color (future)",
-    points: 400,
+    points: 600,
     rewardType: "placeholder_decoration",
   },
   20: {
     label: "Rune Circles Background",
-    points: 500,
+    points: 800,
     cosmeticId: "bg_rune_circles",
     rewardType: "background_entitlement",
   },
   25: {
     label: "Placeholder: Avatar Border (future)",
-    points: 600,
+    points: 1000,
     rewardType: "placeholder_decoration",
   },
   30: {
     label: "Synthwave Background",
-    points: 700,
+    points: 1200,
     cosmeticId: "bg_synthwave",
     rewardType: "background_entitlement",
   },
   35: {
     label: "Placeholder: Animated Emote (future)",
-    points: 800,
+    points: 1400,
     rewardType: "placeholder_decoration",
   },
   40: {
     label: "Placeholder: Profile Badge (future)",
-    points: 900,
+    points: 1600,
     rewardType: "placeholder_decoration",
   },
   45: {
     label: "Placeholder: Exclusive Sticker Pack (future)",
-    points: 1000,
+    points: 1800,
     rewardType: "placeholder_decoration",
   },
   50: {

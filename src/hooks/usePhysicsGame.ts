@@ -36,7 +36,8 @@ export type PhysicsPhase =
   | "countdown"
   | "playing"
   | "finished"
-  | "reconnecting";
+  | "reconnecting"
+  | "error";
 
 export interface BallState {
   x: number;
@@ -155,6 +156,12 @@ export interface UsePhysicsGameReturn {
   /** Server latency */
   latency: number | null;
 
+  /** Whether the local user joined as a spectator */
+  isSpectator: boolean;
+
+  /** Number of spectators watching (from Colyseus state) */
+  spectatorCount: number;
+
   // --- Actions ---
 
   /** Send input to server (normalised 0-1 x, optional y for Air Hockey) */
@@ -173,7 +180,13 @@ export interface UsePhysicsGameReturn {
   leave: () => Promise<void>;
 
   /** Start multiplayer mode */
-  startMultiplayer: (roomId?: string) => void;
+  startMultiplayer: (opts?: {
+    firestoreGameId?: string;
+    spectator?: boolean;
+  }) => void;
+
+  /** Cancel/leave multiplayer and return to menu */
+  cancelMultiplayer: () => Promise<void>;
 
   /** Stop multiplayer and return to solo */
   stopMultiplayer: () => void;
@@ -212,14 +225,18 @@ export function usePhysicsGame(
 
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [joinRoomId, setJoinRoomId] = useState<string | undefined>();
+  const [activeFirestoreGameId, setActiveFirestoreGameId] = useState<
+    string | undefined
+  >(firestoreGameId);
+  const [activeSpectator, setActiveSpectator] = useState(spectator);
 
   // Only connect when explicitly starting multiplayer
   const colyseusOptions: UseColyseusOptions = {
     gameType,
     autoJoin: false,
     roomId: joinRoomId,
-    firestoreGameId,
-    options: spectator ? { spectator: true } : undefined,
+    firestoreGameId: activeFirestoreGameId,
+    options: activeSpectator ? { spectator: true } : undefined,
   };
 
   const {
@@ -425,11 +442,12 @@ export function usePhysicsGame(
   }, [sendMessage]);
 
   const startMultiplayer = useCallback(
-    (roomId?: string) => {
+    (opts?: { firestoreGameId?: string; spectator?: boolean }) => {
       if (!isAvailable) return;
+      if (opts?.firestoreGameId) setActiveFirestoreGameId(opts.firestoreGameId);
+      if (opts?.spectator !== undefined) setActiveSpectator(opts.spectator);
       setIsMultiplayer(true);
       setPhase("connecting");
-      if (roomId) setJoinRoomId(roomId);
       // Trigger join on next effect cycle
       setTimeout(() => joinRoom(), 0);
     },
@@ -451,11 +469,20 @@ export function usePhysicsGame(
   useEffect(() => {
     if (!isMultiplayer) return;
     if (reconnecting) setPhase("reconnecting");
-    else if (error) setPhase("idle");
+    else if (error) setPhase("error");
     else if (!connected && phase === "connecting") {
       // Still connecting
     }
   }, [reconnecting, error, connected, isMultiplayer, phase]);
+
+  // Matchmaking timeout — don't let users wait forever
+  useEffect(() => {
+    if (phase !== "waiting" || !isMultiplayer) return;
+    const timer = setTimeout(() => {
+      setPhase("error");
+    }, 60_000);
+    return () => clearTimeout(timer);
+  }, [phase, isMultiplayer]);
 
   return {
     isAvailable,
@@ -484,12 +511,15 @@ export function usePhysicsGame(
     rawState: state ?? null,
     rematchRequested,
     latency,
+    isSpectator: activeSpectator,
+    spectatorCount: (state as any)?.spectatorCount ?? 0,
     sendInput,
     sendReady,
     sendRematch,
     acceptRematch,
     leave: leaveRoom,
     startMultiplayer,
+    cancelMultiplayer: stopMultiplayer,
     stopMultiplayer,
   };
 }

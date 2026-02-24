@@ -6,7 +6,7 @@
  *   - The shared state (discard pile, hand sizes, current suit) is synced
  *   - Private data (actual hand cards, deck) is sent via targeted messages
  *
- * Used by: CrazyEightsRoom (Phase 3)
+ * Used by: CrazyCardsRoom
  *
  * @see docs/COLYSEUS_MULTIPLAYER_PLAN.md Â§6.4
  */

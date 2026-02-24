@@ -28,6 +28,7 @@ export interface ClaimLevelRewardResponse {
   rewardType: string;
   amount: number;
   message: string;
+  cosmeticId?: string;
 }
 
 // =============================================================================

@@ -264,6 +264,18 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       return;
     }
 
+    // ─── Reject player joins when room is full ──────────────────────────
+    // Don't use this.lock() — that blocks spectators too. Instead, gate at
+    // the application level so spectators can still join after 2 players.
+    if (this.state.players.size >= 2) {
+      this.roomLog.warn(
+        `Rejected player join — room full: ${auth.displayName} (${client.sessionId})`,
+      );
+      client.error(4000, "Room is full — game already has 2 players");
+      client.leave(4000); // 4000 = room full
+      return;
+    }
+
     const player = new PhysicsPlayer();
     player.uid = auth.uid;
     player.sessionId = client.sessionId;
@@ -293,13 +305,9 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     this.roomLog.info(
       `Player joined: ${auth.displayName} (${client.sessionId}) [${this.state.players.size}/${this.maxClients}]`,
     );
-
-    if (this.state.players.size >= 2) {
-      this.lock();
-    }
   }
 
-  onDrop(client: Client, _code: number): void {
+  async onDrop(client: Client, _code: number): Promise<void> {
     if (this.spectatorSessionIds.has(client.sessionId)) return;
     const player = this.state.players.get(client.sessionId);
     if (player) player.connected = false;
@@ -313,8 +321,13 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       process.env.RECONNECTION_TIMEOUT_PHYSICS || "15",
       10,
     );
-    this.allowReconnection(client, timeout);
-    this.roomLog.info(`Player dropped: ${client.sessionId}`);
+    try {
+      await this.allowReconnection(client, timeout);
+      // Reconnected successfully — onReconnect handles state update
+    } catch {
+      // Reconnection timed out — Colyseus will call onLeave
+      this.roomLog.info(`Reconnection timed out: ${client.sessionId}`);
+    }
   }
 
   onReconnect(client: Client): void {
@@ -341,16 +354,33 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       return;
     }
 
-    if (this.state.phase === "playing") {
-      // Award win to remaining player
+    if (
+      this.state.phase === "playing" &&
+      this.state.players.has(client.sessionId)
+    ) {
+      // Award win to remaining player — only if they’re still connected
       const remaining = this.getOpponent(client.sessionId);
-      if (remaining) {
+      if (remaining && remaining.connected) {
         this.endGame(remaining.uid, "opponent_left");
+      } else if (remaining) {
+        // Both disconnected — end without a winner
+        this.endGame("", "mutual_disconnect");
       }
     }
     this.state.players.delete(client.sessionId);
     this.state.paddles.delete(client.sessionId);
     this.roomLog.info(`Player left: ${client.sessionId} (code: ${code})`);
+  }
+
+  /**
+   * Override in subclasses to attach game-specific stats (e.g. shutouts)
+   * that the achievement evaluator can read via `gameSpecific` fields.
+   * Keys are player UIDs → stat map.
+   */
+  protected getPerPlayerStats():
+    | Record<string, Record<string, number>>
+    | undefined {
+    return undefined;
   }
 
   async onDispose(): Promise<void> {
@@ -360,10 +390,11 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
 
     if (this.state.phase === "finished" && this.state.winnerId) {
-      // Game resolved � persist results, then delete game + invite
+      // Game resolved — persist results, then delete game + invite
       await persistGameResult(
         this.state as unknown as BaseGameState,
         this.state.elapsed,
+        this.getPerPlayerStats(),
       );
       await deleteGameAndInvite(firestoreGameId);
       this.roomLog.info(

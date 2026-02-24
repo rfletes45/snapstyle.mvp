@@ -63,6 +63,12 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
   /** Scoped logger with room-level context */
   protected roomLog: ServerLogger = log;
 
+  /** Bot session IDs (virtual players — no real Colyseus client) */
+  protected botSessionIds = new Set<string>();
+
+  /** Whether this room is in practice/solo mode */
+  protected practiceMode = false;
+
   /** Check if a session is a spectator */
   protected isSpectator(sessionId: string): boolean {
     return this.spectatorSessionIds.has(sessionId);
@@ -208,6 +214,17 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       });
       this.checkAllReady();
     }
+
+    // ── Practice mode: add a bot and auto-start ──
+    if (options.practice === true && this.state.cardPlayers.size === 1) {
+      this.practiceMode = true;
+      this.lock();
+      this.addBotPlayer("Bot");
+      this.state.cardPlayers.forEach((p: CardPlayer) => {
+        p.ready = true;
+      });
+      this.checkAllReady();
+    }
   }
 
   // ─── onLeave ────────────────────────────────────────────────────────
@@ -325,13 +342,42 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
   // ─── Shared Helpers ─────────────────────────────────────────────────
 
   protected checkAllReady(): void {
-    if (this.state.cardPlayers.size < 2) return;
+    const totalPlayers = this.state.cardPlayers.size;
+    if (totalPlayers < 2) return;
     let allReady = true;
     this.state.cardPlayers.forEach((p: CardPlayer) => {
       if (!p.ready) allReady = false;
     });
     if (!allReady) return;
     this.startCountdown();
+  }
+
+  /** Add a bot (AI) player to the room without a real client connection */
+  protected addBotPlayer(name: string): string {
+    const botSessionId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const botUid = `bot-${botSessionId}`;
+
+    const player = new CardPlayer();
+    player.uid = botUid;
+    player.sessionId = botSessionId;
+    player.displayName = name;
+    player.avatarUrl = "";
+    player.connected = true;
+    player.playerIndex = this.state.cardPlayers.size;
+    player.ready = true;
+
+    this.state.cardPlayers.set(botSessionId, player);
+    this.playerUids.set(botSessionId, botUid);
+    this.playerOrder.push(botSessionId);
+    this.botSessionIds.add(botSessionId);
+
+    this.roomLog.info(`Bot added: ${name} (${botSessionId})`);
+    return botSessionId;
+  }
+
+  /** Check if a session ID belongs to a bot */
+  protected isBot(sessionId: string): boolean {
+    return this.botSessionIds.has(sessionId);
   }
 
   private startCountdown(): void {

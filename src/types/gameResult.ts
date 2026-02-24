@@ -129,6 +129,7 @@ export const GAME_XP_CATEGORY: Record<ExtendedGameType, GameXpCategory> = {
   sketch_party_game: "party",
   lights_out: "puzzle",
   minigolf_duels: "arcade",
+  battleship: "board",
 };
 
 // =============================================================================

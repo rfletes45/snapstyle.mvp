@@ -130,7 +130,10 @@ export type TurnBasedGameType =
   | "crazy_eights"
   | "tic_tac_toe";
 
-export type RealTimeGameType = "starforge_game" | "sketch_party_game";
+export type RealTimeGameType =
+  | "starforge_game"
+  | "sketch_party_game"
+  | "pong_game";
 
 // All available game types
 export type ExtendedGameType =

@@ -9,7 +9,7 @@
  * - Matchmaking background processing
  * - Daily cleanup tasks
  *
- * @see docs/07_GAMES_ARCHITECTURE.md Section 5
+ * @see docs/GAMES_SYSTEM.md
  */
 import * as functions from "firebase-functions";
 /**

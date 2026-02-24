@@ -222,14 +222,21 @@ class ColyseusService {
    *
    * @param gameType - Client-side game type
    * @param firestoreGameId - The Firestore document ID of the saved game
+   * @param handlers - Event handlers for state, reconnection, errors
+   * @param extraOptions - Additional join options (e.g. spectator flag)
    * @returns The restored Room instance
    */
   async restoreGame(
     gameType: string,
     firestoreGameId: string,
     handlers: ColyseusEventHandlers = {},
+    extraOptions: JoinOptions = {},
   ): Promise<Room> {
-    return this.joinOrCreate(gameType, { firestoreGameId }, handlers);
+    return this.joinOrCreate(
+      gameType,
+      { ...extraOptions, firestoreGameId },
+      handlers,
+    );
   }
 
   /**

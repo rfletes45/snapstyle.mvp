@@ -79,6 +79,12 @@ export interface ScoreRaceOverlayProps {
   reconnecting: boolean;
   /** Whether the opponent is currently disconnected */
   opponentDisconnected: boolean;
+  /** Whether the viewer is a spectator (read-only, no action buttons) */
+  isSpectator?: boolean;
+  /** Number of spectators watching */
+  spectatorCount?: number;
+  /** Local player's display name (used in spectator view instead of "YOU") */
+  myName?: string;
 }
 
 // Theme colors for the overlay
@@ -114,6 +120,9 @@ export default function ScoreRaceOverlay({
   rematchRequested,
   reconnecting,
   opponentDisconnected,
+  isSpectator = false,
+  spectatorCount = 0,
+  myName,
 }: ScoreRaceOverlayProps) {
   // Don't render anything during playing or idle
   if (phase === "playing" || phase === "idle") {
@@ -136,7 +145,7 @@ export default function ScoreRaceOverlay({
   }
 
   if (phase === "waiting") {
-    return <WaitingOverlay onCancel={onLeave} />;
+    return <WaitingOverlay onCancel={onLeave} isSpectator={isSpectator} />;
   }
 
   if (phase === "countdown") {
@@ -160,6 +169,8 @@ export default function ScoreRaceOverlay({
         onRematch={onRematch}
         onAcceptRematch={onAcceptRematch}
         onLeave={onLeave}
+        isSpectator={isSpectator}
+        myName={myName}
       />
     );
   }
@@ -200,8 +211,10 @@ function ConnectingOverlay() {
 
 function WaitingOverlay({
   onCancel,
+  isSpectator = false,
 }: {
   onCancel: () => void | Promise<void>;
+  isSpectator?: boolean;
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -229,12 +242,14 @@ function WaitingOverlay({
       style={[styles.overlay, { backgroundColor: COLORS.background + "F5" }]}
     >
       <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-        <Text style={{ fontSize: 48 }}>⚔️</Text>
+        <Text style={{ fontSize: 48 }}>{isSpectator ? "👀" : "⚔️"}</Text>
       </Animated.View>
       <Text
         style={[styles.overlayTitle, { color: COLORS.text, marginTop: 16 }]}
       >
-        Waiting for Opponent...
+        {isSpectator
+          ? "Waiting for Game to Start..."
+          : "Waiting for Opponent..."}
       </Text>
       <Text
         style={[
@@ -242,7 +257,7 @@ function WaitingOverlay({
           { color: COLORS.textSecondary, marginTop: 8 },
         ]}
       >
-        Finding a match for you
+        {isSpectator ? "You are spectating" : "Finding a match for you"}
       </Text>
       <ActivityIndicator
         size="small"
@@ -444,6 +459,8 @@ function FinishedOverlay({
   onRematch,
   onAcceptRematch,
   onLeave,
+  isSpectator = false,
+  myName,
 }: {
   isWinner: boolean | null;
   isTie: boolean;
@@ -455,6 +472,8 @@ function FinishedOverlay({
   onRematch: () => void;
   onAcceptRematch: () => void;
   onLeave: () => void | Promise<void>;
+  isSpectator?: boolean;
+  myName?: string;
 }) {
   const slideAnim = useRef(new Animated.Value(50)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -475,9 +494,21 @@ function FinishedOverlay({
     ]).start();
   }, [slideAnim, fadeAnim]);
 
-  const emoji = isTie ? "🤝" : isWinner ? "🏆" : "😔";
-  const title = isTie ? "It's a Tie!" : isWinner ? "You Win!" : "You Lose";
-  const titleColor = isTie ? COLORS.tie : isWinner ? COLORS.win : COLORS.lose;
+  const emoji = isSpectator ? "🏁" : isTie ? "🤝" : isWinner ? "🏆" : "😔";
+  const title = isSpectator
+    ? "Game Over"
+    : isTie
+      ? "It's a Tie!"
+      : isWinner
+        ? "You Win!"
+        : "You Lose";
+  const titleColor = isSpectator
+    ? COLORS.text
+    : isTie
+      ? COLORS.tie
+      : isWinner
+        ? COLORS.win
+        : COLORS.lose;
 
   return (
     <View
@@ -507,7 +538,11 @@ function FinishedOverlay({
               { color: COLORS.textSecondary, marginTop: 4 },
             ]}
           >
-            {isWinner ? "Congratulations!" : `${winnerName} wins`}
+            {isSpectator
+              ? `${winnerName} wins!`
+              : isWinner
+                ? "Congratulations!"
+                : `${winnerName} wins`}
           </Text>
         )}
 
@@ -515,7 +550,7 @@ function FinishedOverlay({
         <View style={styles.resultScores}>
           <View style={styles.resultScoreCol}>
             <Text style={[styles.resultLabel, { color: COLORS.textSecondary }]}>
-              YOU
+              {isSpectator ? myName || "Player 1" : "YOU"}
             </Text>
             <Canvas style={{ width: 80, height: 52 }}>
               <RoundedRect x={0} y={0} width={80} height={52} r={12}>
@@ -588,8 +623,8 @@ function FinishedOverlay({
           </View>
         </View>
 
-        {/* Rematch prompt */}
-        {rematchRequested && (
+        {/* Rematch prompt (hidden for spectators) */}
+        {!isSpectator && rematchRequested && (
           <View style={styles.rematchPrompt}>
             <Text style={[styles.rematchText, { color: COLORS.primary }]}>
               {opponentName || "Opponent"} wants a rematch!
@@ -611,7 +646,7 @@ function FinishedOverlay({
 
         {/* Action buttons */}
         <View style={styles.resultActions}>
-          {!rematchRequested && (
+          {!isSpectator && !rematchRequested && (
             <Button
               mode="contained"
               onPress={onRematch}
@@ -631,13 +666,13 @@ function FinishedOverlay({
             onPress={onLeave}
             style={{
               borderColor: COLORS.border,
-              flex: rematchRequested ? undefined : 1,
+              flex: !isSpectator && !rematchRequested ? 1 : undefined,
               borderRadius: 24,
               minWidth: 100,
             }}
             textColor={COLORS.text}
           >
-            Leave
+            {isSpectator ? "Stop Watching" : "Leave"}
           </Button>
         </View>
       </Animated.View>

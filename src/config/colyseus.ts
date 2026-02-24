@@ -7,6 +7,11 @@
 
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { GameErrorCode, createGameError } from "@/types/gameErrors";
+import {
+  type ExtendedGameType,
+  GAME_METADATA,
+  getGameRuntimeType,
+} from "@/types/games";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
@@ -82,37 +87,200 @@ export const COLYSEUS_SERVER_URL: string = __DEV__ ? DEV_URL! : PROD_URL;
 // =============================================================================
 
 /**
+ * Game category types for Colyseus feature-flag gating.
+ */
+export type ColyseusGameCategory =
+  | "physics"
+  | "quickplay"
+  | "turnbased"
+  | "complex"
+  | "coop"
+  | "incremental"
+  | "party";
+
+type ColyseusMappedGameType = Extract<
+  ExtendedGameType,
+  | "dot_match"
+  | "tic_tac_toe"
+  | "connect_four"
+  | "gomoku_master"
+  | "reversi_game"
+  | "chess"
+  | "checkers"
+  | "crazy_eights"
+  | "pong_game"
+  | "bounce_blitz"
+  | "brick_breaker"
+  | "word_master"
+  | "crossword_puzzle"
+  | "starforge_game"
+  | "sketch_party_game"
+  | "minigolf_duels"
+  | "battleship"
+>;
+
+export interface ColyseusGameMappingEntry {
+  /**
+   * Client lookup key used by join hooks.
+   * Some entries use a `_game` suffix for backward compatibility.
+   */
+  clientKey: string;
+  /** Registered room name in colyseus-server/src/app.config.ts */
+  roomName: string;
+  /** Feature-flag category */
+  category: ColyseusGameCategory;
+}
+
+/**
+ * Canonical mapping table for gameId -> client join key -> room name.
+ */
+export const COLYSEUS_GAME_MAPPING: Record<
+  ColyseusMappedGameType,
+  ColyseusGameMappingEntry
+> = {
+  dot_match: {
+    clientKey: "dot_match_game",
+    roomName: "dot_match",
+    category: "quickplay",
+  },
+  tic_tac_toe: {
+    clientKey: "tic_tac_toe_game",
+    roomName: "tic_tac_toe",
+    category: "turnbased",
+  },
+  connect_four: {
+    clientKey: "connect_four_game",
+    roomName: "connect_four",
+    category: "turnbased",
+  },
+  gomoku_master: {
+    clientKey: "gomoku_master_game",
+    roomName: "gomoku",
+    category: "turnbased",
+  },
+  reversi_game: {
+    clientKey: "reversi_game",
+    roomName: "reversi",
+    category: "turnbased",
+  },
+  chess: {
+    clientKey: "chess_game",
+    roomName: "chess",
+    category: "complex",
+  },
+  checkers: {
+    clientKey: "checkers_game",
+    roomName: "checkers",
+    category: "complex",
+  },
+  crazy_eights: {
+    clientKey: "crazy_eights_game",
+    roomName: "crazy_eights",
+    category: "complex",
+  },
+  pong_game: {
+    clientKey: "pong_game",
+    roomName: "pong",
+    category: "physics",
+  },
+  bounce_blitz: {
+    clientKey: "bounce_blitz_game",
+    roomName: "bounce_blitz",
+    category: "physics",
+  },
+  brick_breaker: {
+    clientKey: "brick_breaker_game",
+    roomName: "brick_breaker",
+    category: "physics",
+  },
+  word_master: {
+    clientKey: "word_master_game",
+    roomName: "word_master",
+    category: "coop",
+  },
+  crossword_puzzle: {
+    clientKey: "crossword_puzzle_game",
+    roomName: "crossword",
+    category: "coop",
+  },
+  starforge_game: {
+    clientKey: "starforge_game",
+    roomName: "starforge",
+    category: "incremental",
+  },
+  sketch_party_game: {
+    clientKey: "sketch_party_game",
+    roomName: "sketch_party",
+    category: "party",
+  },
+  minigolf_duels: {
+    clientKey: "minigolf_duels",
+    roomName: "minigolf_duels",
+    category: "physics",
+  },
+  battleship: {
+    clientKey: "battleship_game",
+    roomName: "battleship",
+    category: "complex",
+  },
+};
+
+/**
  * Maps client-side game type keys to Colyseus room names.
  * Must match the room names registered in colyseus-server/src/app.config.ts.
  */
-export const COLYSEUS_ROOM_NAMES: Record<string, string> = {
-  // Quick-Play
-  dot_match_game: "dot_match",
+export const COLYSEUS_ROOM_NAMES: Record<string, string> = Object.values(
+  COLYSEUS_GAME_MAPPING,
+).reduce<Record<string, string>>((acc, entry) => {
+  acc[entry.clientKey] = entry.roomName;
+  return acc;
+}, {});
 
-  // Turn-Based
-  tic_tac_toe_game: "tic_tac_toe",
-  connect_four_game: "connect_four",
-  gomoku_master_game: "gomoku",
-  reversi_game: "reversi",
-  chess_game: "chess",
-  checkers_game: "checkers",
-  crazy_eights_game: "crazy_eights",
+/**
+ * Maps each game type key to its Colyseus tier category.
+ * Used by shouldUseColyseus() to check the correct feature flag.
+ */
+export const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> =
+  Object.values(COLYSEUS_GAME_MAPPING).reduce<
+    Record<string, ColyseusGameCategory>
+  >((acc, entry) => {
+    acc[entry.clientKey] = entry.category;
+    return acc;
+  }, {});
 
-  // Physics / Real-Time
-  pong_game: "pong",
-  bounce_blitz_game: "bounce_blitz",
-  brick_breaker_game: "brick_breaker",
+export function getColyseusClientKey(
+  gameType: ExtendedGameType,
+): string | null {
+  const entry = COLYSEUS_GAME_MAPPING[gameType as ColyseusMappedGameType];
+  return entry?.clientKey ?? null;
+}
 
-  // Cooperative / Creative
-  word_master_game: "word_master",
-  crossword_puzzle_game: "crossword",
+function assertColyseusMappingIntegrity(): void {
+  // Ensure every mapping entry points to a real registry game.
+  for (const gameId of Object.keys(COLYSEUS_GAME_MAPPING)) {
+    if (!(gameId in GAME_METADATA)) {
+      throw new Error(
+        `[colyseus] Mapping key "${gameId}" is missing from GAME_METADATA`,
+      );
+    }
+  }
 
-  // Incremental
-  starforge_game: "starforge",
+  // Ensure every realtime runtime game has a mapping.
+  for (const gameId of Object.keys(GAME_METADATA) as ExtendedGameType[]) {
+    if (getGameRuntimeType(gameId) !== "realtime") continue;
+    const mapped =
+      !!COLYSEUS_ROOM_NAMES[gameId] || !!COLYSEUS_ROOM_NAMES[`${gameId}_game`];
+    if (!mapped) {
+      throw new Error(
+        `[colyseus] Missing room mapping for realtime game "${gameId}"`,
+      );
+    }
+  }
+}
 
-  // Party
-  sketch_party_game: "sketch_party",
-};
+if (typeof __DEV__ !== "undefined" && __DEV__) {
+  assertColyseusMappingIntegrity();
+}
 
 /**
  * Room name for the dedicated single-player spectating room.
@@ -169,53 +337,6 @@ export function resolveColyseusRoomName(gameType: string): string {
 // =============================================================================
 // Game Category Mapping
 // =============================================================================
-
-/**
- * Game category types for Colyseus feature-flag gating.
- */
-export type ColyseusGameCategory =
-  | "physics"
-  | "quickplay"
-  | "turnbased"
-  | "complex"
-  | "coop"
-  | "incremental"
-  | "party";
-
-/**
- * Maps each game type key to its Colyseus tier category.
- * Used by shouldUseColyseus() to check the correct feature flag.
- */
-export const GAME_CATEGORY_MAP: Record<string, ColyseusGameCategory> = {
-  // Quick-Play (score race)
-  dot_match_game: "quickplay",
-
-  // Turn-Based (simple)
-  tic_tac_toe_game: "turnbased",
-  connect_four_game: "turnbased",
-  gomoku_master_game: "turnbased",
-  reversi_game: "turnbased",
-
-  // Complex Turn-Based
-  chess_game: "complex",
-  checkers_game: "complex",
-  crazy_eights_game: "complex",
-
-  // Physics / Real-Time
-  pong_game: "physics",
-  bounce_blitz_game: "physics",
-  brick_breaker_game: "physics",
-
-  // Cooperative / Creative
-  word_master_game: "coop",
-  crossword_puzzle_game: "coop",
-
-  // Incremental
-  starforge_game: "incremental",
-
-  // Party
-  sketch_party_game: "party",
-};
 
 /**
  * Get the Colyseus category for a game type.

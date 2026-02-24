@@ -18,10 +18,32 @@
 
 import { colyseusService, JoinOptions } from "@/services/colyseus";
 import type { Room } from "@colyseus/sdk";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useColyseus");
+
+// =============================================================================
+// Terminal error detection
+// =============================================================================
+
+/** Server close codes / error messages that should NOT be retried. */
+const TERMINAL_ERROR_PATTERNS = [
+  "room is full",
+  "already has 2 players",
+  "already seated",
+  "cannot spectate",
+  "game already started",
+  "invalid seat",
+  "not authorized",
+  "authentication failed",
+  "protocol rejected",
+];
+
+function isTerminalJoinError(err: any): boolean {
+  const msg = (err?.message || String(err)).toLowerCase();
+  return TERMINAL_ERROR_PATTERNS.some((p) => msg.includes(p));
+}
 // =============================================================================
 // Types
 // =============================================================================
@@ -78,7 +100,7 @@ export interface UseColyseusReturn {
 
 export function useColyseus({
   gameType,
-  options = {},
+  options: rawOptions,
   firestoreGameId,
   autoJoin = true,
   roomId,
@@ -93,16 +115,58 @@ export function useColyseus({
   const roomRef = useRef<Room | null>(null);
   const mountedRef = useRef(true);
   const joiningRef = useRef(false);
+  /** True after a terminal error — blocks all future join attempts. */
+  const terminalErrorRef = useRef(false);
+
+  // Stabilize options reference: only change when the JSON representation
+  // changes, NOT on every render (default `= {}` creates a new ref).
+  const optionsJson = JSON.stringify(rawOptions ?? {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const options: JoinOptions = useMemo(
+    () => JSON.parse(optionsJson),
+    [optionsJson],
+  );
 
   // ===========================================================================
   // Join Room
   // ===========================================================================
 
+  const joinAttemptRef = useRef(0);
+
   const joinRoom = useCallback(async () => {
-    if (!mountedRef.current) return;
+    joinAttemptRef.current++;
+    const attempt = joinAttemptRef.current;
+
+    // Block if we already have a connected room
+    if (roomRef.current) {
+      logger.info(
+        `[joinRoom #${attempt}] BLOCKED — room already connected (${roomRef.current.roomId})`,
+      );
+      return;
+    }
+
+    // Block on terminal error — no point retrying "room full" etc.
+    if (terminalErrorRef.current) {
+      logger.warn(
+        `[joinRoom #${attempt}] BLOCKED — terminal error previously hit`,
+      );
+      return;
+    }
+
+    if (!mountedRef.current) {
+      logger.warn(`[joinRoom #${attempt}] BLOCKED — unmounted`);
+      return;
+    }
     // Guard against concurrent joins (React Strict Mode double-mount)
-    if (joiningRef.current) return;
+    if (joiningRef.current) {
+      logger.warn(`[joinRoom #${attempt}] BLOCKED — already joining`);
+      return;
+    }
     joiningRef.current = true;
+
+    logger.info(
+      `[joinRoom #${attempt}] gameType=${gameType}, firestoreGameId=${firestoreGameId ?? "none"}`,
+    );
 
     try {
       setError(null);
@@ -114,29 +178,42 @@ export function useColyseus({
         // Invite flow: both players joinOrCreate with same firestoreGameId.
         // Server rooms use filterBy(["firestoreGameId"]) so Colyseus
         // matches them into the same room instance.
-        newRoom = await colyseusService.restoreGame(gameType, firestoreGameId, {
-          onStateChange: (newState) => {
-            if (mountedRef.current) setState({ ...newState });
+        // Pass `options` so extra flags (e.g. spectator) are forwarded.
+        newRoom = await colyseusService.restoreGame(
+          gameType,
+          firestoreGameId,
+          {
+            onStateChange: (newState) => {
+              if (mountedRef.current) setState({ ...newState });
+            },
+            onDrop: () => {
+              if (mountedRef.current) setReconnecting(true);
+            },
+            onLeave: (code) => {
+              if (!mountedRef.current) return;
+              const consented = code >= 4000 || code === 1000;
+              if (consented) {
+                setConnected(false);
+                setReconnecting(false);
+                roomRef.current = null;
+                setRoom(null);
+              } else {
+                // Non-consented leave — reconnection timed out
+                setConnected(false);
+                setReconnecting(false);
+                setError("Connection lost");
+                roomRef.current = null;
+                setRoom(null);
+              }
+            },
+            onError: (code, message) => {
+              if (mountedRef.current) {
+                setError(`Error ${code}: ${message}`);
+              }
+            },
           },
-          onDrop: () => {
-            if (mountedRef.current) setReconnecting(true);
-          },
-          onLeave: (code) => {
-            if (!mountedRef.current) return;
-            const consented = code >= 4000 || code === 1000;
-            if (consented) {
-              setConnected(false);
-              setReconnecting(false);
-              roomRef.current = null;
-              setRoom(null);
-            }
-          },
-          onError: (code, message) => {
-            if (mountedRef.current) {
-              setError(`Error ${code}: ${message}`);
-            }
-          },
-        });
+          options,
+        );
       } else if (roomId) {
         // Join existing room by ID (legacy/direct room join)
         newRoom = await colyseusService.joinById(roomId, options, {
@@ -152,6 +229,13 @@ export function useColyseus({
             if (consented) {
               setConnected(false);
               setReconnecting(false);
+              roomRef.current = null;
+              setRoom(null);
+            } else {
+              // Non-consented leave — reconnection timed out
+              setConnected(false);
+              setReconnecting(false);
+              setError("Connection lost");
               roomRef.current = null;
               setRoom(null);
             }
@@ -177,6 +261,13 @@ export function useColyseus({
               setReconnecting(false);
               roomRef.current = null;
               setRoom(null);
+            } else {
+              // Non-consented leave — reconnection timed out
+              setConnected(false);
+              setReconnecting(false);
+              setError("Connection lost");
+              roomRef.current = null;
+              setRoom(null);
             }
           },
           onError: (code, message) => {
@@ -197,8 +288,18 @@ export function useColyseus({
       }
     } catch (err: any) {
       if (mountedRef.current) {
-        setError(err.message || "Failed to join room");
-        logger.error("[useColyseus] Join failed:", err);
+        const msg = err.message || "Failed to join room";
+        setError(msg);
+        logger.error(
+          `[useColyseus] Join failed (attempt #${joinAttemptRef.current}):`,
+          msg,
+        );
+
+        // Mark terminal so the retry-effect won't re-fire
+        if (isTerminalJoinError(err)) {
+          terminalErrorRef.current = true;
+          logger.warn("[useColyseus] Terminal join error — no further retries");
+        }
       }
     } finally {
       joiningRef.current = false;

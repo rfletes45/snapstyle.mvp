@@ -851,6 +851,7 @@ describe("Smoke Test: Multi-Game Type Sweep", () => {
     "gomoku_master",
     "reversi_game",
     "sketch_party_game",
+    "battleship",
   ];
 
   it.each(gameTypes)(

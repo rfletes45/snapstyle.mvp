@@ -36,6 +36,15 @@ export {
 // Card game schemas (Phase 3)
 export { CardGameState, CardPlayer, SyncCard } from "./cards";
 
+// Battleship schemas (Phase 8)
+export {
+  BattleshipPlayer,
+  BattleshipState,
+  ShotRecord,
+  SunkShip,
+  SunkShipCell,
+} from "./battleship";
+
 // Cooperative / Creative game schemas (Phase 5)
 export {
   CrosswordCell,

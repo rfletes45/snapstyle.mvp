@@ -66,7 +66,9 @@ import {
 import {
   ExtendedGameType,
   GAME_METADATA,
+  RealTimeGameType,
   SinglePlayerGameType,
+  TurnBasedGameType,
 } from "@/types/games";
 import { GameSession } from "@/types/models";
 import {
@@ -75,12 +77,7 @@ import {
   GameSearchFilters,
 } from "@/types/playScreen";
 import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
-import {
-  AnyMatch,
-  RealTimeGameType,
-  TurnBasedGameType,
-  UniversalGameInvite,
-} from "@/types/turnBased";
+import { AnyMatch, UniversalGameInvite } from "@/types/turnBased";
 import { searchGames } from "@/utils/gameSearch";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -122,7 +119,6 @@ const SINGLE_PLAYER_GAME_TYPES = new Set<SinglePlayerGameType>([
   "word_master",
   "brick_breaker",
   "minesweeper_classic",
-  "pong_game",
 ]);
 
 function isSinglePlayerGameType(

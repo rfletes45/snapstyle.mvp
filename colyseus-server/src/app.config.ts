@@ -36,13 +36,19 @@ import { TicTacToeRoom } from "./rooms/turnbased/TicTacToeRoom";
 // ---------------------------------------------------------------------------
 import { CheckersRoom } from "./rooms/turnbased/CheckersRoom";
 import { ChessRoom } from "./rooms/turnbased/ChessRoom";
-import { CrazyEightsRoom } from "./rooms/turnbased/CrazyEightsRoom";
+import { CrazyCardsRoom } from "./rooms/turnbased/CrazyCardsRoom";
+
+// ---------------------------------------------------------------------------
+// Room Imports — Battleship (Phase 8)
+// ---------------------------------------------------------------------------
+import { BattleshipRoom } from "./rooms/turnbased/BattleshipRoom";
 
 // ---------------------------------------------------------------------------
 // Room Imports — Physics / Real-Time (Phase 4)
 // ---------------------------------------------------------------------------
 import { BounceBlitzRoom } from "./rooms/physics/BounceBlitzRoom";
 import { BrickBreakerRoom } from "./rooms/physics/BrickBreakerRoom";
+import { MiniGolfDuelsRoom } from "./rooms/physics/MiniGolfDuelsRoom";
 import { PongRoom } from "./rooms/physics/PongRoom";
 
 // ---------------------------------------------------------------------------
@@ -102,7 +108,7 @@ const serverConfig = defineServer({
     // =====================================================================
     chess: defineRoom(ChessRoom).filterBy(["firestoreGameId"]),
     checkers: defineRoom(CheckersRoom).filterBy(["firestoreGameId"]),
-    crazy_eights: defineRoom(CrazyEightsRoom).filterBy(["firestoreGameId"]),
+    crazy_eights: defineRoom(CrazyCardsRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
     // Tier 1: Physics / Real-Time — Phase 4 (LIVE)
@@ -110,6 +116,7 @@ const serverConfig = defineServer({
     pong: defineRoom(PongRoom).filterBy(["firestoreGameId"]),
     bounce_blitz: defineRoom(BounceBlitzRoom).filterBy(["firestoreGameId"]),
     brick_breaker: defineRoom(BrickBreakerRoom).filterBy(["firestoreGameId"]),
+    minigolf_duels: defineRoom(MiniGolfDuelsRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
     // Tier 3: Cooperative / Creative — Phase 5 (LIVE)
@@ -126,6 +133,11 @@ const serverConfig = defineServer({
     // Tier 7: Party — Phase 7 (NEW)
     // =====================================================================
     sketch_party: defineRoom(SketchPartyRoom).filterBy(["firestoreGameId"]),
+
+    // =====================================================================
+    // Tier 3: Battleship — Phase 8 (NEW)
+    // =====================================================================
+    battleship: defineRoom(BattleshipRoom).filterBy(["firestoreGameId"]),
 
     // =====================================================================
     // Spectator Room — Single-Player Game Spectating

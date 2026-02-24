@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Achievement Definitions Data
  *
  * Comprehensive achievement definitions for all games.
@@ -1042,9 +1042,9 @@ export const CHESS_ACHIEVEMENTS: GameAchievementDefinition[] = [
 export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
   {
     id: "crazy_eights_first_win",
-    name: "Crazy for Eights",
-    description: "Win your first game of Crazy Eights",
-    icon: "Ã°Å¸Å½Â´",
+    name: "Crazy Start",
+    description: "Win your first game of Crazy Cards",
+    icon: "🃏",
     category: "crazy_eights",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
@@ -1057,8 +1057,8 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
   {
     id: "crazy_eights_wins_10",
     name: "Card Shark",
-    description: "Win 10 games of Crazy Eights",
-    icon: "Ã°Å¸Â¦Ë†",
+    description: "Win 10 games of Crazy Cards",
+    icon: "🦈",
     category: "crazy_eights",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
@@ -1071,9 +1071,9 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
   },
   {
     id: "crazy_eights_wins_50",
-    name: "Crazy Eights Master",
-    description: "Win 50 games of Crazy Eights",
-    icon: "Ã°Å¸Ââ€ ",
+    name: "Crazy Cards Master",
+    description: "Win 50 games of Crazy Cards",
+    icon: "🏆",
     category: "crazy_eights",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
@@ -1083,41 +1083,41 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
     trigger: { type: "crazy_eights_win", conditions: { count: 50 } },
     progressType: "count",
     progressTarget: 50,
-    unlocks: { type: "badge", itemId: "crazy_eights_master_badge" },
+    unlocks: { type: "badge", itemId: "badge_crazy_eights_master" },
   },
   {
-    id: "crazy_eights_eight_played",
-    name: "Wild Card",
-    description: "Play your first 8 to change the suit",
-    icon: "8Ã¯Â¸ÂÃ¢Æ’Â£",
+    id: "crazy_eights_wild_played",
+    name: "Wild Thing",
+    description: "Play your first Wild card to change the color",
+    icon: "🌈",
     category: "crazy_eights",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
     secret: false,
     repeatable: false,
-    trigger: { type: "crazy_eights_win", conditions: { eightPlayed: true } },
+    trigger: { type: "crazy_eights_win", conditions: { wildPlayed: true } },
     progressType: "instant",
   },
   {
-    id: "crazy_eights_empty_hand",
-    name: "Going Out",
-    description: "Win with no cards left in your hand",
-    icon: "Ã¢Å“â€¹",
+    id: "crazy_eights_uno_call",
+    name: "UNO!",
+    description: "Successfully call UNO with one card left",
+    icon: "☝️",
     category: "crazy_eights",
     tier: "bronze",
     xpReward: TIER_REWARDS.bronze.xp,
     coinReward: TIER_REWARDS.bronze.coins,
     secret: false,
     repeatable: false,
-    trigger: { type: "crazy_eights_win", conditions: { emptyHand: true } },
+    trigger: { type: "crazy_eights_win", conditions: { unoCalled: true } },
     progressType: "instant",
   },
   {
     id: "crazy_eights_perfect_game",
-    name: "Perfect Hand",
+    name: "No-Draw Victory",
     description: "Win without drawing any cards",
-    icon: "Ã°Å¸Å’Å¸",
+    icon: "💎",
     category: "crazy_eights",
     tier: "gold",
     xpReward: TIER_REWARDS.gold.xp,
@@ -1132,7 +1132,7 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
     id: "crazy_eights_comeback",
     name: "Comeback King",
     description: "Win after having 10+ cards in your hand",
-    icon: "Ã°Å¸â€˜â€˜",
+    icon: "👑",
     category: "crazy_eights",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
@@ -1146,7 +1146,7 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
     id: "crazy_eights_quick_win",
     name: "Speed Dealer",
     description: "Win a game in under 10 turns",
-    icon: "Ã¢Å¡Â¡",
+    icon: "⚡",
     category: "crazy_eights",
     tier: "silver",
     xpReward: TIER_REWARDS.silver.xp,
@@ -1158,9 +1158,6 @@ export const CRAZY_EIGHTS_ACHIEVEMENTS: GameAchievementDefinition[] = [
   },
 ];
 
-// =============================================================================
-// Brick Breaker Achievements
-// =============================================================================
 // =============================================================================
 // Brick Breaker Achievements
 // =============================================================================

@@ -87,7 +87,9 @@ const THEME_CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - THEME_CARD_GAP) / 2;
 
 interface CustomizationHubScreenProps {
   navigation: any;
-  route?: { params?: { initialTab?: string; initialSection?: string } };
+  route?: {
+    params?: { initialTab?: string; initialSection?: "profile" | "chat" };
+  };
 }
 
 type CustomizationSection = "profile" | "chat";

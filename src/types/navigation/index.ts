@@ -4,5 +4,4 @@
  * @module types/navigation
  */
 
-export * from "./profile";
 export * from "./root";

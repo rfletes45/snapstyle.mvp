@@ -112,9 +112,11 @@ type Props = NativeStackScreenProps<PlayStackParamList, "Achievements">;
 function V2AchievementCard({
   item,
   onEquipPress,
+  isHighlighted = false,
 }: {
   item: V2AchievementDisplayItem;
   onEquipPress?: () => void;
+  isHighlighted?: boolean;
 }) {
   const theme = useTheme();
   const tierColor = TIER_COLORS[item.tier];
@@ -130,6 +132,10 @@ function V2AchievementCard({
       style={[
         styles.achievementCard,
         { backgroundColor: theme.colors.surface },
+        isHighlighted && {
+          borderColor: tierColor,
+          borderWidth: 2,
+        },
         item.state === "locked" && {
           backgroundColor: theme.colors.surfaceVariant,
           opacity: 0.8,
@@ -555,6 +561,7 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
   const { currentFirebaseUser } = useAuth();
   const userId = currentFirebaseUser?.uid;
   const filterGameId = route.params?.gameId;
+  const targetAchievementId = route.params?.targetAchievementId;
 
   const [activeTab, setActiveTab] = useState<V2Tab>("global");
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
@@ -595,6 +602,20 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     return buildSectionsWithProgress(displayItems, effectiveCategory);
   }, [displayItems, effectiveCategory]);
 
+  const targetItem = useMemo(() => {
+    if (!targetAchievementId) return null;
+    return displayItems.find((item) => item.id === targetAchievementId) ?? null;
+  }, [targetAchievementId, displayItems]);
+
+  // If a target achievement is provided, switch to its category so it's visible.
+  useEffect(() => {
+    if (!targetItem || filterGameId) return;
+    const targetCategory = targetItem.category as V2Tab;
+    if (activeTab !== targetCategory) {
+      setActiveTab(targetCategory);
+    }
+  }, [targetItem, filterGameId, activeTab]);
+
   // Default all sections collapsed on initial load
   useEffect(() => {
     if (!sectionsInitializedRef.current && sections.length > 0) {
@@ -602,6 +623,22 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
       setCollapsedSections(new Set(sections.map((s) => s.section.id)));
     }
   }, [sections]);
+
+  // If targeting a specific achievement, force-open the containing section.
+  useEffect(() => {
+    if (!targetAchievementId || sections.length === 0) return;
+    const targetSection = sections.find((s) =>
+      s.items.some((item) => item.id === targetAchievementId),
+    );
+    if (!targetSection) return;
+
+    setCollapsedSections((prev) => {
+      if (!prev.has(targetSection.section.id)) return prev;
+      const next = new Set(prev);
+      next.delete(targetSection.section.id);
+      return next;
+    });
+  }, [targetAchievementId, sections]);
 
   // Count completed sections for the summary
   const completedSectionCount = useMemo(
@@ -888,6 +925,7 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
                         key={item.id}
                         item={item}
                         onEquipPress={handleEquipBadgePress}
+                        isHighlighted={item.id === targetAchievementId}
                       />
                     ))}
                   </View>

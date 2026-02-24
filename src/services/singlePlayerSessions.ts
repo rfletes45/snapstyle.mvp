@@ -553,10 +553,11 @@ function extractGameSpecificStats(
     case "brick_breaker": {
       const s = stats as BrickBreakerStats;
       return {
-        highestLevel: s.levelsCompleted,
-        perfectLevels: s.perfectLevels,
+        wallsCleared: s.wallsCleared,
         totalBricksDestroyed: s.bricksDestroyed,
-        maxMultiBall: s.maxMultiBall,
+        maxSpeedTier: s.maxSpeedTier,
+        paddleShrinkTriggered: s.paddleShrinkTriggered ? 1 : 0,
+        livesRemaining: s.livesRemaining,
       };
     }
     case "bounce_blitz": {
@@ -565,6 +566,7 @@ function extractGameSpecificStats(
         highestLevel: s.levelReached,
         totalBlocksDestroyed: s.blocksDestroyed,
         totalBounces: s.totalBounces,
+        peakBallCount: s.ballsLaunched,
       };
     }
     case "word_master": {

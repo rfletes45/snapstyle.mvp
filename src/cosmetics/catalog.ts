@@ -291,8 +291,8 @@ export const COSMETICS_CATALOG: CosmeticDefinition[] = [
   {
     id: "badge_crazy_eights_master",
     type: "badge",
-    name: "Crazy Eights Master",
-    description: "Complete all Crazy Eights achievements",
+    name: "Crazy Cards Master",
+    description: "Complete all Crazy Cards achievements",
     rarity: "epic",
     source: "achievement",
     tags: ["games", "crazy_eights", "master"],

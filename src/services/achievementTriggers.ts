@@ -513,30 +513,82 @@ function getTicTacToeAchievementChecks(
 }
 
 /**
- * Get crazy eights-specific achievement checks
+ * Get Crazy Cards (UNO-style) achievement checks
  */
 function getCrazyEightsAchievementChecks(
   context: GameCompletionContext,
 ): { achievementId: string; value: number }[] {
-  const { isWinner, stats } = context;
+  const { match, isWinner, stats } = context;
   const checks: { achievementId: string; value: number }[] = [];
   const gameTypeStats = stats.byGameType.crazy_eights;
 
+  // Cast match.gameState to access UNO-specific fields
+  const gameState = match.gameState as
+    | {
+        wildPlayed?: boolean;
+        unoCalled?: boolean;
+        drawCount?: number;
+        maxHandSize?: number;
+        turnCount?: number;
+      }
+    | undefined;
+
   if (isWinner && gameTypeStats) {
+    // Win-count achievements
     checks.push({
-      achievementId: "crazy8_first_win",
+      achievementId: "crazy_eights_first_win",
       value: gameTypeStats.wins,
     });
 
     checks.push({
-      achievementId: "crazy8_wins_10",
+      achievementId: "crazy_eights_wins_10",
       value: gameTypeStats.wins,
     });
 
     checks.push({
-      achievementId: "crazy8_wins_50",
+      achievementId: "crazy_eights_wins_50",
       value: gameTypeStats.wins,
     });
+
+    // Wild card played
+    if (gameState?.wildPlayed) {
+      checks.push({
+        achievementId: "crazy_eights_wild_played",
+        value: 1,
+      });
+    }
+
+    // UNO called successfully
+    if (gameState?.unoCalled) {
+      checks.push({
+        achievementId: "crazy_eights_uno_call",
+        value: 1,
+      });
+    }
+
+    // No-draw victory
+    if (gameState?.drawCount === 0) {
+      checks.push({
+        achievementId: "crazy_eights_perfect_game",
+        value: 1,
+      });
+    }
+
+    // Comeback win (had 10+ cards at some point)
+    if (gameState?.maxHandSize && gameState.maxHandSize >= 10) {
+      checks.push({
+        achievementId: "crazy_eights_comeback",
+        value: 1,
+      });
+    }
+
+    // Quick win (under 10 turns)
+    if (gameState?.turnCount && gameState.turnCount < 10) {
+      checks.push({
+        achievementId: "crazy_eights_quick_win",
+        value: 1,
+      });
+    }
   }
 
   return checks;

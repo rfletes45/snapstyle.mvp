@@ -385,7 +385,7 @@ export function getCategoryDisplayName(category: AchievementCategory): string {
     chess: "Chess",
     checkers: "Checkers",
     tic_tac_toe: "Tic-Tac-Toe",
-    crazy_eights: "Crazy Eights",
+    crazy_eights: "Crazy Cards",
     social: "Social",
     streak: "Streaks",
   };

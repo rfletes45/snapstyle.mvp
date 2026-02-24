@@ -60,6 +60,8 @@ const REAL_TIME_MULTIPLAYER_GAMES: string[] = [
   "pong_game",
   "bounce_blitz",
   "bounce_blitz_game",
+  "battleship",
+  "battleship_game",
 ];
 
 interface UseGameBackHandlerOptions {

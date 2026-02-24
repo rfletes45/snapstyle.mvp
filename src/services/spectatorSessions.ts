@@ -9,7 +9,7 @@
  *
  * Collection: SpectatorSessions/{roomId}
  *
- * @see docs/06_GAMES.md (Spectator System)
+ * @see docs/GAMES_SYSTEM.md (Spectator system section)
  */
 
 import { getFirestoreInstance } from "@/services/firebase";

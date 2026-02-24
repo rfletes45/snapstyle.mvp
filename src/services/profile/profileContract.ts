@@ -1,3 +1,6 @@
+import { hasCosmeticAsset } from "@/cosmetics/assetRegistry";
+import { getCosmeticById } from "@/cosmetics/catalog";
+import type { CosmeticType } from "@/cosmetics/types";
 import type { AvatarConfig } from "@/types/models";
 import {
   DEFAULT_PRIVACY_SETTINGS,
@@ -11,6 +14,7 @@ const DEFAULT_AVATAR_CONFIG: AvatarConfig = { baseColor: "#6366F1" };
 const DEFAULT_THEME_ID = "default";
 const VALID_PRIVACY_VISIBILITY = ["everyone", "friends", "nobody"] as const;
 const VALID_MOODS = Object.keys(MOOD_CONFIG) as MoodType[];
+const WARNED_KEYS = new Set<string>();
 
 const VISIBILITY_FIELDS: (keyof Pick<
   ProfilePrivacySettings,
@@ -66,6 +70,116 @@ function isValidPrivacyVisibility(value: unknown): boolean {
   return (
     typeof value === "string" &&
     (VALID_PRIVACY_VISIBILITY as readonly string[]).includes(value)
+  );
+}
+
+function warnOnce(key: string, message: string, data?: Record<string, unknown>) {
+  if (typeof __DEV__ === "undefined" || !__DEV__) return;
+  if (WARNED_KEYS.has(key)) return;
+  WARNED_KEYS.add(key);
+  if (data) {
+    console.warn(message, data);
+    return;
+  }
+  console.warn(message);
+}
+
+function validateEquippedCatalogId(
+  userId: string,
+  slot: string,
+  expectedType: CosmeticType,
+  id: string | null | undefined,
+  options?: { requireAsset?: boolean; allowLegacyDefault?: boolean },
+): void {
+  if (!id) return;
+  const { requireAsset = false, allowLegacyDefault = false } = options ?? {};
+  if (allowLegacyDefault && id === "default") return;
+
+  const def = getCosmeticById(id);
+  if (!def) {
+    warnOnce(
+      `profile:${userId}:${slot}:${id}:missingCatalog`,
+      `[profileContract] Equipped ${slot} "${id}" is not in cosmetics catalog`,
+      { userId, slot, id },
+    );
+    return;
+  }
+
+  if (def.type !== expectedType) {
+    warnOnce(
+      `profile:${userId}:${slot}:${id}:wrongType`,
+      `[profileContract] Equipped ${slot} "${id}" has wrong catalog type`,
+      {
+        userId,
+        slot,
+        id,
+        expectedType,
+        actualType: def.type,
+      },
+    );
+    return;
+  }
+
+  if (requireAsset && !hasCosmeticAsset(expectedType, def.assetKey ?? id)) {
+    warnOnce(
+      `profile:${userId}:${slot}:${id}:missingAsset`,
+      `[profileContract] Equipped ${slot} "${id}" is missing an asset mapping`,
+      { userId, slot, id, expectedType },
+    );
+  }
+}
+
+function validateEquippedCosmetics(userId: string, profile: UserProfileData): void {
+  if (typeof __DEV__ === "undefined" || !__DEV__) return;
+
+  validateEquippedCatalogId(
+    userId,
+    "avatarDecoration.decorationId",
+    "decoration",
+    profile.avatarDecoration?.decorationId,
+    { requireAsset: true },
+  );
+
+  validateEquippedCatalogId(
+    userId,
+    "equippedBackgroundId",
+    "background",
+    profile.equippedBackgroundId,
+    { requireAsset: true },
+  );
+
+  validateEquippedCatalogId(
+    userId,
+    "theme.equippedThemeId",
+    "theme",
+    profile.theme?.equippedThemeId,
+    { allowLegacyDefault: true },
+  );
+
+  for (const badgeId of profile.featuredBadges?.badgeIds ?? []) {
+    validateEquippedCatalogId(userId, "featuredBadges.badgeIds[]", "badge", badgeId, {
+      requireAsset: true,
+    });
+  }
+
+  validateEquippedCatalogId(
+    userId,
+    "chatAppearance.bubbleColorId",
+    "chat_bubble_color",
+    profile.chatAppearance?.bubbleColorId,
+  );
+  validateEquippedCatalogId(
+    userId,
+    "chatAppearance.fontId",
+    "chat_font",
+    profile.chatAppearance?.fontId,
+  );
+  validateEquippedCatalogId(
+    userId,
+    "chatAppearance.animalThemeId",
+    "chat_animal_theme",
+    profile.chatAppearance?.animalThemeId,
+    { requireAsset: true },
   );
 }
 
@@ -146,7 +260,7 @@ export function hydrateProfileData(
     ? { ...DEFAULT_PRIVACY_SETTINGS, ...source.privacy }
     : { ...DEFAULT_PRIVACY_SETTINGS };
 
-  return {
+  const hydrated: UserProfileData = {
     uid: userId,
     username: source.username || "",
     usernameLower: source.usernameLower || "",
@@ -182,4 +296,7 @@ export function hydrateProfileData(
     profileViews: source.profileViews,
     expoPushToken: source.expoPushToken,
   };
+
+  validateEquippedCosmetics(userId, hydrated);
+  return hydrated;
 }

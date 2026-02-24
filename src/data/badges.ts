@@ -404,9 +404,9 @@ export const BADGE_DEFINITIONS: Badge[] = [
   },
   {
     id: "badge_crazy_eights_master",
-    name: "Crazy Eights Master",
-    description: "Complete all Crazy Eights achievements",
-    icon: "🎴",
+    name: "Crazy Cards Master",
+    description: "Complete all Crazy Cards achievements",
+    icon: "🃏",
     tier: "gold",
     category: "games",
     earnedVia: { type: "achievement", achievementId: "master_tb_crazy_eights" },

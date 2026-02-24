@@ -1,32 +1,38 @@
 /**
- * BrickBreakerSpectatorRenderer
+ * BrickBreakerSpectatorRenderer — Atari Breakout Spectator View
  *
- * Read-only spectator view of a Brick Breaker game.
- * Renders bricks, balls, paddle, power-ups, and lasers from
- * the JSON state pushed by the host.
+ * Read-only spectator view of a Brick Breaker (Atari Breakout) game.
+ * Renders bricks, ball, and paddle from the JSON snapshot pushed by the host.
+ * Uses the same Skia rendering approach as BreakoutRenderer but scales to fit.
  */
 
 import {
-  CONFIG,
-  getBrickColor,
-  getBrickPosition,
-} from "@/services/games/brickBreakerLogic";
-import type {
-  BrickBallState,
-  BrickPaddleState,
-  BrickState,
-  FallingPowerUp,
-  LaserState,
-} from "@/types/singlePlayerGames";
+  BALL_RADIUS_PX,
+  BRICK_HEIGHT,
+  BRICK_PADDING,
+  BRICK_ROWS,
+  BRICK_TOP_OFFSET,
+  BRICK_WIDTH,
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  PADDLE_HEIGHT,
+  PADDLE_Y,
+  ROW_DEFS,
+} from "@/games/brickBreaker/BreakoutConfig";
+import type { BreakoutBrick } from "@/games/brickBreaker/BreakoutTypes";
 import {
   Canvas,
+  Circle,
+  Group,
+  Line,
+  LinearGradient,
+  RadialGradient,
+  Rect,
   RoundedRect,
-  Circle as SkiaCircle,
-  LinearGradient as SkiaLinearGradient,
-  Shadow as SkiaShadow,
+  Shadow,
   vec,
 } from "@shopify/react-native-skia";
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
@@ -35,156 +41,27 @@ import type { SpectatorRendererProps } from "./types";
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 function lightenHex(hex: string, amount: number): string {
-  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + amount);
-  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + amount);
-  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + amount);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  const c = parseInt(hex.replace("#", ""), 16);
+  const r = Math.min(255, ((c >> 16) & 0xff) + amount);
+  const g = Math.min(255, ((c >> 8) & 0xff) + amount);
+  const b = Math.min(255, (c & 0xff) + amount);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
 function darkenHex(hex: string, amount: number): string {
-  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - amount);
-  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - amount);
-  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - amount);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  const c = parseInt(hex.replace("#", ""), 16);
+  const r = Math.max(0, ((c >> 16) & 0xff) - amount);
+  const g = Math.max(0, ((c >> 8) & 0xff) - amount);
+  const b = Math.max(0, (c & 0xff) - amount);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
-// ─── Sub-components ─────────────────────────────────────────────────────
-
-const SpectatorBrick = React.memo(
-  ({ brick, scale }: { brick: BrickState; scale: number }) => {
-    const pos = getBrickPosition(brick);
-    const color = getBrickColor(brick);
-    const brickW = pos.width * scale;
-    const brickH = pos.height * scale;
-
-    return (
-      <View
-        style={[
-          styles.brick,
-          {
-            left: pos.x * scale,
-            top: pos.y * scale,
-            width: brickW,
-            height: brickH,
-          },
-        ]}
-      >
-        <Canvas style={{ width: brickW, height: brickH }}>
-          <RoundedRect x={0} y={0} width={brickW} height={brickH} r={4}>
-            <SkiaLinearGradient
-              start={vec(0, 0)}
-              end={vec(0, brickH)}
-              colors={[lightenHex(color, 40), color, darkenHex(color, 40)]}
-            />
-            <SkiaShadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.3)" />
-          </RoundedRect>
-        </Canvas>
-        {brick.type === "explosive" && <Text style={styles.brickIcon}>💥</Text>}
-        {brick.type === "mystery" && <Text style={styles.brickIcon}>?</Text>}
-        {brick.type === "gold" && brick.hitsRemaining === 3 && (
-          <Text style={styles.brickIcon}>✨</Text>
-        )}
-      </View>
-    );
-  },
-);
-SpectatorBrick.displayName = "SpectatorBrick";
-
-const SpectatorBall = React.memo(
-  ({ ball, scale }: { ball: BrickBallState; scale: number }) => {
-    const r = ball.radius * scale;
-    const d = (r + 2) * 2;
-    return (
-      <View
-        style={[
-          styles.ball,
-          {
-            left: (ball.x - ball.radius) * scale - 2,
-            top: (ball.y - ball.radius) * scale - 2,
-            width: d,
-            height: d,
-          },
-        ]}
-      >
-        <Canvas style={{ width: d, height: d }}>
-          <SkiaCircle cx={r + 2} cy={r + 2} r={r}>
-            <SkiaLinearGradient
-              start={vec(r, 0)}
-              end={vec(r, r * 2)}
-              colors={["#FFFFFF", "#E0E0E0", "#BBBBBB"]}
-            />
-            <SkiaShadow dx={0} dy={1} blur={3} color="rgba(255,255,255,0.6)" />
-          </SkiaCircle>
-        </Canvas>
-      </View>
-    );
-  },
-);
-SpectatorBall.displayName = "SpectatorBall";
-
-const SpectatorPaddle = React.memo(
-  ({ paddle, scale }: { paddle: BrickPaddleState; scale: number }) => {
-    return (
-      <View
-        style={[
-          styles.paddle,
-          {
-            left: paddle.x * scale,
-            top: CONFIG.paddleY * scale,
-            width: paddle.width * scale,
-            height: CONFIG.paddleHeight * scale,
-            backgroundColor: paddle.hasSticky
-              ? "#FFEB3B"
-              : paddle.hasLaser
-                ? "#E91E63"
-                : "#FFFFFF",
-          },
-        ]}
-      />
-    );
-  },
-);
-SpectatorPaddle.displayName = "SpectatorPaddle";
-
-const SpectatorPowerUp = React.memo(
-  ({ powerUp, scale }: { powerUp: FallingPowerUp; scale: number }) => {
-    const size = CONFIG.powerUpSize * scale;
-    return (
-      <View
-        style={[
-          styles.powerUp,
-          {
-            left: (powerUp.x - CONFIG.powerUpSize / 2) * scale,
-            top: (powerUp.y - CONFIG.powerUpSize / 2) * scale,
-            width: size,
-            height: size,
-            backgroundColor: "#7C4DFF",
-          },
-        ]}
-      />
-    );
-  },
-);
-SpectatorPowerUp.displayName = "SpectatorPowerUp";
-
-const SpectatorLaser = React.memo(
-  ({ laser, scale }: { laser: LaserState; scale: number }) => {
-    return (
-      <View
-        style={[
-          styles.laser,
-          {
-            left: (laser.x - 2) * scale,
-            top: laser.y * scale,
-            width: 4 * scale,
-            height: 12 * scale,
-          },
-        ]}
-      />
-    );
-  },
-);
-SpectatorLaser.displayName = "SpectatorLaser";
+function brickFill(row: number): string {
+  if (row >= 0 && row < ROW_DEFS.length) {
+    return ROW_DEFS[row].fill;
+  }
+  return "#888";
+}
 
 // ─── Main Renderer ──────────────────────────────────────────────────────
 
@@ -192,65 +69,140 @@ export function BrickBreakerSpectatorRenderer({
   gameState,
   width,
 }: SpectatorRendererProps) {
-  // Parse sub-objects from the JSON state
-  const paddle = gameState.paddle as BrickPaddleState | undefined;
-  const balls = (gameState.balls ?? []) as BrickBallState[];
-  const bricks = (gameState.bricks ?? []) as BrickState[];
-  const powerUps = (gameState.powerUps ?? []) as FallingPowerUp[];
-  const lasers = (gameState.lasers ?? []) as LaserState[];
+  // Parse the Breakout snapshot from spectator JSON
+  const ball = gameState.ball as { x: number; y: number } | undefined;
+  const paddle = gameState.paddle as { x: number; width: number } | undefined;
+  const bricks = (gameState.bricks ?? []) as BreakoutBrick[];
   const phase = (gameState.phase as string) ?? "playing";
+  const paddleShrunk = (gameState.paddleShrunk as boolean) ?? false;
 
-  const scale = Math.min(1, width / CONFIG.canvasWidth);
-  const scaledW = CONFIG.canvasWidth * scale;
-  const scaledH = CONFIG.canvasHeight * scale;
+  // Scale to fit available width
+  const scale = Math.min(1, width / GAME_WIDTH);
+  const scaledW = GAME_WIDTH * scale;
+  const scaledH = GAME_HEIGHT * scale;
+
+  // Filter alive bricks
+  const aliveBricks = useMemo(() => bricks.filter((b) => b.alive), [bricks]);
+
+  const showBall = phase === "playing" || phase === "serving";
 
   return (
     <View style={[styles.canvas, { width: scaledW, height: scaledH }]}>
-      {/* Background */}
-      <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-        <RoundedRect x={0} y={0} width={scaledW} height={scaledH} r={12}>
-          <SkiaLinearGradient
+      <Canvas style={{ width: scaledW, height: scaledH }}>
+        {/* Background */}
+        <RoundedRect x={0} y={0} width={scaledW} height={scaledH} r={8}>
+          <LinearGradient
             start={vec(0, 0)}
             end={vec(0, scaledH)}
-            colors={["#1A1A3E", "#16162E", "#0F0F22"]}
+            colors={["#1A2744", "#16213E", "#0F1A2E"]}
           />
-          <SkiaShadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
+          <Shadow dx={0} dy={2} blur={8} color="rgba(0,0,0,0.5)" inner />
         </RoundedRect>
+
+        {/* Ceiling line */}
+        <Line
+          p1={vec(0, (BRICK_TOP_OFFSET - 6) * scale)}
+          p2={vec(scaledW, (BRICK_TOP_OFFSET - 6) * scale)}
+          color="rgba(255,255,255,0.12)"
+          strokeWidth={1}
+        />
+
+        {/* Bricks */}
+        <Group>
+          {aliveBricks.map((brick) => {
+            const visualRow = BRICK_ROWS - 1 - brick.row;
+            const bx = (brick.col * BRICK_WIDTH + BRICK_PADDING) * scale;
+            const by =
+              (BRICK_TOP_OFFSET + visualRow * BRICK_HEIGHT + BRICK_PADDING) *
+              scale;
+            const bw = (BRICK_WIDTH - BRICK_PADDING * 2) * scale;
+            const bh = (BRICK_HEIGHT - BRICK_PADDING * 2) * scale;
+            const fill = brickFill(brick.row);
+
+            return (
+              <Group key={brick.id}>
+                <RoundedRect x={bx} y={by} width={bw} height={bh} r={2 * scale}>
+                  <LinearGradient
+                    start={vec(bx, by)}
+                    end={vec(bx, by + bh)}
+                    colors={[lightenHex(fill, 40), fill, darkenHex(fill, 35)]}
+                  />
+                  <Shadow dx={0} dy={1} blur={2} color="rgba(0,0,0,0.35)" />
+                </RoundedRect>
+              </Group>
+            );
+          })}
+        </Group>
+
+        {/* Paddle */}
+        {paddle && (
+          <RoundedRect
+            x={(paddle.x - paddle.width / 2) * scale}
+            y={(PADDLE_Y - PADDLE_HEIGHT / 2) * scale}
+            width={paddle.width * scale}
+            height={PADDLE_HEIGHT * scale}
+            r={4 * scale}
+          >
+            <LinearGradient
+              start={vec(0, (PADDLE_Y - PADDLE_HEIGHT / 2) * scale)}
+              end={vec(0, (PADDLE_Y + PADDLE_HEIGHT / 2) * scale)}
+              colors={
+                paddleShrunk
+                  ? ["#FF8A80", "#FF5252", "#D32F2F"]
+                  : ["#FFFFFF", "#E0E0E0", "#BDBDBD"]
+              }
+            />
+          </RoundedRect>
+        )}
+
+        {/* Ball */}
+        {showBall && ball && (
+          <Group>
+            <Circle
+              cx={ball.x * scale}
+              cy={ball.y * scale}
+              r={BALL_RADIUS_PX * scale + 3}
+            >
+              <RadialGradient
+                c={vec(ball.x * scale, ball.y * scale)}
+                r={BALL_RADIUS_PX * scale + 3}
+                colors={["rgba(255,255,200,0.3)", "rgba(255,255,200,0.0)"]}
+              />
+            </Circle>
+            <Circle
+              cx={ball.x * scale}
+              cy={ball.y * scale}
+              r={BALL_RADIUS_PX * scale}
+              color="#FFFFFF"
+            />
+          </Group>
+        )}
+
+        {/* Drain zone */}
+        <Rect
+          x={0}
+          y={scaledH - 3}
+          width={scaledW}
+          height={3}
+          color="rgba(255,0,0,0.25)"
+        />
       </Canvas>
 
-      {/* Bricks */}
-      {bricks.map((brick) => (
-        <SpectatorBrick key={brick.id} brick={brick} scale={scale} />
-      ))}
-
-      {/* Power-ups */}
-      {powerUps.map((pu) => (
-        <SpectatorPowerUp key={pu.id} powerUp={pu} scale={scale} />
-      ))}
-
-      {/* Lasers */}
-      {lasers.map((l) => (
-        <SpectatorLaser key={l.id} laser={l} scale={scale} />
-      ))}
-
-      {/* Paddle */}
-      {paddle && <SpectatorPaddle paddle={paddle} scale={scale} />}
-
-      {/* Balls */}
-      {balls.map((ball) => (
-        <SpectatorBall key={ball.id} ball={ball} scale={scale} />
-      ))}
-
-      {/* Phase overlay */}
-      {phase === "ready" && (
+      {/* Phase overlays */}
+      {phase === "serving" && (
         <View style={styles.phaseOverlay}>
           <Text style={styles.phaseText}>WAITING TO LAUNCH</Text>
         </View>
       )}
-      {phase === "levelComplete" && (
+      {phase === "wallCleared" && (
         <View style={styles.phaseOverlay}>
-          <Text style={styles.phaseText}>LEVEL COMPLETE!</Text>
+          <Text style={[styles.phaseText, { color: "#4CAF50" }]}>
+            WALL CLEARED!
+          </Text>
         </View>
+      )}
+      {phase === "lifeLost" && (
+        <View style={[styles.phaseOverlay, styles.flashOverlay]} />
       )}
     </View>
   );
@@ -261,36 +213,8 @@ export function BrickBreakerSpectatorRenderer({
 const styles = StyleSheet.create({
   canvas: {
     alignSelf: "center",
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: "hidden",
-  },
-  brick: {
-    position: "absolute",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  brickIcon: {
-    position: "absolute",
-    fontSize: 10,
-    textAlign: "center",
-  },
-  ball: {
-    position: "absolute",
-  },
-  paddle: {
-    position: "absolute",
-    borderRadius: 6,
-  },
-  powerUp: {
-    position: "absolute",
-    borderRadius: 6,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  laser: {
-    position: "absolute",
-    backgroundColor: "#E91E63",
-    borderRadius: 2,
   },
   phaseOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -300,8 +224,11 @@ const styles = StyleSheet.create({
   },
   phaseText: {
     color: "#FFFFFF",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
     letterSpacing: 2,
+  },
+  flashOverlay: {
+    backgroundColor: "rgba(255,60,60,0.15)",
   },
 });

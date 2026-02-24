@@ -7,19 +7,19 @@
  * - Invite expiration
  * - Notification integration
  *
- * @see docs/07_GAMES_ARCHITECTURE.md Section 2.2
+ * @see docs/GAMES_SYSTEM.md
  */
 
 import {
   ExtendedGameType,
   GAME_METADATA,
-  GameCategory,
+  getGameRuntimeType,
   RealTimeGameType,
   TurnBasedGameType,
 } from "@/types/games";
 import type { TurnBasedMatchConfig, TurnBasedPlayer } from "@/types/turnBased";
 import {
-  GameInviteStatus,
+  canTransitionUniversalInviteStatus,
   PlayerSlot,
   SendUniversalInviteParams,
   UniversalGameInvite,
@@ -36,7 +36,6 @@ import {
   orderBy,
   query,
   runTransaction,
-  serverTimestamp,
   setDoc,
   Timestamp,
   Unsubscribe,
@@ -55,7 +54,7 @@ const getDb = () => getFirestoreInstance();
 const getAuth = () => getAuthInstance();
 
 // =============================================================================
-// Types (legacy — use UniversalGameInvite from @/types/turnBased instead)
+// Types
 // =============================================================================
 
 /**
@@ -63,174 +62,14 @@ const getAuth = () => getAuthInstance();
  */
 export type InviteGameType = TurnBasedGameType | RealTimeGameType;
 
-/**
- * @deprecated Use {@link UniversalInviteStatus} from `@/types/turnBased`.
- */
-export type InviteStatus = GameInviteStatus;
-
-/**
- * @deprecated Use {@link UniversalGameInvite} from `@/types/turnBased`.
- */
-interface GameInvite {
-  id: string;
-  gameType: InviteGameType;
-  category: GameCategory;
-
-  // Players
-  senderId: string;
-  senderName: string;
-  senderAvatar?: string;
-
-  recipientId: string;
-  recipientName: string;
-  recipientAvatar?: string;
-
-  // Status
-  status: GameInviteStatus;
-
-  // Game settings
-  settings: GameInviteSettings;
-
-  // Timestamps
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  expiresAt: Timestamp;
-  respondedAt?: Timestamp;
-
-  // Result
-  gameId?: string; // Set when accepted and game created
-
-  // Notification tracking
-  notificationSent: boolean;
-}
-
-/**
- * Game settings for invite
- */
-export interface GameInviteSettings {
-  isRated: boolean;
-  timeControl?: {
-    type: "none" | "per_turn" | "total";
-    seconds: number;
-  };
-  chatEnabled: boolean;
-  customRules?: Record<string, unknown>;
-}
-
-/**
- * @deprecated Use {@link SendUniversalInviteParams} from `@/types/turnBased`.
- */
-export interface CreateInviteInput {
-  gameType: InviteGameType;
-  recipientId: string;
-  recipientName: string;
-  recipientAvatar?: string;
-  settings?: Partial<GameInviteSettings>;
-  expirationMinutes?: number;
-}
-
-/**
- * @deprecated No longer needed — universal queries use inline Firestore constraints.
- */
-export interface InviteFilterOptions {
-  status?: GameInviteStatus[];
-  gameType?: InviteGameType;
-  limit?: number;
-}
-
 // =============================================================================
 // Constants
 // =============================================================================
 
 const COLLECTION_NAME = "GameInvites";
-const DEFAULT_EXPIRATION_MINUTES = 60;
-const MAX_PENDING_INVITES_PER_USER = 10;
 
-/** Invite document schema version — bump when adding breaking field changes */
+/** Invite document schema version - bump when adding breaking field changes */
 const INVITE_VERSION = 1;
-
-/**
- * Default game settings by type
- */
-const DEFAULT_SETTINGS: Record<InviteGameType, GameInviteSettings> = {
-  chess: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 86400 },
-    chatEnabled: true,
-  },
-  checkers: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 86400 },
-    chatEnabled: true,
-  },
-  tic_tac_toe: {
-    isRated: false,
-    timeControl: { type: "per_turn", seconds: 60 },
-    chatEnabled: true,
-  },
-  crazy_eights: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 120 },
-    chatEnabled: true,
-  },
-  connect_four: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 60 },
-    chatEnabled: true,
-  },
-  dot_match: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 60 },
-    chatEnabled: true,
-  },
-  gomoku_master: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 120 },
-    chatEnabled: true,
-  },
-  // Phase 3 turn-based games
-  reversi_game: {
-    isRated: true,
-    timeControl: { type: "per_turn", seconds: 120 },
-    chatEnabled: true,
-  },
-  // Phase 3 real-time games
-  crossword_puzzle: {
-    isRated: false,
-    timeControl: { type: "none", seconds: 0 },
-    chatEnabled: true,
-  },
-  starforge_game: {
-    isRated: false,
-    timeControl: { type: "none", seconds: 0 },
-    chatEnabled: true,
-  },
-  sketch_party_game: {
-    isRated: false,
-    timeControl: { type: "none", seconds: 0 },
-    chatEnabled: true,
-  },
-};
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * Get game category from type
- */
-function getGameCategory(gameType: InviteGameType): GameCategory {
-  return "multiplayer";
-}
-
-/**
- * Generate unique invite ID
- */
-function generateInviteId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
-  return `inv_${timestamp}_${random}`;
-}
 
 // =============================================================================
 // Universal Invite Helpers
@@ -310,6 +149,21 @@ export function getDefaultInviteSettings(
       timeControl: { type: "none", seconds: 0 },
       chatEnabled: true,
     },
+    pong_game: {
+      isRated: false,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    minigolf_duels: {
+      isRated: false,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
+    battleship: {
+      isRated: true,
+      timeControl: { type: "none", seconds: 0 },
+      chatEnabled: true,
+    },
   };
   return defaults[gameType] || { isRated: false, chatEnabled: true };
 }
@@ -329,11 +183,7 @@ function getPlayerCounts(gameType: InviteGameType): {
 }
 
 function usesExternalSessionId(gameType: InviteGameType): boolean {
-  return (
-    gameType === "starforge_game" ||
-    gameType === "sketch_party_game" ||
-    gameType === "crossword_puzzle"
-  );
+  return getGameRuntimeType(gameType as ExtendedGameType) === "realtime";
 }
 
 function createExternalSessionId(
@@ -341,149 +191,6 @@ function createExternalSessionId(
   gameType: InviteGameType,
 ): string {
   return `ext_${gameType}_${inviteId}`;
-}
-
-// =============================================================================
-// Core Functions (LEGACY — use Universal Invite API instead)
-// =============================================================================
-
-/**
- * Send a game invite to another user.
- *
- * @deprecated Use {@link sendUniversalInvite} instead. This legacy function
- * creates 1:1 invites in the old format. It will be removed in a future release.
- */
-export async function sendGameInvite(
-  senderId: string,
-  senderName: string,
-  senderAvatar: string | undefined,
-  input: CreateInviteInput,
-): Promise<GameInvite> {
-  // Check pending invite limit
-  const pendingCount = await getPendingInviteCount(senderId);
-  if (pendingCount >= MAX_PENDING_INVITES_PER_USER) {
-    throw new Error(
-      `Maximum pending invites (${MAX_PENDING_INVITES_PER_USER}) reached`,
-    );
-  }
-
-  // Check for existing pending invite to same user for same game
-  const existingInvite = await getExistingInvite(
-    senderId,
-    input.recipientId,
-    input.gameType,
-  );
-  if (existingInvite) {
-    throw new Error(
-      "You already have a pending invite to this user for this game",
-    );
-  }
-
-  // Check that sender and recipient are different
-  if (senderId === input.recipientId) {
-    throw new Error("Cannot send invite to yourself");
-  }
-
-  // Build invite
-  const now = Timestamp.now();
-  const expirationMs =
-    (input.expirationMinutes ?? DEFAULT_EXPIRATION_MINUTES) * 60 * 1000;
-  const expiresAt = Timestamp.fromMillis(now.toMillis() + expirationMs);
-
-  const inviteId = generateInviteId();
-  const settings: GameInviteSettings = {
-    ...DEFAULT_SETTINGS[input.gameType],
-    ...input.settings,
-  };
-
-  // Build invite object, filtering out undefined values (Firestore rejects undefined)
-  const invite: Record<string, unknown> = {
-    id: inviteId,
-    gameType: input.gameType,
-    category: getGameCategory(input.gameType),
-
-    senderId,
-    senderName,
-
-    recipientId: input.recipientId,
-    recipientName: input.recipientName,
-
-    status: "pending",
-    settings,
-
-    createdAt: now,
-    updatedAt: now,
-    expiresAt,
-
-    notificationSent: false,
-  };
-
-  // Only add optional avatar fields if they have values
-  if (senderAvatar) {
-    invite.senderAvatar = senderAvatar;
-  }
-  if (input.recipientAvatar) {
-    invite.recipientAvatar = input.recipientAvatar;
-  }
-
-  // Save to Firestore
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-  await setDoc(inviteRef, invite);
-
-  // Update the DM conversation so the invite bumps it to the top of the inbox
-  try {
-    const chatId = await getOrCreateChat(senderId, input.recipientId);
-    const chatRef = doc(getDb(), "Chats", chatId);
-    const gameLabel =
-      GAME_METADATA[input.gameType]?.name || input.gameType || "a game";
-    await updateDoc(chatRef, {
-      lastMessageAt: Timestamp.now(),
-      lastMessageText: `🎮 ${senderName} sent a game invite: ${gameLabel}`,
-      lastMessageSenderId: senderId,
-      lastMessageType: "game_invite",
-      updatedAt: Timestamp.now(),
-    });
-  } catch (e) {
-    // Non-critical — don't fail the invite if the conversation update fails
-    logger.warn("[GameInvites] Failed to update chat preview for invite", e);
-  }
-
-  return invite as unknown as GameInvite;
-}
-
-/**
- * Cancel a game invite (sender only).
- *
- * @deprecated Use {@link cancelUniversalInvite} instead — it uses transactions
- * and supports the full universal invite status set.
- */
-export async function cancelGameInvite(
-  inviteId: string,
-  userId: string,
-): Promise<void> {
-  const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
-  const inviteSnap = await getDoc(inviteRef);
-
-  if (!inviteSnap.exists()) {
-    throw new Error("Invite not found");
-  }
-
-  const invite = inviteSnap.data() as GameInvite;
-
-  // Validate
-  if (invite.senderId !== userId) {
-    throw new Error("Only the sender can cancel an invite");
-  }
-
-  if (invite.status !== "pending") {
-    throw new Error(`Invite is ${invite.status}, cannot cancel`);
-  }
-
-  // Update invite
-  await updateDoc(inviteRef, {
-    status: "cancelled",
-    updatedAt: serverTimestamp(),
-  });
 }
 
 // =============================================================================
@@ -540,12 +247,15 @@ export async function sendUniversalInvite(
     expirationMinutes = 60,
   } = params;
 
-  // Reject invites for removed games
-  const REMOVED_GAMES = new Set(["lights_out", "minigolf_duels"]);
-  if (REMOVED_GAMES.has(gameType)) {
-    throw new Error(
-      `Game "${gameType}" has been removed and cannot be played.`,
-    );
+  const metadata = GAME_METADATA[gameType as ExtendedGameType];
+  if (!metadata) {
+    throw new Error(`Unknown game type "${gameType}"`);
+  }
+  if (!metadata.isAvailable) {
+    throw new Error(`Game "${gameType}" is not available right now.`);
+  }
+  if (getGameRuntimeType(gameType as ExtendedGameType) === "solo") {
+    throw new Error(`Game "${gameType}" does not support multiplayer invites.`);
   }
 
   // ── Idempotency check ──────────────────────────────────────────────
@@ -589,7 +299,8 @@ export async function sendUniversalInvite(
 
   // Get player counts from game metadata
   const { min: minPlayers, max: maxPlayers } = getPlayerCounts(gameType);
-  const requiredPlayers = customRequiredPlayers ?? minPlayers;
+  // Invites always need at least 2 players (even if the game supports solo AI)
+  const requiredPlayers = Math.max(2, customRequiredPlayers ?? minPlayers);
 
   if (requiredPlayers < minPlayers || requiredPlayers > maxPlayers) {
     throw new Error(
@@ -651,6 +362,8 @@ export async function sendUniversalInvite(
     filledAt: undefined,
 
     spectatingEnabled: true,
+    spectatorOnly: false,
+    spectators: [],
 
     status: "pending",
     gameId: undefined,
@@ -805,6 +518,13 @@ export async function claimInviteSlot(
         newStatus = "filling";
       }
 
+      if (!canTransitionUniversalInviteStatus(invite.status, newStatus)) {
+        return {
+          success: false,
+          error: `Invalid invite transition ${invite.status} -> ${newStatus}`,
+        };
+      }
+
       // Update document
       const updates: Partial<UniversalGameInvite> & {
         filledAt?: number | null;
@@ -899,6 +619,12 @@ export async function unclaimInviteSlot(
 
       // If nobody remains, cancel the invite
       if (newClaimedSlots.length === 0) {
+        if (!canTransitionUniversalInviteStatus(invite.status, "cancelled")) {
+          return {
+            success: false,
+            error: `Invalid invite transition ${invite.status} -> cancelled`,
+          };
+        }
         transaction.update(inviteRef, {
           claimedSlots: [],
           status: "cancelled" as UniversalInviteStatus,
@@ -916,6 +642,13 @@ export async function unclaimInviteSlot(
         newStatus = "filling"; // No longer have required players
       } else {
         newStatus = "ready"; // Still have enough players
+      }
+
+      if (!canTransitionUniversalInviteStatus(invite.status, newStatus)) {
+        return {
+          success: false,
+          error: `Invalid invite transition ${invite.status} -> ${newStatus}`,
+        };
       }
 
       transaction.update(inviteRef, {
@@ -1017,6 +750,18 @@ export async function startGameEarly(
       }
 
       // Transition to "starting" — locks out joins/cancels
+      if (
+        !canTransitionUniversalInviteStatus(
+          invite.status as UniversalInviteStatus,
+          "starting",
+        )
+      ) {
+        return {
+          success: false as const,
+          error: `Invalid invite transition ${invite.status} -> starting`,
+        };
+      }
+
       transaction.update(inviteRef, {
         status: "starting" as UniversalInviteStatus,
         updatedAt: Date.now(),
@@ -1158,6 +903,18 @@ export async function cancelUniversalInvite(
       }
 
       // Update status to cancelled (atomic — no TOCTOU race)
+      if (
+        !canTransitionUniversalInviteStatus(
+          invite.status as UniversalInviteStatus,
+          "cancelled",
+        )
+      ) {
+        return {
+          success: false,
+          error: `Invalid invite transition ${invite.status} -> cancelled`,
+        };
+      }
+
       transaction.update(inviteRef, {
         status: "cancelled" as UniversalInviteStatus,
         updatedAt: Date.now(),
@@ -1217,6 +974,18 @@ export async function completeGameInvite(
         };
       }
 
+      if (
+        !canTransitionUniversalInviteStatus(
+          invite.status as UniversalInviteStatus,
+          "completed",
+        )
+      ) {
+        return {
+          success: false,
+          error: `Invalid invite transition ${invite.status} -> completed`,
+        };
+      }
+
       const updates: Record<string, unknown> = {
         status: "completed" as UniversalInviteStatus,
         completedAt: Date.now(),
@@ -1267,162 +1036,6 @@ export async function deleteGameInviteDoc(
     logger.error(`[GameInvites] Error deleting invite:`, error);
     return { success: false, error: "Failed to delete invite" };
   }
-}
-
-// =============================================================================
-// Query Functions (LEGACY — dead code, scheduled for removal)
-// =============================================================================
-
-/**
- * @deprecated No production callers. Legacy query function.
- */
-async function getSentInvites(
-  userId: string,
-  options: InviteFilterOptions = {},
-): Promise<GameInvite[]> {
-  let q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("senderId", "==", userId),
-    orderBy("createdAt", "desc"),
-  );
-
-  if (options.status && options.status.length > 0) {
-    q = query(q, where("status", "in", options.status));
-  }
-
-  if (options.gameType) {
-    q = query(q, where("gameType", "==", options.gameType));
-  }
-
-  if (options.limit) {
-    q = query(q, limit(options.limit));
-  }
-
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((doc) => doc.data() as GameInvite);
-}
-
-/**
- * @deprecated No production callers. Legacy query function.
- */
-async function getReceivedInvites(
-  userId: string,
-  options: InviteFilterOptions = {},
-): Promise<GameInvite[]> {
-  let q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("recipientId", "==", userId),
-    orderBy("createdAt", "desc"),
-  );
-
-  if (options.status && options.status.length > 0) {
-    q = query(q, where("status", "in", options.status));
-  }
-
-  if (options.gameType) {
-    q = query(q, where("gameType", "==", options.gameType));
-  }
-
-  if (options.limit) {
-    q = query(q, limit(options.limit));
-  }
-
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((doc) => doc.data() as GameInvite);
-}
-
-/**
- * @deprecated No production callers. Use subscribeToPlayPageInvites instead.
- */
-export async function getPendingInvites(userId: string): Promise<{
-  sent: GameInvite[];
-  received: GameInvite[];
-}> {
-  const [sent, received] = await Promise.all([
-    getSentInvites(userId, { status: ["pending"] }),
-    getReceivedInvites(userId, { status: ["pending"] }),
-  ]);
-
-  return { sent, received };
-}
-
-/**
- * Get count of pending invites sent by user
- */
-async function getPendingInviteCount(userId: string): Promise<number> {
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("senderId", "==", userId),
-    where("status", "==", "pending"),
-  );
-
-  const snapshot = await getDocs(q);
-  return snapshot.size;
-}
-
-/**
- * Check for existing pending invite
- */
-async function getExistingInvite(
-  senderId: string,
-  recipientId: string,
-  gameType: InviteGameType,
-): Promise<GameInvite | null> {
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("senderId", "==", senderId),
-    where("recipientId", "==", recipientId),
-    where("gameType", "==", gameType),
-    where("status", "==", "pending"),
-  );
-
-  const snapshot = await getDocs(q);
-  if (snapshot.empty) {
-    return null;
-  }
-
-  return snapshot.docs[0].data() as GameInvite;
-}
-
-// =============================================================================
-// Universal Invite Query Functions
-// =============================================================================
-
-// =============================================================================
-// Real-time Subscriptions
-// =============================================================================
-
-/**
- * @deprecated No production callers. Use subscribeToPlayPageInvites instead.
- */
-export function subscribeToPendingInvites(
-  userId: string,
-  onUpdate: (invites: GameInvite[]) => void,
-  onError?: (error: Error) => void,
-): Unsubscribe {
-  const q = query(
-    collection(getDb(), COLLECTION_NAME),
-    where("recipientId", "==", userId),
-    where("status", "==", "pending"),
-    orderBy("createdAt", "desc"),
-  );
-
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const invites = snapshot.docs.map((doc) => doc.data() as GameInvite);
-      // Filter out expired invites
-      const now = Timestamp.now().toMillis();
-      const validInvites = invites.filter(
-        (inv) => inv.expiresAt.toMillis() > now,
-      );
-      onUpdate(validInvites);
-    },
-    (error) => {
-      logger.error("[GameInvites] Subscription error:", error);
-      onError?.(error);
-    },
-  );
 }
 
 // =============================================================================
@@ -1652,13 +1265,7 @@ export async function cleanupCompletedGameInvites(
 // =============================================================================
 
 export const gameInvites = {
-  // ── Legacy (deprecated — use universal API) ──────────────────────────────
-  /** @deprecated Use {@link sendUniversalInvite} */
-  send: sendGameInvite,
-  /** @deprecated Use {@link cancelUniversalInvite} */
-  cancel: cancelGameInvite,
-
-  // ── Universal invite API ─────────────────────────────────────────────────
+  // Universal invite API
   sendUniversal: sendUniversalInvite,
   claimSlot: claimInviteSlot,
   unclaimSlot: unclaimInviteSlot,
@@ -1666,11 +1273,11 @@ export const gameInvites = {
   cancelUniversal: cancelUniversalInvite,
   completeInvite: completeGameInvite,
 
-  // ── Subscriptions ────────────────────────────────────────────────────────
+  // Subscriptions
   subscribeUniversal: subscribeToUniversalInvite,
   subscribePlayPage: subscribeToPlayPageInvites,
   subscribeConversation: subscribeToConversationInvites,
 
-  // ── Cleanup ──────────────────────────────────────────────────────────────
+  // Cleanup
   cleanupCompleted: cleanupCompletedGameInvites,
 };
