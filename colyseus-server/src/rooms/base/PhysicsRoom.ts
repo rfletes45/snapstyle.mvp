@@ -37,6 +37,7 @@ import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
   deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
   markGameVacant,
   persistGameResult,
 } from "../../services/persistence";
@@ -95,6 +96,9 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
 
   /** Stuck-room watchdog — logs if room never reaches playing */
   private stuckWatchdog: StuckRoomWatchdog | null = null;
+
+  /** Invite ID for finalization fallback (defense-in-depth). */
+  private inviteId: string | undefined;
 
   /** Check if a session is a spectator */
   protected isSpectator(sessionId: string): boolean {
@@ -181,6 +185,11 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
 
     if (options.firestoreGameId) {
       (this.state as any).firestoreGameId = options.firestoreGameId;
+    }
+
+    // Capture inviteId for finalization fallback
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
     }
 
     // Build scoped logger with room-level correlation context
@@ -388,6 +397,10 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
     this.stuckWatchdog?.dispose();
     const firestoreGameId =
       (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
+    const inviteId =
+      extractInviteIdFromExtGameId(firestoreGameId) ??
+      this.inviteId ??
+      undefined;
 
     if (this.state.phase === "finished" && this.state.winnerId) {
       // Game resolved — persist results, then delete game + invite
@@ -395,13 +408,14 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
         this.state as unknown as BaseGameState,
         this.state.elapsed,
         this.getPerPlayerStats(),
+        { inviteId, firestoreGameId },
       );
-      await deleteGameAndInvite(firestoreGameId);
+      await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info(
         `Game completed, persisted, and cleaned up: ${this.roomId}`,
       );
     } else if (this.state.phase === "playing") {
-      // Ongoing non-turn-based game � mark as vacant for 10-minute cleanup
+      // Ongoing non-turn-based game — mark as vacant for 10-minute cleanup
       await markGameVacant(firestoreGameId, this.gameTypeKey, false);
       this.roomLog.info(
         `Ongoing game marked vacant (10-min TTL): ${this.roomId}`,
@@ -411,7 +425,7 @@ export abstract class PhysicsRoom extends Room<{ state: PhysicsState }> {
       this.state.phase === "countdown"
     ) {
       // PRE-START ABANDONMENT: delete immediately
-      await deleteGameAndInvite(firestoreGameId);
+      await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info(
         `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
       );

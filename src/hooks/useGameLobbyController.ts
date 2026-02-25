@@ -33,14 +33,14 @@
  * @module hooks/useGameLobbyController
  */
 
-import type {
-  UseGameLobbyOptions,
-  UseGameLobbyReturn,
-} from "@/hooks/useGameLobby";
 import {
   getConnectionBannerForState,
   shouldShowLobbyOverlayForState,
 } from "@/hooks/gameLobbySelectors";
+import type {
+  UseGameLobbyOptions,
+  UseGameLobbyReturn,
+} from "@/hooks/useGameLobby";
 import { useGameLobby } from "@/hooks/useGameLobby";
 import type { RoomHealthState } from "@/hooks/useRoomHealth";
 import { useRoomHealth } from "@/hooks/useRoomHealth";
@@ -52,7 +52,12 @@ import type { GameError, GameRecoveryActionId } from "@/types/gameErrors";
 import { createGameError, GameErrorCode } from "@/types/gameErrors";
 import type { ExtendedGameType } from "@/types/games";
 import type { Room } from "@colyseus/sdk";
+import { getAuth } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { unclaimInviteSlot } from "@/services/gameInvites";
+import { createLogger } from "@/utils/log";
+const logger = createLogger("hooks/useGameLobbyController");
 
 // =============================================================================
 // Constants
@@ -269,6 +274,43 @@ export function useGameLobbyController(
     }
   }, [room, rawRoomPhase, options.isTurnBased]);
 
+  // ── Phase 3: Terminal join error → auto-unclaim invite slot ───────────
+  // When the Colyseus join fails (e.g. "room full", "auth failed"), the
+  // joiner's claimed slot should be released so other players can fill it
+  // or the invite cleanly expires.  Without this, the user stays "claimed"
+  // forever and the invite never reaches quorum again.
+  const didAutoUnclaimRef = useRef(false);
+  useEffect(() => {
+    // Only trigger when:
+    // 1. There's a room-level error
+    // 2. No room connected (join truly failed, not a mid-game error)
+    // 3. We haven't already auto-unclaimed
+    // 4. We have an invite to unclaim from
+    // 5. User is NOT the host (host should cancel, not unclaim)
+    if (
+      roomError &&
+      !room &&
+      !didAutoUnclaimRef.current &&
+      lobby.inviteId &&
+      !lobby.isHost
+    ) {
+      const uid = getAuth().currentUser?.uid;
+      if (uid) {
+        didAutoUnclaimRef.current = true;
+        logger.warn(
+          `[useGameLobbyController] Join failed — auto-unclaiming slot for invite ${lobby.inviteId}`,
+        );
+        unclaimInviteSlot(lobby.inviteId, uid).catch((err) =>
+          logger.error("[useGameLobbyController] Auto-unclaim failed:", err),
+        );
+      }
+    }
+    // Reset when error clears (e.g. successful retry)
+    if (!roomError) {
+      didAutoUnclaimRef.current = false;
+    }
+  }, [roomError, room, lobby.inviteId, lobby.isHost]);
+
   // Effective room phase (normalized)
   const roomPhase = rawRoomPhase ?? null;
 
@@ -423,4 +465,3 @@ export function useGameLobbyController(
     shouldShowOverlay,
   };
 }
-

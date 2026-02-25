@@ -109,6 +109,7 @@ import InboxSearchScreen from "@/screens/chat/InboxSearchScreen";
 import InboxSettingsScreen from "@/screens/chat/InboxSettingsScreen";
 
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
+import GameStatsScreen from "@/screens/profile/GameStatsScreen";
 
 // Social screens
 import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
@@ -677,6 +678,11 @@ function ProfileStack() {
         component={SafeLevelRewards}
         options={{ headerShown: false }}
       />
+      <ProfileStack_Nav.Screen
+        name="GameStats"
+        component={GameStatsScreen}
+        options={{ headerShown: false }}
+      />
     </ProfileStack_Nav.Navigator>
   );
 }
@@ -1013,6 +1019,11 @@ function MainStack() {
           headerShown: false,
           presentation: "card",
         }}
+      />
+      <MainStack_Nav.Screen
+        name="GameStats"
+        component={GameStatsScreen}
+        options={{ headerShown: false }}
       />
     </MainStack_Nav.Navigator>
   );

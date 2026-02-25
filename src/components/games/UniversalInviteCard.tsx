@@ -13,7 +13,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import {
   Button,
   Card,
@@ -24,6 +24,7 @@ import {
 } from "react-native-paper";
 
 import { BorderRadius, Spacing } from "@/constants/theme";
+import { completeGameInvite } from "@/services/gameInvites";
 import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
 import type { UniversalGameInvite } from "@/types/turnBased";
 import { PlayerSlots } from "./PlayerSlots";
@@ -116,6 +117,17 @@ export function UniversalInviteCard({
   const [loading, setLoading] = useState<string | null>(null);
 
   // -------------------------------------------------------------------------
+  // Phase 2 hardening: never render a terminal or chat-hidden invite
+  // -------------------------------------------------------------------------
+  const TERMINAL_STATUSES = ["completed", "declined", "expired", "cancelled"];
+  if (
+    TERMINAL_STATUSES.includes(invite.status) ||
+    invite.chatVisibility === "hidden"
+  ) {
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
   // Computed State
   // -------------------------------------------------------------------------
   const isHost = invite.claimedSlots[0]?.playerId === currentUserId;
@@ -166,6 +178,12 @@ export function UniversalInviteCard({
   // Game & status info
   const { name: gameName, icon: gameIcon } = getGameInfo(invite.gameType);
   const statusInfo = getStatusInfo(invite.status, slotsRemaining);
+
+  // Phase 2: staleness detection — warn if invite is active for >1 hour
+  const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+  const isStale =
+    invite.status === "active" &&
+    Date.now() - invite.createdAt > STALE_THRESHOLD_MS;
 
   // -------------------------------------------------------------------------
   // Auto-Navigation Effect (Phase 4: Chat Integration)
@@ -218,6 +236,26 @@ export function UniversalInviteCard({
     },
     [],
   );
+
+  // Phase 2: DEV-only force-resolve for debugging stuck invites
+  const handleForceResolve = useCallback(async () => {
+    setLoading("force-resolve");
+    try {
+      logger.warn(
+        `[UniversalInviteCard] DEV force-resolve triggered for invite ${invite.id}`,
+      );
+      const result = await completeGameInvite(invite.id);
+      if (!result.success) {
+        logger.error(
+          `[UniversalInviteCard] Force-resolve failed: ${result.error}`,
+        );
+      }
+    } catch (error) {
+      logger.error(`[UniversalInviteCard] Force-resolve error:`, error);
+    } finally {
+      setLoading(null);
+    }
+  }, [invite.id]);
 
   // -------------------------------------------------------------------------
   // Compact Render
@@ -339,6 +377,20 @@ export function UniversalInviteCard({
             {canSpectate && (
               <Button mode="outlined" compact icon="eye" onPress={onSpectate}>
                 Watch
+              </Button>
+            )}
+
+            {/* Phase 2: DEV force-resolve (debug only) */}
+            {__DEV__ && invite.status === "active" && (
+              <Button
+                mode="text"
+                compact
+                textColor="#F44336"
+                onPress={handleForceResolve}
+                loading={loading === "force-resolve"}
+                disabled={loading !== null}
+              >
+                ⚠️ Resolve
               </Button>
             )}
           </View>
@@ -465,6 +517,15 @@ export function UniversalInviteCard({
           )}
         </View>
 
+        {/* Phase 2: Staleness warning — invite active for >1 hour */}
+        {isStale && (
+          <View style={styles.stalenessWarning}>
+            <Text style={styles.stalenessText}>
+              ⚠️ This game may have ended — it’s been active for over an hour.
+            </Text>
+          </View>
+        )}
+
         {/* Host Controls */}
         {isHost && ["pending", "filling", "ready"].includes(invite.status) && (
           <>
@@ -534,6 +595,28 @@ export function UniversalInviteCard({
                   </Button>
                 )}
               </View>
+            </View>
+          </>
+        )}
+
+        {/* Phase 2: DEV force-resolve (debug only) */}
+        {__DEV__ && invite.status === "active" && (
+          <>
+            <Divider style={styles.divider} />
+            <View style={styles.devSection}>
+              <Text style={styles.devLabel}>🛠️ DEV Tools</Text>
+              <Button
+                mode="outlined"
+                compact
+                textColor="#F44336"
+                onPress={handleForceResolve}
+                loading={loading === "force-resolve"}
+                disabled={loading !== null}
+                style={styles.devButton}
+              >
+                Force Resolve Invite
+              </Button>
+              <Text style={styles.devHint}>ID: {invite.id}</Text>
             </View>
           </>
         )}
@@ -640,6 +723,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: "italic",
     marginBottom: Spacing.sm,
+  },
+  stalenessWarning: {
+    backgroundColor: "#FFF3E0",
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    marginTop: Spacing.sm,
+  },
+  stalenessText: {
+    fontSize: 12,
+    color: "#E65100",
+  },
+  devSection: {
+    marginTop: Spacing.xs,
+    padding: Spacing.sm,
+    backgroundColor: "#FFF8E1",
+    borderRadius: BorderRadius.sm,
+  },
+  devLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#F57F17",
+    marginBottom: Spacing.xs,
+  },
+  devButton: {
+    borderColor: "#F44336",
+    marginBottom: Spacing.xs,
+  },
+  devHint: {
+    fontSize: 10,
+    color: "#9E9E9E",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 });
 

@@ -834,6 +834,44 @@ export interface UniversalGameInvite {
   /** How the game ended (e.g. "checkmate", "resignation", "timeout") */
   winReason?: string;
 
+  // ============= RESOLUTION / FINALIZATION =============
+  /** When the invite was finalized (server-authoritative timestamp) */
+  resolvedAt?: number;
+
+  /**
+   * How the game resolved. Used for analytics / UI decisions.
+   * Missing on legacy invites — treat as undefined.
+   */
+  resolutionType?:
+    | "win"
+    | "loss"
+    | "draw"
+    | "resign"
+    | "timeout"
+    | "disconnect"
+    | "cancel"
+    | "expire"
+    | "error";
+
+  /** Who finalized the invite (server / client / room / watchdog) */
+  resolvedBy?: "server" | "client" | "room" | "watchdog";
+
+  // ============= CHAT VISIBILITY =============
+  /**
+   * Controls whether this invite renders in chat.
+   * Missing on legacy invites — treat missing as "visible".
+   */
+  chatVisibility?: "visible" | "hidden";
+
+  /** When chatVisibility was set to "hidden" */
+  chatHiddenAt?: number;
+
+  /** Conversation IDs where this invite should be hidden */
+  chatHiddenInConversationIds?: string[];
+
+  /** Server-set TTL: hard-delete after this timestamp */
+  deleteAt?: number;
+
   // ============= SETTINGS =============
   settings: {
     isRated: boolean;

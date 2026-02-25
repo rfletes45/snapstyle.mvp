@@ -176,10 +176,7 @@ export function useAchievementsV2(
     if (options?.gameType) {
       logger.debug(`[summary] Scoped to gameType=${options.gameType}`);
     } else {
-      logger.warn(
-        "[summary] No gameType provided — returning global counts. " +
-          "Pass { gameType } to scope achievements to a specific game.",
-      );
+      logger.debug("[summary] No gameType provided — returning global counts.");
     }
     return computeLocalSummary(userDocs, options?.gameType);
   }, [isV2Active, userDocs, options?.gameType]);

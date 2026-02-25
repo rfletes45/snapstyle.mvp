@@ -22,9 +22,13 @@
  */
 
 import { DAILY_GAMES } from "@/constants/featureFlags";
+import { clearActiveSession } from "@/services/gameRecovery";
+import { createLogger } from "@/utils/log";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useRef } from "react";
 import { Alert, BackHandler } from "react-native";
+
+const logger = createLogger("hooks/useGameBackHandler");
 
 /**
  * Turn-based multiplayer game types whose state is automatically saved to
@@ -139,6 +143,13 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
   const navigateToOrigin = useCallback(async () => {
     // Mark as intentionally leaving so beforeRemove doesn't show a 2nd dialog
     leavingRef.current = true;
+
+    // ── Belt-and-suspenders: clear the recovery bookmark BEFORE navigation.
+    // This ensures the hub's GameRecoveryBanner never sees a stale bookmark,
+    // even if `onBeforeLeave` doesn't call `leaveRoom()` or the room's
+    // `clearActiveSession()` hasn't completed yet.
+    await clearActiveSession();
+    logger.info("[navigateToOrigin] Active session cleared before navigation");
 
     if (onBeforeLeave) {
       await onBeforeLeave();

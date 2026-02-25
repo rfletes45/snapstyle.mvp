@@ -17,7 +17,9 @@
  */
 
 import { colyseusService, JoinOptions } from "@/services/colyseus";
+import { clearActiveSession, saveActiveSession } from "@/services/gameRecovery";
 import type { Room } from "@colyseus/sdk";
+import { getAuth } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
@@ -63,6 +65,15 @@ export interface UseColyseusOptions {
 
   /** Colyseus room ID to join directly (for invites) */
   roomId?: string;
+
+  /** Invite ID — used for recovery bookmark (optional) */
+  inviteId?: string;
+
+  /** Conversation ID — used for recovery bookmark (optional) */
+  conversationId?: string;
+
+  /** Whether this is a turn-based game (for recovery bookmark) */
+  isTurnBased?: boolean;
 }
 
 export interface UseColyseusReturn {
@@ -104,6 +115,9 @@ export function useColyseus({
   firestoreGameId,
   autoJoin = true,
   roomId,
+  inviteId,
+  conversationId,
+  isTurnBased = false,
 }: UseColyseusOptions): UseColyseusReturn {
   const [room, setRoom] = useState<Room | null>(null);
   const [state, setState] = useState<any>(null);
@@ -281,6 +295,22 @@ export function useColyseus({
         setRoom(newRoom);
         setConnected(true);
 
+        // Persist recovery bookmark for crash/kill recovery
+        if (inviteId) {
+          const uid = getAuth().currentUser?.uid;
+          if (uid) {
+            saveActiveSession({
+              inviteId,
+              gameType,
+              firestoreGameId: firestoreGameId || undefined,
+              reconnectionToken: newRoom.reconnectionToken || undefined,
+              conversationId: conversationId || undefined,
+              isTurnBased,
+              userId: uid,
+            }).catch(() => {}); // best-effort
+          }
+        }
+
         // Measure initial latency
         colyseusService.getLatency().then((ms) => {
           if (mountedRef.current) setLatency(ms);
@@ -304,7 +334,15 @@ export function useColyseus({
     } finally {
       joiningRef.current = false;
     }
-  }, [gameType, options, firestoreGameId, roomId]);
+  }, [
+    gameType,
+    options,
+    firestoreGameId,
+    roomId,
+    inviteId,
+    conversationId,
+    isTurnBased,
+  ]);
 
   // ===========================================================================
   // Leave Room
@@ -312,6 +350,11 @@ export function useColyseus({
 
   const leaveRoom = useCallback(async () => {
     await colyseusService.leaveRoom();
+    // Clear recovery bookmark — user is intentionally leaving.
+    // MUST be awaited so callers (e.g. navigateToOrigin) don't race
+    // the hub's recovery check against the AsyncStorage removal.
+    await clearActiveSession();
+    logger.info("[useColyseus] leaveRoom — room left + active session cleared");
     if (mountedRef.current) {
       setRoom(null);
       setConnected(false);
@@ -348,6 +391,15 @@ export function useColyseus({
         roomRef.current.leave().catch(() => {});
         roomRef.current = null;
       }
+      // Clear the recovery bookmark on unmount.
+      // Normal unmount (user navigating away) means the game screen is
+      // being torn down — the bookmark should be cleared to prevent a
+      // stale "Resume" banner on the hub.  Crash/kill scenarios don't
+      // trigger this cleanup, so the bookmark correctly persists for
+      // those cases.
+      clearActiveSession().catch(() => {
+        logger.warn("[useColyseus] unmount — clearActiveSession failed");
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

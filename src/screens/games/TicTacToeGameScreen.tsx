@@ -393,7 +393,11 @@ function TicTacToeGameScreen({ navigation, route }: TicTacToeGameScreenProps) {
     onGameReady: (gameId: string) => {
       logger.info(`[TicTacToe] Lobby ready, gameId=${gameId}`);
       setGameMode("colyseus");
-      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+      mp.startMultiplayer({
+        firestoreGameId: gameId,
+        spectator: isSpectator,
+        inviteId: route.params?.inviteId,
+      });
     },
     onLeaveLobby: () => {
       setGameMode("menu");

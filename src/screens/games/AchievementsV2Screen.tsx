@@ -562,6 +562,11 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
   const userId = currentFirebaseUser?.uid;
   const filterGameId = route.params?.gameId;
   const targetAchievementId = route.params?.targetAchievementId;
+  const profileUid = route.params?.profileUid;
+
+  // Determine whose achievements we're viewing
+  const viewingUid = profileUid || userId;
+  const isOtherUser = !!profileUid && profileUid !== userId;
 
   const [activeTab, setActiveTab] = useState<V2Tab>("global");
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
@@ -577,14 +582,24 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
   const {
     isV2Active,
     isLoading,
-    displayItems,
-    summary,
+    displayItems: rawDisplayItems,
+    summary: rawSummary,
     newUnlocks,
     clearNewUnlocks,
-  } = useAchievementsV2(userId, {
+  } = useAchievementsV2(viewingUid, {
     gameType: filterGameId as ExtendedGameType | undefined,
     category: categoryFilter,
   });
+
+  // Use all items so section progress counts stay accurate.
+  // For other-user view we only hide non-unlocked *cards* in the JSX.
+  const displayItems = rawDisplayItems;
+
+  // Adjust summary for other-user view (show only unlocked stats)
+  const summary = useMemo(() => {
+    if (!isOtherUser) return rawSummary;
+    return { ...rawSummary };
+  }, [rawSummary, isOtherUser]);
 
   // Determine the effective category for section building.
   // When filterGameId is set, derive category from the items themselves
@@ -673,9 +688,9 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     null,
   );
 
-  // Load master badge statuses when sections change
+  // Load master badge statuses when sections change (own user only)
   useEffect(() => {
-    if (!userId || sections.length === 0) return;
+    if (!userId || sections.length === 0 || isOtherUser) return;
 
     const sectionInfos = sections.map((s) => ({
       sectionId: s.section.id,
@@ -692,7 +707,7 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
         }
         setMasterBadgeStatuses(fallback);
       });
-  }, [userId, sections]);
+  }, [userId, sections, isOtherUser]);
 
   // Handle master badge claim
   const handleClaimMasterBadge = useCallback(
@@ -729,7 +744,7 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
     });
   }, [sections]);
 
-  if (!userId) {
+  if (!viewingUid) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContainer}>
@@ -755,7 +770,9 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
           title={
             filterGameId && GAME_METADATA[filterGameId as ExtendedGameType]
               ? `${GAME_METADATA[filterGameId as ExtendedGameType].name} Achievements`
-              : "Achievements"
+              : isOtherUser
+                ? "Their Achievements"
+                : "Achievements"
           }
         />
         {/* Expand/Collapse All toggle */}
@@ -865,8 +882,9 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
                       { color: theme.colors.onSurface },
                     ]}
                   >
-                    {summary.totalUnlocked} / {summary.totalAvailable}{" "}
-                    Achievements
+                    {isOtherUser
+                      ? `${summary.totalUnlocked} Achievements Unlocked`
+                      : `${summary.totalUnlocked} / ${summary.totalAvailable} Achievements`}
                   </Text>
                   <Text
                     style={[
@@ -874,23 +892,28 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
                       { color: theme.colors.onSurfaceVariant },
                     ]}
                   >
-                    {completionPct}% Complete • {summary.totalXpEarned} XP
-                    {completedSectionCount > 0 &&
-                      ` • ${completedSectionCount} Badge${completedSectionCount > 1 ? "s" : ""}`}
+                    {isOtherUser
+                      ? `${summary.totalXpEarned} XP Earned`
+                      : `${completionPct}% Complete • ${summary.totalXpEarned} XP${completedSectionCount > 0 ? ` • ${completedSectionCount} Badge${completedSectionCount > 1 ? "s" : ""}` : ""}`}
                   </Text>
                 </View>
               </View>
-              <ProgressBar
-                progress={completionPct / 100}
-                color={theme.colors.primary}
-                style={styles.progressBar}
-              />
+              {!isOtherUser && (
+                <ProgressBar
+                  progress={completionPct / 100}
+                  color={theme.colors.primary}
+                  style={styles.progressBar}
+                />
+              )}
               <TierBreakdown unlockedByTier={summary.unlockedByTier} />
             </Card.Content>
           </Card>
 
           {/* Collapsible Sections */}
           {sections.map((sectionData) => {
+            // In other-user mode, skip sections with no unlocked achievements
+            if (isOtherUser && sectionData.unlockedCount === 0) return null;
+
             const isExpanded = !collapsedSections.has(sectionData.section.id);
 
             return (
@@ -903,38 +926,49 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
 
                 {isExpanded && (
                   <View style={styles.sectionBody}>
-                    {/* Master badge indicator — shows locked/claimable/claimed */}
-                    <SectionBadgeIndicator
-                      sectionData={sectionData}
-                      masterBadgeStatus={
-                        masterBadgeStatuses[sectionData.section.id]
-                      }
-                      onClaimPress={() =>
-                        handleClaimMasterBadge(
-                          sectionData.section.id,
-                          sectionData.isComplete,
-                        )
-                      }
-                      onEquipPress={handleEquipBadgePress}
-                      isClaiming={claimingSectionId === sectionData.section.id}
-                    />
+                    {/* Master badge indicator — only for own user */}
+                    {!isOtherUser && (
+                      <SectionBadgeIndicator
+                        sectionData={sectionData}
+                        masterBadgeStatus={
+                          masterBadgeStatuses[sectionData.section.id]
+                        }
+                        onClaimPress={() =>
+                          handleClaimMasterBadge(
+                            sectionData.section.id,
+                            sectionData.isComplete,
+                          )
+                        }
+                        onEquipPress={handleEquipBadgePress}
+                        isClaiming={
+                          claimingSectionId === sectionData.section.id
+                        }
+                      />
+                    )}
 
                     {/* Achievement cards */}
-                    {sectionData.items.map((item) => (
-                      <V2AchievementCard
-                        key={item.id}
-                        item={item}
-                        onEquipPress={handleEquipBadgePress}
-                        isHighlighted={item.id === targetAchievementId}
-                      />
-                    ))}
+                    {sectionData.items
+                      .filter(
+                        (item) => !isOtherUser || item.state === "unlocked",
+                      )
+                      .map((item) => (
+                        <V2AchievementCard
+                          key={item.id}
+                          item={item}
+                          onEquipPress={
+                            isOtherUser ? undefined : handleEquipBadgePress
+                          }
+                          isHighlighted={item.id === targetAchievementId}
+                        />
+                      ))}
                   </View>
                 )}
               </View>
             );
           })}
 
-          {displayItems.length === 0 && (
+          {(displayItems.length === 0 ||
+            (isOtherUser && summary.totalUnlocked === 0)) && (
             <View style={styles.emptySections}>
               <MaterialCommunityIcons
                 name="trophy-outline"
@@ -947,7 +981,9 @@ export default function AchievementsV2Screen({ navigation, route }: Props) {
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                No achievements in this category
+                {isOtherUser
+                  ? "No achievements unlocked yet"
+                  : "No achievements in this category"}
               </Text>
             </View>
           )}

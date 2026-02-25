@@ -156,6 +156,7 @@ function MutualFriendsSectionBase({
 const styles = StyleSheet.create({
   container: {
     width: "100%",
+    paddingHorizontal: Spacing.lg,
   },
   header: {
     flexDirection: "row",

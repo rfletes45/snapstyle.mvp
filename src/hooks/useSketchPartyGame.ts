@@ -66,6 +66,8 @@ export interface UseSketchPartyGameOptions {
   autoJoin?: boolean;
   /** Join as spectator */
   spectator?: boolean;
+  /** Forwarded to Colyseus join options for server-side invite finalization. */
+  inviteId?: string;
 }
 
 export interface UseSketchPartyGameReturn {
@@ -156,6 +158,7 @@ export function useSketchPartyGame({
   firestoreGameId,
   autoJoin = true,
   spectator = false,
+  inviteId,
 }: UseSketchPartyGameOptions): UseSketchPartyGameReturn {
   // ---------------------------------------------------------------------------
   // Colyseus connection
@@ -174,7 +177,7 @@ export function useSketchPartyGame({
     gameType: "sketch_party_game",
     firestoreGameId,
     autoJoin,
-    options: { firestoreGameId, spectator },
+    options: { firestoreGameId, spectator, inviteId },
   });
 
   // ---------------------------------------------------------------------------

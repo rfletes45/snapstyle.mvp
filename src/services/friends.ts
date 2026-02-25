@@ -15,7 +15,6 @@ import { isUserBlocked } from "./blocking";
 import { getFirestoreInstance } from "./firebase";
 import { getUserProfile } from "./users";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/friends");
 /**
@@ -308,10 +307,17 @@ export async function getFriends(uid: string): Promise<Friend[]> {
     const snapshot = await getDocs(q);
     const friends: Friend[] = [];
 
-    // Get list of blocked users
-    const blockedUsersRef = collection(db, "Users", uid, "blockedUsers");
-    const blockedSnapshot = await getDocs(blockedUsersRef);
-    const blockedUserIds = new Set(blockedSnapshot.docs.map((doc) => doc.id));
+    // Try to get list of blocked users — this may fail with permission-denied
+    // when viewing another user's friends (blockedUsers subcollection is
+    // owner-only). In that case proceed without blocked-user filtering.
+    let blockedUserIds = new Set<string>();
+    try {
+      const blockedUsersRef = collection(db, "Users", uid, "blockedUsers");
+      const blockedSnapshot = await getDocs(blockedUsersRef);
+      blockedUserIds = new Set(blockedSnapshot.docs.map((doc) => doc.id));
+    } catch {
+      // Expected when querying another user's friends — skip block filtering
+    }
 
     snapshot.forEach((doc) => {
       const friend = {
@@ -333,7 +339,7 @@ export async function getFriends(uid: string): Promise<Friend[]> {
 
     return friends;
   } catch (error) {
-    logger.error("Error getting friends:", error);
+    logger.debug("Could not load friends (may be permission-denied):", error);
     return [];
   }
 }

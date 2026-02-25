@@ -12,7 +12,7 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";
 
@@ -21,6 +21,7 @@ import {
   cancelUniversalInvite,
   claimInviteSlot,
   cleanupCompletedGameInvites,
+  completeGameInvite,
   startGameEarly,
   subscribeToConversationInvites,
   unclaimInviteSlot,
@@ -155,6 +156,45 @@ export function ChatGameInvites({
   }, [conversationId, currentUserId]);
 
   // -------------------------------------------------------------------------
+  // Phase 2: Leak guard — auto-resolve invites stuck "active" for >3 hours
+  // -------------------------------------------------------------------------
+
+  const leakGuardFiredRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (invites.length === 0) return;
+
+    const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+
+    const sweep = () => {
+      const now = Date.now();
+      for (const inv of invites) {
+        if (
+          inv.status === "active" &&
+          now - inv.createdAt > THREE_HOURS_MS &&
+          !leakGuardFiredRef.current.has(inv.id)
+        ) {
+          leakGuardFiredRef.current.add(inv.id);
+          logger.warn(
+            `[ChatGameInvites] Leak guard: invite ${inv.id} stuck active for >3h, auto-resolving`,
+          );
+          completeGameInvite(inv.id).catch((err) =>
+            logger.error(
+              `[ChatGameInvites] Leak guard failed for ${inv.id}:`,
+              err,
+            ),
+          );
+        }
+      }
+    };
+
+    // Run immediately on invites change, then every 60s
+    sweep();
+    const interval = setInterval(sweep, 60_000);
+    return () => clearInterval(interval);
+  }, [invites]);
+
+  // -------------------------------------------------------------------------
   // Handlers
   // -------------------------------------------------------------------------
 
@@ -173,9 +213,15 @@ export function ChatGameInvites({
       // when colyseusRoomKey or gameId were set, which meant turn-based
       // invites created from chat (no roomKey, no gameId yet) left the
       // joiner stranded in chat instead of entering the lobby.
+      //
+      // IMPORTANT: Do NOT pass matchId when inviteId is present — the
+      // lobby hook should enter queue mode (subscribe to invite doc) and
+      // resolve the correct firestoreGameId from inv.gameId when the
+      // invite becomes active.  Passing both matchId + inviteId would
+      // skip queue mode and use the stale colyseusRoomKey, which breaks
+      // invite finalization for external Colyseus games.
       if (result.success) {
-        const matchId = invite.settings?.colyseusRoomKey || invite.gameId || "";
-        onNavigateToGame(matchId, invite.gameType, {
+        onNavigateToGame("", invite.gameType, {
           inviteId: invite.id,
         });
       }
@@ -302,20 +348,29 @@ export function ChatGameInvites({
       {/* Invites List */}
       {expanded && (
         <View style={styles.invitesList}>
-          {invites.map((invite) => (
-            <UniversalInviteCard
-              key={invite.id}
-              invite={invite}
-              currentUserId={currentUserId}
-              onJoin={() => handleJoin(invite)}
-              onLeave={() => handleLeave(invite)}
-              onSpectate={() => handleSpectate(invite)}
-              onStartEarly={() => handleStartEarly(invite)}
-              onCancel={() => handleCancel(invite)}
-              onPlay={handlePlay}
-              compact={compact}
-            />
-          ))}
+          {invites
+            // Phase 2 defensive filter: never render terminal or chat-hidden
+            .filter(
+              (inv) =>
+                inv.chatVisibility !== "hidden" &&
+                !["completed", "declined", "expired", "cancelled"].includes(
+                  inv.status,
+                ),
+            )
+            .map((invite) => (
+              <UniversalInviteCard
+                key={invite.id}
+                invite={invite}
+                currentUserId={currentUserId}
+                onJoin={() => handleJoin(invite)}
+                onLeave={() => handleLeave(invite)}
+                onSpectate={() => handleSpectate(invite)}
+                onStartEarly={() => handleStartEarly(invite)}
+                onCancel={() => handleCancel(invite)}
+                onPlay={handlePlay}
+                compact={compact}
+              />
+            ))}
         </View>
       )}
     </View>

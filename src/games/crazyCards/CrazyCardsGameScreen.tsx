@@ -199,7 +199,7 @@ function CrazyCardsGameScreen({ navigation, route }: CrazyCardsScreenProps) {
     entryPoint: routeEntryPoint,
     isTurnBased: false,
     onGameReady: (gameId: string) => {
-      mp.startMultiplayer({ firestoreGameId: gameId });
+      mp.startMultiplayer({ firestoreGameId: gameId, inviteId: routeInviteId });
       setGameMode("colyseus");
     },
     onLeaveLobby: () => {

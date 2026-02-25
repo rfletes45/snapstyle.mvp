@@ -143,6 +143,7 @@ export interface UseBattleshipGameReturn {
   startMultiplayer: (opts?: {
     firestoreGameId?: string;
     spectator?: boolean;
+    inviteId?: string;
   }) => void;
   cancelMultiplayer: () => Promise<void>;
 }
@@ -160,12 +161,19 @@ export function useBattleshipGame(): UseBattleshipGameReturn {
     string | undefined
   >();
   const [activeSpectator, setActiveSpectator] = useState(false);
+  const [activeInviteId, setActiveInviteId] = useState<string | undefined>();
 
   const colyseusOptions: UseColyseusOptions = {
     gameType,
     autoJoin: false,
     firestoreGameId: activeFirestoreGameId,
-    options: activeSpectator ? { spectator: true } : undefined,
+    inviteId: activeInviteId,
+    // Pass inviteId through to the server so the room can use it in
+    // onDispose for direct invite finalization (defense-in-depth).
+    options: {
+      ...(activeSpectator ? { spectator: true } : {}),
+      ...(activeInviteId ? { inviteId: activeInviteId } : {}),
+    },
   };
 
   const {
@@ -455,7 +463,11 @@ export function useBattleshipGame(): UseBattleshipGameReturn {
   }, [leaveRoom]);
 
   const startMultiplayer = useCallback(
-    (opts?: { firestoreGameId?: string; spectator?: boolean }) => {
+    (opts?: {
+      firestoreGameId?: string;
+      spectator?: boolean;
+      inviteId?: string;
+    }) => {
       if (joinTriggeredRef.current) {
         bsLogger.warn(
           `[startMultiplayer] BLOCKED — already triggered (gameId=${opts?.firestoreGameId})`,
@@ -465,13 +477,14 @@ export function useBattleshipGame(): UseBattleshipGameReturn {
       joinTriggeredRef.current = true;
 
       bsLogger.info(
-        `[startMultiplayer] gameId=${opts?.firestoreGameId}, spectator=${opts?.spectator ?? false}`,
+        `[startMultiplayer] gameId=${opts?.firestoreGameId}, spectator=${opts?.spectator ?? false}, inviteId=${opts?.inviteId ?? "none"}`,
       );
 
       setIsMultiplayer(true);
       setPhase("connecting");
       setActiveFirestoreGameId(opts?.firestoreGameId);
       setActiveSpectator(opts?.spectator ?? false);
+      setActiveInviteId(opts?.inviteId);
     },
     [],
   );

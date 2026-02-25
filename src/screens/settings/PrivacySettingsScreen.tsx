@@ -36,7 +36,6 @@ import {
   ProfilePrivacySettings,
 } from "@/types/userProfile";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/settings/PrivacySettingsScreen");
 // =============================================================================
@@ -142,9 +141,30 @@ const SETTING_SECTIONS: SettingSection[] = [
       },
       {
         key: "showBadges",
-        title: "Badges & Achievements",
+        title: "Badges",
         description: "Who can see your earned badges",
         icon: "medal",
+        type: "visibility",
+      },
+      {
+        key: "showAchievements",
+        title: "Achievements",
+        description: "Who can see your achievements progress",
+        icon: "trophy-award",
+        type: "visibility",
+      },
+      {
+        key: "showStreaks",
+        title: "Streaks",
+        description: "Who can see your streak info",
+        icon: "fire",
+        type: "visibility",
+      },
+      {
+        key: "showRecentActivity",
+        title: "Recent Activity",
+        description: "Who can see your recent activity on your profile",
+        icon: "lightning-bolt",
         type: "visibility",
       },
       {
@@ -600,7 +620,9 @@ export default function PrivacySettingsScreen({ navigation }: Props) {
             <List.Section>
               <View style={styles.sectionHeader}>
                 <MaterialCommunityIcons
-                  name={section.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                  name={
+                    section.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                  }
                   size={20}
                   color={theme.colors.primary}
                 />

@@ -17,6 +17,7 @@
 
 import { getCosmeticById } from "@/cosmetics/catalog";
 import type { AvatarConfig, Friend, FriendRequest } from "@/types/models";
+import { calculateLevelFromXp } from "@/types/profile";
 import type {
   ExtendedMuteConfig,
   FriendshipDetails,
@@ -46,11 +47,12 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { Share } from "react-native";
 import { isUserBlocked } from "./blocking";
 import { hasEntitlement } from "./entitlements";
-import { getFirestoreInstance } from "./firebase";
+import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 import { getFriends } from "./friends";
 import {
   hydrateProfileData,
@@ -60,7 +62,6 @@ import {
   validateFullPrivacySettings,
   validateStatusInput,
 } from "./profile/profileContract";
-import { getUserProfile } from "./users";
 
 // =============================================================================
 // PROFILE DATA OPERATIONS
@@ -82,10 +83,14 @@ export async function getFullProfileData(
       return null;
     }
 
-    return hydrateProfileData(
-      userId,
-      userDoc.data() as Partial<UserProfileData>,
-    );
+    const raw = userDoc.data();
+    // Compute level from the raw XP fields stored on the Firestore doc
+    const level = calculateLevelFromXp(raw.gameXp ?? 0);
+
+    return hydrateProfileData(userId, {
+      ...raw,
+      level,
+    } as Partial<UserProfileData>);
   } catch (error) {
     log.error("Error fetching profile data", error);
     return null;
@@ -106,8 +111,13 @@ export function subscribeToProfile(
     userRef,
     (doc) => {
       if (doc.exists()) {
+        const raw = doc.data();
+        const level = calculateLevelFromXp(raw.gameXp ?? 0);
         callback(
-          hydrateProfileData(userId, doc.data() as Partial<UserProfileData>),
+          hydrateProfileData(userId, {
+            ...raw,
+            level,
+          } as Partial<UserProfileData>),
         );
       } else {
         callback(null);
@@ -306,16 +316,16 @@ export async function getMutualFriends(
     // Fetch profiles for mutual friends
     const mutualFriends: MutualFriendInfo[] = [];
 
-    for (const userId of mutualIds.slice(0, 10)) {
+    for (const mutualId of mutualIds.slice(0, 10)) {
       // Limit to 10
-      const profile = await getUserProfile(userId);
+      const profile = await getFullProfileData(mutualId);
       if (profile) {
         mutualFriends.push({
           userId: profile.uid,
           username: profile.username,
           displayName: profile.displayName,
           avatarConfig: profile.avatarConfig,
-          profilePictureUrl: undefined, // Would need to fetch from profile data
+          profilePictureUrl: profile.profilePicture?.url ?? undefined,
         });
       }
     }
@@ -1070,20 +1080,20 @@ export async function isUserMuted(
 // =============================================================================
 
 /**
- * Increment profile view count
+ * Increment profile view count via server callable.
+ * Fire-and-forget — never throws to caller.
  */
 export async function incrementProfileViews(userId: string): Promise<void> {
   try {
-    const db = getFirestoreInstance();
-    const userRef = doc(db, "Users", userId);
-
-    const { increment } = await import("firebase/firestore");
-    await updateDoc(userRef, {
-      profileViews: increment(1),
-    });
+    const functions = getFunctionsInstance();
+    const callable = httpsCallable<{ targetUid: string }, { ok: boolean }>(
+      functions,
+      "incrementProfileViews",
+    );
+    await callable({ targetUid: userId });
   } catch (error) {
-    // Non-critical, just log
-    log.warn("Error incrementing profile views", {
+    // Non-critical, just debug log
+    log.debug("incrementProfileViews callable failed (non-critical)", {
       data: { error: String(error) },
     });
   }

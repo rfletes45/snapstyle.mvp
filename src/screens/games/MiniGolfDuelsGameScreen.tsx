@@ -178,6 +178,7 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
     firestoreGameId: effectiveGameId,
     autoJoin: !isQueueMode,
     spectator: !!routeSpectator,
+    inviteId,
   });
 
   // When queue resolves, trigger join

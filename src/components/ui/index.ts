@@ -22,7 +22,6 @@
  * - StatSkeleton: Stat number + label placeholder
  * - ProfileSkeleton: Full profile screen skeleton
  * - CompactProfileSkeleton: Inline profile skeleton
- * - BadgeShowcaseSkeleton: Badge showcase skeleton
  * - ShopSkeleton: Cosmetic shop skeleton
  */
 
@@ -46,7 +45,6 @@ export {
 } from "./SkeletonLoader";
 
 export {
-  BadgeShowcaseSkeleton,
   CompactProfileSkeleton,
   default as ProfileSkeleton,
   ShopSkeleton,

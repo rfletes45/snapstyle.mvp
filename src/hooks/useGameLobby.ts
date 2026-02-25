@@ -103,6 +103,11 @@ export interface UseGameLobbyOptions {
    * Defaults to first 3 chars of gameType.
    */
   roomKeyPrefix?: string;
+  /**
+   * True when entering from the game recovery flow (crash/kill resume).
+   * Skips unmount cleanup (cancel/unclaim) since the game is already active.
+   */
+  fromRecovery?: boolean;
 }
 
 export interface UseGameLobbyReturn extends GameLobbyState {
@@ -147,6 +152,7 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
     onLeaveLobby,
     isTurnBased = false,
     roomKeyPrefix,
+    fromRecovery = false,
   } = options;
 
   // ── Stable callback refs ───────────────────────────────────────────
@@ -254,13 +260,15 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       // Invite became active with a game ID → resolve and join
       if (inv.status === "active" && inv.gameId && !didJoinRef.current) {
         didJoinRef.current = true;
-        // Turn-based games need the Firestore doc ID (inv.gameId) so the
-        // Colyseus room can load game state.  Real-time games need the
-        // host's Colyseus room key stored in invite settings.
-        const activeGameId = inv.gameId; // narrowed to string by if-check
-        const resolvedId = isTurnBased
-          ? activeGameId
-          : inv.settings?.colyseusRoomKey || activeGameId;
+        // Always use inv.gameId as the firestoreGameId for Colyseus join.
+        // For turn-based games this is the TurnBasedGames doc ID.
+        // For external Colyseus games this is the ext_<type>_<inviteId> ID
+        // set by the Cloud Function — critical for invite finalization
+        // (Layer 1: deleteGameAndInvite needs the ext_ format to extract
+        // inviteId; Layer 2: processRealtimeGameCompletion needs it too).
+        // The legacy colyseusRoomKey fallback is no longer used because it
+        // produced a random key that broke all finalization layers.
+        const resolvedId = inv.gameId;
         setResolvedMatchId(resolvedId);
         setPhase("starting");
         logger.info(
@@ -305,10 +313,8 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       // Invite resolved → Cloud Function created the game
       if (inv.status === "active" && inv.gameId && !didJoinRef.current) {
         didJoinRef.current = true;
-        const activeGameId = inv.gameId; // narrowed to string by if-check
-        const resolvedId = isTurnBased
-          ? activeGameId
-          : inv.settings?.colyseusRoomKey || activeGameId;
+        // Always use inv.gameId — see queue-mode comment for rationale.
+        const resolvedId = inv.gameId;
         setResolvedMatchId(resolvedId);
         setPhase("starting");
         logger.info(
@@ -353,6 +359,10 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       // Don't clean up if the game already started
       if (didJoinRef.current) return;
 
+      // Don't clean up if we entered from recovery — the game is active
+      // and the user simply navigated away from the recovery screen.
+      if (fromRecovery) return;
+
       const targetInviteId = inviteIdRef.current || routeInviteId;
       const currentUid = uidRef.current;
       if (!targetInviteId || !currentUid) return;
@@ -369,7 +379,7 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeInviteId]);
+  }, [routeInviteId, fromRecovery]);
 
   // ── Actions ────────────────────────────────────────────────────────────
 

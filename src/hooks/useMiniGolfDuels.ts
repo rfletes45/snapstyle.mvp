@@ -52,6 +52,8 @@ export interface UseMiniGolfDuelsOptions {
   firestoreGameId?: string;
   autoJoin?: boolean;
   spectator?: boolean;
+  /** Forwarded to Colyseus join options for server-side invite finalization. */
+  inviteId?: string;
 }
 
 export interface UseMiniGolfDuelsReturn {
@@ -120,6 +122,7 @@ export function useMiniGolfDuels({
   firestoreGameId,
   autoJoin = true,
   spectator = false,
+  inviteId,
 }: UseMiniGolfDuelsOptions): UseMiniGolfDuelsReturn {
   const {
     room,
@@ -135,7 +138,7 @@ export function useMiniGolfDuels({
     gameType: "minigolf_duels",
     firestoreGameId,
     autoJoin,
-    options: { firestoreGameId, spectator },
+    options: { firestoreGameId, spectator, inviteId },
   });
 
   // ---------------------------------------------------------------------------

@@ -499,7 +499,11 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
     onGameReady: (gameId: string) => {
       logger.info(`[Checkers] Lobby ready, gameId=${gameId}`);
       setGameMode("colyseus");
-      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+      mp.startMultiplayer({
+        firestoreGameId: gameId,
+        spectator: isSpectator,
+        inviteId: route.params?.inviteId,
+      });
     },
     onLeaveLobby: () => {
       setGameMode("menu");

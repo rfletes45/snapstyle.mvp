@@ -918,6 +918,16 @@ export async function cancelUniversalInvite(
       transaction.update(inviteRef, {
         status: "cancelled" as UniversalInviteStatus,
         updatedAt: Date.now(),
+        // Phase 1 hardening — immediate chat hide + TTL
+        resolvedAt: Date.now(),
+        resolvedBy: "client",
+        resolutionType: "cancel",
+        chatVisibility: "hidden",
+        chatHiddenAt: Date.now(),
+        chatHiddenInConversationIds: invite.conversationId
+          ? [invite.conversationId]
+          : [],
+        deleteAt: Date.now() + 6 * 60 * 60 * 1000,
       });
 
       return { success: true };
@@ -961,8 +971,24 @@ export async function completeGameInvite(
 
       const invite = inviteSnap.data() as UniversalGameInvite;
 
-      // Idempotent: already completed
+      // Idempotent: already completed — ensure chat-hide fields are set
       if (invite.status === "completed") {
+        const patch: Record<string, unknown> = {};
+        if (invite.chatVisibility !== "hidden") {
+          patch.chatVisibility = "hidden";
+          patch.chatHiddenAt = Date.now();
+        }
+        if (
+          (!invite.chatHiddenInConversationIds ||
+            invite.chatHiddenInConversationIds.length === 0) &&
+          invite.conversationId
+        ) {
+          patch.chatHiddenInConversationIds = [invite.conversationId];
+        }
+        if (Object.keys(patch).length > 0) {
+          patch.updatedAt = Date.now();
+          transaction.update(inviteRef, patch);
+        }
         return { success: true };
       }
 
@@ -986,10 +1012,21 @@ export async function completeGameInvite(
         };
       }
 
+      const now = Date.now();
+      const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
       const updates: Record<string, unknown> = {
         status: "completed" as UniversalInviteStatus,
-        completedAt: Date.now(),
-        updatedAt: Date.now(),
+        completedAt: now,
+        updatedAt: now,
+        // Phase 1 hardening — immediate chat hide + TTL
+        resolvedAt: now,
+        resolvedBy: "client",
+        chatVisibility: "hidden",
+        chatHiddenAt: now,
+        chatHiddenInConversationIds: invite.conversationId
+          ? [invite.conversationId]
+          : [],
+        deleteAt: now + SIX_HOURS_MS,
       };
       if (winnerId) updates.winnerId = winnerId;
       if (winReason) updates.winReason = winReason;
@@ -1101,6 +1138,8 @@ export function subscribeToPlayPageInvites(
         .filter((inv) => validStatuses.includes(inv.status))
         .filter((inv) => inv.senderId !== userId)
         .filter((inv) => inv.expiresAt > Date.now()) // Filter expired
+        // Phase 2 hardening: also hide chat-hidden invites on play page
+        .filter((inv) => inv.chatVisibility !== "hidden")
         .slice(0, 20); // Limit results after filtering
       onUpdate(invites);
     },
@@ -1137,10 +1176,21 @@ export function subscribeToConversationInvites(
   return onSnapshot(
     q,
     (snapshot) => {
-      const validStatuses = ["pending", "filling", "ready", "active"];
+      const validStatuses = [
+        "pending",
+        "filling",
+        "ready",
+        "starting",
+        "active",
+      ];
       const invites = snapshot.docs
         .map((d) => d.data() as UniversalGameInvite)
-        .filter((inv) => validStatuses.includes(inv.status));
+        .filter((inv) => validStatuses.includes(inv.status))
+        // Phase 2 hardening: hide invites that have been finalized.
+        // chatVisibility === "hidden" means the invite was server-finalized
+        // even if the status hasn't propagated yet in the snapshot.
+        // Legacy docs without chatVisibility are treated as visible.
+        .filter((inv) => inv.chatVisibility !== "hidden");
       onUpdate(invites);
     },
     (error) => {
@@ -1187,24 +1237,56 @@ export async function cleanupCompletedGameInvites(
   const snapshot = await getDocs(q);
   let cleanedUp = 0;
 
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
   for (const inviteDoc of snapshot.docs) {
     const invite = inviteDoc.data() as UniversalGameInvite;
 
     // Check if this invite has a gameId
     if (invite.gameId) {
+      // External Colyseus games use ext_<type>_<inviteId> as gameId and have
+      // no TurnBasedGames doc by design.  We must NOT mark these as completed
+      // just because the TurnBasedGames lookup fails — the game may still be
+      // in progress on the Colyseus server.  Skip them and let the normal
+      // completion pipeline (room onDispose → deleteGameAndInvite, or the
+      // processRealtimeGameCompletion Cloud Function, or the watchdog) handle
+      // finalization.
+      if (invite.gameId.startsWith("ext_")) {
+        logger.info(
+          `[GameInvites] Skipping ext_ Colyseus invite ${invite.id} (gameId=${invite.gameId}) — server-driven finalization`,
+        );
+        continue;
+      }
+
       // Check the game status
       try {
         const gameDoc = await getDoc(
           doc(getDb(), "TurnBasedGames", invite.gameId),
         );
 
+        // Build full finalization payload so the invite disappears from chat
+        // immediately — mirrors what finalizeUniversalInvite writes.
+        const now = Date.now();
+        const fullFinalize = {
+          status: "completed" as const,
+          completedAt: now,
+          updatedAt: now,
+          resolvedAt: now,
+          resolvedBy: "client" as const,
+          chatVisibility: "hidden" as const,
+          chatHiddenAt: now,
+          chatHiddenInConversationIds: invite.conversationId
+            ? [invite.conversationId]
+            : [],
+          deleteAt: now + SIX_HOURS_MS,
+        };
+
         if (!gameDoc.exists()) {
-          // Game doesn't exist - mark invite as completed
+          // Game doesn't exist — mark invite as completed + hidden
           await updateDoc(inviteDoc.ref, {
-            status: "completed",
-            completedAt: Date.now(),
+            ...fullFinalize,
+            resolutionType: "error",
             gameEndStatus: "game_not_found",
-            updatedAt: Date.now(),
           });
           cleanedUp++;
           continue;
@@ -1220,12 +1302,18 @@ export async function cleanupCompletedGameInvites(
         ];
 
         if (terminalStates.includes(game?.status)) {
-          // Game is completed - update invite status
+          // Game is completed — update invite status + hide from chat
           await updateDoc(inviteDoc.ref, {
-            status: "completed",
-            completedAt: Date.now(),
+            ...fullFinalize,
+            resolutionType:
+              game?.status === "draw"
+                ? "draw"
+                : game?.status === "resigned"
+                  ? "resign"
+                  : game?.status === "timeout"
+                    ? "timeout"
+                    : "win",
             gameEndStatus: game?.status,
-            updatedAt: Date.now(),
           });
           cleanedUp++;
         }

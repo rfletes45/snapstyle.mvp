@@ -66,7 +66,11 @@ import {
 } from "../../schemas/minigolf";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
-import { persistGameResult } from "../../services/persistence";
+import {
+  deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
+  persistGameResult,
+} from "../../services/persistence";
 import type { ServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
 
@@ -168,6 +172,9 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
   // --- Ordered UID list for turn alternation ---
   private playerUids: string[] = [];
 
+  // --- Invite ID for finalization fallback (defense-in-depth) ---
+  private inviteId: string | undefined;
+
   // ── Per-player achievement stats (flushed to game result at dispose) ────
   private holesInOneByUid = new Map<string, number>();
   private underParHolesByUid = new Map<string, number>();
@@ -225,6 +232,13 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
 
     if (options.firestoreGameId) {
       state.firestoreGameId = options.firestoreGameId;
+    }
+
+    // Capture inviteId for finalization fallback — the firestoreGameId may
+    // be a random host key (e.g. "mg_...") that extractInviteIdFromExtGameId
+    // cannot parse.  Having the inviteId directly ensures Layer 1 cleanup.
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
     }
 
     this.roomLog = log.child({
@@ -410,46 +424,75 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
   async onDispose(): Promise<void> {
     this.cleanupTimers();
 
+    const firestoreGameId =
+      this.state.firestoreGameId || this.state.gameId || this.roomId;
+    const inviteId =
+      extractInviteIdFromExtGameId(firestoreGameId) ??
+      this.inviteId ??
+      undefined;
+
     if (this.state.phase === "finished" && this.state.winnerId) {
-      // Build a BaseGameState-like object for persistGameResult
-      const pseudoState = {
-        gameType: this.state.gameType,
-        gameId: this.state.gameId,
-        firestoreGameId: this.state.firestoreGameId,
-        winnerId: this.state.winnerId,
-        winReason: this.state.winReason,
-        isRated: this.state.isRated,
-        turnNumber: 0,
-        currentTurnPlayerId: "",
-        phase: this.state.phase,
-        players: new MapSchema(),
-      } as unknown as BaseGameState;
+      // Persist game result
+      try {
+        // Build a BaseGameState-like object for persistGameResult
+        // Clear firestoreGameId so it writes to RealtimeGameSessions
+        // (not non-existent TurnBasedGames for ext_ games)
+        const pseudoState = {
+          gameType: this.state.gameType,
+          gameId: this.state.gameId,
+          firestoreGameId: "",
+          winnerId: this.state.winnerId,
+          winReason: this.state.winReason,
+          isRated: this.state.isRated,
+          turnNumber: 0,
+          currentTurnPlayerId: "",
+          phase: this.state.phase,
+          players: new MapSchema(),
+        } as unknown as BaseGameState;
 
-      // Populate players MapSchema with score = total strokes
-      this.state.players.forEach((p: MiniGolfPlayer) => {
-        const { Player } = require("../../schemas/common");
-        const cp = new Player();
-        cp.uid = p.uid;
-        cp.displayName = p.displayName;
-        cp.score = this.state.strokesTotalByUid.get(p.uid) ?? 0;
-        cp.playerIndex = p.playerIndex;
-        (pseudoState.players as MapSchema).set(p.sessionId, cp);
-      });
+        // Populate players MapSchema with score = total strokes
+        this.state.players.forEach((p: MiniGolfPlayer) => {
+          const { Player } = require("../../schemas/common");
+          const cp = new Player();
+          cp.uid = p.uid;
+          cp.displayName = p.displayName;
+          cp.score = this.state.strokesTotalByUid.get(p.uid) ?? 0;
+          cp.playerIndex = p.playerIndex;
+          (pseudoState.players as MapSchema).set(p.sessionId, cp);
+        });
 
-      // Build per-player gameSpecific stats for achievement evaluation
-      const perPlayerStats: Record<string, Record<string, number>> = {};
-      for (const uid of this.playerUids) {
-        const totalStrokes = this.state.strokesTotalByUid.get(uid) ?? 0;
-        perPlayerStats[uid] = {
-          bestTotalStrokes: totalStrokes,
-          holesInOne: this.holesInOneByUid.get(uid) ?? 0,
-          underParHoles: this.underParHolesByUid.get(uid) ?? 0,
-          holesPlayed: this.state.holesTotal,
-          bestScore: totalStrokes,
-        };
+        // Build per-player gameSpecific stats for achievement evaluation
+        const perPlayerStats: Record<string, Record<string, number>> = {};
+        for (const uid of this.playerUids) {
+          const totalStrokes = this.state.strokesTotalByUid.get(uid) ?? 0;
+          perPlayerStats[uid] = {
+            bestTotalStrokes: totalStrokes,
+            holesInOne: this.holesInOneByUid.get(uid) ?? 0,
+            underParHoles: this.underParHolesByUid.get(uid) ?? 0,
+            holesPlayed: this.state.holesTotal,
+            bestScore: totalStrokes,
+          };
+        }
+
+        await persistGameResult(
+          pseudoState,
+          this.state.elapsed,
+          perPlayerStats,
+          {
+            inviteId,
+            firestoreGameId,
+          },
+        );
+      } catch (e) {
+        this.roomLog.error("Failed to persist game result:", e);
       }
 
-      await persistGameResult(pseudoState, this.state.elapsed, perPlayerStats);
+      // Always attempt invite cleanup, even if persistence failed
+      try {
+        await deleteGameAndInvite(firestoreGameId, inviteId);
+      } catch (e) {
+        this.roomLog.error("Failed to clean up game/invite:", e);
+      }
     }
 
     if (this.engine) {

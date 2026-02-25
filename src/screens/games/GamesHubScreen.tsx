@@ -18,7 +18,9 @@
 
 import { UniversalInviteCard } from "@/components/games";
 import { EnhancedGamesProfileHeader } from "@/components/games/EnhancedGamesProfileHeader";
+import { GameDebugPanel } from "@/components/games/GameDebugPanel";
 import { GameInviteBadge } from "@/components/games/GameInviteBadge";
+import { GameRecoveryBanner } from "@/components/games/GameRecoveryBanner";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ThreeFloatingIcons, ThreeGameBackground } from "@/components/three";
 import { ErrorState, LoadingState } from "@/components/ui";
@@ -742,10 +744,11 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       // Navigate to the appropriate game screen for Colyseus games
       const screen = GAME_SCREEN_MAP[invite.gameType as ExtendedGameType];
       if (screen) {
-        const roomKey = invite.settings?.colyseusRoomKey;
+        // Do NOT pass colyseusRoomKey as matchId — useGameLobby should enter
+        // queue mode (subscribe to invite doc) and resolve the canonical
+        // ext_ firestoreGameId from inv.gameId when the invite becomes active.
         navigation.navigate(screen, {
           inviteId: invite.id,
-          matchId: roomKey || invite.gameId || undefined,
           entryPoint: "invite_queue",
         });
       }
@@ -986,6 +989,12 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
           }
           keyboardShouldPersistTaps="handled"
         >
+          {/* Recovery Banner — shown when an interrupted game can be resumed */}
+          <GameRecoveryBanner testID="game-recovery-banner" />
+
+          {/* DEV-only debug panel — shows bookmark state + clear button */}
+          <GameDebugPanel />
+
           {/* Active Games Section - Show first if there are any */}
           {activeGames.length > 0 && currentFirebaseUser && (
             <>

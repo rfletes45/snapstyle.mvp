@@ -1,5 +1,5 @@
-﻿import { createServerLogger } from "../../utils/logger";
-import type { ServerLogger } from "../../utils/logger";
+﻿import type { ServerLogger } from "../../utils/logger";
+import { createServerLogger } from "../../utils/logger";
 const log = createServerLogger("CrosswordRoom");
 
 /**
@@ -29,7 +29,11 @@ import {
   CrosswordState,
 } from "../../schemas/draw";
 import { verifyFirebaseToken } from "../../services/firebase";
-import { persistGameResult } from "../../services/persistence";
+import {
+  deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
+  persistGameResult,
+} from "../../services/persistence";
 import { checkProtocolVersion } from "../../utils/protocol";
 
 // =============================================================================
@@ -507,11 +511,36 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
   }
 
   async onDispose(): Promise<void> {
+    const firestoreGameId =
+      (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
+    const inviteId = extractInviteIdFromExtGameId(firestoreGameId) ?? undefined;
+
     if (this.state.phase === "finished") {
-      await persistGameResult(
-        this.state as unknown as BaseGameState,
-        this.state.elapsed,
-      );
+      // Persist game result
+      try {
+        // Clear firestoreGameId so persistGameResult writes to
+        // RealtimeGameSessions (not non-existent TurnBasedGames for ext_ games)
+        const savedFsId = (this.state as any).firestoreGameId;
+        (this.state as any).firestoreGameId = "";
+
+        await persistGameResult(
+          this.state as unknown as BaseGameState,
+          this.state.elapsed,
+          undefined,
+          { inviteId, firestoreGameId },
+        );
+
+        (this.state as any).firestoreGameId = savedFsId;
+      } catch (err) {
+        this.roomLog.error("[crossword] Failed to persist game result:", err);
+      }
+
+      // Always attempt invite cleanup, even if persistence failed
+      try {
+        await deleteGameAndInvite(firestoreGameId, inviteId);
+      } catch (err) {
+        this.roomLog.error("[crossword] Failed to clean up game/invite:", err);
+      }
     }
     this.roomLog.info(`[crossword] Room disposed: ${this.roomId}`);
   }
@@ -562,7 +591,9 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
       puzzleIndex: this.state.puzzleIndex,
     });
 
-    this.roomLog.info(`[crossword] Game started! Puzzle: ${this.state.puzzleIndex}`);
+    this.roomLog.info(
+      `[crossword] Game started! Puzzle: ${this.state.puzzleIndex}`,
+    );
   }
 
   private checkCompletion(): void {

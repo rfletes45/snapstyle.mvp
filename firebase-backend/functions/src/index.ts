@@ -27,6 +27,7 @@ import {
   processGameCompletion,
   processMatchmakingQueue,
   processRealtimeGameCompletion,
+  reconcileActiveInvites,
   resignGame,
 } from "./games";
 
@@ -142,6 +143,9 @@ import {
   publishTypingIndicator,
 } from "./privacyPublish";
 
+// Profile Views (server-authoritative increment)
+import { incrementProfileViews } from "./profileViews";
+
 // Utilities extracted from legacy index.
 export {
   getUserPushToken,
@@ -198,6 +202,7 @@ export {
   grantCosmeticEntitlement,
   grantItem,
   handleCallTimeouts,
+  incrementProfileViews,
   initializeExistingWallets,
   initializeFirstAdmin,
   makeMove,
@@ -240,6 +245,7 @@ export {
   publishTypingIndicator,
   purchaseCosmeticWithTokens,
   purchaseWithTokens,
+  reconcileActiveInvites,
   recordDailyLogin,
   resignGame,
   restorePurchases,

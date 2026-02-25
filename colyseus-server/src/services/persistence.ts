@@ -206,6 +206,7 @@ export async function persistGameResult(
   state: BaseGameState,
   gameDurationMs?: number,
   perPlayerStats?: Record<string, Record<string, number>>,
+  metadata?: { inviteId?: string; firestoreGameId?: string },
 ): Promise<void> {
   const db = getFirestoreDb();
   if (!db) {
@@ -214,17 +215,25 @@ export async function persistGameResult(
   }
 
   const players: GameResultRecord["players"] = [];
-  state.players.forEach((player: Player) => {
-    players.push({
-      uid: player.uid,
-      displayName: player.displayName,
-      score: player.score,
-      playerIndex: player.playerIndex,
-      ...(perPlayerStats?.[player.uid]
-        ? { gameSpecific: perPlayerStats[player.uid] }
-        : {}),
+  // Use state.players if populated; fall back to cardPlayers for card games
+  // (card games extend BaseGameState but use cardPlayers instead of players).
+  const playerMap =
+    state.players?.size > 0
+      ? state.players
+      : ((state as any).cardPlayers ?? null);
+  if (playerMap) {
+    playerMap.forEach((player: Player) => {
+      players.push({
+        uid: player.uid,
+        displayName: player.displayName,
+        score: player.score,
+        playerIndex: player.playerIndex,
+        ...(perPlayerStats?.[player.uid]
+          ? { gameSpecific: perPlayerStats[player.uid] }
+          : {}),
+      });
     });
-  });
+  }
 
   const gameRecord: GameResultRecord = {
     gameType: state.gameType,
@@ -249,8 +258,14 @@ export async function persistGameResult(
           status: "completed",
         });
     } else {
-      // Create new real-time game session record
-      await db.collection("RealtimeGameSessions").add(gameRecord);
+      // Create new real-time game session record.
+      // Include inviteId / firestoreGameId so the processRealtimeGameCompletion
+      // Cloud Function can reliably discover and finalize the associated invite.
+      const sessionDoc: Record<string, any> = { ...gameRecord };
+      if (metadata?.inviteId) sessionDoc.inviteId = metadata.inviteId;
+      if (metadata?.firestoreGameId)
+        sessionDoc.firestoreGameId = metadata.firestoreGameId;
+      await db.collection("RealtimeGameSessions").add(sessionDoc);
     }
 
     // Clean up suspended state if any
@@ -310,6 +325,30 @@ export async function cleanupExpiredGameStates(
 }
 
 // =============================================================================
+// Helpers — External Colyseus Game ID Parsing
+// =============================================================================
+
+/**
+ * Extract the invite ID from an external Colyseus game ID.
+ *
+ * External Colyseus games use the format `ext_<gameType>_<inviteId>`.
+ * Firestore auto-generated invite IDs are alphanumeric (no underscores),
+ * so the invite ID is safely the substring after the last underscore.
+ *
+ * @returns The invite ID, or null if the format doesn't match
+ */
+export function extractInviteIdFromExtGameId(
+  firestoreGameId: string,
+): string | null {
+  if (!firestoreGameId || !firestoreGameId.startsWith("ext_")) return null;
+  const lastUnderscore = firestoreGameId.lastIndexOf("_");
+  // "ext_" is 4 chars — the last underscore must be beyond index 3
+  if (lastUnderscore <= 3) return null;
+  const inviteId = firestoreGameId.substring(lastUnderscore + 1);
+  return inviteId || null;
+}
+
+// =============================================================================
 // Game + Invite Deletion (Vacancy / Pre-Start Abandonment / Resolution)
 // =============================================================================
 
@@ -352,6 +391,19 @@ export async function deleteGameAndInvite(
       batch.delete(tbRef);
     }
 
+    // Fallback: parse inviteId from ext_<gameType>_<inviteId> format.
+    // External Colyseus games have no TurnBasedGames doc, so auto-discovery
+    // above will miss them. The inviteId is embedded in the firestoreGameId.
+    if (!inviteId) {
+      const parsed = extractInviteIdFromExtGameId(firestoreGameId);
+      if (parsed) {
+        inviteId = parsed;
+        log.info(
+          `[Persistence] Extracted inviteId from ext_ format: ${inviteId}`,
+        );
+      }
+    }
+
     // Delete RealtimeGameSessions record (if exists)
     const rtRef = db.collection("RealtimeGameSessions").doc(firestoreGameId);
     const rtDoc = await rtRef.get();
@@ -359,14 +411,27 @@ export async function deleteGameAndInvite(
       batch.delete(rtRef);
     }
 
-    // Mark the associated invite as completed so it disappears from chat
+    // Mark the associated invite as completed + hidden so it disappears
+    // from chat immediately (Phase 1 hardening).
     if (inviteId) {
       const inviteRef = db.collection("GameInvites").doc(inviteId);
       const inviteDoc = await inviteRef.get();
       if (inviteDoc.exists) {
+        const inviteData = inviteDoc.data() || {};
+        const now = Date.now();
+        const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
         batch.update(inviteRef, {
           status: "completed",
-          completedAt: FieldValue.serverTimestamp(),
+          completedAt: now,
+          resolvedAt: now,
+          resolvedBy: "room",
+          chatVisibility: "hidden",
+          chatHiddenAt: now,
+          chatHiddenInConversationIds: inviteData.conversationId
+            ? [inviteData.conversationId]
+            : [],
+          deleteAt: now + SIX_HOURS_MS,
+          updatedAt: now,
         });
       }
     }

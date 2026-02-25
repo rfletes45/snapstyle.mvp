@@ -17,13 +17,17 @@ import { FlatList, StyleSheet, View } from "react-native";
 import { Appbar, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/BadgeCollectionScreen");
-export default function BadgeCollectionScreen({ navigation }: any) {
+export default function BadgeCollectionScreen({ navigation, route }: any) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
-  const { earnedBadges, hasBadge, stats } = useBadges(currentFirebaseUser?.uid);
+
+  // Support viewing another user's badges via route params
+  const targetUserId = route?.params?.userId || currentFirebaseUser?.uid;
+  const isOwnProfile = targetUserId === currentFirebaseUser?.uid;
+
+  const { earnedBadges, hasBadge, stats } = useBadges(targetUserId);
 
   const visibleBadges = BADGE_DEFINITIONS.filter((b) => !b.hidden);
 
@@ -34,7 +38,7 @@ export default function BadgeCollectionScreen({ navigation }: any) {
     >
       <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content title="Badges" />
+        <Appbar.Content title={isOwnProfile ? "Badges" : "Their Badges"} />
       </Appbar.Header>
 
       {/* Stats Header */}

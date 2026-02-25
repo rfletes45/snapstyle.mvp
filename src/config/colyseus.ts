@@ -290,9 +290,16 @@ export const COLYSEUS_SPECTATOR_ROOM = "spectator";
 
 /**
  * Check if a game type supports Colyseus multiplayer.
+ * Accepts both ExtendedGameType IDs ("battleship") and clientKeys ("battleship_game").
  */
 export function isColyseusEnabled(gameType: string): boolean {
-  return gameType in COLYSEUS_ROOM_NAMES;
+  // Direct match against clientKey-keyed room names
+  if (gameType in COLYSEUS_ROOM_NAMES) return true;
+  // Fall back: check if appending "_game" hits (ExtendedGameType → clientKey)
+  if (gameType + "_game" in COLYSEUS_ROOM_NAMES) return true;
+  // Fall back: check if it's a key in the COLYSEUS_GAME_MAPPING (ExtendedGameType)
+  if (gameType in COLYSEUS_GAME_MAPPING) return true;
+  return false;
 }
 
 /**
@@ -340,9 +347,18 @@ export function resolveColyseusRoomName(gameType: string): string {
 
 /**
  * Get the Colyseus category for a game type.
+ * Accepts both ExtendedGameType IDs and clientKeys.
  */
 export function getGameCategory(gameType: string): ColyseusGameCategory | null {
-  return GAME_CATEGORY_MAP[gameType] ?? null;
+  // Direct match (clientKey-keyed)
+  const direct = GAME_CATEGORY_MAP[gameType];
+  if (direct) return direct;
+  // Try appending _game (ExtendedGameType → clientKey)
+  const withSuffix = GAME_CATEGORY_MAP[gameType + "_game"];
+  if (withSuffix) return withSuffix;
+  // Fall back via COLYSEUS_GAME_MAPPING (keyed by ExtendedGameType)
+  const mapping = COLYSEUS_GAME_MAPPING[gameType as ColyseusMappedGameType];
+  return mapping?.category ?? null;
 }
 
 /**

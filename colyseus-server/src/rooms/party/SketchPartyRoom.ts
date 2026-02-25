@@ -23,7 +23,11 @@ import { BaseGameState } from "../../schemas/common";
 import { SketchPartyPlayer, SketchPartyState } from "../../schemas/sketchParty";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
-import { persistGameResult } from "../../services/persistence";
+import {
+  deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
+  persistGameResult,
+} from "../../services/persistence";
 import type { ServerLogger } from "../../utils/logger";
 import { createServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
@@ -209,6 +213,9 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
   private hintTimers: any[] = [];
   private roomLog: ServerLogger = log;
 
+  /** Invite ID for finalization fallback (defense-in-depth). */
+  private inviteId: string | undefined;
+
   // ── Per-player cumulative stats (for achievement evaluation) ──────────
   /**
    * Accumulated stats per player UID, tracked across *all* turns.
@@ -293,6 +300,11 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     this.state.turnSubphase = "lobby";
     this.state.firestoreGameId = options.firestoreGameId || "";
     this.state.hostUid = options.hostUid || "";
+
+    // Capture inviteId for finalization fallback
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
+    }
 
     // Apply lobby settings with clamping
     this.state.rounds = clamp(
@@ -507,7 +519,15 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
   async onDispose(): Promise<void> {
     this._clearTurnTimers();
 
+    const firestoreGameId =
+      (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
+    const inviteId =
+      extractInviteIdFromExtGameId(firestoreGameId) ??
+      this.inviteId ??
+      undefined;
+
     if (this.state.phase === "finished") {
+      // Persist game result
       try {
         const duration = this.gameStartedAt
           ? Date.now() - this.gameStartedAt
@@ -529,14 +549,32 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
           };
         });
 
+        // Clear firestoreGameId so persistGameResult writes to
+        // RealtimeGameSessions (not non-existent TurnBasedGames for ext_ games)
+        const savedFsId = (this.state as any).firestoreGameId;
+        (this.state as any).firestoreGameId = "";
+
         await persistGameResult(
           this.state as unknown as BaseGameState,
           duration,
           perPlayerStats,
+          { inviteId, firestoreGameId },
         );
+
+        (this.state as any).firestoreGameId = savedFsId;
       } catch (err) {
         this.roomLog.error(
           "[sketch_party] Failed to persist game result:",
+          err,
+        );
+      }
+
+      // Always attempt invite cleanup, even if persistence failed
+      try {
+        await deleteGameAndInvite(firestoreGameId, inviteId);
+      } catch (err) {
+        this.roomLog.error(
+          "[sketch_party] Failed to clean up game/invite:",
           err,
         );
       }

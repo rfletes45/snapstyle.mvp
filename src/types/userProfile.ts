@@ -15,6 +15,7 @@
 
 import type { ChatAppearance } from "@/cosmetics/types";
 import type { AvatarConfig, Friend } from "./models";
+import type { LevelInfo } from "./profile";
 
 // =============================================================================
 // PROFILE PICTURE & AVATAR DECORATIONS
@@ -216,6 +217,12 @@ export interface ProfilePrivacySettings {
   showOnlineStatus: PrivacyVisibility;
   /** Who can see your friendship anniversary info */
   showFriendshipInfo: PrivacyVisibility;
+  /** Who can see your achievements (separate from badges) */
+  showAchievements: PrivacyVisibility;
+  /** Who can see your streak info */
+  showStreaks: PrivacyVisibility;
+  /** Who can see your recent activity on your profile */
+  showRecentActivity: PrivacyVisibility;
 
   // === SOCIAL VISIBILITY ===
   /** Show mutual friends on your profile */
@@ -264,6 +271,9 @@ export const DEFAULT_PRIVACY_SETTINGS: ProfilePrivacySettings = {
   showLastActive: "friends",
   showOnlineStatus: "friends",
   showFriendshipInfo: "friends",
+  showAchievements: "everyone",
+  showStreaks: "friends",
+  showRecentActivity: "friends",
 
   // Social visibility
   showMutualFriends: true,
@@ -303,6 +313,9 @@ export const PRIVACY_PRESETS = {
       showLastActive: "everyone",
       showOnlineStatus: "everyone",
       showFriendshipInfo: "everyone",
+      showAchievements: "everyone",
+      showStreaks: "everyone",
+      showRecentActivity: "everyone",
       showMutualFriends: true,
       showFriendCount: true,
       showFriendsList: "everyone",
@@ -330,6 +343,9 @@ export const PRIVACY_PRESETS = {
       showLastActive: "friends",
       showOnlineStatus: "friends",
       showFriendshipInfo: "friends",
+      showAchievements: "friends",
+      showStreaks: "friends",
+      showRecentActivity: "friends",
       showMutualFriends: true,
       showFriendCount: false,
       showFriendsList: "friends",
@@ -357,6 +373,9 @@ export const PRIVACY_PRESETS = {
       showLastActive: "nobody",
       showOnlineStatus: "nobody",
       showFriendshipInfo: "friends",
+      showAchievements: "friends",
+      showStreaks: "friends",
+      showRecentActivity: "nobody",
       showMutualFriends: false,
       showFriendCount: false,
       showFriendsList: "nobody",
@@ -776,6 +795,9 @@ export interface UserProfileData {
   ownedDecorations: string[];
   ownedThemes: string[];
 
+  // Level / XP progression
+  level: LevelInfo;
+
   // Metadata
   createdAt: number;
   lastActive: number;
@@ -830,6 +852,7 @@ export const DEFAULT_USER_PROFILE_DATA: Omit<
   },
   ownedDecorations: [],
   ownedThemes: ["default"],
+  level: { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 },
   lastProfileUpdate: Date.now(),
 };
 

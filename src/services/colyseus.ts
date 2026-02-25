@@ -458,11 +458,17 @@ class ColyseusService {
   // ===========================================================================
 
   private setupRoomHandlers(room: Room, handlers: ColyseusEventHandlers): void {
-    // Store reconnection token for later use
+    // Store reconnection token for later use (recovery)
     if (room.reconnectionToken) {
       logger.info(
         `[Colyseus] Reconnection token: ${room.reconnectionToken.substring(0, 8)}...`,
       );
+      // Persist token for crash recovery — import is lazy to avoid circular deps
+      import("@/services/gameRecovery")
+        .then(({ updateReconnectionToken }) => {
+          updateReconnectionToken(room.reconnectionToken).catch(() => {});
+        })
+        .catch(() => {});
     }
 
     // Use the scoped `handlers` argument — NOT `this.eventHandlers` —

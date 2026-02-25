@@ -14,10 +14,12 @@ import { StyleSheet, View, ViewStyle } from "react-native";
 import { Text } from "react-native-paper";
 
 import { CosmeticImage } from "@/components/CosmeticImage";
+import { LevelProgress } from "@/components/profile/LevelProgress";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { getCosmeticAsset } from "@/cosmetics/assetRegistry";
 import type { CosmeticImageSource } from "@/cosmetics/types";
 import { useColors } from "@/store/ThemeContext";
+import type { LevelInfo } from "@/types/profile";
 import type {
   FriendshipDetails,
   ProfileBio,
@@ -46,6 +48,8 @@ export interface UserProfileHeaderProps {
   status?: ProfileStatus | null;
   /** Last active timestamp (may be hidden by privacy settings) */
   lastActive?: number | null;
+  /** User's level and XP progress */
+  level?: LevelInfo | null;
   /** Friendship details (if friends) */
   friendshipDetails?: FriendshipDetails | null;
   /** Handler for picture press (e.g., to view full size) */
@@ -108,6 +112,7 @@ function UserProfileHeaderBase({
   backgroundId,
   bio,
   status,
+  level,
   lastActive,
   friendshipDetails,
   onPicturePress,
@@ -282,6 +287,13 @@ function UserProfileHeaderBase({
               </Text>
             </View>
           )}
+
+          {/* Level Progress */}
+          {level && (
+            <View style={styles.levelContainer}>
+              <LevelProgress level={level} compact={!!backgroundSource} />
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -391,6 +403,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
+  },
+  levelContainer: {
+    width: "100%",
+    paddingHorizontal: 16,
+    marginTop: 12,
   },
 });
 

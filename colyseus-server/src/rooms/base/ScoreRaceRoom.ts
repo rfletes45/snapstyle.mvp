@@ -26,6 +26,7 @@ import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
   deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
   markGameVacant,
   persistGameResult,
 } from "../../services/persistence";
@@ -72,6 +73,9 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
 
   /** Stuck-room watchdog — logs if room never reaches playing */
   private stuckWatchdog: StuckRoomWatchdog | null = null;
+
+  /** Invite ID for finalization fallback (defense-in-depth). */
+  private inviteId: string | undefined;
 
   protected isSpectator(sessionId: string): boolean {
     return this.spectatorSessionIds.has(sessionId);
@@ -137,6 +141,11 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
 
     if (options.firestoreGameId) {
       this.state.firestoreGameId = options.firestoreGameId;
+    }
+
+    // Capture inviteId for finalization fallback
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
     }
 
     // Build scoped logger with room-level correlation context
@@ -420,12 +429,19 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     this.stuckWatchdog?.dispose();
     const firestoreGameId =
       this.state.firestoreGameId || this.state.gameId || this.roomId;
+    const inviteId =
+      extractInviteIdFromExtGameId(firestoreGameId) ??
+      this.inviteId ??
+      undefined;
 
     if (this.state.phase === "finished" && this.state.winnerId) {
-      // Game resolved � persist results, then delete game + invite
+      // Game resolved — persist results, then delete game + invite
       const durationMs = this.state.timer.elapsed;
-      await persistGameResult(this.state, durationMs);
-      await deleteGameAndInvite(firestoreGameId);
+      await persistGameResult(this.state, durationMs, undefined, {
+        inviteId,
+        firestoreGameId,
+      });
+      await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info(
         `Game completed, persisted, and cleaned up: ${this.roomId}`,
       );
@@ -440,7 +456,7 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       this.state.phase === "countdown"
     ) {
       // PRE-START ABANDONMENT: delete immediately
-      await deleteGameAndInvite(firestoreGameId);
+      await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info(
         `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
       );

@@ -20,10 +20,13 @@
  */
 
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
+import { createLogger } from "@/utils/log";
 import type { Room } from "@colyseus/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useColyseus, UseColyseusOptions } from "./useColyseus";
 import { useColyseusAppState } from "./useColyseusAppState";
+
+const logger = createLogger("hooks/usePhysicsGame");
 
 // =============================================================================
 // Types
@@ -183,6 +186,7 @@ export interface UsePhysicsGameReturn {
   startMultiplayer: (opts?: {
     firestoreGameId?: string;
     spectator?: boolean;
+    inviteId?: string;
   }) => void;
 
   /** Cancel/leave multiplayer and return to menu */
@@ -201,6 +205,8 @@ export interface UsePhysicsGameOptions {
   /** Firestore game ID from invite flow — used by filterBy to match both players */
   firestoreGameId?: string;
   spectator?: boolean;
+  /** Forwarded to Colyseus join options for server-side invite finalization. */
+  inviteId?: string;
 }
 
 export function usePhysicsGame(
@@ -211,11 +217,13 @@ export function usePhysicsGame(
     gameType,
     firestoreGameId,
     spectator = false,
+    inviteId,
   } = typeof optionsOrGameType === "string"
     ? {
         gameType: optionsOrGameType,
         firestoreGameId: undefined,
         spectator: false,
+        inviteId: undefined,
       }
     : optionsOrGameType;
 
@@ -229,6 +237,9 @@ export function usePhysicsGame(
     string | undefined
   >(firestoreGameId);
   const [activeSpectator, setActiveSpectator] = useState(spectator);
+  const [activeInviteId, setActiveInviteId] = useState<string | undefined>(
+    inviteId,
+  );
 
   // Only connect when explicitly starting multiplayer
   const colyseusOptions: UseColyseusOptions = {
@@ -236,7 +247,10 @@ export function usePhysicsGame(
     autoJoin: false,
     roomId: joinRoomId,
     firestoreGameId: activeFirestoreGameId,
-    options: activeSpectator ? { spectator: true } : undefined,
+    options: {
+      ...(activeSpectator ? { spectator: true } : {}),
+      ...(activeInviteId ? { inviteId: activeInviteId } : {}),
+    },
   };
 
   const {
@@ -441,11 +455,27 @@ export function usePhysicsGame(
     setIsTie(false);
   }, [sendMessage]);
 
+  // Phase 3: idempotency guard — prevent double startMultiplayer calls
+  const joinTriggeredRef = useRef(false);
+
   const startMultiplayer = useCallback(
-    (opts?: { firestoreGameId?: string; spectator?: boolean }) => {
+    (opts?: {
+      firestoreGameId?: string;
+      spectator?: boolean;
+      inviteId?: string;
+    }) => {
       if (!isAvailable) return;
+      if (joinTriggeredRef.current) {
+        logger.warn(
+          `[startMultiplayer] BLOCKED — already triggered (gameId=${opts?.firestoreGameId})`,
+        );
+        return;
+      }
+      joinTriggeredRef.current = true;
+
       if (opts?.firestoreGameId) setActiveFirestoreGameId(opts.firestoreGameId);
       if (opts?.spectator !== undefined) setActiveSpectator(opts.spectator);
+      if (opts?.inviteId) setActiveInviteId(opts.inviteId);
       setIsMultiplayer(true);
       setPhase("connecting");
       // Trigger join on next effect cycle
@@ -463,6 +493,7 @@ export function usePhysicsGame(
     setIsWinner(null);
     setIsTie(false);
     setRematchRequested(false);
+    joinTriggeredRef.current = false;
   }, [leaveRoom]);
 
   // Update phase based on connection state

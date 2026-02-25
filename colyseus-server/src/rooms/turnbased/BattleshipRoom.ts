@@ -32,6 +32,7 @@ import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
   deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
   markGameVacant,
   persistGameResult,
 } from "../../services/persistence";
@@ -77,6 +78,12 @@ export class BattleshipRoom extends Room {
    */
   private firestoreGameId = "";
 
+  /**
+   * Invite ID — passed explicitly from client join options as defense-in-depth.
+   * Used alongside ext_ parsing in onDispose for reliable invite finalization.
+   */
+  private inviteId: string | undefined;
+
   /** Scoped logger */
   private roomLog: ServerLogger = log;
   /** Timestamp when combat began (for duration tracking) */
@@ -110,6 +117,9 @@ export class BattleshipRoom extends Room {
     if (options.firestoreGameId) {
       this.firestoreGameId = options.firestoreGameId;
       state.firestoreGameId = options.firestoreGameId;
+    }
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
     }
     if (options.isRated !== undefined) {
       state.isRated = options.isRated;
@@ -908,6 +918,15 @@ export class BattleshipRoom extends Room {
 
     if (this.s.phase === "finished" && this.s.winnerId) {
       // ── Game resolved → persist results ────────────────────────────────
+
+      // Extract inviteId from ext_battleship_<inviteId> for explicit passing.
+      // Fall back to this.inviteId (passed from client join options) as
+      // defense-in-depth.
+      const inviteId =
+        extractInviteIdFromExtGameId(firestoreGameId) ??
+        this.inviteId ??
+        undefined;
+
       try {
         // Temporarily clear firestoreGameId on state so persistGameResult
         // writes a new RealtimeGameSessions doc (triggering the backend
@@ -944,15 +963,21 @@ export class BattleshipRoom extends Room {
           this.s as unknown as BaseGameState,
           gameDurationMs,
           perPlayerStats,
+          { inviteId, firestoreGameId },
         );
 
-        // Restore for cleanup, then clean up invite / game docs
+        // Restore for cleanup
         this.s.firestoreGameId = savedFsId;
-        await deleteGameAndInvite(firestoreGameId);
-
-        this.roomLog.info("Game completed, persisted, and cleaned up");
       } catch (e) {
         this.roomLog.error("Failed to persist game result:", e);
+      }
+
+      // Always attempt invite cleanup, even if persistence failed
+      try {
+        await deleteGameAndInvite(firestoreGameId, inviteId);
+        this.roomLog.info("Game completed, persisted, and cleaned up");
+      } catch (e) {
+        this.roomLog.error("Failed to clean up game/invite:", e);
       }
     } else if (this.s.phase === "combat" || this.s.phase === "placement") {
       // ── Ongoing game → mark vacant (10-min cleanup) ────────────────────
@@ -960,7 +985,11 @@ export class BattleshipRoom extends Room {
       this.roomLog.info("Ongoing game marked vacant (10-min TTL)");
     } else if (this.s.phase === "waiting") {
       // ── Pre-start abandonment → delete immediately ─────────────────────
-      await deleteGameAndInvite(firestoreGameId);
+      const inviteId =
+        extractInviteIdFromExtGameId(firestoreGameId) ??
+        this.inviteId ??
+        undefined;
+      await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info("Pre-start abandonment — deleted game + invite");
     }
 

@@ -1,69 +1,60 @@
 /**
  * OwnProfileScreen
  *
- * The current user's profile screen with full editing capabilities.
- * Replaces the legacy ProfileScreen when NEW_PROFILE_LAYOUT feature flag is enabled.
+ * The current user's profile screen — polished, minimal, and cohesive.
  *
- * Features:
- * - Profile picture with decoration editing
- * - Bio editing
- * - Status/mood setting
- * - Featured badges showcase
- * - Stats dashboard
- * - Quick action navigation
+ * Layout (top → bottom):
+ * 1. Showcase Header (background + PFP + decoration + level/XP)
+ * 2. Identity row (name, handle, level/tokens chips)
+ * 3. Primary actions (Customize / Shop) — max 2-3 buttons
+ * 4. Social proof (streak summary + recent activity)
+ * 5. Overview cards (Friends / Badges / Achievements / Best Scores)
+ * 6. Overflow menu (•••) → Privacy / Settings
  *
  * @module screens/profile/OwnProfileScreen
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from "react-native";
-import { Button } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BadgeShowcase } from "@/components/badges";
 import {
-  FriendsSection,
-  GameScoresDisplay,
-  GameScoresEditor,
-  ProfileActions as ProfileActionsGrid,
-  ProfileStats,
-} from "@/components/profile";
+  AchievementsCard,
+  BadgesCard,
+  BestScoresCard,
+  FriendsCard,
+} from "@/components/profile/OverviewCards";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
 import { OwnProfileHeader } from "@/components/profile/ProfileHeader/index";
-import {
-  DecorationPickerModal,
-  ProfilePictureEditor,
-} from "@/components/profile/ProfilePicture";
+import { ProfileOverflowMenu } from "@/components/profile/ProfileOverflowMenu";
+import { ProfilePictureEditor } from "@/components/profile/ProfilePicture";
+import { SocialProofSection } from "@/components/profile/SocialProof";
 import { LoadingState } from "@/components/ui";
-import { BorderRadius, Spacing } from "@/constants/theme";
+import { BorderRadius, FontSizes, Spacing } from "@/constants/theme";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 
+import { useAchievementsV2 } from "@/hooks/useAchievementsV2";
 import { useFullProfileData } from "@/hooks/useFullProfileData";
 import { useGameScores } from "@/hooks/useGameScores";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
-import { logout } from "@/services/auth";
 
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
-import type { ProfileAction } from "@/types/profile";
 import type { ProfileBio, ProfileStatus } from "@/types/userProfile";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/profile/OwnProfileScreen");
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -81,14 +72,14 @@ export default function OwnProfileScreen({
 }: OwnProfileScreenProps) {
   const insets = useSafeAreaInsets();
   const { currentFirebaseUser } = useAuth();
-  const { profile: baseProfile, refreshProfile } = useUser();
+  const { profile: baseProfile } = useUser();
   const {
     profile,
     loading: profileDataLoading,
     refresh,
   } = useProfileData(currentFirebaseUser?.uid);
 
-  // Full profile data for bio and status
+  // Full profile data for bio, status, and privacy
   const { profile: fullProfile, refresh: refreshFullProfile } =
     useFullProfileData({ userId: currentFirebaseUser?.uid || "" });
 
@@ -96,21 +87,21 @@ export default function OwnProfileScreen({
   const {
     picture,
     decoration,
-    ownedDecorations,
     refresh: refreshPicture,
   } = useProfilePicture({ userId: currentFirebaseUser?.uid || "" });
 
   // Game scores hook
-  const {
-    displayScores: gameScores,
-    allScores: allGameScores,
-    config: gameScoresConfig,
-    updateConfig: updateGameScoresConfig,
-    refresh: refreshGameScores,
-  } = useGameScores({
+  const { displayScores: gameScores } = useGameScores({
     userId: currentFirebaseUser?.uid || "",
     maxScores: 5,
   });
+
+  // Achievements hook
+  const {
+    displayItems: achievementItems,
+    unlockedIds: achievementUnlockedIds,
+    isV2Active: achievementsActive,
+  } = useAchievementsV2(currentFirebaseUser?.uid || "");
 
   // Derived from hook results
   const pictureUrl = picture?.url || null;
@@ -119,12 +110,7 @@ export default function OwnProfileScreen({
   // Local state
   const [refreshing, setRefreshing] = useState(false);
   const [pictureEditorVisible, setPictureEditorVisible] = useState(false);
-  const [decorationPickerVisible, setDecorationPickerVisible] = useState(false);
   const [bioEditorVisible, setBioEditorVisible] = useState(false);
-  const [gameScoresEditorVisible, setGameScoresEditorVisible] = useState(false);
-
-  // Ref to track decoration picker delay timer
-  const decorationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const colors = useColors();
 
@@ -132,14 +118,8 @@ export default function OwnProfileScreen({
   const userBio: ProfileBio | null = fullProfile?.bio || null;
   const userStatus: ProfileStatus | null = fullProfile?.status || null;
 
-  // Clean up decoration timer on unmount
-  useEffect(() => {
-    return () => {
-      if (decorationTimerRef.current) {
-        clearTimeout(decorationTimerRef.current);
-      }
-    };
-  }, []);
+  // Privacy settings
+  const privacy = fullProfile?.privacy;
 
   // Prefetch equipped cosmetic assets so profile renders instantly
   useEffect(() => {
@@ -153,6 +133,31 @@ export default function OwnProfileScreen({
   }, [profile?.equippedBackgroundId, decorationId]);
 
   // ==========================================================================
+  // Privacy-derived flags (for "Hidden from others" badges on own profile)
+  // ==========================================================================
+
+  const friendsHidden = privacy?.showFriendsList === "nobody";
+  const badgesHidden = privacy?.showBadges === "nobody";
+  const scoresHidden = privacy?.showGameScores === "nobody";
+  const achievementsHidden = privacy?.showAchievements === "nobody";
+  const streaksHidden = privacy?.showStreaks === "nobody";
+  const activityHidden = privacy?.showRecentActivity === "nobody";
+
+  // Streak from stats
+  const streakCount = profile?.stats?.currentStreak ?? 0;
+
+  // Latest achievement title
+  const latestAchievementTitle = useMemo(() => {
+    if (!achievementsActive || achievementItems.length === 0) return undefined;
+    const unlocked = achievementItems.filter((a) =>
+      achievementUnlockedIds.has(a.id),
+    );
+    if (unlocked.length === 0) return undefined;
+    // Most-recently unlocked (items are sorted by display order so pick last unlocked)
+    return unlocked[unlocked.length - 1]?.name;
+  }, [achievementItems, achievementUnlockedIds, achievementsActive]);
+
+  // ==========================================================================
   // Handlers
   // ==========================================================================
 
@@ -162,41 +167,8 @@ export default function OwnProfileScreen({
     setRefreshing(false);
   }, [refresh, refreshPicture, refreshFullProfile]);
 
-  const handleSignOut = useCallback(async () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await logout();
-          } catch (error: any) {
-            logger.error("Sign out error:", error);
-          }
-        },
-      },
-    ]);
-  }, []);
-
   const handleEditPicture = useCallback(() => {
     setPictureEditorVisible(true);
-  }, []);
-
-  const handleOpenDecorationPicker = useCallback(() => {
-    setPictureEditorVisible(false);
-    // Wait for modal dismiss animation to complete before opening next modal
-    if (decorationTimerRef.current) {
-      clearTimeout(decorationTimerRef.current);
-    }
-    decorationTimerRef.current = setTimeout(() => {
-      setDecorationPickerVisible(true);
-      decorationTimerRef.current = null;
-    }, 350);
-  }, []);
-
-  const handleOpenDecorationPickerDirect = useCallback(() => {
-    setDecorationPickerVisible(true);
   }, []);
 
   const handleEditBio = useCallback(() => {
@@ -212,7 +184,7 @@ export default function OwnProfileScreen({
   }, [navigation]);
 
   const handleBioUpdated = useCallback(
-    (newBio: ProfileBio) => {
+    (_newBio: ProfileBio) => {
       refreshFullProfile();
     },
     [refreshFullProfile],
@@ -222,73 +194,14 @@ export default function OwnProfileScreen({
     refreshPicture();
   }, [refreshPicture]);
 
-  const handleDecorationChanged = useCallback(() => {
-    refreshPicture();
-  }, [refreshPicture]);
-
   // Modal close handlers
   const handleClosePictureEditor = useCallback(() => {
     setPictureEditorVisible(false);
   }, []);
 
-  const handleCloseDecorationPicker = useCallback(() => {
-    setDecorationPickerVisible(false);
-  }, []);
-
   const handleCloseBioEditor = useCallback(() => {
     setBioEditorVisible(false);
   }, []);
-
-  const handleCloseGameScoresEditor = useCallback(() => {
-    setGameScoresEditorVisible(false);
-  }, []);
-
-  // Action buttons configuration
-  const actions = useMemo<ProfileAction[]>(
-    () => [
-      {
-        id: "customize",
-        label: "Customize",
-        icon: "palette",
-        onPress: () => navigation.navigate("Customization"),
-      },
-      {
-        id: "wallet",
-        label: "My Wallet",
-        icon: "wallet",
-        onPress: () => navigation.navigate("Wallet"),
-      },
-      {
-        id: "tasks",
-        label: "Daily Tasks",
-        icon: "clipboard-check",
-        onPress: () => navigation.navigate("Tasks"),
-      },
-      {
-        id: "settings",
-        label: "Settings",
-        icon: "cog",
-        onPress: () => navigation.navigate("Settings"),
-      },
-      ...(__DEV__
-        ? [
-            {
-              id: "debug",
-              label: "Debug",
-              icon: "bug",
-              onPress: () => navigation.navigate("Debug"),
-            },
-          ]
-        : []),
-      {
-        id: "blocked",
-        label: "Blocked Users",
-        icon: "account-cancel",
-        onPress: () => navigation.navigate("BlockedUsers"),
-      },
-    ],
-    [navigation],
-  );
 
   // ==========================================================================
   // Render
@@ -305,154 +218,160 @@ export default function OwnProfileScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.scrollContainer}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[
-            styles.content,
-            { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
-          ]}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-          }
-        >
-          {/* Profile Header */}
-          <OwnProfileHeader
-            displayName={baseProfile.displayName}
-            username={baseProfile.username}
-            pictureUrl={pictureUrl}
-            decorationId={decorationId}
-            backgroundId={profile?.equippedBackgroundId ?? null}
-            bio={userBio}
-            status={userStatus}
-            level={
-              profile?.level || {
-                current: 1,
-                xp: 0,
-                xpToNextLevel: 100,
-                totalXp: 0,
-              }
-            }
-            onEditPicturePress={handleEditPicture}
-            onEditBioPress={handleEditBio}
-            onEditStatusPress={handleEditStatus}
-            onEditNamePress={handleEditName}
-            onLevelPress={() => navigation.navigate("LevelRewards")}
-          />
-
-          <View
-            style={[
-              styles.sectionDivider,
-              {
-                backgroundColor: colors.surfaceVariant,
-              },
-            ]}
-          />
-
-          {/* Game Scores Display */}
-          <>
-            <GameScoresDisplay
-              scores={gameScores}
-              enabled={gameScoresConfig.enabled}
-              isOwnProfile={true}
-              onEditPress={() => setGameScoresEditorVisible(true)}
-              onGamePress={(gameId) => {
-                navigation.navigate("Games", { gameId });
-              }}
-              testID="own-profile-game-scores"
-            />
-            <View
-              style={[
-                styles.sectionDivider,
-                {
-                  backgroundColor: colors.surfaceVariant,
-                },
-              ]}
-            />
-          </>
-
-          {/* Featured Badges */}
-          {profile?.featuredBadges && (
-            <>
-              <BadgeShowcase
-                badges={profile.featuredBadges}
-                onBadgePress={(badge) => {
-                  navigation.navigate("BadgeCollection", {
-                    highlightBadgeId: badge.badgeId,
-                  });
-                }}
-                onViewAll={() => navigation.navigate("BadgeCollection")}
-              />
-              <View
-                style={[
-                  styles.sectionDivider,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                  },
-                ]}
-              />
-            </>
-          )}
-
-          {/* Friends Section */}
-          {currentFirebaseUser?.uid && (
-            <>
-              <FriendsSection
-                userId={currentFirebaseUser.uid}
-                maxDisplay={10}
-                onSeeAllPress={() => navigation.navigate("Connections")}
-                onFriendPress={(friendUid) =>
-                  navigation.navigate("UserProfile", { userId: friendUid })
-                }
-              />
-              <View
-                style={[
-                  styles.sectionDivider,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                  },
-                ]}
-              />
-            </>
-          )}
-
-          {/* Stats Dashboard */}
-          {profile?.stats && (
-            <>
-              <ProfileStats stats={profile.stats} expanded={false} />
-              <View
-                style={[
-                  styles.sectionDivider,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                  },
-                ]}
-              />
-            </>
-          )}
-
-          {/* Action Buttons */}
-          <ProfileActionsGrid actions={actions} />
-
-          {/* Sign Out */}
-          <View style={styles.signOutContainer}>
-            <Button
-              mode="outlined"
-              onPress={handleSignOut}
-              textColor={colors.textSecondary}
-              style={[
-                styles.signOutButton,
-                {
-                  borderColor: colors.textSecondary + "40",
-                },
-              ]}
-              accessibilityLabel="Sign out of your account"
-            >
-              Sign Out
-            </Button>
-          </View>
-        </ScrollView>
+      {/* Overflow menu (top-right) */}
+      <View style={[styles.overflowContainer, { top: insets.top + 8 }]}>
+        <ProfileOverflowMenu
+          onPrivacyPress={() => navigation.navigate("PrivacySettings")}
+          onSettingsPress={() => navigation.navigate("Settings")}
+        />
       </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
+        ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        {/* ============================================================ */}
+        {/* A) Showcase Header */}
+        {/* ============================================================ */}
+        <OwnProfileHeader
+          displayName={baseProfile.displayName}
+          username={baseProfile.username}
+          pictureUrl={pictureUrl}
+          decorationId={decorationId}
+          backgroundId={profile?.equippedBackgroundId ?? null}
+          bio={userBio}
+          status={userStatus}
+          level={
+            profile?.level || {
+              current: 1,
+              xp: 0,
+              xpToNextLevel: 100,
+              totalXp: 0,
+            }
+          }
+          onEditPicturePress={handleEditPicture}
+          onEditBioPress={handleEditBio}
+          onEditStatusPress={handleEditStatus}
+          onEditNamePress={handleEditName}
+          onLevelPress={() => navigation.navigate("LevelRewards")}
+        />
+
+        {/* ============================================================ */}
+        {/* Identity chips row (Level + Tokens — read-only) */}
+        {/* ============================================================ */}
+        <View style={styles.chipsRow}>
+          <View
+            style={[styles.chip, { backgroundColor: colors.primary + "15" }]}
+          >
+            <MaterialCommunityIcons
+              name="star-circle-outline"
+              size={14}
+              color={colors.primary}
+            />
+            <Text style={[styles.chipText, { color: colors.primary }]}>
+              Lv {profile?.level?.current ?? 1}
+            </Text>
+          </View>
+        </View>
+
+        {/* ============================================================ */}
+        {/* B) Primary Actions (max 2-3) */}
+        {/* ============================================================ */}
+        <View style={styles.primaryActions}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate("Customization")}
+            accessibilityLabel="Customize profile"
+          >
+            <MaterialCommunityIcons name="palette" size={18} color="#fff" />
+            <Text style={styles.primaryBtnText}>Customize</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.primaryBtn,
+              { backgroundColor: colors.surfaceVariant },
+            ]}
+            onPress={() => navigation.navigate("Shop")}
+            accessibilityLabel="Open shop"
+          >
+            <MaterialCommunityIcons
+              name="shopping-outline"
+              size={18}
+              color={colors.text}
+            />
+            <Text style={[styles.primaryBtnText, { color: colors.text }]}>
+              Shop
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ============================================================ */}
+        {/* D) Social Proof (streak + recent activity) */}
+        {/* ============================================================ */}
+        <SocialProofSection
+          userId={currentFirebaseUser?.uid || ""}
+          streakCount={streaksHidden ? 0 : streakCount}
+          showRecentActivity={!activityHidden}
+          isOwnProfile={true}
+          onStreakPress={() => navigation.navigate("Tasks", { tab: "daily" })}
+          onActivityPress={() => navigation.navigate("ActivityFeed")}
+        />
+
+        {/* ============================================================ */}
+        {/* C) Overview Cards */}
+        {/* ============================================================ */}
+        <View style={styles.cardsSection}>
+          {/* Friends Card */}
+          <FriendsCard
+            userId={currentFirebaseUser?.uid || ""}
+            isOwnProfile={true}
+            hiddenFromOthers={friendsHidden}
+            enterIndex={0}
+            onPress={() => navigation.navigate("Connections")}
+            onFriendPress={(friendUid) =>
+              navigation.navigate("UserProfile", { userId: friendUid })
+            }
+          />
+
+          {/* Badges Card */}
+          <BadgesCard
+            badges={profile?.featuredBadges ?? []}
+            totalEarned={profile?.stats?.totalBadges}
+            hiddenFromOthers={badgesHidden}
+            enterIndex={1}
+            onPress={() => navigation.navigate("BadgeCollection")}
+          />
+
+          {/* Achievements Card */}
+          {achievementsActive && (
+            <AchievementsCard
+              totalAchievements={achievementItems.length}
+              unlockedCount={achievementUnlockedIds.size}
+              latestUnlockTitle={latestAchievementTitle}
+              hiddenFromOthers={achievementsHidden}
+              enterIndex={2}
+              onPress={() =>
+                navigation.navigate("Play", { screen: "Achievements" })
+              }
+            />
+          )}
+
+          {/* Best Scores Card */}
+          <BestScoresCard
+            scores={gameScores}
+            hiddenFromOthers={scoresHidden}
+            enterIndex={3}
+            onPress={() => navigation.navigate("GameStats")}
+          />
+        </View>
+      </ScrollView>
 
       {/* Profile Picture Editor Modal */}
       <ProfilePictureEditor
@@ -463,19 +382,18 @@ export default function OwnProfileScreen({
         decorationId={decorationId}
         onClose={handleClosePictureEditor}
         onPictureUpdated={handlePictureUpdated}
-        onDecorationPress={handleOpenDecorationPicker}
-      />
-
-      {/* Decoration Picker Modal */}
-      <DecorationPickerModal
-        visible={decorationPickerVisible}
-        userId={currentFirebaseUser?.uid || ""}
-        pictureUrl={pictureUrl}
-        name={baseProfile.displayName}
-        ownedDecorationIds={ownedDecorations}
-        currentDecorationId={decorationId}
-        onClose={handleCloseDecorationPicker}
-        onDecorationChanged={handleDecorationChanged}
+        onDecorationPress={() => {
+          setPictureEditorVisible(false);
+          // Navigate to Customization Hub decoration tab instead of deprecated picker
+          setTimeout(
+            () =>
+              navigation.navigate("Customization", {
+                initialTab: "profile",
+                initialSection: "decoration",
+              }),
+            350,
+          );
+        }}
       />
 
       {/* Bio Editor Modal */}
@@ -485,19 +403,6 @@ export default function OwnProfileScreen({
         currentBio={userBio}
         onClose={handleCloseBioEditor}
         onBioUpdated={handleBioUpdated}
-      />
-
-      {/* Game Scores Editor Modal */}
-      <GameScoresEditor
-        visible={gameScoresEditorVisible}
-        currentConfig={gameScoresConfig}
-        availableScores={allGameScores}
-        onDismiss={handleCloseGameScoresEditor}
-        onSave={async (newConfig) => {
-          await updateGameScoresConfig(newConfig);
-          await refreshGameScores();
-        }}
-        testID="game-scores-editor"
       />
     </View>
   );
@@ -511,30 +416,57 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollContainer: {
-    flex: 1,
-  },
   scrollView: {
     flex: 1,
   },
   content: {
     flexGrow: 1,
   },
-  sectionDivider: {
-    width: "70%",
-    height: 1,
-    marginVertical: Spacing.lg,
-    borderRadius: 1,
-    alignSelf: "center",
-    opacity: 0.35,
+  overflowContainer: {
+    position: "absolute",
+    right: Spacing.md,
+    zIndex: 10,
   },
-  signOutContainer: {
+  chipsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  chipText: {
+    fontSize: FontSizes.sm,
+    fontWeight: "600",
+  },
+  primaryActions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xxl,
-    paddingBottom: Spacing.lg,
-    marginTop: "auto",
+    marginVertical: Spacing.lg,
   },
-  signOutButton: {
-    borderRadius: BorderRadius.md,
+  primaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.xl,
+  },
+  primaryBtnText: {
+    fontSize: FontSizes.md,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  cardsSection: {
+    marginTop: Spacing.sm,
   },
 });

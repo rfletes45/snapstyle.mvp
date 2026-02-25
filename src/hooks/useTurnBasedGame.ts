@@ -171,6 +171,7 @@ export interface TurnBasedActions {
           roomId?: string;
           firestoreGameId?: string;
           spectator?: boolean;
+          inviteId?: string;
         },
   ) => Promise<void>;
 
@@ -534,6 +535,7 @@ export function useTurnBasedGame(
             roomId?: string;
             firestoreGameId?: string;
             spectator?: boolean;
+            inviteId?: string;
           },
     ) => {
       if (!isAvailable) {
@@ -542,6 +544,8 @@ export function useTurnBasedGame(
       }
       // Support old signature: startMultiplayer(roomId?: string)
       // and new signature: startMultiplayer({ firestoreGameId })
+      const inviteId =
+        typeof options === "object" ? options?.inviteId : undefined;
       if (typeof options === "string") {
         await joinRoom({ roomId: options });
       } else if (options?.firestoreGameId) {
@@ -551,6 +555,7 @@ export function useTurnBasedGame(
         await joinRoom({
           firestoreGameId: options.firestoreGameId,
           ...(options.spectator ? { spectator: true } : {}),
+          ...(inviteId ? { inviteId } : {}),
         });
       } else if (options?.roomId) {
         if (options.spectator) {
@@ -559,6 +564,7 @@ export function useTurnBasedGame(
         await joinRoom({
           roomId: options.roomId,
           ...(options.spectator ? { spectator: true } : {}),
+          ...(inviteId ? { inviteId } : {}),
         });
       } else {
         await joinRoom();

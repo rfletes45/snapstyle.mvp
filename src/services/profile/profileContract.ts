@@ -27,6 +27,9 @@ const VISIBILITY_FIELDS: (keyof Pick<
   | "showLastActive"
   | "showOnlineStatus"
   | "showFriendshipInfo"
+  | "showAchievements"
+  | "showStreaks"
+  | "showRecentActivity"
   | "showFriendsList"
   | "allowFriendRequests"
   | "allowMessages"
@@ -42,6 +45,9 @@ const VISIBILITY_FIELDS: (keyof Pick<
   "showLastActive",
   "showOnlineStatus",
   "showFriendshipInfo",
+  "showAchievements",
+  "showStreaks",
+  "showRecentActivity",
   "showFriendsList",
   "allowFriendRequests",
   "allowMessages",
@@ -73,7 +79,11 @@ function isValidPrivacyVisibility(value: unknown): boolean {
   );
 }
 
-function warnOnce(key: string, message: string, data?: Record<string, unknown>) {
+function warnOnce(
+  key: string,
+  message: string,
+  data?: Record<string, unknown>,
+) {
   if (typeof __DEV__ === "undefined" || !__DEV__) return;
   if (WARNED_KEYS.has(key)) return;
   WARNED_KEYS.add(key);
@@ -129,7 +139,10 @@ function validateEquippedCatalogId(
   }
 }
 
-function validateEquippedCosmetics(userId: string, profile: UserProfileData): void {
+function validateEquippedCosmetics(
+  userId: string,
+  profile: UserProfileData,
+): void {
   if (typeof __DEV__ === "undefined" || !__DEV__) return;
 
   validateEquippedCatalogId(
@@ -157,9 +170,15 @@ function validateEquippedCosmetics(userId: string, profile: UserProfileData): vo
   );
 
   for (const badgeId of profile.featuredBadges?.badgeIds ?? []) {
-    validateEquippedCatalogId(userId, "featuredBadges.badgeIds[]", "badge", badgeId, {
-      requireAsset: true,
-    });
+    validateEquippedCatalogId(
+      userId,
+      "featuredBadges.badgeIds[]",
+      "badge",
+      badgeId,
+      {
+        requireAsset: true,
+      },
+    );
   }
 
   validateEquippedCatalogId(
@@ -288,6 +307,12 @@ export function hydrateProfileData(
     },
     privacy,
     equippedBackgroundId: source.equippedBackgroundId ?? null,
+    level: source.level || {
+      current: 1,
+      xp: 0,
+      xpToNextLevel: 100,
+      totalXp: 0,
+    },
     ownedDecorations: source.ownedDecorations || [],
     ownedThemes: source.ownedThemes || [DEFAULT_THEME_ID],
     createdAt: source.createdAt || now,

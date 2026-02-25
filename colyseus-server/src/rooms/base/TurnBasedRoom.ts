@@ -49,6 +49,7 @@ import {
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
   deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
   loadGameState,
   markGameVacant,
   persistGameResult,
@@ -144,6 +145,9 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
 
   /** Stuck-room watchdog — logs if room never reaches playing */
   private stuckWatchdog: StuckRoomWatchdog | null = null;
+
+  /** Invite ID for finalization fallback (defense-in-depth). */
+  private inviteId: string | undefined;
 
   // =========================================================================
   // Abstract Methods — Subclasses MUST implement
@@ -258,6 +262,11 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     this.state.gameId = this.roomId;
     this.state.maxPlayers = this.maxClients;
     this.state.traceId = options.traceId || "";
+
+    // Capture inviteId for finalization fallback (defense-in-depth)
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
+    }
 
     // Build scoped logger with room-level correlation context
     this.roomLog = log.child({
@@ -679,11 +688,18 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       : undefined;
 
     if (this.state.phase === "finished") {
-      // Game completed � persist final result, then clean up game + invite
-      await persistGameResult(this.state, gameDurationMs);
+      // Game completed — persist final result, then clean up game + invite
       const firestoreGameId =
         this.state.firestoreGameId || this.state.gameId || this.roomId;
-      await deleteGameAndInvite(firestoreGameId);
+      const inviteId =
+        extractInviteIdFromExtGameId(firestoreGameId) ??
+        this.inviteId ??
+        undefined;
+      await persistGameResult(this.state, gameDurationMs, undefined, {
+        inviteId,
+        firestoreGameId,
+      });
+      await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info(
         `Game completed, persisted, and cleaned up: ${this.roomId}`,
       );
@@ -750,7 +766,11 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       // Delete the game invite + any session records immediately.
       const firestoreGameIdPrestart =
         this.state.firestoreGameId || this.state.gameId || this.roomId;
-      await deleteGameAndInvite(firestoreGameIdPrestart);
+      const inviteIdPrestart =
+        extractInviteIdFromExtGameId(firestoreGameIdPrestart) ??
+        this.inviteId ??
+        undefined;
+      await deleteGameAndInvite(firestoreGameIdPrestart, inviteIdPrestart);
       this.roomLog.info(
         `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
       );

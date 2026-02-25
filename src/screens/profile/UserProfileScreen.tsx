@@ -31,22 +31,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
-import { BadgeShowcase } from "@/components/badges";
+import { MuteOptionsModal, MutualFriendsSection } from "@/components/profile";
 import {
-  FriendshipInfoCard,
-  GameScoresDisplay,
-  MuteOptionsModal,
-  MutualFriendsSection,
-  ScoreComparisonView,
-  ShareProfileButton,
-} from "@/components/profile";
+  AchievementsCard,
+  BadgesCard,
+  BestScoresCard,
+  FriendsCard,
+} from "@/components/profile/OverviewCards";
 import {
   MoreOptionsMenu,
   ProfileActionsBar,
 } from "@/components/profile/ProfileActions/index";
 import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
-import { CALL_FEATURES, PROFILE_V2_FEATURES } from "@/constants/featureFlags";
+import { SocialProofSection } from "@/components/profile/SocialProof";
+import { CALL_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
+import { useAchievementsV2 } from "@/hooks/useAchievementsV2";
 import { useBadges } from "@/hooks/useBadges";
 import { useScoreComparison } from "@/hooks/useGameScores";
 import { useAuth } from "@/store/AuthContext";
@@ -157,7 +157,14 @@ function UserProfileScreenContent({
   });
 
   // Badges hook — subscribes to the viewed user's badges
-  const { featuredBadges } = useBadges(userId);
+  const { featuredBadges, stats: badgeStats } = useBadges(userId);
+
+  // Achievements hook
+  const {
+    displayItems: achievementItems,
+    unlockedIds: achievementUnlockedIds,
+    isV2Active: achievementsActive,
+  } = useAchievementsV2(userId);
 
   // ==========================================================================
   // Load Profile Data
@@ -574,41 +581,61 @@ function UserProfileScreenContent({
   }, [userId]);
 
   // ==========================================================================
-  // Render Helpers
+  // Privacy-derived flags (for other-user cards)
   // ==========================================================================
 
-  const getMoodEmoji = (mood: string) => {
-    const moodConfig: Record<
-      string,
-      { emoji: string; label: string; color: string }
-    > = {
-      happy: { emoji: "😊", label: "Happy", color: "#FFD700" },
-      excited: { emoji: "🎉", label: "Excited", color: "#FF69B4" },
-      chill: { emoji: "😎", label: "Chillin", color: "#87CEEB" },
-      busy: { emoji: "💼", label: "Busy", color: "#FF4500" },
-      gaming: { emoji: "🎮", label: "Gaming", color: "#9B59B6" },
-      studying: { emoji: "📚", label: "Studying", color: "#3498DB" },
-      away: { emoji: "🌙", label: "Away", color: "#95A5A6" },
-      sleeping: { emoji: "😴", label: "Sleeping", color: "#34495E" },
-      custom: { emoji: "✨", label: "Custom", color: "#E91E63" },
-    };
-    return moodConfig[mood] || moodConfig.custom;
-  };
+  const friendsPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showFriendsList;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    // "friends" — only visible if relationship is friend
+    return relationship?.type !== "friend";
+  })();
 
-  const formatLastActiveTime = (lastActive: number): string => {
-    const now = Date.now();
-    const diff = now - lastActive;
-    const minutes = Math.floor(diff / (1000 * 60));
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const badgesPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showBadges;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    return relationship?.type !== "friend";
+  })();
 
-    if (minutes < 1) return "Just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days === 1) return "Yesterday";
-    if (days < 7) return `${days}d ago`;
-    return new Date(lastActive).toLocaleDateString();
-  };
+  const scoresPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showGameScores;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    return relationship?.type !== "friend";
+  })();
+
+  const achievementsPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showAchievements;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    return relationship?.type !== "friend";
+  })();
+
+  const streaksPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showStreaks;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    return relationship?.type !== "friend";
+  })();
+
+  const activityPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showRecentActivity;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    return relationship?.type !== "friend";
+  })();
+
+  // Latest achievement title
+  const latestAchievementTitle = useMemo(() => {
+    if (!achievementsActive || achievementItems.length === 0) return undefined;
+    const unlocked = achievementItems.filter((a) =>
+      achievementUnlockedIds.has(a.id),
+    );
+    if (unlocked.length === 0) return undefined;
+    return unlocked[unlocked.length - 1]?.name;
+  }, [achievementItems, achievementUnlockedIds, achievementsActive]);
 
   // ==========================================================================
   // Render
@@ -748,6 +775,7 @@ function UserProfileScreenContent({
             backgroundId={profile.equippedBackgroundId ?? null}
             bio={profile.bio}
             status={profile.status}
+            level={profile.level}
             lastActive={
               profile.privacy.showLastActive !== "nobody"
                 ? profile.lastActive
@@ -777,78 +805,99 @@ function UserProfileScreenContent({
             </View>
           )}
 
-          <View
-            style={[styles.sectionDivider, { backgroundColor: colors.divider }]}
-          />
-
-          {/* Featured Badges */}
-          {featuredBadges.length > 0 &&
-            profile.privacy.showBadges !== "nobody" && (
-              <>
-                <BadgeShowcase
-                  badges={featuredBadges}
-                  onBadgePress={() => {}}
-                />
-                <View
-                  style={[
-                    styles.sectionDivider,
-                    { backgroundColor: colors.divider },
-                  ]}
-                />
-              </>
-            )}
-
-          {/* Game Scores Display */}
-          {profile.gameScores?.enabled !== false &&
-            profile.privacy.showGameScores !== "nobody" && (
-              <>
-                {relationship?.type === "friend" ? (
-                  <ScoreComparisonView
-                    ownerScores={profileGameScores}
-                    viewerScores={myGameScores}
-                    ownerName={profile.displayName}
-                    viewerName="You"
-                    testID="user-profile-score-comparison"
-                  />
-                ) : (
-                  <GameScoresDisplay
-                    scores={profileGameScores}
-                    enabled={true}
-                    isOwnProfile={false}
-                    onGamePress={(gameId) => {
-                      navigation.navigate("Games", { gameId });
-                    }}
-                    testID="user-profile-game-scores"
-                  />
-                )}
-                <View
-                  style={[
-                    styles.sectionDivider,
-                    { backgroundColor: colors.divider },
-                  ]}
-                />
-              </>
-            )}
-
-          {/* Friendship Info Card (for friends) */}
+          {/* Social Proof (streak for friendship + activity) */}
           {relationship?.type === "friend" && friendshipDetails && (
-            <>
-              <FriendshipInfoCard
-                details={friendshipDetails}
-                testID="user-profile-friendship-info"
-              />
-              <View
-                style={[
-                  styles.sectionDivider,
-                  { backgroundColor: colors.divider },
-                ]}
-              />
-            </>
+            <SocialProofSection
+              userId={userId}
+              streakCount={
+                streaksPrivacyHidden ? 0 : (friendshipDetails.streakCount ?? 0)
+              }
+              showRecentActivity={!activityPrivacyHidden}
+              isOwnProfile={false}
+            />
           )}
 
-          {/* Mutual Friends */}
-          {mutualFriends.length > 0 && profile.privacy.showMutualFriends && (
-            <>
+          {/* ========================================================== */}
+          {/* Overview Cards */}
+          {/* ========================================================== */}
+          <View style={styles.cardsSection}>
+            {/* Friends Card */}
+            <FriendsCard
+              userId={userId}
+              isOwnProfile={false}
+              privacyHidden={friendsPrivacyHidden}
+              enterIndex={0}
+              onPress={
+                !friendsPrivacyHidden
+                  ? () =>
+                      navigation.navigate("MutualFriendsList", {
+                        userId: currentUserId,
+                        targetUserId: userId,
+                      })
+                  : undefined
+              }
+              onFriendPress={(friendUid) =>
+                navigation.push("UserProfile", { userId: friendUid })
+              }
+            />
+
+            {/* Badges Card */}
+            <BadgesCard
+              badges={featuredBadges}
+              totalEarned={badgeStats.earned}
+              privacyHidden={badgesPrivacyHidden}
+              enterIndex={1}
+              onPress={
+                !badgesPrivacyHidden
+                  ? () =>
+                      navigation.navigate("MainTabs", {
+                        screen: "Profile",
+                        params: {
+                          screen: "BadgeCollection",
+                          params: { userId },
+                        },
+                      })
+                  : undefined
+              }
+            />
+
+            {/* Achievements Card */}
+            {achievementsActive && (
+              <AchievementsCard
+                totalAchievements={achievementItems.length}
+                unlockedCount={achievementUnlockedIds.size}
+                latestUnlockTitle={latestAchievementTitle}
+                privacyHidden={achievementsPrivacyHidden}
+                enterIndex={2}
+                onPress={
+                  !achievementsPrivacyHidden
+                    ? () =>
+                        navigation.navigate("MainTabs", {
+                          screen: "Play",
+                          params: {
+                            screen: "Achievements",
+                            params: { profileUid: userId },
+                          },
+                        })
+                    : undefined
+                }
+              />
+            )}
+
+            {/* Best Scores Card */}
+            <BestScoresCard
+              scores={profileGameScores}
+              privacyHidden={scoresPrivacyHidden}
+              enterIndex={3}
+              onPress={
+                !scoresPrivacyHidden
+                  ? () => navigation.navigate("GameStats", { userId })
+                  : undefined
+              }
+            />
+
+            {/* Mutual Friends (compact) */}
+            {mutualFriends.length > 0 && profile.privacy.showMutualFriends && (
               <MutualFriendsSection
                 friends={mutualFriends}
                 onFriendPress={(friendUserId) =>
@@ -863,26 +912,8 @@ function UserProfileScreenContent({
                 maxDisplay={6}
                 testID="user-profile-mutual-friends"
               />
-              <View
-                style={[
-                  styles.sectionDivider,
-                  { backgroundColor: colors.divider },
-                ]}
-              />
-            </>
-          )}
-
-          {/* Share Profile Button */}
-          {PROFILE_V2_FEATURES.PROFILE_SHARING &&
-            profile.privacy.allowProfileSharing && (
-              <ShareProfileButton
-                userId={userId}
-                displayName={profile.displayName}
-                username={profile.username}
-                variant="full"
-                style={styles.shareButton}
-              />
             )}
+          </View>
 
           {/* Action Buttons */}
           {relationship && (
@@ -906,7 +937,7 @@ function UserProfileScreenContent({
           <View style={{ height: insets.bottom + 24 }} />
         </ScrollView>
 
-        {/* More Options Menu */}
+        {/* More Options Menu (overflow: block/report/share/mute) */}
         <MoreOptionsMenu
           visible={menuVisible}
           relationship={relationship || { type: "stranger" }}
@@ -996,9 +1027,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   content: {
-    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxxl,
-    alignItems: "center",
   },
   mutedBadge: {
     flexDirection: "row",
@@ -1016,27 +1045,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: "uppercase",
   },
-  sectionDivider: {
-    width: "70%",
-    height: 1,
-    marginVertical: Spacing.lg,
-    borderRadius: 1,
-    alignSelf: "center",
-    opacity: 0.5,
-  },
-  section: {
-    width: "100%",
-    marginBottom: Spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: Spacing.sm,
-  },
-  shareButton: {
-    width: "100%",
-    marginVertical: Spacing.sm,
+  cardsSection: {
+    marginTop: Spacing.md,
+    paddingHorizontal: 0,
   },
 });

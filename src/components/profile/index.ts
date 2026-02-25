@@ -5,8 +5,6 @@
 // Profile Picture System
 export {
   DecorationOverlay,
-  DecorationPicker,
-  DecorationPickerModal,
   InitialsAvatar,
   ProfilePicture,
   ProfilePictureEditor,
@@ -15,17 +13,11 @@ export {
 
 export type {
   DecorationOverlayProps,
-  DecorationPickerModalProps,
-  DecorationPickerProps,
   InitialsAvatarProps,
   ProfilePictureEditorProps,
   ProfilePictureProps,
   ProfilePictureWithDecorationProps,
 } from "./ProfilePicture";
-
-// Friends Section
-export { FriendsSection } from "./FriendsSection";
-export type { FriendsSectionProps } from "./FriendsSection";
 
 // =============================================================================
 // Phase 3 - New Profile Header Components
@@ -70,22 +62,11 @@ export type {
 export { LevelProgress } from "./LevelProgress";
 export type { LevelProgressProps } from "./LevelProgress";
 
-export { ProfileStats } from "./ProfileStats";
-export type { ProfileStatsProps } from "./ProfileStats";
-
 // =============================================================================
 // Phase 5 - Game Scores Components
 // =============================================================================
-export {
-  GameScoresDisplay,
-  GameScoresEditor,
-  ScoreComparisonView,
-} from "./ProfileGameScores";
-export type {
-  GameScoresDisplayProps,
-  GameScoresEditorProps,
-  ScoreComparisonViewProps,
-} from "./ProfileGameScores";
+export { GameScoresDisplay } from "./ProfileGameScores";
+export type { GameScoresDisplayProps } from "./ProfileGameScores";
 
 // =============================================================================
 // Phase 5 - Skeletons & Loading States
@@ -148,26 +129,6 @@ export { MutualFriendsSection } from "./MutualFriends";
 export type { MutualFriendsSectionProps } from "./MutualFriends";
 
 // =============================================================================
-// Phase 6 - Friendship Info Components
-// =============================================================================
-export { FriendshipInfoCard } from "./FriendshipInfo";
-export type { FriendshipInfoCardProps } from "./FriendshipInfo";
-
-// =============================================================================
-// Phase 6 - Profile Sharing Components
-// =============================================================================
-export {
-  QRCodeModal,
-  ShareProfileButton,
-  ShareProfileModal,
-} from "./ProfileShare";
-export type {
-  QRCodeModalProps,
-  ShareProfileButtonProps,
-  ShareProfileModalProps,
-} from "./ProfileShare";
-
-// =============================================================================
 // Phase 7 - Profile Moderation Components
 // =============================================================================
 export {
@@ -185,3 +146,33 @@ export type {
 // =============================================================================
 export { ProfileActions } from "./ProfileQuickActions";
 export type { ProfileActionsProps } from "./ProfileQuickActions";
+
+// =============================================================================
+// Profile Overview Cards
+// =============================================================================
+export {
+  AchievementsCard,
+  BadgesCard,
+  BestScoresCard,
+  FriendsCard,
+  OverviewCard,
+} from "./OverviewCards";
+export type {
+  AchievementsCardProps,
+  BadgesCardProps,
+  BestScoresCardProps,
+  FriendsCardProps,
+  OverviewCardProps,
+} from "./OverviewCards";
+
+// =============================================================================
+// Social Proof
+// =============================================================================
+export { SocialProofSection } from "./SocialProof";
+export type { SocialProofSectionProps } from "./SocialProof";
+
+// =============================================================================
+// Profile Overflow Menu
+// =============================================================================
+export { ProfileOverflowMenu } from "./ProfileOverflowMenu";
+export type { ProfileOverflowMenuProps } from "./ProfileOverflowMenu";

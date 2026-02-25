@@ -286,7 +286,11 @@ function ReversiGameScreen({
     onGameReady: (gameId: string) => {
       setGameMode("online");
       setScreenState("playing");
-      mp.startMultiplayer({ firestoreGameId: gameId, spectator: isSpectator });
+      mp.startMultiplayer({
+        firestoreGameId: gameId,
+        spectator: isSpectator,
+        inviteId: route?.params?.inviteId,
+      });
     },
     onLeaveLobby: () => {
       setScreenState("menu");

@@ -192,6 +192,7 @@ export interface CardGameActions {
           firestoreGameId?: string;
           spectator?: boolean;
           practice?: boolean;
+          inviteId?: string;
         },
   ) => Promise<void>;
 
@@ -411,8 +412,21 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
 
   // ─── Join Room ──────────────────────────────────────────────────────
 
+  // Phase 3: join mutex — prevent concurrent join attempts
+  const joiningRef = useRef(false);
+
   const joinRoom = useCallback(
     async (options: Record<string, any> = {}) => {
+      if (joiningRef.current) {
+        logger.warn("[joinRoom] BLOCKED — already joining");
+        return;
+      }
+      if (roomRef.current) {
+        logger.warn("[joinRoom] BLOCKED — room already connected");
+        return;
+      }
+      joiningRef.current = true;
+
       setIsMultiplayer(true);
       setPhase("connecting");
       setError(null);
@@ -555,12 +569,17 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
           setPhase("idle");
           setIsMultiplayer(false);
         }
+      } finally {
+        joiningRef.current = false;
       }
     },
     [gameType, handleStateChange],
   );
 
   // ─── Public Actions ──────────────────────────────────────────────────
+
+  // Phase 3: idempotency guard — prevent double startMultiplayer calls
+  const joinTriggeredRef = useRef(false);
 
   const startMultiplayer = useCallback(
     async (
@@ -571,14 +590,23 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
             firestoreGameId?: string;
             spectator?: boolean;
             practice?: boolean;
+            inviteId?: string;
           },
     ) => {
       if (!isAvailable) {
         setError("Card game multiplayer is not available");
         return;
       }
+      if (joinTriggeredRef.current) {
+        logger.warn("[startMultiplayer] BLOCKED — already triggered");
+        return;
+      }
+      joinTriggeredRef.current = true;
+
       // Support old signature: startMultiplayer(roomId?: string)
       // and new signature: startMultiplayer({ firestoreGameId })
+      const inviteId =
+        typeof options === "object" ? options?.inviteId : undefined;
       if (typeof options === "string") {
         await joinRoom({ roomId: options });
       } else if (options?.firestoreGameId) {
@@ -588,6 +616,7 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
         await joinRoom({
           firestoreGameId: options.firestoreGameId,
           ...(options.spectator ? { spectator: true } : {}),
+          ...(inviteId ? { inviteId } : {}),
         });
       } else if (options?.roomId) {
         if (options.spectator) {
@@ -596,6 +625,7 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
         await joinRoom({
           roomId: options.roomId,
           ...(options.spectator ? { spectator: true } : {}),
+          ...(inviteId ? { inviteId } : {}),
         });
       } else if (options?.practice) {
         await joinRoom({ practice: true });
@@ -620,6 +650,8 @@ export function useCardGame(gameType: string): CardGameState & CardGameActions {
     setOpponents([]);
     setRawState(null);
     setRoom(null);
+    joiningRef.current = false;
+    joinTriggeredRef.current = false;
   }, []);
 
   const sendReady = useCallback(() => {

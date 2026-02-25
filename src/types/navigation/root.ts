@@ -51,6 +51,8 @@ export type PlayStackParamList = {
     | {
         gameId?: string;
         targetAchievementId?: string;
+        /** When set, view this user's unlocked achievements (read-only) */
+        profileUid?: string;
       }
     | undefined;
   GameHistory: OptionalRouteParams;
@@ -66,13 +68,14 @@ export type ProfileTabStackParamList = {
   LocalStorageDebug: undefined;
   BlockedUsers: undefined;
   PrivacySettings: undefined;
-  BadgeCollection: undefined;
+  BadgeCollection: { userId?: string } | undefined;
   Settings: undefined;
   Wallet: undefined;
   Tasks: { tab?: "daily" | "monthly" } | undefined;
   Shop: undefined;
   AdminReports: undefined;
   LevelRewards: undefined;
+  GameStats: { userId?: string } | undefined;
 };
 
 export type AppTabsParamList = {
@@ -124,6 +127,7 @@ export type MainStackParamList = {
     | undefined;
   ActivityFeed: undefined;
   SpectatorView: OptionalRouteParams;
+  GameStats: { userId?: string } | undefined;
 };
 
 export type ProfileSetupStackParamList = {

@@ -115,6 +115,7 @@ export default function BattleshipGameScreen({
       bs.startMultiplayer({
         firestoreGameId: gameId,
         spectator: isSpectatorMode,
+        inviteId: route?.params?.inviteId,
       });
     },
     onLeaveLobby: () => {
@@ -528,6 +529,35 @@ export default function BattleshipGameScreen({
                 ? "Connecting to server…"
                 : "Waiting for opponent…"}
             </Text>
+          </View>
+        )}
+
+        {/* ── ERROR PHASE ────────────────────────────────────────── */}
+        {bs.phase === "error" && (
+          <View style={styles.centeredMessage}>
+            <Text style={[styles.waitingText, { color: "#ff6b6b" }]}>
+              Connection Failed
+            </Text>
+            <Text
+              style={[
+                styles.waitingText,
+                { fontSize: 14, marginTop: 8, opacity: 0.7 },
+              ]}
+            >
+              {bs.error || "Unable to connect to the game server."}
+            </Text>
+            <TouchableOpacity
+              style={{
+                marginTop: 20,
+                paddingHorizontal: 24,
+                paddingVertical: 12,
+                backgroundColor: "#1a3a5c",
+                borderRadius: 8,
+              }}
+              onPress={handleBack}
+            >
+              <Text style={{ color: "#fff", fontSize: 16 }}>Go Back</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>

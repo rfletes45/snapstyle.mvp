@@ -596,6 +596,27 @@ service cloud.firestore {
         // All writes are server-managed (callables / admin SDK)
         allow create, update, delete: if false;
       }
+
+      // --------------------------------------------------------
+      // Activity feed subcollection (Social Proof)
+      // Stores recent activity events for profile display.
+      // Any authenticated user can read (privacy enforced in UI).
+      // Writes are server-managed (Cloud Functions / admin SDK).
+      // Users/{uid}/activity/{activityId}
+      // --------------------------------------------------------
+      match /activity/{activityId} {
+        allow read: if isAuth();
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Profile Views dedup subcollection
+      // Server-managed via incrementProfileViews callable.
+      // Users/{uid}/ProfileViews/{viewerUid}
+      // --------------------------------------------------------
+      match /ProfileViews/{viewerUid} {
+        allow read, write: if false;
+      }
     }
 
     // ============================================================
@@ -674,8 +695,10 @@ service cloud.firestore {
     // ============================================================
 
     match /Friends/{friendId} {
-      // Read for array-contains queries
-      allow read: if isAuth() && request.auth.uid in resource.data.users;
+      // Any authenticated user can read friend docs (privacy enforced in UI).
+      // Data is minimal (user IDs, streak count) and needed for profile
+      // FriendsCard when viewing another user's profile.
+      allow read: if isAuth();
       
       // Create: user must be in users array, validate structure
       // Note: createdAt is a number (JS timestamp) not Firestore Timestamp
@@ -2007,8 +2030,10 @@ service cloud.firestore {
       allow write: if false;
 
       // /users/{uid}/achievements/{achievementId}
+      // Any authenticated user can read (needed for viewing achievements
+      // on other users' profiles via useAchievementsV2).
       match /achievements/{achievementId} {
-        allow read: if isAuth() && isOwner(uid);
+        allow read: if isAuth();
         allow create, update, delete: if false;
       }
 
@@ -2019,8 +2044,9 @@ service cloud.firestore {
       }
 
       // /users/{uid}/achievementSummary/{docId}
+      // Any authenticated user can read (for profile display).
       match /achievementSummary/{docId} {
-        allow read: if isAuth() && isOwner(uid);
+        allow read: if isAuth();
         allow create, update, delete: if false;
       }
 

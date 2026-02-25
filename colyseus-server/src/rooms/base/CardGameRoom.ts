@@ -21,6 +21,7 @@ import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
   deleteGameAndInvite,
+  extractInviteIdFromExtGameId,
   loadGameState,
   persistGameResult,
   saveGameState,
@@ -68,6 +69,9 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
 
   /** Whether this room is in practice/solo mode */
   protected practiceMode = false;
+
+  /** Invite ID for finalization fallback (defense-in-depth). */
+  private inviteId: string | undefined;
 
   /** Check if a session is a spectator */
   protected isSpectator(sessionId: string): boolean {
@@ -153,6 +157,11 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       firestoreGameId: options.firestoreGameId || undefined,
       traceId: options.traceId || undefined,
     });
+
+    // Capture inviteId for finalization fallback
+    if (options.inviteId) {
+      this.inviteId = options.inviteId;
+    }
 
     // Restore from Firestore?
     if (options.firestoreGameId) {
@@ -249,7 +258,12 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
 
     if (this.state.phase === "playing" && !consented) {
       try {
-        await this.allowReconnection(client, 300);
+        // Phase 3: reduced from 300s to 60s (env-configurable)
+        const graceSeconds = parseInt(
+          process.env.RECONNECTION_TIMEOUT_CARD || "60",
+          10,
+        );
+        await this.allowReconnection(client, graceSeconds);
         if (player) player.connected = true;
         // Re-send hand
         this.sendHand(client.sessionId);
@@ -493,14 +507,36 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       : undefined;
 
     if (this.state.phase === "finished") {
+      const firestoreGameId =
+        this.state.firestoreGameId || this.state.gameId || this.roomId;
+      const inviteId =
+        extractInviteIdFromExtGameId(firestoreGameId) ??
+        this.inviteId ??
+        undefined;
+
+      // Persist game result
       try {
-        await persistGameResult(this.state, gameDurationMs);
-        // Clean up game docs + mark invite as completed
-        const firestoreGameId =
-          this.state.firestoreGameId || this.state.gameId || this.roomId;
-        await deleteGameAndInvite(firestoreGameId);
+        // Clear firestoreGameId so persistGameResult writes a new
+        // RealtimeGameSessions doc instead of updating a non-existent
+        // TurnBasedGames doc for external Colyseus games.
+        const savedFsId = this.state.firestoreGameId;
+        this.state.firestoreGameId = "";
+
+        await persistGameResult(this.state, gameDurationMs, undefined, {
+          inviteId,
+          firestoreGameId,
+        });
+
+        this.state.firestoreGameId = savedFsId;
       } catch (e) {
         this.roomLog.error(`Failed to persist result:`, e);
+      }
+
+      // Always attempt invite cleanup, even if persistence failed
+      try {
+        await deleteGameAndInvite(firestoreGameId, inviteId);
+      } catch (e) {
+        this.roomLog.error(`Failed to clean up game/invite:`, e);
       }
     } else if (this.allPlayersLeft && this.state.phase === "playing") {
       try {

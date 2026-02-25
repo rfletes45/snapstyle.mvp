@@ -169,6 +169,7 @@ function PongGameScreen({
       mp.startMultiplayer({
         firestoreGameId: gameId,
         spectator: isSpectatorMode,
+        inviteId: route?.params?.inviteId,
       });
     },
     onLeaveLobby: () => {

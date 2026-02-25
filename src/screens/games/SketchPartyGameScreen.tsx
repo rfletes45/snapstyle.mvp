@@ -128,6 +128,7 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
     firestoreGameId: gameId,
     autoJoin: false, // We control joining via effects below
     spectator: !!routeSpectator,
+    inviteId,
   });
 
   // ---------------------------------------------------------------------------
