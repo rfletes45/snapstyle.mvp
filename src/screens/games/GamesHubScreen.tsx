@@ -24,8 +24,10 @@ import { GameRecoveryBanner } from "@/components/games/GameRecoveryBanner";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import { ThreeFloatingIcons, ThreeGameBackground } from "@/components/three";
 import { ErrorState, LoadingState } from "@/components/ui";
+import { getLobbyMaxParticipants, isLobbyGame } from "@/config/gameAdapters";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
 import {
+  GAME_SESSIONS_V3,
   PLAY_SCREEN_FEATURES,
   THREE_JS_FEATURES,
 } from "@/constants/featureFlags";
@@ -39,6 +41,7 @@ import {
   subscribeToPlayPageInvites,
   unclaimInviteSlot,
 } from "@/services/gameInvites";
+import { createSession, joinSession } from "@/services/gameSessions";
 import {
   formatScore,
   getAllPersonalBests,
@@ -68,6 +71,7 @@ import {
 import {
   ExtendedGameType,
   GAME_METADATA,
+  getGameRuntimeType,
   RealTimeGameType,
   SinglePlayerGameType,
   TurnBasedGameType,
@@ -80,6 +84,7 @@ import {
 } from "@/types/playScreen";
 import { SinglePlayerGameSession } from "@/types/singlePlayerGames";
 import { AnyMatch, UniversalGameInvite } from "@/types/turnBased";
+import { navigateToSessionLobby } from "@/utils/gameNavHelpers";
 import { searchGames } from "@/utils/gameSearch";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -597,7 +602,40 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   }, [loadData]);
 
   const navigateToGame = useCallback(
-    (gameId: ExtendedGameType) => {
+    async (gameId: ExtendedGameType) => {
+      // Multiplayer games go through the v3 Session Lobby
+      if (GAME_SESSIONS_V3.ENABLED && isLobbyGame(gameId)) {
+        try {
+          const result = await createSession({
+            gameType: gameId,
+            runtimeType: getGameRuntimeType(gameId),
+            maxParticipants: getLobbyMaxParticipants(gameId),
+            entrySource: "play",
+          });
+          if (result.success && result.sessionId) {
+            navigateToSessionLobby(
+              result.sessionId,
+              "play",
+              navigation.dispatch,
+            );
+            return;
+          }
+          logger.warn(
+            "[GamesHub] createSession failed, falling back to direct nav",
+            {
+              gameId,
+              error: result.error,
+            },
+          );
+        } catch (err) {
+          logger.error(
+            "[GamesHub] createSession threw, falling back to direct nav",
+            err,
+          );
+        }
+      }
+
+      // Solo games or fallback — direct navigate
       const screen = GAME_SCREEN_MAP[gameId];
       if (screen) {
         navigation.navigate(screen);
@@ -628,12 +666,10 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
 
   const handleSheetPlay = useCallback(
     (gameId: ExtendedGameType) => {
-      const screen = GAME_SCREEN_MAP[gameId];
-      if (screen) {
-        navigation.navigate(screen);
-      }
+      // Delegate to navigateToGame which handles lobby routing
+      navigateToGame(gameId);
     },
-    [navigation],
+    [navigateToGame],
   );
 
   const handleSelectActiveGame = useCallback(
@@ -729,6 +765,32 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
       const userName =
         currentFirebaseUser.displayName || currentFirebaseUser.email || "User";
 
+      // v3: If the invite has a linked v3 session, join via SessionLobbyScreen
+      if (
+        GAME_SESSIONS_V3.ENABLED &&
+        GAME_SESSIONS_V3.SESSION_LOBBY &&
+        invite.v3SessionId
+      ) {
+        // Join the v3 session, then navigate to lobby
+        const joinResult = await joinSession({
+          sessionId: invite.v3SessionId,
+          displayName: userName,
+          entrySource: "play",
+        });
+
+        if (!joinResult.success) {
+          logger.error(
+            "[GamesScreen] v3 joinSession failed:",
+            joinResult.error,
+          );
+          return;
+        }
+
+        navigateToSessionLobby(invite.v3SessionId, "play");
+        return;
+      }
+
+      // v2: Legacy invite claim + direct game navigation
       const result = await claimInviteSlot(
         invite.id,
         currentFirebaseUser.uid,
@@ -783,7 +845,23 @@ export default function GamesScreen({ navigation }: GamesScreenProps) {
   );
 
   const handlePlayUniversalInvite = useCallback(
-    (gameId: string, gameType: string, inviteId?: string) => {
+    (
+      gameId: string,
+      gameType: string,
+      inviteId?: string,
+      v3SessionId?: string,
+    ) => {
+      // v3: Route through SessionLobbyScreen when session context is available
+      if (
+        GAME_SESSIONS_V3.ENABLED &&
+        GAME_SESSIONS_V3.SESSION_LOBBY &&
+        v3SessionId
+      ) {
+        navigateToSessionLobby(v3SessionId, "play");
+        return;
+      }
+
+      // v2: Navigate directly to game screen
       const screen = GAME_SCREEN_MAP[gameType as ExtendedGameType];
       if (screen) {
         navigation.navigate(screen, {

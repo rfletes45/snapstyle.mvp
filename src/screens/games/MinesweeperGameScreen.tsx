@@ -16,6 +16,10 @@ import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useSoloRuntime,
+  withSoloRuntime,
+} from "@/screens/games/SoloRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -31,6 +35,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, {
@@ -49,7 +54,7 @@ import {
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { Button, Dialog, Text } from "react-native-paper";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -58,9 +63,6 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/MinesweeperGameScreen");
 // =============================================================================
@@ -268,22 +270,19 @@ function formatTime(seconds: number): string {
 
 interface MinesweeperGameScreenProps {
   navigation: any;
+  route?: { params?: { v3Session?: string } };
 }
 
-function MinesweeperGameScreen({ navigation }: MinesweeperGameScreenProps) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "minesweeper" });
-  void __codexGameCompletion;
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
-
+function MinesweeperGameScreen({
+  navigation,
+  route,
+}: MinesweeperGameScreenProps) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const soloRuntime = useSoloRuntime();
+  const isV3 = !!route?.params?.v3Session;
 
   // Game state
   const [phase, setPhase] = useState<GamePhase>("menu");
@@ -447,6 +446,32 @@ function MinesweeperGameScreen({ navigation }: MinesweeperGameScreenProps) {
     }
 
     setPhase("result");
+
+    // V3: send result facts to solo runtime shell
+    if (isV3 && soloRuntime) {
+      const facts: GameResultFacts = {
+        gameId: "minesweeper_classic",
+        mode: "solo",
+        outcome: "win",
+        outcomeReason: isNewBest ? "New Best Time!" : "Puzzle cleared",
+        scoreboard: [
+          {
+            uid: currentFirebaseUser?.uid ?? "",
+            displayName: currentFirebaseUser?.displayName ?? "Player",
+            score: elapsedSeconds,
+            formattedScore: `${elapsedSeconds}s`,
+            outcome: "win",
+            isWinner: true,
+          },
+        ],
+        performanceMetrics: [
+          { label: "Time", value: `${elapsedSeconds}s`, icon: "clock" },
+          { label: "Difficulty", value: difficulty.label, icon: "grid" },
+        ],
+        durationMs: elapsedSeconds * 1000,
+      };
+      soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
+    }
   }, [currentFirebaseUser, elapsedSeconds, personalBest, showSuccess]);
 
   const handleLoss = useCallback(() => {
@@ -472,6 +497,32 @@ function MinesweeperGameScreen({ navigation }: MinesweeperGameScreenProps) {
       ).catch(() => {});
     }
     setPhase("result");
+
+    // V3: send result facts to solo runtime shell
+    if (isV3 && soloRuntime) {
+      const facts: GameResultFacts = {
+        gameId: "minesweeper_classic",
+        mode: "solo",
+        outcome: "lose",
+        outcomeReason: "Hit a mine",
+        scoreboard: [
+          {
+            uid: currentFirebaseUser?.uid ?? "",
+            displayName: currentFirebaseUser?.displayName ?? "Player",
+            score: elapsedSeconds,
+            formattedScore: `${elapsedSeconds}s`,
+            outcome: "lose",
+            isWinner: false,
+          },
+        ],
+        performanceMetrics: [
+          { label: "Time", value: `${elapsedSeconds}s`, icon: "clock" },
+          { label: "Difficulty", value: difficulty.label, icon: "grid" },
+        ],
+        durationMs: elapsedSeconds * 1000,
+      };
+      soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
+    }
   }, [currentFirebaseUser, elapsedSeconds]);
 
   const handleCellPress = useCallback(
@@ -1079,88 +1130,84 @@ function MinesweeperGameScreen({ navigation }: MinesweeperGameScreenProps) {
       )}
 
       {/* Result Dialog */}
-      <Portal>
-        <Dialog visible={phase === "result"} dismissable={false}>
-          <Dialog.Title>
-            {won
-              ? isNewBest
-                ? "🎉 New Best Time!"
-                : "🏆 You Win!"
-              : "💥 Game Over!"}
-          </Dialog.Title>
-          <Dialog.Content>
-            {won ? (
-              <>
-                <Text style={styles.resultLine}>
-                  Time: {formatTime(elapsedSeconds)}
-                </Text>
-                <Text style={styles.resultLine}>
-                  Difficulty: {difficulty.label} ({difficulty.rows}×
-                  {difficulty.cols})
-                </Text>
-                {personalBest && (
-                  <Text
-                    style={[styles.resultBest, { color: colors.textSecondary }]}
-                  >
-                    Personal Best: {formatTime(personalBest.bestScore)}
-                  </Text>
-                )}
-              </>
-            ) : (
-              <>
-                <Text style={styles.resultLine}>You hit a mine!</Text>
-                <Text
-                  style={[styles.resultLine, { color: colors.textSecondary }]}
-                >
-                  Time: {formatTime(elapsedSeconds)} — {difficulty.label}
-                </Text>
-              </>
-            )}
-            {xpEarned > 0 && (
-              <Text
-                style={[styles.resultLine, { color: "#fbbf24", marginTop: 8 }]}
-              >
-                ⭐ +{xpEarned} XP
-                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+      <Dialog visible={phase === "result" && !isV3} dismissable={false}>
+        <Dialog.Title>
+          {won
+            ? isNewBest
+              ? "🎉 New Best Time!"
+              : "🏆 You Win!"
+            : "💥 Game Over!"}
+        </Dialog.Title>
+        <Dialog.Content>
+          {won ? (
+            <>
+              <Text style={styles.resultLine}>
+                Time: {formatTime(elapsedSeconds)}
               </Text>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={goToMenu}>Menu</Button>
-            {won && <Button onPress={handleShareScore}>Share</Button>}
-            <Button mode="contained" onPress={restartGame}>
-              Play Again
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              <Text style={styles.resultLine}>
+                Difficulty: {difficulty.label} ({difficulty.rows}×
+                {difficulty.cols})
+              </Text>
+              {personalBest && (
+                <Text
+                  style={[styles.resultBest, { color: colors.textSecondary }]}
+                >
+                  Personal Best: {formatTime(personalBest.bestScore)}
+                </Text>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.resultLine}>You hit a mine!</Text>
+              <Text
+                style={[styles.resultLine, { color: colors.textSecondary }]}
+              >
+                Time: {formatTime(elapsedSeconds)} — {difficulty.label}
+              </Text>
+            </>
+          )}
+          {xpEarned > 0 && (
+            <Text
+              style={[styles.resultLine, { color: "#fbbf24", marginTop: 8 }]}
+            >
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+            </Text>
+          )}
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={goToMenu}>Menu</Button>
+          {won && <Button onPress={handleShareScore}>Share</Button>}
+          <Button mode="contained" onPress={restartGame}>
+            Play Again
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Share Dialog */}
-      <Portal>
-        <Dialog
-          visible={showShareDialog}
-          onDismiss={() => setShowShareDialog(false)}
-        >
-          <Dialog.Title>Share Score</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              Send your time of {formatTime(elapsedSeconds)} ({difficulty.label}
-              ) to a friend?
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
-            <Button
-              onPress={() => {
-                setShowShareDialog(false);
-                setShowFriendPicker(true);
-              }}
-            >
-              Choose Friend
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <Dialog
+        visible={showShareDialog}
+        onDismiss={() => setShowShareDialog(false)}
+      >
+        <Dialog.Title>Share Score</Dialog.Title>
+        <Dialog.Content>
+          <Text>
+            Send your time of {formatTime(elapsedSeconds)} ({difficulty.label})
+            to a friend?
+          </Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
+          <Button
+            onPress={() => {
+              setShowShareDialog(false);
+              setShowFriendPicker(true);
+            }}
+          >
+            Choose Friend
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Friend Picker */}
       <FriendPickerModal
@@ -1372,4 +1419,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(MinesweeperGameScreen, "minesweeper");
+export default withGameErrorBoundary(
+  withSoloRuntime(MinesweeperGameScreen, "minesweeper_classic"),
+  "minesweeper",
+);

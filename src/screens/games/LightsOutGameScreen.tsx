@@ -15,6 +15,10 @@ import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useSoloRuntime,
+  withSoloRuntime,
+} from "@/screens/games/SoloRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -30,6 +34,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Canvas,
@@ -48,7 +53,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { Button, Dialog, Text } from "react-native-paper";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -56,9 +61,6 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/LightsOutGameScreen");
 // =============================================================================
@@ -292,20 +294,19 @@ function LightCell({ isOn, onPress, disabled }: LightCellProps) {
 // Component
 // =============================================================================
 
-function LightsOutGameScreen({ navigation }: { navigation: any }) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "lights_out" });
-  void __codexGameCompletion;
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
-
+function LightsOutGameScreen({
+  navigation,
+  route,
+}: {
+  navigation: any;
+  route?: { params?: { v3Session?: string } };
+}) {
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const soloRuntime = useSoloRuntime();
+  const isV3 = !!route?.params?.v3Session;
 
   // ---------------------------------------------------------------------------
   // State
@@ -437,6 +438,36 @@ function LightsOutGameScreen({ navigation }: { navigation: any }) {
               displayName: currentFirebaseUser.displayName || "Player",
             }),
           ).catch(() => {});
+        }
+
+        // V3: send result facts to solo runtime shell
+        if (isV3 && soloRuntime) {
+          const facts: GameResultFacts = {
+            gameId: "lights_out",
+            mode: "solo",
+            outcome: "win",
+            outcomeReason: "Puzzle solved",
+            scoreboard: [
+              {
+                uid: currentFirebaseUser?.uid ?? "",
+                displayName: currentFirebaseUser?.displayName ?? "Player",
+                score: nextMoves,
+                formattedScore: `${nextMoves} moves`,
+                outcome: "win",
+                isWinner: true,
+              },
+            ],
+            performanceMetrics: [
+              {
+                label: "Moves",
+                value: String(nextMoves),
+                icon: "cursor-default-click",
+              },
+              { label: "Level", value: String(level), icon: "signal" },
+            ],
+            durationMs: 0,
+          };
+          soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
         }
       }
     },
@@ -690,68 +721,62 @@ function LightsOutGameScreen({ navigation }: { navigation: any }) {
       )}
 
       {/* Result Dialog */}
-      <Portal>
-        <Dialog visible={phase === "result"} dismissable={false}>
-          <Dialog.Title>
-            {isNewBest ? "🎉 New Best!" : "🏆 Puzzle Solved!"}
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text style={styles.resultLine}>
-              Level {level} completed in {finalScore} move
-              {finalScore !== 1 ? "s" : ""}!
+      <Dialog visible={phase === "result" && !isV3} dismissable={false}>
+        <Dialog.Title>
+          {isNewBest ? "🎉 New Best!" : "🏆 Puzzle Solved!"}
+        </Dialog.Title>
+        <Dialog.Content>
+          <Text style={styles.resultLine}>
+            Level {level} completed in {finalScore} move
+            {finalScore !== 1 ? "s" : ""}!
+          </Text>
+          {personalBest && (
+            <Text style={[styles.resultBest, { color: colors.textSecondary }]}>
+              Personal Best: {personalBest.bestScore} moves
             </Text>
-            {personalBest && (
-              <Text
-                style={[styles.resultBest, { color: colors.textSecondary }]}
-              >
-                Personal Best: {personalBest.bestScore} moves
-              </Text>
-            )}
-            {xpEarned > 0 && (
-              <Text
-                style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
-              >
-                ⭐ +{xpEarned} XP
-                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
-              </Text>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={goToMenu}>Menu</Button>
-            <Button onPress={handleShareScore}>Share</Button>
-            <Button mode="contained" onPress={nextLevel}>
-              Next Level
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+          )}
+          {xpEarned > 0 && (
+            <Text
+              style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+            >
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+            </Text>
+          )}
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={goToMenu}>Menu</Button>
+          <Button onPress={handleShareScore}>Share</Button>
+          <Button mode="contained" onPress={nextLevel}>
+            Next Level
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Share Dialog */}
-      <Portal>
-        <Dialog
-          visible={showShareDialog}
-          onDismiss={() => setShowShareDialog(false)}
-        >
-          <Dialog.Title>Share Score</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              Send your score of {finalScore} move
-              {finalScore !== 1 ? "s" : ""} (Level {level}) to a friend?
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
-            <Button
-              onPress={() => {
-                setShowShareDialog(false);
-                setShowFriendPicker(true);
-              }}
-            >
-              Choose Friend
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <Dialog
+        visible={showShareDialog}
+        onDismiss={() => setShowShareDialog(false)}
+      >
+        <Dialog.Title>Share Score</Dialog.Title>
+        <Dialog.Content>
+          <Text>
+            Send your score of {finalScore} move
+            {finalScore !== 1 ? "s" : ""} (Level {level}) to a friend?
+          </Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
+          <Button
+            onPress={() => {
+              setShowShareDialog(false);
+              setShowFriendPicker(true);
+            }}
+          >
+            Choose Friend
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Friend Picker */}
       <FriendPickerModal
@@ -950,4 +975,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(LightsOutGameScreen, "lights_out");
+export default withGameErrorBoundary(
+  withSoloRuntime(LightsOutGameScreen, "lights_out"),
+  "lights_out",
+);

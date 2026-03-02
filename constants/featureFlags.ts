@@ -557,6 +557,65 @@ export const THREE_JS_FEATURES = {
 } as const;
 
 // =============================================================================
+// =============================================================================
+// Game Sessions V3 — Session-First Architecture
+// =============================================================================
+
+/**
+ * Feature flags for the v3 game session system.
+ *
+ * V3 replaces the invite-as-runtime-state-machine with a session-first
+ * architecture where `GameSessions/{sessionId}` is the canonical runtime
+ * document and invites are demoted to lightweight delivery envelopes.
+ *
+ * Rollout phases:
+ *   Phase 0: Instrumentation (trace + flag)
+ *   Phase 1: SessionLobbyScreen, InvitePillRow, v3 types, navigation
+ *   Phase 2: Cloud Function callables (createSession, joinSession, etc.)
+ *   Phase 3: Universal GameOver screen + per-game migrations
+ *   Phase 4: Realtime alignment (Colyseus room ↔ session doc)
+ *   Phase 5: Cleanup — deprecate v2 invite fields
+ *
+ * @see docs/GAMES_SYSTEM.md §v3-sessions
+ */
+export const GAME_SESSIONS_V3 = {
+  /**
+   * Master switch — when true the client uses SessionLobbyScreen,
+   * GameSessions collection, and compact InvitePillRow in chat.
+   * When false, the legacy invite-driven flow is used unchanged.
+   */
+  ENABLED: true,
+
+  /**
+   * Use v3 compact InvitePillRow in chat instead of tall UniversalInviteCard.
+   * Requires ENABLED = true to take effect.
+   */
+  COMPACT_CHAT_PILLS: true,
+
+  /**
+   * Route all multiplayer entry through SessionLobbyScreen.
+   * Requires ENABLED = true.
+   */
+  SESSION_LOBBY: true,
+
+  /**
+   * Write GameSessions docs alongside invites (dual-write).
+   * Requires ENABLED = true. Safe to enable independently for data seeding.
+   */
+  DUAL_WRITE: true,
+
+  /**
+   * Use v3 universal GameOver screen instead of per-game GameOverModal.
+   * Requires ENABLED = true.
+   */
+  UNIVERSAL_GAME_OVER: true,
+
+  /**
+   * Debug: log session lifecycle transitions to console.
+   */
+  DEBUG_SESSION_LIFECYCLE: __DEV__,
+} as const;
+
 // Colyseus Multiplayer Features
 // =============================================================================
 

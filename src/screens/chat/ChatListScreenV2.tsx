@@ -205,19 +205,10 @@ export default function ChatListScreen() {
 
       const loadInvites = async () => {
         try {
-          logger.info("[ChatListScreen] Loading group invites for uid:", uid);
           const invites = await getPendingInvites(uid);
-          logger.info(
-            "[ChatListScreen] Loaded group invites:",
-            invites.length,
-            invites,
-          );
           setPendingInvites(invites);
         } catch (e) {
           logger.error("[ChatListScreen] Error loading group invites:", e);
-          log.warn("Could not fetch group invites", {
-            data: { error: e instanceof Error ? e.message : String(e) },
-          });
         }
       };
 

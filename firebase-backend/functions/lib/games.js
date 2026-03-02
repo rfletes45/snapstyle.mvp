@@ -46,7 +46,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.claimLevelReward = exports.onGameResult = exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processRealtimeGameCompletion = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
+exports.claimLevelReward = exports.onGameResult = exports.resignGame = exports.makeMove = exports.cleanupOldGameSessions = exports.reconcileActiveInvites = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.processMatchmakingQueue = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.processRealtimeGameCompletion = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.createGameFromInvite = void 0;
 const admin = __importStar(require("firebase-admin"));
 const firestore_1 = require("firebase-admin/firestore");
 const functions = __importStar(require("firebase-functions"));
@@ -214,9 +214,11 @@ exports.createGameFromInvite = functions.firestore
         // Reject invites for removed games
         if (REMOVED_GAME_IDS.has(invite.gameType)) {
             console.warn(`Rejecting invite for removed game: ${invite.gameType}`);
-            await change.after.ref.update({
-                status: "declined",
-                declineReason: "game_removed",
+            await finalizeUniversalInvite({
+                inviteId: context.params.inviteId,
+                terminalStatus: "declined",
+                resolvedBy: "server",
+                resolutionType: "game_removed",
             });
             return;
         }
@@ -307,8 +309,21 @@ exports.onUniversalInviteUpdate = functions.firestore
     const before = change.before.data();
     const after = change.after.data();
     const inviteId = context.params.inviteId;
+    functions.logger.info("FN.onUniversalInviteUpdate.ENTER", {
+        inviteId,
+        beforeStatus: before?.status,
+        afterStatus: after.status,
+        gameType: after.gameType,
+        gameId: after.gameId,
+        traceId: after.traceId,
+        claimedSlotsCount: after.claimedSlots?.length,
+    });
     // Skip if not a universal invite (no claimedSlots means legacy invite)
     if (!after.claimedSlots || after.claimedSlots.length === 0) {
+        functions.logger.info("FN.onUniversalInviteUpdate.EXIT", {
+            inviteId,
+            reason: "no_claimed_slots",
+        });
         return;
     }
     const beforeSlotCount = before?.claimedSlots?.length ?? 0;
@@ -525,6 +540,14 @@ exports.processGameCompletion = functions.firestore
     .onUpdate(async (change, context) => {
     const before = change.before.data();
     const after = change.after.data();
+    functions.logger.info("FN.processGameCompletion.ENTER", {
+        gameId: context.params.gameId,
+        beforeStatus: before.status,
+        afterStatus: after.status,
+        gameType: after.gameType,
+        inviteId: after.inviteId,
+        winnerId: after.winner?.playerId,
+    });
     // Only process when game ends (any terminal state)
     const terminalStates = [
         "completed",
@@ -569,23 +592,41 @@ exports.processGameCompletion = functions.firestore
                 }
             }
             // Update invite status to "completed" if game was created from an invite
+            // Uses canonical finalizeUniversalInvite for chat-hide + TTL
+            const gameEndStatus = after.status;
+            const resolutionType = gameEndStatus === "draw"
+                ? "draw"
+                : gameEndStatus === "resigned"
+                    ? "resign"
+                    : gameEndStatus === "timeout"
+                        ? "timeout"
+                        : "win";
             if (after.inviteId) {
-                await updateInviteStatusOnGameCompletion(after.inviteId, after.status);
+                await finalizeUniversalInvite({
+                    inviteId: after.inviteId,
+                    terminalStatus: "completed",
+                    resolutionType,
+                    winnerId: after.winner?.playerId ?? null,
+                    winReason: after.winner?.reason ?? null,
+                    resolvedBy: "server",
+                });
             }
             else {
-                // Fallback: Try to find invite by gameId
-                await updateInviteStatusByGameId(context.params.gameId, after.status);
+                // Fallback: Try to find invite by gameId and finalize
+                await finalizeInviteByGameId(context.params.gameId, resolutionType, after.winner?.playerId);
             }
-            functions.logger.info("Game completion processed", {
+            functions.logger.info("FN.processGameCompletion.EXIT", {
                 gameId: context.params.gameId,
                 gameType: after.gameType,
-                winner: after.winner?.playerId,
+                winnerId: after.winner?.playerId,
                 inviteId: after.inviteId,
+                result: "ok",
             });
         }
         catch (error) {
-            functions.logger.error("Failed to process game completion", {
+            functions.logger.error("FN.processGameCompletion.EXIT", {
                 gameId: context.params.gameId,
+                result: "error",
                 error,
             });
         }
@@ -612,6 +653,14 @@ exports.processRealtimeGameCompletion = functions.firestore
     const gameType = data.gameType;
     const winnerId = data.winnerId || "";
     const players = data.players || [];
+    functions.logger.info("FN.processRealtimeGameCompletion.ENTER", {
+        sessionId: context.params.sessionId,
+        gameType,
+        winnerId,
+        playerCount: players.length,
+        inviteId: data.inviteId,
+        firestoreGameId: data.firestoreGameId,
+    });
     if (players.length === 0) {
         functions.logger.warn("[RealtimeCompletion] No players in record", {
             sessionId: context.params.sessionId,
@@ -700,86 +749,221 @@ exports.processRealtimeGameCompletion = functions.firestore
             error: histErr instanceof Error ? histErr.message : String(histErr),
         });
     }
-    functions.logger.info("[RealtimeCompletion] Done", {
+    // ── Finalize associated invite (chat-hide + TTL) ────────────────────
+    // RealtimeGameSessions may carry an inviteId. If not, try parsing it
+    // from the ext_<gameType>_<inviteId> format, then fall back to a
+    // gameId-based search.
+    try {
+        let sessionInviteId = data.inviteId;
+        const sessionGameId = data.firestoreGameId || context.params.sessionId;
+        const resolutionType = winnerId ? "win" : "draw";
+        // Parse inviteId from ext_<gameType>_<inviteId> format if not explicit.
+        // IMPORTANT: invite IDs may contain underscores (e.g. uinv_mm2myqz0_ijltf8),
+        // so we MUST strip the known prefix rather than splitting on last underscore.
+        if (!sessionInviteId && data.firestoreGameId) {
+            const fgid = data.firestoreGameId;
+            if (fgid.startsWith("ext_") && gameType) {
+                const prefix = `ext_${gameType}_`;
+                if (fgid.startsWith(prefix) && fgid.length > prefix.length) {
+                    sessionInviteId = fgid.slice(prefix.length);
+                    functions.logger.info("[RealtimeCompletion] Extracted inviteId from ext_ format", { inviteId: sessionInviteId, firestoreGameId: fgid, gameType });
+                }
+                else {
+                    functions.logger.warn("[RealtimeCompletion] ext_ prefix mismatch — cannot extract inviteId", { firestoreGameId: fgid, gameType });
+                }
+            }
+        }
+        if (sessionInviteId) {
+            await finalizeUniversalInvite({
+                inviteId: sessionInviteId,
+                terminalStatus: "completed",
+                resolutionType,
+                winnerId: winnerId || null,
+                winReason: data.winReason || null,
+                resolvedBy: "server",
+            });
+        }
+        else if (sessionGameId) {
+            await finalizeInviteByGameId(sessionGameId, resolutionType, winnerId);
+        }
+    }
+    catch (invErr) {
+        // Non-critical — don't fail the whole pipeline
+        functions.logger.warn("[RealtimeCompletion] Invite finalization failed", {
+            error: invErr instanceof Error ? invErr.message : String(invErr),
+        });
+    }
+    functions.logger.info("FN.processRealtimeGameCompletion.EXIT", {
         sessionId: context.params.sessionId,
         gameType,
+        result: "ok",
     });
 });
 /**
- * Update invite status when the associated game completes
+ * Find invite(s) by gameId and finalize them via the canonical helper.
+ * Fallback path when inviteId is not stored on the game doc.
  */
-async function updateInviteStatusOnGameCompletion(inviteId, gameStatus) {
+async function finalizeInviteByGameId(gameId, resolutionType, winnerId) {
     try {
-        const inviteRef = db.collection("GameInvites").doc(inviteId);
-        const inviteSnap = await inviteRef.get();
-        if (!inviteSnap.exists) {
-            functions.logger.warn("Invite not found for game completion update", {
-                inviteId,
-            });
-            return;
-        }
-        const invite = inviteSnap.data();
-        // Only update if invite is still in "active" status
-        if (invite?.status === "active") {
-            await inviteRef.update({
-                status: "completed",
-                completedAt: firestore_1.Timestamp.now().toMillis(),
-                gameEndStatus: gameStatus,
-                updatedAt: firestore_1.Timestamp.now().toMillis(),
-            });
-            functions.logger.info("Invite status updated to completed", {
-                inviteId,
-                gameStatus,
-            });
-        }
-    }
-    catch (error) {
-        functions.logger.error("Failed to update invite status on game completion", {
-            inviteId,
-            error,
-        });
-    }
-}
-/**
- * Update invite status by searching for the gameId
- * Fallback when inviteId is not stored on the game
- */
-async function updateInviteStatusByGameId(gameId, gameStatus) {
-    try {
-        // Search for invites with this gameId
         const invitesSnapshot = await db
             .collection("GameInvites")
             .where("gameId", "==", gameId)
+            .limit(5)
             .get();
-        if (invitesSnapshot.empty) {
-            // No invite found - game may have been created without an invite
+        if (invitesSnapshot.empty)
             return;
-        }
-        const batch = db.batch();
         for (const inviteDoc of invitesSnapshot.docs) {
-            const invite = inviteDoc.data();
-            // Only update if invite is in an active state
-            if (invite.status === "active" || invite.status === "ready") {
-                batch.update(inviteDoc.ref, {
-                    status: "completed",
-                    completedAt: firestore_1.Timestamp.now().toMillis(),
-                    gameEndStatus: gameStatus,
-                    updatedAt: firestore_1.Timestamp.now().toMillis(),
-                });
-            }
+            await finalizeUniversalInvite({
+                inviteId: inviteDoc.id,
+                terminalStatus: "completed",
+                resolutionType,
+                winnerId: winnerId ?? null,
+                resolvedBy: "server",
+            });
         }
-        await batch.commit();
-        functions.logger.info("Invite(s) status updated to completed via gameId", {
-            gameId,
-            gameStatus,
-            inviteCount: invitesSnapshot.size,
-        });
     }
     catch (error) {
-        functions.logger.error("Failed to update invite status by gameId", {
+        functions.logger.error("[finalizeInviteByGameId] Failed", {
             gameId,
-            error,
+            error: error instanceof Error ? error.message : String(error),
         });
+    }
+}
+// =============================================================================
+// Canonical Invite Finalization (Phase 1 — Server-Authoritative + Idempotent)
+// =============================================================================
+/** Terminal invite statuses — once reached, no further transitions are allowed. */
+const INVITE_TERMINAL_STATUSES = new Set([
+    "completed",
+    "declined",
+    "expired",
+    "cancelled",
+]);
+/** How long (ms) to keep terminal invites before hard-delete. Default: 6 h. */
+const INVITE_DELETE_DELAY_MS = 6 * 60 * 60 * 1000;
+/**
+ * Canonical, idempotent invite finalisation.
+ *
+ * Every completion path (turn-based, realtime, room, client, watchdog) MUST
+ * funnel through this helper so that:
+ *   1. Status is moved to a terminal value (guarded by transition rules).
+ *   2. `chatVisibility` is set to `"hidden"` so chat subscriptions drop it.
+ *   3. `deleteAt` is set for deferred hard-delete.
+ *   4. Repeated calls are safe (idempotent).
+ *
+ * Uses a Firestore transaction to prevent races.
+ */
+async function finalizeUniversalInvite(params) {
+    const { inviteId, terminalStatus, resolutionType, winnerId, winReason, resolvedBy, traceId, now = Date.now(), } = params;
+    const inviteRef = db.collection("GameInvites").doc(inviteId);
+    // ── Guardrail: warn if inviteId looks suspiciously short or misformatted ──
+    if (inviteId.length < 10 ||
+        (!inviteId.startsWith("uinv_") && !inviteId.match(/^[A-Za-z0-9]{15,}$/))) {
+        functions.logger.warn("INVITE_FINALIZE_SUSPICIOUS_ID", {
+            inviteId,
+            length: inviteId.length,
+            resolvedBy,
+            traceId,
+            hint: "inviteId may be truncated — expected format uinv_* or 20+ char Firestore ID",
+        });
+    }
+    try {
+        const result = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(inviteRef);
+            // ── Invite missing → treat as success (already cleaned up / deleted)
+            if (!snap.exists) {
+                functions.logger.warn("INVITE_FINALIZE_MISSING_DOC", {
+                    inviteId,
+                    resolvedBy,
+                    traceId,
+                });
+                return { success: true, alreadyTerminal: true };
+            }
+            const invite = snap.data();
+            // ── Already terminal → ensure chat-hide + deleteAt are set, then return
+            if (INVITE_TERMINAL_STATUSES.has(invite.status)) {
+                const patch = {};
+                if (invite.chatVisibility !== "hidden") {
+                    patch.chatVisibility = "hidden";
+                    patch.chatHiddenAt = now;
+                }
+                if (!invite.deleteAt) {
+                    patch.deleteAt = now + INVITE_DELETE_DELAY_MS;
+                }
+                if (!invite.resolvedAt) {
+                    patch.resolvedAt = now;
+                }
+                // Backfill chatHiddenInConversationIds if missing
+                if ((!invite.chatHiddenInConversationIds ||
+                    invite.chatHiddenInConversationIds.length === 0) &&
+                    invite.conversationId) {
+                    patch.chatHiddenInConversationIds = [invite.conversationId];
+                }
+                if (Object.keys(patch).length > 0) {
+                    patch.updatedAt = now;
+                    tx.update(inviteRef, patch);
+                }
+                return { success: true, alreadyTerminal: true };
+            }
+            // ── Build the update payload ──────────────────────────────────────
+            const updates = {
+                status: terminalStatus,
+                resolvedAt: now,
+                resolvedBy,
+                chatVisibility: "hidden",
+                chatHiddenAt: now,
+                deleteAt: now + INVITE_DELETE_DELAY_MS,
+                completedAt: now,
+                updatedAt: now,
+            };
+            if (resolutionType)
+                updates.resolutionType = resolutionType;
+            if (winnerId !== undefined)
+                updates.winnerId = winnerId ?? null;
+            if (winReason !== undefined)
+                updates.winReason = winReason ?? null;
+            // Populate chatHiddenInConversationIds from conversationId
+            if (invite.conversationId) {
+                updates.chatHiddenInConversationIds = [invite.conversationId];
+            }
+            tx.update(inviteRef, updates);
+            return { success: true, alreadyTerminal: false };
+        });
+        if (result.success && !result.alreadyTerminal) {
+            functions.logger.info("FN.finalizeUniversalInvite.RESULT", {
+                inviteId,
+                terminalStatus,
+                resolutionType,
+                resolvedBy,
+                traceId,
+                alreadyTerminal: false,
+                fieldsWritten: {
+                    chatVisibility: "hidden",
+                    deleteAt: `${now} + 6h`,
+                    resolvedAt: now,
+                    completedAt: now,
+                },
+            });
+        }
+        else if (result.success && result.alreadyTerminal) {
+            functions.logger.info("FN.finalizeUniversalInvite.RESULT", {
+                inviteId,
+                terminalStatus,
+                resolvedBy,
+                traceId,
+                alreadyTerminal: true,
+            });
+        }
+        return result;
+    }
+    catch (error) {
+        functions.logger.error("FN.finalizeUniversalInvite.RESULT", {
+            inviteId,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            traceId,
+        });
+        return { success: false };
     }
 }
 /**
@@ -1485,12 +1669,16 @@ async function createMatchFromQueue(player1Entry, player2Entry, gameType) {
 // Cleanup Functions
 // =============================================================================
 /**
- * Expire old invites daily
+ * Expire old invites daily.
+ *
+ * Uses finalizeUniversalInvite per-invite to guarantee chat-hide + deleteAt
+ * fields are set atomically. Falls back to batch update if finalize fails.
  */
 exports.expireGameInvites = functions.pubsub
     .schedule("every day 00:00")
     .onRun(async () => {
     const now = firestore_1.Timestamp.now();
+    const nowMs = now.toMillis();
     // Expire any invite still waiting for players, not just "pending"
     const EXPIRABLE_STATUSES = ["pending", "filling", "ready"];
     let totalExpired = 0;
@@ -1501,16 +1689,23 @@ exports.expireGameInvites = functions.pubsub
             .where("expiresAt", "<", now)
             .limit(500)
             .get();
-        if (!snapshot.empty) {
-            const batch = db.batch();
-            snapshot.docs.forEach((doc) => {
-                batch.update(doc.ref, {
-                    status: "expired",
-                    updatedAt: now,
+        for (const inviteDoc of snapshot.docs) {
+            try {
+                await finalizeUniversalInvite({
+                    inviteId: inviteDoc.id,
+                    terminalStatus: "expired",
+                    resolutionType: "expire",
+                    resolvedBy: "server",
+                    now: nowMs,
                 });
-            });
-            await batch.commit();
-            totalExpired += snapshot.size;
+                totalExpired++;
+            }
+            catch (err) {
+                functions.logger.warn("[expireGameInvites] Finalize failed for invite", {
+                    inviteId: inviteDoc.id,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
         }
     }
     if (totalExpired > 0) {
@@ -1610,14 +1805,18 @@ exports.cleanupOldGames = functions.pubsub
 /**
  * Clean up resolved game invites (accepted/declined/cancelled/expired)
  *
- * Once an invite reaches a terminal status it serves no purpose in Firestore.
- * We keep them for 30 days for debugging / audit, then delete.
+ * Three-pass strategy:
+ *   1. Hard-delete invites whose `deleteAt` has passed (new field).
+ *   2. Self-heal legacy terminal invites missing `chatVisibility` → set "hidden".
+ *   3. Fall back to deleting terminal invites older than 30 days by createdAt.
+ *
  * Runs daily at 02:30 (offset from cleanupOldGames to avoid contention).
  */
 exports.cleanupResolvedInvites = functions.pubsub
     .schedule("every day 02:30")
     .onRun(async () => {
-    const cutoff = firestore_1.Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    const cutoff30d = firestore_1.Timestamp.fromMillis(now - 30 * 24 * 60 * 60 * 1000);
     const TERMINAL_STATUSES = [
         "accepted",
         "declined",
@@ -1626,21 +1825,87 @@ exports.cleanupResolvedInvites = functions.pubsub
         "completed",
     ];
     let totalDeleted = 0;
-    const snapshot = await db
-        .collection("GameInvites")
-        .where("status", "in", TERMINAL_STATUSES)
-        .where("createdAt", "<", cutoff)
-        .limit(500)
-        .get();
-    if (!snapshot.empty) {
-        const batch = db.batch();
-        snapshot.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-        totalDeleted = snapshot.size;
+    let totalHealed = 0;
+    // ── Pass 1: delete invites whose deleteAt has passed ─────────────
+    try {
+        const ttlSnap = await db
+            .collection("GameInvites")
+            .where("deleteAt", "<", now)
+            .limit(500)
+            .get();
+        if (!ttlSnap.empty) {
+            const batch = db.batch();
+            ttlSnap.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+            totalDeleted += ttlSnap.size;
+        }
     }
-    if (totalDeleted > 0) {
+    catch (err) {
+        functions.logger.warn("[cleanupResolvedInvites] TTL pass failed", {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    // ── Pass 2: self-heal terminal invites still visible ──────────────
+    // Use "!=" to catch BOTH chatVisibility: "visible" AND invites
+    // where chatVisibility is missing/unset (Firestore "==" doesn't
+    // match missing fields, so "== visible" missed undefined values).
+    for (const status of TERMINAL_STATUSES) {
+        try {
+            const visibleSnap = await db
+                .collection("GameInvites")
+                .where("status", "==", status)
+                .where("chatVisibility", "!=", "hidden")
+                .limit(200)
+                .get();
+            if (!visibleSnap.empty) {
+                const batch = db.batch();
+                visibleSnap.docs.forEach((d) => {
+                    const data = d.data();
+                    batch.update(d.ref, {
+                        chatVisibility: "hidden",
+                        chatHiddenAt: now,
+                        chatHiddenInConversationIds: data.conversationId
+                            ? [data.conversationId]
+                            : [],
+                        deleteAt: data.deleteAt || now + 6 * 60 * 60 * 1000,
+                        updatedAt: now,
+                    });
+                });
+                await batch.commit();
+                totalHealed += visibleSnap.size;
+            }
+        }
+        catch (err) {
+            functions.logger.warn("[cleanupResolvedInvites] Heal pass failed", {
+                status,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    // ── Pass 3: legacy fallback — delete old terminal invites by createdAt
+    try {
+        const legacySnap = await db
+            .collection("GameInvites")
+            .where("status", "in", TERMINAL_STATUSES)
+            .where("createdAt", "<", cutoff30d)
+            .limit(500)
+            .get();
+        if (!legacySnap.empty) {
+            const batch = db.batch();
+            legacySnap.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+            totalDeleted += legacySnap.size;
+        }
+    }
+    catch (err) {
+        functions.logger.warn("[cleanupResolvedInvites] Legacy pass failed", {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    if (totalDeleted > 0 || totalHealed > 0) {
         functions.logger.info("Cleaned up resolved invites", {
-            count: totalDeleted,
+            deleted: totalDeleted,
+            healed: totalHealed,
         });
     }
     return null;
@@ -1731,14 +1996,14 @@ exports.cleanupVacantGames = functions.pubsub
             .get();
         if (rtDoc.exists)
             batch.delete(rtDoc.ref);
-        // Find and delete the linked invite (if any)
+        // Find and finalize the linked invite (if any) — then delete game docs
         if (data.inviteId) {
-            const inviteDoc = await db
-                .collection("GameInvites")
-                .doc(data.inviteId)
-                .get();
-            if (inviteDoc.exists)
-                batch.delete(inviteDoc.ref);
+            await finalizeUniversalInvite({
+                inviteId: data.inviteId,
+                terminalStatus: "cancelled",
+                resolutionType: "disconnect",
+                resolvedBy: "watchdog",
+            });
         }
         await batch.commit();
         totalDeleted++;
@@ -1748,6 +2013,243 @@ exports.cleanupVacantGames = functions.pubsub
             count: totalDeleted,
         });
     }
+    return null;
+});
+// =============================================================================
+// Watchdog: Reconcile Active Invites
+// =============================================================================
+/**
+ * Safely extract a millisecond timestamp from a value that may be a Firestore
+ * Timestamp or a plain number.  Returns 0 if the value is falsy.
+ */
+function extractMillis(value) {
+    if (!value)
+        return 0;
+    if (typeof value === "number")
+        return value;
+    // Firestore Timestamp has a toMillis() method
+    if (typeof value.toMillis === "function") {
+        return value.toMillis();
+    }
+    // Fallback for serialized Timestamp objects (e.g. from JSON)
+    if (typeof value._seconds === "number") {
+        return value._seconds * 1000;
+    }
+    return 0;
+}
+/**
+ * Watchdog reconciliation — catches "stuck" invites that escaped all other
+ * finalization paths.
+ *
+ * Runs every 15 minutes and checks for:
+ *
+ * 1. **Stuck `active` invites** — if the invite has been `active` longer than
+ *    the threshold (2 h for realtime, 7 d for turn-based) AND the backing
+ *    game doc is missing/completed, finalize the invite.
+ *
+ * 2. **Stuck `starting` invites** — if the invite has been in `starting`
+ *    status for > 10 minutes, the match-creation likely failed.  Finalize
+ *    as cancelled.
+ *
+ * 3. **Self-heal pass** — any terminal invite still showing
+ *    `chatVisibility: "visible"` is patched (same as cleanupResolvedInvites
+ *    Pass 2 but at higher frequency).
+ *
+ * All finalization goes through `finalizeUniversalInvite` for idempotency.
+ */
+exports.reconcileActiveInvites = functions.pubsub
+    .schedule("every 15 minutes")
+    .onRun(async () => {
+    const now = Date.now();
+    // Thresholds
+    const REALTIME_STUCK_MS = 2 * 60 * 60 * 1000; // 2 hours
+    const TURN_BASED_STUCK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const STARTING_STUCK_MS = 10 * 60 * 1000; // 10 minutes
+    let reconciledActive = 0;
+    let reconciledStarting = 0;
+    let selfHealed = 0;
+    // ── Pass 1: Stuck "active" invites ─────────────────────────────────
+    try {
+        const ACTIVE_LIMIT = 200;
+        const activeSnap = await db
+            .collection("GameInvites")
+            .where("status", "==", "active")
+            .limit(ACTIVE_LIMIT)
+            .get();
+        if (activeSnap.size === ACTIVE_LIMIT) {
+            functions.logger.warn("[reconcileActiveInvites] Active query hit limit — more stuck invites may exist", { limit: ACTIVE_LIMIT });
+        }
+        for (const inviteDoc of activeSnap.docs) {
+            const invite = inviteDoc.data();
+            // Determine age — use updatedAt or createdAt
+            // Runtime values may be Firestore Timestamps despite the TS type saying number.
+            const updatedAt = extractMillis(invite.updatedAt);
+            const createdAt = extractMillis(invite.createdAt);
+            // Safety: if both timestamps are missing/corrupt, treat invite as
+            // maximally aged so the watchdog can reconcile it rather than
+            // silently skipping it forever.
+            if (!updatedAt && !createdAt) {
+                functions.logger.warn("[reconcileActiveInvites] Invite has no valid timestamps — treating as stuck", { inviteId: inviteDoc.id });
+            }
+            const effectiveTs = updatedAt || createdAt;
+            const activeAge = effectiveTs ? now - effectiveTs : Infinity;
+            // Determine threshold based on game type
+            const gameType = invite.gameType;
+            const isRealtime = EXTERNAL_COLYSEUS_INVITE_GAMES.has(gameType);
+            const threshold = isRealtime ? REALTIME_STUCK_MS : TURN_BASED_STUCK_MS;
+            if (activeAge < threshold)
+                continue;
+            // ── Cross-check: does the backing game doc still exist + active?
+            let gameAlive = false;
+            if (invite.gameId) {
+                const gameIdStr = invite.gameId;
+                if (isRealtime) {
+                    // Realtime games may have ColyseusGameState or RealtimeGameSessions
+                    const colySnap = await db
+                        .collection("ColyseusGameState")
+                        .doc(gameIdStr)
+                        .get();
+                    if (colySnap.exists) {
+                        const colyData = colySnap.data();
+                        // If status is NOT vacant/completed, game is alive
+                        if (colyData &&
+                            colyData.status !== "vacant" &&
+                            colyData.status !== "completed") {
+                            gameAlive = true;
+                        }
+                    }
+                }
+                else {
+                    // Turn-based games live in TurnBasedGames
+                    const tbSnap = await db
+                        .collection("TurnBasedGames")
+                        .doc(gameIdStr)
+                        .get();
+                    if (tbSnap.exists) {
+                        const tbData = tbSnap.data();
+                        // If game is still active/invited, it's alive
+                        if (tbData &&
+                            tbData.status !== "completed" &&
+                            tbData.status !== "abandoned") {
+                            gameAlive = true;
+                        }
+                    }
+                }
+            }
+            if (gameAlive)
+                continue; // game is still running — don't touch
+            // Game is gone or completed but invite is stuck active → finalize
+            functions.logger.warn("[reconcileActiveInvites] Finalizing stuck active invite", {
+                inviteId: inviteDoc.id,
+                gameType,
+                gameId: invite.gameId,
+                activeAge: Math.round(activeAge / 60000),
+            });
+            const result = await finalizeUniversalInvite({
+                inviteId: inviteDoc.id,
+                terminalStatus: "completed",
+                resolutionType: "disconnect",
+                resolvedBy: "watchdog",
+                now,
+            });
+            if (result.success)
+                reconciledActive++;
+        }
+    }
+    catch (err) {
+        functions.logger.error("[reconcileActiveInvites] Active pass failed", {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    // ── Pass 2: Stuck "starting" invites ───────────────────────────────
+    try {
+        const STARTING_LIMIT = 100;
+        const startingSnap = await db
+            .collection("GameInvites")
+            .where("status", "==", "starting")
+            .limit(STARTING_LIMIT)
+            .get();
+        if (startingSnap.size === STARTING_LIMIT) {
+            functions.logger.warn("[reconcileActiveInvites] Starting query hit limit — more stuck invites may exist", { limit: STARTING_LIMIT });
+        }
+        for (const inviteDoc of startingSnap.docs) {
+            const invite = inviteDoc.data();
+            const updatedAt = extractMillis(invite.updatedAt);
+            const createdAt = extractMillis(invite.createdAt);
+            const effectiveTs = updatedAt || createdAt;
+            const startingAge = effectiveTs ? now - effectiveTs : Infinity;
+            if (startingAge < STARTING_STUCK_MS)
+                continue;
+            functions.logger.warn("[reconcileActiveInvites] Cancelling stuck starting invite", {
+                inviteId: inviteDoc.id,
+                gameType: invite.gameType,
+                startingAge: Math.round(startingAge / 60000),
+            });
+            const result = await finalizeUniversalInvite({
+                inviteId: inviteDoc.id,
+                terminalStatus: "cancelled",
+                resolutionType: "error",
+                resolvedBy: "watchdog",
+                now,
+            });
+            if (result.success)
+                reconciledStarting++;
+        }
+    }
+    catch (err) {
+        functions.logger.error("[reconcileActiveInvites] Starting pass failed", {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    // ── Pass 3: Self-heal terminal invites still visible ───────────────
+    // Route through finalizeUniversalInvite for consistent field backfill
+    // (resolvedAt, resolvedBy, deleteAt, chatHiddenInConversationIds, etc.)
+    try {
+        for (const status of INVITE_TERMINAL_STATUSES) {
+            // Use "!=" to catch BOTH chatVisibility: "visible" AND invites
+            // where chatVisibility is missing/unset (Firestore "==" doesn't
+            // match missing fields).
+            const visibleSnap = await db
+                .collection("GameInvites")
+                .where("status", "==", status)
+                .where("chatVisibility", "!=", "hidden")
+                .limit(100)
+                .get();
+            if (visibleSnap.size >= 100) {
+                functions.logger.warn("[reconcileActiveInvites] Pass 3 hit limit for status", { status, count: visibleSnap.size });
+            }
+            for (const inviteDoc of visibleSnap.docs) {
+                try {
+                    const result = await finalizeUniversalInvite({
+                        inviteId: inviteDoc.id,
+                        terminalStatus: status,
+                        resolutionType: "error",
+                        resolvedBy: "watchdog",
+                        now,
+                    });
+                    if (result.success)
+                        selfHealed++;
+                }
+                catch (docErr) {
+                    functions.logger.warn("[reconcileActiveInvites] Self-heal doc update failed", {
+                        inviteId: inviteDoc.id,
+                        error: docErr instanceof Error ? docErr.message : String(docErr),
+                    });
+                }
+            }
+        }
+    }
+    catch (err) {
+        functions.logger.error("[reconcileActiveInvites] Self-heal pass failed", {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    // ── Logging ────────────────────────────────────────────────────────
+    functions.logger.info("FN.reconcileActiveInvites.SUMMARY", {
+        pass1_reconciledActive: reconciledActive,
+        pass2_reconciledStarting: reconciledStarting,
+        pass3_selfHealed: selfHealed,
+    });
     return null;
 });
 /**
@@ -2296,7 +2798,11 @@ exports.claimLevelReward = functions.https.onCall(async (data, context) => {
     return {
         success: true,
         level,
-        rewardType: milestoneBackgroundId ? "background_entitlement" : isMilestone ? "milestone" : "small",
+        rewardType: milestoneBackgroundId
+            ? "background_entitlement"
+            : isMilestone
+                ? "milestone"
+                : "small",
         amount,
         message: isMilestone
             ? `Milestone! +${amount} Tokens`

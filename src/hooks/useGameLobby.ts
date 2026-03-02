@@ -13,6 +13,7 @@
  * @module hooks/useGameLobby
  */
 
+import { GAME_SESSIONS_V3 } from "@/constants/featureFlags";
 import {
   cancelUniversalInvite,
   sendUniversalInvite,
@@ -20,11 +21,17 @@ import {
   subscribeToUniversalInvite,
   unclaimInviteSlot,
 } from "@/services/gameInvites";
-import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
+import { createSession } from "@/services/gameSessions";
+import {
+  GAME_METADATA,
+  getGameRuntimeType,
+  type ExtendedGameType,
+} from "@/types/games";
 import type {
   SendUniversalInviteParams,
   UniversalGameInvite,
 } from "@/types/turnBased";
+import { createInviteTrace } from "@/utils/inviteTrace";
 import { createLogger } from "@/utils/log";
 import { getAuth } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -178,6 +185,36 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
   const displayName =
     currentUser?.displayName || currentUser?.email || "Player";
 
+  // ── Lobby trace ──────────────────────────────────────────────────────────────
+  const lobbyTraceRef = useRef(
+    createInviteTrace({
+      inviteId: routeInviteId,
+      gameType,
+      uid,
+      role: routeInviteId ? "joiner" : "host",
+    }),
+  );
+  const lobbyTrace = lobbyTraceRef.current;
+
+  // Log mount
+  useEffect(() => {
+    lobbyTrace.info("LOBBY.MOUNT", {
+      inviteId: routeInviteId,
+      matchId,
+      fromRecovery,
+      roleGuess: routeInviteId ? "joiner" : "host",
+      spectator,
+    });
+    return () => {
+      lobbyTrace.info("LOBBY.UNMOUNT", {
+        didJoinRoom: didJoinRef.current,
+        inviteId: inviteIdRef.current,
+        isHost: isHostRef.current,
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Stable host room key (generated once) ─────────────────────────────
   const prefix = roomKeyPrefix || gameType.slice(0, 3);
   const [hostRoomKey] = useState<string | null>(() => {
@@ -232,6 +269,14 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
 
       setInvite(inv);
 
+      // LOBBY.INVITE.UPDATE trace
+      lobbyTrace.update({ status: inv.status, gameId: inv.gameId });
+      lobbyTrace.info("LOBBY.INVITE.UPDATE", {
+        status: inv.status,
+        gameId: inv.gameId,
+        claimedSlotsCount: inv.claimedSlots?.length,
+      });
+
       // Map claimed slots to lobby players
       const lobbyPlayers: LobbyPlayer[] = (inv.claimedSlots || []).map(
         (slot: any) => ({
@@ -260,17 +305,13 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       // Invite became active with a game ID → resolve and join
       if (inv.status === "active" && inv.gameId && !didJoinRef.current) {
         didJoinRef.current = true;
-        // Always use inv.gameId as the firestoreGameId for Colyseus join.
-        // For turn-based games this is the TurnBasedGames doc ID.
-        // For external Colyseus games this is the ext_<type>_<inviteId> ID
-        // set by the Cloud Function — critical for invite finalization
-        // (Layer 1: deleteGameAndInvite needs the ext_ format to extract
-        // inviteId; Layer 2: processRealtimeGameCompletion needs it too).
-        // The legacy colyseusRoomKey fallback is no longer used because it
-        // produced a random key that broke all finalization layers.
         const resolvedId = inv.gameId;
         setResolvedMatchId(resolvedId);
         setPhase("starting");
+        lobbyTrace.info("LOBBY.ON_READY", {
+          gameId: resolvedId,
+          runtimeType: "queue",
+        });
         logger.info(
           `[useGameLobby] Invite resolved → joining room: ${resolvedId}`,
         );
@@ -317,6 +358,10 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
         const resolvedId = inv.gameId;
         setResolvedMatchId(resolvedId);
         setPhase("starting");
+        lobbyTrace.info("LOBBY.ON_READY", {
+          gameId: resolvedId,
+          runtimeType: "host",
+        });
         logger.info(
           `[useGameLobby] Host invite resolved → joining room: ${resolvedId}`,
         );
@@ -441,24 +486,45 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       if (!uid || !effectiveGameId) return;
 
       try {
-        const result = await sendUniversalInvite({
-          senderId: uid,
-          senderName: displayName,
-          gameType: gameType as SendUniversalInviteParams["gameType"],
-          context: "dm",
-          recipientId: friendUid,
-          recipientName: friendName,
-          recipientAvatar: friendAvatar,
-          conversationId: [uid, friendUid].sort().join("_"),
-          settings: {
-            isRated: true,
-            chatEnabled: true,
-            colyseusRoomKey: effectiveGameId,
-          },
-        });
-        if (result?.id) {
-          setInviteId(result.id);
-          setInvite(result);
+        // v3: create session (+ dual-write invite)
+        if (GAME_SESSIONS_V3.ENABLED) {
+          const runtimeType = getGameRuntimeType(gameType);
+          const result = await createSession({
+            gameType,
+            runtimeType,
+            conversationId: [uid, friendUid].sort().join("_"),
+            entrySource: "game",
+            maxParticipants: 2,
+            createInvite: GAME_SESSIONS_V3.DUAL_WRITE,
+            recipientUids: [friendUid],
+          });
+          if (result.success && result.sessionId) {
+            logger.info(
+              `[useGameLobby] v3 friend session created: ${result.sessionId}`,
+            );
+          }
+        } else {
+          // v2 fallback
+          const result = await sendUniversalInvite({
+            senderId: uid,
+            senderName: displayName,
+            senderAvatar: currentUser?.photoURL || undefined,
+            gameType: gameType as SendUniversalInviteParams["gameType"],
+            context: "dm",
+            recipientId: friendUid,
+            recipientName: friendName,
+            recipientAvatar: friendAvatar,
+            conversationId: [uid, friendUid].sort().join("_"),
+            settings: {
+              isRated: true,
+              chatEnabled: true,
+              colyseusRoomKey: effectiveGameId,
+            },
+          });
+          if (result?.id) {
+            setInviteId(result.id);
+            setInvite(result);
+          }
         }
       } catch (err) {
         logger.error("[useGameLobby] Error sending friend invite:", err);
@@ -472,23 +538,47 @@ export function useGameLobby(options: UseGameLobbyOptions): UseGameLobbyReturn {
       if (!uid || !effectiveGameId) return;
 
       try {
-        const result = await sendUniversalInvite({
-          senderId: uid,
-          senderName: displayName,
-          gameType: gameType as SendUniversalInviteParams["gameType"],
-          context: "group",
-          conversationId: groupId,
-          conversationName: groupName,
-          eligibleUserIds: [...new Set([uid, ...memberUids])],
-          settings: {
-            isRated: true,
-            chatEnabled: true,
-            colyseusRoomKey: effectiveGameId,
-          },
-        });
-        if (result?.id) {
-          setInviteId(result.id);
-          setInvite(result);
+        // v3: create session (+ dual-write invite)
+        if (GAME_SESSIONS_V3.ENABLED) {
+          const runtimeType = getGameRuntimeType(gameType);
+          const recipientUids = [...new Set(memberUids)].filter(
+            (id) => id !== uid,
+          );
+          const result = await createSession({
+            gameType,
+            runtimeType,
+            conversationId: groupId,
+            entrySource: "game",
+            maxParticipants: Math.max(2, recipientUids.length + 1),
+            createInvite: GAME_SESSIONS_V3.DUAL_WRITE,
+            recipientUids,
+          });
+          if (result.success && result.sessionId) {
+            logger.info(
+              `[useGameLobby] v3 group session created: ${result.sessionId}`,
+            );
+          }
+        } else {
+          // v2 fallback
+          const result = await sendUniversalInvite({
+            senderId: uid,
+            senderName: displayName,
+            senderAvatar: currentUser?.photoURL || undefined,
+            gameType: gameType as SendUniversalInviteParams["gameType"],
+            context: "group",
+            conversationId: groupId,
+            conversationName: groupName,
+            eligibleUserIds: [...new Set([uid, ...memberUids])],
+            settings: {
+              isRated: true,
+              chatEnabled: true,
+              colyseusRoomKey: effectiveGameId,
+            },
+          });
+          if (result?.id) {
+            setInviteId(result.id);
+            setInvite(result);
+          }
         }
       } catch (err) {
         logger.error("[useGameLobby] Error sending group invite:", err);

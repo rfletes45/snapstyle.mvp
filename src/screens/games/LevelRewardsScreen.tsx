@@ -41,14 +41,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Button,
-  Dialog,
-  Portal,
-  Snackbar,
-  Text,
-  useTheme,
-} from "react-native-paper";
+import { Button, Dialog, Snackbar, Text, useTheme } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // =============================================================================
@@ -420,34 +413,32 @@ export default function LevelRewardsScreen() {
       )}
 
       {/* Milestone claim dialog */}
-      <Portal>
-        <Dialog
-          visible={dialogReward !== null}
-          onDismiss={() => setDialogReward(null)}
-        >
-          <Dialog.Title>
+      <Dialog
+        visible={dialogReward !== null}
+        onDismiss={() => setDialogReward(null)}
+      >
+        <Dialog.Title>
+          {dialogReward?.rewardType === "background_entitlement"
+            ? "🎨 Background Unlocked!"
+            : "🏆 Milestone Reward!"}
+        </Dialog.Title>
+        <Dialog.Content>
+          <Text variant="bodyLarge">
+            Level {dialogReward?.level} — {dialogReward?.label}
+          </Text>
+          <Text
+            variant="bodyMedium"
+            style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}
+          >
             {dialogReward?.rewardType === "background_entitlement"
-              ? "🎨 Background Unlocked!"
-              : "🏆 Milestone Reward!"}
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyLarge">
-              Level {dialogReward?.level} — {dialogReward?.label}
-            </Text>
-            <Text
-              variant="bodyMedium"
-              style={{ marginTop: 8, color: theme.colors.onSurfaceVariant }}
-            >
-              {dialogReward?.rewardType === "background_entitlement"
-                ? "New profile background added to your collection! Equip it from your profile."
-                : `+${dialogReward?.amount} Tokens`}
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setDialogReward(null)}>Awesome!</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              ? "New profile background added to your collection! Equip it from your profile."
+              : `+${dialogReward?.amount} Tokens`}
+          </Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setDialogReward(null)}>Awesome!</Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Snackbar */}
       <Snackbar

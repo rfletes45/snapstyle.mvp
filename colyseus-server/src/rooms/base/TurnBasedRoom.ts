@@ -48,11 +48,14 @@ import {
 } from "../../schemas/turnbased";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
+  abandonV3Session,
   deleteGameAndInvite,
   extractInviteIdFromExtGameId,
+  linkColyseusRoom,
   loadGameState,
   markGameVacant,
   persistGameResult,
+  resolveV3Session,
   saveGameState,
 } from "../../services/persistence";
 import { checkProtocolVersion } from "../../utils/protocol";
@@ -148,6 +151,9 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
 
   /** Invite ID for finalization fallback (defense-in-depth). */
   private inviteId: string | undefined;
+
+  /** V3 session ID for session bridge (if v3 flow). */
+  private v3SessionId: string | undefined;
 
   // =========================================================================
   // Abstract Methods — Subclasses MUST implement
@@ -266,6 +272,12 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
     // Capture inviteId for finalization fallback (defense-in-depth)
     if (options.inviteId) {
       this.inviteId = options.inviteId;
+    }
+
+    // Capture v3 session ID and link this room to the session
+    if (options.v3SessionId) {
+      this.v3SessionId = options.v3SessionId;
+      linkColyseusRoom(options.v3SessionId, this.roomId);
     }
 
     // Build scoped logger with room-level correlation context
@@ -645,6 +657,21 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
         // Reconnection timed out — player is gone
         this.roomLog.info(`Reconnection timeout: ${client.sessionId}`);
       }
+
+      // ── Auto-forfeit: if the other player is still connected, the
+      //    disconnected player forfeits rather than leaving both stuck. ──
+      const opponent = this.getOpponent(client.sessionId);
+      if (opponent?.connected && this.state.phase === "playing") {
+        this.state.winnerId =
+          this.playerUids.get(opponent.sessionId) || opponent.uid;
+        this.state.winReason = "disconnect_forfeit";
+        this.state.phase = "finished";
+        this.roomLog.info(
+          `Auto-forfeit: ${client.sessionId} disconnected, ` +
+            `${opponent.sessionId} wins`,
+        );
+        return;
+      }
     }
 
     // Track current turn UID for persistence (so the correct player
@@ -692,14 +719,45 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       const firestoreGameId =
         this.state.firestoreGameId || this.state.gameId || this.roomId;
       const inviteId =
-        extractInviteIdFromExtGameId(firestoreGameId) ??
         this.inviteId ??
+        extractInviteIdFromExtGameId(firestoreGameId) ??
         undefined;
       await persistGameResult(this.state, gameDurationMs, undefined, {
         inviteId,
         firestoreGameId,
+        v3SessionId: this.v3SessionId,
       });
       await deleteGameAndInvite(firestoreGameId, inviteId);
+
+      // V3 session bridge — resolve with game results
+      const scores: Record<string, number> = {};
+      const movesPerPlayer: Record<string, number> = {};
+      this.state.tbPlayers.forEach((p: TurnBasedPlayer) => {
+        scores[p.uid] = p.score;
+        movesPerPlayer[p.uid] = 0;
+      });
+      // Count moves per player from moveHistory
+      this.state.moveHistory.forEach((m: MoveRecord) => {
+        const playerEntry = this.state.tbPlayers.get(m.playerId);
+        const uid = playerEntry
+          ? playerEntry.uid
+          : this.playerUids.get(m.playerId) || m.playerId;
+        movesPerPlayer[uid] = (movesPerPlayer[uid] || 0) + 1;
+      });
+
+      await resolveV3Session(
+        this.v3SessionId,
+        this.state.winnerId ? "win" : "draw",
+        {
+          winnerUid: this.state.winnerId || undefined,
+          scores,
+          firestoreGameId,
+          turnCount: this.state.turnNumber,
+          movesPerPlayer,
+          gameDurationMs,
+        },
+      );
+
       this.roomLog.info(
         `Game completed, persisted, and cleaned up: ${this.roomId}`,
       );
@@ -751,10 +809,14 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       };
 
       await saveGameState(this.state, this.roomId, extraFields);
-      // Mark as vacant � Cloud Function will delete after 2 days if nobody returns
+      // Mark as vacant — Cloud Function will delete after 2 days if nobody returns
       const firestoreGameIdSave =
         this.state.firestoreGameId || this.state.gameId || this.roomId;
       await markGameVacant(firestoreGameIdSave, this.gameTypeKey, true);
+
+      // V3 session bridge — mark session as abandoned (suspended game)
+      await abandonV3Session(this.v3SessionId);
+
       this.roomLog.info(
         `Game suspended, saved, marked vacant (2-day TTL): ${this.roomId}`,
       );
@@ -767,12 +829,16 @@ export abstract class TurnBasedRoom extends Room<{ state: TurnBasedState }> {
       const firestoreGameIdPrestart =
         this.state.firestoreGameId || this.state.gameId || this.roomId;
       const inviteIdPrestart =
-        extractInviteIdFromExtGameId(firestoreGameIdPrestart) ??
         this.inviteId ??
+        extractInviteIdFromExtGameId(firestoreGameIdPrestart) ??
         undefined;
       await deleteGameAndInvite(firestoreGameIdPrestart, inviteIdPrestart);
+
+      // V3 session bridge — abandon pre-start session
+      await abandonV3Session(this.v3SessionId);
+
       this.roomLog.info(
-        `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
+        `Pre-start abandonment — deleted game + invite: ${this.roomId}`,
       );
     } else {
       this.roomLog.info(

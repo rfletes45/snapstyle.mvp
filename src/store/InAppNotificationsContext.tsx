@@ -204,7 +204,7 @@ export function InAppNotificationsProvider({
   const setEnabled = useCallback((value: boolean) => {
     setEnabledState(value);
     storage.setItem(STORAGE_KEY, value ? "true" : "false");
-    log.info(`In-app notifications ${value ? "enabled" : "disabled"}`);
+    log.debug(`In-app notifications ${value ? "enabled" : "disabled"}`);
   }, []);
 
   // =============================================================================
@@ -319,7 +319,7 @@ export function InAppNotificationsProvider({
         timestamp: Date.now(),
       };
 
-      log.info(
+      log.debug(
         `Pushing notification: ${notification.type} - ${notification.title}`,
       );
 
@@ -423,7 +423,7 @@ export function InAppNotificationsProvider({
       where("status", "==", "pending"),
     );
 
-    log.info("Setting up friend request listener");
+    log.debug("Setting up friend request listener");
 
     const unsubscribe = onSnapshot(
       q,
@@ -494,7 +494,7 @@ export function InAppNotificationsProvider({
       limit(20), // Only track recent groups
     );
 
-    log.info("Setting up group listener for message notifications");
+    log.debug("Setting up group listener for message notifications");
 
     const unsubscribe = onSnapshot(
       q,
@@ -593,7 +593,7 @@ export function InAppNotificationsProvider({
       limit(20), // Only track recent chats
     );
 
-    log.info("Setting up chat listener for message notifications");
+    log.debug("Setting up chat listener for message notifications");
 
     const unsubscribe = onSnapshot(
       q,
@@ -696,7 +696,7 @@ export function InAppNotificationsProvider({
       where("status", "==", "pending"),
     );
 
-    log.info("Setting up game invite listener");
+    log.debug("Setting up game invite listener");
 
     const unsubscribe = onSnapshot(
       q,

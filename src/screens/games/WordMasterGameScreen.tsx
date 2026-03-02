@@ -18,17 +18,18 @@
 import FriendPickerModal from "@/components/FriendPickerModal";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
 import {
   GuessRow,
   useWordMasterMultiplayer,
 } from "@/hooks/useWordMasterMultiplayer";
+import {
+  useSoloRuntime,
+  withSoloRuntime,
+} from "@/screens/games/SoloRuntimeShell";
 import {
   DailyWordMasterState,
   loadDailyGameState,
@@ -40,6 +41,7 @@ import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { createLogger } from "@/utils/log";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
@@ -59,7 +61,7 @@ import {
   Vibration,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Dialog, Text, useTheme } from "react-native-paper";
 import Animated, {
   SharedValue,
   makeMutable,
@@ -88,6 +90,7 @@ interface LetterGuess {
 
 interface WordMasterGameScreenProps {
   navigation: any;
+  route?: { params?: { v3Session?: string } };
 }
 
 const logger = createLogger("screens/games/WordMasterGameScreen");
@@ -745,20 +748,16 @@ const KEYBOARD_ROWS = [
 // Component
 // =============================================================================
 
-function WordMasterGameScreen({ navigation }: WordMasterGameScreenProps) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "word_master" });
-  void __codexGameCompletion;
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
-
+function WordMasterGameScreen({
+  navigation,
+  route,
+}: WordMasterGameScreenProps) {
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
+  const soloRuntime = useSoloRuntime();
+  const isV3 = !!route?.params?.v3Session;
 
   // Multiplayer hook — always called (Phase 5)
   const mp = useWordMasterMultiplayer({
@@ -1123,6 +1122,36 @@ function WordMasterGameScreen({ navigation }: WordMasterGameScreenProps) {
               );
             });
           }
+
+          // V3: send result facts to solo runtime shell
+          if (isV3 && soloRuntime) {
+            const facts: GameResultFacts = {
+              gameId: "word_master",
+              mode: "solo",
+              outcome: "win",
+              outcomeReason: `Guessed in ${currentRow + 1}`,
+              scoreboard: [
+                {
+                  uid: currentFirebaseUser?.uid ?? "",
+                  displayName: currentFirebaseUser?.displayName ?? "Player",
+                  score: finalScore,
+                  formattedScore: `${finalScore} pts`,
+                  outcome: "win",
+                  isWinner: true,
+                },
+              ],
+              performanceMetrics: [
+                {
+                  label: "Attempts",
+                  value: String(currentRow + 1),
+                  icon: "grid",
+                },
+                { label: "Streak", value: String(streak + 1), icon: "fire" },
+              ],
+              durationMs: 0,
+            };
+            soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
+          }
         },
         WORD_LENGTH * 150 + 300,
       );
@@ -1171,6 +1200,31 @@ function WordMasterGameScreen({ navigation }: WordMasterGameScreenProps) {
                 err,
               );
             });
+          }
+
+          // V3: send result facts to solo runtime shell
+          if (isV3 && soloRuntime) {
+            const facts: GameResultFacts = {
+              gameId: "word_master",
+              mode: "solo",
+              outcome: "lose",
+              outcomeReason: `The word was ${targetWord}`,
+              scoreboard: [
+                {
+                  uid: currentFirebaseUser?.uid ?? "",
+                  displayName: currentFirebaseUser?.displayName ?? "Player",
+                  score: 0,
+                  formattedScore: "0 pts",
+                  outcome: "lose",
+                  isWinner: false,
+                },
+              ],
+              performanceMetrics: [
+                { label: "Attempts", value: String(MAX_GUESSES), icon: "grid" },
+              ],
+              durationMs: 0,
+            };
+            soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
           }
         },
         WORD_LENGTH * 150 + 300,
@@ -1971,7 +2025,7 @@ function WordMasterGameScreen({ navigation }: WordMasterGameScreenProps) {
           </View>
 
           {/* Result Message */}
-          {(status === "won" || status === "lost") && (
+          {(status === "won" || status === "lost") && !isV3 && (
             <View style={styles.resultContainer}>
               <Text style={styles.resultText}>
                 {status === "won"
@@ -2032,32 +2086,28 @@ function WordMasterGameScreen({ navigation }: WordMasterGameScreenProps) {
           </View>
 
           {/* Share Dialog */}
-          <Portal>
-            <Dialog
-              visible={showShareDialog}
-              onDismiss={() => setShowShareDialog(false)}
-              style={{ backgroundColor: theme.colors.surface }}
-            >
-              <Dialog.Title>Share Your Result</Dialog.Title>
-              <Dialog.Content>
-                <Text
-                  style={{
-                    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                  }}
-                >
-                  {generateShareText()}
-                </Text>
-              </Dialog.Content>
-              <Dialog.Actions>
-                <Button onPress={() => setShowShareDialog(false)}>
-                  Cancel
-                </Button>
-                <Button onPress={shareToChat} mode="contained">
-                  Send to Friend
-                </Button>
-              </Dialog.Actions>
-            </Dialog>
-          </Portal>
+          <Dialog
+            visible={showShareDialog}
+            onDismiss={() => setShowShareDialog(false)}
+            style={{ backgroundColor: theme.colors.surface }}
+          >
+            <Dialog.Title>Share Your Result</Dialog.Title>
+            <Dialog.Content>
+              <Text
+                style={{
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                }}
+              >
+                {generateShareText()}
+              </Text>
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
+              <Button onPress={shareToChat} mode="contained">
+                Send to Friend
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
 
           {/* Spectator overlay — shows count of watchers */}
           {spectatorHost.spectatorCount > 0 && (
@@ -2243,4 +2293,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(WordMasterGameScreen, "word_master");
+export default withGameErrorBoundary(
+  withSoloRuntime(WordMasterGameScreen, "word_master"),
+  "word_master",
+);

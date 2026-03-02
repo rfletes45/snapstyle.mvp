@@ -25,10 +25,13 @@ import { ScoreRacePlayer, ScoreRaceState } from "../../schemas/quickplay";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
+  abandonV3Session,
   deleteGameAndInvite,
   extractInviteIdFromExtGameId,
+  linkColyseusRoom,
   markGameVacant,
   persistGameResult,
+  resolveV3Session,
 } from "../../services/persistence";
 import { validateScoreUpdate } from "../../services/validation";
 import { checkProtocolVersion } from "../../utils/protocol";
@@ -76,6 +79,9 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
 
   /** Invite ID for finalization fallback (defense-in-depth). */
   private inviteId: string | undefined;
+
+  /** V3 session ID for session bridge (if v3 flow). */
+  private v3SessionId: string | undefined;
 
   protected isSpectator(sessionId: string): boolean {
     return this.spectatorSessionIds.has(sessionId);
@@ -146,6 +152,12 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     // Capture inviteId for finalization fallback
     if (options.inviteId) {
       this.inviteId = options.inviteId;
+    }
+
+    // Capture v3 session ID and link this room to the session
+    if (options.v3SessionId) {
+      this.v3SessionId = options.v3SessionId;
+      linkColyseusRoom(options.v3SessionId, this.roomId);
     }
 
     // Build scoped logger with room-level correlation context
@@ -430,8 +442,8 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     const firestoreGameId =
       this.state.firestoreGameId || this.state.gameId || this.roomId;
     const inviteId =
-      extractInviteIdFromExtGameId(firestoreGameId) ??
       this.inviteId ??
+      extractInviteIdFromExtGameId(firestoreGameId) ??
       undefined;
 
     if (this.state.phase === "finished" && this.state.winnerId) {
@@ -440,14 +452,31 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
       await persistGameResult(this.state, durationMs, undefined, {
         inviteId,
         firestoreGameId,
+        v3SessionId: this.v3SessionId,
       });
       await deleteGameAndInvite(firestoreGameId, inviteId);
+
+      // V3 session bridge — resolve with game results
+      const scores: Record<string, number> = {};
+      this.state.players.forEach((p: Player) => {
+        scores[p.uid] = p.score;
+      });
+      await resolveV3Session(this.v3SessionId, "win", {
+        winnerUid: this.state.winnerId || undefined,
+        scores,
+        firestoreGameId,
+      });
+
       this.roomLog.info(
         `Game completed, persisted, and cleaned up: ${this.roomId}`,
       );
     } else if (this.state.phase === "playing") {
-      // Ongoing non-turn-based game � mark as vacant for 10-minute cleanup
+      // Ongoing non-turn-based game — mark as vacant for 10-minute cleanup
       await markGameVacant(firestoreGameId, this.gameTypeKey, false);
+
+      // V3 session bridge — mark session as abandoned (vacant game)
+      await abandonV3Session(this.v3SessionId);
+
       this.roomLog.info(
         `Ongoing game marked vacant (10-min TTL): ${this.roomId}`,
       );
@@ -457,8 +486,12 @@ export abstract class ScoreRaceRoom extends Room<{ state: ScoreRaceState }> {
     ) {
       // PRE-START ABANDONMENT: delete immediately
       await deleteGameAndInvite(firestoreGameId, inviteId);
+
+      // V3 session bridge — abandon pre-start session
+      await abandonV3Session(this.v3SessionId);
+
       this.roomLog.info(
-        `Pre-start abandonment � deleted game + invite: ${this.roomId}`,
+        `Pre-start abandonment — deleted game + invite: ${this.roomId}`,
       );
     } else {
       this.roomLog.info(`Room disposed: ${this.roomId}`);

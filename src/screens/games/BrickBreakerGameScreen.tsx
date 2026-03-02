@@ -24,17 +24,21 @@ import { GameOverModal } from "@/components/games/GameOverModal";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useScoreRace } from "@/hooks/useScoreRace";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useSoloRuntime,
+  withSoloRuntime,
+} from "@/screens/games/SoloRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -82,12 +86,6 @@ interface BrickBreakerGameScreenProps {
 function BrickBreakerGameScreen({
   navigation,
 }: BrickBreakerGameScreenProps): React.ReactElement {
-  // Track game completion (required by SnapStyle game framework)
-  const __codexGameCompletion = useGameCompletion({
-    gameType: "brick_breaker",
-  });
-  void __codexGameCompletion;
-
   const theme = useTheme();
   const haptics = useGameHaptics();
   const { currentFirebaseUser } = useAuth();
@@ -95,6 +93,8 @@ function BrickBreakerGameScreen({
   const { showError, showSuccess } = useSnackbar();
   const route =
     useRoute<RouteProp<BrickBreakerRouteParams, "BrickBreakerGame">>();
+  const soloRuntime = useSoloRuntime();
+  const isV3 = !!route?.params && "v3Session" in route.params;
 
   // --------------------------------------------------------------------------
   // Colyseus multiplayer
@@ -208,13 +208,47 @@ function BrickBreakerGameScreen({
   useEffect(() => {
     if (!result) return;
 
-    setShowGameOverModal(true);
+    if (!isV3) {
+      setShowGameOverModal(true);
+    }
 
     // Haptic feedback
     if (result.outcome === "win") {
       haptics.celebrationPattern?.();
     } else {
       haptics.gameOverPattern?.();
+    }
+
+    // V3: send result facts to solo runtime shell
+    if (isV3 && soloRuntime) {
+      const isWin = result.outcome === "win";
+      const facts: GameResultFacts = {
+        gameId: "brick_breaker",
+        mode: "solo",
+        outcome: (isWin ? "win" : "lose") as GameResultFacts["outcome"],
+        outcomeReason: isWin ? "Both walls cleared!" : "Game Over",
+        scoreboard: [
+          {
+            uid: currentFirebaseUser?.uid ?? "",
+            displayName: currentFirebaseUser?.displayName ?? "Player",
+            score: result.score,
+            formattedScore: `${result.score} pts`,
+            outcome: (isWin ? "win" : "lose") as GameResultFacts["outcome"],
+            isWinner: isWin,
+          },
+        ],
+        performanceMetrics: [
+          { label: "Score", value: String(result.score), icon: "star" },
+          {
+            label: "Bricks",
+            value: String(result.stats?.bricksDestroyed ?? 0),
+            icon: "cube",
+          },
+        ],
+        durationMs: 0,
+        sessionId: (route?.params as any)?.v3Session,
+      };
+      soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
     }
 
     // Record single-player session
@@ -307,9 +341,8 @@ function BrickBreakerGameScreen({
 
   const handleExitToHub = useCallback(() => {
     setShowGameOverModal(false);
-    if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate("GamesHub");
-  }, [navigation]);
+    handleBack();
+  }, [handleBack]);
 
   // --------------------------------------------------------------------------
   // Gestures
@@ -711,4 +744,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(BrickBreakerGameScreen, "brick_breaker");
+export default withGameErrorBoundary(
+  withSoloRuntime(BrickBreakerGameScreen, "brick_breaker"),
+  "brick_breaker",
+);

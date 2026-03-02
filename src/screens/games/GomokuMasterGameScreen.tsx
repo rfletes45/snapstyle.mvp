@@ -11,7 +11,6 @@
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
 import { SkiaGameBoard } from "@/components/games/graphics";
 import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
@@ -33,10 +32,13 @@ import InvitePickerModal, {
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSpectator } from "@/hooks/useSpectator";
 import { useTurnBasedGame } from "@/hooks/useTurnBasedGame";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -53,6 +55,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Canvas,
@@ -77,7 +80,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { Button, Dialog, Text } from "react-native-paper";
 
 // =============================================================================
 // Constants
@@ -286,28 +289,27 @@ function getAIMove(board: Board, aiPlayer: CellState): Coord {
 
 interface GomokuMasterGameScreenProps {
   navigation: any;
-  route?: any;
+  route?: {
+    params?: {
+      matchId?: string;
+      inviteId?: string;
+      entryPoint?: string;
+      spectatorMode?: boolean;
+      /** v3 session fields */
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
+    };
+  };
 }
 
 function GomokuMasterGameScreen({
   navigation,
   route,
 }: GomokuMasterGameScreenProps) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "gomoku" });
-  void __codexGameCompletion;
+  const isV3 = !!route?.params?.v3Session;
+  const { exitGame } = useGameCompletion({ gameType: "gomoku" });
   const [gameMode, setGameMode] = useState<GameMode>("ai");
-  useGameBackHandler({
-    gameType: "gomoku",
-    isGameOver: false,
-    isMultiplayer: gameMode === "online",
-    entryPoint: route?.params?.entryPoint,
-  });
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
 
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
@@ -315,7 +317,7 @@ function GomokuMasterGameScreen({
   const { showSuccess, showError } = useSnackbar();
 
   const [gameState, setGameState] = useState<GameState>(
-    route?.params?.inviteId ? "lobby" : "menu",
+    isV3 ? "playing" : route?.params?.inviteId ? "lobby" : "menu",
   );
   const [board, setBoard] = useState<Board>(EMPTY_BOARD());
   const [currentPlayer, setCurrentPlayer] = useState<CellState>(1); // 1 = black goes first
@@ -323,6 +325,15 @@ function GomokuMasterGameScreen({
   const [winLine, setWinLine] = useState<Coord[] | null>(null);
   const [isDraw, setIsDraw] = useState(false);
   const [wins, setWins] = useState(0);
+
+  // Back-handler wired AFTER winner/isDraw so isGameOver is reactive
+  const { markAsLeaving } = useGameBackHandler({
+    gameType: "gomoku",
+    isGameOver: winner !== null || isDraw,
+    isMultiplayer: gameMode === "online",
+    entryPoint: route?.params?.entryPoint,
+  });
+
   const [lastMove, setLastMove] = useState<Coord | null>(null);
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
@@ -365,6 +376,59 @@ function GomokuMasterGameScreen({
   const isSpectator = route?.params?.spectatorMode === true;
   const mp = useTurnBasedGame("gomoku_master_game");
 
+  // ── V3 Runtime Shell integration ──────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      mp.phase !== "finished" ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myOutcome = mp.isDraw ? "draw" : mp.isWinner ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "gomoku_master",
+      mode: "turnBased",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason:
+        mp.winReason ??
+        (mp.isDraw ? "Draw" : mp.isWinner ? "Five in a row!" : "Defeat"),
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!mp.isWinner,
+        },
+        {
+          uid: "opponent",
+          displayName: mp.opponentName ?? "Opponent",
+          outcome: (mp.isDraw
+            ? "draw"
+            : mp.isWinner
+              ? "lose"
+              : "win") as GameResultFacts["outcome"],
+          isWinner: !mp.isWinner && !mp.isDraw,
+        },
+      ],
+      performanceMetrics: [
+        { label: "Turns", value: String(mp.turnNumber ?? 0), icon: "counter" },
+      ],
+      durationMs: 0,
+      sessionId: route?.params?.v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, mp.phase, mp.isWinner, mp.isDraw]);
+
   // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
   const lobbyController = useGameLobbyController({
     gameType: "gomoku",
@@ -400,13 +464,39 @@ function GomokuMasterGameScreen({
     route?.params?.matchId,
   );
 
+  // v3 auto-start: bypass useGameConnection, join room directly
+  const v3StartedRef = useRef(false);
   useEffect(() => {
-    // Skip when lobby is handling the invite flow
-    if (route?.params?.inviteId) return;
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route?.params?.firestoreGameId ||
+      route?.params?.matchId ||
+      route?.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      mp.startMultiplayer({ firestoreGameId: fId, spectator: isSpectator });
+    }
+  }, [
+    isV3,
+    route?.params?.firestoreGameId,
+    route?.params?.matchId,
+    route?.params?.v3Session,
+    isSpectator,
+  ]);
+
+  useEffect(() => {
+    // Skip when lobby is handling the invite flow, or v3 (handled above)
+    if (route?.params?.inviteId || isV3) return;
     if (resolvedMode && firestoreGameId) {
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
     }
-  }, [resolvedMode, firestoreGameId, isSpectator, route?.params?.inviteId]);
+  }, [
+    resolvedMode,
+    firestoreGameId,
+    isSpectator,
+    route?.params?.inviteId,
+    isV3,
+  ]);
 
   // Derive Colyseus board as 2D array for rendering
   const colyseusBoard: Board | null =
@@ -876,7 +966,7 @@ function GomokuMasterGameScreen({
         <View style={{ width: 32 }} />
       </View>
 
-      {gameState === "lobby" ? (
+      {gameState === "lobby" && !isV3 ? (
         <View style={{ flex: 1 }}>
           <MultiplayerLobbyOverlay
             controller={lobbyController}
@@ -982,48 +1072,44 @@ function GomokuMasterGameScreen({
       )}
 
       {/* Result Dialog */}
-      <Portal>
-        <Dialog visible={gameState === "result"} dismissable={false}>
-          <Dialog.Title>
+      <Dialog visible={gameState === "result"} dismissable={false}>
+        <Dialog.Title>
+          {isDraw
+            ? "Draw!"
+            : winner === 1
+              ? gameMode === "ai"
+                ? "🎉 You Win!"
+                : "🎉 Black Wins!"
+              : gameMode === "ai"
+                ? "AI Wins!"
+                : "⚪ White Wins!"}
+        </Dialog.Title>
+        <Dialog.Content>
+          <Text>
             {isDraw
-              ? "Draw!"
+              ? "The board is full — no winner!"
               : winner === 1
-                ? gameMode === "ai"
-                  ? "🎉 You Win!"
-                  : "🎉 Black Wins!"
-                : gameMode === "ai"
-                  ? "AI Wins!"
-                  : "⚪ White Wins!"}
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              {isDraw
-                ? "The board is full — no winner!"
-                : winner === 1
-                  ? "Black connected five in a row!"
-                  : "White connected five in a row!"}
+                ? "Black connected five in a row!"
+                : "White connected five in a row!"}
+          </Text>
+          {wins > 0 && <Text style={{ marginTop: 8 }}>Win Streak: {wins}</Text>}
+          {xpEarned > 0 && (
+            <Text style={{ color: "#fbbf24", marginTop: 8 }}>
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
             </Text>
-            {wins > 0 && (
-              <Text style={{ marginTop: 8 }}>Win Streak: {wins}</Text>
-            )}
-            {xpEarned > 0 && (
-              <Text style={{ color: "#fbbf24", marginTop: 8 }}>
-                ⭐ +{xpEarned} XP
-                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
-              </Text>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setGameState("menu")}>Menu</Button>
-            {winner === 1 && (
-              <Button onPress={() => setShowFriendPicker(true)}>Share</Button>
-            )}
-            <Button mode="contained" onPress={() => startGame(gameMode)}>
-              Play Again
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+          )}
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setGameState("menu")}>Menu</Button>
+          {winner === 1 && (
+            <Button onPress={() => setShowFriendPicker(true)}>Share</Button>
+          )}
+          <Button mode="contained" onPress={() => startGame(gameMode)}>
+            Play Again
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       <FriendPickerModal
         visible={showFriendPicker}
@@ -1070,7 +1156,8 @@ function GomokuMasterGameScreen({
       {gameMode === "online" &&
         mp.isMultiplayer &&
         mp.phase === "playing" &&
-        !isSpectator && (
+        !isSpectator &&
+        !isV3 && (
           <GameActionBar
             onResign={() => setShowResignConfirm(true)}
             onOfferDraw={mp.offerDraw}
@@ -1152,9 +1239,10 @@ function GomokuMasterGameScreen({
             onAcceptRematch={mp.acceptRematch}
             onMenu={() => {
               mp.cancelMultiplayer();
-              setGameState("menu");
+              markAsLeaving();
+              exitGame();
             }}
-            visible={mp.phase === "finished"}
+            visible={mp.phase === "finished" && !isV3}
           />
 
           <DrawOfferDialog
@@ -1174,7 +1262,7 @@ function GomokuMasterGameScreen({
           />
 
           <ResignConfirmDialog
-            visible={showResignConfirm}
+            visible={showResignConfirm && !isV3}
             colors={{
               primary: colors.primary,
               background: colors.background,
@@ -1315,4 +1403,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(GomokuMasterGameScreen, "gomoku");
+export default withGameErrorBoundary(
+  withMultiplayerRuntime(GomokuMasterGameScreen),
+  "gomoku",
+);

@@ -11,15 +11,15 @@
  * @module components/chat/inbox/SwipeableConversation
  */
 
+import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import * as haptics from "@/utils/haptics";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useCallback, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { RectButton } from "react-native-gesture-handler";
 import Swipeable from "react-native-gesture-handler/Swipeable";
-import { IconButton } from "react-native-paper";
-import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -103,9 +103,9 @@ export function SwipeableConversation({
               style={styles.actionButton}
               onPress={() => handleAction(onPin)}
             >
-              <IconButton
-                icon={isPinned ? "pin-off" : "pin"}
-                iconColor="white"
+              <MaterialCommunityIcons
+                name={isPinned ? "pin-off" : "pin"}
+                color="white"
                 size={24}
               />
             </RectButton>
@@ -143,9 +143,9 @@ export function SwipeableConversation({
             style={[styles.singleAction, { backgroundColor: colors.warning }]}
             onPress={() => handleAction(onMute)}
           >
-            <IconButton
-              icon={isMuted ? "bell" : "bell-off"}
-              iconColor="white"
+            <MaterialCommunityIcons
+              name={isMuted ? "bell" : "bell-off"}
+              color="white"
               size={24}
             />
           </RectButton>
@@ -155,9 +155,9 @@ export function SwipeableConversation({
             style={[styles.singleAction, { backgroundColor: colors.info }]}
             onPress={() => handleAction(onArchive)}
           >
-            <IconButton
-              icon={isArchived ? "inbox" : "archive"}
-              iconColor="white"
+            <MaterialCommunityIcons
+              name={isArchived ? "inbox" : "archive"}
+              color="white"
               size={24}
             />
           </RectButton>
@@ -167,7 +167,7 @@ export function SwipeableConversation({
             style={[styles.singleAction, { backgroundColor: colors.error }]}
             onPress={() => handleAction(onDelete)}
           >
-            <IconButton icon="delete" iconColor="white" size={24} />
+            <MaterialCommunityIcons name="delete" color="white" size={24} />
           </RectButton>
         </Animated.View>
       );

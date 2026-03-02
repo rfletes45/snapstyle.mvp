@@ -54,6 +54,13 @@ export interface GameSessionContext {
   /** True if the user is joining as a spectator */
   spectator?: boolean;
   /**
+   * v3 Game Session ID.
+   *
+   * When present, the Colyseus room should write its roomId back
+   * to the session doc and use the sessionId for completion bridging.
+   */
+  v3SessionId?: string;
+  /**
    * Correlation ID for end-to-end tracing.
    *
    * If provided (e.g. from the invite doc), `buildJoinOptions` will
@@ -96,6 +103,8 @@ export interface GameJoinOptions {
   inviteId?: string;
   /** Chat conversation ID (for post-game navigation & chat integration) */
   conversationId?: string;
+  /** v3 Game Session document ID — for session ↔ room bridging */
+  v3SessionId?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

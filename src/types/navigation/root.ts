@@ -1,6 +1,31 @@
+import type { SessionEntrySource } from "@/types/gameSessionV3";
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 type OptionalRouteParams = Record<string, unknown> | undefined;
+
+/**
+ * Standard route params that any multiplayer game screen may receive when
+ * entered through the v3 SessionLobbyScreen flow.
+ */
+export interface V3GameScreenParams {
+  /** v3 session document ID (always present in v3 flow). */
+  sessionId?: string;
+  /**
+   * When present, this is the v3 session ID string (truthy = v3 flow).
+   * Game screens use this to resolve the session on game-over.
+   */
+  v3Session?: string;
+  /** Colyseus room ID assigned by the server. */
+  matchId?: string;
+  /** Legacy invite doc ID (dual-write). */
+  inviteId?: string;
+  /** Firestore turn-based game doc ID (turnBased games only). */
+  firestoreGameId?: string;
+  /** How the user entered the game. */
+  entryPoint?: "play" | "chat";
+  /** Whether the user is spectating. */
+  spectatorMode?: boolean;
+}
 
 export type AuthStackParamList = {
   Welcome: undefined;
@@ -25,26 +50,33 @@ export type MomentsStackParamList = {
 
 export type PlayStackParamList = {
   GamesHub: undefined;
+  SessionLobbyScreen: {
+    sessionId: string;
+    source: SessionEntrySource;
+  };
+  SessionGameOverScreen: {
+    sessionId: string;
+  };
   BounceBlitzGame: OptionalRouteParams;
-  WordGame: OptionalRouteParams;
+  WordGame: V3GameScreenParams | undefined;
   Play2048Game: OptionalRouteParams;
-  LightsOutGame: OptionalRouteParams;
+  LightsOutGame: V3GameScreenParams | undefined;
   BrickBreakerGame: OptionalRouteParams;
-  TicTacToeGame: OptionalRouteParams;
-  CheckersGame: OptionalRouteParams;
-  ChessGame: OptionalRouteParams;
-  CrazyEightsGame: OptionalRouteParams;
-  FourGame: OptionalRouteParams;
-  MinesweeperGame: OptionalRouteParams;
-  DotsGame: OptionalRouteParams;
-  GomokuGame: OptionalRouteParams;
-  PongGame: OptionalRouteParams;
-  ReversiGame: OptionalRouteParams;
-  CrosswordGame: OptionalRouteParams;
-  StarforgeGame: OptionalRouteParams;
-  SketchPartyGameScreen: OptionalRouteParams;
-  MiniGolfDuelsGame: OptionalRouteParams;
-  BattleshipGame: OptionalRouteParams;
+  MinesweeperGame: V3GameScreenParams | undefined;
+  TicTacToeGame: V3GameScreenParams | undefined;
+  CheckersGame: V3GameScreenParams | undefined;
+  ChessGame: V3GameScreenParams | undefined;
+  CrazyEightsGame: V3GameScreenParams | undefined;
+  FourGame: V3GameScreenParams | undefined;
+  DotsGame: V3GameScreenParams | undefined;
+  GomokuGame: V3GameScreenParams | undefined;
+  PongGame: V3GameScreenParams | undefined;
+  ReversiGame: V3GameScreenParams | undefined;
+  CrosswordGame: V3GameScreenParams | undefined;
+  StarforgeGame: V3GameScreenParams | undefined;
+  SketchPartyGameScreen: V3GameScreenParams | undefined;
+  MiniGolfDuelsGame: V3GameScreenParams | undefined;
+  BattleshipGame: V3GameScreenParams | undefined;
   GameDetails: { gameId: string };
   Leaderboard: { gameId?: string } | undefined;
   Achievements:

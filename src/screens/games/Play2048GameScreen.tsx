@@ -39,15 +39,20 @@ import { Skia2048Tile, SkiaGameBoard } from "@/components/games/graphics";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useSoloRuntime,
+  withSoloRuntime,
+} from "@/screens/games/SoloRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import { sendScorecard } from "@/services/games";
 import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
+import { buildSoloScoreboard } from "@/types/gameResultFacts";
 import { Play2048Stats } from "@/types/singlePlayerGames";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
@@ -59,7 +64,7 @@ import React, {
 } from "react";
 import { Dimensions, Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Dialog, Text, useTheme } from "react-native-paper";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -675,13 +680,14 @@ interface Play2048GameScreenProps {
 }
 
 function Play2048GameScreen({ navigation }: Play2048GameScreenProps) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "play_2048" });
-  void __codexGameCompletion;
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
   const haptics = useGameHaptics();
+
+  // ── V3 Solo Runtime Shell integration ─────────────────────────────────
+  const soloRuntime = useSoloRuntime();
 
   // ---------------------------------------------------------------------------
   // Game engine lives in a ref (mutable). React state holds render snapshots.
@@ -792,7 +798,7 @@ function Play2048GameScreen({ navigation }: Play2048GameScreenProps) {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Handle game over — record session to Firebase
+  // Handle game over — record session to Firebase + submit via SoloRuntimeShell
   // ---------------------------------------------------------------------------
   const handleGameOver = useCallback(
     async (finalScore: number, didWin: boolean, moves: number) => {
@@ -811,18 +817,54 @@ function Play2048GameScreen({ navigation }: Play2048GameScreenProps) {
 
         const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
 
+        // Keep legacy session recording as backup for existing leaderboards
         await recordSinglePlayerSession(currentFirebaseUser.uid, {
           gameType: "play_2048",
           finalScore,
           stats,
           duration,
         });
+
+        // Submit via SoloRuntimeShell for unified XP/achievement pipeline
+        if (soloRuntime) {
+          const durationMs = Date.now() - startTimeRef.current;
+          const uid = currentFirebaseUser.uid;
+          const displayName = currentFirebaseUser.displayName ?? "Player";
+
+          const facts: GameResultFacts = {
+            gameId: "play_2048",
+            mode: "solo",
+            outcome: didWin ? "win" : "completed",
+            outcomeReason: didWin ? `Reached ${best}!` : `Best tile: ${best}`,
+            scoreboard: buildSoloScoreboard({
+              uid,
+              displayName,
+              score: finalScore,
+              formattedScore: `${finalScore} pts`,
+              outcome: didWin ? "win" : "completed",
+            }),
+            performanceMetrics: [
+              { label: "Best Tile", value: String(best), icon: "star" },
+              { label: "Moves", value: String(moves), icon: "counter" },
+              { label: "Duration", value: `${duration}s`, icon: "timer" },
+            ],
+            durationMs,
+            meta: { bestTile: best, moveCount: moves },
+          };
+
+          // Submit + navigate to unified end screen
+          soloRuntime
+            .onGameComplete(facts, { navigateToEndScreen: true })
+            .catch(() => {});
+        }
       }
 
       spectatorHost.endHosting(finalScore);
+      // Show legacy game-over modal as fallback (navigateToEndScreen will
+      // replace the screen, so this only shows if the shell isn’t active).
       setShowGameOverModal(true);
     },
-    [currentFirebaseUser, haptics],
+    [currentFirebaseUser, haptics, soloRuntime],
   );
 
   // ---------------------------------------------------------------------------
@@ -1174,29 +1216,27 @@ function Play2048GameScreen({ navigation }: Play2048GameScreenProps) {
       </Button>
 
       {/* Win Dialog */}
-      <Portal>
-        <Dialog visible={showWinDialog} onDismiss={continueGame}>
-          <Dialog.Title>🎉 You Win!</Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyLarge">Congratulations! You reached 2048!</Text>
-            <Text variant="bodyMedium" style={{ marginTop: 8 }}>
-              Score: {score}
-            </Text>
-            <Text
-              variant="bodySmall"
-              style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}
-            >
-              You can continue playing to reach higher tiles!
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={startNewGame}>New Game</Button>
-            <Button mode="contained" onPress={continueGame}>
-              Keep Playing
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <Dialog visible={showWinDialog} onDismiss={continueGame}>
+        <Dialog.Title>🎉 You Win!</Dialog.Title>
+        <Dialog.Content>
+          <Text variant="bodyLarge">Congratulations! You reached 2048!</Text>
+          <Text variant="bodyMedium" style={{ marginTop: 8 }}>
+            Score: {score}
+          </Text>
+          <Text
+            variant="bodySmall"
+            style={{ marginTop: 4, color: theme.colors.onSurfaceVariant }}
+          >
+            You can continue playing to reach higher tiles!
+          </Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={startNewGame}>New Game</Button>
+          <Button mode="contained" onPress={continueGame}>
+            Keep Playing
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Game Over Modal */}
       <GameOverModal
@@ -1214,8 +1254,7 @@ function Play2048GameScreen({ navigation }: Play2048GameScreenProps) {
         onRematch={startNewGame}
         onShare={handleShare}
         onExit={() => {
-          if (navigation.canGoBack()) navigation.goBack();
-          else navigation.navigate("GamesHub");
+          handleBack();
         }}
         showRematch={true}
         showShare={true}
@@ -1361,4 +1400,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(Play2048GameScreen, "play_2048");
+export default withGameErrorBoundary(
+  withSoloRuntime(Play2048GameScreen, "play_2048"),
+  "play_2048",
+);

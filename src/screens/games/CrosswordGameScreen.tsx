@@ -12,15 +12,16 @@
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { COLYSEUS_FEATURES } from "@/constants/featureFlags";
 import { useCrosswordMultiplayer } from "@/hooks/useCrosswordMultiplayer";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -36,6 +37,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Canvas,
@@ -61,7 +63,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { Button, Dialog, Text } from "react-native-paper";
 
 // =============================================================================
 // Constants
@@ -257,24 +259,28 @@ function CrosswordGameScreen({
   route,
 }: {
   navigation: any;
-  route: any;
+  route: {
+    params?: {
+      matchId?: string;
+      inviteId?: string;
+      entryPoint?: string;
+      spectatorMode?: boolean;
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
+    };
+  };
 }) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "crossword" });
-  void __codexGameCompletion;
-  useGameBackHandler({ gameType: "crossword", isGameOver: false });
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
-
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
   const isSpectator = route?.params?.spectatorMode === true;
-  const inviteMatchId = route?.params?.matchId;
+  const isV3 = !!route?.params?.v3Session;
+  const inviteMatchId =
+    route?.params?.firestoreGameId ||
+    route?.params?.matchId ||
+    route?.params?.v3Session;
 
   // Multiplayer hook — always called (Phase 5)
   const cmp = useCrosswordMultiplayer({
@@ -283,6 +289,72 @@ function CrosswordGameScreen({
     autoJoin: !!inviteMatchId,
     options: isSpectator ? { spectator: true } : undefined,
   });
+
+  // ── V3 Runtime Shell integration ──────────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      cmp.phase !== "finished" ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myOutcome = cmp.completed ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "crossword_puzzle",
+      mode: "realtime",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason: cmp.completed ? "Puzzle completed" : "Time expired",
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          score: cmp.myLettersPlaced ?? 0,
+          formattedScore: `${cmp.myLettersPlaced ?? 0} letters`,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!cmp.completed,
+        },
+        {
+          uid: "partner",
+          displayName: cmp.partnerName ?? "Partner",
+          score: cmp.partnerLettersPlaced ?? 0,
+          formattedScore: `${cmp.partnerLettersPlaced ?? 0} letters`,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!cmp.completed,
+        },
+      ],
+      performanceMetrics: [
+        {
+          label: "Time",
+          value: `${Math.floor(cmp.elapsed ?? 0)}s`,
+          icon: "clock",
+        },
+        {
+          label: "My Letters",
+          value: String(cmp.myLettersPlaced ?? 0),
+          icon: "alphabetical",
+        },
+        {
+          label: "Partner Letters",
+          value: String(cmp.partnerLettersPlaced ?? 0),
+          icon: "alphabetical",
+        },
+      ],
+      durationMs: (cmp.elapsed ?? 0) * 1000,
+      sessionId: route?.params?.v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, cmp.phase, cmp.completed]);
+
   const spectatorSession = useSpectator({
     mode: "multiplayer-spectator",
     room: cmp.room,
@@ -303,6 +375,13 @@ function CrosswordGameScreen({
   );
   const [direction, setDirection] = useState<"across" | "down">("across");
   const [gameState, setGameState] = useState<GameState>("menu");
+
+  // Back-handler wired AFTER gameState so isGameOver is reactive
+  useGameBackHandler({
+    gameType: "crossword",
+    isGameOver: gameState === "result",
+  });
+
   const [startTime] = useState(Date.now());
   const [elapsedTime, setElapsedTime] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest | null>(null);
@@ -886,7 +965,7 @@ function CrosswordGameScreen({
           )}
 
           {/* --- Finished --- */}
-          {cmp.phase === "finished" && (
+          {cmp.phase === "finished" && !isV3 && (
             <View
               style={{
                 alignItems: "center",
@@ -1161,55 +1240,53 @@ function CrosswordGameScreen({
           </ScrollView>
 
           {/* Result dialog */}
-          <Portal>
-            <Dialog
-              visible={gameState === "result"}
-              onDismiss={() => {}}
-              style={{ backgroundColor: colors.surface }}
-            >
-              <Dialog.Title style={{ color: colors.text, textAlign: "center" }}>
-                🎉 Puzzle Complete!
-              </Dialog.Title>
-              <Dialog.Content>
+          <Dialog
+            visible={gameState === "result"}
+            onDismiss={() => {}}
+            style={{ backgroundColor: colors.surface }}
+          >
+            <Dialog.Title style={{ color: colors.text, textAlign: "center" }}>
+              🎉 Puzzle Complete!
+            </Dialog.Title>
+            <Dialog.Content>
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  textAlign: "center",
+                  fontSize: 16,
+                }}
+              >
+                Time: {formatTime(elapsedTime)}
+              </Text>
+              {personalBest && (
                 <Text
                   style={{
-                    color: colors.textSecondary,
+                    color: colors.primary,
                     textAlign: "center",
-                    fontSize: 16,
+                    marginTop: 4,
                   }}
                 >
-                  Time: {formatTime(elapsedTime)}
+                  Best: {formatTime(personalBest.bestScore)}
                 </Text>
-                {personalBest && (
-                  <Text
-                    style={{
-                      color: colors.primary,
-                      textAlign: "center",
-                      marginTop: 4,
-                    }}
-                  >
-                    Best: {formatTime(personalBest.bestScore)}
-                  </Text>
-                )}
-                {xpEarned > 0 && (
-                  <Text
-                    style={{
-                      color: "#fbbf24",
-                      textAlign: "center",
-                      marginTop: 8,
-                    }}
-                  >
-                    ⭐ +{xpEarned} XP
-                    {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
-                  </Text>
-                )}
-              </Dialog.Content>
-              <Dialog.Actions style={styles.dialogActions}>
-                <Button onPress={() => setShowFriendPicker(true)}>Share</Button>
-                <Button onPress={() => navigation.goBack()}>Done</Button>
-              </Dialog.Actions>
-            </Dialog>
-          </Portal>
+              )}
+              {xpEarned > 0 && (
+                <Text
+                  style={{
+                    color: "#fbbf24",
+                    textAlign: "center",
+                    marginTop: 8,
+                  }}
+                >
+                  ⭐ +{xpEarned} XP
+                  {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+                </Text>
+              )}
+            </Dialog.Content>
+            <Dialog.Actions style={styles.dialogActions}>
+              <Button onPress={() => setShowFriendPicker(true)}>Share</Button>
+              <Button onPress={() => navigation.goBack()}>Done</Button>
+            </Dialog.Actions>
+          </Dialog>
 
           <FriendPickerModal
             visible={showFriendPicker}
@@ -1294,4 +1371,7 @@ const styles = StyleSheet.create({
   dialogActions: { justifyContent: "center" },
 });
 
-export default withGameErrorBoundary(CrosswordGameScreen, "crossword");
+export default withGameErrorBoundary(
+  withMultiplayerRuntime(CrosswordGameScreen),
+  "crossword",
+);

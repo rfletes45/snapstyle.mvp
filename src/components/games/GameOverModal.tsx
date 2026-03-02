@@ -13,17 +13,17 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
+  BackHandler,
   Dimensions,
-  Modal,
   StyleSheet,
   TouchableOpacity,
   useColorScheme,
   View,
 } from "react-native";
-import { Button, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Text, useTheme } from "react-native-paper";
 import Animated, {
   SlideInDown,
   useAnimatedStyle,
@@ -49,9 +49,11 @@ import {
   AchievementNotification,
   GameAchievementDefinition,
 } from "@/types/achievements";
+import { createLogger } from "@/utils/log";
 import { formatDurationSeconds as formatTime } from "@/utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const gameOverLogger = createLogger("GameOverModal");
 
 // =============================================================================
 // Types
@@ -336,6 +338,28 @@ export function GameOverModal({
 
   const resultConfig = getResultConfig(result, isDarkMode);
   const [burstActive, setBurstActive] = useState(false);
+  const rematchPressedRef = useRef(false);
+
+  // Reset the rematch guard when the modal opens so subsequent games work
+  useEffect(() => {
+    if (visible) rematchPressedRef.current = false;
+  }, [visible]);
+
+  const safeOnRematch = useCallback(() => {
+    if (rematchPressedRef.current) return;
+    rematchPressedRef.current = true;
+    onRematch?.();
+  }, [onRematch]);
+
+  // DEV instrumentation: log overlay show/hide transitions
+  useEffect(() => {
+    if (__DEV__) {
+      gameOverLogger.info(`[GameEnd] ${visible ? "SHOW" : "HIDE"}`, {
+        result,
+        winMethod: stats.winMethod,
+      });
+    }
+  }, [visible, result, stats.winMethod]);
 
   // Haptic feedback on show
   useEffect(() => {
@@ -407,258 +431,266 @@ export function GameOverModal({
     opacity: contentOpacity.value,
   }));
 
+  // Handle Android back button (replaces Modal's onRequestClose)
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onExit();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onExit]);
+
+  if (!visible) return null;
+
   return (
-    <Portal>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={onExit}
-      >
-        <View style={styles.overlay}>
-          {/* Confetti for wins */}
-          {resultConfig.confetti && <Confetti />}
-          {(result === "win" || stats.isNewBest) && (
-            <SkiaParticleBurst
-              x={SCREEN_WIDTH / 2}
-              y={SCREEN_HEIGHT / 2 - 110}
-              radius={stats.isNewBest ? 84 : 62}
-              count={stats.isNewBest ? 28 : 20}
-              size={220}
-              duration={760}
-              colors={
-                stats.isNewBest
-                  ? ["#FFD700", "#FFF4B0", "#FFFFFF", "#F59E0B"]
-                  : ["#FFD700", "#FFFFFF", "#60A5FA", "#34D399"]
-              }
-              active={burstActive}
-            />
-          )}
+    <View style={styles.fullScreenOverlay}>
+      <View style={styles.overlay}>
+        {/* Confetti for wins */}
+        {resultConfig.confetti && <Confetti />}
+        {(result === "win" || stats.isNewBest) && (
+          <SkiaParticleBurst
+            x={SCREEN_WIDTH / 2}
+            y={SCREEN_HEIGHT / 2 - 110}
+            radius={stats.isNewBest ? 84 : 62}
+            count={stats.isNewBest ? 28 : 20}
+            size={220}
+            duration={760}
+            colors={
+              stats.isNewBest
+                ? ["#FFD700", "#FFF4B0", "#FFFFFF", "#F59E0B"]
+                : ["#FFD700", "#FFFFFF", "#60A5FA", "#34D399"]
+            }
+            active={burstActive}
+          />
+        )}
 
-          <Animated.View
-            entering={SlideInDown.springify().damping(15)}
-            style={[
-              styles.modal,
-              {
-                backgroundColor: theme.colors.surface,
-              },
-              GAME_SHADOWS.lg,
-            ]}
+        <Animated.View
+          entering={SlideInDown.springify().damping(15)}
+          style={[
+            styles.modal,
+            {
+              backgroundColor: theme.colors.surface,
+            },
+            GAME_SHADOWS.lg,
+          ]}
+        >
+          {/* Header */}
+          <View
+            style={[styles.header, { backgroundColor: resultConfig.bgColor }]}
           >
-            {/* Header */}
-            <View
-              style={[styles.header, { backgroundColor: resultConfig.bgColor }]}
-            >
-              <Animated.Text style={[styles.title, titleStyle]}>
-                {title || resultConfig.title}
-              </Animated.Text>
+            <Animated.Text style={[styles.title, titleStyle]}>
+              {title || resultConfig.title}
+            </Animated.Text>
 
-              {stats.winMethod && (
-                <Text
-                  style={[styles.winMethod, { color: resultConfig.textColor }]}
-                >
-                  {stats.winMethod}
-                </Text>
-              )}
-            </View>
-
-            {/* Content */}
-            <Animated.View style={[styles.content, contentStyle]}>
-              {/* Score / Rating Section */}
-              {stats.score !== undefined && (
-                <View style={styles.scoreSection}>
-                  <Text
-                    style={[
-                      styles.scoreLabel,
-                      { color: theme.colors.onSurfaceVariant },
-                    ]}
-                  >
-                    SCORE
-                  </Text>
-                  <Text
-                    style={[styles.score, { color: theme.colors.onSurface }]}
-                  >
-                    {stats.score}
-                  </Text>
-                  {stats.isNewBest && (
-                    <View style={styles.newBestBadge}>
-                      <MaterialCommunityIcons
-                        name="star"
-                        size={16}
-                        color="#FFD700"
-                      />
-                      <Text style={styles.newBestText}>NEW BEST!</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Rating Change (Multiplayer) */}
-              {stats.ratingChange !== undefined &&
-                stats.newRating !== undefined && (
-                  <View style={styles.ratingSection}>
-                    <Text
-                      style={[
-                        styles.ratingLabel,
-                        { color: theme.colors.onSurfaceVariant },
-                      ]}
-                    >
-                      RATING
-                    </Text>
-                    <View style={styles.ratingRow}>
-                      <Text
-                        style={[
-                          styles.rating,
-                          { color: theme.colors.onSurface },
-                        ]}
-                      >
-                        {stats.newRating}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.ratingChange,
-                          {
-                            color:
-                              stats.ratingChange >= 0 ? "#4CAF50" : "#F44336",
-                          },
-                        ]}
-                      >
-                        {stats.ratingChange >= 0 ? "+" : ""}
-                        {stats.ratingChange}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-              {/* Stats */}
-              <View style={styles.statsSection}>
-                {stats.moves !== undefined && (
-                  <StatRow
-                    icon="♟️"
-                    label="Moves"
-                    value={stats.moves.toString()}
-                  />
-                )}
-                {stats.timeSeconds !== undefined && (
-                  <StatRow
-                    icon="⏱️"
-                    label="Time"
-                    value={formatTime(stats.timeSeconds)}
-                  />
-                )}
-                {stats.personalBest !== undefined && !stats.isNewBest && (
-                  <StatRow
-                    icon="🏆"
-                    label="Best"
-                    value={stats.personalBest.toString()}
-                  />
-                )}
-                {stats.opponentName && (
-                  <StatRow
-                    icon="👤"
-                    label="Opponent"
-                    value={stats.opponentName}
-                  />
-                )}
-              </View>
-
-              {/* XP Earned */}
-              {stats.xpEarned !== undefined && stats.xpEarned > 0 && (
-                <View style={styles.xpSection}>
-                  <View style={styles.xpRow}>
-                    <Text style={styles.xpLabel}>⭐ XP Earned</Text>
-                    <Text
-                      style={[styles.xpValue, { color: theme.colors.primary }]}
-                    >
-                      +{stats.xpEarned}
-                    </Text>
-                  </View>
-                  {stats.didLevelUp && stats.newLevel !== undefined && (
-                    <View style={styles.levelUpRow}>
-                      <Text style={styles.levelUpText}>
-                        🎉 Level Up! You are now Level {stats.newLevel}!
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Achievements */}
-              {achievements.length > 0 && (
-                <View style={styles.achievementsSection}>
-                  {achievements.slice(0, 2).map((notification) => (
-                    <AchievementUnlocked
-                      key={notification.achievement.id}
-                      achievement={notification.achievement}
-                    />
-                  ))}
-                  {achievements.length > 2 && (
-                    <Text
-                      style={[
-                        styles.moreAchievements,
-                        { color: theme.colors.primary },
-                      ]}
-                    >
-                      +{achievements.length - 2} more achievements
-                    </Text>
-                  )}
-                </View>
-              )}
-            </Animated.View>
-
-            {/* Actions */}
-            <View style={styles.actions}>
-              {/* Row 1: Primary actions */}
-              <View style={styles.primaryActions}>
-                {showRematch && onRematch && (
-                  <Button
-                    mode="contained"
-                    icon="reload"
-                    onPress={onRematch}
-                    style={styles.actionButton}
-                  >
-                    Rematch
-                  </Button>
-                )}
-                {showShare && onShare && (
-                  <Button
-                    mode="outlined"
-                    icon="share"
-                    onPress={onShare}
-                    style={styles.actionButton}
-                  >
-                    Share
-                  </Button>
-                )}
-              </View>
-
-              {/* Exit Button */}
-              <TouchableOpacity
-                style={styles.exitButton}
-                onPress={onExit}
-                accessibilityRole="button"
-                accessibilityLabel="Back to games hub"
-                accessibilityHint="Closes game results and returns to the games hub"
+            {stats.winMethod && (
+              <Text
+                style={[styles.winMethod, { color: resultConfig.textColor }]}
               >
-                <MaterialCommunityIcons
-                  name="home"
-                  size={20}
-                  color={theme.colors.onSurfaceVariant}
-                />
+                {stats.winMethod}
+              </Text>
+            )}
+          </View>
+
+          {/* Content */}
+          <Animated.View style={[styles.content, contentStyle]}>
+            {/* Score / Rating Section */}
+            {stats.score !== undefined && (
+              <View style={styles.scoreSection}>
                 <Text
                   style={[
-                    styles.exitText,
+                    styles.scoreLabel,
                     { color: theme.colors.onSurfaceVariant },
                   ]}
                 >
-                  Back to Hub
+                  SCORE
                 </Text>
-              </TouchableOpacity>
+                <Text style={[styles.score, { color: theme.colors.onSurface }]}>
+                  {stats.score}
+                </Text>
+                {stats.isNewBest && (
+                  <View style={styles.newBestBadge}>
+                    <MaterialCommunityIcons
+                      name="star"
+                      size={16}
+                      color="#FFD700"
+                    />
+                    <Text style={styles.newBestText}>NEW BEST!</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Rating Change (Multiplayer) */}
+            {stats.ratingChange !== undefined &&
+              stats.newRating !== undefined && (
+                <View style={styles.ratingSection}>
+                  <Text
+                    style={[
+                      styles.ratingLabel,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    RATING
+                  </Text>
+                  <View style={styles.ratingRow}>
+                    <Text
+                      style={[styles.rating, { color: theme.colors.onSurface }]}
+                    >
+                      {stats.newRating}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.ratingChange,
+                        {
+                          color:
+                            stats.ratingChange >= 0 ? "#4CAF50" : "#F44336",
+                        },
+                      ]}
+                    >
+                      {stats.ratingChange >= 0 ? "+" : ""}
+                      {stats.ratingChange}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+            {/* Stats */}
+            <View style={styles.statsSection}>
+              {stats.moves !== undefined && (
+                <StatRow
+                  icon="♟️"
+                  label="Moves"
+                  value={stats.moves.toString()}
+                />
+              )}
+              {stats.timeSeconds !== undefined && (
+                <StatRow
+                  icon="⏱️"
+                  label="Time"
+                  value={formatTime(stats.timeSeconds)}
+                />
+              )}
+              {stats.personalBest !== undefined && !stats.isNewBest && (
+                <StatRow
+                  icon="🏆"
+                  label="Best"
+                  value={stats.personalBest.toString()}
+                />
+              )}
+              {stats.opponentName && (
+                <StatRow
+                  icon="👤"
+                  label="Opponent"
+                  value={stats.opponentName}
+                />
+              )}
             </View>
+
+            {/* XP Earned */}
+            {stats.xpEarned !== undefined && stats.xpEarned > 0 && (
+              <View style={styles.xpSection}>
+                <View style={styles.xpRow}>
+                  <Text style={styles.xpLabel}>⭐ XP Earned</Text>
+                  <Text
+                    style={[styles.xpValue, { color: theme.colors.primary }]}
+                  >
+                    +{stats.xpEarned}
+                  </Text>
+                </View>
+                {stats.didLevelUp && stats.newLevel !== undefined && (
+                  <View style={styles.levelUpRow}>
+                    <Text style={styles.levelUpText}>
+                      🎉 Level Up! You are now Level {stats.newLevel}!
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Achievements */}
+            {achievements.length > 0 && (
+              <View style={styles.achievementsSection}>
+                {achievements.slice(0, 2).map((notification) => (
+                  <AchievementUnlocked
+                    key={notification.achievement.id}
+                    achievement={notification.achievement}
+                  />
+                ))}
+                {achievements.length > 2 && (
+                  <Text
+                    style={[
+                      styles.moreAchievements,
+                      { color: theme.colors.primary },
+                    ]}
+                  >
+                    +{achievements.length - 2} more achievements
+                  </Text>
+                )}
+              </View>
+            )}
           </Animated.View>
-        </View>
-      </Modal>
-    </Portal>
+
+          {/* Actions */}
+          <View style={styles.actions}>
+            {/* Row 1: Primary actions */}
+            <View style={styles.primaryActions}>
+              {showRematch && onRematch && (
+                <Button
+                  mode="contained"
+                  icon="reload"
+                  onPress={safeOnRematch}
+                  disabled={rematchPressedRef.current}
+                  style={styles.actionButton}
+                >
+                  Rematch
+                </Button>
+              )}
+              {showShare && onShare && (
+                <Button
+                  mode="outlined"
+                  icon="share"
+                  onPress={onShare}
+                  style={styles.actionButton}
+                >
+                  Share
+                </Button>
+              )}
+            </View>
+
+            {/* Exit Button */}
+            <TouchableOpacity
+              style={styles.exitButton}
+              onPress={() => {
+                if (__DEV__) {
+                  gameOverLogger.info("[GameEnd] BACK_PRESS", {
+                    to: "playHub",
+                  });
+                }
+                onExit();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Back to games hub"
+              accessibilityHint="Closes game results and returns to the games hub"
+            >
+              <MaterialCommunityIcons
+                name="home"
+                size={20}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text
+                style={[
+                  styles.exitText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Back to Hub
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </View>
   );
 }
 
@@ -667,6 +699,11 @@ export function GameOverModal({
 // =============================================================================
 
 const styles = StyleSheet.create({
+  fullScreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
+  },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.6)",

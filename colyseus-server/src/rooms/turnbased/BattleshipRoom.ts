@@ -36,6 +36,7 @@ import {
   markGameVacant,
   persistGameResult,
 } from "../../services/persistence";
+import { createInviteTrace, type InviteTracer } from "../../utils/inviteTrace";
 import type { ServerLogger } from "../../utils/logger";
 import { createServerLogger } from "../../utils/logger";
 import { checkProtocolVersion } from "../../utils/protocol";
@@ -86,6 +87,8 @@ export class BattleshipRoom extends Room {
 
   /** Scoped logger */
   private roomLog: ServerLogger = log;
+  /** Invite lifecycle tracer */
+  private trace: InviteTracer | null = null;
   /** Timestamp when combat began (for duration tracking) */
   private gameStartTime = 0;
   /** Active timer interval reference */
@@ -132,6 +135,19 @@ export class BattleshipRoom extends Room {
       traceId: options.traceId || undefined,
     });
 
+    this.trace = createInviteTrace({
+      traceId: options.traceId || undefined,
+      inviteId: this.inviteId,
+      gameType: "battleship",
+      firestoreGameId: this.firestoreGameId || undefined,
+      role: "system",
+    });
+    this.trace.info("ROOM.CREATE", {
+      roomId: this.roomId,
+      isRated: state.isRated,
+      firestoreGameId: this.firestoreGameId || undefined,
+    });
+
     this.roomLog.info("Room created");
   }
 
@@ -171,6 +187,15 @@ export class BattleshipRoom extends Room {
 
     // ── Debug: log every join attempt ────────────────────────────────
     const seatedUids = Array.from(this.uidToSession.keys());
+    this.trace?.info("ROOM.JOIN", {
+      uid: auth.uid,
+      sessionId: client.sessionId,
+      spectator: options.spectator ?? false,
+      phase: s.phase,
+      seatedPlayers: seatedUids,
+      playerCount: s.players.size,
+      spectatorCount: s.spectatorCount,
+    });
     this.roomLog.info(
       `onJoin attempt: uid=${auth.uid}, sessionId=${client.sessionId}, ` +
         `spectator=${options.spectator ?? false}, ` +
@@ -899,6 +924,12 @@ export class BattleshipRoom extends Room {
       }
     }
 
+    this.trace?.info("ROOM.LEAVE", {
+      uid: player.uid,
+      code,
+      phase: this.s.phase,
+      remainingPlayers: this.s.players.size,
+    });
     this.roomLog.info(`Player left: ${player.uid} (code: ${code})`);
   }
 
@@ -913,18 +944,24 @@ export class BattleshipRoom extends Room {
       ? Date.now() - this.gameStartTime
       : undefined;
 
+    this.trace?.info("ROOM.DISPOSE.ENTER", {
+      phase: this.s.phase,
+      winnerId: this.s.winnerId || undefined,
+      gameDurationMs,
+      playerCount: this.s.players.size,
+    });
+
     const firestoreGameId =
       this.firestoreGameId || this.s.gameId || this.roomId;
 
     if (this.s.phase === "finished" && this.s.winnerId) {
       // ── Game resolved → persist results ────────────────────────────────
 
-      // Extract inviteId from ext_battleship_<inviteId> for explicit passing.
-      // Fall back to this.inviteId (passed from client join options) as
-      // defense-in-depth.
+      // Prefer the explicit inviteId passed via client join options.
+      // Fall back to parsing from the ext_ game ID (prefix-stripping).
       const inviteId =
-        extractInviteIdFromExtGameId(firestoreGameId) ??
         this.inviteId ??
+        extractInviteIdFromExtGameId(firestoreGameId, "battleship") ??
         undefined;
 
       try {
@@ -986,13 +1023,17 @@ export class BattleshipRoom extends Room {
     } else if (this.s.phase === "waiting") {
       // ── Pre-start abandonment → delete immediately ─────────────────────
       const inviteId =
-        extractInviteIdFromExtGameId(firestoreGameId) ??
         this.inviteId ??
+        extractInviteIdFromExtGameId(firestoreGameId, "battleship") ??
         undefined;
       await deleteGameAndInvite(firestoreGameId, inviteId);
       this.roomLog.info("Pre-start abandonment — deleted game + invite");
     }
 
+    this.trace?.info("ROOM.DISPOSE.EXIT", {
+      phase: this.s.phase,
+      roomId: this.roomId,
+    });
     this.roomLog.info(`Room disposed: ${this.roomId}`);
   }
 

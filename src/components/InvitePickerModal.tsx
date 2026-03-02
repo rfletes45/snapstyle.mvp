@@ -45,6 +45,8 @@ export interface GroupItem {
   name: string;
   memberCount: number;
   avatarUrl?: string;
+  /** All member UIDs — needed for group invite eligibleUserIds. */
+  memberIds: string[];
 }
 
 type TabKey = "friends" | "groups";
@@ -133,6 +135,7 @@ export default function InvitePickerModal({
         name: g.name,
         memberCount: g.memberCount ?? g.memberIds?.length ?? 0,
         avatarUrl: g.avatarUrl,
+        memberIds: g.memberIds ?? [],
       }));
       setGroups(items);
     } catch (error) {

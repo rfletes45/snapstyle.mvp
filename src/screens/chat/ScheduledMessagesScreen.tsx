@@ -117,11 +117,6 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
   };
 
   const handleCancel = async (messageId: string) => {
-    logger.info(
-      "[ScheduledMessagesScreen] handleCancel called for:",
-      messageId,
-    );
-
     confirmDialog(
       {
         title: "Cancel Message",
@@ -136,7 +131,6 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
             return;
           }
           await cancelScheduledMessage(messageId, user.uid);
-          logger.info("[ScheduledMessagesScreen] Cancel successful");
           alertDialog({
             title: "Cancelled",
             message: "Message has been cancelled",
@@ -157,11 +151,6 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
   };
 
   const handleDelete = async (messageId: string) => {
-    logger.info(
-      "[ScheduledMessagesScreen] handleDelete called for:",
-      messageId,
-    );
-
     confirmDialog(
       {
         title: "Delete Message",
@@ -177,7 +166,6 @@ export default function ScheduledMessagesScreen({ navigation }: Props) {
             return;
           }
           await deleteScheduledMessage(messageId, user.uid);
-          logger.info("[ScheduledMessagesScreen] Delete successful");
           alertDialog({
             title: "Deleted",
             message: "Message has been deleted",

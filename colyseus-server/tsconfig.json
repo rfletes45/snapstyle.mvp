@@ -19,7 +19,8 @@
   "include": [
     "src/**/*",
     "../packages/golf-duels-shared/src/**/*",
-    "../shared/golfDuels/**/*"
+    "../shared/golfDuels/**/*",
+    "../shared/sessions/**/*"
   ],
   "exclude": ["node_modules", "dist", "tests"]
 }

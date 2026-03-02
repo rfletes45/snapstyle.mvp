@@ -27,6 +27,7 @@ import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
+import { withMultiplayerRuntime } from "@/screens/games/MultiplayerRuntimeShell";
 import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import {
@@ -36,7 +37,13 @@ import {
 } from "@/utils/battleshipPlacement";
 import { error as errorBuzz, light as lightTap } from "@/utils/haptics";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Dimensions,
   Platform,
@@ -81,13 +88,24 @@ type GameViewState = "lobby" | "game";
 // Component
 // =============================================================================
 
-export default function BattleshipGameScreen({
+function BattleshipGameScreen({
   navigation,
   route,
 }: {
   navigation: any;
-  route: any;
+  route: {
+    params?: {
+      matchId?: string;
+      inviteId?: string;
+      entryPoint?: string;
+      spectatorMode?: boolean;
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
+    };
+  };
 }) {
+  const isV3 = !!route?.params?.v3Session;
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid || "";
 
@@ -134,14 +152,35 @@ export default function BattleshipGameScreen({
     GAME_TYPE,
     route?.params?.matchId,
   );
+  // v3 auto-start: bypass useGameConnection, join room directly
+  const v3StartedRef = useRef(false);
   useEffect(() => {
-    if (route?.params?.inviteId) return;
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route?.params?.firestoreGameId ||
+      route?.params?.matchId ||
+      route?.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      setViewState("game");
+      bs.startMultiplayer({ firestoreGameId: fId, spectator: isSpectatorMode });
+    }
+  }, [
+    isV3,
+    route?.params?.firestoreGameId,
+    route?.params?.matchId,
+    route?.params?.v3Session,
+    isSpectatorMode,
+  ]);
+
+  useEffect(() => {
+    if (route?.params?.inviteId || isV3) return;
     if (resolvedMode === "colyseus" && directGameId) {
       setViewState("game");
       bs.startMultiplayer({ firestoreGameId: directGameId });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedMode, directGameId, route?.params?.inviteId]);
+  }, [resolvedMode, directGameId, route?.params?.inviteId, isV3]);
 
   // ── Invite handlers ─────────────────────────────────────────────────
   const handleSelectFriend = useCallback(
@@ -175,7 +214,7 @@ export default function BattleshipGameScreen({
     gameType: GAME_TYPE,
     isGameOver: bs.phase === "finished",
     isMultiplayer: bs.isMultiplayer,
-    isInLobby: viewState === "lobby",
+    isInLobby: viewState === "lobby" && !isV3,
     entryPoint: route?.params?.entryPoint,
     onBeforeLeave: async () => {
       if (bs.isMultiplayer) {
@@ -343,6 +382,7 @@ export default function BattleshipGameScreen({
 
   if (
     viewState === "lobby" &&
+    !isV3 &&
     bs.phase !== "placement" &&
     bs.phase !== "combat" &&
     bs.phase !== "finished"
@@ -506,7 +546,9 @@ export default function BattleshipGameScreen({
         )}
 
         {/* ── FINISHED PHASE ─────────────────────────────────────── */}
-        {bs.phase === "finished" && (
+        {/* In v3 mode the SessionRuntimeShell navigates to
+            SessionGameOverScreen automatically — skip custom end UI. */}
+        {bs.phase === "finished" && !isV3 && (
           <FinishedView
             isWinner={bs.isWinner}
             winReason={bs.winReason}
@@ -1548,3 +1590,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+export default withMultiplayerRuntime(BattleshipGameScreen);

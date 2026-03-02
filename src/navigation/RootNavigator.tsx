@@ -60,6 +60,7 @@ import LightsOutGameScreen from "@/screens/games/LightsOutGameScreen";
 import MinesweeperGameScreen from "@/screens/games/MinesweeperGameScreen";
 import MiniGolfDuelsGameScreen from "@/screens/games/MiniGolfDuelsGameScreen";
 import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
+import { withSessionRuntime } from "@/screens/games/SessionRuntimeShell";
 import SketchPartyGameScreen from "@/screens/games/SketchPartyGameScreen";
 import StarforgeGameScreen from "@/screens/games/StarforgeGameScreen";
 import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
@@ -67,10 +68,13 @@ import WordMasterGameScreen from "@/screens/games/WordMasterGameScreen";
 // Phase 3 game screens
 import { CustomizationHubScreen } from "@/screens/customization";
 import BattleshipGameScreen from "@/screens/games/BattleshipGameScreen";
+// v3 session lobby
 import CrosswordGameScreen from "@/screens/games/CrosswordGameScreen";
 import GameDetailsScreen from "@/screens/games/GameDetailsScreen";
 import PongGameScreen from "@/screens/games/PongGameScreen";
 import ReversiGameScreen from "@/screens/games/ReversiGameScreen";
+import SessionGameOverScreen from "@/screens/games/SessionGameOverScreen";
+import SessionLobbyScreen from "@/screens/games/SessionLobbyScreen";
 import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import MutualFriendsListScreen from "@/screens/profile/MutualFriendsListScreen";
@@ -139,27 +143,54 @@ const ProfileSetupStack_Nav =
 const Tab = createBottomTabNavigator<AppTabsParamList>();
 
 // Wrap game screens with ErrorBoundary to prevent crashes from bubbling up
+// Multiplayer screens also get SessionRuntimeShell via withSessionRuntime
+// (resign FAB, terminal detection → SessionGameOverScreen, back interception).
 const SafeBounceBlitzGame = withErrorBoundary(BounceBlitzGameScreen);
 const SafeBrickBreakerGame = withErrorBoundary(BrickBreakerGameScreen);
-const SafeCheckersGame = withErrorBoundary(CheckersGameScreen);
-const SafeChessGame = withErrorBoundary(ChessGameScreen);
-const SafeCrazyEightsGame = withErrorBoundary(CrazyCardsGameScreen);
+const SafeCheckersGame = withErrorBoundary(
+  withSessionRuntime(CheckersGameScreen),
+);
+const SafeChessGame = withErrorBoundary(withSessionRuntime(ChessGameScreen));
+const SafeCrazyEightsGame = withErrorBoundary(
+  withSessionRuntime(CrazyCardsGameScreen),
+);
 const SafePlay2048Game = withErrorBoundary(Play2048GameScreen);
 const SafeLightsOutGame = withErrorBoundary(LightsOutGameScreen);
-const SafeTicTacToeGame = withErrorBoundary(TicTacToeGameScreen);
+const SafeTicTacToeGame = withErrorBoundary(
+  withSessionRuntime(TicTacToeGameScreen),
+);
 const SafeWordGame = withErrorBoundary(WordMasterGameScreen);
-const SafeFourGame = withErrorBoundary(ConnectFourGameScreen);
+const SafeFourGame = withErrorBoundary(
+  withSessionRuntime(ConnectFourGameScreen),
+);
 const SafeMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
-const SafeDotsGame = withErrorBoundary(DotMatchGameScreen);
-const SafeGomokuGame = withErrorBoundary(GomokuMasterGameScreen);
+const SafeDotsGame = withErrorBoundary(withSessionRuntime(DotMatchGameScreen));
+const SafeGomokuGame = withErrorBoundary(
+  withSessionRuntime(GomokuMasterGameScreen),
+);
 // Phase 3 safe wrappers
-const SafePongGame = withErrorBoundary(PongGameScreen);
-const SafeReversiGame = withErrorBoundary(ReversiGameScreen);
-const SafeCrosswordGame = withErrorBoundary(CrosswordGameScreen);
-const SafeStarforgeGame = withErrorBoundary(StarforgeGameScreen);
-const SafeSketchPartyGame = withErrorBoundary(SketchPartyGameScreen);
-const SafeMiniGolfDuelsGame = withErrorBoundary(MiniGolfDuelsGameScreen);
-const SafeBattleshipGame = withErrorBoundary(BattleshipGameScreen);
+const SafePongGame = withErrorBoundary(withSessionRuntime(PongGameScreen));
+const SafeReversiGame = withErrorBoundary(
+  withSessionRuntime(ReversiGameScreen),
+);
+const SafeCrosswordGame = withErrorBoundary(
+  withSessionRuntime(CrosswordGameScreen),
+);
+const SafeStarforgeGame = withErrorBoundary(
+  withSessionRuntime(StarforgeGameScreen),
+);
+const SafeSketchPartyGame = withErrorBoundary(
+  withSessionRuntime(SketchPartyGameScreen),
+);
+const SafeMiniGolfDuelsGame = withErrorBoundary(
+  withSessionRuntime(MiniGolfDuelsGameScreen),
+);
+const SafeBattleshipGame = withErrorBoundary(
+  withSessionRuntime(BattleshipGameScreen),
+);
+// v3 session lobby
+const SafeSessionLobby = withErrorBoundary(SessionLobbyScreen);
+const SafeSessionGameOver = withErrorBoundary(SessionGameOverScreen);
 const SafeGamesHub = withErrorBoundary(GamesHubScreen);
 const SafeLeaderboard = withErrorBoundary(LeaderboardScreen);
 const SafeAchievements = withErrorBoundary(AchievementsScreen);
@@ -199,6 +230,8 @@ const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   "SketchPartyGameScreen",
   "MiniGolfDuelsGame",
   "BattleshipGame",
+  "SessionLobbyScreen",
+  "SessionGameOverScreen",
   "Leaderboard",
   "Achievements",
   "GameHistory",
@@ -546,6 +579,24 @@ function PlayStack() {
       <PlayStack_Nav.Screen
         name="BattleshipGame"
         component={SafeBattleshipGame}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <PlayStack_Nav.Screen
+        name="SessionLobbyScreen"
+        component={SafeSessionLobby}
+        options={{
+          headerShown: false,
+          presentation: "card",
+          gestureEnabled: false,
+        }}
+      />
+      <PlayStack_Nav.Screen
+        name="SessionGameOverScreen"
+        component={SafeSessionGameOver}
         options={{
           headerShown: false,
           presentation: "card",

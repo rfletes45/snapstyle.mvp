@@ -522,8 +522,8 @@ export class SketchPartyRoom extends Room<{ state: SketchPartyState }> {
     const firestoreGameId =
       (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
     const inviteId =
-      extractInviteIdFromExtGameId(firestoreGameId) ??
       this.inviteId ??
+      extractInviteIdFromExtGameId(firestoreGameId) ??
       undefined;
 
     if (this.state.phase === "finished") {

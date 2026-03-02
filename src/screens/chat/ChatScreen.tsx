@@ -94,7 +94,7 @@ import {
 import { GamePickerModal } from "@/components/games/GamePickerModal";
 import { GAME_SCREEN_MAP } from "@/config/gameCategories";
 import { ExtendedGameType } from "@/types/games";
-import type { UniversalGameInvite } from "@/types/turnBased";
+import { navigateToSessionLobby } from "@/utils/gameNavHelpers";
 
 // Call buttons
 import { CallButtonGroup } from "@/components/calls";
@@ -173,13 +173,10 @@ export default function ChatScreen({
   const animalEntitlement = useAnimalEntitlement(uid, chatAppearance);
 
   // Build sender style snapshot for stamping on outgoing messages
-  const senderStyle = useMemo(() => {
-    const style = buildSenderStyle(chatAppearance);
-    console.log(
-      `[MSG_SEND_STYLE] DM: chatAppearance=${JSON.stringify(chatAppearance)} → senderStyle=${JSON.stringify(style)}`,
-    );
-    return style;
-  }, [chatAppearance]);
+  const senderStyle = useMemo(
+    () => buildSenderStyle(chatAppearance),
+    [chatAppearance],
+  );
 
   // OPTIMIZATION: Extract initial data passed from inbox for instant display
   const { friendUid, initialData } = route.params as ChatScreenParams;
@@ -878,7 +875,7 @@ export default function ChatScreen({
       // De-duplicate: if we already navigated for this inviteId, skip
       if (options?.inviteId) {
         if (navigatedInvitesRef.current.has(options.inviteId)) {
-          logger.info(
+          logger.debug(
             `[ChatScreen] Skipping duplicate navigation for invite ${options.inviteId}`,
           );
           return;
@@ -971,20 +968,21 @@ export default function ChatScreen({
     [navigation, chatId],
   );
 
-  // Handle multiplayer invite creation — navigate host into the game's
-  // built-in lobby immediately so they don't wait in chat.
-  const handleInviteCreated = useCallback(
-    (invite: UniversalGameInvite) => {
-      if (!invite?.id || !invite?.gameType) return;
-
-      // Navigate host to the game screen with inviteId so it enters lobby
-      // mode.  The lobby subscribes to the invite and waits for the
-      // opponent.  matchId may be empty at this point (game not yet started).
-      handleNavigateToGame(invite.gameId || "", invite.gameType, {
-        inviteId: invite.id,
-      });
+  // v3: Navigate host to SessionLobbyScreen after creating a session
+  const handleSessionCreated = useCallback(
+    (sessionId: string) => {
+      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
     },
-    [handleNavigateToGame],
+    [navigation.dispatch],
+  );
+
+  // v3: Navigate to SessionLobbyScreen when tapping a session pill in chat
+  const handleNavigateToLobby = useCallback(
+    (sessionId: string) => {
+      logger.info("[Nav] ChatScreen.handleNavigateToLobby", { sessionId });
+      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
+    },
+    [navigation.dispatch],
   );
 
   const handleBlockConfirm = async (reason?: string) => {
@@ -1149,6 +1147,7 @@ export default function ChatScreen({
               "User"
             }
             onNavigateToGame={handleNavigateToGame}
+            onNavigateToLobby={handleNavigateToLobby}
             compact
           />
         )}
@@ -1314,7 +1313,7 @@ export default function ChatScreen({
         recipientName={friendProfile?.username}
         recipientAvatar={friendProfile?.profilePicture?.url}
         onSinglePlayerGame={handleSinglePlayerGame}
-        onInviteCreated={handleInviteCreated}
+        onSessionCreated={handleSessionCreated}
         onError={(error) => Alert.alert("Error", error)}
       />
 

@@ -427,8 +427,8 @@ export class MiniGolfDuelsRoom extends Room<{ state: MiniGolfState }> {
     const firestoreGameId =
       this.state.firestoreGameId || this.state.gameId || this.roomId;
     const inviteId =
-      extractInviteIdFromExtGameId(firestoreGameId) ??
       this.inviteId ??
+      extractInviteIdFromExtGameId(firestoreGameId) ??
       undefined;
 
     if (this.state.phase === "finished" && this.state.winnerId) {

@@ -343,6 +343,11 @@ class ColyseusService {
         `spectator=${joinOpts.spectator ?? false}`,
     );
 
+    logger.debug(
+      `[Colyseus] COLYSEUS.MAP.RESOLVE gameType=${ctx.gameType} roomName=${roomName}`,
+    );
+    logger.debug(`[Colyseus] COLYSEUS.JOIN.START traceId=${joinOpts.traceId}`);
+
     try {
       const room = await this.client.joinOrCreate(roomName, {
         ...extras,
@@ -354,13 +359,13 @@ class ColyseusService {
       this.setupRoomHandlers(room, handlers);
 
       logger.info(
-        `[Colyseus] Joined room: ${roomName} (${room.roomId}), traceId=${joinOpts.traceId}`,
+        `[Colyseus] COLYSEUS.JOIN.OK roomId=${room.roomId} sessionId=${room.sessionId} room=${roomName} traceId=${joinOpts.traceId}`,
       );
 
       return room;
     } catch (error: any) {
       logger.error(
-        `[Colyseus] joinWithContext failed: ${error?.message}\n` +
+        `[Colyseus] COLYSEUS.JOIN.ERROR code=${error?.code ?? "unknown"} message=${error?.message}\n` +
           `traceId=${joinOpts.traceId}\nStack: ${error?.stack}`,
       );
 
@@ -490,7 +495,9 @@ class ColyseusService {
 
     // Left room — consented or final leave
     room.onLeave((code: number) => {
-      logger.info(`[Colyseus] Left room: ${code}`);
+      logger.info(
+        `[Colyseus] COLYSEUS.ROOM.LEAVE code=${code} roomId=${room.roomId}`,
+      );
       // Only clear activeRoom if it's still THIS room — prevents a
       // stale room's onLeave from nullifying a newer session.
       if (this.activeRoom === room) {
@@ -501,7 +508,9 @@ class ColyseusService {
 
     // Error
     room.onError((code: number, message?: string) => {
-      logger.error(`[Colyseus] Room error: ${code} — ${message}`);
+      logger.error(
+        `[Colyseus] COLYSEUS.ROOM.ERROR code=${code} message=${message} roomId=${room.roomId}`,
+      );
       handlers.onError?.(code, message);
     });
   }

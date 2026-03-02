@@ -25,8 +25,11 @@ import {
   type GameJoinOptions,
   type GameSessionContext,
 } from "@/types/gameSession";
+import { createLogger } from "@/utils/log";
 import { createTraceId } from "@/utils/trace";
 import { getAuth } from "firebase/auth";
+
+const joinLogger = createLogger("services/colyseusJoin");
 
 // =============================================================================
 // Token helper
@@ -84,6 +87,11 @@ export async function buildJoinOptions(
   if (ctx.spectator) opts.spectator = true;
   if (ctx.inviteId) opts.inviteId = ctx.inviteId;
   if (ctx.conversationId) opts.conversationId = ctx.conversationId;
+  if (ctx.v3SessionId) opts.v3SessionId = ctx.v3SessionId;
+
+  joinLogger.debug(
+    `[colyseusJoin] COLYSEUS.JOIN.OPTIONS firestoreGameId=${opts.firestoreGameId ?? "none"} inviteId=${opts.inviteId ?? "none"} v3SessionId=${opts.v3SessionId ?? "none"} spectator=${opts.spectator ?? false} traceId=${opts.traceId}`,
+  );
 
   // Defensive wire-boundary check to prevent malformed join payloads.
   assertGameJoinOptions(opts, "buildJoinOptions produced invalid join options");

@@ -31,6 +31,7 @@ import { recordSinglePlayerSession } from "@/services/singlePlayerSessions";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
   useCallback,
@@ -47,11 +48,15 @@ import {
   Vibration,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Dialog, Text, useTheme } from "react-native-paper";
 
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
 import { GameOverModal } from "@/components/games/GameOverModal";
 import { useGameHaptics } from "@/hooks/useGameHaptics";
+import {
+  useSoloRuntime,
+  withSoloRuntime,
+} from "@/screens/games/SoloRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import { createLogger } from "@/utils/log";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -92,6 +97,8 @@ function BounceBlitzGameScreen({
   const { currentFirebaseUser } = useAuth();
   const { profile } = useUser();
   const { showSuccess, showError } = useSnackbar();
+  const soloRuntime = useSoloRuntime();
+  const isV3 = !!route?.params?.v3Session;
 
   // ── Colyseus multiplayer ────────────────────────────────────────────────
   const { resolvedMode, firestoreGameId } = useGameConnection(
@@ -246,7 +253,44 @@ function BounceBlitzGameScreen({
     setXpEarned(0);
     setDidLevelUp(false);
     setNewLevel(0);
-    setShowGameOverModal(true);
+    if (!isV3) {
+      setShowGameOverModal(true);
+    }
+
+    // V3: send result facts to solo runtime shell
+    if (isV3 && soloRuntime) {
+      const facts: GameResultFacts = {
+        gameId: "bounce_blitz",
+        mode: "solo",
+        outcome: (result.isNewBest
+          ? "win"
+          : "lose") as GameResultFacts["outcome"],
+        outcomeReason: result.isNewBest ? "New High Score!" : "Game Over",
+        scoreboard: [
+          {
+            uid: currentFirebaseUser?.uid ?? "",
+            displayName: currentFirebaseUser?.displayName ?? "Player",
+            score: result.score,
+            formattedScore: `${result.score} pts`,
+            outcome: (result.isNewBest
+              ? "win"
+              : "lose") as GameResultFacts["outcome"],
+            isWinner: !!result.isNewBest,
+          },
+        ],
+        performanceMetrics: [
+          { label: "Score", value: String(result.score), icon: "star" },
+          {
+            label: "Blocks",
+            value: String(result.stats?.blocksDestroyed ?? 0),
+            icon: "cube",
+          },
+        ],
+        durationMs: 0,
+        sessionId: route?.params?.v3Session,
+      };
+      soloRuntime.onGameComplete(facts, { navigateToEndScreen: true });
+    }
 
     // Record session (non-blocking)
     if (currentFirebaseUser) {
@@ -551,27 +595,25 @@ function BounceBlitzGameScreen({
       />
 
       {/* Share Dialog */}
-      <Portal>
-        <Dialog
-          visible={showShareDialog}
-          onDismiss={() => setShowShareDialog(false)}
-          style={{ backgroundColor: theme.colors.surface }}
-        >
-          <Dialog.Title>Share Your Score</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              Challenge your friends! Round {snapshot.level}, Score:{" "}
-              {snapshot.score}
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
-            <Button onPress={shareToChat} mode="contained">
-              Send to Friend
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <Dialog
+        visible={showShareDialog}
+        onDismiss={() => setShowShareDialog(false)}
+        style={{ backgroundColor: theme.colors.surface }}
+      >
+        <Dialog.Title>Share Your Score</Dialog.Title>
+        <Dialog.Content>
+          <Text>
+            Challenge your friends! Round {snapshot.level}, Score:{" "}
+            {snapshot.score}
+          </Text>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setShowShareDialog(false)}>Cancel</Button>
+          <Button onPress={shareToChat} mode="contained">
+            Send to Friend
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Colyseus multiplayer overlay */}
       {isOnlineMode && (
@@ -737,4 +779,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(BounceBlitzGameScreen, "bounce_blitz");
+export default withGameErrorBoundary(
+  withSoloRuntime(BounceBlitzGameScreen, "bounce_blitz"),
+  "bounce_blitz",
+);

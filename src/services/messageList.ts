@@ -141,11 +141,6 @@ function docToMessage(doc: DocumentSnapshot): MessageV2 | null {
 
   const resolvedSenderStyle = data.senderStyle || undefined;
 
-  // Unconditional log: show senderStyle status for every message
-  console.log(
-    `[MSG_READ] id=${doc.id} sender=${data.senderId} senderStyle=${JSON.stringify(resolvedSenderStyle ?? null)}`,
-  );
-
   return {
     id: doc.id,
     scope: data.scope,
@@ -248,7 +243,7 @@ function subscribeToMessages(
 
   const cursorKey = `${scope}:${conversationId}`;
 
-  log.info("Subscribing to messages", {
+  log.debug("Subscribing to messages", {
     operation: "subscribe",
     data: { scope, conversationId, limit: initialLimit },
   });
@@ -331,7 +326,7 @@ export async function loadOlderMessages(
   const cursorKey = `${scope}:${conversationId}`;
   const cursors = paginationCursors.get(cursorKey);
 
-  log.info("Loading older messages", {
+  log.debug("Loading older messages", {
     operation: "loadOlder",
     data: {
       scope,
@@ -391,7 +386,7 @@ export async function loadOlderMessages(
 
     const hasMore = snapshot.docs.length >= messageLimit;
 
-    log.info("Loaded older messages", {
+    log.debug("Loaded older messages", {
       operation: "loadOlder",
       data: { count: messages.length, hasMore },
     });
@@ -418,7 +413,7 @@ export async function loadNewerMessages(
   afterServerReceivedAt: number,
   messageLimit: number = 25,
 ): Promise<PaginationLoadResult> {
-  log.info("Loading newer messages", {
+  log.debug("Loading newer messages", {
     operation: "loadNewer",
     data: {
       scope,
@@ -449,7 +444,7 @@ export async function loadNewerMessages(
 
     const hasMore = snapshot.docs.length >= messageLimit;
 
-    log.info("Loaded newer messages", {
+    log.debug("Loaded newer messages", {
       operation: "loadNewer",
       data: { count: messages.length, hasMore },
     });

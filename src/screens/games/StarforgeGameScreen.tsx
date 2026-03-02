@@ -20,6 +20,7 @@ import {
   type StarforgeLaunchMode,
 } from "@/config/starforgeGame";
 import { Spacing } from "@/constants/theme";
+import { withMultiplayerRuntime } from "@/screens/games/MultiplayerRuntimeShell";
 import type { PlayStackParamList } from "@/types/navigation/root";
 import { createTraceId } from "@/utils/trace";
 import * as Network from "expo-network";
@@ -33,6 +34,10 @@ interface RouteParamsShape {
   traceId?: string;
   spectatorMode?: boolean;
   entryPoint?: string;
+  /** v3 session fields */
+  v3Session?: string;
+  sessionId?: string;
+  firestoreGameId?: string;
 }
 
 const PROBE_TIMEOUT_MS = 2400;
@@ -67,6 +72,18 @@ function asRouteParams(value: unknown): RouteParamsShape {
         : undefined,
     entryPoint:
       typeof params.entryPoint === "string" ? params.entryPoint : undefined,
+    v3Session:
+      typeof params.v3Session === "string" && params.v3Session
+        ? params.v3Session
+        : undefined,
+    sessionId:
+      typeof params.sessionId === "string" && params.sessionId
+        ? params.sessionId
+        : undefined,
+    firestoreGameId:
+      typeof params.firestoreGameId === "string" && params.firestoreGameId
+        ? params.firestoreGameId
+        : undefined,
   };
 }
 
@@ -111,10 +128,14 @@ function getProbeLine(baseUrl: string, result: ProbeResult): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function StarforgeGameScreen({ navigation, route }: Props) {
+function StarforgeGameScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const params = asRouteParams(route.params);
-  const effectiveGameId = params.matchId ?? params.roomId;
+  const effectiveGameId =
+    params.firestoreGameId ??
+    params.matchId ??
+    params.roomId ??
+    params.v3Session;
   const launchMode = getLaunchMode(effectiveGameId, params.spectatorMode);
   const traceId = useMemo(
     () => params.traceId ?? createTraceId("gs"),
@@ -522,3 +543,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+
+// Note: Starforge runs in a WebView — result-facts integration requires
+// a WebView bridge message from the starforge-viewer client (deferred to STOP 5).
+export default withMultiplayerRuntime(StarforgeGameScreen);

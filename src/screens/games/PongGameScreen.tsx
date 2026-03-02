@@ -13,7 +13,6 @@
 
 import FriendPickerModal from "@/components/FriendPickerModal";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
 import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import InvitePickerModal, {
@@ -26,12 +25,14 @@ import ScoreRaceOverlay, {
 } from "@/components/ScoreRaceOverlay";
 import SpectatorInviteModal from "@/components/SpectatorInviteModal";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { usePhysicsGame } from "@/hooks/usePhysicsGame";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -48,6 +49,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Canvas,
@@ -77,7 +79,7 @@ import {
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { Button, Dialog, Text } from "react-native-paper";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -129,17 +131,19 @@ function PongGameScreen({
   route,
 }: {
   navigation: any;
-  route: any;
+  route: {
+    params?: {
+      matchId?: string;
+      inviteId?: string;
+      entryPoint?: string;
+      spectatorMode?: boolean;
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
+    };
+  };
 }) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "pong" });
-  void __codexGameCompletion;
-
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
+  const isV3 = !!route.params?.v3Session;
 
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
@@ -152,8 +156,15 @@ function PongGameScreen({
   // Colyseus multiplayer hook
   const mp = usePhysicsGame({ gameType: GAME_TYPE });
 
+  // ── V3 Runtime Shell integration ──────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
   // Determine initial mode: lobby (from invite) or menu
-  const initialMode: GameState = route?.params?.inviteId ? "lobby" : "menu";
+  const initialMode: GameState = isV3
+    ? "colyseus"
+    : route?.params?.inviteId
+      ? "lobby"
+      : "menu";
   const [gameState, setGameState] = useState<GameState>(initialMode);
   const [showInvitePicker, setShowInvitePicker] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -188,14 +199,34 @@ function PongGameScreen({
     GAME_TYPE,
     route?.params?.matchId,
   );
+  // v3 auto-start: bypass useGameConnection, join room directly
+  const v3StartedRef = useRef(false);
   useEffect(() => {
-    // Skip when lobby is handling the invite flow
-    if (route?.params?.inviteId) return;
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route.params?.firestoreGameId ||
+      route.params?.matchId ||
+      route.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      setGameState("colyseus");
+      mp.startMultiplayer({ firestoreGameId: fId });
+    }
+  }, [
+    isV3,
+    route.params?.firestoreGameId,
+    route.params?.matchId,
+    route.params?.v3Session,
+  ]);
+
+  useEffect(() => {
+    // Skip when lobby is handling the invite flow, or v3 (handled above)
+    if (route?.params?.inviteId || isV3) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameState("colyseus");
       mp.startMultiplayer({ firestoreGameId });
     }
-  }, [resolvedMode, firestoreGameId, route?.params?.inviteId]);
+  }, [resolvedMode, firestoreGameId, route?.params?.inviteId, isV3]);
 
   // Auto-send ready once connected in multiplayer — Pong starts immediately
   // when both players are present (no lobby/ready-up screen needed)
@@ -279,6 +310,69 @@ function PongGameScreen({
     });
     return unsub;
   }, []);
+
+  // When a v3 Colyseus game finishes, build result facts and hand them to
+  // the MultiplayerRuntimeShell so it can forward to SessionGameOverScreen.
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      mp.phase !== "finished" ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myOutcome = mp.isTie ? "draw" : mp.isWinner ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "pong_game",
+      mode: "realtime",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason: mp.isTie ? "Tie" : mp.isWinner ? "Victory" : "Defeat",
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          score: mp.myScore ?? 0,
+          formattedScore: `${mp.myScore ?? 0} pts`,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!mp.isWinner,
+        },
+        {
+          uid: "opponent",
+          displayName: mp.opponentName ?? "Opponent",
+          score: mp.opponentScore ?? 0,
+          formattedScore: `${mp.opponentScore ?? 0} pts`,
+          outcome: (mp.isTie
+            ? "draw"
+            : mp.isWinner
+              ? "lose"
+              : "win") as GameResultFacts["outcome"],
+          isWinner: !mp.isWinner && !mp.isTie,
+        },
+      ],
+      performanceMetrics: [
+        {
+          label: "My Score",
+          value: String(mp.myScore ?? 0),
+          icon: "scoreboard",
+        },
+        {
+          label: "Opp Score",
+          value: String(mp.opponentScore ?? 0),
+          icon: "scoreboard-outline",
+        },
+      ],
+      durationMs: 0,
+      sessionId: route.params?.v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, mp.phase, mp.isWinner, mp.isTie]);
 
   // Spectator hosting (only for SP host mode — skip when joining as spectator)
   const spectatorHost = useSpectator({
@@ -667,12 +761,12 @@ function PongGameScreen({
   const { handleBack } = useGameBackHandler({
     gameType: "pong_game",
     isGameOver: gameState === "result" || gameState === "menu",
-    isInLobby: gameState === "lobby",
+    isInLobby: gameState === "lobby" && !isV3,
     entryPoint: route?.params?.entryPoint,
   });
 
-  // ── Lobby Screen ──────────────────────────────────────────────────────
-  if (gameState === "lobby") {
+  // ── Lobby Screen (skip for v3 — lobby is handled by SessionLobbyScreen) ──
+  if (gameState === "lobby" && !isV3) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <MultiplayerLobbyOverlay
@@ -1199,44 +1293,42 @@ function PongGameScreen({
       )}
 
       {/* Result dialog */}
-      <Portal>
-        <Dialog
-          visible={gameState === "result"}
-          onDismiss={() => {}}
-          style={{ backgroundColor: colors.surface }}
-        >
-          <Dialog.Title style={{ color: colors.text, textAlign: "center" }}>
-            {playerWon ? "🎉 You Win!" : "😢 AI Wins"}
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text style={{ color: colors.textSecondary, textAlign: "center" }}>
-              {playerScore} — {aiScore}
-            </Text>
-            {xpEarned > 0 && (
-              <Text
-                style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
-              >
-                ⭐ +{xpEarned} XP
-                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
-              </Text>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions style={styles.dialogActions}>
-            <Button onPress={() => startGame(difficulty)}>Play Again</Button>
-            <Button
-              onPress={() => {
-                setShowFriendPicker(true);
-              }}
+      <Dialog
+        visible={gameState === "result"}
+        onDismiss={() => {}}
+        style={{ backgroundColor: colors.surface }}
+      >
+        <Dialog.Title style={{ color: colors.text, textAlign: "center" }}>
+          {playerWon ? "🎉 You Win!" : "😢 AI Wins"}
+        </Dialog.Title>
+        <Dialog.Content>
+          <Text style={{ color: colors.textSecondary, textAlign: "center" }}>
+            {playerScore} — {aiScore}
+          </Text>
+          {xpEarned > 0 && (
+            <Text
+              style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
             >
-              Share
-            </Button>
-            <Button onPress={() => setGameState("menu")}>Menu</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
+            </Text>
+          )}
+        </Dialog.Content>
+        <Dialog.Actions style={styles.dialogActions}>
+          <Button onPress={() => startGame(difficulty)}>Play Again</Button>
+          <Button
+            onPress={() => {
+              setShowFriendPicker(true);
+            }}
+          >
+            Share
+          </Button>
+          <Button onPress={() => setGameState("menu")}>Menu</Button>
+        </Dialog.Actions>
+      </Dialog>
 
       {/* Colyseus multiplayer overlays */}
-      {gameState === "colyseus" && (
+      {gameState === "colyseus" && !(isV3 && mp.phase === "finished") && (
         <ScoreRaceOverlay
           phase={mp.phase as ScoreRaceOverlayPhase}
           countdown={mp.countdown}
@@ -1396,4 +1488,7 @@ const styles = StyleSheet.create({
   dialogActions: { justifyContent: "center" },
 });
 
-export default withGameErrorBoundary(PongGameScreen, "pong");
+export default withGameErrorBoundary(
+  withMultiplayerRuntime(PongGameScreen),
+  "pong",
+);

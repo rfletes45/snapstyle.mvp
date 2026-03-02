@@ -70,7 +70,10 @@ export declare const onGameHistoryCreatedUpdateLeaderboard: functions.CloudFunct
  */
 export declare const processMatchmakingQueue: functions.CloudFunction<unknown>;
 /**
- * Expire old invites daily
+ * Expire old invites daily.
+ *
+ * Uses finalizeUniversalInvite per-invite to guarantee chat-hide + deleteAt
+ * fields are set atomically. Falls back to batch update if finalize fails.
  */
 export declare const expireGameInvites: functions.CloudFunction<unknown>;
 /**
@@ -88,8 +91,11 @@ export declare const cleanupOldGames: functions.CloudFunction<unknown>;
 /**
  * Clean up resolved game invites (accepted/declined/cancelled/expired)
  *
- * Once an invite reaches a terminal status it serves no purpose in Firestore.
- * We keep them for 30 days for debugging / audit, then delete.
+ * Three-pass strategy:
+ *   1. Hard-delete invites whose `deleteAt` has passed (new field).
+ *   2. Self-heal legacy terminal invites missing `chatVisibility` → set "hidden".
+ *   3. Fall back to deleting terminal invites older than 30 days by createdAt.
+ *
  * Runs daily at 02:30 (offset from cleanupOldGames to avoid contention).
  */
 export declare const cleanupResolvedInvites: functions.CloudFunction<unknown>;
@@ -116,6 +122,27 @@ export declare const cleanupStaleMatchmakingEntries: functions.CloudFunction<unk
  * RealtimeGameSessions, and the associated GameInvite (if linked).
  */
 export declare const cleanupVacantGames: functions.CloudFunction<unknown>;
+/**
+ * Watchdog reconciliation — catches "stuck" invites that escaped all other
+ * finalization paths.
+ *
+ * Runs every 15 minutes and checks for:
+ *
+ * 1. **Stuck `active` invites** — if the invite has been `active` longer than
+ *    the threshold (2 h for realtime, 7 d for turn-based) AND the backing
+ *    game doc is missing/completed, finalize the invite.
+ *
+ * 2. **Stuck `starting` invites** — if the invite has been in `starting`
+ *    status for > 10 minutes, the match-creation likely failed.  Finalize
+ *    as cancelled.
+ *
+ * 3. **Self-heal pass** — any terminal invite still showing
+ *    `chatVisibility: "visible"` is patched (same as cleanupResolvedInvites
+ *    Pass 2 but at higher frequency).
+ *
+ * All finalization goes through `finalizeUniversalInvite` for idempotency.
+ */
+export declare const reconcileActiveInvites: functions.CloudFunction<unknown>;
 /**
  * Clean up old single-player game sessions.
  *

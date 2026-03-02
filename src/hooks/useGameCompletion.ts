@@ -20,6 +20,7 @@ import {
   buildGameResultEvent,
   submitGameResult,
 } from "@/services/gameResultService";
+import type { ResolveGameParams } from "@/services/sessionBridge";
 import { useAuth } from "@/store/AuthContext";
 import type {
   AchievementNotification,
@@ -120,7 +121,7 @@ interface UseGameCompletionReturn {
   clearNotifications: () => void;
 
   // Re-export navigation functions from useGameNavigation
-  exitGame: () => void;
+  exitGame: (resolution?: Omit<ResolveGameParams, "sessionId">) => void;
   goToChat: () => void;
   goToPlayScreen: () => void;
   goToGameHistory: () => void;

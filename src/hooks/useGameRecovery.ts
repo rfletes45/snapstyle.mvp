@@ -128,11 +128,20 @@ export function useGameRecovery(): UseGameRecoveryReturn {
 
     logger.info(
       `[useGameRecovery] Resuming game: screen=${screenName}, ` +
-        `inviteId=${bookmark.inviteId}, gameType=${bookmark.gameType}`,
+        `inviteId=${bookmark.inviteId}, gameType=${bookmark.gameType}` +
+        (bookmark.v3SessionId ? `, v3SessionId=${bookmark.v3SessionId}` : ""),
     );
 
-    // Navigate to the game screen with the invite/game params.
-    // The game screen's useGameLobby / useColyseus will handle reconnect.
+    // V3 sessions route through SessionLobbyScreen which handles reconnection
+    if (bookmark.v3SessionId) {
+      navigation.navigate("SessionLobbyScreen", {
+        sessionId: bookmark.v3SessionId,
+        source: "recovery" as const,
+      });
+      return;
+    }
+
+    // Legacy path — navigate directly to the game screen
     navigation.navigate(screenName, {
       inviteId: bookmark.inviteId,
       matchId: bookmark.firestoreGameId,

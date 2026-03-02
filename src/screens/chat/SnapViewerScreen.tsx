@@ -43,16 +43,10 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
   useEffect(() => {
     const loadSnap = async () => {
       try {
-        logger.info("🔵 [SnapViewerScreen] Loading snap:", {
-          storagePath,
-          messageId,
-          chatId,
-        });
         setLoading(true);
         setError(null);
 
         const uri = await downloadSnapImage(storagePath);
-        logger.info("✅ [SnapViewerScreen] Snap loaded successfully");
         setImageUri(uri);
       } catch (err: any) {
         logger.error("❌ [SnapViewerScreen] Failed to load snap:", err);
@@ -73,17 +67,11 @@ export function SnapViewerScreen({ route, navigation }: SnapViewerScreenProps) {
     }
 
     try {
-      logger.info(
-        "🔵 [SnapViewerScreen] Dismissing snap and marking as opened",
-      );
-
       // Mark snap as opened in Firestore (records metadata)
       await markSnapOpened(chatId, messageId, currentFirebaseUser.uid);
-      logger.info("✅ [SnapViewerScreen] Snap marked as opened");
 
       // Delete snap from Storage
       await deleteSnapImage(storagePath);
-      logger.info("✅ [SnapViewerScreen] Snap deleted from storage");
 
       // Navigate back to chat
       navigation.goBack();

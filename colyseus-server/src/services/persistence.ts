@@ -1,4 +1,6 @@
-﻿import { createServerLogger } from "../utils/logger";
+﻿import { EXTERNAL_COLYSEUS_GAME_TYPES } from "../../../shared/sessions/constants";
+import { createInviteTrace } from "../utils/inviteTrace";
+import { createServerLogger } from "../utils/logger";
 const log = createServerLogger("persistence");
 
 /**
@@ -206,7 +208,11 @@ export async function persistGameResult(
   state: BaseGameState,
   gameDurationMs?: number,
   perPlayerStats?: Record<string, Record<string, number>>,
-  metadata?: { inviteId?: string; firestoreGameId?: string },
+  metadata?: {
+    inviteId?: string;
+    firestoreGameId?: string;
+    v3SessionId?: string;
+  },
 ): Promise<void> {
   const db = getFirestoreDb();
   if (!db) {
@@ -259,12 +265,14 @@ export async function persistGameResult(
         });
     } else {
       // Create new real-time game session record.
-      // Include inviteId / firestoreGameId so the processRealtimeGameCompletion
-      // Cloud Function can reliably discover and finalize the associated invite.
+      // Include inviteId / firestoreGameId / v3SessionId so the
+      // processRealtimeGameCompletion Cloud Function can reliably discover
+      // and finalize the associated invite, and skip rewards for v3 sessions.
       const sessionDoc: Record<string, any> = { ...gameRecord };
       if (metadata?.inviteId) sessionDoc.inviteId = metadata.inviteId;
       if (metadata?.firestoreGameId)
         sessionDoc.firestoreGameId = metadata.firestoreGameId;
+      if (metadata?.v3SessionId) sessionDoc.v3SessionId = metadata.v3SessionId;
       await db.collection("RealtimeGameSessions").add(sessionDoc);
     }
 
@@ -278,11 +286,32 @@ export async function persistGameResult(
       }
     }
 
-    log.info(
-      `[Persistence] Persisted game result: ${state.gameType} â€” winner: ${state.winnerId || "draw"}`,
-    );
+    const trace = createInviteTrace({
+      gameType: state.gameType,
+      inviteId: metadata?.inviteId,
+      firestoreGameId:
+        metadata?.firestoreGameId || state.firestoreGameId || undefined,
+      role: "system",
+    });
+    trace.info("PERSIST.RESULT.WRITE_OK", {
+      winnerId: state.winnerId || "draw",
+      playerCount: players.length,
+      gameDurationMs,
+      collection: state.firestoreGameId
+        ? "TurnBasedGames"
+        : "RealtimeGameSessions",
+    });
   } catch (error) {
-    log.error("[Persistence] Failed to persist game result:", error);
+    const trace = createInviteTrace({
+      gameType: state.gameType,
+      inviteId: metadata?.inviteId,
+      firestoreGameId:
+        metadata?.firestoreGameId || state.firestoreGameId || undefined,
+      role: "system",
+    });
+    trace.error("PERSIST.RESULT.WRITE_FAIL", error, {
+      winnerId: state.winnerId || "draw",
+    });
   }
 }
 
@@ -329,23 +358,65 @@ export async function cleanupExpiredGameStates(
 // =============================================================================
 
 /**
+ * Known external Colyseus game types, sorted longest-first for unambiguous
+ * prefix matching.  Derived from the shared canonical list.
+ */
+const KNOWN_EXT_GAME_TYPES: readonly string[] = [
+  ...EXTERNAL_COLYSEUS_GAME_TYPES,
+].sort((a, b) => b.length - a.length);
+
+/**
  * Extract the invite ID from an external Colyseus game ID.
  *
- * External Colyseus games use the format `ext_<gameType>_<inviteId>`.
- * Firestore auto-generated invite IDs are alphanumeric (no underscores),
- * so the invite ID is safely the substring after the last underscore.
+ * Format: `ext_<gameType>_<inviteId>`
  *
- * @returns The invite ID, or null if the format doesn't match
+ * **IMPORTANT**: invite IDs may contain underscores (e.g. `uinv_mm2myqz0_ijltf8`).
+ * We therefore CANNOT use `lastIndexOf("_")`.  Instead we strip the known prefix
+ * `ext_<gameType>_` and treat the rest as the invite ID.
+ *
+ * When `gameType` is provided the prefix is computed directly.
+ * When omitted we try every entry in `KNOWN_EXT_GAME_TYPES` (longest first).
+ *
+ * @param firestoreGameId - e.g. `ext_battleship_uinv_mm2myqz0_ijltf8`
+ * @param gameType        - optional, e.g. `"battleship"`
+ * @returns The full invite ID, or `null` if the format doesn't match
  */
 export function extractInviteIdFromExtGameId(
   firestoreGameId: string,
+  gameType?: string,
 ): string | null {
   if (!firestoreGameId || !firestoreGameId.startsWith("ext_")) return null;
-  const lastUnderscore = firestoreGameId.lastIndexOf("_");
-  // "ext_" is 4 chars — the last underscore must be beyond index 3
-  if (lastUnderscore <= 3) return null;
-  const inviteId = firestoreGameId.substring(lastUnderscore + 1);
-  return inviteId || null;
+
+  // ── When caller provides the gameType, strip the exact prefix ──────────
+  if (gameType) {
+    const prefix = `ext_${gameType}_`;
+    if (
+      firestoreGameId.startsWith(prefix) &&
+      firestoreGameId.length > prefix.length
+    ) {
+      return firestoreGameId.slice(prefix.length);
+    }
+    log.warn(
+      `[extractInviteIdFromExtGameId] prefix mismatch: expected "${prefix}..." but got "${firestoreGameId}"`,
+    );
+    return null;
+  }
+
+  // ── No gameType provided — try known types (longest prefix first) ──────
+  for (const knownType of KNOWN_EXT_GAME_TYPES) {
+    const prefix = `ext_${knownType}_`;
+    if (
+      firestoreGameId.startsWith(prefix) &&
+      firestoreGameId.length > prefix.length
+    ) {
+      return firestoreGameId.slice(prefix.length);
+    }
+  }
+
+  log.warn(
+    `[extractInviteIdFromExtGameId] cannot parse inviteId — unknown game type in "${firestoreGameId}"`,
+  );
+  return null;
 }
 
 // =============================================================================
@@ -433,15 +504,32 @@ export async function deleteGameAndInvite(
           deleteAt: now + SIX_HOURS_MS,
           updatedAt: now,
         });
+      } else {
+        // Invite doc not found — likely a truncated/wrong inviteId
+        log.warn(
+          `[deleteGameAndInvite] INVITE_DOC_MISSING — GameInvites/${inviteId} does not exist. ` +
+            `firestoreGameId=${firestoreGameId}. Invite may have been truncated from ext_ parsing.`,
+        );
       }
     }
 
     await batch.commit();
-    log.info(
-      `[Persistence] Deleted game ${firestoreGameId}${inviteId ? ` + completed invite ${inviteId}` : ""}`,
-    );
+    const trace = createInviteTrace({
+      inviteId,
+      firestoreGameId,
+      role: "system",
+    });
+    trace.info("INVITE.DELETE_AND_FINALIZE.OK", {
+      deletedGame: firestoreGameId,
+      inviteFinalized: !!inviteId,
+    });
   } catch (error) {
-    log.error("[Persistence] deleteGameAndInvite failed:", error);
+    const trace = createInviteTrace({
+      inviteId,
+      firestoreGameId,
+      role: "system",
+    });
+    trace.error("INVITE.DELETE_AND_FINALIZE.FAIL", error);
   }
 }
 
@@ -503,5 +591,311 @@ export async function clearGameVacancy(firestoreGameId: string): Promise<void> {
     }
   } catch (error) {
     log.error("[Persistence] clearGameVacancy failed:", error);
+  }
+}
+
+// =============================================================================
+// V3 Session Bridge
+// =============================================================================
+
+/**
+ * Outcome types for v3 session resolution.
+ * Must match the `SessionResolution.outcome` type in sessionsV3.ts.
+ */
+type V3Outcome = "win" | "draw" | "forfeit" | "timeout" | "error";
+
+/** Terminal phases that should not be overwritten. */
+const V3_TERMINAL_PHASES = new Set([
+  "resolved",
+  "abandoned",
+  "expired",
+  "cancelled",
+]);
+
+/**
+ * Link a Colyseus room to a v3 GameSession by writing the
+ * `colyseusRoomId` back to the session document.
+ *
+ * Called from room `onCreate` when `options.v3SessionId` is present.
+ *
+ * @param v3SessionId - The v3 GameSession document ID
+ * @param colyseusRoomId - The Colyseus room ID to record
+ */
+export async function linkColyseusRoom(
+  v3SessionId: string,
+  colyseusRoomId: string,
+): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    const ref = db.collection("GameSessions").doc(v3SessionId);
+    await ref.update({
+      colyseusRoomId,
+      updatedAt: Date.now(),
+    });
+    log.info(
+      `[V3Bridge] Linked room ${colyseusRoomId} → session ${v3SessionId}`,
+    );
+  } catch (error) {
+    log.error("[V3Bridge] linkColyseusRoom failed:", error);
+  }
+}
+
+/**
+ * Resolve a v3 GameSession when a Colyseus game finishes.
+ *
+ * This mirrors the `resolveSessionV3` Cloud Function callable but
+ * runs directly via admin SDK from the Colyseus server, avoiding
+ * an extra network hop.
+ *
+ * Behaviour:
+ *   - If no `v3SessionId` was provided, returns silently (v2 flow).
+ *   - If the session is already in a terminal phase, returns (idempotent).
+ *   - Transitions to "resolved" and writes resolution data.
+ *
+ * @param v3SessionId - The v3 GameSession document ID (may be undefined)
+ * @param outcome - The game result: win, draw, forfeit, timeout, or error
+ * @param opts - Optional winner/scores/firestoreGameId
+ */
+export async function resolveV3Session(
+  v3SessionId: string | undefined,
+  outcome: V3Outcome,
+  opts?: {
+    winnerUid?: string;
+    scores?: Record<string, number>;
+    firestoreGameId?: string;
+    turnCount?: number;
+    movesPerPlayer?: Record<string, number>;
+    gameDurationMs?: number;
+  },
+): Promise<void> {
+  if (!v3SessionId) return; // v2 flow — nothing to do
+
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    const ref = db.collection("GameSessions").doc(v3SessionId);
+
+    // ── Transactional read-then-write (prevents TOCTOU race D4-1) ────
+    const txResult = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+
+      if (!snap.exists) {
+        log.warn(`[V3Bridge] Session ${v3SessionId} not found — skipping`);
+        return {
+          written: false,
+          sourceInviteId: undefined as string | undefined,
+        };
+      }
+
+      const session = snap.data() as Record<string, any>;
+
+      // Already terminal — idempotent
+      if (V3_TERMINAL_PHASES.has(session.phase)) {
+        log.info(
+          `[V3Bridge] Session ${v3SessionId} already ${session.phase} — skipping`,
+        );
+        return { written: false, sourceInviteId: session.sourceInviteId };
+      }
+
+      const now = Date.now();
+
+      // Update each participant's status
+      const updatedParticipants = (session.participants ?? []).map(
+        (p: Record<string, any>) => {
+          if (p.status === "playing" || p.status === "joined") {
+            const isWinner = opts?.winnerUid
+              ? p.uid === opts.winnerUid
+              : undefined;
+            const score = opts?.scores?.[p.uid];
+            return {
+              ...p,
+              status: "finished",
+              ...(isWinner !== undefined ? { isWinner } : {}),
+              ...(score !== undefined ? { score } : {}),
+            };
+          }
+          return p;
+        },
+      );
+
+      const resolution: Record<string, any> = {
+        outcome,
+        resolvedAt: now,
+        resolvedBy: "colyseus",
+      };
+      if (opts?.winnerUid) resolution.winnerUid = opts.winnerUid;
+      if (opts?.scores) resolution.scores = opts.scores;
+      if (opts?.firestoreGameId)
+        resolution.firestoreGameId = opts.firestoreGameId;
+      if (session.sourceInviteId)
+        resolution.sourceInviteId = session.sourceInviteId;
+      if (opts?.turnCount !== undefined) resolution.turnCount = opts.turnCount;
+      if (opts?.movesPerPlayer) resolution.movesPerPlayer = opts.movesPerPlayer;
+      if (opts?.gameDurationMs !== undefined)
+        resolution.gameDurationMs = opts.gameDurationMs;
+
+      tx.update(ref, {
+        phase: "resolved",
+        participants: updatedParticipants,
+        participantUids: updatedParticipants
+          .filter((p: Record<string, any>) => p.status !== "left")
+          .map((p: Record<string, any>) => p.uid),
+        resolution,
+        updatedAt: now,
+      });
+
+      return { written: true, sourceInviteId: session.sourceInviteId };
+    });
+
+    log.info(
+      `[V3Bridge] Session ${v3SessionId} resolved: outcome=${outcome}, winner=${opts?.winnerUid ?? "none"}`,
+    );
+
+    // ── Trigger reward processing immediately ─────────────────────────
+    // Previously rewards depended entirely on the watchdog (15-min cycle).
+    // Now we call the resolveSessionV3 Cloud Function directly so rewards
+    // are processed within seconds. Watchdog remains as safety net.
+    try {
+      const { getFunctions } = await import("firebase-admin/functions");
+      const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT;
+      const functionUrl = projectId
+        ? `https://us-central1-${projectId}.cloudfunctions.net/resolveSessionV3`
+        : null;
+
+      if (functionUrl) {
+        await fetch(functionUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: {
+              sessionId: v3SessionId,
+              outcome,
+              winnerUid: opts?.winnerUid,
+              scores: opts?.scores,
+              firestoreGameId: opts?.firestoreGameId,
+            },
+          }),
+          signal: AbortSignal.timeout(10000), // 10s timeout
+        }).catch((fetchErr: Error) => {
+          log.warn(
+            `[V3Bridge] resolveSessionV3 HTTP call failed (watchdog will retry): ${fetchErr.message}`,
+          );
+        });
+        log.info(`[V3Bridge] Triggered resolveSessionV3 for ${v3SessionId}`);
+      }
+    } catch (triggerErr) {
+      // Non-fatal — watchdog Pass 4 will catch unprocessed rewards
+      log.warn(
+        `[V3Bridge] Failed to trigger resolveSessionV3: ${triggerErr instanceof Error ? triggerErr.message : String(triggerErr)}`,
+      );
+    }
+
+    // ── Also finalize the linked v2 invite (belt-and-suspenders) ──────
+    // The primary finalization path is deleteGameAndInvite, but if this
+    // room uses v3 sessions the invite may not get finalized otherwise.
+    // This is idempotent: if the invite is already terminal, the update
+    // only self-heals missing fields.
+    const sourceInviteId = txResult.sourceInviteId;
+    if (sourceInviteId && db) {
+      try {
+        const inviteRef = db.collection("GameInvites").doc(sourceInviteId);
+        const inviteSnap = await inviteRef.get();
+        if (inviteSnap.exists) {
+          const inv = inviteSnap.data() as Record<string, any>;
+          const TERMINAL = new Set([
+            "completed",
+            "declined",
+            "expired",
+            "cancelled",
+          ]);
+          const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+          const now = Date.now();
+          const patch: Record<string, any> = {};
+
+          if (!TERMINAL.has(inv.status)) {
+            patch.status = "completed";
+            patch.completedAt = now;
+          }
+          if (inv.chatVisibility !== "hidden") {
+            patch.chatVisibility = "hidden";
+            patch.chatHiddenAt = now;
+          }
+          if (!inv.resolvedAt) patch.resolvedAt = now;
+          if (!inv.resolvedBy) patch.resolvedBy = "room";
+          if (!inv.deleteAt) patch.deleteAt = now + SIX_HOURS_MS;
+          if (!inv.resolutionType) {
+            patch.resolutionType = opts?.winnerUid
+              ? "win"
+              : outcome === "draw"
+                ? "draw"
+                : "disconnect";
+          }
+          if (opts?.winnerUid && !inv.winnerId) patch.winnerId = opts.winnerUid;
+          if (
+            (!inv.chatHiddenInConversationIds ||
+              inv.chatHiddenInConversationIds.length === 0) &&
+            inv.conversationId
+          ) {
+            patch.chatHiddenInConversationIds = [inv.conversationId];
+          }
+
+          if (Object.keys(patch).length > 0) {
+            patch.updatedAt = now;
+            await inviteRef.update(patch);
+            log.info(
+              `[V3Bridge] Finalized linked invite ${sourceInviteId} for session ${v3SessionId}`,
+            );
+          }
+        }
+      } catch (invErr) {
+        // Non-fatal — the watchdog or Cloud Function will catch it
+        log.warn(
+          `[V3Bridge] Failed to finalize linked invite ${sourceInviteId}:`,
+          invErr,
+        );
+      }
+    }
+  } catch (error) {
+    // Non-fatal — the v2 flow handles persistence;
+    // v3 resolution will be picked up by the watchdog if this fails.
+    log.error("[V3Bridge] resolveV3Session failed:", error);
+  }
+}
+
+/**
+ * Abandon a v3 GameSession when a room is disposed while still in progress
+ * (save-and-suspend path). The session moves to "abandoned" so the watchdog
+ * can clean it up later.
+ *
+ * @param v3SessionId - The v3 GameSession document ID (may be undefined)
+ */
+export async function abandonV3Session(
+  v3SessionId: string | undefined,
+): Promise<void> {
+  if (!v3SessionId) return;
+
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    const ref = db.collection("GameSessions").doc(v3SessionId);
+    const snap = await ref.get();
+
+    if (!snap.exists) return;
+
+    const session = snap.data() as Record<string, any>;
+    if (V3_TERMINAL_PHASES.has(session.phase)) return;
+
+    await ref.update({
+      phase: "abandoned",
+      updatedAt: Date.now(),
+    });
+
+    log.info(`[V3Bridge] Session ${v3SessionId} abandoned (game suspended)`);
+  } catch (error) {
+    log.error("[V3Bridge] abandonV3Session failed:", error);
   }
 }

@@ -17,7 +17,6 @@ import { useAuth } from "@/store/AuthContext";
 import type { Badge, UserBadge } from "@/types/profile";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useBadges");
 interface UseBadgesReturn {
@@ -70,7 +69,6 @@ export function useBadges(uid: string | undefined): UseBadgesReturn {
         // Force get a fresh token to ensure auth is fully propagated
         const token = await currentFirebaseUser.getIdToken(false);
         if (!cancelled && token) {
-          logger.info("[useBadges] Auth token verified, ready to subscribe");
           setIsTokenReady(true);
         }
       } catch (err) {
@@ -94,34 +92,23 @@ export function useBadges(uid: string | undefined): UseBadgesReturn {
 
   // Subscribe to badges - only after auth token is verified
   useEffect(() => {
-    logger.info("[useBadges] Subscription effect triggered:", {
-      uid,
-      authHydrated,
-      isTokenReady,
-      hasFirebaseUser: !!currentFirebaseUser,
-    });
-
     // Don't subscribe until auth token is truly ready
     if (!isTokenReady) {
-      logger.info("[useBadges] Skipping - auth token not ready yet");
       return;
     }
 
     if (!uid) {
-      logger.info("[useBadges] Skipping - no uid provided");
       setEarnedBadges([]);
       setLoading(false);
       return;
     }
 
-    logger.info("[useBadges] Setting up subscription for uid:", uid);
     setLoading(true);
     setError(null);
 
     const unsubscribe = subscribeToBadges(
       uid,
       (badges) => {
-        logger.info("[useBadges] Received badges:", badges.length);
         setEarnedBadges(badges);
         setLoading(false);
       },
@@ -133,7 +120,6 @@ export function useBadges(uid: string | undefined): UseBadgesReturn {
     );
 
     return () => {
-      logger.info("[useBadges] Cleaning up subscription for uid:", uid);
       unsubscribe();
     };
   }, [uid, isTokenReady, currentFirebaseUser]);

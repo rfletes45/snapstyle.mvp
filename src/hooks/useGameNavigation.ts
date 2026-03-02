@@ -20,10 +20,22 @@
  * @see docs/GAME_SYSTEM_OVERHAUL_PLAN.md Phase 6
  */
 
-import { CommonActions, useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useCallback, useMemo } from "react";
 
-
+import { GAME_SESSIONS_V3 } from "@/constants/featureFlags";
+import {
+  resolveGameSession,
+  type ResolveGameParams,
+} from "@/services/sessionBridge";
+import {
+  exitGameSession,
+  navigateToDmChat,
+  navigateToGroupChat,
+  navigateToPlayHub,
+  navigateToSessionGameOver,
+  type ExitDestination,
+} from "@/utils/gameNavHelpers";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("hooks/useGameNavigation");
 // =============================================================================
@@ -80,11 +92,12 @@ interface UseGameNavigationOptions {
 
 interface UseGameNavigationReturn {
   /**
-   * Exit game and go to appropriate screen
-   * - If game has conversation context -> go to that chat
-   * - Otherwise -> go to Play screen (GamesHub)
+   * Exit game and go to appropriate screen.
+   *
+   * When in a v3 session, optionally pass resolution data so the session
+   * is resolved (closed) before navigating to the game-over screen.
    */
-  exitGame: () => void;
+  exitGame: (resolution?: Omit<ResolveGameParams, "sessionId">) => void;
 
   /**
    * Go to the associated chat (if game was started from chat)
@@ -141,8 +154,16 @@ export function useGameNavigation(
   options: UseGameNavigationOptions = {},
 ): UseGameNavigationReturn {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { match, conversationId, conversationType, currentUserId, entryPoint } =
     options;
+
+  // Detect v3 session context from route params (set by SessionLobbyScreen).
+  // `v3Session` is the session ID string when present (truthy = v3 flow).
+  const v3SessionId: string | undefined =
+    typeof route.params?.v3Session === "string"
+      ? route.params.v3Session
+      : undefined;
 
   // Determine conversation info from match or explicit options
   const chatConversationId = conversationId || match?.conversationId;
@@ -184,127 +205,73 @@ export function useGameNavigation(
   }, [match?.players, currentUserId, chatConversationType, chatConversationId]);
 
   /**
-   * Exit the game - smart navigation based on entry point and context
+   * Exit the game — unified pipeline with session cleanup + navigation.
    *
-   * Priority:
-   * 1. If entryPoint is "play" -> always go to Play screen
-   * 2. If entryPoint is "chat" and has conversation context -> go to that chat
-   * 3. If no entryPoint but has conversation context -> go to that chat (legacy)
-   * 4. Otherwise -> go to Play screen
+   * v3 flow: If this game was entered via SessionLobbyScreen (v3Session
+   * route param), resolve the session (if resolution data provided) and
+   * navigate to SessionGameOverScreen.
    *
-   * Navigation structure:
-   * - AppTabs (Tab.Navigator): Inbox, Moments, Play, Connections, Profile
-   * - Inbox tab contains InboxStack with: ChatList, ChatDetail, GroupChat, etc.
-   * - Play tab contains PlayStack with: GamesHub, game screens, etc.
+   * v2 flow: "Back to Hub" ALWAYS goes to the Play hub root (GamesHub),
+   * regardless of entryPoint. Use `goToChat()` for explicit chat return.
+   *
+   * Uses exitGameSession for: double-tap guard → clear session → navigate.
    */
-  const exitGame = useCallback(() => {
-    // Debug logging
-    logger.info("[useGameNavigation] exitGame called:", {
-      entryPoint,
-      hasChat,
-      chatConversationType,
-      chatConversationId,
-      opponentId,
-      currentUserId,
-    });
+  const exitGame = useCallback(
+    (resolution?: Omit<ResolveGameParams, "sessionId">) => {
+      const localDispatch = navigation.dispatch;
 
-    // If user entered from Play screen, always go back to Play screen
-    if (entryPoint === "play") {
-      goToPlayScreen();
-      return;
-    }
-
-    // If user entered from chat (or no entry point specified), use conversation context
-    if (hasChat && chatConversationType && chatConversationId) {
-      // Navigate to the associated chat within the Inbox tab
-      if (chatConversationType === "dm") {
-        if (!opponentId) {
-          logger.warn(
-            "[useGameNavigation] DM navigation but no opponentId found!",
-            { chatConversationId, currentUserId },
-          );
-          // Fallback to Play screen if we can't determine opponent
-          goToPlayScreen();
-          return;
+      // v3: Resolve session + navigate to SessionGameOverScreen
+      if (
+        v3SessionId &&
+        GAME_SESSIONS_V3.ENABLED &&
+        GAME_SESSIONS_V3.UNIVERSAL_GAME_OVER
+      ) {
+        if (__DEV__) {
+          logger.info("[GameNav] exitGame → SessionGameOverScreen (v3)", {
+            sessionId: v3SessionId,
+            hasResolution: !!resolution,
+          });
         }
-        // For DMs, navigate to Inbox tab -> ChatDetail screen
-        navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [
-              {
-                name: "Inbox",
-                state: {
-                  routes: [
-                    { name: "ChatList" },
-                    { name: "ChatDetail", params: { friendUid: opponentId } },
-                  ],
-                  index: 1,
-                },
-              },
-            ],
-          }),
-        );
-        return;
-      } else if (chatConversationType === "group") {
-        // For groups, navigate to Inbox tab -> GroupChat screen
-        navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [
-              {
-                name: "Inbox",
-                state: {
-                  routes: [
-                    { name: "ChatList" },
-                    {
-                      name: "GroupChat",
-                      params: { groupId: chatConversationId },
-                    },
-                  ],
-                  index: 1,
-                },
-              },
-            ],
-          }),
-        );
+
+        // Fire-and-forget resolve — navigation happens immediately
+        if (resolution) {
+          void resolveGameSession({
+            sessionId: v3SessionId,
+            ...resolution,
+          });
+        }
+
+        navigateToSessionGameOver(v3SessionId, localDispatch);
         return;
       }
-    }
 
-    // Default: go to Play screen
-    goToPlayScreen();
-  }, [
-    entryPoint,
-    hasChat,
-    chatConversationType,
-    chatConversationId,
-    opponentId,
-    currentUserId,
-    navigation,
-  ]);
+      if (__DEV__) {
+        logger.info("[GameNav] exitGame → playHub", { entryPoint });
+      }
+
+      // Always navigate to Play hub root
+      const destination: ExitDestination = { type: "playHub" };
+
+      // Unified pipeline: double-tap guard → clear session → navigate
+      void exitGameSession(destination, { dispatch: localDispatch });
+    },
+    [entryPoint, v3SessionId, navigation],
+  );
 
   /**
    * Go directly to the associated chat
    */
   const goToChat = useCallback(() => {
     if (!hasChat) {
-      logger.warn("[useGameNavigation] No chat associated with this game");
+      logger.warn("[GameNav] No chat associated with this game");
       return;
     }
 
+    const localDispatch = navigation.dispatch;
     if (chatConversationType === "dm" && opponentId) {
-      // Navigate to Inbox tab -> ChatDetail screen
-      navigation.navigate("Inbox", {
-        screen: "ChatDetail",
-        params: { friendUid: opponentId },
-      });
+      navigateToDmChat(opponentId, localDispatch);
     } else if (chatConversationType === "group" && chatConversationId) {
-      // Navigate to Inbox tab -> GroupChat screen
-      navigation.navigate("Inbox", {
-        screen: "GroupChat",
-        params: { groupId: chatConversationId },
-      });
+      navigateToGroupChat(chatConversationId, localDispatch);
     }
   }, [
     hasChat,
@@ -318,20 +285,7 @@ export function useGameNavigation(
    * Go directly to Play screen (GamesHub)
    */
   const goToPlayScreen = useCallback(() => {
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [
-          {
-            name: "Play",
-            state: {
-              routes: [{ name: "GamesHub" }],
-              index: 0,
-            },
-          },
-        ],
-      }),
-    );
+    navigateToPlayHub(navigation.dispatch);
   }, [navigation]);
 
   /**

@@ -46,6 +46,24 @@ function isTerminalJoinError(err: any): boolean {
   const msg = (err?.message || String(err)).toLowerCase();
   return TERMINAL_ERROR_PATTERNS.some((p) => msg.includes(p));
 }
+
+/**
+ * Close codes that indicate the room was disposed / game ended server-side.
+ * When these fire after a reconnection failure, the user should see a
+ * "Game no longer available" message instead of a generic "Connection lost".
+ */
+const ROOM_DISPOSED_CODES = new Set([
+  4001, // Colyseus default "room disposed"
+  4010, // Custom: game finished while disconnected
+  4100, // Custom: server shutdown
+]);
+
+function getDisconnectMessage(code: number): string {
+  if (ROOM_DISPOSED_CODES.has(code)) {
+    return "Game no longer available";
+  }
+  return "Connection lost";
+}
 // =============================================================================
 // Types
 // =============================================================================
@@ -215,7 +233,7 @@ export function useColyseus({
                 // Non-consented leave — reconnection timed out
                 setConnected(false);
                 setReconnecting(false);
-                setError("Connection lost");
+                setError(getDisconnectMessage(code));
                 roomRef.current = null;
                 setRoom(null);
               }
@@ -249,7 +267,7 @@ export function useColyseus({
               // Non-consented leave — reconnection timed out
               setConnected(false);
               setReconnecting(false);
-              setError("Connection lost");
+              setError(getDisconnectMessage(code));
               roomRef.current = null;
               setRoom(null);
             }
@@ -279,7 +297,7 @@ export function useColyseus({
               // Non-consented leave — reconnection timed out
               setConnected(false);
               setReconnecting(false);
-              setError("Connection lost");
+              setError(getDisconnectMessage(code));
               roomRef.current = null;
               setRoom(null);
             }

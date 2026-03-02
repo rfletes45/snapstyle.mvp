@@ -1,6 +1,6 @@
 # System Overview
 
-Last verified: 2026-02-22
+Last verified: 2026-02-27
 
 ## Scope
 
@@ -61,7 +61,7 @@ Important design choice:
 
 ## Data Planes and Authority
 
-App data responsibilities are split across three planes:
+App data responsibilities are split across four planes:
 
 1. Client Firebase SDK plane:
    - Day-to-day reads and lightweight writes
@@ -70,8 +70,15 @@ App data responsibilities are split across three planes:
    - Messaging callable writes (idempotency, validation, moderation/rate checks)
    - Economy/shop/task transaction safety
    - Scheduled cleanup and maintenance jobs
-3. Colyseus realtime plane:
+3. V3 Session pipeline plane:
+   - `GameSessions/{sessionId}` Firestore collection
+   - 6 Cloud Functions + 1 scheduled watchdog (`firebase-backend/functions/src/sessionsV3.ts`)
+   - Lifecycle: `createSessionV3 → inviteToSessionV3 → joinSessionV3 → startSessionV3 → resolveSessionV3`
+   - All 5 `GAME_SESSIONS_V3` feature flags are **enabled**
+   - See `docs/UNIFIED_LOBBY_SPEC.md` for the implemented lobby system
+4. Colyseus realtime plane:
    - Stateful realtime gameplay rooms
+   - V3 session bridge (`linkColyseusRoom`, `resolveV3Session`, `abandonV3Session`)
    - Spectator session room
    - Embedded Starforge hosting support on the same server process
 
@@ -96,6 +103,10 @@ This means both paths are active contracts and must remain functional.
 - Feature flags: `constants/featureFlags.ts`
 - Messaging model: `src/types/messaging.ts`
 - Game registry and IDs: `src/types/games.ts`
+- Game adapter registry: `src/config/gameAdapters.ts`
+- V3 session types: `shared/sessions/types.ts`
+- V3 session hook: `src/hooks/useSessionLobby.ts`
+- V3 Cloud Functions: `firebase-backend/functions/src/sessionsV3.ts`
 - Colyseus mapping: `src/config/colyseus.ts`
 - Profile validation/hydration: `src/services/profile/profileContract.ts`
 - Firebase SDK init: `src/services/firebase.ts`
@@ -107,6 +118,8 @@ This means both paths are active contracts and must remain functional.
 3. All context-dependent hooks must mount inside their provider boundaries.
 4. Realtime game room mappings must remain consistent across client/server.
 5. Cross-system trace IDs should be preserved for debugging (`createTraceId` paths).
+6. V3 session `firestoreGameId` must be set by `startSessionV3` before game screen navigation.
+7. All 14 multiplayer game screens must accept `V3GameScreenParams` (sessionId, v3Session, firestoreGameId).
 
 ## Change-Safety Checklist
 

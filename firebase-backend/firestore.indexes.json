@@ -76,6 +76,16 @@
       ]
     },
     {
+      "collectionGroup": "GameSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "participantUids", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "phase", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "GameHistory",
       "queryScope": "COLLECTION",
       "fields": [

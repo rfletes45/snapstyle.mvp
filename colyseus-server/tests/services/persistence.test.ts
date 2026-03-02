@@ -134,6 +134,8 @@ function addPlayer(
 // =============================================================================
 
 describe("extractInviteIdFromExtGameId", () => {
+  // ── Basic: simple (no-underscore) invite IDs ──────────────────────────
+
   it("extracts inviteId from ext_battleship_abc123", () => {
     expect(extractInviteIdFromExtGameId("ext_battleship_abc123")).toBe(
       "abc123",
@@ -141,7 +143,7 @@ describe("extractInviteIdFromExtGameId", () => {
   });
 
   it("extracts inviteId from ext_crazy_eights_def456", () => {
-    // crazy_eights has an underscore in the gameType — inviteId is after LAST underscore
+    // crazy_eights has an underscore in the gameType
     expect(extractInviteIdFromExtGameId("ext_crazy_eights_def456")).toBe(
       "def456",
     );
@@ -175,6 +177,55 @@ describe("extractInviteIdFromExtGameId", () => {
     );
   });
 
+  // ── THE BUG FIX: invite IDs with underscores ─────────────────────────
+
+  it("correctly extracts invite ID with underscores (uinv_ prefix)", () => {
+    // This was the EXACT production bug: lastIndexOf("_") returned "ijltf8"
+    // instead of the full "uinv_mm2myqz0_ijltf8".
+    expect(
+      extractInviteIdFromExtGameId("ext_battleship_uinv_mm2myqz0_ijltf8"),
+    ).toBe("uinv_mm2myqz0_ijltf8");
+  });
+
+  it("correctly extracts invite ID with underscores for multi-underscore gameType", () => {
+    // Both gameType AND inviteId contain underscores
+    expect(
+      extractInviteIdFromExtGameId("ext_crazy_eights_uinv_abc_def_ghi"),
+    ).toBe("uinv_abc_def_ghi");
+  });
+
+  it("correctly extracts invite ID with underscores for sketch_party_game", () => {
+    expect(
+      extractInviteIdFromExtGameId("ext_sketch_party_game_uinv_x1_y2_z3"),
+    ).toBe("uinv_x1_y2_z3");
+  });
+
+  it("uses explicit gameType for prefix-stripping when provided", () => {
+    expect(
+      extractInviteIdFromExtGameId(
+        "ext_battleship_uinv_mm2myqz0_ijltf8",
+        "battleship",
+      ),
+    ).toBe("uinv_mm2myqz0_ijltf8");
+  });
+
+  it("uses explicit gameType for multi-underscore game types", () => {
+    expect(
+      extractInviteIdFromExtGameId(
+        "ext_crazy_eights_uinv_foo_bar",
+        "crazy_eights",
+      ),
+    ).toBe("uinv_foo_bar");
+  });
+
+  it("returns null when explicit gameType doesn't match prefix", () => {
+    expect(
+      extractInviteIdFromExtGameId("ext_battleship_abc123", "chess"),
+    ).toBeNull();
+  });
+
+  // ── Edge cases ────────────────────────────────────────────────────────
+
   it("returns null for non-ext IDs", () => {
     expect(extractInviteIdFromExtGameId("game_abc123")).toBeNull();
   });
@@ -202,6 +253,12 @@ describe("extractInviteIdFromExtGameId", () => {
     expect(extractInviteIdFromExtGameId(`ext_battleship_${longId}`)).toBe(
       longId,
     );
+  });
+
+  it("returns null for unknown game type when gameType not provided", () => {
+    expect(
+      extractInviteIdFromExtGameId("ext_unknown_game_type_abc123"),
+    ).toBeNull();
   });
 });
 

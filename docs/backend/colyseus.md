@@ -1,6 +1,6 @@
 # Colyseus Multiplayer Server
 
-Last verified: 2026-02-24
+Last verified: 2026-03-01
 
 ## Server Entry and Runtime
 
@@ -69,6 +69,38 @@ Optional routing fields:
 - `spectator`
 - `inviteId`
 - `conversationId`
+- `v3SessionId` (v3 session document ID — used by persistence bridge)
+
+## V3 Session Bridge
+
+When a game room is created via the v3 session pipeline, `options.v3SessionId` is captured
+in `onCreate`. The persistence bridge in `colyseus-server/src/services/persistence.ts`
+provides three functions to synchronize v3 session lifecycle with room lifecycle:
+
+| Function           | Purpose                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `linkColyseusRoom` | Writes `colyseusRoomId` to session doc on room creation     |
+| `resolveV3Session` | Transitions session → "resolved" with outcome/scores/winner |
+| `abandonV3Session` | Transitions session → "abandoned" (game suspended/vacant)   |
+
+All four base room classes (`TurnBasedRoom`, `ScoreRaceRoom`, `PhysicsRoom`, `CardGameRoom`)
+integrate with this bridge. Game-managed rooms (battleship, sketch_party, starforge,
+crossword, minigolf) call the bridge in their own `onDispose` handlers.
+
+See `docs/UNIFIED_LOBBY_SPEC.md` §8 for the full phase mapping.
+
+Reward processing:
+
+- When `resolveV3Session` completes, the backend `processSessionRewards` function in `sessionsV3.ts` runs (idempotent, checks `rewardsProcessed` flag).
+- V3 guards in `games.ts` ensure `processRealtimeGameCompletion` skips legacy reward processing for V3 sessions (checks `v3SessionId` on the doc).
+- Watchdog Pass 4 retries `processSessionRewards` for resolved sessions where rewards were not processed.
+
+Runtime shell integration:
+
+- On the client side, all 14 multiplayer game screens are wrapped with `withMultiplayerRuntime` HOC (`src/components/games/MultiplayerRuntimeShell.tsx`).
+- The shell detects game completion, builds `GameResultFacts`, and navigates to `SessionGameOverScreen`.
+- For V3 sessions, the shell calls `resolveSessionV3` to trigger the backend reward pipeline.
+- See `docs/GAMES_SYSTEM.md` §26 for full runtime shell architecture.
 
 ## Feature-Flag Gating
 

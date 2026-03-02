@@ -949,12 +949,6 @@ export function rowToMessageV2(
 
   const parsedSenderStyle = parseJsonColumn(row.sender_style_json, undefined);
 
-  if (__DEV__ && parsedSenderStyle) {
-    logger.debug(
-      `[MSG_RENDER_STYLE] id=${row.id} sender=${row.sender_id} senderStyle=${JSON.stringify(parsedSenderStyle)}`,
-    );
-  }
-
   return {
     id: row.id,
     scope: row.scope as "dm" | "group",

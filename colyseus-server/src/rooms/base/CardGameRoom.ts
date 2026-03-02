@@ -20,10 +20,13 @@ import { CardGameState, CardPlayer, ServerCard } from "../../schemas/cards";
 import { SpectatorEntry } from "../../schemas/spectator";
 import { verifyFirebaseToken } from "../../services/firebase";
 import {
+  abandonV3Session,
   deleteGameAndInvite,
   extractInviteIdFromExtGameId,
+  linkColyseusRoom,
   loadGameState,
   persistGameResult,
+  resolveV3Session,
   saveGameState,
 } from "../../services/persistence";
 import { checkProtocolVersion } from "../../utils/protocol";
@@ -72,6 +75,9 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
 
   /** Invite ID for finalization fallback (defense-in-depth). */
   private inviteId: string | undefined;
+
+  /** V3 session ID for session bridge (if v3 flow). */
+  private v3SessionId: string | undefined;
 
   /** Check if a session is a spectator */
   protected isSpectator(sessionId: string): boolean {
@@ -161,6 +167,12 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
     // Capture inviteId for finalization fallback
     if (options.inviteId) {
       this.inviteId = options.inviteId;
+    }
+
+    // Capture v3 session ID and link this room to the session
+    if (options.v3SessionId) {
+      this.v3SessionId = options.v3SessionId;
+      linkColyseusRoom(options.v3SessionId, this.roomId);
     }
 
     // Restore from Firestore?
@@ -510,8 +522,8 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       const firestoreGameId =
         this.state.firestoreGameId || this.state.gameId || this.roomId;
       const inviteId =
-        extractInviteIdFromExtGameId(firestoreGameId) ??
         this.inviteId ??
+        extractInviteIdFromExtGameId(firestoreGameId) ??
         undefined;
 
       // Persist game result
@@ -525,6 +537,7 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
         await persistGameResult(this.state, gameDurationMs, undefined, {
           inviteId,
           firestoreGameId,
+          v3SessionId: this.v3SessionId,
         });
 
         this.state.firestoreGameId = savedFsId;
@@ -538,6 +551,25 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       } catch (e) {
         this.roomLog.error(`Failed to clean up game/invite:`, e);
       }
+
+      // V3 session bridge — resolve with game results
+      try {
+        const scores: Record<string, number> = {};
+        this.state.cardPlayers.forEach((p: CardPlayer) => {
+          scores[p.uid] = p.score;
+        });
+        await resolveV3Session(
+          this.v3SessionId,
+          this.state.winnerId ? "win" : "draw",
+          {
+            winnerUid: this.state.winnerId || undefined,
+            scores,
+            firestoreGameId,
+          },
+        );
+      } catch (e) {
+        this.roomLog.error(`Failed to resolve v3 session:`, e);
+      }
     } else if (this.allPlayersLeft && this.state.phase === "playing") {
       try {
         await saveGameState(this.state, this.roomId, {
@@ -546,6 +578,9 @@ export abstract class CardGameRoom extends Room<{ state: CardGameState }> {
       } catch (e) {
         this.roomLog.error(`Failed to save state:`, e);
       }
+
+      // V3 session bridge — mark session as abandoned (suspended game)
+      await abandonV3Session(this.v3SessionId);
     }
   }
 }

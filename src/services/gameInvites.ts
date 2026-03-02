@@ -46,6 +46,7 @@ import { getOrCreateChat } from "./chat";
 import { getAuthInstance, getFirestoreInstance } from "./firebase";
 import { createMatch } from "./turnBasedGames";
 
+import { computeInviteHealth, createInviteTrace } from "@/utils/inviteTrace";
 import { createLogger } from "@/utils/log";
 import { createTraceId } from "@/utils/trace";
 const logger = createLogger("services/gameInvites");
@@ -82,6 +83,40 @@ function generateUniversalInviteId(): string {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 8);
   return `uinv_${timestamp}_${random}`;
+}
+
+/**
+ * Build a deterministic DM conversation ID from two user UIDs.
+ * Matches the format used by `getOrCreateChat` (services/chat.ts).
+ *
+ * @example buildDmConversationId("alice", "bob") // "alice_bob"
+ */
+export function buildDmConversationId(uid1: string, uid2: string): string {
+  return [uid1, uid2].sort().join("_");
+}
+
+/**
+ * Normalize an invite payload for comparison / testing.
+ * Strips volatile fields (timestamps, IDs, trace) so payloads
+ * from different creation flows can be structurally compared.
+ */
+export function normalizeInvitePayload(
+  invite: UniversalGameInvite,
+): Omit<
+  UniversalGameInvite,
+  "id" | "traceId" | "createdAt" | "updatedAt" | "expiresAt" | "chatMessageId"
+> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const {
+    id,
+    traceId,
+    createdAt,
+    updatedAt,
+    expiresAt,
+    chatMessageId,
+    ...rest
+  } = invite;
+  return rest;
 }
 
 /**
@@ -236,7 +271,7 @@ export async function sendUniversalInvite(
     senderAvatar,
     gameType,
     context,
-    conversationId,
+    conversationId: rawConversationId,
     conversationName,
     eligibleUserIds,
     recipientId,
@@ -247,14 +282,62 @@ export async function sendUniversalInvite(
     expirationMinutes = 60,
   } = params;
 
+  // ── Normalise conversationId ──────────────────────────────────────────
+  // For DM invites with an empty/missing conversationId, auto-compute
+  // the deterministic chat ID so idempotency & preview updates work.
+  let conversationId = rawConversationId;
+  if (context === "dm" && !conversationId && recipientId) {
+    conversationId = buildDmConversationId(senderId, recipientId);
+    if (__DEV__) {
+      logger.warn(
+        "[sendUniversalInvite] Auto-computed conversationId for DM invite",
+        { conversationId },
+      );
+    }
+  }
+
+  // ── DEV: warn about suspicious senderAvatar format ────────────────────
+  if (__DEV__ && senderAvatar && senderAvatar.startsWith("{")) {
+    logger.warn(
+      "[sendUniversalInvite] senderAvatar looks like JSON — expected a URL string",
+      { senderAvatar: senderAvatar.slice(0, 80) },
+    );
+  }
+
+  const runtimeType = getGameRuntimeType(gameType as ExtendedGameType);
+  const trace = createInviteTrace({
+    gameType,
+    runtimeType: runtimeType as "solo" | "turnBased" | "realtime",
+    conversationId,
+    uid: senderId,
+    role: "host",
+  });
+  trace.info("INVITE.CREATE.REQUEST", {
+    context,
+    recipientId,
+    requiredPlayers: customRequiredPlayers,
+  });
+
   const metadata = GAME_METADATA[gameType as ExtendedGameType];
   if (!metadata) {
+    trace.error(
+      "INVITE.CREATE.WRITE_FAIL",
+      new Error(`Unknown game type "${gameType}"`),
+    );
     throw new Error(`Unknown game type "${gameType}"`);
   }
   if (!metadata.isAvailable) {
+    trace.error(
+      "INVITE.CREATE.WRITE_FAIL",
+      new Error(`Game "${gameType}" is not available right now.`),
+    );
     throw new Error(`Game "${gameType}" is not available right now.`);
   }
-  if (getGameRuntimeType(gameType as ExtendedGameType) === "solo") {
+  if (runtimeType === "solo") {
+    trace.error(
+      "INVITE.CREATE.WRITE_FAIL",
+      new Error(`Game "${gameType}" does not support multiplayer invites.`),
+    );
     throw new Error(`Game "${gameType}" does not support multiplayer invites.`);
   }
 
@@ -275,7 +358,7 @@ export async function sendUniversalInvite(
       const existingSnap = await getDocs(existingQuery);
       if (!existingSnap.empty) {
         const existing = existingSnap.docs[0].data() as UniversalGameInvite;
-        logger.info(
+        logger.debug(
           `[sendUniversalInvite] Reusing existing invite ${existing.id} ` +
             `(status=${existing.status}) for ${gameType} in ${conversationId}`,
         );
@@ -392,6 +475,16 @@ export async function sendUniversalInvite(
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
   await setDoc(inviteRef, cleanInvite);
 
+  trace.update({ inviteId, traceId: invite.traceId, status: "pending" });
+  trace.info("INVITE.CREATE.WRITE_OK", {
+    inviteId,
+    status: "pending",
+    requiredPlayers,
+    maxPlayers,
+    claimedSlotsCount: 1,
+    gameId: undefined,
+  });
+
   // Update the conversation so the invite bumps it to the top of the inbox
   try {
     const gameLabel = GAME_METADATA[gameType]?.name || gameType || "a game";
@@ -426,12 +519,28 @@ export async function sendUniversalInvite(
     );
   }
 
-  logger.info(`[GameInvites] Created universal invite: ${inviteId}`, {
+  logger.debug(`[GameInvites] Created universal invite: ${inviteId}`, {
     context,
     targetType,
     gameType,
     requiredPlayers,
   });
+  trace.info("INVITE.CREATE.COMPLETE", { inviteId });
+
+  // ── DEV: Invite Debug Snapshot ──────────────────────────────────────
+  if (__DEV__) {
+    logger.info("[Invite] Created snapshot", {
+      inviteId,
+      gameType,
+      context,
+      conversationId,
+      hasRecipientId: !!recipientId,
+      hasColyseusRoomKey: !!customSettings?.colyseusRoomKey,
+      hasSenderAvatar: !!senderAvatar,
+      isRated: invite.settings.isRated,
+      showInPlayPage: invite.showInPlayPage,
+    });
+  }
 
   return invite;
 }
@@ -449,6 +558,8 @@ export async function claimInviteSlot(
   userName: string,
   userAvatar?: string,
 ): Promise<{ success: boolean; error?: string; invite?: UniversalGameInvite }> {
+  const trace = createInviteTrace({ inviteId, uid: userId, role: "joiner" });
+  trace.info("INVITE.SLOT.CLAIM.REQUEST", { userName });
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
 
   try {
@@ -552,9 +663,26 @@ export async function claimInviteSlot(
       return { success: true, invite: updatedInvite };
     });
 
-    logger.info(`[GameInvites] Slot claimed: ${inviteId} by ${userId}`, result);
+    if (result.success) {
+      const inv = result.invite;
+      trace.update({ gameType: inv?.gameType, status: inv?.status });
+      trace.info("INVITE.SLOT.CLAIM.TXN_OK", {
+        fromStatus: "(read)",
+        toStatus: inv?.status,
+        claimedSlotsCount: inv?.claimedSlots?.length,
+        requiredPlayers: inv?.requiredPlayers,
+        maxPlayers: inv?.maxPlayers,
+      });
+    } else {
+      trace.warn("INVITE.SLOT.CLAIM.TXN_FAIL", { error: result.error });
+    }
+    logger.debug(
+      `[GameInvites] Slot claimed: ${inviteId} by ${userId}`,
+      result,
+    );
     return result;
   } catch (error) {
+    trace.error("INVITE.SLOT.CLAIM.TXN_FAIL", error);
     logger.error(`[GameInvites] Error claiming slot:`, error);
     return { success: false, error: "Failed to join game" };
   }
@@ -569,6 +697,8 @@ export async function unclaimInviteSlot(
   inviteId: string,
   userId: string,
 ): Promise<{ success: boolean; error?: string }> {
+  const trace = createInviteTrace({ inviteId, uid: userId, role: "joiner" });
+  trace.info("INVITE.SLOT.UNCLAIM.REQUEST");
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
 
   try {
@@ -662,9 +792,9 @@ export async function unclaimInviteSlot(
     });
 
     if (result.success) {
-      logger.info(`[GameInvites] Slot unclaimed: ${inviteId} by ${userId}`);
+      logger.debug(`[GameInvites] Slot unclaimed: ${inviteId} by ${userId}`);
     } else {
-      logger.info(
+      logger.warn(
         `[GameInvites] Unclaim failed: ${inviteId} - ${result.error}`,
       );
     }
@@ -704,6 +834,8 @@ export async function startGameEarly(
   gameId?: string;
   error?: string;
 }> {
+  const trace = createInviteTrace({ inviteId, uid: hostId, role: "host" });
+  trace.info("INVITE.START_EARLY.REQUEST");
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
 
   try {
@@ -834,13 +966,23 @@ export async function startGameEarly(
         filledAt: Date.now(),
       });
 
-      logger.info(`[GameInvites] Game started early: ${inviteId}`, {
+      trace.update({ gameId, status: "active" });
+      trace.info("INVITE.START_EARLY.OK", {
+        gameId,
+        fromStatus: "starting",
+        toStatus: "active",
+        claimedSlotsCount: invite.claimedSlots.length,
+      });
+      logger.debug(`[GameInvites] Game started early: ${inviteId}`, {
         gameId,
         traceId: invite.traceId,
       });
       return { success: true, gameId };
     } catch (matchError) {
       // Match creation failed — roll back to "ready" so host can retry
+      trace.error("INVITE.START_EARLY.FAIL", matchError, {
+        rollbackTo: "ready",
+      });
       logger.error(
         `[GameInvites] Match creation failed, rolling back "starting" lock:`,
         matchError,
@@ -874,6 +1016,8 @@ export async function cancelUniversalInvite(
   inviteId: string,
   hostId: string,
 ): Promise<{ success: boolean; error?: string }> {
+  const trace = createInviteTrace({ inviteId, uid: hostId, role: "host" });
+  trace.info("INVITE.CANCEL.REQUEST");
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
 
   try {
@@ -934,10 +1078,14 @@ export async function cancelUniversalInvite(
     });
 
     if (result.success) {
-      logger.info(`[GameInvites] Universal invite cancelled: ${inviteId}`);
+      trace.info("INVITE.CANCEL.OK", { chatVisibility: "hidden" });
+      logger.debug(`[GameInvites] Universal invite cancelled: ${inviteId}`);
+    } else {
+      trace.warn("INVITE.CANCEL.FAIL", { error: result.error });
     }
     return result;
   } catch (error) {
+    trace.error("INVITE.CANCEL.FAIL", error);
     logger.error(`[GameInvites] Error cancelling invite:`, error);
     return { success: false, error: "Failed to cancel invite" };
   }
@@ -958,6 +1106,8 @@ export async function completeGameInvite(
   winnerId?: string,
   winReason?: string,
 ): Promise<{ success: boolean; error?: string }> {
+  const trace = createInviteTrace({ inviteId, role: "system" });
+  trace.info("INVITE.COMPLETE.REQUEST", { winnerId, winReason });
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
 
   try {
@@ -971,12 +1121,24 @@ export async function completeGameInvite(
 
       const invite = inviteSnap.data() as UniversalGameInvite;
 
-      // Idempotent: already completed — ensure chat-hide fields are set
-      if (invite.status === "completed") {
+      // Idempotent: already in any terminal status — ensure chat-hide fields are set
+      const TERMINAL = new Set([
+        "completed",
+        "declined",
+        "expired",
+        "cancelled",
+      ]);
+      if (TERMINAL.has(invite.status)) {
         const patch: Record<string, unknown> = {};
         if (invite.chatVisibility !== "hidden") {
           patch.chatVisibility = "hidden";
           patch.chatHiddenAt = Date.now();
+        }
+        if (!invite.resolvedAt) patch.resolvedAt = Date.now();
+        if (!invite.resolvedBy) patch.resolvedBy = "client";
+        if (!invite.deleteAt) {
+          const SIX_H = 6 * 60 * 60 * 1000;
+          patch.deleteAt = Date.now() + SIX_H;
         }
         if (
           (!invite.chatHiddenInConversationIds ||
@@ -1037,13 +1199,21 @@ export async function completeGameInvite(
     });
 
     if (result.success) {
-      logger.info(`[GameInvites] Invite completed: ${inviteId}`, {
+      trace.info("INVITE.COMPLETE.OK", {
+        chatVisibility: "hidden",
         winnerId,
         winReason,
       });
+      logger.debug(`[GameInvites] Invite completed: ${inviteId}`, {
+        winnerId,
+        winReason,
+      });
+    } else {
+      trace.warn("INVITE.COMPLETE.FAIL", { error: result.error });
     }
     return result;
   } catch (error) {
+    trace.error("INVITE.COMPLETE.FAIL", error);
     logger.error(`[GameInvites] Error completing invite:`, error);
     return { success: false, error: "Failed to complete invite" };
   }
@@ -1066,7 +1236,7 @@ export async function deleteGameInviteDoc(
     const inviteSnap = await getDoc(inviteRef);
     if (inviteSnap.exists()) {
       await deleteDoc(inviteRef);
-      logger.info(`[GameInvites] Invite deleted: ${inviteId}`);
+      logger.debug(`[GameInvites] Invite deleted: ${inviteId}`);
     }
     return { success: true };
   } catch (error) {
@@ -1089,18 +1259,38 @@ export function subscribeToUniversalInvite(
   onUpdate: (invite: UniversalGameInvite | null) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
+  const trace = createInviteTrace({ inviteId });
+  trace.info("INVITE.SUBSCRIBE.START");
   const inviteRef = doc(getDb(), COLLECTION_NAME, inviteId);
 
   return onSnapshot(
     inviteRef,
     (snapshot) => {
       if (!snapshot.exists()) {
+        trace.warn("INVITE.SUBSCRIBE.UPDATE", { exists: false });
         onUpdate(null);
         return;
       }
-      onUpdate(snapshot.data() as UniversalGameInvite);
+      const inv = snapshot.data() as UniversalGameInvite;
+      const health = computeInviteHealth(
+        inv as unknown as Record<string, unknown>,
+      );
+      trace.update({
+        status: inv.status,
+        gameType: inv.gameType,
+        gameId: inv.gameId,
+      });
+      trace.info("INVITE.SUBSCRIBE.UPDATE", {
+        status: inv.status,
+        claimedSlotsCount: inv.claimedSlots?.length,
+        gameId: inv.gameId,
+        chatVisibility: inv.chatVisibility,
+        ...health,
+      });
+      onUpdate(inv);
     },
     (error) => {
+      trace.error("INVITE.SUBSCRIBE.ERROR", error);
       logger.error("[GameInvites] Universal invite subscription error:", error);
       onError?.(error);
     },
@@ -1140,6 +1330,7 @@ export function subscribeToPlayPageInvites(
         .filter((inv) => inv.expiresAt > Date.now()) // Filter expired
         // Phase 2 hardening: also hide chat-hidden invites on play page
         .filter((inv) => inv.chatVisibility !== "hidden")
+        .filter((inv) => !inv.resolvedAt) // extra safety
         .slice(0, 20); // Limit results after filtering
       onUpdate(invites);
     },
@@ -1176,6 +1367,7 @@ export function subscribeToConversationInvites(
   return onSnapshot(
     q,
     (snapshot) => {
+      const rawCount = snapshot.docs.length;
       const validStatuses = [
         "pending",
         "filling",
@@ -1190,7 +1382,13 @@ export function subscribeToConversationInvites(
         // chatVisibility === "hidden" means the invite was server-finalized
         // even if the status hasn't propagated yet in the snapshot.
         // Legacy docs without chatVisibility are treated as visible.
-        .filter((inv) => inv.chatVisibility !== "hidden");
+        .filter((inv) => inv.chatVisibility !== "hidden")
+        // Extra safety: resolvedAt present means the game is done,
+        // regardless of what status/chatVisibility say.
+        .filter((inv) => !inv.resolvedAt);
+      logger.debug(
+        `[GameInvites] Conversation invites snapshot: raw=${rawCount}, filtered=${invites.length}, conversationId=${conversationId}`,
+      );
       onUpdate(invites);
     },
     (error) => {
@@ -1252,7 +1450,7 @@ export async function cleanupCompletedGameInvites(
       // processRealtimeGameCompletion Cloud Function, or the watchdog) handle
       // finalization.
       if (invite.gameId.startsWith("ext_")) {
-        logger.info(
+        logger.debug(
           `[GameInvites] Skipping ext_ Colyseus invite ${invite.id} (gameId=${invite.gameId}) — server-driven finalization`,
         );
         continue;
@@ -1326,7 +1524,7 @@ export async function cleanupCompletedGameInvites(
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         if (errorMessage.includes("permission")) {
-          logger.info(
+          logger.debug(
             `[GameInvites] Skipping invite ${invite.id} - no permission to read game (user may not be participant)`,
           );
         } else {
@@ -1340,7 +1538,7 @@ export async function cleanupCompletedGameInvites(
   }
 
   if (cleanedUp > 0) {
-    logger.info(
+    logger.debug(
       `[GameInvites] Cleaned up ${cleanedUp} completed game invites for conversation ${conversationId}`,
     );
   }

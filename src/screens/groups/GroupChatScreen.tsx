@@ -155,7 +155,7 @@ import {
   formatGameScore,
   GAME_METADATA,
 } from "@/types/games";
-import type { UniversalGameInvite } from "@/types/turnBased";
+import { navigateToSessionLobby } from "@/utils/gameNavHelpers";
 
 // Types
 import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
@@ -210,13 +210,10 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   );
 
   // Build sender style snapshot for stamping on outgoing messages
-  const senderStyle = useMemo(() => {
-    const style = buildSenderStyle(profile?.chatAppearance ?? null);
-    console.log(
-      `[MSG_SEND_STYLE] Built senderStyle from chatAppearance=${JSON.stringify(profile?.chatAppearance ?? null)} → senderStyle=${JSON.stringify(style)}`,
-    );
-    return style;
-  }, [profile?.chatAppearance]);
+  const senderStyle = useMemo(
+    () => buildSenderStyle(profile?.chatAppearance ?? null),
+    [profile?.chatAppearance],
+  );
 
   // Track current group chat for notification suppression
   useFocusEffect(
@@ -768,7 +765,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       // De-duplicate: if we already navigated for this inviteId, skip
       if (options?.inviteId) {
         if (navigatedInvitesRef.current.has(options.inviteId)) {
-          logger.info(
+          logger.debug(
             `[GroupChatScreen] Skipping duplicate navigation for invite ${options.inviteId}`,
           );
           return;
@@ -862,16 +859,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [navigation, groupId],
   );
 
-  // Handle multiplayer invite creation — navigate host into the game's
-  // built-in lobby immediately so they aren't stranded in chat.
-  const handleInviteCreated = useCallback(
-    (invite: UniversalGameInvite) => {
-      if (!invite?.id || !invite?.gameType) return;
-      handleNavigateToGame(invite.gameId || "", invite.gameType, {
-        inviteId: invite.id,
-      });
+  // v3: Navigate host to SessionLobbyScreen after creating a session
+  const handleSessionCreated = useCallback(
+    (sessionId: string) => {
+      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
     },
-    [handleNavigateToGame],
+    [navigation.dispatch],
+  );
+
+  // v3: Navigate to SessionLobbyScreen when tapping a session pill in chat
+  const handleNavigateToLobby = useCallback(
+    (sessionId: string) => {
+      logger.info("[Nav] GroupChatScreen.handleNavigateToLobby", { sessionId });
+      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
+    },
+    [navigation.dispatch],
   );
 
   // Compute eligible user IDs from group members
@@ -1166,12 +1168,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             defaultTextColor: colors.text,
           })
         : null;
-
-      if (!isOwnMessage) {
-        console.log(
-          `[MSG_RENDER_STYLE] id=${item.id} sender=${item.senderId} senderStyle=${JSON.stringify(item.senderStyle ?? null)} showMemberChatStyles=${showMemberChatStyles} resolvedBg=${incomingStyle?.bubbleBgColor}`,
-        );
-      }
 
       // Unified style: outgoing uses viewer's chatStyle, incoming uses sender's stamped style
       const bubbleBgColor = isOwnMessage
@@ -1632,6 +1628,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
               "User"
             }
             onNavigateToGame={handleNavigateToGame}
+            onNavigateToLobby={handleNavigateToLobby}
             compact
           />
         )}
@@ -1813,7 +1810,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         conversationName={group?.name}
         eligibleUserIds={groupMemberIds}
         onSinglePlayerGame={handleSinglePlayerGame}
-        onInviteCreated={handleInviteCreated}
+        onSessionCreated={handleSessionCreated}
         onError={(error) => Alert.alert("Error", error)}
       />
     </>

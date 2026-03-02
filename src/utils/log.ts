@@ -64,6 +64,45 @@ const defaultConfig: LogConfig = {
 let currentConfig: LogConfig = { ...defaultConfig };
 
 // =============================================================================
+// Feature-level Debug Flags
+// =============================================================================
+// All default to OFF even in __DEV__. Flip to true for local debugging only.
+
+export const DEBUG_FLAGS = {
+  /** Per-message read / render / send style logs */
+  MESSAGES: false,
+  /** Chat & inbox subscription lifecycle logs */
+  CHAT: false,
+  /** Group invite step-by-step logs */
+  INVITES: false,
+  /** InAppNotifications listener setup & suppression logs */
+  NOTIFS: false,
+  /** Badge subscription logs */
+  BADGES: false,
+} as const;
+
+export type DebugFlagKey = keyof typeof DEBUG_FLAGS;
+
+const _debugOverrides: Partial<Record<DebugFlagKey, boolean>> = {};
+
+/**
+ * Check whether a feature-level debug flag is ON.
+ * Returns true only when __DEV__ === true AND the flag is overridden to true.
+ */
+export function isDebugEnabled(flag: DebugFlagKey): boolean {
+  if (typeof __DEV__ !== "undefined" && !__DEV__) return false;
+  return _debugOverrides[flag] ?? DEBUG_FLAGS[flag];
+}
+
+/**
+ * Override a debug flag at runtime (dev only — no-op in prod).
+ */
+export function setDebugFlag(flag: DebugFlagKey, enabled: boolean): void {
+  if (typeof __DEV__ !== "undefined" && !__DEV__) return;
+  _debugOverrides[flag] = enabled;
+}
+
+// =============================================================================
 // Sanitization
 // =============================================================================
 

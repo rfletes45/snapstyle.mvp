@@ -9,23 +9,23 @@
  * - Handle notification received/tapped events
  */
 
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-import { Platform } from "react-native";
-import { doc, updateDoc } from "firebase/firestore";
-import { getFirestoreInstance } from "./firebase";
 import { LightColors } from "@/constants/theme";
-
+import Constants from "expo-constants";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
+import { doc, updateDoc } from "firebase/firestore";
+import { Platform } from "react-native";
+import { getFirestoreInstance } from "./firebase";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/notifications");
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowAlert: false, // R3-4 fix: prevent double notification (OS banner + in-app toast)
     shouldPlaySound: true,
     shouldSetBadge: true,
-    shouldShowBanner: true,
+    shouldShowBanner: false, // R3-4 fix: same — let in-app handler decide display
     shouldShowList: true,
   }),
 });
@@ -74,8 +74,11 @@ export async function registerForPushNotifications(): Promise<string | null> {
     logger.info("✅ [notifications] Permission granted");
 
     // Get Expo Push Token
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      "a57e6af7-ac18-4751-90ee-3b9cda7ea645";
     const tokenResponse = await Notifications.getExpoPushTokenAsync({
-      projectId: "your-project-id", // Optional: Replace with actual Expo project ID
+      projectId,
     });
 
     const token = tokenResponse.data;
@@ -97,6 +100,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
  * Set up Android notification channel for proper notification display
  */
 async function setupAndroidChannel(): Promise<void> {
+  // Default channel (DMs, general app notifications)
   await Notifications.setNotificationChannelAsync("default", {
     name: "Vibe",
     importance: Notifications.AndroidImportance.HIGH,
@@ -104,7 +108,35 @@ async function setupAndroidChannel(): Promise<void> {
     lightColor: LightColors.primary,
     sound: "default",
   });
-  logger.info("✅ [notifications] Android channel set up");
+
+  // Game invites / turn notifications — uses collapseId grouping
+  await Notifications.setNotificationChannelAsync("game-invites", {
+    name: "Game Invites",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: LightColors.primary,
+    sound: "default",
+  });
+
+  // Incoming calls channel (mirrors the FCM channel in calls.ts)
+  await Notifications.setNotificationChannelAsync("vibe-incoming-calls", {
+    name: "Incoming Calls",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 500, 500, 500],
+    lightColor: LightColors.primary,
+    sound: "default",
+  });
+
+  // Group calls channel
+  await Notifications.setNotificationChannelAsync("vibe-group-calls", {
+    name: "Group Calls",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 500, 500, 500],
+    lightColor: LightColors.primary,
+    sound: "default",
+  });
+
+  logger.info("✅ [notifications] Android channels set up");
 }
 
 /**

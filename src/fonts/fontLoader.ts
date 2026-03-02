@@ -13,6 +13,7 @@
  */
 
 import * as Font from "expo-font";
+import { Platform } from "react-native";
 
 // =============================================================================
 // Font Map
@@ -22,16 +23,26 @@ import * as Font from "expo-font";
  * Maps registered font key → asset require.
  * The key here MUST match the fontFamily string used in chatDefaults
  * CHAT_FONT_FAMILIES and chatCatalog metadata.
+ *
+ * NOTE: BellMT-Regular.ttf has a malformed cmap table (languageId != 0)
+ * which causes OTS parsing failure in Chromium browsers.  We skip it on
+ * web to avoid noisy console errors; native platforms handle it fine.
  */
 /* eslint-disable @typescript-eslint/no-require-imports */
-const fontAssets = {
+const fontAssetsBase: Record<string, ReturnType<typeof require>> = {
   pf_agency: require("../../assets/fonts/AgencyFB-Regular.ttf"),
   pf_bradleyhand: require("../../assets/fonts/BradleyHand-Regular.ttf"),
   pf_bauhaus: require("../../assets/fonts/Bauhaus93-Regular.ttf"),
-  pf_bellmt: require("../../assets/fonts/BellMT-Regular.ttf"),
   pf_chiller: require("../../assets/fonts/Chiller-Regular.ttf"),
-} as const;
+};
+
+// BellMT has a broken cmap table — Chromium rejects it.
+if (Platform.OS !== "web") {
+  fontAssetsBase.pf_bellmt = require("../../assets/fonts/BellMT-Regular.ttf");
+}
 /* eslint-enable @typescript-eslint/no-require-imports */
+
+const fontAssets = fontAssetsBase;
 
 export const CUSTOM_FONT_MAP = fontAssets;
 

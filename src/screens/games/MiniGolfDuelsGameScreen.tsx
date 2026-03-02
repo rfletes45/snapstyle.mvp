@@ -32,12 +32,18 @@ import InvitePickerModal, {
 import { GameOverModal, type GameResult } from "@/components/games";
 import { MiniGolfCanvas } from "@/components/games/minigolf/MiniGolfCanvas";
 import { MiniGolfDebugOverlay } from "@/components/games/minigolf/MiniGolfDebugOverlay";
+import { GAME_SESSIONS_V3 } from "@/constants/featureFlags";
 import type { HoleConfig } from "@/games/minigolf/courseLoader";
 import { loadHole } from "@/games/minigolf/courseLoader";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameConnection } from "@/hooks/useGameConnection";
 import { useMiniGolfDuels } from "@/hooks/useMiniGolfDuels";
 import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
+import {
+  buildDmConversationId,
   sendUniversalInvite,
   subscribeToUniversalInvite,
 } from "@/services/gameInvites";
@@ -46,10 +52,13 @@ import {
   buildGameResultEvent,
   submitGameResult,
 } from "@/services/gameResultService";
+import { createSession } from "@/services/gameSessions";
 import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
+import { getGameRuntimeType } from "@/types/games";
 import type { PlayStackParamList } from "@/types/navigation/root";
 import type { UniversalGameInvite } from "@/types/turnBased";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -68,6 +77,10 @@ interface RouteParamsShape {
   inviteId?: string;
   entryPoint?: string;
   spectator?: boolean;
+  /** v3 session fields */
+  v3Session?: string;
+  sessionId?: string;
+  firestoreGameId?: string;
 }
 
 function asRouteParams(raw: unknown): RouteParamsShape {
@@ -79,6 +92,18 @@ function asRouteParams(raw: unknown): RouteParamsShape {
     entryPoint:
       typeof params.entryPoint === "string" ? params.entryPoint : undefined,
     spectator: typeof params.spectator === "boolean" ? params.spectator : false,
+    v3Session:
+      typeof params.v3Session === "string" && params.v3Session
+        ? params.v3Session
+        : undefined,
+    sessionId:
+      typeof params.sessionId === "string" && params.sessionId
+        ? params.sessionId
+        : undefined,
+    firestoreGameId:
+      typeof params.firestoreGameId === "string" && params.firestoreGameId
+        ? params.firestoreGameId
+        : undefined,
   };
 }
 
@@ -93,7 +118,7 @@ const MAX_POWER = 20;
 // Screen
 // =============================================================================
 
-export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
+function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
   const theme = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const routeParams = asRouteParams(route.params);
@@ -101,7 +126,10 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
     matchId: routeMatchId,
     inviteId,
     spectator: routeSpectator,
+    v3Session,
+    firestoreGameId: v3FirestoreGameId,
   } = routeParams;
+  const isV3 = !!v3Session;
 
   // Auth + profile
   const { currentFirebaseUser } = useAuth();
@@ -112,8 +140,9 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
   // Host room key — generated once for direct-launch so the Colyseus room
   // gets a deterministic firestoreGameId that can be shared via invites.
   // ---------------------------------------------------------------------------
+  // Host room key — skip for v3 (room already created server-side)
   const [hostRoomKey] = useState(() =>
-    !inviteId && !routeMatchId
+    !isV3 && !inviteId && !routeMatchId
       ? `mg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       : undefined,
   );
@@ -122,7 +151,7 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
   // Queue mode: wait for invite to become active before joining room
   // ---------------------------------------------------------------------------
   const [resolvedMatchId, setResolvedMatchId] = useState<string | undefined>(
-    routeMatchId,
+    isV3 ? v3FirestoreGameId || routeMatchId || v3Session : routeMatchId,
   );
   const [queueInvite, setQueueInvite] = useState<UniversalGameInvite | null>(
     null,
@@ -180,6 +209,66 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
     spectator: !!routeSpectator,
     inviteId,
   });
+
+  // ── V3 Runtime Shell integration ──────────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      mg.phase !== "finished" ||
+      !mg.gameOverData ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myTotal = mg.strokesTotalByUid[mg.myUid] ?? 0;
+    const isWinner = mg.gameOverData.winnerId === mg.myUid;
+    const isDraw = mg.gameOverData.winnerId === "";
+    const myOutcome = isDraw ? "draw" : isWinner ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "minigolf_duels",
+      mode: "realtime",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason: isDraw ? "Tied" : isWinner ? "Fewer strokes" : "Defeated",
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          score: myTotal,
+          formattedScore: `${myTotal} strokes`,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner,
+        },
+        {
+          uid: "opponent",
+          displayName: mg.opponentPlayer?.displayName ?? "Opponent",
+          score: 0,
+          formattedScore: "",
+          outcome: (isDraw
+            ? "draw"
+            : isWinner
+              ? "lose"
+              : "win") as GameResultFacts["outcome"],
+          isWinner: !isWinner && !isDraw,
+        },
+      ],
+      performanceMetrics: [
+        { label: "Total Strokes", value: String(myTotal), icon: "golf" },
+        { label: "Win Reason", value: mg.winReason ?? "N/A", icon: "trophy" },
+      ],
+      durationMs: 0,
+      sessionId: v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, mg.phase, mg.gameOverData]);
 
   // When queue resolves, trigger join
   const didJoinRef = useRef(false);
@@ -249,9 +338,9 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
     return map;
   }, [mg.players]);
 
-  // Show game over when phase transitions to finished
+  // Show game over when phase transitions to finished (skip in v3)
   useEffect(() => {
-    if (mg.phase === "finished" && mg.gameOverData) {
+    if (mg.phase === "finished" && mg.gameOverData && !isV3) {
       setShowGameOver(true);
       // Submit to XP pipeline
       if (currentFirebaseUser) {
@@ -336,23 +425,47 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
     async (friend: FriendItem) => {
       if (!currentFirebaseUser) return;
       try {
-        const invite = await sendUniversalInvite({
-          senderId: currentFirebaseUser.uid,
-          senderName: profile?.displayName || "Player",
-          senderAvatar: profile?.avatarConfig
-            ? JSON.stringify(profile.avatarConfig)
-            : undefined,
-          gameType: GAME_TYPE as any,
-          context: "dm",
-          conversationId: "",
-          recipientId: friend.friendUid,
-          recipientName: friend.displayName || "Friend",
-          settings: effectiveGameId
-            ? { colyseusRoomKey: effectiveGameId }
-            : undefined,
-        });
-        logger.info(`[MiniGolf] Invite sent: ${invite.id}`);
-        showSuccess("Invite sent!");
+        // v3: create session (+ dual-write invite) when enabled
+        if (GAME_SESSIONS_V3.ENABLED) {
+          const runtimeType = getGameRuntimeType(GAME_TYPE);
+          const convId = buildDmConversationId(
+            currentFirebaseUser.uid,
+            friend.friendUid,
+          );
+          const result = await createSession({
+            gameType: GAME_TYPE,
+            runtimeType,
+            conversationId: convId,
+            entrySource: "game",
+            maxParticipants: 2,
+            createInvite: GAME_SESSIONS_V3.DUAL_WRITE,
+            recipientUids: [friend.friendUid],
+          });
+          if (!result.success)
+            throw new Error(result.error || "Session creation failed");
+          logger.info(`[MiniGolf] v3 session created: ${result.sessionId}`);
+          showSuccess("Invite sent!");
+        } else {
+          // v2 fallback
+          const invite = await sendUniversalInvite({
+            senderId: currentFirebaseUser.uid,
+            senderName: profile?.displayName || "Player",
+            senderAvatar: currentFirebaseUser.photoURL || undefined,
+            gameType: GAME_TYPE as any,
+            context: "dm",
+            conversationId: buildDmConversationId(
+              currentFirebaseUser.uid,
+              friend.friendUid,
+            ),
+            recipientId: friend.friendUid,
+            recipientName: friend.displayName || "Friend",
+            settings: effectiveGameId
+              ? { colyseusRoomKey: effectiveGameId }
+              : undefined,
+          });
+          logger.info(`[MiniGolf] Invite sent: ${invite.id}`);
+          showSuccess("Invite sent!");
+        }
       } catch {
         showError("Failed to send invite");
       }
@@ -367,23 +480,46 @@ export default function MiniGolfDuelsGameScreen({ route, navigation }: Props) {
       try {
         const members = await getGroupMembers(group.groupId);
         const memberIds = members.map((m: any) => m.uid);
-        const invite = await sendUniversalInvite({
-          senderId: currentFirebaseUser.uid,
-          senderName: profile?.displayName || "Player",
-          senderAvatar: profile?.avatarConfig
-            ? JSON.stringify(profile.avatarConfig)
-            : undefined,
-          gameType: GAME_TYPE as any,
-          context: "group",
-          conversationId: group.groupId,
-          conversationName: group.name,
-          eligibleUserIds: memberIds,
-          settings: effectiveGameId
-            ? { colyseusRoomKey: effectiveGameId }
-            : undefined,
-        });
-        logger.info(`[MiniGolf] Group invite sent: ${invite.id}`);
-        showSuccess(`Invite sent to ${group.name}!`);
+
+        // v3: create session (+ dual-write invite) when enabled
+        if (GAME_SESSIONS_V3.ENABLED) {
+          const runtimeType = getGameRuntimeType(GAME_TYPE);
+          const recipientUids = memberIds.filter(
+            (id: string) => id !== currentFirebaseUser.uid,
+          );
+          const result = await createSession({
+            gameType: GAME_TYPE,
+            runtimeType,
+            conversationId: group.groupId,
+            entrySource: "game",
+            maxParticipants: 2,
+            createInvite: GAME_SESSIONS_V3.DUAL_WRITE,
+            recipientUids,
+          });
+          if (!result.success)
+            throw new Error(result.error || "Session creation failed");
+          logger.info(
+            `[MiniGolf] v3 group session created: ${result.sessionId}`,
+          );
+          showSuccess(`Invite sent to ${group.name}!`);
+        } else {
+          // v2 fallback
+          const invite = await sendUniversalInvite({
+            senderId: currentFirebaseUser.uid,
+            senderName: profile?.displayName || "Player",
+            senderAvatar: currentFirebaseUser.photoURL || undefined,
+            gameType: GAME_TYPE as any,
+            context: "group",
+            conversationId: group.groupId,
+            conversationName: group.name,
+            eligibleUserIds: memberIds,
+            settings: effectiveGameId
+              ? { colyseusRoomKey: effectiveGameId }
+              : undefined,
+          });
+          logger.info(`[MiniGolf] Group invite sent: ${invite.id}`);
+          showSuccess(`Invite sent to ${group.name}!`);
+        }
       } catch {
         showError("Failed to send group invite");
       }
@@ -906,3 +1042,5 @@ const styles = StyleSheet.create({
     color: "#FFFFFFCC",
   },
 });
+
+export default withMultiplayerRuntime(MiniGolfDuelsGameScreen);

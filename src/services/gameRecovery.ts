@@ -47,7 +47,7 @@ const ACTIVE_SESSION_KEY = "@snapstyle/active_game_session";
  * doc is unreachable.  Matches the server-side vacancy timeout (2 h)
  * with a generous buffer.
  */
-const SESSION_MAX_AGE_MS = 3 * 60 * 60 * 1000; // 3 hours
+const SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 /** Terminal invite statuses — session should be cleared */
 const TERMINAL_STATUSES = new Set([
@@ -82,6 +82,12 @@ export interface ActiveSessionBookmark {
   savedAt: number;
   /** Current user's UID */
   userId: string;
+  /**
+   * V3 GameSessions document ID.  When present, recovery validates the
+   * session phase in `GameSessions/{v3SessionId}` and navigates to
+   * `SessionLobbyScreen` instead of the game screen directly.
+   */
+  v3SessionId?: string;
 }
 
 /**
@@ -180,6 +186,33 @@ export async function getActiveSessionBookmark(): Promise<ActiveSessionBookmark 
   }
 }
 
+/**
+ * Patch the existing bookmark with a V3 session ID.
+ *
+ * Called by MultiplayerRuntimeShell once the session connects, so the
+ * recovery flow can validate against GameSessions and navigate directly
+ * to SessionLobbyScreen.
+ */
+export async function patchBookmarkV3SessionId(
+  v3SessionId: string,
+): Promise<void> {
+  try {
+    const bookmark = await getActiveSessionBookmark();
+    if (!bookmark) return;
+    bookmark.v3SessionId = v3SessionId;
+    bookmark.savedAt = Date.now(); // refresh timestamp
+    await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(bookmark));
+    logger.info(
+      `[gameRecovery] Patched bookmark with v3SessionId=${v3SessionId}`,
+    );
+  } catch (err) {
+    logger.warn("[gameRecovery] Failed to patch bookmark v3SessionId:", err);
+  }
+}
+
+/** Terminal V3 session phases — session should be cleared */
+const TERMINAL_PHASES = new Set(["resolved", "abandoned", "expired"]);
+
 // =============================================================================
 // Recovery
 // =============================================================================
@@ -256,6 +289,41 @@ export async function recoverActiveSession(
 
       await clearActiveSession();
       return null;
+    }
+
+    // ── V3 session validation ────────────────────────────────────────
+    // If the bookmark has a V3 session ID, also check the GameSessions doc.
+    // This catches cases where the invite is still "active" but the session
+    // itself has already resolved/abandoned.
+    if (bookmark.v3SessionId) {
+      try {
+        const sessionRef = doc(getDb(), "GameSessions", bookmark.v3SessionId);
+        const sessionSnap = await getDoc(sessionRef);
+        if (sessionSnap.exists()) {
+          const phase = sessionSnap.data()?.phase as string | undefined;
+          if (phase && TERMINAL_PHASES.has(phase)) {
+            logger.info(
+              `[gameRecovery] V3 session ${bookmark.v3SessionId} is terminal ` +
+                `(phase=${phase}) — clearing`,
+            );
+            await clearActiveSession();
+            return null;
+          }
+        } else {
+          // Session doc missing — clear the bookmark
+          logger.info(
+            `[gameRecovery] V3 session ${bookmark.v3SessionId} not found — clearing`,
+          );
+          await clearActiveSession();
+          return null;
+        }
+      } catch (err) {
+        // Network error — fall through to invite-based recovery
+        logger.warn(
+          "[gameRecovery] V3 session check failed, falling back to invite:",
+          err,
+        );
+      }
     }
 
     // ── Active invite → recoverable ────────────────────────────────────

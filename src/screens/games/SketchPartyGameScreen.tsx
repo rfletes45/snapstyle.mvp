@@ -40,6 +40,10 @@ import {
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useSketchPartyGame } from "@/hooks/useSketchPartyGame";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -49,6 +53,7 @@ import { getGroupMembers } from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import type { PlayStackParamList } from "@/types/navigation/root";
 
 // =============================================================================
@@ -65,6 +70,10 @@ interface RouteParamsShape {
   inviteId?: string;
   entryPoint?: string;
   spectator?: boolean;
+  /** v3 session fields */
+  v3Session?: string;
+  sessionId?: string;
+  firestoreGameId?: string;
 }
 
 function asRouteParams(value: unknown): RouteParamsShape {
@@ -82,6 +91,18 @@ function asRouteParams(value: unknown): RouteParamsShape {
     entryPoint:
       typeof params.entryPoint === "string" ? params.entryPoint : undefined,
     spectator: typeof params.spectator === "boolean" ? params.spectator : false,
+    v3Session:
+      typeof params.v3Session === "string" && params.v3Session
+        ? params.v3Session
+        : undefined,
+    sessionId:
+      typeof params.sessionId === "string" && params.sessionId
+        ? params.sessionId
+        : undefined,
+    firestoreGameId:
+      typeof params.firestoreGameId === "string" && params.firestoreGameId
+        ? params.firestoreGameId
+        : undefined,
   };
 }
 
@@ -91,14 +112,17 @@ const GAME_TYPE = "sketch_party_game";
 // Screen
 // =============================================================================
 
-export default function SketchPartyGameScreen({ route, navigation }: Props) {
+function SketchPartyGameScreen({ route, navigation }: Props) {
   const theme = useTheme();
   const routeParams = asRouteParams(route.params);
   const {
     matchId: routeMatchId,
     inviteId,
     spectator: routeSpectator,
+    v3Session,
+    firestoreGameId: v3FirestoreGameId,
   } = routeParams;
+  const isV3 = !!v3Session;
 
   // Auth + profile (for invite flow)
   const { currentFirebaseUser } = useAuth();
@@ -112,13 +136,15 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
   // invite resolves and onGameReady fires.
   // ---------------------------------------------------------------------------
   const [gameState, setGameState] = useState<"lobby" | "game">(
-    inviteId ? "lobby" : "game",
+    isV3 ? "game" : inviteId ? "lobby" : "game",
   );
 
   // The Colyseus firestoreGameId, set from the lobby controller.
   // For hosts: set via the lobby's auto-generated hostRoomKey.
   // For joiners: set when onGameReady fires with the resolved ID.
-  const [gameId, setGameId] = useState<string | undefined>(routeMatchId);
+  const [gameId, setGameId] = useState<string | undefined>(
+    isV3 ? v3FirestoreGameId || routeMatchId || v3Session : routeMatchId,
+  );
 
   // ---------------------------------------------------------------------------
   // Sketch Party Colyseus hook (declared before lobbyController so room is
@@ -130,6 +156,69 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
     spectator: !!routeSpectator,
     inviteId,
   });
+
+  // ── V3 Runtime Shell integration ──────────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      sp.phase !== "finished" ||
+      !sp.gameOverData ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myScore =
+      sp.players.find((p) => p.sessionId === sp.mySessionId)?.score ?? 0;
+    const myUidLocal = sp.players.find(
+      (p) => p.sessionId === sp.mySessionId,
+    )?.uid;
+    const isWinner = sp.gameOverData.winnerId === myUidLocal;
+    const myOutcome = isWinner ? "win" : "lose";
+
+    const scoreboard = sp.gameOverData.finalScores?.map((ps: any) => ({
+      uid: ps.uid ?? ps.sessionId ?? "unknown",
+      displayName: ps.displayName ?? "Player",
+      score: ps.score ?? 0,
+      formattedScore: `${ps.score ?? 0} pts`,
+      outcome: (ps.uid === myUidLocal
+        ? myOutcome
+        : isWinner
+          ? "lose"
+          : "win") as GameResultFacts["outcome"],
+      isWinner: ps.uid === sp.gameOverData?.winnerId,
+    })) ?? [
+      {
+        uid,
+        displayName,
+        score: myScore,
+        formattedScore: `${myScore} pts`,
+        outcome: myOutcome as GameResultFacts["outcome"],
+        isWinner,
+      },
+    ];
+
+    const facts: GameResultFacts = {
+      gameId: "sketch_party",
+      mode: "realtime",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason: isWinner ? "Most points" : "Defeated",
+      scoreboard,
+      performanceMetrics: [
+        { label: "My Score", value: String(myScore), icon: "star" },
+      ],
+      durationMs: 0,
+      sessionId: v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, sp.phase, sp.gameOverData]);
 
   // ---------------------------------------------------------------------------
   // Lobby controller — composes useGameLobby + watchdog + recovery.
@@ -209,9 +298,9 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
   const isCompact = windowWidth < 768;
   const [activeTab, setActiveTab] = useState<"players" | "chat">("chat");
 
-  // Show game over when phase changes
+  // Show game over when phase changes (skip in v3 — runtime shell handles it)
   useEffect(() => {
-    if (sp.phase === "finished" && sp.gameOverData) {
+    if (sp.phase === "finished" && sp.gameOverData && !isV3) {
       setShowGameOver(true);
       // Submit to XP pipeline
       if (currentFirebaseUser) {
@@ -305,9 +394,9 @@ export default function SketchPartyGameScreen({ route, navigation }: Props) {
   // ---------------------------------------------------------------------------
 
   // =========================================================================
-  // RENDER: LOBBY OVERLAY (joiner invite queue)
+  // RENDER: LOBBY OVERLAY (joiner invite queue — skip for v3)
   // =========================================================================
-  if (gameState === "lobby") {
+  if (gameState === "lobby" && !isV3) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -1168,3 +1257,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 });
+
+export default withMultiplayerRuntime(SketchPartyGameScreen);

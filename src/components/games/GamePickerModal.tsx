@@ -27,13 +27,17 @@ import {
   getAllCategoriesWithGames,
   PickerCategory,
 } from "@/config/gameCategories";
-import { sendUniversalInvite } from "@/services/gameInvites";
+import { GAME_SESSIONS_V3 } from "@/constants/featureFlags";
+import { BorderRadius, Spacing } from "@/constants/theme";
+import { createSession } from "@/services/gameSessions";
 import { getFullProfileData } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
-import { ExtendedGameType, GameMetadata } from "@/types/games";
-import type { SendUniversalInviteParams, UniversalGameInvite } from "@/types/turnBased";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
+import {
+  ExtendedGameType,
+  GameMetadata,
+  getGameRuntimeType,
+} from "@/types/games";
+// v2 invite types no longer needed (v3 session-first flow)
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/games/GamePickerModal");
@@ -62,8 +66,8 @@ export interface GamePickerModalProps {
   eligibleUserIds?: string[];
   /** Called when a single-player game is selected (navigate to game) */
   onSinglePlayerGame: (gameType: ExtendedGameType) => void;
-  /** Called when a multiplayer invite is created */
-  onInviteCreated?: (invite: UniversalGameInvite) => void;
+  /** Called when a v3 session is created — navigate host to SessionLobbyScreen */
+  onSessionCreated?: (sessionId: string) => void;
   /** Called on any error */
   onError?: (error: string) => void;
 }
@@ -240,7 +244,7 @@ export function GamePickerModal({
   recipientAvatar,
   eligibleUserIds,
   onSinglePlayerGame,
-  onInviteCreated,
+  onSessionCreated,
   onError,
 }: GamePickerModalProps) {
   const theme = useTheme();
@@ -335,30 +339,43 @@ export function GamePickerModal({
           throw new Error("Invalid context configuration");
         }
 
-          const invite = await sendUniversalInvite({
-            senderId: uid,
-            senderName: userName,
-            senderAvatar: currentUserAvatarUrl,
-            gameType: game.id as SendUniversalInviteParams["gameType"],
-            context,
+        // ── v3: Create session → navigate host to SessionLobbyScreen ──
+        if (
+          GAME_SESSIONS_V3.ENABLED &&
+          GAME_SESSIONS_V3.SESSION_LOBBY &&
+          onSessionCreated
+        ) {
+          const runtimeType = getGameRuntimeType(game.id);
+          const result = await createSession({
+            gameType: game.id,
+            runtimeType,
             conversationId,
-          conversationName,
-          recipientId: context === "dm" ? recipientId : undefined,
-          recipientName: context === "dm" ? recipientName : undefined,
-          recipientAvatar: context === "dm" ? recipientAvatar : undefined,
-          eligibleUserIds: finalEligibleUserIds,
-          requiredPlayers: game.isMultiplayer
-            ? Math.max(2, game.minPlayers)
-            : game.minPlayers,
-          settings: {
-            isRated: false,
-            chatEnabled: true,
-          },
-          expirationMinutes: 60,
-        });
+            entrySource: "chat",
+            maxParticipants: game.isMultiplayer
+              ? Math.max(2, game.minPlayers)
+              : game.minPlayers,
+            createInvite: GAME_SESSIONS_V3.DUAL_WRITE,
+            recipientUids: finalEligibleUserIds.filter((id) => id !== uid),
+          });
 
-        onInviteCreated?.(invite);
-        onDismiss();
+          if (!result.success || !result.sessionId) {
+            throw new Error(result.error || "Failed to create session");
+          }
+
+          logger.info("[GamePickerModal] v3 session created", {
+            sessionId: result.sessionId,
+            inviteId: result.inviteId,
+          });
+
+          onSessionCreated(result.sessionId);
+          onDismiss();
+          return;
+        }
+
+        // v2 path removed — if we reach here the v3 flags are misconfigured
+        throw new Error(
+          "Game session creation requires v3 feature flags to be enabled",
+        );
       } catch (error: any) {
         logger.error("[GamePickerModal] Error creating invite:", error);
         onError?.(error.message || "Failed to create game invite");
@@ -376,7 +393,7 @@ export function GamePickerModal({
       recipientAvatar,
       eligibleUserIds,
       onSinglePlayerGame,
-      onInviteCreated,
+      onSessionCreated,
       onDismiss,
       onError,
     ],

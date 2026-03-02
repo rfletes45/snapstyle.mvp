@@ -1,6 +1,6 @@
 # Battleship — Feature Specification
 
-Last verified: 2026-02-24
+Last verified: 2026-02-27
 
 ## Overview
 
@@ -18,7 +18,24 @@ Canonical source: `docs/GAMES_SYSTEM.md` (§7 Battleship section)
 | Schemas       | `colyseus-server/src/schemas/battleship.ts`             | 231      |
 | Client screen | `src/screens/games/BattleshipGameScreen.tsx`            | ~1329    |
 | Client hook   | `src/hooks/useBattleshipGame.ts`                        | 523      |
+| Game adapter  | `src/config/gameAdapters.ts`                            | —        |
 | Room tests    | `colyseus-server/tests/rooms/BattleshipRoom.test.ts`    | 97 tests |
+
+### V3 Session Entry Path
+
+Battleship is a **game-managed** connection mode game. The v3 entry flow is:
+
+```
+SessionLobbyScreen → startSessionV3 (sets firestoreGameId = sessionId)
+  → navigation.replace("BattleshipGame", {
+      sessionId, matchId, firestoreGameId, v3Session: sessionId, entryPoint
+    })
+  → BattleshipGameScreen mounts → v3StartedRef reads firestoreGameId
+  → startMultiplayer({ firestoreGameId }) → Colyseus joinOrCreate
+  → filterBy(["firestoreGameId"]) ensures both players join same room
+```
+
+Fallback chain: `firestoreGameId → matchId → v3Session`
 
 ## Game Rules
 
@@ -40,7 +57,7 @@ Canonical source: `docs/GAMES_SYSTEM.md` (§7 Battleship section)
 waiting → placement → combat → finished
 ```
 
-- **waiting**: Lobby phase. Players join via universal invite system. Game starts when 2 players are present and invite transitions to `active`.
+- **waiting**: Lobby phase. Players join via `SessionLobbyScreen` (v3 session flow) or legacy universal invite. Game starts when 2 players are present and the host presses "Start Game" (calls `startSessionV3`).
 - **placement** (30s timer): Each player places all 5 ships. Ships cannot overlap or extend off the grid. If a player does not place in time, the server auto-fills with random valid placements.
 - **combat** (30s per turn): Players alternate turns firing at the opponent's grid. On timeout, the server fires a random unshot cell. Each shot resolves as hit, miss, or sunk. The game ends when all 5 ships of one player are sunk.
 - **finished**: Winner determined. Full board revealed to both players. Stats persisted.
@@ -95,6 +112,9 @@ BattleshipRoom.onDispose()
         → awardGameXp() per player (category: "board")
         → writes GameHistory doc
   → deleteGameAndInvite() (transitions invite to terminal)
+  → If v3SessionId present:
+    → resolveV3Session(sessionId, outcome, scores, winner)
+    → Session transitions to "resolved" phase
 ```
 
 The client does **not** call `submitGameResult` or `onGameResult`. The entire completion flow is server-driven and idempotent (Firestore `onCreate` fires exactly once per document).

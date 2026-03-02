@@ -128,6 +128,10 @@ interface CrazyCardsScreenProps {
       inviteId?: string;
       entryPoint?: string;
       spectatorMode?: boolean;
+      /** v3 session fields */
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
     };
   };
 }
@@ -167,6 +171,7 @@ const OVERLAY_COLORS = {
 };
 
 function CrazyCardsGameScreen({ navigation, route }: CrazyCardsScreenProps) {
+  const isV3 = !!route.params?.v3Session;
   const theme = useTheme();
   const auth = useAuth();
   const { profile } = useUser();
@@ -180,7 +185,7 @@ function CrazyCardsGameScreen({ navigation, route }: CrazyCardsScreenProps) {
 
   // ── Game mode ──
   const [gameMode, setGameMode] = useState<GameMode>(
-    routeInviteId ? "lobby" : "menu",
+    isV3 ? "colyseus" : routeInviteId ? "lobby" : "menu",
   );
 
   // ── Multiplayer hook ──
@@ -331,13 +336,35 @@ function CrazyCardsGameScreen({ navigation, route }: CrazyCardsScreenProps) {
 
   // ── Effects ──
 
-  // Auto-connect when routed with matchId
+  // v3 auto-start: bypass useGameConnection, join room directly
+  const v3StartedRef = useRef(false);
   useEffect(() => {
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route.params?.firestoreGameId ||
+      route.params?.matchId ||
+      route.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId: fId, spectator: routeSpectator });
+    }
+  }, [
+    isV3,
+    route.params?.firestoreGameId,
+    route.params?.matchId,
+    route.params?.v3Session,
+    routeSpectator,
+  ]);
+
+  // Auto-connect when routed with matchId (v2 path)
+  useEffect(() => {
+    if (isV3) return;
     if (resolvedMode === "colyseus" && firestoreGameId && gameMode === "menu") {
       mp.startMultiplayer({ firestoreGameId, spectator: routeSpectator });
       setGameMode("colyseus");
     }
-  }, [resolvedMode, firestoreGameId, gameMode, routeSpectator]);
+  }, [resolvedMode, firestoreGameId, gameMode, routeSpectator, isV3]);
 
   // Game over detection
   useEffect(() => {
@@ -683,7 +710,7 @@ function CrazyCardsGameScreen({ navigation, route }: CrazyCardsScreenProps) {
   // RENDER: Lobby Mode
   // =========================================================================
 
-  if (gameMode === "lobby") {
+  if (gameMode === "lobby" && !isV3) {
     return (
       <View style={{ flex: 1 }}>
         <MultiplayerLobbyOverlay

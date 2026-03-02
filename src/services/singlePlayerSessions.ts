@@ -22,20 +22,15 @@ import {
   SinglePlayerLeaderboardEntry,
   WordMasterStats,
 } from "@/types/singlePlayerGames";
-import { generateId } from "@/utils/ids";
 import { createLogger } from "@/utils/log";
 import {
-  Timestamp,
   collection,
   doc,
   getDoc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
-  setDoc,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -44,7 +39,6 @@ import {
   getFirestoreInstance,
   getFunctionsInstance,
 } from "./firebase";
-import { buildGameResultEvent, submitGameResult } from "./gameResultService";
 
 const log = createLogger("singlePlayerSessions");
 
@@ -72,6 +66,10 @@ export interface PlayerHighScore {
 
 /**
  * Record a single-player game session
+ *
+ * Phase 1 Hardening: All writes now go through the `processSoloGameResult`
+ * Cloud Function for server-authoritative score/PB/leaderboard/coin writes.
+ * The client sends raw facts and receives computed results.
  */
 export async function recordSinglePlayerSession(
   playerId: string,
@@ -102,126 +100,75 @@ export async function recordSinglePlayerSession(
   }
 
   try {
-    const sessionId = generateId();
-    const now = Date.now();
+    const functions = getFunctionsInstance();
+    const processResult = httpsCallable<
+      {
+        gameType: string;
+        score: number;
+        durationMs?: number;
+        stats?: Record<string, unknown>;
+        gameSpecific?: Record<string, number>;
+      },
+      {
+        success: boolean;
+        sessionId: string;
+        isNewHighScore: boolean;
+        highScore: number;
+        totalGames: number;
+        coinsEarned: number;
+        xpEarned: number;
+        didLevelUp: boolean;
+        level: number;
+        achievementsUnlocked: string[];
+        rewardsGranted: number;
+      }
+    >(functions, "processSoloGameResult");
 
-    // Get current high score
-    const highScoreDoc = await getDoc(
-      doc(db, "Users", playerId, "GameHighScores", input.gameType),
-    );
+    const gameSpecific = extractGameSpecificStats(input.stats);
 
-    const currentHighScore = highScoreDoc.exists()
-      ? (highScoreDoc.data().highScore ?? 0)
-      : 0;
+    log.info("Submitting to processSoloGameResult", {
+      data: { playerId, gameType: input.gameType, score: input.finalScore },
+    });
 
-    const isNewHighScore = input.finalScore > currentHighScore;
+    const result = await processResult({
+      gameType: input.gameType,
+      score: input.finalScore,
+      durationMs: (input.duration || 0) * 1000,
+      stats: input.stats as unknown as Record<string, unknown>,
+      gameSpecific,
+    });
 
-    // Create session document
+    const r = result.data;
+
+    // Build the session object for backward compatibility with callers
     const session: SinglePlayerGameSession = {
-      id: sessionId,
+      id: r.sessionId,
       playerId,
       gameType: input.gameType,
       finalScore: input.finalScore,
-      highScore: isNewHighScore ? input.finalScore : currentHighScore,
-      isNewHighScore,
-      startedAt: now - (input.duration || 0) * 1000,
-      endedAt: now,
+      highScore: r.highScore,
+      isNewHighScore: r.isNewHighScore,
+      startedAt: Date.now() - (input.duration || 0) * 1000,
+      endedAt: Date.now(),
       duration: input.duration || 0,
       stats: input.stats,
-      achievementsUnlocked: [], // NOTE: Check achievements
-      coinsEarned: calculateCoinsEarned(
-        input.gameType,
-        input.finalScore,
-        isNewHighScore,
-      ),
+      achievementsUnlocked: r.achievementsUnlocked,
+      coinsEarned: r.coinsEarned,
       platform: getPlatform(),
     };
 
-    // Save session - create minimal document that matches Firestore rules
-    const sessionDoc = {
-      playerId,
-      gameType: input.gameType,
-      finalScore: input.finalScore,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-      // Additional fields (allowed but not validated by rules)
-      id: sessionId,
-      highScore: session.highScore,
-      isNewHighScore,
-      duration: session.duration,
-      stats: session.stats,
-      achievementsUnlocked: session.achievementsUnlocked,
-      coinsEarned: session.coinsEarned,
-      platform: session.platform,
-      createdAt: Timestamp.now(),
-    };
-
-    log.debug("Saving session", { data: { playerId, sessionId } });
-
-    await setDoc(
-      doc(db, "Users", playerId, "GameSessions", sessionId),
-      sessionDoc,
-    );
-
-    // Update high score if new best
-    if (isNewHighScore) {
-      await setDoc(
-        doc(db, "Users", playerId, "GameHighScores", input.gameType),
-        {
-          gameType: input.gameType,
-          highScore: input.finalScore,
-          achievedAt: Timestamp.now(),
-          totalGames: increment(1),
-        },
-        { merge: true },
-      );
-
-      // Update leaderboard
-      await updateLeaderboard(playerId, input.gameType, input.finalScore);
-    } else {
-      // Just increment game count
-      await setDoc(
-        doc(db, "Users", playerId, "GameHighScores", input.gameType),
-        {
-          totalGames: increment(1),
-        },
-        { merge: true },
-      );
-    }
-
-    // Award coins
-    if (session.coinsEarned > 0) {
-      await updateDoc(doc(db, "Users", playerId), {
-        coins: increment(session.coinsEarned),
-      });
-    }
-
-    log.info("Session recorded", { data: { sessionId } });
-
-    // Fire-and-forget: trigger server-side achievement evaluation & rewards
-    triggerAchievementEvaluation(input, session).catch((err) =>
-      log.warn("Achievement evaluation failed (non-blocking)", err),
-    );
-
-    // Fire-and-forget: submit to universal GameResult pipeline for XP/level
-    submitGameResult(
-      buildGameResultEvent({
-        gameId: input.gameType,
-        mode: "solo",
-        outcome: session.isNewHighScore ? "win" : "completed",
-        score: input.finalScore,
-        durationMs: (input.duration || 0) * 1000,
-        userId: playerId,
-        displayName: currentUser.displayName || "Player",
-        meta: input.stats as unknown as Record<string, unknown>,
-      }),
-    ).catch((err) =>
-      log.warn("GameResult submission failed (non-blocking)", err),
-    );
+    log.info("Session recorded via server", {
+      data: {
+        sessionId: r.sessionId,
+        isNewHighScore: r.isNewHighScore,
+        xpEarned: r.xpEarned,
+        achievements: r.achievementsUnlocked.length,
+      },
+    });
 
     return session;
   } catch (error: any) {
-    log.error("Error recording session", error);
+    log.error("Error recording session via server", error);
 
     // Provide more helpful error messages
     if (
@@ -229,7 +176,7 @@ export async function recordSinglePlayerSession(
       error?.message?.includes("permission")
     ) {
       log.error(
-        "PERMISSION DENIED - Check: 1) Firestore rules deployed, 2) User authenticated, 3) playerId matches auth UID",
+        "PERMISSION DENIED - Check: 1) Cloud Function deployed, 2) User authenticated",
       );
     }
 
@@ -338,64 +285,8 @@ export async function getRecentSessions(
 }
 
 // =============================================================================
-// Leaderboards
+// Leaderboards (reads only — writes handled by processSoloGameResult CF)
 // =============================================================================
-
-/**
- * Update global leaderboard
- */
-async function updateLeaderboard(
-  playerId: string,
-  gameType: SinglePlayerGameType,
-  score: number,
-): Promise<void> {
-  const db = getFirestoreInstance();
-
-  try {
-    // Get player info
-    const userDoc = await getDoc(doc(db, "Users", playerId));
-    const userData = userDoc.data();
-
-    if (!userData) return;
-
-    // Update all-time leaderboard
-    await setDoc(doc(db, "Leaderboards", gameType, "allTime", playerId), {
-      playerId,
-      playerName: userData.displayName || userData.username || "Player",
-      playerAvatar: userData.avatarConfig,
-      score,
-      achievedAt: Timestamp.now(),
-    });
-
-    // Update weekly leaderboard
-    const weekKey = getWeekKey();
-    await setDoc(
-      doc(db, "Leaderboards", gameType, `weekly_${weekKey}`, playerId),
-      {
-        playerId,
-        playerName: userData.displayName || userData.username || "Player",
-        playerAvatar: userData.avatarConfig,
-        score,
-        achievedAt: Timestamp.now(),
-      },
-    );
-
-    // Update daily leaderboard
-    const dayKey = getDayKey();
-    await setDoc(
-      doc(db, "Leaderboards", gameType, `daily_${dayKey}`, playerId),
-      {
-        playerId,
-        playerName: userData.displayName || userData.username || "Player",
-        playerAvatar: userData.avatarConfig,
-        score,
-        achievedAt: Timestamp.now(),
-      },
-    );
-  } catch (error) {
-    log.error("Error updating leaderboard", error);
-  }
-}
 
 /**
  * Get leaderboard entries
@@ -462,39 +353,6 @@ export async function getPlayerRank(
 // =============================================================================
 
 /**
- * Calculate coins earned from a game
- */
-function calculateCoinsEarned(
-  gameType: SinglePlayerGameType,
-  score: number,
-  isNewHighScore: boolean,
-): number {
-  let coins = 0;
-
-  // Base coins for playing
-  coins += 5;
-
-  // Bonus for high score
-  if (isNewHighScore) {
-    coins += 10;
-  }
-
-  // Game-specific bonuses
-  switch (gameType) {
-    case "bounce_blitz":
-      coins += Math.floor(score / 50);
-      break;
-    case "word_master":
-      coins += score > 0 ? 15 : 0;
-      break;
-    default:
-      coins += Math.floor(score / 100);
-  }
-
-  return Math.min(coins, 100); // Cap at 100 coins per game
-}
-
-/**
  * Get current platform
  */
 function getPlatform(): "ios" | "android" {
@@ -531,7 +389,7 @@ function getMonthKey(): string {
 }
 
 // =============================================================================
-// Server Achievement Evaluation Bridge
+// Game-Specific Stats Extraction
 // =============================================================================
 
 /**
@@ -579,47 +437,6 @@ function extractGameSpecificStats(
     }
     default:
       return undefined;
-  }
-}
-
-/**
- * Fire-and-forget call to the server-side achievement evaluator.
- * This triggers stat updates + achievement evaluation + reward granting.
- */
-async function triggerAchievementEvaluation(
-  input: RecordSessionInput,
-  session: SinglePlayerGameSession,
-): Promise<void> {
-  try {
-    const functions = getFunctionsInstance();
-    const callable = httpsCallable<
-      {
-        gameType: string;
-        score: number;
-        outcome: string;
-        gameSpecific?: Record<string, number>;
-      },
-      { success: boolean; newUnlocks: string[]; rewardsGranted: number }
-    >(functions, "processSinglePlayerCompletion");
-
-    const result = await callable({
-      gameType: input.gameType,
-      score: input.finalScore,
-      outcome: "completed",
-      gameSpecific: extractGameSpecificStats(input.stats),
-    });
-
-    if (result.data.newUnlocks.length > 0) {
-      log.info("Achievements unlocked!", {
-        data: {
-          unlocks: result.data.newUnlocks,
-          rewardsGranted: result.data.rewardsGranted,
-        },
-      });
-    }
-  } catch (error) {
-    // Non-fatal — the session was already recorded client-side
-    log.warn("processSinglePlayerCompletion callable failed", error);
   }
 }
 

@@ -17,7 +17,6 @@ import InvitePickerModal, {
   type GroupItem,
 } from "@/components/InvitePickerModal";
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
-import { GameOverModal } from "@/components/games/GameOverModal";
 import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import {
   CountdownOverlay,
@@ -29,12 +28,14 @@ import {
 import { SpectatorBanner } from "@/components/games/SpectatorBanner";
 import { SpectatorOverlay } from "@/components/games/SpectatorOverlay";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameCompletion } from "@/hooks/useGameCompletion";
 import { useGameConnection } from "@/hooks/useGameConnection";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
 import { useMultiplayerGame } from "@/hooks/useMultiplayerGame";
 import { useSpectator } from "@/hooks/useSpectator";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
 import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   buildGameResultEvent,
@@ -51,6 +52,7 @@ import { useAuth } from "@/store/AuthContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useColors } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Canvas,
@@ -77,7 +79,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Dialog, Portal, Text } from "react-native-paper";
+import { Button, Dialog, Text } from "react-native-paper";
 
 // =============================================================================
 // Constants
@@ -356,23 +358,20 @@ function DotMatchGameScreen({
   route,
 }: {
   navigation: any;
-  route: any;
+  route: {
+    params?: {
+      matchId?: string;
+      inviteId?: string;
+      entryPoint?: string;
+      spectatorMode?: boolean;
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
+    };
+  };
 }) {
-  const __codexGameCompletion = useGameCompletion({ gameType: "dot_match" });
-  void __codexGameCompletion;
+  const isV3 = !!route.params?.v3Session;
   const [gameMode, setGameMode] = useState<GameMode>("ai");
-  useGameBackHandler({
-    gameType: "dot_match",
-    isGameOver: false,
-    isMultiplayer: gameMode === "online",
-    entryPoint: route?.params?.entryPoint,
-  });
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
-  const __codexGameOverModal = (
-    <GameOverModal visible={false} result="loss" stats={{}} onExit={() => {}} />
-  );
-  void __codexGameOverModal;
 
   const colors = useColors();
   const { currentFirebaseUser } = useAuth();
@@ -388,6 +387,66 @@ function DotMatchGameScreen({
     gameType: "dot_match_game",
     firestoreGameId: firestoreGameId ?? undefined,
   });
+
+  // ── V3 Runtime Shell integration ──────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      mp.phase !== "gameOver" ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myOutcome = mp.isTie ? "draw" : mp.isWinner ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "dot_match",
+      mode: "turnBased",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason: mp.isTie ? "Tie" : mp.isWinner ? "Victory" : "Defeat",
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          score: mp.myScore ?? 0,
+          formattedScore: `${mp.myScore ?? 0} boxes`,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!mp.isWinner,
+        },
+        {
+          uid: "opponent",
+          displayName: mp.opponentName ?? "Opponent",
+          score: mp.opponentScore ?? 0,
+          formattedScore: `${mp.opponentScore ?? 0} boxes`,
+          outcome: (mp.isTie
+            ? "draw"
+            : mp.isWinner
+              ? "lose"
+              : "win") as GameResultFacts["outcome"],
+          isWinner: !mp.isWinner && !mp.isTie,
+        },
+      ],
+      performanceMetrics: [
+        { label: "My Boxes", value: String(mp.myScore ?? 0), icon: "square" },
+        {
+          label: "Opp Boxes",
+          value: String(mp.opponentScore ?? 0),
+          icon: "square-outline",
+        },
+      ],
+      durationMs: 0,
+      sessionId: route?.params?.v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, mp.phase, mp.isWinner, mp.isTie]);
 
   // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
   const lobbyController = useGameLobbyController({
@@ -427,17 +486,44 @@ function DotMatchGameScreen({
       ? spectatorSession.spectatorCount
       : mp.spectatorCount;
 
+  // v3 auto-start: bypass useGameConnection, join room directly
+  const v3StartedRef = useRef(false);
   useEffect(() => {
-    // Skip when lobby is handling the invite flow
-    if (route?.params?.inviteId) return;
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route.params?.firestoreGameId ||
+      route.params?.matchId ||
+      route.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      setGameMode("online");
+      mp.startMultiplayer({ firestoreGameId: fId, spectator: isSpectator });
+    }
+  }, [
+    isV3,
+    route.params?.firestoreGameId,
+    route.params?.matchId,
+    route.params?.v3Session,
+    isSpectator,
+  ]);
+
+  useEffect(() => {
+    // Skip when lobby is handling the invite flow, or v3 (handled above)
+    if (route?.params?.inviteId || isV3) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameMode("online");
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
     }
-  }, [resolvedMode, firestoreGameId, isSpectator, route?.params?.inviteId]);
+  }, [
+    resolvedMode,
+    firestoreGameId,
+    isSpectator,
+    route?.params?.inviteId,
+    isV3,
+  ]);
 
   const [gameState, setGameState] = useState<GameState>(
-    route?.params?.inviteId ? "lobby" : "menu",
+    isV3 ? "playing" : route?.params?.inviteId ? "lobby" : "menu",
   );
   const [board, setBoard] = useState<BoardState>(createEmptyBoard());
   const [currentPlayer, setCurrentPlayer] = useState<1 | 2>(1);
@@ -486,6 +572,14 @@ function DotMatchGameScreen({
     () => allBoxesFilled(board) || linesDrawn >= TOTAL_LINES,
     [board, linesDrawn],
   );
+
+  // Back-handler wired AFTER isGameOver so the value is reactive
+  useGameBackHandler({
+    gameType: "dot_match",
+    isGameOver,
+    isMultiplayer: gameMode === "online",
+    entryPoint: route?.params?.entryPoint,
+  });
 
   // Load personal best
   useEffect(() => {
@@ -786,7 +880,7 @@ function DotMatchGameScreen({
         <View style={{ width: 32 }} />
       </View>
 
-      {gameState === "lobby" ? (
+      {gameState === "lobby" && !isV3 ? (
         <View style={{ flex: 1 }}>
           <MultiplayerLobbyOverlay
             controller={lobbyController}
@@ -1178,33 +1272,31 @@ function DotMatchGameScreen({
       )}
 
       {/* Result Dialog */}
-      <Portal>
-        <Dialog visible={gameState === "result"} dismissable={false}>
-          <Dialog.Title>{resultTitle}</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              {gameMode === "local"
-                ? `P1: ${playerScore} ${playerScore === 1 ? "box" : "boxes"} vs P2: ${aiScore} ${aiScore === 1 ? "box" : "boxes"}`
-                : `You captured ${playerScore} ${playerScore === 1 ? "box" : "boxes"} vs AI's ${aiScore}.`}
+      <Dialog visible={gameState === "result"} dismissable={false}>
+        <Dialog.Title>{resultTitle}</Dialog.Title>
+        <Dialog.Content>
+          <Text>
+            {gameMode === "local"
+              ? `P1: ${playerScore} ${playerScore === 1 ? "box" : "boxes"} vs P2: ${aiScore} ${aiScore === 1 ? "box" : "boxes"}`
+              : `You captured ${playerScore} ${playerScore === 1 ? "box" : "boxes"} vs AI's ${aiScore}.`}
+          </Text>
+          {xpEarned > 0 && (
+            <Text style={{ color: "#fbbf24", marginTop: 8 }}>
+              ⭐ +{xpEarned} XP
+              {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
             </Text>
-            {xpEarned > 0 && (
-              <Text style={{ color: "#fbbf24", marginTop: 8 }}>
-                ⭐ +{xpEarned} XP
-                {didLevelUp ? ` — Level Up! Level ${newLevel}!` : ""}
-              </Text>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setGameState("menu")}>Menu</Button>
-            {playerScore > aiScore && (
-              <Button onPress={() => setShowFriendPicker(true)}>Share</Button>
-            )}
-            <Button mode="contained" onPress={() => startGame(gameMode)}>
-              Play Again
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+          )}
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setGameState("menu")}>Menu</Button>
+          {playerScore > aiScore && (
+            <Button onPress={() => setShowFriendPicker(true)}>Share</Button>
+          )}
+          <Button mode="contained" onPress={() => startGame(gameMode)}>
+            Play Again
+          </Button>
+        </Dialog.Actions>
+      </Dialog>
 
       <FriendPickerModal
         visible={showFriendPicker}
@@ -1257,7 +1349,7 @@ function DotMatchGameScreen({
         }}
       />
       <GameOverOverlay
-        visible={mp.phase === "gameOver"}
+        visible={mp.phase === "gameOver" && !isV3}
         isWinner={mp.isWinner}
         isTie={mp.isTie}
         winnerName={mp.winnerName}
@@ -1444,4 +1536,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(DotMatchGameScreen, "dot_match");
+export default withGameErrorBoundary(
+  withMultiplayerRuntime(DotMatchGameScreen),
+  "dot_match",
+);

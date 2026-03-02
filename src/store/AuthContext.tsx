@@ -17,7 +17,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, AppStateStatus, Platform } from "react-native";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("store/AuthContext");
@@ -64,10 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           response.notification.request.content,
         );
         const data = response.notification.request.content.data;
-        if (data?.type === "message" && typeof data.friendUid === "string") {
-          // Navigate to the DM chat with this friend
+        if (data?.type === "message" && typeof data.senderId === "string") {
+          // Navigate to the DM chat with this friend (R3-3 fix: server sends senderId)
           globalNavigate("ChatDetail", {
-            friendUid: data.friendUid,
+            friendUid: data.senderId,
             initialData: {
               chatId: data.chatId,
               friendName:
@@ -95,6 +95,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             screen: "Play",
             params: {
               screen: "GamesHub",
+            },
+          });
+        } else if (
+          data?.type === "game_start" &&
+          typeof data.sessionId === "string"
+        ) {
+          // R3-2 fix: Navigate to the session lobby when a game starts
+          globalNavigate("MainTabs", {
+            screen: "Play",
+            params: {
+              screen: "SessionLobbyScreen",
+              params: { sessionId: data.sessionId, source: "push" },
             },
           });
         }
@@ -138,6 +150,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS !== "web") {
       registerPushToken();
     }
+  }, [currentFirebaseUser]);
+
+  // ── Periodic push-token refresh ───────────────────────────────────────
+  // Expo push tokens can expire / rotate.  Re-register every 7 days when
+  // the app returns to the foreground to prevent stale tokens.
+  const lastTokenRefreshRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const TOKEN_REFRESH_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+    const sub = AppState.addEventListener(
+      "change",
+      async (state: AppStateStatus) => {
+        if (state !== "active") return;
+        if (!currentFirebaseUser) return;
+        const elapsed = Date.now() - lastTokenRefreshRef.current;
+        if (elapsed < TOKEN_REFRESH_INTERVAL) return;
+
+        try {
+          const token = await registerForPushNotifications();
+          if (token) {
+            await savePushToken(currentFirebaseUser.uid, token);
+            lastTokenRefreshRef.current = Date.now();
+            logger.info("[AuthContext] Push token refreshed");
+          }
+        } catch (err) {
+          logger.warn("[AuthContext] Push token refresh failed:", err);
+        }
+      },
+    );
+
+    return () => sub.remove();
   }, [currentFirebaseUser]);
 
   useEffect(() => {

@@ -25,7 +25,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Button, Modal, Portal, Text } from "react-native-paper";
+import { Button, Modal, Text } from "react-native-paper";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -102,6 +102,11 @@ import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
 import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/ChessGameScreen");
 // =============================================================================
@@ -138,6 +143,10 @@ interface ChessGameScreenProps {
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
       spectatorMode?: boolean;
+      /** v3 session ID (present when entered via SessionLobbyScreen) */
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
     };
   };
 }
@@ -323,26 +332,24 @@ function PromotionModal({ visible, color, onSelect }: PromotionModalProps) {
   const pieces: ChessPieceType[] = ["queen", "rook", "bishop", "knight"];
 
   return (
-    <Portal>
-      <Modal
-        visible={visible}
-        dismissable={false}
-        contentContainerStyle={styles.promotionModal}
-      >
-        <Text style={styles.promotionTitle}>Choose Promotion</Text>
-        <View style={styles.promotionOptions}>
-          {pieces.map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={styles.promotionOption}
-              onPress={() => onSelect(type)}
-            >
-              <SkiaChessPieces type={type} color={color} size={40} />
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Modal>
-    </Portal>
+    <Modal
+      visible={visible}
+      dismissable={false}
+      contentContainerStyle={styles.promotionModal}
+    >
+      <Text style={styles.promotionTitle}>Choose Promotion</Text>
+      <View style={styles.promotionOptions}>
+        {pieces.map((type) => (
+          <TouchableOpacity
+            key={type}
+            style={styles.promotionOption}
+            onPress={() => onSelect(type)}
+          >
+            <SkiaChessPieces type={type} color={color} size={40} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Modal>
   );
 }
 
@@ -429,15 +436,13 @@ function CapturedPiecesDisplay({ pieces, color }: CapturedPiecesProps) {
 // =============================================================================
 
 function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
-  const initialMode: GameMode = route.params?.inviteId ? "lobby" : "menu";
+  const isV3 = !!route.params?.v3Session;
+  const initialMode: GameMode = isV3
+    ? "colyseus"
+    : route.params?.inviteId
+      ? "lobby"
+      : "menu";
   const [gameMode, setGameMode] = useState<GameMode>(initialMode);
-  useGameBackHandler({
-    gameType: "chess",
-    isGameOver: false,
-    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
-    isInLobby: gameMode === "lobby",
-    entryPoint: route.params?.entryPoint,
-  });
 
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
@@ -515,6 +520,15 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
+  // Back-handler wired AFTER showGameOverModal so isGameOver is reactive
+  const { markAsLeaving } = useGameBackHandler({
+    gameType: "chess",
+    isGameOver: showGameOverModal,
+    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
+    isInLobby: gameMode === "lobby",
+    entryPoint: route.params?.entryPoint,
+  });
+
   // XP state (populated via GameResult notification)
   const [xpEarned, setXpEarned] = useState(0);
   const [didLevelUp, setDidLevelUp] = useState(false);
@@ -534,6 +548,59 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
 
   // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("chess_game");
+
+  // ── V3 Runtime Shell integration ──────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      mp.phase !== "finished" ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myOutcome = mp.isDraw ? "draw" : mp.isWinner ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "chess",
+      mode: "turnBased",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason:
+        mp.winReason ??
+        (mp.isDraw ? "Draw" : mp.isWinner ? "Checkmate" : "Defeat"),
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!mp.isWinner,
+        },
+        {
+          uid: "opponent",
+          displayName: mp.opponentName ?? "Opponent",
+          outcome: (mp.isDraw
+            ? "draw"
+            : mp.isWinner
+              ? "lose"
+              : "win") as GameResultFacts["outcome"],
+          isWinner: !mp.isWinner && !mp.isDraw,
+        },
+      ],
+      performanceMetrics: [
+        { label: "Turns", value: String(mp.turnNumber ?? 0), icon: "counter" },
+      ],
+      durationMs: 0,
+      sessionId: route.params?.v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, mp.phase, mp.isWinner, mp.isDraw]);
 
   // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
   const lobbyController = useGameLobbyController({
@@ -713,9 +780,31 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
     route.params?.matchId,
   );
 
+  // v3 auto-start: when entered from SessionLobbyScreen, the lobby already ran.
+  // Start Colyseus immediately using the matchId (colyseusRoomId) from route.
+  const v3StartedRef = useRef(false);
   useEffect(() => {
-    // Skip when lobby is handling the invite flow
-    if (route.params?.inviteId) return;
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route.params?.firestoreGameId ||
+      route.params?.matchId ||
+      route.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId: fId, spectator: isSpectator });
+    }
+  }, [
+    isV3,
+    route.params?.firestoreGameId,
+    route.params?.matchId,
+    route.params?.v3Session,
+    isSpectator,
+  ]);
+
+  useEffect(() => {
+    // Skip when lobby or v3 is handling the invite flow
+    if (route.params?.inviteId || isV3) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameMode("colyseus");
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
@@ -723,7 +812,7 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
       setGameMode("online");
       setMatchId(firestoreGameId);
     }
-  }, [resolvedMode, firestoreGameId, route.params?.inviteId]);
+  }, [resolvedMode, firestoreGameId, route.params?.inviteId, isV3]);
 
   // ==========================================================================
   // Game Logic
@@ -1272,7 +1361,7 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
   // Lobby Screen (universal overlay)
   // ==========================================================================
 
-  if (gameMode === "lobby") {
+  if (gameMode === "lobby" && !isV3) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -1397,7 +1486,7 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
 
         <Text style={[styles.headerTitle, { color: colors.text }]}>Chess</Text>
 
-        {gameMode === "online" && !isSpectator && (
+        {gameMode === "online" && !isSpectator && !isV3 && (
           <TouchableOpacity onPress={handleResign} style={styles.resignButton}>
             <MaterialCommunityIcons
               name="flag"
@@ -1409,7 +1498,8 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
         {gameMode === "colyseus" &&
           mp.isMultiplayer &&
           mp.phase === "playing" &&
-          !isSpectator && (
+          !isSpectator &&
+          !isV3 && (
             <TouchableOpacity
               onPress={() => setShowResignConfirm(true)}
               style={styles.resignButton}
@@ -1517,7 +1607,8 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
         onRematch={handlePlayAgain}
         onExit={() => {
           setShowGameOverModal(false);
-          setGameMode("menu");
+          markAsLeaving();
+          exitGame();
         }}
         showRematch={true}
         showShare={false}
@@ -1561,7 +1652,8 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
       {gameMode === "colyseus" &&
         mp.isMultiplayer &&
         mp.phase === "playing" &&
-        !isSpectator && (
+        !isSpectator &&
+        !isV3 && (
           <GameActionBar
             onResign={() => setShowResignConfirm(true)}
             onOfferDraw={mp.offerDraw}
@@ -1643,9 +1735,9 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
             onAcceptRematch={mp.acceptRematch}
             onMenu={() => {
               mp.cancelMultiplayer();
-              setGameMode("menu");
+              exitGame();
             }}
-            visible={mp.phase === "finished"}
+            visible={mp.phase === "finished" && !isV3}
           />
 
           <DrawOfferDialog
@@ -1665,7 +1757,7 @@ function ChessGameScreen({ navigation, route }: ChessGameScreenProps) {
           />
 
           <ResignConfirmDialog
-            visible={showResignConfirm}
+            visible={showResignConfirm && !isV3}
             colors={{
               primary: colors.primary,
               background: colors.background,
@@ -1937,4 +2029,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(ChessGameScreen, "chess");
+export default withGameErrorBoundary(
+  withMultiplayerRuntime(ChessGameScreen),
+  "chess",
+);

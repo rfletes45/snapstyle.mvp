@@ -24,6 +24,7 @@ import {
   incrementInvitesAccepted,
   incrementInvitesSent,
 } from "./socialGameStatsHelpers";
+import { getUserPushToken, sendExpoPushNotification } from "./utils";
 
 // Initialize if not already
 if (!admin.apps.length) {
@@ -513,8 +514,22 @@ export const onUniversalInviteUpdate = functions.firestore
     const after = change.after.data() as UniversalGameInvite;
     const inviteId = context.params.inviteId;
 
+    functions.logger.info("FN.onUniversalInviteUpdate.ENTER", {
+      inviteId,
+      beforeStatus: before?.status,
+      afterStatus: after.status,
+      gameType: after.gameType,
+      gameId: after.gameId,
+      traceId: (after as any).traceId,
+      claimedSlotsCount: after.claimedSlots?.length,
+    });
+
     // Skip if not a universal invite (no claimedSlots means legacy invite)
     if (!after.claimedSlots || after.claimedSlots.length === 0) {
+      functions.logger.info("FN.onUniversalInviteUpdate.EXIT", {
+        inviteId,
+        reason: "no_claimed_slots",
+      });
       return;
     }
 
@@ -621,9 +636,9 @@ export const onUniversalInviteUpdate = functions.firestore
  * It builds the game document from the claimed slots and starts the game.
  */
 // Games orchestrated as external Colyseus sessions (no TurnBasedGames doc).
-// Keep aligned with client runtime classification in src/types/games.ts.
-type ExternalColyseusInviteGameType = RealtimeInviteGameType | "crazy_eights";
-const EXTERNAL_COLYSEUS_INVITE_GAMES = new Set<ExternalColyseusInviteGameType>([
+// CANONICAL SOURCE: shared/sessions/constants.ts → EXTERNAL_COLYSEUS_GAME_TYPES
+// Cannot import directly because rootDir is "./src". Keep in sync manually.
+const EXTERNAL_COLYSEUS_INVITE_GAMES = new Set<string>([
   "crazy_eights",
   "starforge_game",
   "sketch_party_game",
@@ -635,9 +650,48 @@ const EXTERNAL_COLYSEUS_INVITE_GAMES = new Set<ExternalColyseusInviteGameType>([
 
 function isExternalColyseusInviteGame(
   gameType: UniversalInviteGameType,
-): gameType is ExternalColyseusInviteGameType {
-  return EXTERNAL_COLYSEUS_INVITE_GAMES.has(
-    gameType as ExternalColyseusInviteGameType,
+): boolean {
+  return EXTERNAL_COLYSEUS_INVITE_GAMES.has(gameType);
+}
+
+/**
+ * Send push notifications to players when a game starts.
+ * Uses Expo push with a collapseKey so rapid invite flurries
+ * collapse into a single notification per game type.
+ */
+async function sendGameStartNotifications(
+  playerIds: string[],
+  gameId: string,
+  gameType: string,
+): Promise<void> {
+  const humanName = gameType
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  await Promise.allSettled(
+    playerIds.map(async (uid) => {
+      try {
+        const token = await getUserPushToken(uid);
+        if (!token) return;
+
+        await sendExpoPushNotification({
+          to: token,
+          title: "Game On!",
+          body: `Your ${humanName} game is starting!`,
+          data: {
+            type: "game_start",
+            gameId,
+            gameType,
+          },
+          sound: "default",
+        });
+      } catch (err) {
+        functions.logger.warn("sendGameStartNotifications.ITEM_FAIL", {
+          uid,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
   );
 }
 
@@ -666,6 +720,7 @@ async function createGameFromUniversalInvite(
       gameId: externalId,
       updatedAt: now.toMillis(),
     });
+
     return;
   }
 
@@ -703,14 +758,14 @@ async function createGameFromUniversalInvite(
     // Build turn order for multi-player games
     const turnOrder = playerIds.slice(); // Copy of player IDs in join order
 
-    // Get initial game state
-    const gameState = getInitialGameState(invite.gameType);
+    // Get initial game state (safe cast: external Colyseus types already returned above)
+    const gameState = getInitialGameState(invite.gameType as TurnBasedGameType);
 
     // Build the game document
     // Use type assertion since we're extending the interface
     const game: TurnBasedGame = {
       id: gameId,
-      gameType: invite.gameType,
+      gameType: invite.gameType as TurnBasedGameType,
       status: "active",
       playerIds,
       players: players as any, // Allow dynamic player keys
@@ -759,8 +814,10 @@ async function createGameFromUniversalInvite(
       spectators: (invite.spectators ?? []).map((s) => s.userId),
     });
 
-    // NOTE: Send push notifications to all players
-    // await sendGameStartNotifications(playerIds, gameId, invite.gameType);
+    // Send push notifications to all players (best-effort, don't block)
+    sendGameStartNotifications(playerIds, gameId, invite.gameType).catch(
+      (err) => functions.logger.warn("sendGameStartNotifications failed:", err),
+    );
   } catch (error) {
     functions.logger.error("Failed to create game from universal invite", {
       inviteId: invite.id,
@@ -784,6 +841,15 @@ export const processGameCompletion = functions.firestore
     const before = change.before.data() as TurnBasedGame;
     const after = change.after.data() as TurnBasedGame;
 
+    functions.logger.info("FN.processGameCompletion.ENTER", {
+      gameId: context.params.gameId,
+      beforeStatus: before.status,
+      afterStatus: after.status,
+      gameType: after.gameType,
+      inviteId: after.inviteId,
+      winnerId: after.winner?.playerId,
+    });
+
     // Only process when game ends (any terminal state)
     const terminalStates = [
       "completed",
@@ -797,44 +863,63 @@ export const processGameCompletion = functions.firestore
 
     if (wasActive && isTerminal) {
       try {
-        // Update player stats (shared)
-        await updatePlayerStats(after);
+        // ── V3 guard: skip rewards if this game is owned by a v3 session ──
+        // resolveSessionV3 handles XP/stats/achievements for v3 sessions.
+        // The (after as any).sessionId field is set by startSessionV3 when
+        // creating the TurnBasedGames doc for a v3 session.
+        const isV3Session = !!(after as any).sessionId;
+
         // V1 achievements disabled — V2 evaluator handles all achievement logic
         // await checkAchievements(after);
 
-        // ── Achievements V2 ──────────────────────────────────
-        // Update per-game stats and run v2 evaluator for each player
-        const playerIds = [after.players.player1.id, after.players.player2.id];
-        const winnerId = after.winner?.playerId;
-        for (const pid of playerIds) {
-          try {
-            const outcome = !winnerId
-              ? ("draw" as const)
-              : winnerId === pid
-                ? ("win" as const)
-                : ("loss" as const);
-            await updatePerGameStatsV2(pid, after.gameType, outcome);
-            await evaluateAchievementsV2(pid);
+        if (!isV3Session) {
+          // Update player stats (legacy) — only for non-v3 sessions
+          // V3 sessions handle stats via processSessionRewards
+          await updatePlayerStats(after);
 
-            // Award XP via universal pipeline
-            const xpOutcome =
-              outcome === "loss"
-                ? ("lose" as GameResultOutcome)
-                : (outcome as GameResultOutcome);
-            await awardGameXp(
-              pid,
-              after.gameType,
-              xpOutcome,
-              undefined,
-              "turnBased",
-            );
-          } catch (v2Err) {
-            // Non-critical — don't fail the whole completion
-            functions.logger.warn("[AchievementsV2] Player eval failed", {
-              playerId: pid,
-              error: v2Err,
-            });
+          // ── Achievements V2 (non-v3 only) ──────────────────────
+          // Update per-game stats and run v2 evaluator for each player
+          const playerIds = [
+            after.players.player1.id,
+            after.players.player2.id,
+          ];
+          const winnerId = after.winner?.playerId;
+          for (const pid of playerIds) {
+            try {
+              const outcome = !winnerId
+                ? ("draw" as const)
+                : winnerId === pid
+                  ? ("win" as const)
+                  : ("loss" as const);
+              await updatePerGameStatsV2(pid, after.gameType, outcome);
+              await evaluateAchievementsV2(pid);
+
+              // Award XP via universal pipeline
+              const xpOutcome =
+                outcome === "loss"
+                  ? ("lose" as GameResultOutcome)
+                  : (outcome as GameResultOutcome);
+              await awardGameXp(
+                pid,
+                after.gameType,
+                xpOutcome,
+                undefined,
+                "turnBased",
+              );
+            } catch (v2Err) {
+              // Non-critical — don't fail the whole completion
+              functions.logger.warn("[AchievementsV2] Player eval failed", {
+                playerId: pid,
+                error: v2Err,
+              });
+            }
           }
+        } else {
+          functions.logger.info("FN.processGameCompletion.V3_SKIP_REWARDS", {
+            gameId: context.params.gameId,
+            sessionId: (after as any).sessionId,
+            hint: "resolveSessionV3 handles XP/stats/achievements for v3 sessions",
+          });
         }
 
         // Update invite status to "completed" if game was created from an invite
@@ -866,15 +951,17 @@ export const processGameCompletion = functions.firestore
           );
         }
 
-        functions.logger.info("Game completion processed", {
+        functions.logger.info("FN.processGameCompletion.EXIT", {
           gameId: context.params.gameId,
           gameType: after.gameType,
-          winner: after.winner?.playerId,
+          winnerId: after.winner?.playerId,
           inviteId: after.inviteId,
+          result: "ok",
         });
       } catch (error) {
-        functions.logger.error("Failed to process game completion", {
+        functions.logger.error("FN.processGameCompletion.EXIT", {
           gameId: context.params.gameId,
+          result: "error",
           error,
         });
       }
@@ -910,6 +997,16 @@ export const processRealtimeGameCompletion = functions.firestore
       gameSpecific?: Record<string, number>;
     }> = data.players || [];
 
+    functions.logger.info("FN.processRealtimeGameCompletion.ENTER", {
+      sessionId: context.params.sessionId,
+      gameType,
+      winnerId,
+      playerCount: players.length,
+      inviteId: data.inviteId,
+      firestoreGameId: data.firestoreGameId,
+      v3SessionId: data.v3SessionId,
+    });
+
     if (players.length === 0) {
       functions.logger.warn("[RealtimeCompletion] No players in record", {
         sessionId: context.params.sessionId,
@@ -917,60 +1014,79 @@ export const processRealtimeGameCompletion = functions.firestore
       return;
     }
 
+    // ── V3 guard: skip rewards if owned by a v3 session ──────────────
+    // resolveSessionV3 handles XP/stats/achievements for v3 sessions.
+    // The v3SessionId field is written by the Colyseus persistence bridge.
+    const isV3Session = !!data.v3SessionId;
+
+    if (isV3Session) {
+      functions.logger.info(
+        "FN.processRealtimeGameCompletion.V3_SKIP_REWARDS",
+        {
+          sessionId: context.params.sessionId,
+          v3SessionId: data.v3SessionId,
+          hint: "resolveSessionV3 handles XP/stats/achievements for v3 sessions",
+        },
+      );
+    }
+
     functions.logger.info("[RealtimeCompletion] Processing", {
       sessionId: context.params.sessionId,
       gameType,
       winnerId,
       playerCount: players.length,
+      isV3Session,
     });
 
-    for (const player of players) {
-      try {
-        // Determine outcome
-        let outcome: "win" | "loss" | "draw";
-        if (!winnerId) {
-          outcome = "draw";
-        } else {
-          outcome = winnerId === player.uid ? "win" : "loss";
-        }
-
-        await updatePerGameStatsV2(
-          player.uid,
-          gameType,
-          outcome,
-          player.score,
-          player.gameSpecific,
-        );
-        await evaluateAchievementsV2(player.uid);
-
-        // Award XP via universal pipeline
+    if (!isV3Session) {
+      for (const player of players) {
         try {
-          const xpOutcome =
-            outcome === "loss"
-              ? ("lose" as GameResultOutcome)
-              : (outcome as GameResultOutcome);
-          await awardGameXp(
+          // Determine outcome
+          let outcome: "win" | "loss" | "draw";
+          if (!winnerId) {
+            outcome = "draw";
+          } else {
+            outcome = winnerId === player.uid ? "win" : "loss";
+          }
+
+          await updatePerGameStatsV2(
             player.uid,
             gameType,
-            xpOutcome,
+            outcome,
             player.score,
-            "realtime",
+            player.gameSpecific,
           );
-        } catch (xpErr) {
-          functions.logger.warn("[RealtimeCompletion] XP award failed", {
+          await evaluateAchievementsV2(player.uid);
+
+          // Award XP via universal pipeline
+          try {
+            const xpOutcome =
+              outcome === "loss"
+                ? ("lose" as GameResultOutcome)
+                : (outcome as GameResultOutcome);
+            await awardGameXp(
+              player.uid,
+              gameType,
+              xpOutcome,
+              player.score,
+              "realtime",
+            );
+          } catch (xpErr) {
+            functions.logger.warn("[RealtimeCompletion] XP award failed", {
+              playerId: player.uid,
+              error: xpErr instanceof Error ? xpErr.message : String(xpErr),
+            });
+          }
+        } catch (err) {
+          // Non-critical — don't fail the whole batch
+          functions.logger.warn("[RealtimeCompletion] Player eval failed", {
             playerId: player.uid,
-            error: xpErr instanceof Error ? xpErr.message : String(xpErr),
+            gameType,
+            error: err instanceof Error ? err.message : String(err),
           });
         }
-      } catch (err) {
-        // Non-critical — don't fail the whole batch
-        functions.logger.warn("[RealtimeCompletion] Player eval failed", {
-          playerId: player.uid,
-          gameType,
-          error: err instanceof Error ? err.message : String(err),
-        });
       }
-    }
+    } // end if (!isV3Session)
 
     // ── Create GameHistory record for leaderboard / game-history UI ──
     try {
@@ -1040,16 +1156,23 @@ export const processRealtimeGameCompletion = functions.firestore
         data.firestoreGameId || context.params.sessionId;
       const resolutionType = winnerId ? "win" : "draw";
 
-      // Parse inviteId from ext_<gameType>_<inviteId> format if not explicit
+      // Parse inviteId from ext_<gameType>_<inviteId> format if not explicit.
+      // IMPORTANT: invite IDs may contain underscores (e.g. uinv_mm2myqz0_ijltf8),
+      // so we MUST strip the known prefix rather than splitting on last underscore.
       if (!sessionInviteId && data.firestoreGameId) {
         const fgid = data.firestoreGameId as string;
-        if (fgid.startsWith("ext_")) {
-          const lastUnderscore = fgid.lastIndexOf("_");
-          if (lastUnderscore > 3) {
-            sessionInviteId = fgid.substring(lastUnderscore + 1) || undefined;
+        if (fgid.startsWith("ext_") && gameType) {
+          const prefix = `ext_${gameType}_`;
+          if (fgid.startsWith(prefix) && fgid.length > prefix.length) {
+            sessionInviteId = fgid.slice(prefix.length);
             functions.logger.info(
               "[RealtimeCompletion] Extracted inviteId from ext_ format",
-              { inviteId: sessionInviteId, firestoreGameId: fgid },
+              { inviteId: sessionInviteId, firestoreGameId: fgid, gameType },
+            );
+          } else {
+            functions.logger.warn(
+              "[RealtimeCompletion] ext_ prefix mismatch — cannot extract inviteId",
+              { firestoreGameId: fgid, gameType },
             );
           }
         }
@@ -1074,106 +1197,12 @@ export const processRealtimeGameCompletion = functions.firestore
       });
     }
 
-    functions.logger.info("[RealtimeCompletion] Done", {
+    functions.logger.info("FN.processRealtimeGameCompletion.EXIT", {
       sessionId: context.params.sessionId,
       gameType,
+      result: "ok",
     });
   });
-
-/**
- * Update invite status when the associated game completes
- */
-async function updateInviteStatusOnGameCompletion(
-  inviteId: string,
-  gameStatus: string,
-): Promise<void> {
-  try {
-    const inviteRef = db.collection("GameInvites").doc(inviteId);
-    const inviteSnap = await inviteRef.get();
-
-    if (!inviteSnap.exists) {
-      functions.logger.warn("Invite not found for game completion update", {
-        inviteId,
-      });
-      return;
-    }
-
-    const invite = inviteSnap.data();
-
-    // Only update if invite is still in "active" status
-    if (invite?.status === "active") {
-      await inviteRef.update({
-        status: "completed",
-        completedAt: Timestamp.now().toMillis(),
-        gameEndStatus: gameStatus,
-        updatedAt: Timestamp.now().toMillis(),
-      });
-
-      functions.logger.info("Invite status updated to completed", {
-        inviteId,
-        gameStatus,
-      });
-    }
-  } catch (error) {
-    functions.logger.error(
-      "Failed to update invite status on game completion",
-      {
-        inviteId,
-        error,
-      },
-    );
-  }
-}
-
-/**
- * Update invite status by searching for the gameId
- * Fallback when inviteId is not stored on the game
- */
-async function updateInviteStatusByGameId(
-  gameId: string,
-  gameStatus: string,
-): Promise<void> {
-  try {
-    // Search for invites with this gameId
-    const invitesSnapshot = await db
-      .collection("GameInvites")
-      .where("gameId", "==", gameId)
-      .get();
-
-    if (invitesSnapshot.empty) {
-      // No invite found - game may have been created without an invite
-      return;
-    }
-
-    const batch = db.batch();
-
-    for (const inviteDoc of invitesSnapshot.docs) {
-      const invite = inviteDoc.data();
-      // Only update if invite is in an active state
-      if (invite.status === "active" || invite.status === "ready") {
-        batch.update(inviteDoc.ref, {
-          status: "completed",
-          completedAt: Timestamp.now().toMillis(),
-          gameEndStatus: gameStatus,
-          updatedAt: Timestamp.now().toMillis(),
-        });
-      }
-    }
-
-    await batch.commit();
-
-    functions.logger.info("Invite(s) status updated to completed via gameId", {
-      gameId,
-      gameStatus,
-      inviteCount: invitesSnapshot.size,
-    });
-  } catch (error) {
-    functions.logger.error("Failed to update invite status by gameId", {
-      gameId,
-      error,
-    });
-  }
-}
 
 /**
  * Find invite(s) by gameId and finalize them via the canonical helper.
@@ -1265,19 +1294,31 @@ async function finalizeUniversalInvite(
 
   const inviteRef = db.collection("GameInvites").doc(inviteId);
 
+  // ── Guardrail: warn if inviteId looks suspiciously short or misformatted ──
+  if (
+    inviteId.length < 10 ||
+    (!inviteId.startsWith("uinv_") && !inviteId.match(/^[A-Za-z0-9]{15,}$/))
+  ) {
+    functions.logger.warn("INVITE_FINALIZE_SUSPICIOUS_ID", {
+      inviteId,
+      length: inviteId.length,
+      resolvedBy,
+      traceId,
+      hint: "inviteId may be truncated — expected format uinv_* or 20+ char Firestore ID",
+    });
+  }
+
   try {
     const result = await db.runTransaction(async (tx) => {
       const snap = await tx.get(inviteRef);
 
       // ── Invite missing → treat as success (already cleaned up / deleted)
       if (!snap.exists) {
-        functions.logger.info(
-          "[finalizeUniversalInvite] Invite missing — noop",
-          {
-            inviteId,
-            traceId,
-          },
-        );
+        functions.logger.warn("INVITE_FINALIZE_MISSING_DOC", {
+          inviteId,
+          resolvedBy,
+          traceId,
+        });
         return { success: true, alreadyTerminal: true };
       }
 
@@ -1338,19 +1379,35 @@ async function finalizeUniversalInvite(
     });
 
     if (result.success && !result.alreadyTerminal) {
-      functions.logger.info("[finalizeUniversalInvite] Invite finalized", {
+      functions.logger.info("FN.finalizeUniversalInvite.RESULT", {
         inviteId,
         terminalStatus,
         resolutionType,
         resolvedBy,
         traceId,
+        alreadyTerminal: false,
+        fieldsWritten: {
+          chatVisibility: "hidden",
+          deleteAt: `${now} + 6h`,
+          resolvedAt: now,
+          completedAt: now,
+        },
+      });
+    } else if (result.success && result.alreadyTerminal) {
+      functions.logger.info("FN.finalizeUniversalInvite.RESULT", {
+        inviteId,
+        terminalStatus,
+        resolvedBy,
+        traceId,
+        alreadyTerminal: true,
       });
     }
 
     return result;
   } catch (error) {
-    functions.logger.error("[finalizeUniversalInvite] Transaction failed", {
+    functions.logger.error("FN.finalizeUniversalInvite.RESULT", {
       inviteId,
+      success: false,
       error: error instanceof Error ? error.message : String(error),
       traceId,
     });
@@ -2452,13 +2509,16 @@ export const cleanupResolvedInvites = functions.pubsub
       });
     }
 
-    // ── Pass 2: self-heal terminal invites still marked visible ──────
+    // ── Pass 2: self-heal terminal invites still visible ──────────────
+    // Use "!=" to catch BOTH chatVisibility: "visible" AND invites
+    // where chatVisibility is missing/unset (Firestore "==" doesn't
+    // match missing fields, so "== visible" missed undefined values).
     for (const status of TERMINAL_STATUSES) {
       try {
         const visibleSnap = await db
           .collection("GameInvites")
           .where("status", "==", status)
-          .where("chatVisibility", "==", "visible")
+          .where("chatVisibility", "!=", "hidden")
           .limit(200)
           .get();
 
@@ -2732,9 +2792,7 @@ export const reconcileActiveInvites = functions.pubsub
 
         // Determine threshold based on game type
         const gameType = invite.gameType as string;
-        const isRealtime = EXTERNAL_COLYSEUS_INVITE_GAMES.has(
-          gameType as ExternalColyseusInviteGameType,
-        );
+        const isRealtime = EXTERNAL_COLYSEUS_INVITE_GAMES.has(gameType);
         const threshold = isRealtime ? REALTIME_STUCK_MS : TURN_BASED_STUCK_MS;
 
         if (activeAge < threshold) continue;
@@ -2860,6 +2918,8 @@ export const reconcileActiveInvites = functions.pubsub
     }
 
     // ── Pass 3: Self-heal terminal invites still visible ───────────────
+    // Route through finalizeUniversalInvite for consistent field backfill
+    // (resolvedAt, resolvedBy, deleteAt, chatHiddenInConversationIds, etc.)
     try {
       for (const status of INVITE_TERMINAL_STATUSES) {
         // Use "!=" to catch BOTH chatVisibility: "visible" AND invites
@@ -2872,19 +2932,27 @@ export const reconcileActiveInvites = functions.pubsub
           .limit(100)
           .get();
 
+        if (visibleSnap.size >= 100) {
+          functions.logger.warn(
+            "[reconcileActiveInvites] Pass 3 hit limit for status",
+            { status, count: visibleSnap.size },
+          );
+        }
+
         for (const inviteDoc of visibleSnap.docs) {
           try {
-            const data = inviteDoc.data();
-            await inviteDoc.ref.update({
-              chatVisibility: "hidden",
-              chatHiddenAt: now,
-              chatHiddenInConversationIds: data.conversationId
-                ? [data.conversationId]
-                : [],
-              deleteAt: data.deleteAt || now + INVITE_DELETE_DELAY_MS,
-              updatedAt: now,
+            const result = await finalizeUniversalInvite({
+              inviteId: inviteDoc.id,
+              terminalStatus: status as
+                | "completed"
+                | "declined"
+                | "expired"
+                | "cancelled",
+              resolutionType: "error",
+              resolvedBy: "watchdog",
+              now,
             });
-            selfHealed++;
+            if (result.success) selfHealed++;
           } catch (docErr) {
             functions.logger.warn(
               "[reconcileActiveInvites] Self-heal doc update failed",
@@ -2904,10 +2972,10 @@ export const reconcileActiveInvites = functions.pubsub
     }
 
     // ── Logging ────────────────────────────────────────────────────────
-    functions.logger.info("[reconcileActiveInvites] Reconciliation complete", {
-      reconciledActive,
-      reconciledStarting,
-      selfHealed,
+    functions.logger.info("FN.reconcileActiveInvites.SUMMARY", {
+      pass1_reconciledActive: reconciledActive,
+      pass2_reconciledStarting: reconciledStarting,
+      pass3_selfHealed: selfHealed,
     });
 
     return null;
@@ -3259,7 +3327,7 @@ interface GameResultEvent {
  * Called from onGameResult (callable), processGameCompletion, and
  * processRealtimeGameCompletion triggers.
  */
-async function awardGameXp(
+export async function awardGameXp(
   uid: string,
   gameId: string,
   outcome: GameResultOutcome,

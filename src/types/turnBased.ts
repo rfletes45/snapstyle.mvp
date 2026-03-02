@@ -896,6 +896,9 @@ export interface UniversalGameInvite {
 
   /** Message ID in chat (for linking invite to message) */
   chatMessageId?: string;
+
+  /** v3 session ID — set by dual-write when invite was created alongside a v3 session */
+  v3SessionId?: string;
 }
 
 /** Parameters for creating a universal invite */

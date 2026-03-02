@@ -22,9 +22,9 @@
  */
 
 import { DAILY_GAMES } from "@/constants/featureFlags";
-import { clearActiveSession } from "@/services/gameRecovery";
+import { exitGameSession, type ExitDestination } from "@/utils/gameNavHelpers";
 import { createLogger } from "@/utils/log";
-import { CommonActions, useNavigation } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useRef } from "react";
 import { Alert, BackHandler } from "react-native";
 
@@ -102,11 +102,21 @@ interface UseGameBackHandlerOptions {
    * confirmation dialog — there is no game-in-progress to save.
    */
   isInLobby?: boolean;
+  /**
+   * Shared ref from MultiplayerRuntimeShell.
+   * When true, the resign/exit modal is already open — this hook should
+   * suppress its own dialogs to prevent stacking.
+   */
+  exitFlowActiveRef?: React.MutableRefObject<boolean>;
 }
 
 /**
  * Returns a `handleBack` callback that can be wired to any back button.
  * Also registers BackHandler + beforeRemove automatically.
+ *
+ * `markAsLeaving()` — call from any exit path (e.g. `exitGame()` from
+ * `useGameNavigation`) so that `beforeRemove` lets the navigation
+ * dispatch pass through without showing a second dialog.
  */
 export function useGameBackHandler(options: UseGameBackHandlerOptions) {
   const {
@@ -119,12 +129,19 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
     conversationType,
     opponentUid,
     isInLobby = false,
+    exitFlowActiveRef,
   } = options;
   const navigation = useNavigation<any>();
 
   // Guard flag: when true, the user already confirmed leaving via handleBack's
   // Alert — let beforeRemove pass through without showing a second dialog.
   const leavingRef = useRef(false);
+
+  /** Mark as intentionally leaving — external callers (e.g. exitGame) can
+   *  set this so `beforeRemove` doesn't block navigation. */
+  const markAsLeaving = useCallback(() => {
+    leavingRef.current = true;
+  }, []);
 
   const isDaily = DAILY_GAMES.includes(gameType);
   const isTurnBasedSaveable =
@@ -133,99 +150,34 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
     isMultiplayer && REAL_TIME_MULTIPLAYER_GAMES.includes(gameType);
 
   /**
-   * Navigate to the correct screen based on entryPoint.
+   * Navigate to the Play hub root (GamesHub).
    *
-   * Priority:
-   * 1. entryPoint === "chat" + conversationId → return to that chat
-   * 2. entryPoint === "play" / "invite_queue" → GamesHub
-   * 3. Default → GamesHub (never falls to Shop or random stack state)
+   * Policy: "Back to Hub" ALWAYS goes to the Play tab root,
+   * regardless of where the user entered the game from.
    */
   const navigateToOrigin = useCallback(async () => {
     // Mark as intentionally leaving so beforeRemove doesn't show a 2nd dialog
     leavingRef.current = true;
 
-    // ── Belt-and-suspenders: clear the recovery bookmark BEFORE navigation.
-    // This ensures the hub's GameRecoveryBanner never sees a stale bookmark,
-    // even if `onBeforeLeave` doesn't call `leaveRoom()` or the room's
-    // `clearActiveSession()` hasn't completed yet.
-    await clearActiveSession();
-    logger.info("[navigateToOrigin] Active session cleared before navigation");
-
-    if (onBeforeLeave) {
-      await onBeforeLeave();
+    if (__DEV__) {
+      logger.info("[GameBack] navigateToOrigin → playHub", { entryPoint });
     }
 
-    // Chat entry point with conversation context
-    if (entryPoint === "chat" && conversationId) {
-      if (conversationType === "dm" && opponentUid) {
-        navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [
-              {
-                name: "Inbox",
-                state: {
-                  routes: [
-                    { name: "ChatList" },
-                    { name: "ChatDetail", params: { friendUid: opponentUid } },
-                  ],
-                  index: 1,
-                },
-              },
-            ],
-          }),
-        );
-        return;
-      }
-      if (conversationType === "group") {
-        navigation.dispatch(
-          CommonActions.reset({
-            index: 0,
-            routes: [
-              {
-                name: "Inbox",
-                state: {
-                  routes: [
-                    { name: "ChatList" },
-                    { name: "GroupChat", params: { groupId: conversationId } },
-                  ],
-                  index: 1,
-                },
-              },
-            ],
-          }),
-        );
-        return;
-      }
-    }
+    // Always navigate to Play hub root
+    const destination: ExitDestination = { type: "playHub" };
 
-    // Default: always go to Play tab → GamesHub via deterministic reset.
-    // This fixes Bug #1 — never falls through to Shop or wrong tab.
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [
-          {
-            name: "Play",
-            state: {
-              routes: [{ name: "GamesHub" }],
-              index: 0,
-            },
-          },
-        ],
-      }),
-    );
-  }, [
-    navigation,
-    onBeforeLeave,
-    entryPoint,
-    conversationId,
-    conversationType,
-    opponentUid,
-  ]);
+    // Unified pipeline: double-tap guard → clear session → onBeforeLeave → navigate
+    await exitGameSession(destination, {
+      onBeforeLeave,
+      dispatch: navigation.dispatch,
+    });
+  }, [onBeforeLeave, entryPoint]);
 
   /** The user-facing back handler. */
   const handleBack = useCallback(() => {
+    // If the shell's resign/exit flow is already active, don't stack dialogs
+    if (exitFlowActiveRef?.current) return;
+
     // Game already over → leave immediately (no unsaved progress).
     if (isGameOver) {
       navigateToOrigin();
@@ -315,6 +267,9 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
       // If we already confirmed via handleBack, allow navigation immediately
       if (leavingRef.current) return;
 
+      // If the shell's resign/exit flow is active, don't block navigation
+      if (exitFlowActiveRef?.current) return;
+
       // If game is over, daily, or in lobby, let navigation proceed
       // immediately — no game-in-progress to save.
       if (isGameOver || isDaily || isInLobby) return;
@@ -381,5 +336,5 @@ export function useGameBackHandler(options: UseGameBackHandlerOptions) {
     isRealTimeMultiplayer,
   ]);
 
-  return { handleBack };
+  return { handleBack, markAsLeaving };
 }

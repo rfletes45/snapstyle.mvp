@@ -513,7 +513,10 @@ export class CrosswordRoom extends Room<{ state: CrosswordState }> {
   async onDispose(): Promise<void> {
     const firestoreGameId =
       (this.state as any).firestoreGameId || this.state.gameId || this.roomId;
-    const inviteId = extractInviteIdFromExtGameId(firestoreGameId) ?? undefined;
+    const inviteId =
+      (this as any).inviteId ??
+      extractInviteIdFromExtGameId(firestoreGameId) ??
+      undefined;
 
     if (this.state.phase === "finished") {
       // Persist game result

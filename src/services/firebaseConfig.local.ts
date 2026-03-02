@@ -1,6 +1,7 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyCSNcmWANTrWokpiLStcmJQmGWyQ7B2J7c",
   authDomain: "gamerapp-37e70.firebaseapp.com",
+  databaseURL: "https://gamerapp-37e70-default-rtdb.firebaseio.com",
   projectId: "gamerapp-37e70",
   storageBucket: "gamerapp-37e70.firebasestorage.app",
   messagingSenderId: "1093558948023",

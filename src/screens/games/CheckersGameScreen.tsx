@@ -13,7 +13,7 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -22,7 +22,7 @@ import {
   Vibration,
   View,
 } from "react-native";
-import { Button, Modal, Portal, Text, useTheme } from "react-native-paper";
+import { Button, Text, useTheme } from "react-native-paper";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -84,8 +84,12 @@ import {
 import { withGameErrorBoundary } from "@/components/games/GameErrorBoundary";
 import { MultiplayerLobbyOverlay } from "@/components/games/MultiplayerLobbyOverlay";
 import { useGameBackHandler } from "@/hooks/useGameBackHandler";
-import { useGameHaptics } from "@/hooks/useGameHaptics";
 import { useGameLobbyController } from "@/hooks/useGameLobbyController";
+import {
+  useMultiplayerRuntime,
+  withMultiplayerRuntime,
+} from "@/screens/games/MultiplayerRuntimeShell";
+import type { GameResultFacts } from "@/types/gameResultFacts";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/games/CheckersGameScreen");
 // =============================================================================
@@ -120,6 +124,10 @@ interface CheckersGameScreenProps {
       /** Where the user entered from - determines back navigation */
       entryPoint?: "play" | "chat";
       spectatorMode?: boolean;
+      /** v3 session fields */
+      v3Session?: string;
+      sessionId?: string;
+      firestoreGameId?: string;
     };
   };
 }
@@ -406,17 +414,13 @@ function CellComponent({
 // =============================================================================
 
 function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
-  const initialMode: GameMode = route.params?.inviteId ? "lobby" : "menu";
+  const isV3 = !!route.params?.v3Session;
+  const initialMode: GameMode = isV3
+    ? "colyseus"
+    : route.params?.inviteId
+      ? "lobby"
+      : "menu";
   const [gameMode, setGameMode] = useState<GameMode>(initialMode);
-  useGameBackHandler({
-    gameType: "checkers",
-    isGameOver: false,
-    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
-    isInLobby: gameMode === "lobby",
-    entryPoint: route.params?.entryPoint,
-  });
-  const __codexGameHaptics = useGameHaptics();
-  void __codexGameHaptics;
 
   const theme = useTheme();
   const { currentFirebaseUser } = useAuth();
@@ -470,6 +474,15 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [showResignConfirm, setShowResignConfirm] = useState(false);
 
+  // Back-handler wired AFTER showGameOverModal so isGameOver is reactive
+  const { markAsLeaving } = useGameBackHandler({
+    gameType: "checkers",
+    isGameOver: showGameOverModal,
+    isMultiplayer: gameMode === "online" || gameMode === "colyseus",
+    isInLobby: gameMode === "lobby" && !isV3,
+    entryPoint: route.params?.entryPoint,
+  });
+
   // XP state (populated via GameResult notification)
   const [xpEarned, setXpEarned] = useState(0);
   const [didLevelUp, setDidLevelUp] = useState(false);
@@ -489,6 +502,59 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
 
   // Colyseus multiplayer hook (declared before lobby controller so room is available)
   const mp = useTurnBasedGame("checkers_game");
+
+  // ── V3 Runtime Shell integration ──────────────────────────────────────
+  const mpRuntime = useMultiplayerRuntime();
+
+  const v3ResultSentRef = useRef(false);
+  useEffect(() => {
+    if (
+      !isV3 ||
+      !mpRuntime ||
+      mp.phase !== "finished" ||
+      v3ResultSentRef.current
+    )
+      return;
+    v3ResultSentRef.current = true;
+
+    const uid = currentFirebaseUser?.uid ?? "";
+    const displayName = currentFirebaseUser?.displayName ?? "Player";
+    const myOutcome = mp.isDraw ? "draw" : mp.isWinner ? "win" : "lose";
+
+    const facts: GameResultFacts = {
+      gameId: "checkers",
+      mode: "turnBased",
+      outcome: myOutcome as GameResultFacts["outcome"],
+      outcomeReason:
+        mp.winReason ??
+        (mp.isDraw ? "Draw" : mp.isWinner ? "Victory" : "Defeat"),
+      scoreboard: [
+        {
+          uid,
+          displayName,
+          outcome: myOutcome as GameResultFacts["outcome"],
+          isWinner: !!mp.isWinner,
+        },
+        {
+          uid: "opponent",
+          displayName: mp.opponentName ?? "Opponent",
+          outcome: (mp.isDraw
+            ? "draw"
+            : mp.isWinner
+              ? "lose"
+              : "win") as GameResultFacts["outcome"],
+          isWinner: !mp.isWinner && !mp.isDraw,
+        },
+      ],
+      performanceMetrics: [
+        { label: "Turns", value: String(mp.turnNumber ?? 0), icon: "counter" },
+      ],
+      durationMs: 0,
+      sessionId: route.params?.v3Session,
+    };
+
+    mpRuntime.setResultFacts(facts);
+  }, [isV3, mpRuntime, mp.phase, mp.isWinner, mp.isDraw]);
 
   // ── Lobby Controller (composes useGameLobby + watchdog + recovery) ────
   const lobbyController = useGameLobbyController({
@@ -632,9 +698,30 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
     route.params?.matchId,
   );
 
+  // v3 auto-start: bypass useGameConnection, join room directly
+  const v3StartedRef = useRef(false);
   useEffect(() => {
-    // Skip when lobby is handling the invite flow
-    if (route.params?.inviteId) return;
+    if (!isV3 || v3StartedRef.current) return;
+    const fId =
+      route.params?.firestoreGameId ||
+      route.params?.matchId ||
+      route.params?.v3Session;
+    if (fId) {
+      v3StartedRef.current = true;
+      setGameMode("colyseus");
+      mp.startMultiplayer({ firestoreGameId: fId, spectator: isSpectator });
+    }
+  }, [
+    isV3,
+    route.params?.firestoreGameId,
+    route.params?.matchId,
+    route.params?.v3Session,
+    isSpectator,
+  ]);
+
+  useEffect(() => {
+    // Skip when lobby is handling the invite flow, or v3 (handled above)
+    if (route.params?.inviteId || isV3) return;
     if (resolvedMode === "colyseus" && firestoreGameId) {
       setGameMode("colyseus");
       mp.startMultiplayer({ firestoreGameId, spectator: isSpectator });
@@ -642,7 +729,7 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
       setGameMode("online");
       setMatchId(firestoreGameId);
     }
-  }, [resolvedMode, firestoreGameId, route.params?.inviteId]);
+  }, [resolvedMode, firestoreGameId, route.params?.inviteId, isV3]);
 
   // Fallback: if Colyseus connection fails, switch to Firestore online mode
   // so the game remains playable with Firestore subscriptions
@@ -1023,6 +1110,7 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
           onPress: async () => {
             try {
               await resignMatch(matchId, currentFirebaseUser.uid);
+              markAsLeaving();
               exitGame();
             } catch (error) {
               logger.error("[Checkers] Error resigning:", error);
@@ -1038,6 +1126,7 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
       resetGame();
     } else {
       setShowGameOverModal(false);
+      markAsLeaving();
       exitGame();
     }
   };
@@ -1045,6 +1134,7 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
   const handleGoBack = () => {
     // Allow users to leave active games without resigning
     // They can return to continue playing at their own pace
+    markAsLeaving();
     exitGame();
   };
 
@@ -1112,8 +1202,8 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
   // Render
   // ==========================================================================
 
-  // Lobby Screen
-  if (gameMode === "lobby") {
+  // Lobby Screen (skip for v3 — lobby is handled by SessionLobbyScreen)
+  if (gameMode === "lobby" && !isV3) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -1152,7 +1242,12 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => exitGame()}>
+          <TouchableOpacity
+            onPress={() => {
+              markAsLeaving();
+              exitGame();
+            }}
+          >
             <MaterialCommunityIcons
               name="arrow-left"
               size={28}
@@ -1266,7 +1361,10 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
         <Text style={[styles.title, { color: theme.colors.onBackground }]}>
           Checkers
         </Text>
-        {gameMode === "online" && match?.status === "active" && !isSpectator ? (
+        {gameMode === "online" &&
+        match?.status === "active" &&
+        !isSpectator &&
+        !isV3 ? (
           <TouchableOpacity onPress={handleResign}>
             <MaterialCommunityIcons
               name="flag"
@@ -1277,7 +1375,8 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
         ) : gameMode === "colyseus" &&
           mp.isMultiplayer &&
           mp.phase === "playing" &&
-          !isSpectator ? (
+          !isSpectator &&
+          !isV3 ? (
           <TouchableOpacity onPress={() => setShowResignConfirm(true)}>
             <MaterialCommunityIcons
               name="flag"
@@ -1429,54 +1528,66 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
       </SkiaGameBoard>
 
       {/* Game Over Modal */}
-      <Portal>
-        <Modal
-          visible={showGameOverModal}
-          onDismiss={() => setShowGameOverModal(false)}
-          contentContainerStyle={[
-            styles.modalContent,
-            { backgroundColor: theme.colors.surface },
+      {showGameOverModal && (
+        <View
+          style={[
+            {
+              ...StyleSheet.absoluteFillObject,
+              zIndex: 9999,
+              justifyContent: "center",
+              alignItems: "center",
+              backgroundColor: "rgba(0,0,0,0.5)",
+            },
           ]}
         >
-          <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
-            {winner &&
-              (gameMode === "online"
-                ? winner === myColor
-                  ? "🎉 Victory!"
-                  : "😔 Defeat"
-                : `${winner === "red" ? "🔴 Red" : "⬛ Black"} Wins!`)}
-          </Text>
-          {xpEarned > 0 && (
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: theme.colors.surface },
+            ]}
+          >
             <Text
-              style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+              style={[styles.modalTitle, { color: theme.colors.onSurface }]}
             >
-              ⭐ +{xpEarned} XP
-              {didLevelUp ? ` — Level Up! Level ${newXpLevel}!` : ""}
+              {winner &&
+                (gameMode === "online"
+                  ? winner === myColor
+                    ? "🎉 Victory!"
+                    : "😔 Defeat"
+                  : `${winner === "red" ? "🔴 Red" : "⬛ Black"} Wins!`)}
             </Text>
-          )}
+            {xpEarned > 0 && (
+              <Text
+                style={{ color: "#fbbf24", textAlign: "center", marginTop: 8 }}
+              >
+                ⭐ +{xpEarned} XP
+                {didLevelUp ? ` — Level Up! Level ${newXpLevel}!` : ""}
+              </Text>
+            )}
 
-          <View style={styles.modalButtons}>
-            <Button
-              mode="contained"
-              onPress={handlePlayAgain}
-              style={styles.modalButton}
-            >
-              {gameMode === "local" ? "Play Again" : "Back to Menu"}
-            </Button>
-            <Button
-              mode="outlined"
-              onPress={() => {
-                setShowGameOverModal(false);
-                setGameMode("menu");
-                resetGame();
-              }}
-              style={styles.modalButton}
-            >
-              Main Menu
-            </Button>
+            <View style={styles.modalButtons}>
+              <Button
+                mode="contained"
+                onPress={handlePlayAgain}
+                style={styles.modalButton}
+              >
+                {gameMode === "local" ? "Play Again" : "Back to Menu"}
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={() => {
+                  setShowGameOverModal(false);
+                  setGameMode("menu");
+                  resetGame();
+                }}
+                style={styles.modalButton}
+              >
+                Main Menu
+              </Button>
+            </View>
           </View>
-        </Modal>
-      </Portal>
+        </View>
+      )}
 
       {/* Colyseus Multiplayer — Turn Indicator Bar */}
       {gameMode === "colyseus" &&
@@ -1500,7 +1611,8 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
       {gameMode === "colyseus" &&
         mp.isMultiplayer &&
         mp.phase === "playing" &&
-        !isSpectator && (
+        !isSpectator &&
+        !isV3 && (
           <GameActionBar
             onResign={() => setShowResignConfirm(true)}
             onOfferDraw={mp.offerDraw}
@@ -1547,9 +1659,10 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
             onAcceptRematch={mp.acceptRematch}
             onMenu={() => {
               mp.cancelMultiplayer();
-              setGameMode("menu");
+              markAsLeaving();
+              exitGame();
             }}
-            visible={mp.phase === "finished"}
+            visible={mp.phase === "finished" && !isV3}
           />
 
           <DrawOfferDialog
@@ -1562,7 +1675,7 @@ function CheckersGameScreen({ navigation, route }: CheckersGameScreenProps) {
           />
 
           <ResignConfirmDialog
-            visible={showResignConfirm}
+            visible={showResignConfirm && !isV3}
             colors={overlayColors}
             onConfirm={() => {
               setShowResignConfirm(false);
@@ -1778,4 +1891,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default withGameErrorBoundary(CheckersGameScreen, "checkers");
+export default withGameErrorBoundary(
+  withMultiplayerRuntime(CheckersGameScreen),
+  "checkers",
+);

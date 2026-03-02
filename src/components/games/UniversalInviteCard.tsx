@@ -25,11 +25,16 @@ import {
 
 import { BorderRadius, Spacing } from "@/constants/theme";
 import { completeGameInvite } from "@/services/gameInvites";
-import { GAME_METADATA, type ExtendedGameType } from "@/types/games";
+import {
+  getGameRuntimeType as _getRuntimeType,
+  GAME_METADATA,
+  type ExtendedGameType,
+} from "@/types/games";
 import type { UniversalGameInvite } from "@/types/turnBased";
 import { PlayerSlots } from "./PlayerSlots";
 import { QueueProgressBar } from "./QueueProgressBar";
 
+import { computeInviteHealth } from "@/utils/inviteTrace";
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/games/UniversalInviteCard");
 // =============================================================================
@@ -50,7 +55,12 @@ export interface UniversalInviteCardProps {
   /** Cancel the invite (host only) */
   onCancel: () => Promise<void>;
   /** Navigate to active game */
-  onPlay?: (gameId: string, gameType: string, inviteId?: string) => void;
+  onPlay?: (
+    gameId: string,
+    gameType: string,
+    inviteId?: string,
+    v3SessionId?: string,
+  ) => void;
   /** Spectate an active game (Colyseus-based) */
   onSpectate?: () => void;
   /** Compact mode */
@@ -122,7 +132,8 @@ export function UniversalInviteCard({
   const TERMINAL_STATUSES = ["completed", "declined", "expired", "cancelled"];
   if (
     TERMINAL_STATUSES.includes(invite.status) ||
-    invite.chatVisibility === "hidden"
+    invite.chatVisibility === "hidden" ||
+    invite.resolvedAt // extra safety: resolvedAt present means game is done
   ) {
     return null;
   }
@@ -185,6 +196,28 @@ export function UniversalInviteCard({
     invite.status === "active" &&
     Date.now() - invite.createdAt > STALE_THRESHOLD_MS;
 
+  // ── CARD.CTA.DECISION logging ────────────────────────────────────────
+  const cta = canPlay
+    ? "resume"
+    : canSpectate
+      ? "watch"
+      : canJoin
+        ? "join"
+        : "none";
+  const ctaWhy = canPlay
+    ? "hasJoined+active+gameId"
+    : canSpectate
+      ? "notJoined+spectatingEnabled+active+gameId"
+      : canJoin
+        ? "notJoined+notFull+notExpired+notStarting"
+        : hasJoined
+          ? "waitingForOthers"
+          : "noActionAvailable";
+
+  logger.debug(
+    `[UniversalInviteCard] CARD.CTA.DECISION inviteId=${invite.id} cta=${cta} why=${ctaWhy} isParticipant=${hasJoined} isClaimed=${hasJoined} isSpectatorEligible=${canSpectate} status=${invite.status}`,
+  );
+
   // -------------------------------------------------------------------------
   // Auto-Navigation Effect (Phase 4: Chat Integration)
   // -------------------------------------------------------------------------
@@ -213,7 +246,7 @@ export function UniversalInviteCard({
         logger.info(
           `[UniversalInviteCard] Auto-navigating to ${invite.gameType} game: ${invite.gameId}`,
         );
-        onPlay(invite.gameId!, invite.gameType, invite.id);
+        onPlay(invite.gameId!, invite.gameType, invite.id, invite.v3SessionId);
       }, 300);
 
       return () => clearTimeout(timer);
@@ -366,7 +399,12 @@ export function UniversalInviteCard({
                 mode="contained"
                 compact
                 onPress={() =>
-                  onPlay(invite.gameId!, invite.gameType, invite.id)
+                  onPlay(
+                    invite.gameId!,
+                    invite.gameType,
+                    invite.id,
+                    invite.v3SessionId,
+                  )
                 }
               >
                 Play
@@ -487,7 +525,14 @@ export function UniversalInviteCard({
             <Button
               mode="contained"
               icon="play"
-              onPress={() => onPlay(invite.gameId!, invite.gameType, invite.id)}
+              onPress={() =>
+                onPlay(
+                  invite.gameId!,
+                  invite.gameType,
+                  invite.id,
+                  invite.v3SessionId,
+                )
+              }
               style={styles.actionButton}
             >
               Play Now
@@ -599,24 +644,81 @@ export function UniversalInviteCard({
           </>
         )}
 
-        {/* Phase 2: DEV force-resolve (debug only) */}
+        {/* Phase 2: DEV Invite Inspector (enhanced) */}
         {__DEV__ && invite.status === "active" && (
           <>
             <Divider style={styles.divider} />
             <View style={styles.devSection}>
-              <Text style={styles.devLabel}>🛠️ DEV Tools</Text>
-              <Button
-                mode="outlined"
-                compact
-                textColor="#F44336"
-                onPress={handleForceResolve}
-                loading={loading === "force-resolve"}
-                disabled={loading !== null}
-                style={styles.devButton}
-              >
-                Force Resolve Invite
-              </Button>
+              <Text style={styles.devLabel}>🛠️ DEV Invite Inspector</Text>
               <Text style={styles.devHint}>ID: {invite.id}</Text>
+              <Text style={styles.devHint}>Status: {invite.status}</Text>
+              <Text style={styles.devHint}>
+                gameId: {invite.gameId ?? "(none)"}
+              </Text>
+              <Text style={styles.devHint}>
+                chatVisibility: {invite.chatVisibility ?? "(undefined)"}
+              </Text>
+              <Text style={styles.devHint}>
+                runtimeType:{" "}
+                {(() => {
+                  try {
+                    return _getRuntimeType(invite.gameType as any);
+                  } catch {
+                    return "unknown";
+                  }
+                })()}
+              </Text>
+              <Text style={styles.devHint}>
+                age: {Math.round((Date.now() - invite.createdAt) / 1000)}s |
+                sinceUpdate:{" "}
+                {Math.round((Date.now() - invite.updatedAt) / 1000)}s
+              </Text>
+              <Text style={styles.devHint}>
+                CTA: {cta} ({ctaWhy})
+              </Text>
+              <Text style={styles.devHint}>
+                isExt: {invite.gameId?.startsWith("ext_") ? "yes" : "no"}
+              </Text>
+              <Text style={styles.devHint}>
+                hasChatFields: vis={String(invite.chatVisibility !== undefined)}{" "}
+                hidAt={String((invite as any).chatHiddenAt !== undefined)}{" "}
+                delAt={String((invite as any).deleteAt !== undefined)}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+                <Button
+                  mode="outlined"
+                  compact
+                  textColor="#1976D2"
+                  onPress={() => {
+                    const snap = {
+                      ...invite,
+                      _health: computeInviteHealth(
+                        invite as unknown as Record<string, unknown>,
+                      ),
+                      _cta: { cta, ctaWhy },
+                    };
+                    logger.info(
+                      "[DEV] Invite snapshot copied to console",
+                      snap,
+                    );
+                    // In RN we can't clipboard easily, so just dump to console
+                  }}
+                  style={styles.devButton}
+                >
+                  Copy Snapshot
+                </Button>
+                <Button
+                  mode="outlined"
+                  compact
+                  textColor="#F44336"
+                  onPress={handleForceResolve}
+                  loading={loading === "force-resolve"}
+                  disabled={loading !== null}
+                  style={styles.devButton}
+                >
+                  Force Resolve
+                </Button>
+              </View>
             </View>
           </>
         )}
@@ -631,18 +733,18 @@ export function UniversalInviteCard({
 
 const styles = StyleSheet.create({
   card: {
-    marginVertical: Spacing.sm,
+    marginVertical: Spacing.xs,
     borderRadius: BorderRadius.lg,
   },
   cardCompact: {
-    marginVertical: Spacing.xs,
+    marginVertical: 2,
     borderRadius: BorderRadius.md,
   },
   compactContent: {
     flexDirection: "row",
     alignItems: "center",
-    padding: Spacing.sm,
-    gap: Spacing.sm,
+    padding: Spacing.xs,
+    gap: Spacing.xs,
   },
   compactInfo: {
     flex: 1,
@@ -653,14 +755,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   gameIconCompact: {
-    fontSize: 24,
+    fontSize: 20,
   },
   gameNameCompact: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
   },
   statusCompact: {
-    fontSize: 11,
+    fontSize: 10,
   },
   header: {
     flexDirection: "row",
@@ -674,10 +776,10 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   gameIcon: {
-    fontSize: 36,
+    fontSize: 28,
   },
   gameName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
   },
   hostText: {

@@ -31,6 +31,18 @@ import {
   resignGame,
 } from "./games";
 
+// Sessions V3
+import {
+  createSessionV3,
+  inviteToSessionV3,
+  joinSessionV3,
+  leaveSessionV3,
+  processSoloGameResult,
+  resolveSessionV3,
+  startSessionV3,
+  watchdogSessionsV3,
+} from "./sessionsV3";
+
 // Migrations
 import {
   migrateGameInvites,
@@ -189,6 +201,7 @@ export {
   cleanupStaleMatchmakingEntries,
   cleanupVacantGames,
   createGameFromInvite,
+  createSessionV3,
   declineMessageRequest,
   expireGameInvites,
   expireGifts,
@@ -205,6 +218,9 @@ export {
   incrementProfileViews,
   initializeExistingWallets,
   initializeFirstAdmin,
+  inviteToSessionV3,
+  joinSessionV3,
+  leaveSessionV3,
   makeMove,
   markInboxRead,
   migrateGameInvites,
@@ -240,6 +256,7 @@ export {
   processRealtimeGameCompletion,
   processScheduledMessages,
   processSinglePlayerCompletion,
+  processSoloGameResult,
   publishDeliveryReceipt,
   publishReadReceipt,
   publishTypingIndicator,
@@ -248,6 +265,7 @@ export {
   reconcileActiveInvites,
   recordDailyLogin,
   resignGame,
+  resolveSessionV3,
   restorePurchases,
   rollbackGameInvitesMigration,
   seedDailyTasks,
@@ -255,10 +273,12 @@ export {
   seedShopCatalog,
   sendFriendRequestWithRateLimit,
   sendGift,
+  startSessionV3,
   streakReminder,
   triggerDailyDeals,
   updateExpiredBans,
   validateReceipt,
+  watchdogSessionsV3,
   weeklyLeaderboardReset,
 };
 
