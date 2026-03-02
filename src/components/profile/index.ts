@@ -62,8 +62,6 @@ export type {
 export { LevelProgress } from "./LevelProgress";
 export type { LevelProgressProps } from "./LevelProgress";
 
-
-
 // =============================================================================
 // Phase 5 - Skeletons & Loading States
 // =============================================================================
@@ -147,16 +145,12 @@ export type { ProfileActionsProps } from "./ProfileQuickActions";
 // Profile Overview Cards
 // =============================================================================
 export {
-  AchievementsCard,
   BadgesCard,
-  BestScoresCard,
   FriendsCard,
   OverviewCard,
 } from "./OverviewCards";
 export type {
-  AchievementsCardProps,
   BadgesCardProps,
-  BestScoresCardProps,
   FriendsCardProps,
   OverviewCardProps,
 } from "./OverviewCards";

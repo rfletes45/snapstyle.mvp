@@ -33,9 +33,7 @@ import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
 import { MuteOptionsModal, MutualFriendsSection } from "@/components/profile";
 import {
-  AchievementsCard,
   BadgesCard,
-  BestScoresCard,
   FriendsCard,
 } from "@/components/profile/OverviewCards";
 import {
@@ -46,9 +44,7 @@ import { UserProfileHeader } from "@/components/profile/ProfileHeader/index";
 import { SocialProofSection } from "@/components/profile/SocialProof";
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
-import { useAchievementsV2 } from "@/hooks/useAchievementsV2";
 import { useBadges } from "@/hooks/useBadges";
-import { useScoreComparison } from "@/hooks/useGameScores";
 import { useAuth } from "@/store/AuthContext";
 import { useColors } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
@@ -145,26 +141,8 @@ function UserProfileScreenContent({
   const [muteModalVisible, setMuteModalVisible] = useState(false);
   const [muteActionLoading, setMuteActionLoading] = useState(false);
 
-  // Game scores comparison hook
-  const {
-    ownerScores: profileGameScores,
-    viewerScores: myGameScores,
-    isLoading: gameScoresLoading,
-  } = useScoreComparison({
-    ownerId: userId,
-    viewerId: currentUserId || "",
-    autoFetch: true,
-  });
-
   // Badges hook — subscribes to the viewed user's badges
   const { featuredBadges, stats: badgeStats } = useBadges(userId);
-
-  // Achievements hook
-  const {
-    displayItems: achievementItems,
-    unlockedIds: achievementUnlockedIds,
-    isV2Active: achievementsActive,
-  } = useAchievementsV2(userId);
 
   // ==========================================================================
   // Load Profile Data
@@ -599,20 +577,6 @@ function UserProfileScreenContent({
     return relationship?.type !== "friend";
   })();
 
-  const scoresPrivacyHidden = (() => {
-    const setting = profile?.privacy?.showGameScores;
-    if (!setting || setting === "everyone") return false;
-    if (setting === "nobody") return true;
-    return relationship?.type !== "friend";
-  })();
-
-  const achievementsPrivacyHidden = (() => {
-    const setting = profile?.privacy?.showAchievements;
-    if (!setting || setting === "everyone") return false;
-    if (setting === "nobody") return true;
-    return relationship?.type !== "friend";
-  })();
-
   const streaksPrivacyHidden = (() => {
     const setting = profile?.privacy?.showStreaks;
     if (!setting || setting === "everyone") return false;
@@ -626,16 +590,6 @@ function UserProfileScreenContent({
     if (setting === "nobody") return true;
     return relationship?.type !== "friend";
   })();
-
-  // Latest achievement title
-  const latestAchievementTitle = useMemo(() => {
-    if (!achievementsActive || achievementItems.length === 0) return undefined;
-    const unlocked = achievementItems.filter((a) =>
-      achievementUnlockedIds.has(a.id),
-    );
-    if (unlocked.length === 0) return undefined;
-    return unlocked[unlocked.length - 1]?.name;
-  }, [achievementItems, achievementUnlockedIds, achievementsActive]);
 
   // ==========================================================================
   // Render
@@ -857,41 +811,6 @@ function UserProfileScreenContent({
                           params: { userId },
                         },
                       })
-                  : undefined
-              }
-            />
-
-            {/* Achievements Card */}
-            {achievementsActive && (
-              <AchievementsCard
-                totalAchievements={achievementItems.length}
-                unlockedCount={achievementUnlockedIds.size}
-                latestUnlockTitle={latestAchievementTitle}
-                privacyHidden={achievementsPrivacyHidden}
-                enterIndex={2}
-                onPress={
-                  !achievementsPrivacyHidden
-                    ? () =>
-                        navigation.navigate("MainTabs", {
-                          screen: "Play",
-                          params: {
-                            screen: "Achievements",
-                            params: { profileUid: userId },
-                          },
-                        })
-                    : undefined
-                }
-              />
-            )}
-
-            {/* Best Scores Card */}
-            <BestScoresCard
-              scores={profileGameScores}
-              privacyHidden={scoresPrivacyHidden}
-              enterIndex={3}
-              onPress={
-                !scoresPrivacyHidden
-                  ? () => navigation.navigate("GameStats", { userId })
                   : undefined
               }
             />

@@ -142,10 +142,6 @@ function ToastItem({
         return "message-text";
       case "friend_request":
         return "account-plus";
-      case "game_invite":
-        return "gamepad-variant";
-      case "achievement":
-        return "trophy";
       default:
         return "bell";
     }
@@ -157,10 +153,6 @@ function ToastItem({
         return colors.primary;
       case "friend_request":
         return colors.secondary;
-      case "game_invite":
-        return colors.warning || colors.primary;
-      case "achievement":
-        return colors.success || colors.secondary;
       default:
         return colors.info;
     }
@@ -245,8 +237,7 @@ export default function InAppToast({ onNavigate }: InAppToastProps) {
   const handlePress = (notification: InAppNotification) => {
     // For message notifications, trigger the press handler so inbox can mark as read
     if (
-      (notification.type === "message" ||
-        notification.type === "game_invite") &&
+      notification.type === "message" &&
       notification.entityId
     ) {
       onMessageNotificationPressed(notification.entityId);

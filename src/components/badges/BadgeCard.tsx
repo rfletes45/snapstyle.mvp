@@ -6,7 +6,7 @@
  */
 
 import { getBadgeById } from "@/data/badges";
-import { TIER_COLORS } from "@/types/achievements";
+import { TIER_COLORS } from "@/types/profile";
 import type { Badge, BadgeDisplayMode, UserBadge } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";

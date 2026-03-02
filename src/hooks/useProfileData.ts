@@ -13,7 +13,6 @@
  */
 
 import { useBadges } from "@/hooks/useBadges";
-import { onGameResultNotification } from "@/services/gameResultEvents";
 import {
   getCached,
   invalidateCacheForEvent,
@@ -134,9 +133,6 @@ export function useProfileData(
     if (!baseProfile || !uid) return cachedStats;
 
     const stats: ProfileStats = {
-      gamesPlayed: cachedStats?.gamesPlayed ?? 0,
-      gamesWon: cachedStats?.gamesWon ?? 0,
-      winRate: cachedStats?.winRate ?? 0,
       highestStreak: cachedStats?.highestStreak ?? 0,
       currentStreak: cachedStats?.currentStreak ?? 0,
       totalBadges: badgeStats.earned,
@@ -159,35 +155,7 @@ export function useProfileData(
   // Live XP from game results (updates immediately when XP is awarded)
   // =============================================================================
 
-  const [liveXpDelta, setLiveXpDelta] = useState(0);
 
-  // When baseProfile updates (e.g. from Firestore refresh), reset liveXpDelta
-  // because baseProfile.gameXp now contains the authoritative server total.
-  const lastKnownFirestoreXp = useRef<number>(0);
-  useEffect(() => {
-    const firestoreXp = baseProfile?.gameXp ?? 0;
-    if (firestoreXp > lastKnownFirestoreXp.current) {
-      // Firestore has caught up — reset the live delta
-      lastKnownFirestoreXp.current = firestoreXp;
-      setLiveXpDelta(0);
-    }
-  }, [baseProfile?.gameXp]);
-
-  useEffect(() => {
-    const unsub = onGameResultNotification((notification) => {
-      if (notification.xpEarned > 0) {
-        setLiveXpDelta((prev) => prev + notification.xpEarned);
-        logger.info(
-          `[useProfileData] XP notification: +${notification.xpEarned}`,
-        );
-        // Trigger a background profile refresh so Firestore gameXp is re-read.
-        // Once baseProfile updates with the new gameXp, the effect above
-        // resets liveXpDelta to prevent double-counting.
-        refreshProfile().catch(() => {});
-      }
-    });
-    return unsub;
-  }, [refreshProfile]);
 
   // =============================================================================
   // Computed Level (Memoized)
@@ -196,11 +164,7 @@ export function useProfileData(
   const computedLevel = useMemo<LevelInfo | null>(() => {
     if (!uid) return cachedLevel;
 
-    // Read XP from the actual Firestore user profile (written by onGameResult callable).
-    // baseProfile.gameXp is the authoritative server-written total XP.
-    // liveXpDelta adds any XP earned this session that hasn't been re-fetched yet.
-    const firestoreXp = baseProfile?.gameXp ?? 0;
-    const totalXp = firestoreXp + liveXpDelta;
+    const totalXp = baseProfile?.gameXp ?? 0;
     const level = calculateLevelFromXp(totalXp);
 
     // Update cache asynchronously so other consumers see it
@@ -209,7 +173,7 @@ export function useProfileData(
     });
 
     return level;
-  }, [uid, baseProfile, liveXpDelta, cachedLevel]);
+  }, [uid, baseProfile, cachedLevel]);
 
   // =============================================================================
   // Extended Profile (Memoized)
@@ -223,9 +187,6 @@ export function useProfileData(
 
     // Use computed stats and level
     const stats = computedStats || {
-      gamesPlayed: 0,
-      gamesWon: 0,
-      winRate: 0,
       highestStreak: 0,
       currentStreak: 0,
       totalBadges: badgeStats.earned,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Feature Flags
  *
  * Toggle experimental features on/off.
@@ -52,36 +52,22 @@ export const USE_LOCAL_STORAGE = !IS_WEB;
 /**
  * Use VisionCamera (react-native-vision-camera) as the camera backend.
  *
- * When `true`  → VisionCamera + Skia frame processors (pixel-perfect live
+ * When `true`  â†’ VisionCamera + Skia frame processors (pixel-perfect live
  *                filter preview, full GPU pipeline).  Requires a custom dev
- *                client or production build — does NOT work inside Expo Go.
+ *                client or production build â€” does NOT work inside Expo Go.
  *
- * When `false` → expo-camera CameraView fallback with the simpler
+ * When `false` â†’ expo-camera CameraView fallback with the simpler
  *                CameraFilterOverlay tint.  Works inside Expo Go for
  *                development & testing.
  *
- * ──────────────────────────────────────────────────────────────────────────
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * TODO(launch): flip to `true` and remove expo-camera from package.json
  *               once we ship via EAS builds only.
- * ──────────────────────────────────────────────────────────────────────────
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
- * @default false — safe for Expo Go during development
+ * @default false â€” safe for Expo Go during development
  */
 export const USE_VISION_CAMERA = false;
-
-// =============================================================================
-// Daily Games
-// =============================================================================
-
-/**
- * List of game types that are considered "daily" challenges.
- *
- * Daily games:
- * - Save progress when the user leaves mid-game
- * - Prevent replay after a win or loss until the word/puzzle resets
- * - Skip the "leave game?" confirmation dialog
- */
-export const DAILY_GAMES: string[] = ["word_master"];
 
 // =============================================================================
 // Debug Features
@@ -165,10 +151,6 @@ export const PROFILE_V2_FEATURES = {
   THEME_INHERITANCE: true,
 
   // =========================================================================
-  // Phase 5: Game Scores & Polish
-  // =========================================================================
-
-  // =========================================================================
   // Phase 6: Advanced Features
   // =========================================================================
 
@@ -193,94 +175,6 @@ export const PROFILE_V2_FEATURES = {
 
   /** Navigate to UserProfileScreen from DM context menu */
   DM_PROFILE_NAVIGATION: true,
-} as const;
-
-// =============================================================================
-// Play Screen Overhaul Feature Flags
-// =============================================================================
-
-/**
- * Play screen overhaul feature flags
- * Enable these progressively as each phase completes
- *
- * @see docs/PLAY_SCREEN_OVERHAUL_PLAN.md
- */
-export const PLAY_SCREEN_FEATURES = {
-  // =========================================================================
-  // Phase 1: Header & Navigation Redesign
-  // =========================================================================
-
-  /** Phase 1: Enable new play screen header with icon buttons */
-  NEW_HEADER: true,
-
-  /** Phase 1: Enable search bar (UI only, no logic) */
-  SEARCH_BAR: true,
-
-  // =========================================================================
-  // Phase 2: Search & Discovery
-  // =========================================================================
-
-  /** Phase 2: Enable search functionality */
-  SEARCH_LOGIC: true,
-
-  // =========================================================================
-  // Phase 3: Game Card Redesign
-  // =========================================================================
-
-  /** Phase 3: Use ModernGameCard in CategorySection (replaces legacy GameCard) */
-  CATEGORY_MODERN_CARDS: true,
-
-  /** Phase 3: Show personal best on cards */
-  CARD_PERSONAL_BEST: true,
-
-  /** Phase 3: Enable play button on game cards */
-  CARD_PLAY_BUTTON: true,
-
-  /** Phase 3: Show compact variant in browse mode */
-  COMPACT_BROWSE_CARDS: false,
-
-  // =========================================================================
-  // Phase 4: Category & Browse Experience
-  // =========================================================================
-
-  /** Phase 4: Enable category carousels */
-  CATEGORY_CAROUSELS: true,
-
-  // =========================================================================
-  // Phase 5: Game Invites Section
-  // =========================================================================
-
-  /** Phase 5: Enable dedicated invites banner */
-  INVITES_BANNER: true,
-
-  // =========================================================================
-  // Phase 6: Active Games Redesign
-  // =========================================================================
-
-  /** Phase 6: Enable compact active games mini section */
-  ACTIVE_GAMES_MINI: true,
-
-  /** Phase 6: Remove recent games section */
-  REMOVE_RECENT_GAMES: true,
-
-  // =========================================================================
-  // Phase 7: Enhanced Profile Header
-  // =========================================================================
-
-  /**
-   * Phase 7: Enable the enhanced "Player Summary Header" on the Play tab.
-   *
-   * When enabled:
-   * - Replaces the inline profile card with EnhancedGamesProfileHeader
-   * - Shows avatar stack with decoration slots, XP bar, currency chips,
-   *   daily/monthly task rails, and an expandable details panel
-   *
-   * When disabled:
-   * - Falls back to the legacy inline profile card
-   *
-   * @default true
-   */
-  ENHANCED_PROFILE_HEADER: true,
 } as const;
 
 // =============================================================================
@@ -438,14 +332,6 @@ export const CALL_FEATURES = {
    */
   CALL_RECORDING_ENABLED: false,
 
-  /**
-   * Enable in-call games
-   * Future feature - games during video calls
-   *
-   * @default false
-   */
-  IN_CALL_GAMES_ENABLED: false,
-
   // =========================================================================
   // Rollout Configuration
   // =========================================================================
@@ -499,212 +385,6 @@ export const CALL_FEATURES = {
 } as const;
 
 // =============================================================================
-// Three.js 3D Visual Enhancement Features
-// =============================================================================
-
-/**
- * Three.js visual enhancement feature flags
- *
- * Controls progressive rollout of 3D visual effects across the play system.
- * All 3D components are overlaid behind existing 2D UI as position: absolute
- * layers. On web platform, all 3D components render null (expo-gl only).
- *
- * Packages: expo-gl, three, expo-three
- *
- * @see src/components/three/
- */
-export const THREE_JS_FEATURES = {
-  // =========================================================================
-  // Master Switch
-  // =========================================================================
-
-  /** Global enable/disable for all Three.js visual effects. Disabled on web. */
-  THREE_JS_ENABLED: !IS_WEB,
-
-  // =========================================================================
-  // Play Screen 3D Enhancements
-  // =========================================================================
-
-  /** 3D animated hero banner behind FeaturedGameBanner (floating game pieces) */
-  HERO_BANNER_3D: true,
-
-  /** 3D animated background for the GamesHubScreen (floating shapes, fog) */
-  GAME_BACKGROUND_3D: true,
-
-  /** Floating 3D game icons behind the Play header/categories */
-  FLOATING_ICONS_3D: true,
-
-  // =========================================================================
-  // Game Invite 3D Enhancements
-  // =========================================================================
-
-  /** 3D animated overlay on CompactInviteCard (spinning gem, glow ring) */
-  INVITE_CARD_3D: true,
-
-  // =========================================================================
-  // Victory / Game Over 3D Effects
-  // =========================================================================
-
-  /** 3D animated trophy on victory/game-over screens */
-  VICTORY_TROPHY_3D: true,
-
-  // =========================================================================
-  // Debug Flags
-  // =========================================================================
-
-  /** Debug: Log Three.js lifecycle events */
-  DEBUG_THREE_JS: __DEV__,
-} as const;
-
-// =============================================================================
-// =============================================================================
-// Game Sessions V3 — Session-First Architecture
-// =============================================================================
-
-/**
- * Feature flags for the v3 game session system.
- *
- * V3 replaces the invite-as-runtime-state-machine with a session-first
- * architecture where `GameSessions/{sessionId}` is the canonical runtime
- * document and invites are demoted to lightweight delivery envelopes.
- *
- * Rollout phases:
- *   Phase 0: Instrumentation (trace + flag)
- *   Phase 1: SessionLobbyScreen, InvitePillRow, v3 types, navigation
- *   Phase 2: Cloud Function callables (createSession, joinSession, etc.)
- *   Phase 3: Universal GameOver screen + per-game migrations
- *   Phase 4: Realtime alignment (Colyseus room ↔ session doc)
- *   Phase 5: Cleanup — deprecate v2 invite fields
- *
- * @see docs/GAMES_SYSTEM.md §v3-sessions
- */
-export const GAME_SESSIONS_V3 = {
-  /**
-   * Master switch — when true the client uses SessionLobbyScreen,
-   * GameSessions collection, and compact InvitePillRow in chat.
-   * When false, the legacy invite-driven flow is used unchanged.
-   */
-  ENABLED: true,
-
-  /**
-   * Use v3 compact InvitePillRow in chat instead of tall UniversalInviteCard.
-   * Requires ENABLED = true to take effect.
-   */
-  COMPACT_CHAT_PILLS: true,
-
-  /**
-   * Route all multiplayer entry through SessionLobbyScreen.
-   * Requires ENABLED = true.
-   */
-  SESSION_LOBBY: true,
-
-  /**
-   * Write GameSessions docs alongside invites (dual-write).
-   * Requires ENABLED = true. Safe to enable independently for data seeding.
-   */
-  DUAL_WRITE: true,
-
-  /**
-   * Use v3 universal GameOver screen instead of per-game GameOverModal.
-   * Requires ENABLED = true.
-   */
-  UNIVERSAL_GAME_OVER: true,
-
-  /**
-   * Debug: log session lifecycle transitions to console.
-   */
-  DEBUG_SESSION_LIFECYCLE: __DEV__,
-} as const;
-
-// Colyseus Multiplayer Features
-// =============================================================================
-
-/**
- * Feature flags for Colyseus real-time multiplayer system.
- *
- * Controls progressive rollout of multiplayer across game tiers:
- *   Phase 1: Quick-Play (score-race pattern)
- *   Phase 2: Turn-Based (chess, checkers, connect-4)
- *   Phase 3: Complex Turn-Based (Battleship, etc.)
- *   Phase 4: Physics-Based (pong, cart course)
- *   Phase 5: Co-op (cooperative games)
- */
-export const COLYSEUS_FEATURES = {
-  // =========================================================================
-  // Master Switch
-  // =========================================================================
-
-  /** Global enable/disable for all Colyseus multiplayer features */
-  COLYSEUS_ENABLED: true,
-
-  // =========================================================================
-  // Tier Rollout Flags
-  // =========================================================================
-
-  /** Quick-play games: DotMatch */
-  QUICKPLAY_ENABLED: true,
-
-  /** Turn-based games: TicTacToe, ConnectFour, Gomoku, Reversi (Phase 2 â€” LIVE) */
-  TURNBASED_ENABLED: true,
-
-  /** Complex turn-based games: Chess, Checkers, CrazyEights */
-  COMPLEX_TURNBASED_ENABLED: true,
-
-  /** Physics-based games: Pong, BounceBlitz, BrickBreaker */
-  PHYSICS_ENABLED: true,
-
-  /** Cooperative games: WordMaster, Crossword */
-  COOP_ENABLED: true,
-
-  /** Incremental games: Starforge */
-  INCREMENTAL_ENABLED: true,
-
-  /** Party games: Sketch Party */
-  PARTY_ENABLED: true,
-
-  // =========================================================================
-  // Feature Sub-Flags
-  // =========================================================================
-
-  /** Enable matchmaking queue (vs direct invites only) â€” disabled: friends-only */
-  MATCHMAKING_ENABLED: false,
-
-  /** Enable ELO-based ranked matches â€” disabled: friends-only */
-  RANKED_ENABLED: false,
-
-  /** Enable rematch flow after game over */
-  REMATCH_ENABLED: true,
-
-  /** Enable reconnection handling on network drop */
-  RECONNECTION_ENABLED: true,
-
-  /** Show opponent score overlay during gameplay */
-  OPPONENT_SCORE_OVERLAY: true,
-
-  // =========================================================================
-  // Server Configuration
-  // =========================================================================
-
-  /** Use production Colyseus server (vs local dev) */
-  USE_PRODUCTION_SERVER: false,
-
-  // =========================================================================
-  // Debug Flags
-  // =========================================================================
-
-  /** Debug: Log Colyseus state changes to console */
-  DEBUG_STATE_SYNC: __DEV__,
-
-  /** Debug: Log Colyseus messages to console */
-  DEBUG_MESSAGES: __DEV__,
-
-  /** Debug: Show latency overlay */
-  DEBUG_LATENCY_OVERLAY: false,
-
-  /** Debug: Simulate network lag (ms) â€” 0 = disabled */
-  DEBUG_SIMULATED_LAG: 0,
-} as const;
-// =============================================================================
 // Chat V3 Feature Flags
 // =============================================================================
 
@@ -714,7 +394,7 @@ export const COLYSEUS_FEATURES = {
  * Controls progressive rollout of chat improvements:
  * - Settings V3 (global + per-chat overrides + resolver)
  * - Signed media URLs (no long-lived tokens in Firestore)
- * - Staged uploads (client → staging → final)
+ * - Staged uploads (client â†’ staging â†’ final)
  * - Message requests (anti-spam for DMs)
  * - Global rate limiting (bucketed)
  * - Inbox aggregation (single collection)
@@ -732,14 +412,14 @@ export const COLYSEUS_FEATURES = {
  */
 export const CHAT_FEATURES = {
   // =========================================================================
-  // Phase 1 — Settings V3 (global + per-chat overrides + resolver)
+  // Phase 1 â€” Settings V3 (global + per-chat overrides + resolver)
   // =========================================================================
 
   /** Enable Settings V3 resolver and tri-state per-chat overrides */
   CHAT_SETTINGS_V3: false,
 
   // =========================================================================
-  // Phase 1 — Media Pipeline
+  // Phase 1 â€” Media Pipeline
   // =========================================================================
 
   /** Store only storage paths in message docs; mint short-lived signed URLs */
@@ -749,35 +429,35 @@ export const CHAT_FEATURES = {
   CHAT_STAGED_UPLOADS: false,
 
   // =========================================================================
-  // Phase 1 — Message Requests
+  // Phase 1 â€” Message Requests
   // =========================================================================
 
   /** Enforce dmAcceptance setting; unsolicited DMs go to requests queue */
   CHAT_MESSAGE_REQUESTS: false,
 
   // =========================================================================
-  // Phase 1 — Rate Limiting
+  // Phase 1 â€” Rate Limiting
   // =========================================================================
 
   /** Enable global per-user bucketed rate limiter (replaces single-doc) */
   CHAT_GLOBAL_RATE_LIMIT: false,
 
   // =========================================================================
-  // Phase 1 — Inbox Aggregation
+  // Phase 1 â€” Inbox Aggregation
   // =========================================================================
 
   /** Query Users/{uid}/Inbox instead of Chats + Groups collections */
   CHAT_INBOX_AGGREGATION: false,
 
   // =========================================================================
-  // Phase 1 — Delivery Acks
+  // Phase 1 â€” Delivery Acks
   // =========================================================================
 
   /** Enable lastDeliveredAtPublic watermark on member docs */
   CHAT_DELIVERY_ACKS: false,
 
   // =========================================================================
-  // Phase 1 — Privacy Server Enforcement
+  // Phase 1 â€” Privacy Server Enforcement
   // =========================================================================
 
   /** Route typing/read/delivery writes through Cloud Function callables */
@@ -791,33 +471,3 @@ export const CHAT_FEATURES = {
   CHAT_DEBUG_HUD: __DEV__,
 } as const;
 
-// =============================================================================
-// Achievements V2
-// =============================================================================
-
-/**
- * Feature flags for the Achievements V2 system.
- *
- * V2 uses server-authoritative evaluation, per-game stats subcollections,
- * a static achievements catalog, and social counters (invites, spectating,
- * rematches). Legacy achievements continue to work in parallel.
- */
-export const ACHIEVEMENTS_V2_FEATURES = {
-  /**
-   * Master switch — when true the client reads from v2 achievement docs.
-   * V1 legacy collections are no longer read.
-   */
-  ENABLED: true,
-
-  /**
-   * Show v2 progress bars, tiers, and social achievements in the UI.
-   * Requires ENABLED = true.
-   */
-  V2_UI: true,
-
-  /**
-   * Run one-time migration on app start to seed v2 docs from legacy data.
-   * Requires ENABLED = true.
-   */
-  AUTO_MIGRATE: true,
-} as const;

@@ -214,7 +214,6 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         onImagePress(message.imageUrl, senderName, message.createdAt);
         return;
       }
-
     }, [message, isSentByMe, friendProfile, onImagePress, navigation, onRetry]);
 
     // Render message status indicator

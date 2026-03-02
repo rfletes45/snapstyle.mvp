@@ -6,7 +6,25 @@
  * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md
  */
 
-import type { AchievementTier } from "./achievements";
+// =============================================================================
+// Achievement Tier Types (relocated from achievements.ts)
+// =============================================================================
+
+export type AchievementTier =
+  | "bronze"
+  | "silver"
+  | "gold"
+  | "platinum"
+  | "diamond";
+
+export const TIER_COLORS: Record<AchievementTier, string> = {
+  bronze: "#CD7F32",
+  silver: "#C0C0C0",
+  gold: "#FFD700",
+  platinum: "#E5E4E2",
+  diamond: "#B9F2FF",
+};
+
 import type { AvatarConfig } from "./models";
 
 // =============================================================================
@@ -71,7 +89,7 @@ export interface CosmeticUnlock {
     | "exclusive"; // Special event/promotion only
 
   // Milestone unlock details
-  milestoneType?: "streak" | "level" | "games_played";
+  milestoneType?: "streak" | "level";
   milestoneValue?: number;
 
   // Achievement unlock details
@@ -143,7 +161,6 @@ export interface ExtendedCosmeticItem {
  * Badge categories for filtering/organization
  */
 export type BadgeCategory =
-  | "games" // Game-related achievements
   | "social" // Friend/social achievements
   | "streak" // Streak achievements
   | "collection" // Cosmetic collection
@@ -368,9 +385,6 @@ export interface ExtendedAvatarConfig {
  * User statistics for profile display
  */
 export interface ProfileStats {
-  gamesPlayed: number;
-  gamesWon: number;
-  winRate: number;
   highestStreak: number;
   currentStreak: number;
   totalBadges: number;

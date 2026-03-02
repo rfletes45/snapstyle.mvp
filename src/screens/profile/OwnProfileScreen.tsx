@@ -15,7 +15,7 @@
  */
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -27,9 +27,7 @@ import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  AchievementsCard,
   BadgesCard,
-  BestScoresCard,
   FriendsCard,
 } from "@/components/profile/OverviewCards";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
@@ -41,9 +39,7 @@ import { LoadingState } from "@/components/ui";
 import { BorderRadius, FontSizes, Spacing } from "@/constants/theme";
 import { prefetchCriticalProfileAssets } from "@/services/cosmeticsAssetCache";
 
-import { useAchievementsV2 } from "@/hooks/useAchievementsV2";
 import { useFullProfileData } from "@/hooks/useFullProfileData";
-import { useGameScores } from "@/hooks/useGameScores";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useProfilePicture } from "@/hooks/useProfilePicture";
 
@@ -90,19 +86,6 @@ export default function OwnProfileScreen({
     refresh: refreshPicture,
   } = useProfilePicture({ userId: currentFirebaseUser?.uid || "" });
 
-  // Game scores hook
-  const { displayScores: gameScores } = useGameScores({
-    userId: currentFirebaseUser?.uid || "",
-    maxScores: 5,
-  });
-
-  // Achievements hook
-  const {
-    displayItems: achievementItems,
-    unlockedIds: achievementUnlockedIds,
-    isV2Active: achievementsActive,
-  } = useAchievementsV2(currentFirebaseUser?.uid || "");
-
   // Derived from hook results
   const pictureUrl = picture?.url || null;
   const decorationId = decoration?.decorationId || null;
@@ -138,24 +121,11 @@ export default function OwnProfileScreen({
 
   const friendsHidden = privacy?.showFriendsList === "nobody";
   const badgesHidden = privacy?.showBadges === "nobody";
-  const scoresHidden = privacy?.showGameScores === "nobody";
-  const achievementsHidden = privacy?.showAchievements === "nobody";
   const streaksHidden = privacy?.showStreaks === "nobody";
   const activityHidden = privacy?.showRecentActivity === "nobody";
 
   // Streak from stats
   const streakCount = profile?.stats?.currentStreak ?? 0;
-
-  // Latest achievement title
-  const latestAchievementTitle = useMemo(() => {
-    if (!achievementsActive || achievementItems.length === 0) return undefined;
-    const unlocked = achievementItems.filter((a) =>
-      achievementUnlockedIds.has(a.id),
-    );
-    if (unlocked.length === 0) return undefined;
-    // Most-recently unlocked (items are sorted by display order so pick last unlocked)
-    return unlocked[unlocked.length - 1]?.name;
-  }, [achievementItems, achievementUnlockedIds, achievementsActive]);
 
   // ==========================================================================
   // Handlers
@@ -349,27 +319,7 @@ export default function OwnProfileScreen({
             onPress={() => navigation.navigate("BadgeCollection")}
           />
 
-          {/* Achievements Card */}
-          {achievementsActive && (
-            <AchievementsCard
-              totalAchievements={achievementItems.length}
-              unlockedCount={achievementUnlockedIds.size}
-              latestUnlockTitle={latestAchievementTitle}
-              hiddenFromOthers={achievementsHidden}
-              enterIndex={2}
-              onPress={() =>
-                navigation.navigate("Play", { screen: "Achievements" })
-              }
-            />
-          )}
 
-          {/* Best Scores Card */}
-          <BestScoresCard
-            scores={gameScores}
-            hiddenFromOthers={scoresHidden}
-            enterIndex={3}
-            onPress={() => navigation.navigate("GameStats")}
-          />
         </View>
       </ScrollView>
 
