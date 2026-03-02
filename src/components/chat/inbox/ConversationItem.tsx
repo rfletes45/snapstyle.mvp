@@ -131,10 +131,6 @@ export const ConversationItem = memo(function ConversationItem({
         return `${prefix}🎤 Voice message`;
       case "attachment":
         return `${prefix}📎 Attachment`;
-      case "scorecard":
-        return `${prefix}🎮 Shared a score`;
-      case "game_invite":
-        return `${prefix}${lastMessage.text || "🎮 Game invite"}`;
       default:
         return `${prefix}${lastMessage.text}`;
     }

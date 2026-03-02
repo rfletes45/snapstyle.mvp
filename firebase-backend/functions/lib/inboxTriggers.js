@@ -73,8 +73,6 @@ function buildPreview(kind, text) {
         return "📎 File";
     if (kind === "system")
         return text || "System message";
-    if (kind === "scorecard" || kind === "game_invite")
-        return "🎮 Game";
     return text || "";
 }
 /**

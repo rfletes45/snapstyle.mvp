@@ -4,7 +4,7 @@
  * Tests cover:
  * - Type guards (isLegacyGroupMessage, isMessageV2)
  * - Conversion functions (fromGroupMessage, toGroupMessage)
- * - All message types (text, image, voice, scorecard, system)
+ * - All message types (text, image, voice, system)
  * - Edge cases (missing fields, replyTo, deletedForAll)
  */
 
@@ -67,24 +67,6 @@ const createVoiceGroupMessage = (
   ...overrides,
 });
 
-const createScorecardGroupMessage = (
-  overrides?: Partial<GroupMessage>,
-): GroupMessage => ({
-  id: "msg-004",
-  groupId: "group-123",
-  sender: "user-456",
-  senderDisplayName: "John Doe",
-  type: "scorecard",
-  content: "Check out my score!",
-  createdAt: 1706400000000,
-  scorecard: {
-    gameId: "bounce_blitz" as any,
-    score: 42,
-    playerName: "John Doe",
-  },
-  ...overrides,
-});
-
 const createSystemGroupMessage = (
   overrides?: Partial<GroupMessage>,
 ): GroupMessage => ({
@@ -133,7 +115,6 @@ describe("isLegacyGroupMessage", () => {
     expect(isLegacyGroupMessage(createTextGroupMessage())).toBe(true);
     expect(isLegacyGroupMessage(createImageGroupMessage())).toBe(true);
     expect(isLegacyGroupMessage(createVoiceGroupMessage())).toBe(true);
-    expect(isLegacyGroupMessage(createScorecardGroupMessage())).toBe(true);
     expect(isLegacyGroupMessage(createSystemGroupMessage())).toBe(true);
   });
 
@@ -328,22 +309,6 @@ describe("fromGroupMessage", () => {
 
       expect(v2.kind).toBe("voice");
       expect(v2.attachments).toBeUndefined();
-    });
-  });
-
-  describe("scorecard messages", () => {
-    it("should convert scorecard message correctly", () => {
-      const legacy = createScorecardGroupMessage();
-      const v2 = fromGroupMessage(legacy);
-
-      expect(v2.kind).toBe("scorecard");
-      expect(v2.text).toContain("scorecard");
-
-      const parsed = JSON.parse(v2.text!);
-      expect(parsed.type).toBe("scorecard");
-      expect(parsed.gameId).toBe("bounce_blitz");
-      expect(parsed.score).toBe(42);
-      expect(parsed.playerName).toBe("John Doe");
     });
   });
 

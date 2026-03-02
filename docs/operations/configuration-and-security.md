@@ -20,27 +20,18 @@ Main groups in active use:
 - `PROFILE_V2_FEATURES`
 - `PLAY_SCREEN_FEATURES`
 - `CALL_FEATURES`
-- `THREE_JS_FEATURES`
-- `COLYSEUS_FEATURES`
 - `CHAT_FEATURES`
-- `ACHIEVEMENTS_V2_FEATURES`
 
 High-impact defaults (as of 2026-02-22):
 
 - `USE_LOCAL_STORAGE`: enabled on native, disabled on web
 - `USE_VISION_CAMERA`: false (Expo-safe default)
 - `CALL_FEATURES.CALLS_ENABLED`: true, rollout percentage set to `0`
-- `COLYSEUS_FEATURES.COLYSEUS_ENABLED`: true, `USE_PRODUCTION_SERVER`: false
 - `CHAT_FEATURES` major V3 rollout flags: mostly false
-- `ACHIEVEMENTS_V2_FEATURES.ENABLED`: true
 
 ## Environment Variables Used by App Code
 
 Current observed reads:
-
-- `EXPO_PUBLIC_STARFORGE_GAME_URL`
-- `EXPO_PUBLIC_COLYSEUS_URL`
-- `EXPO_PUBLIC_COLYSEUS_SERVER_URL`
 
 Any new env var should be documented here when introduced.
 
@@ -66,7 +57,6 @@ Server-authoritative operations:
 
 - Money-like state (wallet, purchases, rewards)
 - canonical messaging writes and moderation-sensitive actions
-- invite/session orchestration logic where integrity matters
 
 Function deployment safety:
 
@@ -79,8 +69,7 @@ Do not commit real credentials or service account material.
 Paths that require care:
 
 - `src/services/firebaseConfig.local.ts` (public client config is okay; private keys are not)
-- `colyseus-server/serviceAccountKey.json` (should not contain production credentials in git)
-- local `.env` files in backend/server packages
+- local `.env` files in backend packages
 
 ## Secure Change Checklist
 

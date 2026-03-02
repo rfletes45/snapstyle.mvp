@@ -17,7 +17,6 @@
 
 import { getCosmeticById } from "@/cosmetics/catalog";
 import type { AvatarConfig, Friend, FriendRequest } from "@/types/models";
-import { calculateLevelFromXp } from "@/types/profile";
 import type {
   ExtendedMuteConfig,
   FriendshipDetails,
@@ -84,12 +83,10 @@ export async function getFullProfileData(
     }
 
     const raw = userDoc.data();
-    // Compute level from the raw XP fields stored on the Firestore doc
-    const level = calculateLevelFromXp(raw.gameXp ?? 0);
 
     return hydrateProfileData(userId, {
       ...raw,
-      level,
+      level: { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 },
     } as Partial<UserProfileData>);
   } catch (error) {
     log.error("Error fetching profile data", error);
@@ -112,11 +109,10 @@ export function subscribeToProfile(
     (doc) => {
       if (doc.exists()) {
         const raw = doc.data();
-        const level = calculateLevelFromXp(raw.gameXp ?? 0);
         callback(
           hydrateProfileData(userId, {
             ...raw,
-            level,
+            level: { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 },
           } as Partial<UserProfileData>),
         );
       } else {
@@ -564,61 +560,6 @@ export async function clearStatus(userId: string): Promise<void> {
 }
 
 // =============================================================================
-// GAME SCORES OPERATIONS
-// =============================================================================
-
-/**
- * Update game scores display configuration
- * Persists the user's selection of which games to display and their order.
- */
-export async function updateGameScoresConfig(
-  userId: string,
-  config: { enabled: boolean; displayedGames: any[]; updatedAt: number },
-): Promise<void> {
-  try {
-    const db = getFirestoreInstance();
-    const userRef = doc(db, "Users", userId);
-
-    await updateDoc(userRef, {
-      gameScores: {
-        enabled: config.enabled,
-        displayedGames: config.displayedGames,
-        updatedAt: config.updatedAt,
-      },
-      lastProfileUpdate: Date.now(),
-    });
-
-    log.info("Game scores config updated");
-  } catch (error) {
-    log.error("Error updating game scores config", error);
-    throw error;
-  }
-}
-
-/**
- * Get game scores configuration for a user
- */
-export async function getGameScoresConfig(userId: string): Promise<{
-  enabled: boolean;
-  displayedGames: any[];
-  updatedAt: number;
-} | null> {
-  try {
-    const db = getFirestoreInstance();
-    const userRef = doc(db, "Users", userId);
-    const userDoc = await getDoc(userRef);
-
-    if (!userDoc.exists()) return null;
-
-    const data = userDoc.data();
-    return data?.gameScores || null;
-  } catch (error) {
-    log.error("Error getting game scores config", error);
-    return null;
-  }
-}
-
-// =============================================================================
 // AVATAR DECORATION OPERATIONS
 // =============================================================================
 
@@ -766,7 +707,6 @@ async function updatePrivacySettings(
     const userDoc = await getDoc(userRef);
     const userData = userDoc.data() as Partial<UserProfileData>;
     const currentPrivacy = userData.privacy || {
-      showGameScores: "everyone",
       showBadges: "everyone",
       showLastActive: "friends",
       showBio: "everyone",

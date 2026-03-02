@@ -28,8 +28,6 @@ export type MessageKind =
   | "voice"
   | "file"
   | "system"
-  | "scorecard"
-  | "game_invite"
   | "animal";
 
 /** Attachment content type */
@@ -78,13 +76,6 @@ export interface MessageV2 {
 
   /** Text content (for text messages or captions) */
   text?: string;
-
-  /** Scorecard data (for kind: "scorecard") */
-  scorecard?: {
-    gameId: string;
-    score: number;
-    metadata?: Record<string, unknown>;
-  };
 
   /** Animal theme ID (for kind: "animal") — e.g. "animal_duck", "animal_bear" */
   animalId?: string;
@@ -172,7 +163,7 @@ export interface MessageV2 {
   content?: string;
 
   /** @deprecated Use `kind` instead */
-  type?: "text" | "image" | "scorecard";
+  type?: "text" | "image";
 
   /** @deprecated Use member watermarks instead */
   read?: boolean;
@@ -1340,9 +1331,7 @@ export interface InboxConversation {
       | "text"
       | "image"
       | "voice"
-      | "attachment"
-      | "scorecard"
-      | "game_invite";
+      | "attachment";
   } | null;
 
   /** User's private state for this conversation */

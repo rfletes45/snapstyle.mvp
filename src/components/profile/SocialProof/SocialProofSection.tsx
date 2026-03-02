@@ -103,12 +103,6 @@ function formatActivitySummary(event: ActivityEvent): string {
   switch (data.type) {
     case "achievement":
       return `Unlocked "${data.achievementName}"`;
-    case "game_score":
-      return `New PB in ${data.gameName}: ${data.formattedScore}`;
-    case "game_win":
-      return `Won a ${data.gameName} match`;
-    case "level_up":
-      return `Reached level ${data.newLevel}`;
     case "streak_milestone":
       return `Hit a ${data.streakDays}-day streak milestone`;
     default:
@@ -124,12 +118,6 @@ function getActivityIcon(
   switch (data.type) {
     case "achievement":
       return "trophy-outline";
-    case "game_score":
-      return "chart-line";
-    case "game_win":
-      return "medal-outline";
-    case "level_up":
-      return "arrow-up-bold-circle-outline";
     case "streak_milestone":
       return "fire";
     default:

@@ -20,12 +20,8 @@ If you are new to the repo, read in this order:
   - App bootstrap, provider stack, navigation topology, data boundaries, invariants.
 - `docs/backend/firebase-and-functions.md`
   - Firestore/Storage contracts, callable + trigger topology, deploy and schema safety.
-- `docs/backend/colyseus.md`
-  - Realtime server room registry, join payload contract, spectator/Starforge host behavior.
 - `docs/features/messaging.md`
   - DM/group architecture, hybrid local-first migration, message pipeline contracts.
-- `docs/features/games.md`
-  - Game catalog, invite lifecycle, multiplayer runtime split, spectator/leaderboard wiring.
 - `docs/features/profile-economy.md`
   - Profile data/privacy contracts, relationship/moderation flows, wallet/tasks/shop behavior.
 - `docs/PROFILE_SYSTEM.md`
@@ -43,15 +39,13 @@ These are the most important things to preserve when changing the app:
 
 1. Messaging ordering is server-authoritative (`serverReceivedAt`), not client clock order.
 2. Messaging sends are idempotent (`messageId` + `clientId`), and retries must not create duplicates.
-3. Colyseus join payloads must include protocol/build/trace metadata (`buildJoinOptions`).
-4. Colyseus room registry and client room mapping must stay in sync.
-5. Profile writes must stay aligned across:
+3. Profile writes must stay aligned across:
    - `src/services/profile/profileContract.ts`
    - `src/services/profileService.ts`
    - `firebase-backend/firestore.rules`
-6. Economy/shop/task writes should remain server-authoritative via Functions.
-7. Feature flags must be safe both enabled and disabled, especially migration flags.
-8. Embedded Starforge assumes co-hosting at `/starforge` unless explicitly overridden.
+4. Economy/shop/task writes should remain server-authoritative via Functions.
+5. Feature flags must be safe both enabled and disabled, especially migration flags.
+
 
 ## Documentation Maintenance Rules
 

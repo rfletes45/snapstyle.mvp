@@ -27,8 +27,6 @@ Function categories in use:
 
 - Messaging and inbox:
   - `messaging.ts`, `inboxTriggers.ts`, `messageRequests.ts`, `privacyPublish.ts`, `rateLimiter.ts`, `chatMedia.ts`
-- Games/leaderboards/achievements:
-  - `games.ts`, `leaderboards.ts`, `achievementsV2Evaluator.ts`
 - Economy/shop/IAP/gifting:
   - `economy.ts`, `shop.ts`, `cosmeticEntitlements.ts`, `iap.ts`, `gifting.ts`, `dailyDeals.ts`
 - Calls/notifications/moderation/admin/scheduled:
@@ -47,11 +45,6 @@ Messaging:
 - `publishReadReceipt`
 - `publishDeliveryReceipt`
 
-Games and invites:
-
-- `createGameFromInvite`
-- `makeMove`
-- `resignGame`
 
 Economy/shop:
 
@@ -91,16 +84,11 @@ Use `firebase-backend/firestore.rules` as the definitive contract. Important col
   - `Chats/{chatId}` and `Chats/{chatId}/Messages/{messageId}`
   - `Groups/{groupId}`, `Members`, `Messages`
   - Inbox and MessageRequests related structures
-- Games:
-  - `GameInvites`, `TurnBasedGames`, `RealtimeGameSessions`, `SpectatorSessions`
 - Economy and commerce:
   - `Wallets`, `Transactions`, `Tasks`, `TaskProgress`, `ShopCatalog`, purchase collections
 - Calls and moderation:
   - `Calls`, `CallSignaling`, `Reports`, `Bans`, warning/admin artifacts
 
-Compatibility nuance:
-
-- Both `Users/{uid}` and `users/{uid}` appear in rules for backward compatibility around achievements data paths.
 
 ## Storage Contract Summary
 

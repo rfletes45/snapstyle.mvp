@@ -22,15 +22,13 @@ export function messageV2ToWithProfile(
   friendProfile: { displayName?: string; username?: string } | null,
 ): MessageWithProfile {
   // Determine message type from V2 kind
-  let type: "text" | "image" | "scorecard" | "voice" | "animal" = "text";
+  let type: "text" | "image" | "voice" | "animal" = "text";
   if (msg.kind === "animal") {
     type = "animal";
   } else if (msg.kind === "voice") {
     type = "voice";
   } else if (msg.kind === "media") {
     type = "image";
-  } else if (msg.kind === "scorecard" || msg.text?.startsWith('{"game')) {
-    type = "scorecard";
   }
 
   // Map V2 status to legacy status
@@ -102,11 +100,7 @@ export function createReplyMetadataFromMessage(
     senderId: message.sender,
     senderName,
     kind:
-      message.type === "image"
-        ? "media"
-        : message.type === "scorecard"
-          ? "text"
-          : "text",
+      message.type === "image" ? "media" : "text",
     textSnippet:
       message.type === "text"
         ? message.content.length > 100
@@ -159,11 +153,9 @@ export function messageWithProfileToV2(
         ? "media"
         : message.type === "animal"
           ? "animal"
-          : message.type === "scorecard"
-            ? "scorecard"
-            : message.type === "voice"
-              ? "voice"
-              : "text",
+          : message.type === "voice"
+            ? "voice"
+            : "text",
     text: message.type === "text" ? message.content : undefined,
     ...(message.type === "animal" && message.animalId
       ? { animalId: message.animalId }

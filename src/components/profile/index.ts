@@ -68,7 +68,6 @@ export type { LevelProgressProps } from "./LevelProgress";
 export {
   BadgeDisplaySkeleton,
   FullProfileSkeleton,
-  GameScoresSkeleton,
   PrivacySettingsSkeleton,
   ProfileBioSkeleton,
   ProfileHeaderSkeleton,

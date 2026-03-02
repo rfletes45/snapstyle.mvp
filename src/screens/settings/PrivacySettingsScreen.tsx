@@ -133,13 +133,6 @@ const SETTING_SECTIONS: SettingSection[] = [
     icon: "chart-line",
     settings: [
       {
-        key: "showGameScores",
-        title: "Game Scores",
-        description: "Who can see your game high scores",
-        icon: "trophy",
-        type: "visibility",
-      },
-      {
         key: "showBadges",
         title: "Badges",
         description: "Who can see your earned badges",
@@ -240,13 +233,6 @@ const SETTING_SECTIONS: SettingSection[] = [
         title: "Calls",
         description: "Who can call you",
         icon: "phone",
-        type: "visibility",
-      },
-      {
-        key: "allowGameInvites",
-        title: "Game Invites",
-        description: "Who can invite you to games",
-        icon: "gamepad-variant",
         type: "visibility",
       },
     ],

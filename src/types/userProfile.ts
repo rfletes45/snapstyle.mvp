@@ -207,8 +207,6 @@ export interface ProfilePrivacySettings {
   showStatus: PrivacyVisibility;
 
   // === ACTIVITY VISIBILITY ===
-  /** Who can see your game scores */
-  showGameScores: PrivacyVisibility;
   /** Who can see your badges */
   showBadges: PrivacyVisibility;
   /** Who can see your last active time */
@@ -239,9 +237,6 @@ export interface ProfilePrivacySettings {
   allowMessages: PrivacyVisibility;
   /** Who can call you */
   allowCalls: PrivacyVisibility;
-  /** Who can send you game invites */
-  allowGameInvites: PrivacyVisibility;
-
   // === DISCOVERY SETTINGS ===
   /** Allow your profile to appear in search results */
   appearInSearch: boolean;
@@ -266,7 +261,6 @@ export const DEFAULT_PRIVACY_SETTINGS: ProfilePrivacySettings = {
   showStatus: "friends",
 
   // Activity visibility
-  showGameScores: "everyone",
   showBadges: "everyone",
   showLastActive: "friends",
   showOnlineStatus: "friends",
@@ -284,7 +278,6 @@ export const DEFAULT_PRIVACY_SETTINGS: ProfilePrivacySettings = {
   allowFriendRequests: "everyone",
   allowMessages: "friends",
   allowCalls: "friends",
-  allowGameInvites: "friends",
 
   // Discovery
   appearInSearch: true,
@@ -308,7 +301,6 @@ export const PRIVACY_PRESETS = {
       showProfilePicture: "everyone",
       showBio: "everyone",
       showStatus: "everyone",
-      showGameScores: "everyone",
       showBadges: "everyone",
       showLastActive: "everyone",
       showOnlineStatus: "everyone",
@@ -322,7 +314,6 @@ export const PRIVACY_PRESETS = {
       allowFriendRequests: "everyone",
       allowMessages: "everyone",
       allowCalls: "everyone",
-      allowGameInvites: "everyone",
       appearInSearch: true,
       allowProfileSharing: true,
       allowSuggestions: true,
@@ -338,7 +329,6 @@ export const PRIVACY_PRESETS = {
       showProfilePicture: "friends",
       showBio: "friends",
       showStatus: "friends",
-      showGameScores: "friends",
       showBadges: "friends",
       showLastActive: "friends",
       showOnlineStatus: "friends",
@@ -352,7 +342,6 @@ export const PRIVACY_PRESETS = {
       allowFriendRequests: "everyone",
       allowMessages: "friends",
       allowCalls: "friends",
-      allowGameInvites: "friends",
       appearInSearch: true,
       allowProfileSharing: false,
       allowSuggestions: true,
@@ -368,7 +357,6 @@ export const PRIVACY_PRESETS = {
       showProfilePicture: "friends",
       showBio: "friends",
       showStatus: "nobody",
-      showGameScores: "nobody",
       showBadges: "friends",
       showLastActive: "nobody",
       showOnlineStatus: "nobody",
@@ -382,7 +370,6 @@ export const PRIVACY_PRESETS = {
       allowFriendRequests: "nobody",
       allowMessages: "friends",
       allowCalls: "friends",
-      allowGameInvites: "friends",
       appearInSearch: false,
       allowProfileSharing: false,
       allowSuggestions: false,
@@ -510,31 +497,6 @@ export interface UserThemeConfig {
   /** Custom uploaded background (premium) */
   customBackgroundUrl?: string;
   /** When theme was last changed */
-  updatedAt: number;
-}
-
-// =============================================================================
-// GAME SCORES DISPLAY
-// =============================================================================
-
-/**
- * Game score for profile display
- */
-export interface ProfileGameScore {
-  gameId: string;
-  gameName: string;
-  gameIcon: string;
-  score: number;
-  achievedAt: number;
-  displayOrder: number;
-}
-
-/**
- * Game scores display configuration
- */
-export interface ProfileGameScoresConfig {
-  enabled: boolean;
-  displayedGames: ProfileGameScore[];
   updatedAt: number;
 }
 
@@ -773,9 +735,6 @@ export interface UserProfileData {
   // Status/Mood (optional)
   status?: ProfileStatus;
 
-  // Game scores display
-  gameScores: ProfileGameScoresConfig;
-
   // Theme configuration
   theme: UserThemeConfig;
 
@@ -828,11 +787,6 @@ export const DEFAULT_USER_PROFILE_DATA: Omit<
   },
   bio: {
     text: "",
-    updatedAt: Date.now(),
-  },
-  gameScores: {
-    enabled: false,
-    displayedGames: [],
     updatedAt: Date.now(),
   },
   theme: {
@@ -1214,11 +1168,6 @@ export function applyPrivacyFilters(
   // Status
   if (canView(privacy.showStatus)) {
     filtered.status = profile.status;
-  }
-
-  // Game scores
-  if (canView(privacy.showGameScores)) {
-    filtered.gameScores = profile.gameScores;
   }
 
   // Badges

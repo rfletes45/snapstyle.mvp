@@ -18,17 +18,6 @@ export interface User {
   /** Chat cosmetics: bubble color, font, animal theme */
   chatAppearance?: ChatAppearance;
 
-  // ── XP / Leveling (written by onGameResult Cloud Function) ──
-  /** Total game XP earned across all games */
-  gameXp?: number;
-  /** Current game level */
-  gameLevel?: number;
-  /** XP progress within the current level */
-  gameLevelXp?: number;
-  /** XP required to reach the next level */
-  gameXpToNextLevel?: number;
-  /** Array of level reward levels already claimed */
-  claimedLevels?: number[];
   /** Cosmetic points balance */
   cosmeticPoints?: number;
 }
@@ -83,8 +72,8 @@ export type MessageStatus = "sending" | "sent" | "delivered" | "failed";
 export interface Message {
   id: string;
   sender: string;
-  type: "text" | "image" | "scorecard";
-  content: string; // text content or storage path or JSON for scorecard
+  type: "text" | "image";
+  content: string; // text content or storage path
   createdAt: number;
   expiresAt: number;
   read: boolean;
@@ -95,12 +84,6 @@ export interface Message {
   errorMessage?: string;
   isLocal?: boolean;
   clientMessageId?: string;
-  // Scorecard data (for type: "scorecard")
-  scorecard?: {
-    gameId: ExtendedGameType;
-    score: number;
-    playerName: string;
-  };
 }
 
 export interface Story {
@@ -118,63 +101,6 @@ export interface StoryView {
   viewedAt: number;
   viewed: boolean; // true (for querying convenience)
 }
-
-// Game Types
-// @see src/types/games.ts for full type definitions and metadata
-
-export type SinglePlayerGameType = "bounce_blitz" | "play_2048" | "word_master";
-
-export type TurnBasedGameType =
-  | "chess"
-  | "checkers"
-  | "crazy_eights"
-  | "tic_tac_toe";
-
-export type RealTimeGameType =
-  | "starforge_game"
-  | "sketch_party_game"
-  | "pong_game";
-
-// All available game types
-export type ExtendedGameType =
-  | SinglePlayerGameType
-  | TurnBasedGameType
-  | RealTimeGameType;
-
-export interface GameSession {
-  id: string;
-  gameId: string;
-  playerId: string;
-  score: number;
-  playedAt: number; // Always converted to number in service layer
-  // Anti-cheat metadata
-  duration?: number; // Game duration in ms
-}
-
-// Extended game session for new games
-export interface ExtendedGameSession {
-  id: string;
-  gameId: ExtendedGameType;
-  playerId: string;
-  score: number;
-  playedAt: number;
-  duration?: number;
-  // Game-specific metadata
-  metadata?: {
-    // Bounce Blitz
-    blocksDestroyed?: number;
-    ballsUsed?: number;
-    // Word Master
-    wordsFound?: number;
-    longestWord?: string;
-    // 2048
-    highestTile?: number;
-    movesUsed2048?: number;
-  };
-}
-
-// Game score limits for anti-cheat validation
-// @see src/types/games.ts EXTENDED_GAME_SCORE_LIMITS for full configuration
 
 // Cosmetics
 export interface CosmeticItem {
@@ -471,7 +397,7 @@ export interface ScheduledMessage {
   chatId: string; // Target chat (DM chatId or Group groupId)
   scope: "dm" | "group"; // Whether this is for DM or Group chat
   content: string; // Message content (text or storage path)
-  type: "text" | "image"; // Message type (scorecard not supported for scheduling)
+  type: "text" | "image"; // Message type
   scheduledFor: number; // When to send (UTC timestamp)
   createdAt: number; // When the schedule was created
   status: ScheduledMessageStatus;
@@ -516,7 +442,6 @@ export interface Achievement {
   meta?: {
     // Optional metadata about how it was earned
     score?: number;
-    gameId?: ExtendedGameType;
     streakCount?: number;
     friendCount?: number;
   };
@@ -941,17 +866,11 @@ export interface GroupMessage {
   sender: string;
   senderDisplayName: string; // Denormalized for display
   senderAvatarConfig?: AvatarConfig; // Avatar config for display in group chats
-  type: "text" | "image" | "scorecard" | "system" | "voice"; // system for join/leave notifications, voice for H11
+  type: "text" | "image" | "system" | "voice"; // system for join/leave notifications, voice for H11
   content: string;
   createdAt: number;
   // For image messages
   imagePath?: string;
-  // For scorecard messages
-  scorecard?: {
-    gameId: ExtendedGameType;
-    score: number;
-    playerName: string;
-  };
   // For system messages
   systemType?:
     | "member_joined"

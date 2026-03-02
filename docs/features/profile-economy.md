@@ -21,7 +21,7 @@ Hydrated profile includes key fields such as:
 
 - Identity/display: `uid`, `username`, `usernameLower`, `displayName`
 - Visual identity: `avatarConfig`, `profilePicture`, `avatarDecoration`, `theme`
-- Social/profile: `bio`, `status`, `featuredBadges`, `gameScores`
+- Social/profile: `bio`, `status`, `featuredBadges`
 - Privacy: `privacy`
 - Metadata: `createdAt`, `lastActive`, `lastProfileUpdate`
 
@@ -51,9 +51,9 @@ Defaults are defined in:
 Privacy controls cover:
 
 - profile visibility
-- status/game score/badge visibility
+- status/badge visibility
 - friends list and mutual friend display
-- contact permissions (messages/calls/game invites/friend requests)
+- contact permissions (messages/calls/friend requests)
 - discovery toggles (search/sharing/suggestions)
 
 ## Relationship and Moderation Flow
@@ -115,7 +115,6 @@ Server-authoritative write paths:
 Relevant rollout groups in `constants/featureFlags.ts`:
 
 - `PROFILE_V2_FEATURES`
-- `ACHIEVEMENTS_V2_FEATURES`
 
 Treat these as runtime gates that may intentionally leave compatibility paths active.
 

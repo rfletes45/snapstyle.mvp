@@ -145,39 +145,6 @@ export const ProfileBioSkeleton = memo(function ProfileBioSkeleton() {
 });
 
 // =============================================================================
-// Game Scores Skeleton
-// =============================================================================
-
-export const GameScoresSkeleton = memo(function GameScoresSkeleton() {
-  const colors = useColors();
-
-  return (
-    <View style={styles.scoresContainer}>
-      {/* Header */}
-      <View style={styles.scoresHeader}>
-        <SkeletonBox width={100} height={20} />
-      </View>
-
-      {/* Score cards */}
-      {[1, 2, 3].map((i) => (
-        <Surface
-          key={i}
-          style={[styles.scoreCard, { backgroundColor: colors.surfaceVariant }]}
-          elevation={1}
-        >
-          <SkeletonBox width={40} height={40} borderRadius={20} />
-          <View style={styles.scoreInfo}>
-            <SkeletonBox width={80} height={16} />
-            <SkeletonBox width={60} height={12} style={styles.marginTop} />
-          </View>
-          <SkeletonBox width={50} height={24} />
-        </Surface>
-      ))}
-    </View>
-  );
-});
-
-// =============================================================================
 // Badge Display Skeleton
 // =============================================================================
 
@@ -213,7 +180,6 @@ export const FullProfileSkeleton = memo(function FullProfileSkeleton() {
     <View style={styles.fullProfileContainer}>
       <ProfileHeaderSkeleton />
       <ProfileBioSkeleton />
-      <GameScoresSkeleton />
       <BadgeDisplaySkeleton />
     </View>
   );
@@ -318,26 +284,6 @@ const styles = StyleSheet.create({
     margin: Spacing.md,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
-  },
-
-  // Scores
-  scoresContainer: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  scoresHeader: {
-    marginBottom: Spacing.sm,
-  },
-  scoreCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.xs,
-    gap: Spacing.sm,
-  },
-  scoreInfo: {
-    flex: 1,
   },
 
   // Badges

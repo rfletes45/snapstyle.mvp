@@ -26,7 +26,7 @@ import type {
   LevelInfo,
   ProfileStats,
 } from "@/types/profile";
-import { calculateLevelFromXp, normalizeAvatarConfig } from "@/types/profile";
+import { normalizeAvatarConfig } from "@/types/profile";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createLogger } from "@/utils/log";
@@ -152,18 +152,15 @@ export function useProfileData(
   }, [baseProfile, uid, badgeStats, cachedStats]);
 
   // =============================================================================
-  // Live XP from game results (updates immediately when XP is awarded)
-  // =============================================================================
-
-  // =============================================================================
   // Computed Level (Memoized)
   // =============================================================================
+
+  const defaultLevel: LevelInfo = { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 };
 
   const computedLevel = useMemo<LevelInfo | null>(() => {
     if (!uid) return cachedLevel;
 
-    const totalXp = baseProfile?.gameXp ?? 0;
-    const level = calculateLevelFromXp(totalXp);
+    const level = defaultLevel;
 
     // Update cache asynchronously so other consumers see it
     setCached(uid, "level", level).catch((err) => {
@@ -171,7 +168,7 @@ export function useProfileData(
     });
 
     return level;
-  }, [uid, baseProfile, cachedLevel]);
+  }, [uid, cachedLevel]);
 
   // =============================================================================
   // Extended Profile (Memoized)
@@ -195,7 +192,7 @@ export function useProfileData(
       ),
     };
 
-    const level = computedLevel || calculateLevelFromXp(0);
+    const level = computedLevel || defaultLevel;
 
     return {
       uid: baseProfile.uid,

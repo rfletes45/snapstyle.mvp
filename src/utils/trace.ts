@@ -2,7 +2,7 @@
  * Trace ID (Correlation ID) Generator
  *
  * Produces short, URL-safe, collision-resistant identifiers used to
- * correlate logs across client → Colyseus server → Firestore.
+ * correlate logs across client → server → Firestore.
  *
  * Format:  {prefix}-{timestamp36}-{random}
  * Example: gs-m5abc12-k7f9x2

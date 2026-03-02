@@ -411,8 +411,6 @@ interface SendMessageV2Input {
     | "voice"
     | "file"
     | "system"
-    | "scorecard"
-    | "game_invite"
     | "animal";
   text?: string;
   /** Animal theme ID (required when kind="animal") */
@@ -573,8 +571,6 @@ export const sendMessageV2 = functions.https.onCall(
         "voice",
         "file",
         "system",
-        "scorecard",
-        "game_invite",
         "animal",
       ].includes(kind)
     ) {
@@ -836,8 +832,6 @@ export const sendMessageV2 = functions.https.onCall(
       text: "text",
       media: "image",
       voice: "voice",
-      scorecard: "scorecard",
-      game_invite: "scorecard",
       system: "system",
       file: "text", // files shown as text in legacy
     };
@@ -1069,21 +1063,6 @@ function getPreviewText(
   if (kind === "voice") return "🎤 Voice message";
   if (kind === "file") return "📎 File";
   if (kind === "system") return text || "System message";
-
-  if (kind === "scorecard") {
-    try {
-      const data = JSON.parse(text || "");
-      if (data.type === "spectator_invite") {
-        return data.finished
-          ? `🏆 Game ended — ${data.gameName || "Game"}`
-          : `👁️ Watch me play ${data.gameName || "a game"}!`;
-      }
-      return `🎮 ${data.playerName || "Someone"} scored ${data.score ?? 0}`;
-    } catch {
-      return "🎮 Game result";
-    }
-  }
-  if (kind === "game_invite") return "🎮 Game invite";
   if (kind === "animal") return "🐾 Animal sticker";
 
   return text || "";

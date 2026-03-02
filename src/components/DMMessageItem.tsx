@@ -42,7 +42,7 @@ export interface MessageWithProfile {
   id: string;
   sender: string;
   content: string;
-  type: "text" | "image" | "scorecard" | "voice" | "animal";
+  type: "text" | "image" | "voice" | "animal";
   createdAt: Date;
   status?: "sending" | "sent" | "delivered" | "read" | "failed";
   /** Server received timestamp for read receipt calculation */
@@ -340,14 +340,6 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         return <Text style={{ fontSize: 14, color: "#999" }}>📷 Photo</Text>;
       }
 
-      if (message.type === "scorecard") {
-        return (
-          <Text style={[styles.messageText, { color: theme.colors.onSurface }]}>
-            [Scorecard]
-          </Text>
-        );
-      }
-
       return (
         <>
           <Text
@@ -411,7 +403,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       <SwipeableMessage
         message={swipeableMessage}
         onReply={onReply}
-        enabled={message.type !== "scorecard" && message.status !== "failed"}
+        enabled={message.status !== "failed"}
         currentUid={currentUid}
       >
         <View
@@ -457,9 +449,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
                       ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a voice message`
                       : message.type === "image"
                         ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a picture`
-                        : message.type === "scorecard"
-                          ? `${isSentByMe ? "You sent" : `${friendProfile?.displayName || "Friend"} sent`} a scorecard`
-                          : `${isSentByMe ? "You" : friendProfile?.displayName || "Friend"}: ${message.content}`
+                        : `${isSentByMe ? "You" : friendProfile?.displayName || "Friend"}: ${message.content}`
                   }
                   accessibilityRole="button"
                   accessibilityHint="Long press for message options, swipe right to reply"

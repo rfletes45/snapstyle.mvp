@@ -18,10 +18,8 @@ Primary goals completed:
 ```text
 UI Surfaces
   Profile tab (ProfileMain)
-  Play header profile card (EnhancedGamesProfileHeader)
   Customization Hub (equip-only)
   Cosmetics Shop (purchase-only)
-  Achievements + Level Rewards
   Chat bubbles/composer sender style
         |
         v
@@ -29,23 +27,18 @@ Hooks / Composition
   useProfileData / useFullProfileData / useProfilePicture
   useCustomizationHub
   useCosmeticsShop
-  usePlayerSummary
-  useAchievementsV2
         |
         v
 Client Services
   profileService.ts (equip writes)
   profile/profileContract.ts (hydration + validation + dev guardrails)
   entitlements.ts (Users/{uid}/Entitlements reads + free/starter grant path)
-  levelRewardsService.ts (claim callable + claimedLevels read)
-  achievementsV2.ts / masterBadgeClaim.ts / badges.ts
+  masterBadgeClaim.ts / badges.ts
   economy.ts (wallet subscriptions)
         |
         v
 Cloud Functions (authoritative server writes)
   cosmeticEntitlements.ts (purchase and grants)
-  games.ts (onGameResult, claimLevelReward)
-  achievementsV2Evaluator.ts
   messaging.ts (chat senderStyle stamping + animal entitlement enforcement)
         |
         v
@@ -54,7 +47,6 @@ Firestore
   Users/{uid}/Entitlements/{cosmeticId}
   Wallets/{uid}
   Transactions/{transactionId}
-  users/{uid}/achievements/* (v2)
   Users/{uid}/Badges/* (legacy badge path still active)
   Users/{uid}/PurchaseHistory/*
   Users/{uid}/inventory/* (legacy back-compat)
@@ -75,14 +67,8 @@ Canonical wiring:
 
 Entry points validated:
 1. Profile tab -> `ProfileStack.ProfileMain` -> `OwnProfileScreen`
-2. Play header profile card actions -> profile tab routes, wallet, level rewards, shop
-3. Achievement unlock toast tap -> now routes to `Play` tab nested `Achievements`
-4. Level bar taps:
-   - own profile header -> `LevelRewards`
-   - play header XP bar -> `LevelRewards`
 
 Route contract updates applied:
-- `PlayStackParamList.Achievements` now supports `targetAchievementId`
 - `Customization` route params now include `initialSection: "profile" | "chat"` (both profile stack and root stack)
 
 ## 4) Data Model (Exact Paths/Fields)
@@ -102,8 +88,6 @@ Fields actively used by profile/customization:
   - `chatAppearance.bubbleColorId`
   - `chatAppearance.fontId`
   - `chatAppearance.animalThemeId`
-- progression: `gameXp`, `gameLevel`, `gameLevelXp`, `gameXpToNextLevel`
-- rewards idempotency: `claimedLevels`
 - metadata: `lastProfileUpdate`
 - legacy compatibility still present:
   - `ownedDecorations`
@@ -139,14 +123,7 @@ Paths:
 - `Transactions/{transactionId}`
 - `Users/{uid}/PurchaseHistory/{transactionId}`
 
-### 4.5 Achievements V2 (lowercase namespace)
-Paths:
-- `users/{uid}/achievements/{achievementId}`
-- `users/{uid}/achievementSummary/summary`
-- `users/{uid}/statsPerGame/{gameType}`
-- `users/{uid}/socialGameStats/{docId}`
-
-### 4.6 Legacy badge path still active
+### 4.5 Legacy badge path still active
 Path:
 - `Users/{uid}/Badges/{badgeId}`
 
@@ -173,13 +150,6 @@ Path:
   - badges -> `featuredBadges.badgeIds`
   - chat cosmetics -> `chatAppearance.*`
 
-### 5.3 Level rewards claim
-- Client: `levelRewardsService.claimLevelReward(level)`
-- Server: `games.ts` callable `claimLevelReward`
-- Fixed in this pass:
-  - milestone levels with background rewards now grant entitlement docs in `Users/{uid}/Entitlements/{backgroundId}`
-  - `claimedLevels` remains idempotency gate
-
 ## 6) Rendering Pipeline
 
 ### 6.1 Profile headers (own + user)
@@ -192,17 +162,8 @@ Behavior:
 - background image resolved via `getCosmeticAsset("background", equippedBackgroundId)`
 - background is clipped to header region (`overflow: "hidden"`)
 - profile picture uses `ProfilePictureWithDecoration` with equipped decoration
-- level bar renders at bottom of header
 
-### 6.2 Play header profile card
-- `src/components/games/EnhancedGamesProfileHeader.tsx`
-- Data hook: `src/hooks/usePlayerSummary.ts`
-
-Fix applied:
-- removed placeholder equipped slots
-- now maps equipped state from profile fields (`equippedBackgroundId`, first featured badge, extended avatar slots)
-
-### 6.3 Chat appearance rendering
+### 6.2 Chat appearance rendering
 - Resolver: `src/cosmetics/chatAppearanceResolver.ts`
 - Message writes stamped with sender style by server in `messaging.ts`
 - animal sends validated against entitlement/equipped state in backend
@@ -235,31 +196,11 @@ Consolidation performed:
 
 ## 8) Known Issues Found -> Fixes Applied
 
-1. Achievement toast navigation target mismatch
-- was: toast routed to Profile stack for `Achievements` (invalid)
-- fixed: `GameResultToastManager` now routes to `Play` tab nested `Achievements`
-
-2. Achievement deep-link payload mismatch
-- was: toast passed `targetAchievementId`, screen ignored it
-- fixed: `AchievementsV2Screen` now:
-  - reads `targetAchievementId`
-  - switches to matching category tab
-  - auto-expands containing section
-  - highlights targeted achievement card
-
-3. Customization route param drift
+1. Customization route param drift
 - was: runtime used `initialSection`, navigation types did not
 - fixed: root/profile stack `Customization` params now include `initialSection`
 
-4. Level rewards contract gap
-- was: milestone background rewards did not grant background entitlements
-- fixed: server claim writes entitlement docs for milestone background levels
-
-5. Play header equipped state gap
-- was: equipped chip slots hardcoded null placeholders
-- fixed: `usePlayerSummary` maps equipped values from live profile fields
-
-6. Missing dev contract guardrails
+2. Missing dev contract guardrails
 - fixed: `profileContract.hydrateProfileData()` now emits dev-only warnings when equipped IDs:
   - are missing from catalog
   - have wrong type for slot

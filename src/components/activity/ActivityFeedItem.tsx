@@ -19,9 +19,6 @@ import {
   ACTIVITY_DISPLAY_CONFIG,
   type AchievementData,
   type ActivityEvent,
-  type GameScoreData,
-  type GameWinData,
-  type LevelUpData,
   type NewFriendData,
   type StatusChangeData,
   type StreakMilestoneData,
@@ -66,29 +63,10 @@ export const ActivityFeedItem: React.FC<ActivityFeedItemProps> = React.memo(
       const name = event.displayName || event.username || "Someone";
 
       switch (event.data.type) {
-        case "game_score": {
-          const d = event.data as GameScoreData;
-          if (d.isPersonalBest) {
-            return `${name} set a new personal best in ${d.gameName}: ${d.formattedScore}! 🎉`;
-          }
-          return `${name} scored ${d.formattedScore} in ${d.gameName}`;
-        }
-        case "game_win": {
-          const d = event.data as GameWinData;
-          const streak =
-            d.winStreak && d.winStreak > 1
-              ? ` (${d.winStreak} win streak! 🔥)`
-              : "";
-          return `${name} beat ${d.opponentName} in ${d.gameName}${streak}`;
-        }
         case "achievement": {
           const d = event.data as AchievementData;
           const rarityLabel = d.rarity ? ` [${d.rarity}]` : "";
           return `${name} earned "${d.achievementName}"${rarityLabel} — ${d.description}`;
-        }
-        case "level_up": {
-          const d = event.data as LevelUpData;
-          return `${name} reached Level ${d.newLevel}!`;
         }
         case "streak_milestone": {
           const d = event.data as StreakMilestoneData;

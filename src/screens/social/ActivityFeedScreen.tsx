@@ -59,10 +59,7 @@ interface FilterOption {
 
 const FILTER_OPTIONS: FilterOption[] = [
   { id: "all", label: "All", emoji: "📋" },
-  { id: "game_score", label: "Scores", emoji: "🎮" },
-  { id: "game_win", label: "Wins", emoji: "🏆" },
   { id: "achievement", label: "Achievements", emoji: "🏅" },
-  { id: "level_up", label: "Level Ups", emoji: "⬆️" },
   { id: "streak_milestone", label: "Streaks", emoji: "🔥" },
   { id: "new_friend", label: "Friendships", emoji: "🤝" },
 ];
@@ -171,13 +168,6 @@ export default function ActivityFeedScreen({
     (event: ActivityEvent) => {
       // Navigate based on event type
       switch (event.type) {
-        case "game_score":
-        case "game_win":
-          navigation.navigate("MainTabs", {
-            screen: "Play",
-            params: { screen: "GamesHub" },
-          });
-          break;
         case "achievement":
           navigation.navigate("UserProfile", { userId: event.userId });
           break;

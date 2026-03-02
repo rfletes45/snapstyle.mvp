@@ -10,7 +10,6 @@ function createProfile() {
     avatarDecoration: { decorationId: "sparkle" },
     bio: { text: "hello world", updatedAt: 1 },
     status: { text: "Ready to play", mood: "happy", setAt: 1 },
-    gameScores: { enabled: true, displayedGames: [], updatedAt: 1 },
     featuredBadges: { badgeIds: ["badge-1"], updatedAt: 1 },
     theme: { equippedThemeId: "default", updatedAt: 1 },
     profileViews: 42,
@@ -19,7 +18,6 @@ function createProfile() {
       showProfilePicture: "friends",
       showBio: "friends",
       showStatus: "friends",
-      showGameScores: "friends",
       showBadges: "friends",
       showLastActive: "friends",
       trackProfileViews: true,
@@ -44,7 +42,6 @@ describe("applyPrivacyFilters", () => {
     expect(filtered.theme).toBeDefined();
     expect(filtered.bio).toBeUndefined();
     expect(filtered.status).toBeUndefined();
-    expect(filtered.gameScores).toBeUndefined();
     expect(filtered.featuredBadges).toBeUndefined();
     expect(filtered.profilePicture).toBeUndefined();
     expect(filtered.avatarDecoration).toBeUndefined();

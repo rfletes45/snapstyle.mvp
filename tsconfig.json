@@ -21,8 +21,6 @@
   "exclude": [
     "firebase/**",
     "firebase-backend/**",
-    "colyseus-server/**",
-    "starforge-viewer/**",
     "node_modules"
   ]
 }

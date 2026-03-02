@@ -15,10 +15,7 @@
  * All possible activity event types
  */
 export type ActivityEventType =
-  | "game_score" // Friend beat a personal best / high score
-  | "game_win" // Friend won a multiplayer game
   | "achievement" // Friend earned an achievement/badge
-  | "level_up" // Friend leveled up
   | "streak_milestone" // Friend hit a streak milestone
   | "profile_update" // Friend updated profile picture/bio
   | "new_friend" // Two friends became friends
@@ -60,10 +57,7 @@ export interface ActivityEvent {
  * Union type for activity-specific data payloads
  */
 export type ActivityEventData =
-  | GameScoreData
-  | GameWinData
   | AchievementData
-  | LevelUpData
   | StreakMilestoneData
   | ProfileUpdateData
   | NewFriendData
@@ -71,24 +65,6 @@ export type ActivityEventData =
   | DecorationEquipData
   | ShopPurchaseData;
 
-export interface GameScoreData {
-  type: "game_score";
-  gameType: string;
-  gameName: string;
-  score: number;
-  formattedScore: string;
-  isPersonalBest: boolean;
-  previousBest?: number;
-}
-
-export interface GameWinData {
-  type: "game_win";
-  gameType: string;
-  gameName: string;
-  opponentName: string;
-  opponentId: string;
-  winStreak?: number;
-}
 
 export interface AchievementData {
   type: "achievement";
@@ -97,12 +73,6 @@ export interface AchievementData {
   achievementIcon: string;
   description: string;
   rarity?: "common" | "uncommon" | "rare" | "epic" | "legendary";
-}
-
-export interface LevelUpData {
-  type: "level_up";
-  newLevel: number;
-  previousLevel: number;
 }
 
 export interface StreakMilestoneData {
@@ -163,33 +133,12 @@ export const ACTIVITY_DISPLAY_CONFIG: Record<
   ActivityEventType,
   ActivityDisplayConfig
 > = {
-  game_score: {
-    icon: "gamepad-variant",
-    emoji: "🎮",
-    verb: "scored",
-    color: "#4CAF50",
-    priority: 7,
-  },
-  game_win: {
-    icon: "trophy",
-    emoji: "🏆",
-    verb: "won against",
-    color: "#FF9800",
-    priority: 8,
-  },
   achievement: {
     icon: "medal",
     emoji: "🏅",
     verb: "earned",
     color: "#9C27B0",
     priority: 9,
-  },
-  level_up: {
-    icon: "arrow-up-bold-circle",
-    emoji: "⬆️",
-    verb: "leveled up to",
-    color: "#2196F3",
-    priority: 6,
   },
   streak_milestone: {
     icon: "fire",

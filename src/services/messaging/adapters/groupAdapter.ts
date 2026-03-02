@@ -28,14 +28,12 @@ import { GroupMessage } from "@/types/models";
  * - "text" → "text"
  * - "image" → "media"
  * - "voice" → "voice"
- * - "scorecard" → "scorecard"
  * - "system" → "system"
  */
 const KIND_MAP: Record<GroupMessage["type"], MessageKind> = {
   text: "text",
   image: "media",
   voice: "voice",
-  scorecard: "scorecard",
   system: "system",
 };
 
@@ -197,7 +195,6 @@ function convertVoiceAttachment(msg: GroupMessage): AttachmentV2[] {
  * - text: Plain text messages
  * - image: Messages with imagePath
  * - voice: Messages with voiceMetadata
- * - scorecard: Game scorecard messages
  * - system: System notifications (join/leave/etc)
  *
  * @param msg - Legacy GroupMessage to convert
@@ -279,18 +276,6 @@ export function fromGroupMessage(msg: GroupMessage): MessageV2 {
     status: "sent",
   };
 
-  // Handle scorecard-specific data
-  if (msg.type === "scorecard" && msg.scorecard) {
-    // Store scorecard data in text field as JSON for now
-    // Components can parse this when rendering
-    messageV2.text = JSON.stringify({
-      type: "scorecard",
-      gameId: msg.scorecard.gameId,
-      score: msg.scorecard.score,
-      playerName: msg.scorecard.playerName,
-    });
-  }
-
   // Handle system message metadata
   if (msg.type === "system" && msg.systemType) {
     // Store system metadata in text field as JSON
@@ -330,10 +315,8 @@ export function toGroupMessage(msg: MessageV2): GroupMessage {
     text: "text",
     media: "image",
     voice: "voice",
-    scorecard: "scorecard",
     system: "system",
     file: "text", // No file type in legacy format
-    game_invite: "scorecard", // Game invites map to scorecard in legacy format
     animal: "text", // Animal signal messages map to text in legacy format
   };
 

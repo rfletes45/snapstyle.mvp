@@ -89,7 +89,6 @@ function mapEntryToConversation(entry: InboxEntry): InboxConversation {
     voice: "voice",
     file: "attachment",
     scorecard: "scorecard",
-    game_invite: "game_invite",
     system: "text",
   };
 

@@ -383,8 +383,6 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         "voice",
         "file",
         "system",
-        "scorecard",
-        "game_invite",
         "animal",
     ].includes(kind)) {
         throw new functions.https.HttpsError("invalid-argument", "Invalid message kind");
@@ -548,8 +546,6 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
         text: "text",
         media: "image",
         voice: "voice",
-        scorecard: "scorecard",
-        game_invite: "scorecard",
         system: "system",
         file: "text", // files shown as text in legacy
     };
@@ -731,22 +727,6 @@ function getPreviewText(kind, text, attachments) {
         return "📎 File";
     if (kind === "system")
         return text || "System message";
-    if (kind === "scorecard") {
-        try {
-            const data = JSON.parse(text || "");
-            if (data.type === "spectator_invite") {
-                return data.finished
-                    ? `🏆 Game ended — ${data.gameName || "Game"}`
-                    : `👁️ Watch me play ${data.gameName || "a game"}!`;
-            }
-            return `🎮 ${data.playerName || "Someone"} scored ${data.score ?? 0}`;
-        }
-        catch {
-            return "🎮 Game result";
-        }
-    }
-    if (kind === "game_invite")
-        return "🎮 Game invite";
     if (kind === "animal")
         return "🐾 Animal sticker";
     return text || "";

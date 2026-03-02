@@ -7,7 +7,7 @@
  */
 
 // =============================================================================
-// Achievement Tier Types (relocated from achievements.ts)
+// Badge Tier Types
 // =============================================================================
 
 export type AchievementTier =
@@ -580,33 +580,5 @@ export function normalizeAvatarConfig(config: {
     chatBubble: undefined,
     nameEffect: undefined,
     featuredBadges: [],
-  };
-}
-
-/**
- * Calculate level from total XP
- * Formula: Each level requires (level * 100) XP
- */
-export function calculateLevelFromXp(totalXp: number): LevelInfo {
-  let level = 1;
-  let xpUsed = 0;
-
-  while (true) {
-    const xpForNextLevel = level * 100;
-    if (xpUsed + xpForNextLevel > totalXp) {
-      break;
-    }
-    xpUsed += xpForNextLevel;
-    level++;
-  }
-
-  const xpInCurrentLevel = totalXp - xpUsed;
-  const xpToNextLevel = level * 100;
-
-  return {
-    current: level,
-    xp: xpInCurrentLevel,
-    xpToNextLevel,
-    totalXp,
   };
 }

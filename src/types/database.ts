@@ -44,8 +44,6 @@ export interface MessageRow {
     | "voice"
     | "file"
     | "system"
-    | "scorecard"
-    | "game_invite"
     | "animal";
   text: string | null;
   created_at: number;

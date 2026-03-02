@@ -53,10 +53,6 @@ export function getKindLabel(kind: MessageKind | string): string {
       return "File";
     case "system":
       return "System message";
-    case "scorecard":
-      return "Game result";
-    case "game_invite":
-      return "Game invite";
     default:
       return "Message";
   }
@@ -85,10 +81,6 @@ export function getKindIconMCI(kind: MessageKind | string): string {
       return "file";
     case "system":
       return "information";
-    case "scorecard":
-      return "trophy";
-    case "game_invite":
-      return "gamepad-variant";
     default:
       return "message-text";
   }
@@ -115,10 +107,6 @@ export function getKindIconIonicons(kind: MessageKind | string): string {
       return "document-outline";
     case "system":
       return "information-circle-outline";
-    case "scorecard":
-      return "trophy-outline";
-    case "game_invite":
-      return "game-controller-outline";
     default:
       return "chatbubble-outline";
   }

@@ -22,7 +22,6 @@ const VISIBILITY_FIELDS: (keyof Pick<
   | "showProfilePicture"
   | "showBio"
   | "showStatus"
-  | "showGameScores"
   | "showBadges"
   | "showLastActive"
   | "showOnlineStatus"
@@ -34,13 +33,11 @@ const VISIBILITY_FIELDS: (keyof Pick<
   | "allowFriendRequests"
   | "allowMessages"
   | "allowCalls"
-  | "allowGameInvites"
 >)[] = [
   "profileVisibility",
   "showProfilePicture",
   "showBio",
   "showStatus",
-  "showGameScores",
   "showBadges",
   "showLastActive",
   "showOnlineStatus",
@@ -52,7 +49,6 @@ const VISIBILITY_FIELDS: (keyof Pick<
   "allowFriendRequests",
   "allowMessages",
   "allowCalls",
-  "allowGameInvites",
 ];
 
 const BOOLEAN_FIELDS: (keyof Pick<
@@ -292,11 +288,6 @@ export function hydrateProfileData(
     avatarDecoration: source.avatarDecoration || { decorationId: null },
     bio: source.bio || { text: "", updatedAt: now },
     status: source.status,
-    gameScores: source.gameScores || {
-      enabled: false,
-      displayedGames: [],
-      updatedAt: now,
-    },
     theme: source.theme || {
       equippedThemeId: DEFAULT_THEME_ID,
       updatedAt: now,

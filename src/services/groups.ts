@@ -1032,7 +1032,6 @@ export async function getGroupMessages(
           ? data.createdAt.toMillis()
           : data.createdAt,
       imagePath: data.imagePath,
-      scorecard: data.scorecard,
       systemType: data.systemType,
       systemMeta: data.systemMeta,
       // H6: Reply-to threading
@@ -1110,7 +1109,6 @@ export function subscribeToGroupMessages(
               ? data.createdAt.toMillis()
               : data.createdAt,
           imagePath: data.imagePath,
-          scorecard: data.scorecard,
           systemType: data.systemType,
           systemMeta: data.systemMeta,
           // H6: Reply-to threading

@@ -37,7 +37,6 @@ function buildPreview(kind: string, text?: string): string {
   if (kind === "voice") return "🎤 Voice message";
   if (kind === "file") return "📎 File";
   if (kind === "system") return text || "System message";
-  if (kind === "scorecard" || kind === "game_invite") return "🎮 Game";
   return text || "";
 }
 
