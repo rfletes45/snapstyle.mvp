@@ -124,13 +124,6 @@ export {
 } from "./ReturnToBottomPill";
 export type { ReturnToBottomPillProps } from "./ReturnToBottomPill";
 
-// Game Invites in Chat (Universal Game Invites)
-export {
-  ChatGameInvites,
-  default as ChatGameInvitesDefault,
-} from "./ChatGameInvites";
-export type { ChatGameInvitesProps } from "./ChatGameInvites";
-
 // Typing Indicator
 // Typing Indicator
 export { TypingIndicator } from "./TypingIndicator";

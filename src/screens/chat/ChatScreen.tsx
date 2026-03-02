@@ -59,7 +59,6 @@ import { updateStreakAfterMessage } from "@/services/streakCosmetics";
 import {
   AttachmentTray,
   ChatComposer,
-  ChatGameInvites,
   ChatMessageList,
   MediaViewerModal,
   MessageActionsSheet,
@@ -89,12 +88,6 @@ import {
   getScheduledMessagesForChat,
   scheduleMessage,
 } from "@/services/scheduledMessages";
-
-// Game Picker
-import { GamePickerModal } from "@/components/games/GamePickerModal";
-import { GAME_SCREEN_MAP } from "@/config/gameCategories";
-import { ExtendedGameType } from "@/types/games";
-import { navigateToSessionLobby } from "@/utils/gameNavHelpers";
 
 // Call buttons
 import { CallButtonGroup } from "@/components/calls";
@@ -205,7 +198,6 @@ export default function ChatScreen({
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
-  const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
 
   // Message actions state
@@ -860,58 +852,6 @@ export default function ChatScreen({
     returnIndexRef.current = null;
   }, []);
 
-  // Guard to prevent duplicate navigation to the same game/invite
-  const navigatedInvitesRef = useRef<Set<string>>(new Set());
-
-  const handleNavigateToGame = useCallback(
-    (
-      gameId: string,
-      gameType: string,
-      options?: {
-        inviteId?: string;
-        spectatorMode?: boolean;
-      },
-    ) => {
-      // De-duplicate: if we already navigated for this inviteId, skip
-      if (options?.inviteId) {
-        if (navigatedInvitesRef.current.has(options.inviteId)) {
-          logger.debug(
-            `[ChatScreen] Skipping duplicate navigation for invite ${options.inviteId}`,
-          );
-          return;
-        }
-        navigatedInvitesRef.current.add(options.inviteId);
-      }
-
-      const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
-      if (screen) {
-        // Navigate through MainTabs -> Play tab -> specific game screen
-        navigation.navigate("MainTabs", {
-          screen: "Play",
-          params: {
-            screen,
-            params: {
-              matchId: gameId || undefined,
-              inviteId: options?.inviteId,
-              spectatorMode: options?.spectatorMode,
-              entryPoint: "chat",
-              conversationId: chatId,
-              conversationType: "dm" as const,
-            },
-          },
-        });
-      } else {
-        logger.warn(`[ChatScreen] No screen mapping for gameType: ${gameType}`);
-      }
-    },
-    [navigation, chatId],
-  );
-
-  // Game button press handler - Opens game picker modal
-  const handleGamePress = useCallback(() => {
-    setGamePickerVisible(true);
-  }, []);
-
   // Animal button press handler — sends a structured animal signal message
   const handleAnimalPress = useCallback(async () => {
     if (!uid || !chatId) return;
@@ -944,45 +884,6 @@ export default function ChatScreen({
       refreshProfile();
     },
     [refreshProfile],
-  );
-
-  // Handle single-player game selection - navigate directly to game
-  const handleSinglePlayerGame = useCallback(
-    (gameType: ExtendedGameType) => {
-      const screen = GAME_SCREEN_MAP[gameType];
-      if (screen) {
-        // Navigate through MainTabs -> Play tab -> specific game screen
-        navigation.navigate("MainTabs", {
-          screen: "Play",
-          params: {
-            screen,
-            params: {
-              entryPoint: "chat",
-              conversationId: chatId,
-              conversationType: "dm" as const,
-            },
-          },
-        });
-      }
-    },
-    [navigation, chatId],
-  );
-
-  // v3: Navigate host to SessionLobbyScreen after creating a session
-  const handleSessionCreated = useCallback(
-    (sessionId: string) => {
-      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
-    },
-    [navigation.dispatch],
-  );
-
-  // v3: Navigate to SessionLobbyScreen when tapping a session pill in chat
-  const handleNavigateToLobby = useCallback(
-    (sessionId: string) => {
-      logger.info("[Nav] ChatScreen.handleNavigateToLobby", { sessionId });
-      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
-    },
-    [navigation.dispatch],
   );
 
   const handleBlockConfirm = async (reason?: string) => {
@@ -1136,22 +1037,6 @@ export default function ChatScreen({
           { backgroundColor: theme.dark ? "#000" : theme.colors.background },
         ]}
       >
-        {/* Game Invites Section - only show when ready */}
-        {chatId && uid && !showSkeleton && (
-          <ChatGameInvites
-            conversationId={chatId}
-            currentUserId={uid}
-            currentUserName={
-              currentFirebaseUser?.displayName ||
-              currentFirebaseUser?.email ||
-              "User"
-            }
-            onNavigateToGame={handleNavigateToGame}
-            onNavigateToLobby={handleNavigateToLobby}
-            compact
-          />
-        )}
-
         {/* OPTIMIZATION: Show skeleton during initialization, messages when ready */}
         {showSkeleton ? (
           <ChatSkeleton bubbleCount={8} />
@@ -1251,7 +1136,6 @@ export default function ChatScreen({
           onAnimalPickerClose={() => setAnimalPickerVisible(false)}
           currentUserId={uid}
           onAnimalEquipped={handleAnimalEquipped}
-          onGamePress={handleGamePress}
           voiceButtonComponent={
             voiceRecorder.isAvailable &&
             !screen.composer.text.trim() &&
@@ -1301,20 +1185,6 @@ export default function ChatScreen({
         onReply={handleReply}
         onEdited={NOOP}
         onDeleted={NOOP}
-      />
-
-      <GamePickerModal
-        visible={gamePickerVisible}
-        onDismiss={() => setGamePickerVisible(false)}
-        context="dm"
-        conversationId={chatId || ""}
-        conversationName={friendProfile?.username}
-        recipientId={friendUid}
-        recipientName={friendProfile?.username}
-        recipientAvatar={friendProfile?.profilePicture?.url}
-        onSinglePlayerGame={handleSinglePlayerGame}
-        onSessionCreated={handleSessionCreated}
-        onError={(error) => Alert.alert("Error", error)}
       />
 
       <MediaViewerModal

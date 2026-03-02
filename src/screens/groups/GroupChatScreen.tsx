@@ -76,7 +76,6 @@ import {
   AttachmentTray,
   CameraLongPressButton,
   ChatComposer,
-  ChatGameInvites,
   ChatMessageList,
   LinkPreviewCard,
   MediaViewerModal,
@@ -123,9 +122,6 @@ import {
 
 // Animal feature
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
-import SpectatorInviteBubble, {
-  parseSpectatorInviteContent,
-} from "@/components/SpectatorInviteBubble";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
 import { playAnimalSound } from "@/services/chat/animalSoundService";
 
@@ -146,16 +142,6 @@ const getGroupCallService = () => {
   }
   return require("@/services/calls/groupCallService").groupCallService;
 };
-
-// Game Picker
-import { GamePickerModal } from "@/components/games/GamePickerModal";
-import { GAME_SCREEN_MAP } from "@/config/gameCategories";
-import {
-  ExtendedGameType,
-  formatGameScore,
-  GAME_METADATA,
-} from "@/types/games";
-import { navigateToSessionLobby } from "@/utils/gameNavHelpers";
 
 // Types
 import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
@@ -270,7 +256,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Scheduled messages state (UNI-09)
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
-  const [gamePickerVisible, setGamePickerVisible] = useState(false);
   const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
   const [scheduledMessages, setScheduledMessages] = useState<
     ScheduledMessage[]
@@ -750,60 +735,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     [],
   );
 
-  // Guard to prevent duplicate navigation to the same game/invite
-  const navigatedInvitesRef = useRef<Set<string>>(new Set());
-
-  const handleNavigateToGame = useCallback(
-    (
-      gameId: string,
-      gameType: string,
-      options?: {
-        inviteId?: string;
-        spectatorMode?: boolean;
-      },
-    ) => {
-      // De-duplicate: if we already navigated for this inviteId, skip
-      if (options?.inviteId) {
-        if (navigatedInvitesRef.current.has(options.inviteId)) {
-          logger.debug(
-            `[GroupChatScreen] Skipping duplicate navigation for invite ${options.inviteId}`,
-          );
-          return;
-        }
-        navigatedInvitesRef.current.add(options.inviteId);
-      }
-
-      const screen = GAME_SCREEN_MAP[gameType as keyof typeof GAME_SCREEN_MAP];
-      if (screen) {
-        // Navigate through MainTabs -> Play tab -> specific game screen
-        navigation.navigate("MainTabs", {
-          screen: "Play",
-          params: {
-            screen,
-            params: {
-              matchId: gameId || undefined,
-              inviteId: options?.inviteId,
-              spectatorMode: options?.spectatorMode,
-              entryPoint: "chat",
-              conversationId: groupId,
-              conversationType: "group" as const,
-            },
-          },
-        });
-      } else {
-        logger.warn(
-          `[GroupChatScreen] No screen mapping for gameType: ${gameType}`,
-        );
-      }
-    },
-    [navigation, groupId],
-  );
-
-  // Game button press handler - Opens game picker modal
-  const handleGamePress = useCallback(() => {
-    setGamePickerVisible(true);
-  }, []);
-
   // Animal button press handler — sends a structured animal signal message
   const handleAnimalPress = useCallback(async () => {
     if (!uid || !groupId) return;
@@ -835,45 +766,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       refreshProfile();
     },
     [refreshProfile],
-  );
-
-  // Handle single-player game selection - navigate directly to game
-  const handleSinglePlayerGame = useCallback(
-    (gameType: ExtendedGameType) => {
-      const screenName = GAME_SCREEN_MAP[gameType];
-      if (screenName) {
-        // Navigate through MainTabs -> Play tab -> specific game screen
-        navigation.navigate("MainTabs", {
-          screen: "Play",
-          params: {
-            screen: screenName,
-            params: {
-              entryPoint: "chat",
-              conversationId: groupId,
-              conversationType: "group" as const,
-            },
-          },
-        });
-      }
-    },
-    [navigation, groupId],
-  );
-
-  // v3: Navigate host to SessionLobbyScreen after creating a session
-  const handleSessionCreated = useCallback(
-    (sessionId: string) => {
-      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
-    },
-    [navigation.dispatch],
-  );
-
-  // v3: Navigate to SessionLobbyScreen when tapping a session pill in chat
-  const handleNavigateToLobby = useCallback(
-    (sessionId: string) => {
-      logger.info("[Nav] GroupChatScreen.handleNavigateToLobby", { sessionId });
-      navigateToSessionLobby(sessionId, "chat", navigation.dispatch);
-    },
-    [navigation.dispatch],
   );
 
   // Compute eligible user IDs from group members
@@ -1341,66 +1233,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                             durationMs={voiceAttachment.durationMs || 0}
                             isOwn={isOwnMessage}
                           />
-                        ) : item.kind === "scorecard" &&
-                          item.text &&
-                          parseSpectatorInviteContent(item.text) ? (
-                          (() => {
-                            const invite = parseSpectatorInviteContent(
-                              item.text!,
-                            )!;
-                            return (
-                              <SpectatorInviteBubble
-                                invite={invite}
-                                isMine={isOwnMessage}
-                                onPress={
-                                  !isOwnMessage && !invite.finished
-                                    ? () =>
-                                        navigation.navigate("SpectatorView", {
-                                          roomId: invite.roomId,
-                                          gameType: invite.gameId,
-                                          hostName: invite.hostName,
-                                          inviteMode: invite.inviteMode,
-                                          boostSessionEndsAt:
-                                            invite.boostSessionEndsAt,
-                                        })
-                                    : undefined
-                                }
-                              />
-                            );
-                          })()
-                        ) : item.kind === "scorecard" && item.scorecard ? (
-                          <View style={styles.scorecardContent}>
-                            <MaterialCommunityIcons
-                              name="gamepad-variant"
-                              size={24}
-                              color={bubbleTextColor}
-                            />
-                            <Text
-                              style={[
-                                styles.scorecardGame,
-                                {
-                                  color: bubbleTextColor,
-                                },
-                              ]}
-                            >
-                              {GAME_METADATA[
-                                item.scorecard.gameId as ExtendedGameType
-                              ]?.name ?? item.scorecard.gameId}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.scorecardScore,
-                                {
-                                  color: bubbleTextColor,
-                                },
-                              ]}
-                            >
-                              {formatGameScore(
-                                item.scorecard.gameId as ExtendedGameType,
-                                item.scorecard.score,
-                              )}
-                            </Text>
-                          </View>
                         ) : (
                           <>
                             <MessageWithMentions
@@ -1617,22 +1449,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           />
         </Appbar.Header>
 
-        {/* Game Invites Section - only show when ready */}
-        {groupId && uid && !showSkeleton && (
-          <ChatGameInvites
-            conversationId={groupId}
-            currentUserId={uid}
-            currentUserName={
-              currentFirebaseUser?.displayName ||
-              currentFirebaseUser?.email ||
-              "User"
-            }
-            onNavigateToGame={handleNavigateToGame}
-            onNavigateToLobby={handleNavigateToLobby}
-            compact
-          />
-        )}
-
         {/* OPTIMIZATION: Show skeleton during loading, messages when ready */}
         {showSkeleton ? (
           <ChatSkeleton bubbleCount={8} />
@@ -1748,7 +1564,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           onAnimalPickerClose={() => setAnimalPickerVisible(false)}
           currentUserId={uid}
           onAnimalEquipped={handleAnimalEquipped}
-          onGamePress={handleGamePress}
           keyboardHeight={screen.keyboard.keyboardHeight}
           keyboardProgress={screen.keyboard.keyboardProgress}
           safeAreaBottom={insets.bottom}
@@ -1800,18 +1615,6 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         messagePreview={screen.composer.text}
         onSchedule={handleScheduleMessage}
         onClose={() => setScheduleModalVisible(false)}
-      />
-
-      <GamePickerModal
-        visible={gamePickerVisible}
-        onDismiss={() => setGamePickerVisible(false)}
-        context="group"
-        conversationId={groupId}
-        conversationName={group?.name}
-        eligibleUserIds={groupMemberIds}
-        onSinglePlayerGame={handleSinglePlayerGame}
-        onSessionCreated={handleSessionCreated}
-        onError={(error) => Alert.alert("Error", error)}
       />
     </>
   );

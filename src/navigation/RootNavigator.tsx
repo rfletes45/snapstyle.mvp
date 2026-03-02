@@ -1,4 +1,3 @@
-import { GameResultToastManager } from "@/components/GameResultToastManager";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   BottomTabNavigationOptions,
@@ -22,7 +21,6 @@ import type {
   InboxStackParamList,
   MainStackParamList,
   MomentsStackParamList,
-  PlayStackParamList,
   ProfileSetupStackParamList,
   ProfileTabStackParamList,
   RootStackParamList,
@@ -36,46 +34,13 @@ import SignupScreen from "@/screens/auth/SignupScreen";
 import WelcomeScreen from "@/screens/auth/WelcomeScreen";
 
 // App screens
-import { withErrorBoundary } from "@/components/withErrorBoundary";
-import CrazyCardsGameScreen from "@/games/crazyCards/CrazyCardsGameScreen";
 import ChatListScreen from "@/screens/chat/ChatListScreenV2";
 import ChatScreen from "@/screens/chat/ChatScreen";
 import ScheduledMessagesScreen from "@/screens/chat/ScheduledMessagesScreen";
 import { SnapViewerScreen } from "@/screens/chat/SnapViewerScreen";
 import ThreadScreen from "@/screens/chat/ThreadScreen";
-import FriendsScreen from "@/screens/friends/FriendsScreen";
-import AchievementsScreen from "@/screens/games/AchievementsScreen";
-import BounceBlitzGameScreen from "@/screens/games/BounceBlitzGameScreen";
-import BrickBreakerGameScreen from "@/screens/games/BrickBreakerGameScreen";
-import CheckersGameScreen from "@/screens/games/CheckersGameScreen";
-import ChessGameScreen from "@/screens/games/ChessGameScreen";
-import ConnectFourGameScreen from "@/screens/games/ConnectFourGameScreen";
-import DotMatchGameScreen from "@/screens/games/DotMatchGameScreen";
-import GameHistoryScreen from "@/screens/games/GameHistoryScreen";
-import GamesHubScreen from "@/screens/games/GamesHubScreen";
-import GomokuMasterGameScreen from "@/screens/games/GomokuMasterGameScreen";
-import LeaderboardScreen from "@/screens/games/LeaderboardScreen";
-import LevelRewardsScreen from "@/screens/games/LevelRewardsScreen";
-import LightsOutGameScreen from "@/screens/games/LightsOutGameScreen";
-import MinesweeperGameScreen from "@/screens/games/MinesweeperGameScreen";
-import MiniGolfDuelsGameScreen from "@/screens/games/MiniGolfDuelsGameScreen";
-import Play2048GameScreen from "@/screens/games/Play2048GameScreen";
-import { withSessionRuntime } from "@/screens/games/SessionRuntimeShell";
-import SketchPartyGameScreen from "@/screens/games/SketchPartyGameScreen";
-import StarforgeGameScreen from "@/screens/games/StarforgeGameScreen";
-import TicTacToeGameScreen from "@/screens/games/TicTacToeGameScreen";
-import WordMasterGameScreen from "@/screens/games/WordMasterGameScreen";
-// Phase 3 game screens
 import { CustomizationHubScreen } from "@/screens/customization";
-import BattleshipGameScreen from "@/screens/games/BattleshipGameScreen";
-// v3 session lobby
-import CrosswordGameScreen from "@/screens/games/CrosswordGameScreen";
-import GameDetailsScreen from "@/screens/games/GameDetailsScreen";
-import PongGameScreen from "@/screens/games/PongGameScreen";
-import ReversiGameScreen from "@/screens/games/ReversiGameScreen";
-import SessionGameOverScreen from "@/screens/games/SessionGameOverScreen";
-import SessionLobbyScreen from "@/screens/games/SessionLobbyScreen";
-import SpectatorViewScreen from "@/screens/games/SpectatorViewScreen";
+import FriendsScreen from "@/screens/friends/FriendsScreen";
 import BadgeCollectionScreen from "@/screens/profile/BadgeCollectionScreen";
 import MutualFriendsListScreen from "@/screens/profile/MutualFriendsListScreen";
 import OwnProfileScreen from "@/screens/profile/OwnProfileScreen";
@@ -86,7 +51,8 @@ import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
 import MomentsUnderConstructionScreen from "@/screens/stories/MomentsUnderConstructionScreen";
 import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
-// DebugScreens only loaded in development
+
+// Debug screens only loaded in development
 const DebugScreen = __DEV__
   ? require("@/screens/debug/DebugScreen").default
   : () => null;
@@ -113,7 +79,6 @@ import InboxSearchScreen from "@/screens/chat/InboxSearchScreen";
 import InboxSettingsScreen from "@/screens/chat/InboxSettingsScreen";
 
 import AdminReportsQueueScreen from "@/screens/admin/AdminReportsQueueScreen";
-import GameStatsScreen from "@/screens/profile/GameStatsScreen";
 
 // Social screens
 import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
@@ -135,113 +100,23 @@ import {
 const AuthStack_Nav = createNativeStackNavigator<AuthStackParamList>();
 const InboxStack_Nav = createNativeStackNavigator<InboxStackParamList>();
 const MomentsStack_Nav = createNativeStackNavigator<MomentsStackParamList>();
-const PlayStack_Nav = createNativeStackNavigator<PlayStackParamList>();
 const ProfileStack_Nav = createNativeStackNavigator<ProfileTabStackParamList>();
 const MainStack_Nav = createNativeStackNavigator<MainStackParamList>();
 const ProfileSetupStack_Nav =
   createNativeStackNavigator<ProfileSetupStackParamList>();
 const Tab = createBottomTabNavigator<AppTabsParamList>();
 
-// Wrap game screens with ErrorBoundary to prevent crashes from bubbling up
-// Multiplayer screens also get SessionRuntimeShell via withSessionRuntime
-// (resign FAB, terminal detection → SessionGameOverScreen, back interception).
-const SafeBounceBlitzGame = withErrorBoundary(BounceBlitzGameScreen);
-const SafeBrickBreakerGame = withErrorBoundary(BrickBreakerGameScreen);
-const SafeCheckersGame = withErrorBoundary(
-  withSessionRuntime(CheckersGameScreen),
-);
-const SafeChessGame = withErrorBoundary(withSessionRuntime(ChessGameScreen));
-const SafeCrazyEightsGame = withErrorBoundary(
-  withSessionRuntime(CrazyCardsGameScreen),
-);
-const SafePlay2048Game = withErrorBoundary(Play2048GameScreen);
-const SafeLightsOutGame = withErrorBoundary(LightsOutGameScreen);
-const SafeTicTacToeGame = withErrorBoundary(
-  withSessionRuntime(TicTacToeGameScreen),
-);
-const SafeWordGame = withErrorBoundary(WordMasterGameScreen);
-const SafeFourGame = withErrorBoundary(
-  withSessionRuntime(ConnectFourGameScreen),
-);
-const SafeMinesweeperGame = withErrorBoundary(MinesweeperGameScreen);
-const SafeDotsGame = withErrorBoundary(withSessionRuntime(DotMatchGameScreen));
-const SafeGomokuGame = withErrorBoundary(
-  withSessionRuntime(GomokuMasterGameScreen),
-);
-// Phase 3 safe wrappers
-const SafePongGame = withErrorBoundary(withSessionRuntime(PongGameScreen));
-const SafeReversiGame = withErrorBoundary(
-  withSessionRuntime(ReversiGameScreen),
-);
-const SafeCrosswordGame = withErrorBoundary(
-  withSessionRuntime(CrosswordGameScreen),
-);
-const SafeStarforgeGame = withErrorBoundary(
-  withSessionRuntime(StarforgeGameScreen),
-);
-const SafeSketchPartyGame = withErrorBoundary(
-  withSessionRuntime(SketchPartyGameScreen),
-);
-const SafeMiniGolfDuelsGame = withErrorBoundary(
-  withSessionRuntime(MiniGolfDuelsGameScreen),
-);
-const SafeBattleshipGame = withErrorBoundary(
-  withSessionRuntime(BattleshipGameScreen),
-);
-// v3 session lobby
-const SafeSessionLobby = withErrorBoundary(SessionLobbyScreen);
-const SafeSessionGameOver = withErrorBoundary(SessionGameOverScreen);
-const SafeGamesHub = withErrorBoundary(GamesHubScreen);
-const SafeLeaderboard = withErrorBoundary(LeaderboardScreen);
-const SafeAchievements = withErrorBoundary(AchievementsScreen);
-const SafeGameHistory = withErrorBoundary(GameHistoryScreen);
-const SafeLevelRewards = withErrorBoundary(LevelRewardsScreen);
-const SafeGameDetails = withErrorBoundary(GameDetailsScreen);
-const SafeSpectatorView = withErrorBoundary(SpectatorViewScreen);
 /**
  * Routes that should hide the bottom tab bar.
- * NOTE: Most full-screen routes (ChatDetail, GroupChat, etc.) are now at the
- * root stack level and naturally overlay the tabs. This set is only for
- * routes that remain nested within tab stacks.
  */
 const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
   // Moments stack routes
   "StoryViewer",
   "CreateStory",
-  // Game screens in PlayStack - hide tab bar for immersive gameplay
-  "BounceBlitzGame",
-  "WordGame",
-  "Play2048Game",
-  "LightsOutGame",
-  "BrickBreakerGame",
-  "TicTacToeGame",
-  "CheckersGame",
-  "ChessGame",
-  "CrazyEightsGame",
-  "FourGame",
-  "MinesweeperGame",
-  "DotsGame",
-  "GomokuGame",
-  // Phase 3 game screens
-  "PongGame",
-  "ReversiGame",
-  "CrosswordGame",
-  "StarforgeGame",
-  "SketchPartyGameScreen",
-  "MiniGolfDuelsGame",
-  "BattleshipGame",
-  "SessionLobbyScreen",
-  "SessionGameOverScreen",
-  "Leaderboard",
-  "Achievements",
-  "GameHistory",
-  "GameDetails",
 ]);
 
 /**
  * Helper to get the tab bar style based on the focused route in a nested stack.
- * NOTE: With the new architecture where chat screens are at the root level,
- * this is only needed for screens that remain in nested stacks (like StoryViewer).
  */
 function getTabBarStyle(
   route: Parameters<typeof getFocusedRouteNameFromRoute>[0],
@@ -249,7 +124,6 @@ function getTabBarStyle(
 ): BottomTabNavigationOptions["tabBarStyle"] {
   const routeName = getFocusedRouteNameFromRoute(route);
 
-  // If we're on a route that should hide the tab bar, return hidden style
   if (routeName && ROUTES_WITH_HIDDEN_TAB_BAR.has(routeName)) {
     return {
       display: "none" as const,
@@ -257,7 +131,6 @@ function getTabBarStyle(
     };
   }
 
-  // Otherwise return the default tab bar style
   return defaultStyle;
 }
 
@@ -386,259 +259,11 @@ function MomentsStack() {
 }
 
 /**
- * Play Stack (rebranded from Games)
- */
-function PlayStack() {
-  const { colors } = useAppTheme();
-
-  return (
-    <PlayStack_Nav.Navigator
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: colors.headerBackground,
-        },
-        headerTintColor: colors.headerText,
-        headerTitleStyle: {
-          fontWeight: "600",
-          fontSize: 18,
-        },
-        headerShadowVisible: false,
-        contentStyle: {
-          backgroundColor: colors.background,
-        },
-        animation: "simple_push",
-      }}
-    >
-      <PlayStack_Nav.Screen
-        name="GamesHub"
-        component={SafeGamesHub}
-        options={{ headerShown: false }}
-      />
-      <PlayStack_Nav.Screen
-        name="BounceBlitzGame"
-        component={SafeBounceBlitzGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="WordGame"
-        component={SafeWordGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="Play2048Game"
-        component={SafePlay2048Game}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="LightsOutGame"
-        component={SafeLightsOutGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      {/* New Single-Player Games (Phase 1) */}
-      <PlayStack_Nav.Screen
-        name="BrickBreakerGame"
-        component={SafeBrickBreakerGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="TicTacToeGame"
-        component={SafeTicTacToeGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="CheckersGame"
-        component={SafeCheckersGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="ChessGame"
-        component={SafeChessGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="CrazyEightsGame"
-        component={SafeCrazyEightsGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      {/* New Phase 2 Games */}
-      <PlayStack_Nav.Screen
-        name="FourGame"
-        component={SafeFourGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="MinesweeperGame"
-        component={SafeMinesweeperGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="DotsGame"
-        component={SafeDotsGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="GomokuGame"
-        component={SafeGomokuGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      {/* Phase 3 Games */}
-      <PlayStack_Nav.Screen
-        name="PongGame"
-        component={SafePongGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="ReversiGame"
-        component={SafeReversiGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="CrosswordGame"
-        component={SafeCrosswordGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="StarforgeGame"
-        component={SafeStarforgeGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="SketchPartyGameScreen"
-        component={SafeSketchPartyGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="MiniGolfDuelsGame"
-        component={SafeMiniGolfDuelsGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="BattleshipGame"
-        component={SafeBattleshipGame}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="SessionLobbyScreen"
-        component={SafeSessionLobby}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="SessionGameOverScreen"
-        component={SafeSessionGameOver}
-        options={{
-          headerShown: false,
-          presentation: "card",
-          gestureEnabled: false,
-        }}
-      />
-      <PlayStack_Nav.Screen
-        name="GameDetails"
-        component={SafeGameDetails}
-        options={{ headerShown: false }}
-      />
-      <PlayStack_Nav.Screen
-        name="Leaderboard"
-        component={SafeLeaderboard}
-        options={{ headerShown: false }}
-      />
-      <PlayStack_Nav.Screen
-        name="Achievements"
-        component={SafeAchievements}
-        options={{ headerShown: false }}
-      />
-      <PlayStack_Nav.Screen
-        name="GameHistory"
-        component={SafeGameHistory}
-        options={{ headerShown: false }}
-      />
-      <PlayStack_Nav.Screen
-        name="LevelRewards"
-        component={SafeLevelRewards}
-        options={{ headerShown: false }}
-      />
-    </PlayStack_Nav.Navigator>
-  );
-}
-
-/**
  * Profile Stack with settings and economy screens
  */
 function ProfileStack() {
   const { colors } = useAppTheme();
 
-  // Use new OwnProfileScreen (graduated feature flag)
   const ProfileMainScreen = OwnProfileScreen;
 
   return (
@@ -669,7 +294,6 @@ function ProfileStack() {
         component={CustomizationHubScreen}
         options={{ headerShown: false }}
       />
-      {/* Debug screens only available in development */}
       {__DEV__ && (
         <ProfileStack_Nav.Screen
           name="Debug"
@@ -724,23 +348,13 @@ function ProfileStack() {
         component={AdminReportsQueueScreen}
         options={{ headerShown: false }}
       />
-      <ProfileStack_Nav.Screen
-        name="LevelRewards"
-        component={SafeLevelRewards}
-        options={{ headerShown: false }}
-      />
-      <ProfileStack_Nav.Screen
-        name="GameStats"
-        component={GameStatsScreen}
-        options={{ headerShown: false }}
-      />
     </ProfileStack_Nav.Navigator>
   );
 }
 
 /**
  * Main App Tabs
- * Shop | Inbox | Play | Moments | Profile
+ * Shop | Inbox | Moments | Profile
  */
 function AppTabs() {
   const { colors } = useAppTheme();
@@ -748,7 +362,6 @@ function AppTabs() {
     typeof MaterialCommunityIcons
   >["name"];
 
-  // Default tab bar style
   const defaultTabBarStyle = {
     backgroundColor: colors.surface,
     borderTopColor: colors.border,
@@ -771,12 +384,9 @@ function AppTabs() {
         headerShadowVisible: false,
         tabBarActiveTintColor: colors.tabActive,
         tabBarInactiveTintColor: colors.tabInactive,
-        // Hide tab bar when keyboard is shown (prevents jump on iOS)
         tabBarHideOnKeyboard: true,
         tabBarStyle: defaultTabBarStyle,
-        // Set scene container background to prevent white flicker
         sceneStyle: { backgroundColor: colors.background },
-        // Improves performance by keeping screens mounted but frozen
         lazy: true,
         tabBarIcon: ({ color, size }) => {
           let iconName: MaterialCommunityIconName = "message-outline";
@@ -784,9 +394,6 @@ function AppTabs() {
           switch (route.name) {
             case "Shop":
               iconName = "store-outline";
-              break;
-            case "Play":
-              iconName = "gamepad-variant-outline";
               break;
             case "Inbox":
               iconName = "message-outline";
@@ -815,16 +422,7 @@ function AppTabs() {
         component={InboxStack}
         options={{
           headerShown: false,
-          // Tab bar always visible - chat screens slide over from root level
         }}
-      />
-      <Tab.Screen
-        name="Play"
-        component={PlayStack}
-        options={({ route }) => ({
-          headerShown: false,
-          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
-        })}
       />
       <Tab.Screen
         name="Moments"
@@ -849,8 +447,6 @@ function AppTabs() {
 /**
  * Main App Stack
  * Contains AppTabs as the base and full-screen overlay screens.
- * This architecture ensures chat/game screens slide OVER the tab bar
- * instead of being constrained within the tab's content area.
  */
 function MainStack() {
   const { colors } = useAppTheme();
@@ -870,18 +466,15 @@ function MainStack() {
         contentStyle: {
           backgroundColor: colors.background,
         },
-        // Use simple_push animation - no rounded corners like iOS card style
         animation: "simple_push",
       }}
     >
-      {/* Main tabs as the base screen */}
       <MainStack_Nav.Screen
         name="MainTabs"
         component={AppTabs}
         options={{ headerShown: false }}
       />
 
-      {/* Full-screen chat screens - slide over tabs */}
       <MainStack_Nav.Screen
         name="ChatDetail"
         component={ChatScreen}
@@ -928,7 +521,6 @@ function MainStack() {
         }}
       />
 
-      {/* Camera screens - full-screen immersive experience */}
       <MainStack_Nav.Screen
         name="Camera"
         component={CameraScreen}
@@ -949,14 +541,13 @@ function MainStack() {
 
       {CALL_FEATURES.CALLS_ENABLED && (
         <>
-          {/* Call screens - full-screen overlay during calls */}
           <MainStack_Nav.Screen
             name="AudioCall"
             component={AudioCallScreen}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              gestureEnabled: false, // Prevent accidental swipe-to-dismiss
+              gestureEnabled: false,
               animation: "fade",
             }}
           />
@@ -966,7 +557,7 @@ function MainStack() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              gestureEnabled: false, // Prevent accidental swipe-to-dismiss
+              gestureEnabled: false,
               animation: "fade",
             }}
           />
@@ -976,12 +567,11 @@ function MainStack() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              gestureEnabled: false, // Prevent accidental swipe-to-dismiss during group calls
+              gestureEnabled: false,
               animation: "fade",
             }}
           />
 
-          {/* Call History - accessible from profile/settings */}
           <MainStack_Nav.Screen
             name="CallHistory"
             component={CallHistoryScreen}
@@ -991,7 +581,6 @@ function MainStack() {
             }}
           />
 
-          {/* Call Settings - accessible from settings */}
           <MainStack_Nav.Screen
             name="CallSettings"
             component={CallSettingsScreen}
@@ -1003,35 +592,30 @@ function MainStack() {
         </>
       )}
 
-      {/* Connections screen - accessible from Inbox header */}
       <MainStack_Nav.Screen
         name="Connections"
         component={FriendsScreen}
         options={{ title: "Connections" }}
       />
 
-      {/* User Profile screen - view other users' profiles */}
       <MainStack_Nav.Screen
         name="UserProfile"
         component={UserProfileScreen}
         options={{ headerShown: false }}
       />
 
-      {/* Set Status screen - Phase 6 */}
       <MainStack_Nav.Screen
         name="SetStatus"
         component={SetStatusScreen}
         options={{ headerShown: false }}
       />
 
-      {/* Mutual Friends List screen - Phase 6 */}
       <MainStack_Nav.Screen
         name="MutualFriendsList"
         component={MutualFriendsListScreen}
         options={{ headerShown: false }}
       />
 
-      {/* Shop Overhaul Screens - accessible from Shop tab */}
       <MainStack_Nav.Screen
         name="CosmeticsShop"
         component={CosmeticsShopScreen}
@@ -1048,68 +632,37 @@ function MainStack() {
         options={{ headerShown: false }}
       />
 
-      {/* Customization Hub — elevated to root for cross-tab navigation (e.g. achievements → equip badge) */}
       <MainStack_Nav.Screen
         name="Customization"
         component={CustomizationHubScreen}
         options={{ headerShown: false }}
       />
 
-      {/* Activity Feed */}
       <MainStack_Nav.Screen
         name="ActivityFeed"
         component={ActivityFeedScreen}
-        options={{ headerShown: false }}
-      />
-
-      {/* Spectator View — at root level so it's reachable from chat, groups, etc. */}
-      <MainStack_Nav.Screen
-        name="SpectatorView"
-        component={SafeSpectatorView}
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
-      <MainStack_Nav.Screen
-        name="GameStats"
-        component={GameStatsScreen}
         options={{ headerShown: false }}
       />
     </MainStack_Nav.Navigator>
   );
 }
 
-/**
- * RootNavigator Props
- */
 interface RootNavigatorProps {
-  /** Ref to access navigation from outside NavigationContainer */
   navigationRef?: React.RefObject<NavigationContainerRef<RootStackParamList> | null>;
 }
 
 /**
  * RootNavigator
  * Uses AppGate for hydration-safe navigation
- * Rebranded: Vibe app with Shop, Play, Inbox, Moments, Profile
- *
- * Navigation flow:
- * - During hydration: LoadingScreen (via AppGate)
- * - Unauthenticated: AuthStack (Welcome, Login, Signup)
- * - Needs profile: ProfileSetupStack
- * - Ready: MainStack (tabs + full-screen overlays)
+ * Rebranded: Vibe app with Shop, Inbox, Moments, Profile
  */
 export default function RootNavigator({
   navigationRef: externalRef,
 }: RootNavigatorProps) {
   const { theme } = useAppTheme();
 
-  // Use external ref if provided, otherwise use the shared global one
   const navRef = externalRef || navigationRef;
 
-  // Memoize linking config so NavigationContainer doesn't receive a new
-  // object reference on every render (theme changes, profile refreshes, etc.).
-  // A fresh reference can cause React Navigation to re-process URL state.
   const linking = useMemo(
     () => ({
       prefixes: ["exp://", "exp-app://", "vibe://", "http://", "https://"],
@@ -1123,13 +676,6 @@ export default function RootNavigator({
           MainTabs: {
             screens: {
               Shop: "shop",
-              Play: {
-                screens: {
-                  GamesHub: "play",
-                  Leaderboard: "leaderboard",
-                  Achievements: "achievements",
-                },
-              },
               Inbox: {
                 screens: {
                   ChatList: "inbox",
@@ -1169,7 +715,6 @@ export default function RootNavigator({
             <>
               <MainStack />
               <WarningModal />
-              <GameResultToastManager />
             </>
           ) : hydrationState === "needs_profile" ? (
             <ProfileSetupStack_Nav.Navigator

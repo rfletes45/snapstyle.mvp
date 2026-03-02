@@ -62,11 +62,7 @@ export type {
 export { LevelProgress } from "./LevelProgress";
 export type { LevelProgressProps } from "./LevelProgress";
 
-// =============================================================================
-// Phase 5 - Game Scores Components
-// =============================================================================
-export { GameScoresDisplay } from "./ProfileGameScores";
-export type { GameScoresDisplayProps } from "./ProfileGameScores";
+
 
 // =============================================================================
 // Phase 5 - Skeletons & Loading States

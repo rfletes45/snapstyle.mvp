@@ -28,10 +28,6 @@ import { AnimalBubble } from "@/components/chat/AnimalBubble";
 import { LinkPreviewCard } from "@/components/chat/LinkPreviewCard";
 import { ThreadIndicator } from "@/components/chat/ThreadIndicator";
 import { VoiceMessagePlayer } from "@/components/chat/VoiceMessagePlayer";
-import ScorecardBubble from "@/components/ScorecardBubble";
-import SpectatorInviteBubble, {
-  parseSpectatorInviteContent,
-} from "@/components/SpectatorInviteBubble";
 import { Spacing } from "@/constants/theme";
 import {
   resolveIncomingBubbleStyle,
@@ -41,15 +37,6 @@ import type { ChatAppearance, SenderStyle } from "@/cosmetics/types";
 import { useLinkPreviews } from "@/hooks/useLinkPreviews";
 import { extractUrls, hasUrls } from "@/services/linkPreview";
 import type { ReplyToMetadata } from "@/types/messaging";
-
-// Parse scorecard content helper
-function parseScorecardContent(content: string) {
-  try {
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
-}
 
 export interface MessageWithProfile {
   id: string;
@@ -227,19 +214,7 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
         onImagePress(message.imageUrl, senderName, message.createdAt);
         return;
       }
-      // Handle spectator invite taps
-      if (message.type === "scorecard") {
-        const spectatorInvite = parseSpectatorInviteContent(message.content);
-        if (spectatorInvite && !isSentByMe && !spectatorInvite.finished) {
-          navigation.navigate("SpectatorView", {
-            roomId: spectatorInvite.roomId,
-            gameType: spectatorInvite.gameId,
-            hostName: spectatorInvite.hostName,
-            inviteMode: spectatorInvite.inviteMode,
-            boostSessionEndsAt: spectatorInvite.boostSessionEndsAt,
-          });
-        }
-      }
+
     }, [message, isSentByMe, friendProfile, onImagePress, navigation, onRetry]);
 
     // Render message status indicator
@@ -367,36 +342,9 @@ export const DMMessageItem: React.FC<DMMessageItemProps> = React.memo(
       }
 
       if (message.type === "scorecard") {
-        // Check if this is a spectator invite (subtype of scorecard)
-        const spectatorInvite = parseSpectatorInviteContent(message.content);
-        if (spectatorInvite) {
-          return (
-            <SpectatorInviteBubble
-              invite={spectatorInvite}
-              isMine={isSentByMe}
-              onPress={
-                !isSentByMe && !spectatorInvite.finished
-                  ? () =>
-                      navigation.navigate("SpectatorView", {
-                        roomId: spectatorInvite.roomId,
-                        gameType: spectatorInvite.gameId,
-                        hostName: spectatorInvite.hostName,
-                        inviteMode: spectatorInvite.inviteMode,
-                        boostSessionEndsAt: spectatorInvite.boostSessionEndsAt,
-                      })
-                  : undefined
-              }
-            />
-          );
-        }
-
-        const scorecard = parseScorecardContent(message.content);
-        if (scorecard) {
-          return <ScorecardBubble scorecard={scorecard} isMine={isSentByMe} />;
-        }
         return (
           <Text style={[styles.messageText, { color: theme.colors.onSurface }]}>
-            [Invalid scorecard]
+            [Scorecard]
           </Text>
         );
       }

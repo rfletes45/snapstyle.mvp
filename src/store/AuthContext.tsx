@@ -89,26 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else if (data?.type === "friend_request") {
           // Navigate to connections/friends screen
           globalNavigate("Connections");
-        } else if (data?.type === "game_invite" && data?.gameType) {
-          // Navigate to the game
-          globalNavigate("MainTabs", {
-            screen: "Play",
-            params: {
-              screen: "GamesHub",
-            },
-          });
-        } else if (
-          data?.type === "game_start" &&
-          typeof data.sessionId === "string"
-        ) {
-          // R3-2 fix: Navigate to the session lobby when a game starts
-          globalNavigate("MainTabs", {
-            screen: "Play",
-            params: {
-              screen: "SessionLobbyScreen",
-              params: { sessionId: data.sessionId, source: "push" },
-            },
-          });
         }
       },
     );
