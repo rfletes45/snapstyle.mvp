@@ -7,7 +7,6 @@
  * - Push notifications
  * - Streak management
  * - V2 Messaging with idempotent sends
- * - Games: Turn-based games, matchmaking, achievements
  *
  * Security Note:
  * - All onCall functions require authentication via context.auth
@@ -49,35 +48,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.onCallUpdated = exports.onCallCreated = exports.handleCallTimeouts = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.triggerDailyDeals = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.cleanupOldDeals = exports.sendGift = exports.openGift = exports.getGiftHistory = exports.expireGifts = exports.validateReceipt = exports.restorePurchases = exports.getPurchaseHistory = exports.purchaseWithTokens = exports.grantItem = exports.rollbackGameInvitesMigration = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = exports.resignGame = exports.processRealtimeGameCompletion = exports.processMatchmakingQueue = exports.processGameCompletion = exports.onUniversalInviteUpdate = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.makeMove = exports.expireMatchmakingEntries = exports.expireGameInvites = exports.createGameFromInvite = exports.cleanupStaleMatchmakingEntries = exports.cleanupResolvedInvites = exports.cleanupOldGames = exports.cleanupOldGameSessions = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
-exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onGamePlayedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.weeklyLeaderboardReset = exports.onStreakAchievementCheck = exports.onGameSessionCreated = exports.cleanupOldScheduledMessages = void 0;
+exports.adminApplyStrike = exports.adminLiftBan = exports.adminSetBan = exports.cleanupExpiredPushTokens = exports.checkMessageRateLimit = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.initializeExistingWallets = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.recordDailyLogin = exports.onFriendAddedTaskProgress = exports.onStoryPostedTaskProgress = exports.onStoryViewedTaskProgress = exports.onMessageSentTaskProgress = exports.claimTaskReward = exports.onUserCreated = exports.cleanupOldScheduledMessages = exports.onScheduledMessageCreated = exports.processScheduledMessages = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.onDeleteMessage = exports.streakReminder = exports.onStoryViewed = exports.onNewFriendRequest = exports.onNewGroupMessageV2 = exports.onNewMessage = exports.onCallUpdated = exports.onCallCreated = exports.handleCallTimeouts = exports.getTurnCredentials = exports.cleanupCallSignaling = exports.triggerDailyDeals = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.cleanupOldDeals = exports.sendGift = exports.openGift = exports.getGiftHistory = exports.expireGifts = exports.validateReceipt = exports.restorePurchases = exports.getPurchaseHistory = exports.purchaseWithTokens = exports.grantItem = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = void 0;
+exports.fetchLinkPreview = exports.updateExpiredBans = exports.onNewReport = exports.onNewMessageEvent = exports.initializeFirstAdmin = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminApplyWarning = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const httpAuth_1 = require("./httpAuth");
 // Import V2 Messaging functions
 const messaging_1 = require("./messaging");
-// Import Games functions
-const games_1 = require("./games");
-Object.defineProperty(exports, "cleanupOldGameSessions", { enumerable: true, get: function () { return games_1.cleanupOldGameSessions; } });
-Object.defineProperty(exports, "cleanupOldGames", { enumerable: true, get: function () { return games_1.cleanupOldGames; } });
-Object.defineProperty(exports, "cleanupResolvedInvites", { enumerable: true, get: function () { return games_1.cleanupResolvedInvites; } });
-Object.defineProperty(exports, "cleanupStaleMatchmakingEntries", { enumerable: true, get: function () { return games_1.cleanupStaleMatchmakingEntries; } });
-Object.defineProperty(exports, "createGameFromInvite", { enumerable: true, get: function () { return games_1.createGameFromInvite; } });
-Object.defineProperty(exports, "expireGameInvites", { enumerable: true, get: function () { return games_1.expireGameInvites; } });
-Object.defineProperty(exports, "expireMatchmakingEntries", { enumerable: true, get: function () { return games_1.expireMatchmakingEntries; } });
-Object.defineProperty(exports, "makeMove", { enumerable: true, get: function () { return games_1.makeMove; } });
-Object.defineProperty(exports, "onGameCompletedCreateHistory", { enumerable: true, get: function () { return games_1.onGameCompletedCreateHistory; } });
-Object.defineProperty(exports, "onGameHistoryCreatedUpdateLeaderboard", { enumerable: true, get: function () { return games_1.onGameHistoryCreatedUpdateLeaderboard; } });
-Object.defineProperty(exports, "onUniversalInviteUpdate", { enumerable: true, get: function () { return games_1.onUniversalInviteUpdate; } });
-Object.defineProperty(exports, "processGameCompletion", { enumerable: true, get: function () { return games_1.processGameCompletion; } });
-Object.defineProperty(exports, "processMatchmakingQueue", { enumerable: true, get: function () { return games_1.processMatchmakingQueue; } });
-Object.defineProperty(exports, "processRealtimeGameCompletion", { enumerable: true, get: function () { return games_1.processRealtimeGameCompletion; } });
-Object.defineProperty(exports, "resignGame", { enumerable: true, get: function () { return games_1.resignGame; } });
-// Import Migration functions
-const migrateGameInvites_1 = require("./migrations/migrateGameInvites");
-Object.defineProperty(exports, "migrateGameInvites", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvites; } });
-Object.defineProperty(exports, "migrateGameInvitesDryRun", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvitesDryRun; } });
-Object.defineProperty(exports, "rollbackGameInvitesMigration", { enumerable: true, get: function () { return migrateGameInvites_1.rollbackGameInvitesMigration; } });
 // Import Shop functions
 const shop_1 = require("./shop");
 Object.defineProperty(exports, "grantItem", { enumerable: true, get: function () { return shop_1.grantItem; } });
@@ -1183,183 +1160,6 @@ exports.cleanupOldScheduledMessages = functions.pubsub
     }
 });
 // ============================================
-// LEADERBOARDS + ACHIEVEMENTS
-// ============================================
-/**
- * Helper: Get current ISO week key (e.g., "2026-W03")
- */
-function getCurrentWeekKey() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const oneJan = new Date(year, 0, 1);
-    const days = Math.floor((now.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
-    const weekNum = Math.ceil((days + oneJan.getDay() + 1) / 7);
-    return `${year}-W${String(weekNum).padStart(2, "0")}`;
-}
-/**
- * Helper: Validate game score bounds (anti-cheat)
- */
-function isValidScore(gameId, score) {
-    return { valid: false, reason: "Unknown game type" };
-}
-/**
- * onGameSessionCreated: Triggered when a new game session is recorded
- * Updates leaderboard and checks for achievements
- */
-exports.onGameSessionCreated = functions.firestore
-    .document("GameSessions/{sessionId}")
-    .onCreate(async (snap, context) => {
-    const session = snap.data();
-    const { sessionId } = context.params;
-    try {
-        console.log(`🎮 New game session: ${sessionId}`);
-        console.log(`   Player: ${session.playerId}`);
-        console.log(`   Game: ${session.gameId}`);
-        console.log(`   Score: ${session.score}`);
-        // Validate score
-        const validation = isValidScore(session.gameId, session.score);
-        if (!validation.valid) {
-            console.log(`❌ Invalid score: ${validation.reason}`);
-            // Mark session as invalid but don't delete (for review)
-            await snap.ref.update({
-                invalid: true,
-                invalidReason: validation.reason,
-            });
-            return;
-        }
-        // Get player info
-        const playerDoc = await db
-            .collection("Users")
-            .doc(session.playerId)
-            .get();
-        if (!playerDoc.exists) {
-            console.log("❌ Player not found");
-            return;
-        }
-        const player = playerDoc.data();
-        // Update weekly leaderboard
-        const weekKey = getCurrentWeekKey();
-        const leaderboardId = `${session.gameId}_${weekKey}`;
-        const entryRef = db
-            .collection("Leaderboards")
-            .doc(leaderboardId)
-            .collection("Entries")
-            .doc(session.playerId);
-        const existingEntry = await entryRef.get();
-        let shouldUpdate = true;
-        if (existingEntry.exists) {
-            const existingScore = existingEntry.data().score;
-            shouldUpdate = session.score > existingScore;
-        }
-        if (shouldUpdate) {
-            await entryRef.set({
-                uid: session.playerId,
-                displayName: player.displayName,
-                avatarConfig: player.avatarConfig,
-                score: session.score,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            console.log(`✅ Updated leaderboard entry for ${session.playerId}`);
-        }
-        else {
-            console.log("⏭️ Score not better than existing, skipping leaderboard update");
-        }
-        // V1 achievements disabled — V2 evaluator handles all achievement logic
-        // await checkGameAchievements(
-        //   session.playerId,
-        //   session.gameId,
-        //   session.score,
-        // );
-        return;
-    }
-    catch (error) {
-        console.error("❌ Error in onGameSessionCreated:", error);
-    }
-});
-/**
- * Helper: Check and grant game achievements
- */
-async function checkGameAchievements(playerId, gameId, score) {
-    try {
-        // Count total game sessions for this player
-        const sessionsQuery = await db
-            .collection("GameSessions")
-            .where("playerId", "==", playerId)
-            .get();
-        const totalGames = sessionsQuery.size;
-        const achievementsRef = db
-            .collection("Users")
-            .doc(playerId)
-            .collection("Achievements");
-        // First game achievement
-        if (totalGames === 1) {
-            await grantAchievementIfNotEarned(achievementsRef, "game_first_play", {
-                gameId,
-            });
-        }
-        // Session count achievements
-        if (totalGames >= 10) {
-            await grantAchievementIfNotEarned(achievementsRef, "game_10_sessions");
-        }
-        if (totalGames >= 50) {
-            await grantAchievementIfNotEarned(achievementsRef, "game_50_sessions");
-        }
-    }
-    catch (error) {
-        console.error("❌ Error checking game achievements:", error);
-    }
-}
-/**
- * Helper: Grant achievement if not already earned
- */
-async function grantAchievementIfNotEarned(achievementsRef, achievementType, meta) {
-    const achievementRef = achievementsRef.doc(achievementType);
-    const existing = await achievementRef.get();
-    if (existing.exists) {
-        console.log(`⏭️ Achievement ${achievementType} already earned`);
-        return false;
-    }
-    await achievementRef.set({
-        type: achievementType,
-        earnedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ...(meta && { meta }),
-    });
-    console.log(`🏆 Granted achievement: ${achievementType}`);
-    return true;
-}
-/**
- * onStreakUpdated: Check for streak achievements when streak changes
- * V1 DISABLED — streak achievements are now handled by V2 evaluator.
- * Keeping the export to avoid breaking deployed Cloud Functions references.
- */
-exports.onStreakAchievementCheck = functions.firestore
-    .document("Friends/{friendId}")
-    .onUpdate(async (change, _context) => {
-    // V1 streak achievements disabled — V2 evaluator handles all achievement logic
-    const before = change.before.data();
-    const after = change.after.data();
-    if (after.streakCount <= before.streakCount) {
-        return;
-    }
-    console.log(`🔥 [V1-DISABLED] Streak updated to ${after.streakCount} — skipping V1 achievement grants (V2 handles this)`);
-    return;
-});
-/**
- * Weekly leaderboard reset notification (optional)
- * Runs Monday at 00:00 UTC to notify top players from previous week
- */
-exports.weeklyLeaderboardReset = functions.pubsub
-    .schedule("0 0 * * 1") // Every Monday at 00:00 UTC
-    .timeZone("UTC")
-    .onRun(async () => {
-    console.log("🏆 Weekly leaderboard reset - new week started");
-    // This function can be extended to:
-    // - Send notifications to top players
-    // - Archive previous week's results
-    // - Generate weekly summary stats
-    return;
-});
-// ============================================
 // ECONOMY + WALLET + TASKS
 // ============================================
 /** Default starting tokens for new users */
@@ -1667,30 +1467,6 @@ exports.onStoryPostedTaskProgress = functions.firestore
     }
     catch (error) {
         console.error("❌ [onStoryPostedTaskProgress] Error:", error);
-    }
-});
-/**
- * Update task progress when game is played
- * Note: This extends the existing onGameSessionCreated functionality
- */
-exports.onGamePlayedTaskProgress = functions.firestore
-    .document("GameSessions/{sessionId}")
-    .onCreate(async (snap, context) => {
-    const session = snap.data();
-    const playerId = session.playerId;
-    const score = session.score;
-    const gameId = session.gameId;
-    try {
-        // Update "play_game" tasks
-        await updateTaskProgress(playerId, "play_game");
-        // For "win_game" tasks, any valid session with score > 0 counts as a win.
-        // Invalid scores are already filtered by onGameSessionCreated.
-        if (score > 0) {
-            await updateTaskProgress(playerId, "win_game");
-        }
-    }
-    catch (error) {
-        console.error("❌ [onGamePlayedTaskProgress] Error:", error);
     }
 });
 /**

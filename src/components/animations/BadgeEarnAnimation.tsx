@@ -12,8 +12,7 @@
  * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md Phase 7
  */
 
-import type { AchievementTier } from "@/types/profile";
-import type { Badge } from "@/types/profile";
+import type { AchievementTier, Badge } from "@/types/profile";
 import React, { memo, useCallback, useEffect } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { Text, useTheme } from "react-native-paper";

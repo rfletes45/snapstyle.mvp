@@ -7,8 +7,7 @@
  * @see src/types/profile.ts for Badge interface
  */
 
-import type { AchievementTier } from "@/types/profile";
-import type { Badge, BadgeCategory } from "@/types/profile";
+import type { AchievementTier, Badge, BadgeCategory } from "@/types/profile";
 
 // =============================================================================
 // Badge Definitions
@@ -162,7 +161,6 @@ export const BADGE_DEFINITIONS: Badge[] = [
     hidden: false,
     limitedTime: true,
   },
-
 ];
 
 // =============================================================================

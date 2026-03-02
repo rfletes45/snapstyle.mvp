@@ -76,9 +76,7 @@ const storage = {
 // Types
 // =============================================================================
 
-export type NotificationType =
-  | "message"
-  | "friend_request";
+export type NotificationType = "message" | "friend_request";
 
 export interface InAppNotification {
   /** Unique ID for this notification */
@@ -289,8 +287,6 @@ export function InAppNotificationsProvider({
         log.debug("User is on Connections screen, suppressing notification");
         return;
       }
-
-
 
       const id = generateId();
       const newNotification: InAppNotification = {

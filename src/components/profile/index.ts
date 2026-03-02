@@ -144,11 +144,7 @@ export type { ProfileActionsProps } from "./ProfileQuickActions";
 // =============================================================================
 // Profile Overview Cards
 // =============================================================================
-export {
-  BadgesCard,
-  FriendsCard,
-  OverviewCard,
-} from "./OverviewCards";
+export { BadgesCard, FriendsCard, OverviewCard } from "./OverviewCards";
 export type {
   BadgesCardProps,
   FriendsCardProps,

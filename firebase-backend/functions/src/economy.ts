@@ -2,7 +2,6 @@ export {
   claimTaskReward,
   initializeExistingWallets,
   onFriendAddedTaskProgress,
-  onGamePlayedTaskProgress,
   onMessageSentTaskProgress,
   onStoryPostedTaskProgress,
   onStoryViewedTaskProgress,

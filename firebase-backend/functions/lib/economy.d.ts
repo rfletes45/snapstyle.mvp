@@ -1,1 +1,1 @@
-export { claimTaskReward, initializeExistingWallets, onFriendAddedTaskProgress, onGamePlayedTaskProgress, onMessageSentTaskProgress, onStoryPostedTaskProgress, onStoryViewedTaskProgress, onUserCreated, recordDailyLogin, seedDailyTasks, seedMonthlyTasks, } from "./legacy";
+export { claimTaskReward, initializeExistingWallets, onFriendAddedTaskProgress, onMessageSentTaskProgress, onStoryPostedTaskProgress, onStoryViewedTaskProgress, onUserCreated, recordDailyLogin, seedDailyTasks, seedMonthlyTasks, } from "./legacy";

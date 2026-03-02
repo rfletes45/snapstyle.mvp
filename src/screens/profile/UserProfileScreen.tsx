@@ -32,10 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
 import { MuteOptionsModal, MutualFriendsSection } from "@/components/profile";
-import {
-  BadgesCard,
-  FriendsCard,
-} from "@/components/profile/OverviewCards";
+import { BadgesCard, FriendsCard } from "@/components/profile/OverviewCards";
 import {
   MoreOptionsMenu,
   ProfileActionsBar,

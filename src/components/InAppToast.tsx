@@ -13,6 +13,12 @@
  */
 
 import {
+  BorderRadius,
+  FontSizes,
+  FontWeights,
+  Spacing,
+} from "@/constants/theme";
+import {
   InAppNotification,
   NotificationType,
   useInAppNotifications,
@@ -31,12 +37,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  BorderRadius,
-  FontSizes,
-  FontWeights,
-  Spacing,
-} from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TOAST_HEIGHT = 72;
@@ -236,10 +236,7 @@ export default function InAppToast({ onNavigate }: InAppToastProps) {
 
   const handlePress = (notification: InAppNotification) => {
     // For message notifications, trigger the press handler so inbox can mark as read
-    if (
-      notification.type === "message" &&
-      notification.entityId
-    ) {
+    if (notification.type === "message" && notification.entityId) {
       onMessageNotificationPressed(notification.entityId);
     }
 

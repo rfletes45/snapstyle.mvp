@@ -160,7 +160,6 @@ service cloud.firestore {
              validPrivacyVisibility(privacy.showProfilePicture) &&
              validPrivacyVisibility(privacy.showBio) &&
              validPrivacyVisibility(privacy.showStatus) &&
-             validPrivacyVisibility(privacy.showGameScores) &&
              validPrivacyVisibility(privacy.showBadges) &&
              validPrivacyVisibility(privacy.showLastActive) &&
              validPrivacyVisibility(privacy.showOnlineStatus) &&
@@ -256,72 +255,6 @@ service cloud.firestore {
         allow delete: if isAuth() && isOwner(uid);
       }
 
-      // Achievements subcollection (Phase 17 per guide) — LEGACY
-      match /Achievements/{achievementId} {
-        // User can read their own achievements
-        allow read: if isAuth() && isOwner(uid);
-        
-        // Achievements are primarily server-written
-        // Allow client writes as fallback with validation
-        allow create: if isAuth() && isOwner(uid) &&
-                        request.resource.data.uid == uid &&
-                        request.resource.data.type is string &&
-                        validTimestamp(request.resource.data.earnedAt);
-        
-        // Achievements are immutable once earned
-        allow update, delete: if false;
-      }
-
-      // --------------------------------------------------------
-      // Achievements V2 subcollection
-      // /users/{uid}/achievements/{achievementId}
-      // Individual docs per achievement with progress tracking.
-      // Writes are server-authoritative (Cloud Functions).
-      // --------------------------------------------------------
-      match /achievements/{achievementId} {
-        // User can read their own v2 achievements
-        allow read: if isAuth() && isOwner(uid);
-
-        // Server-written only; client reads. Cloud Functions use
-        // admin SDK which bypasses rules, so deny client writes.
-        allow create, update, delete: if false;
-      }
-
-      // --------------------------------------------------------
-      // Per-game stats subcollection (Achievements V2)
-      // /users/{uid}/statsPerGame/{gameType}
-      // Written by Cloud Functions on game completion.
-      // --------------------------------------------------------
-      match /statsPerGame/{gameType} {
-        allow read: if isAuth() && isOwner(uid);
-        allow create, update, delete: if false;
-      }
-
-      // --------------------------------------------------------
-      // Achievement Summary (Achievements V2)
-      // /users/{uid}/achievementSummary (single doc)
-      // Aggregated totals, updated by Cloud Functions.
-      // --------------------------------------------------------
-      match /achievementSummary/{docId} {
-        allow read: if isAuth() && isOwner(uid);
-        allow create, update, delete: if false;
-      }
-
-      // --------------------------------------------------------
-      // Social Game Stats (Achievements V2)
-      // /users/{uid}/socialGameStats (single doc)
-      // Invite/spectator/rematch counters.
-      // Server writes via Cloud Functions (invite counters).
-      // Client writes allowed for spectator/rematch counters
-      // with basic validation (values can only increase).
-      // --------------------------------------------------------
-      match /socialGameStats/{docId} {
-        allow read: if isAuth() && isOwner(uid);
-        allow create: if isAuth() && isOwner(uid);
-        allow update: if isAuth() && isOwner(uid);
-        allow delete: if false;
-      }
-
       // --------------------------------------------------------
       // Badges subcollection (Profile Screen Overhaul)
       // Stores earned badges with display preferences
@@ -409,32 +342,6 @@ service cloud.firestore {
         
         // No delete - settings persist
         allow delete: if false;
-      }
-
-      // --------------------------------------------------------
-      // GameHighScores subcollection (Phase 3 - Single-Player Games)
-      // Stores per-game high score records: Users/{uid}/GameHighScores/{gameType}
-      // SERVER-ONLY WRITES — managed by processSoloGameResult Cloud Function
-      // --------------------------------------------------------
-      match /GameHighScores/{gameType} {
-        // Any authenticated user can read high scores (needed for score comparison)
-        allow read: if isAuth();
-        
-        // All writes handled by server (processSoloGameResult CF)
-        allow create, update, delete: if false;
-      }
-
-      // --------------------------------------------------------
-      // GameSessions subcollection (Phase 3 - Single-Player Games)
-      // Stores individual game session records: Users/{uid}/GameSessions/{sessionId}
-      // SERVER-ONLY WRITES — managed by processSoloGameResult Cloud Function
-      // --------------------------------------------------------
-      match /GameSessions/{sessionId} {
-        // User can read their own game sessions
-        allow read: if isAuth() && isOwner(uid);
-        
-        // All writes handled by server (processSoloGameResult CF)
-        allow create, update, delete: if false;
       }
 
       // --------------------------------------------------------
@@ -772,7 +679,7 @@ service cloud.firestore {
                          request.resource.data.sender == request.auth.uid) &&
                         // V1 type validation OR V2 kind validation
                         // Voice messages use type='voice' (H11)
-                        (request.resource.data.type in ['text', 'image', 'scorecard', 'voice'] ||
+                        (request.resource.data.type in ['text', 'image', 'voice'] ||
                          request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system', 'animal']) &&
                         // Content length limits (V1 content or V2 text)
                         (!request.resource.data.keys().hasAll(['content']) ||
@@ -805,12 +712,6 @@ service cloud.firestore {
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
                          isSender() &&
                          isWithinEditWindow()) ||
-                        
-                        // Case 3b: Scorecard (spectator invite) text updates - sender only, no time limit
-                        // Games can last >15 minutes, so scorecard updates bypass the edit window
-                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
-                         isSender() &&
-                         resource.data.kind == 'scorecard') ||
                         
                         // Case 4: Legacy - mark as read (V1 compatibility)
                         (request.resource.data.sender == resource.data.sender &&
@@ -984,34 +885,6 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // GAME SESSIONS COLLECTION
-    // v3 sessions: participants-based multiplayer sessions
-    //   → reads allowed for any participant (uid in participantUids array)
-    //   → all writes happen via Cloud Function callables (bypass rules)
-    // Legacy single-player records: playerId-based
-    //   → reads allowed for the playerId owner
-    // ============================================================
-
-    match /GameSessions/{sessionId} {
-      // Read: participant in v3 session OR owner of legacy single-player record
-      // NOTE: keys().hasAll() checks removed intentionally — they prevent
-      // Firestore from validating collection queries at plan-time.
-      // If the field is missing, `uid in null` and `uid == null` both
-      // safely evaluate to false, so no guard is needed.
-      allow read: if isAuth() && (
-                    request.auth.uid in resource.data.participantUids ||
-                    request.auth.uid == resource.data.playerId
-                  );
-
-      // All creates now go through processSoloGameResult / createSessionV3
-      // Cloud Functions (Admin SDK bypasses rules). Client create disabled.
-      allow create: if false;
-
-      // v3 sessions are mutated only by Cloud Functions (admin SDK bypasses rules)
-      allow update, delete: if false;
-    }
-
-    // ============================================================
     // COSMETICS COLLECTION (Read-only, admin seeded)
     // ============================================================
 
@@ -1050,35 +923,6 @@ service cloud.firestore {
       // Only sender can delete their scheduled messages
       allow delete: if isAuth() && 
                       request.auth.uid == resource.data.senderId;
-    }
-
-    // ============================================================
-    // LEADERBOARDS COLLECTION (Phase 17 - per guide)
-    // Format: Leaderboards/{gameId}_{weekKey}/Entries/{uid}
-    // ============================================================
-
-    match /Leaderboards/{leaderboardId} {
-      // Anyone authenticated can read leaderboard metadata
-      allow read: if isAuth();
-      allow write: if false; // Server-only via Cloud Functions
-
-      match /Entries/{uid} {
-        // Anyone authenticated can read leaderboard entries
-        allow read: if isAuth();
-        
-        // SERVER-ONLY WRITES — managed by processSoloGameResult CF
-        allow create, update, delete: if false;
-      }
-
-      // Single-player game leaderboards: Leaderboards/{gameType}/{period}/{playerId}
-      // SERVER-ONLY WRITES — managed by processSoloGameResult Cloud Function
-      match /{period}/{playerId} {
-        // Anyone authenticated can read leaderboard entries
-        allow read: if isAuth();
-        
-        // All writes handled by server (processSoloGameResult CF)
-        allow create, update, delete: if false;
-      }
     }
 
     // ============================================================
@@ -1241,15 +1085,6 @@ service cloud.firestore {
 
     // Adding to Users collection rules...
     // (Already handled by adding subcollection match below)
-
-    // ============================================================
-    // ACHIEVEMENTS (Stored in Users/{uid}/Achievements/{achievementId})
-    // Rules already covered under Users collection subcollections
-    // Adding explicit match for clarity
-    // ============================================================
-
-    // Note: Achievements are stored as Users/{uid}/Achievements/{type}
-    // The existing Users match handles subcollections, but we add explicit rules:
 
     // ============================================================
     // PHASE 20: GROUP CHAT
@@ -1422,7 +1257,7 @@ service cloud.firestore {
                          request.resource.data.sender == request.auth.uid) &&
                         // V1 type validation OR V2 kind validation
                         // Voice messages use type='voice' (H11)
-                        (request.resource.data.type in ['text', 'image', 'system', 'voice', 'scorecard'] ||
+                        (request.resource.data.type in ['text', 'image', 'system', 'voice'] ||
                          request.resource.data.kind in ['text', 'media', 'voice', 'file', 'system', 'animal']) &&
                         // Validate content length
                         (request.resource.data.type == 'image' ||
@@ -1455,12 +1290,7 @@ service cloud.firestore {
                         // Case 3: Edit message - sender only, within 15 min
                         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
                          isMessageSender() &&
-                         isWithinEditWindow()) ||
-                        
-                        // Case 3b: Scorecard (spectator invite) text updates - sender only, no time limit
-                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt']) &&
-                         isMessageSender() &&
-                         resource.data.kind == 'scorecard')
+                         isWithinEditWindow())
                       );
         
         // Delete: Not allowed (use deletedForAll or hiddenFor instead)
@@ -1607,515 +1437,6 @@ service cloud.firestore {
       // Events are server-write only
       // Could allow admin read for debugging
       allow read: if isAuth() && request.auth.token.admin == true;
-      allow create, update, delete: if false;
-    }
-
-    // ============================================================
-    // PHASE 22: GAMES EXPANSION - TURN-BASED & REAL-TIME GAMES
-    // ============================================================
-
-    // TURN-BASED GAMES COLLECTION
-    // Stores chess, checkers, tic-tac-toe, crazy eights, 8-ball pool
-    match /TurnBasedGames/{gameId} {
-      // Helper: Check if user is a player in this game
-      function isGamePlayer() {
-        return request.auth.uid in resource.data.playerIds;
-      }
-      
-      // Helper: Check if user is the current turn holder
-      function isCurrentTurn() {
-        return resource.data.currentTurn == request.auth.uid;
-      }
-      
-      // Helper: Check if game is in active status
-      function isGameActive() {
-        return resource.data.status == 'active';
-      }
-
-      // Helper: Check if game allows spectators
-      function allowsSpectators() {
-        return resource.data.get('config', {}).get('allowSpectators', false) == true;
-      }
-      
-      // Read: players can read their games, spectators can read if allowed
-      allow read: if isAuth() && (isGamePlayer() || allowsSpectators());
-      
-      // Create: Validated — host must be caller, valid game type, valid initial status
-      allow create: if isAuth() &&
-        request.resource.data.hostUid == request.auth.uid &&
-        request.resource.data.gameType is string &&
-        request.resource.data.status == 'waiting' &&
-        request.auth.uid in request.resource.data.playerIds;
-      
-      // Update: Players can update their games
-      // - Make moves when it's their turn
-      // - End game, resign, offer draw (any player)
-      // Complex validation is done server-side
-      allow update: if isAuth() && 
-                      isGamePlayer() && 
-                      (
-                        // Current turn player can make moves
-                        isCurrentTurn() || 
-                        // Game already ended
-                        resource.data.status in ['completed', 'abandoned'] ||
-                        // Any player can end/resign (changing status to completed/abandoned)
-                        request.resource.data.status in ['completed', 'abandoned'] ||
-                        // Any player can offer/respond to draw
-                        request.resource.data.keys().hasAny(['drawOfferedBy', 'drawAccepted'])
-                      ) &&
-                      // Cannot change playerIds
-                      request.resource.data.playerIds == resource.data.playerIds &&
-                      // Cannot change gameType
-                      request.resource.data.gameType == resource.data.gameType;
-      
-      // Delete: Not allowed (games are preserved for history)
-      allow delete: if false;
-      
-      // MOVES SUBCOLLECTION (Game History)
-      match /Moves/{moveId} {
-        // Read: any game player or spectator (if allowed)
-        allow read: if isAuth() && (
-                      request.auth.uid in get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.playerIds ||
-                      get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.get('config', {}).get('allowSpectators', false) == true
-                    );
-        
-        // Create: current turn player only, validated server-side
-        allow create: if isAuth() &&
-                        get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.currentTurn == request.auth.uid &&
-                        request.resource.data.playerId == request.auth.uid &&
-                        request.resource.data.createdAt is timestamp;
-        
-        // Moves are immutable
-        allow update, delete: if false;
-      }
-
-      // SPECTATORS SUBCOLLECTION
-      // Tracks who is watching a game in real-time
-      match /spectators/{spectatorId} {
-        // Read: anyone authenticated can see spectators (for spectator count display)
-        allow read: if isAuth();
-        
-        // Create: users can join as spectators if game allows it
-        allow create: if isAuth() &&
-                        get(/databases/$(database)/documents/TurnBasedGames/$(gameId)).data.get('config', {}).get('allowSpectators', false) == true &&
-                        request.resource.data.userId == request.auth.uid;
-        
-        // Update: users can update their own spectator entry
-        allow update: if isAuth() && resource.data.userId == request.auth.uid;
-        
-        // Delete: users can stop spectating (leave)
-        allow delete: if isAuth() && resource.data.userId == request.auth.uid;
-      }
-    }
-
-    // ============================================================
-    // GAME HISTORY COLLECTION (Phase 1: Game System Overhaul)
-    // Stores completed game records for statistics and history
-    // Created by Cloud Functions when games complete
-    // ============================================================
-    match /GameHistory/{historyId} {
-      // Helper: Check if user was a player in this game
-      function wasPlayerInGame() {
-        return request.auth.uid in resource.data.playerIds;
-      }
-      
-      // Read: Users can read their own game history
-      // Supports queries with playerIds array-contains filter
-      allow read: if isAuth() && wasPlayerInGame();
-      
-      // Create: Only Cloud Functions can create history records
-      // This ensures data integrity - clients cannot fabricate game results
-      allow create: if false;
-      
-      // Update: History records are immutable
-      // Any corrections must go through administrative processes
-      allow update: if false;
-      
-      // Delete: History records cannot be deleted
-      // Preserves complete game history for stats and analytics
-      allow delete: if false;
-    }
-
-    // ============================================================
-    // LEADERBOARD STATS COLLECTION (Phase 8: Leaderboards)
-    // Stores aggregated player stats for leaderboard rankings
-    // Created/updated by Cloud Functions when games complete
-    // ============================================================
-    match /LeaderboardStats/{statsId} {
-      // Read: Anyone authenticated can read leaderboard stats
-      // This enables global leaderboard queries
-      allow read: if isAuth();
-      
-      // Create/Update: Only Cloud Functions can write stats
-      // This ensures data integrity - clients cannot manipulate rankings
-      allow create: if false;
-      allow update: if false;
-      
-      // Delete: Stats records cannot be deleted
-      // Preserves leaderboard integrity
-      allow delete: if false;
-    }
-
-    // GAME INVITES COLLECTION (UNIVERSAL INVITES)
-    // Supports both legacy person-specific and new universal invites
-    match /GameInvites/{inviteId} {
-
-      // Helper: Check if user can access this invite (for document-level access)
-      function canAccessInvite() {
-        let data = resource.data;
-        // Sender always has access
-        return data.senderId == request.auth.uid ||
-          // Specific recipient has access (legacy DM behavior)
-          (data.get('targetType', 'specific') == 'specific' &&
-           data.get('recipientId', '') == request.auth.uid) ||
-          // Universal: check eligibleUserIds array
-          (data.get('targetType', 'specific') == 'universal' &&
-           request.auth.uid in data.get('eligibleUserIds', [])) ||
-          // Legacy support: check recipientId for old invites
-          data.get('recipientId', '') == request.auth.uid ||
-          // QUERY SUPPORT: Allow if user is in eligibleUserIds (simplifies queries)
-          request.auth.uid in data.get('eligibleUserIds', []);
-      }
-
-      // Helper: Check if invite is full
-      function isFull() {
-        return resource.data.get('claimedSlots', []).size() >=
-               resource.data.get('requiredPlayers', 2);
-      }
-
-      // Read: users who can access the invite
-      // Supports queries with eligibleUserIds array-contains filter
-      allow read: if isAuth() && canAccessInvite();
-
-      // Create: authenticated users can create invites
-      allow create: if isAuth() &&
-        request.resource.data.senderId == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        // Must have at least sender in claimedSlots (for universal) OR be legacy invite
-        (request.resource.data.get('claimedSlots', []).size() >= 1 ||
-         request.resource.data.get('recipientId', '') != '');
-
-      // Update: Various actions allowed
-      allow update: if isAuth() && (
-        // CLAIM SLOT: Eligible user joining
-        (canAccessInvite() &&
-         resource.data.status in ['pending', 'filling'] &&
-         request.resource.data.get('claimedSlots', []).size() >
-           resource.data.get('claimedSlots', []).size()) ||
-
-        // UNCLAIM SLOT: User leaving (not host, or host in group context with migration)
-        (canAccessInvite() &&
-         resource.data.status in ['pending', 'filling', 'ready'] &&
-         request.resource.data.get('claimedSlots', []).size() <
-           resource.data.get('claimedSlots', []).size()) ||
-
-        // STATUS CHANGE: Filling when players join
-        (canAccessInvite() &&
-         resource.data.status == 'pending' &&
-         request.resource.data.status == 'filling') ||
-
-        // STATUS CHANGE: Ready when full
-        (canAccessInvite() &&
-         resource.data.status in ['pending', 'filling'] &&
-         request.resource.data.status == 'ready') ||
-
-        // STATUS CHANGE: Back to filling/pending when players leave from ready
-        (canAccessInvite() &&
-         resource.data.status == 'ready' &&
-         request.resource.data.status in ['pending', 'filling']) ||
-
-        // START GAME: Host starting game (changes to starting, then active)
-        (resource.data.senderId == request.auth.uid &&
-         resource.data.status in ['pending', 'filling', 'ready'] &&
-         request.resource.data.status in ['starting', 'active']) ||
-
-        // STARTING → ACTIVE: Host promoting after match creation
-        (resource.data.senderId == request.auth.uid &&
-         resource.data.status == 'starting' &&
-         request.resource.data.status == 'active') ||
-
-        // STARTING → READY: Rollback if match creation fails
-        (resource.data.senderId == request.auth.uid &&
-         resource.data.status == 'starting' &&
-         request.resource.data.status == 'ready') ||
-
-        // DECLINE: Specific recipient declining
-        (resource.data.get('targetType', 'specific') == 'specific' &&
-         resource.data.get('recipientId', '') == request.auth.uid &&
-         resource.data.status == 'pending' &&
-         request.resource.data.status == 'declined') ||
-
-        // CANCEL: Sender cancelling - allowed in pending, filling, or ready
-        (resource.data.senderId == request.auth.uid &&
-         resource.data.status in ['pending', 'filling', 'ready'] &&
-         request.resource.data.status == 'cancelled') ||
-
-        // JOIN AS SPECTATOR
-        (canAccessInvite() &&
-         resource.data.get('spectatingEnabled', true) == true &&
-         resource.data.status in ['ready', 'active'] &&
-         request.resource.data.get('spectators', []).size() >
-           resource.data.get('spectators', []).size()) ||
-
-        // LEAVE AS SPECTATOR
-        (canAccessInvite() &&
-         request.resource.data.get('spectators', []).size() <
-           resource.data.get('spectators', []).size()) ||
-
-        // COMPLETE: Participants can mark active/starting invite as completed (cleanup)
-        // This allows client-side cleanup when game has finished
-        (canAccessInvite() &&
-         resource.data.status in ['active', 'starting'] &&
-         request.resource.data.status == 'completed')
-      );
-
-      // Delete: sender can delete
-      allow delete: if isAuth() && resource.data.senderId == request.auth.uid;
-    }
-
-    // =====================================================
-    // SPECTATOR INVITES COLLECTION (SINGLE-PLAYER GAMES)
-    // Allows inviting others to watch single-player games
-    // =====================================================
-    match /SpectatorInvites/{inviteId} {
-      
-      // Helper: Check if user can access this invite (for document reads)
-      function canAccessSpectatorInvite() {
-        let data = resource.data;
-        return data.hostId == request.auth.uid ||
-               request.auth.uid in data.eligibleUserIds;
-      }
-
-      // Read: host and eligible spectators can read
-      // For queries: use array-contains on eligibleUserIds to satisfy security
-      // For document reads: check host or eligibleUserIds membership
-      allow read: if isAuth() && (
-        resource.data.hostId == request.auth.uid ||
-        request.auth.uid in resource.data.eligibleUserIds
-      );
-
-      // Create: authenticated users can create spectator invites
-      allow create: if isAuth() &&
-        request.resource.data.hostId == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.spectators.size() == 0;
-
-      // Update: Various actions allowed
-      allow update: if isAuth() && (
-        // HOST: Can update status (start, end, cancel)
-        (resource.data.hostId == request.auth.uid &&
-         request.resource.data.status in ['active', 'completed', 'cancelled']) ||
-
-        // HOST: Can set liveSessionId
-        (resource.data.hostId == request.auth.uid &&
-         resource.data.status == 'pending' &&
-         request.resource.data.liveSessionId != null) ||
-
-        // JOIN AS SPECTATOR: Eligible user joining
-        ((resource.data.hostId == request.auth.uid || request.auth.uid in resource.data.eligibleUserIds) &&
-         resource.data.status in ['pending', 'active'] &&
-         request.resource.data.spectators.size() > resource.data.spectators.size()) ||
-
-        // LEAVE AS SPECTATOR
-        ((resource.data.hostId == request.auth.uid || request.auth.uid in resource.data.eligibleUserIds) &&
-         request.resource.data.spectators.size() < resource.data.spectators.size())
-      );
-
-      // Delete: host can delete
-      allow delete: if isAuth() && resource.data.hostId == request.auth.uid;
-    }
-
-    // MATCHMAKING QUEUE COLLECTION
-    // Handles automatic matchmaking for games
-    match /MatchmakingQueue/{entryId} {
-      // Read: users can read their own queue entries
-      allow read: if isAuth() && resource.data.playerId == request.auth.uid;
-      
-      // Create: user can join queue
-      allow create: if isAuth() &&
-                      request.resource.data.playerId == request.auth.uid &&
-                      request.resource.data.status == 'searching' &&
-                      request.resource.data.gameType in ['chess', 'checkers', 'tic_tac_toe', 'crazy_eights'] &&
-                      request.resource.data.createdAt is timestamp &&
-                      request.resource.data.rating is number;
-      
-      // Update: user can update own entry (rating range expansion), server updates for match
-      allow update: if isAuth() && (
-                      // User updating their own searching entry
-                      (resource.data.playerId == request.auth.uid &&
-                       resource.data.status == 'searching') ||
-                      // Allow server/transaction update for matching
-                      (resource.data.playerId == request.auth.uid ||
-                       request.resource.data.matchedWith == request.auth.uid)
-                    );
-      
-      // Delete: user can leave queue
-      allow delete: if isAuth() && resource.data.playerId == request.auth.uid;
-    }
-
-    // PLAYER RATINGS COLLECTION
-    // Stores ELO/rating data for competitive games
-    match /PlayerRatings/{ratingId} {
-      // Read: anyone can read ratings (for matchmaking/display)
-      allow read: if isAuth();
-      
-      // Create: users can create their own ratings doc
-      allow create: if isAuth() && ratingId.matches(request.auth.uid + '_.*');
-      
-      // Update: Server-side only to prevent rating manipulation
-      allow update: if false;
-      
-      // Delete: not allowed
-      allow delete: if false;
-    }
-
-    // MATCH SPECTATORS COLLECTION
-    // Tracks who is watching a game
-    match /MatchSpectators/{spectatorId} {
-      // Read: authenticated users can see spectators
-      allow read: if isAuth();
-      
-      // Create: users can spectate games
-      allow create: if isAuth() &&
-                      request.resource.data.userId == request.auth.uid;
-      
-      // Update: users can update their own spectator entry
-      allow update: if isAuth() && resource.data.userId == request.auth.uid;
-      
-      // Delete: users can stop spectating
-      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
-    }
-
-    // MATCH CHAT COLLECTION  
-    // In-game chat messages during matches
-    match /MatchChat/{messageId} {
-      // Read: participants can read messages
-      allow read: if isAuth();
-      
-      // Create: participants can send messages
-      allow create: if isAuth() &&
-                      request.resource.data.senderId == request.auth.uid &&
-                      request.resource.data.text is string &&
-                      request.resource.data.text.size() > 0 &&
-                      request.resource.data.text.size() <= 500 &&
-                      request.resource.data.createdAt is timestamp;
-      
-      // Messages are immutable
-      allow update, delete: if false;
-    }
-
-    // ================================================================
-    // ACHIEVEMENTS V2 — lowercase /users/{uid}/ subcollections
-    // ================================================================
-    // The V2 system writes to /users/{uid}/ (lowercase) via both
-    // Cloud Functions admin SDK and client reads.  These rules grant
-    // authenticated owner read access and deny client writes
-    // (server-authoritative via admin SDK which bypasses rules).
-    // ================================================================
-    match /users/{uid} {
-      // Allow reading the user-level doc (if it exists)
-      allow read: if isAuth() && isOwner(uid);
-      allow write: if false;
-
-      // /users/{uid}/achievements/{achievementId}
-      // Any authenticated user can read (needed for viewing achievements
-      // on other users' profiles via useAchievementsV2).
-      match /achievements/{achievementId} {
-        allow read: if isAuth();
-        allow create, update, delete: if false;
-      }
-
-      // /users/{uid}/statsPerGame/{gameType}
-      match /statsPerGame/{gameType} {
-        allow read: if isAuth() && isOwner(uid);
-        allow create, update, delete: if false;
-      }
-
-      // /users/{uid}/achievementSummary/{docId}
-      // Any authenticated user can read (for profile display).
-      match /achievementSummary/{docId} {
-        allow read: if isAuth();
-        allow create, update, delete: if false;
-      }
-
-      // /users/{uid}/socialGameStats/{docId}
-      // Client writes allowed for spectator/rematch counters.
-      match /socialGameStats/{docId} {
-        allow read: if isAuth() && isOwner(uid);
-        allow create: if isAuth() && isOwner(uid);
-        allow update: if isAuth() && isOwner(uid);
-        allow delete: if false;
-      }
-    }
-
-    // PLAYER GAME STATS COLLECTION
-    // Stores per-player statistics for all games
-    match /PlayerGameStats/{playerId} {
-      // Read: anyone can read stats (for leaderboards)
-      allow read: if isAuth();
-      
-      // Create: users can create their own stats doc
-      allow create: if isAuth() && isOwner(playerId);
-      
-      // Update: users can update their own stats
-      // Stats track game results and ratings
-      allow update: if isAuth() && isOwner(playerId) &&
-                      // Ensure playerId cannot be changed
-                      request.resource.data.playerId == resource.data.playerId &&
-                      // Ensure total games can only increase
-                      request.resource.data.totalGames >= resource.data.totalGames;
-      
-      // Delete: not allowed
-      allow delete: if false;
-    }
-
-    // PLAYER ACHIEVEMENTS COLLECTION
-    // Stores achievement progress per player
-    match /PlayerAchievements/{playerId} {
-      // Read: user can read own achievements, others for profile display
-      allow read: if isAuth();
-      
-      // Create: user can create own achievements doc
-      allow create: if isAuth() && isOwner(playerId);
-      
-      // Update: user can update own achievements
-      // Progress is validated by thresholds, and values can only increase
-      allow update: if isAuth() && isOwner(playerId) &&
-                      // Ensure playerId cannot be changed
-                      request.resource.data.playerId == resource.data.playerId &&
-                      // Ensure totalUnlocked can only increase
-                      request.resource.data.totalUnlocked >= resource.data.totalUnlocked;
-      
-      // Delete: not allowed
-      allow delete: if false;
-    }
-
-    // SINGLE-PLAYER SESSIONS COLLECTION
-    // Stores individual game session results
-    match /SinglePlayerSessions/{sessionId} {
-      // Read: user can read own sessions
-      allow read: if isAuth() && resource.data.playerId == request.auth.uid;
-      
-      // Create: user can record own session
-      allow create: if isAuth() &&
-                      request.resource.data.playerId == request.auth.uid &&
-                      request.resource.data.gameType in ['bounce_master', 'color_match_blitz', 'daily_puzzle', 'bounce_blitz', 'clicker_mine', 'helix_drop', 'play_2048', 'snake_master', 'word_master'] &&
-                      request.resource.data.finalScore is number &&
-                      request.resource.data.finalScore >= 0 &&
-                      request.resource.data.startedAt is number &&
-                      request.resource.data.endedAt is number;
-      
-      // Sessions are immutable once recorded
-      allow update, delete: if false;
-    }
-
-    // DAILY LEADERBOARDS COLLECTION
-    // Aggregated daily high scores
-    match /DailyLeaderboards/{leaderboardId} {
-      // Read: anyone authenticated can read leaderboards
-      allow read: if isAuth();
-      
-      // Write: Server-side only via Cloud Functions
       allow create, update, delete: if false;
     }
 
@@ -2367,70 +1688,6 @@ service cloud.firestore {
       allow update: if isAuth() &&
                       resource.data.userId == request.auth.uid &&
                       request.resource.data.userId == resource.data.userId;
-      allow delete: if false;
-    }
-
-    // ============================================================
-    // REALTIME GAME SESSIONS COLLECTION
-    // Stores completed real-time (Colyseus) game records.
-    // Written by the Colyseus server via Admin SDK.
-    // Players can read sessions they participated in.
-    // ============================================================
-    match /RealtimeGameSessions/{sessionId} {
-      // Read: participants can read their own game sessions
-      allow read: if isAuth() &&
-        request.auth.uid in resource.data.playerUids;
-
-      // Write: server-only via Admin SDK
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
-    }
-
-    // ============================================================
-    // SPECTATOR SESSIONS COLLECTION (Segment 8)
-    // Tracks live spectator session status. The host creates the
-    // doc when starting hosting, and updates it when the game ends.
-    // Spectators read to check if the stream is still live.
-    // ============================================================
-    match /SpectatorSessions/{roomId} {
-      // Read: any authenticated user (spectator invite links are shared)
-      allow read: if isAuth();
-
-      // Create: host creates session (hostUid must match auth)
-      allow create: if isAuth() &&
-        request.resource.data.hostUid == request.auth.uid &&
-        request.resource.data.status == 'active' &&
-        request.resource.data.roomId is string &&
-        request.resource.data.gameType is string;
-
-      // Update: host can finish session
-      allow update: if isAuth() &&
-        resource.data.hostUid == request.auth.uid &&
-        request.resource.data.hostUid == resource.data.hostUid &&
-        request.resource.data.status in ['active', 'finished'];
-
-      // Delete: host only
-      allow delete: if isAuth() && resource.data.hostUid == request.auth.uid;
-    }
-
-    // ============================================================
-    // BUG REPORTS COLLECTION (Segment 7)
-    // Game bug reports submitted from the client Debug HUD or
-    // recovery actions. Authenticated users can create their own.
-    // ============================================================
-    match /BugReports/{reportId} {
-      // Read: only the reporter can read back their own reports
-      allow read: if isAuth() &&
-        resource.data.uid == request.auth.uid;
-
-      // Create: authenticated users can submit reports
-      allow create: if isAuth() &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.status == 'new';
-
-      // No update/delete from client
-      allow update: if false;
       allow delete: if false;
     }
 

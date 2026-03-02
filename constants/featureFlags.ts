@@ -470,4 +470,3 @@ export const CHAT_FEATURES = {
   /** Show ChatDebugHUD overlay (dev-only, default true in __DEV__) */
   CHAT_DEBUG_HUD: __DEV__,
 } as const;
-

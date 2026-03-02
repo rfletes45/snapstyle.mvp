@@ -26,10 +26,7 @@ import {
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  BadgesCard,
-  FriendsCard,
-} from "@/components/profile/OverviewCards";
+import { BadgesCard, FriendsCard } from "@/components/profile/OverviewCards";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
 import { OwnProfileHeader } from "@/components/profile/ProfileHeader/index";
 import { ProfileOverflowMenu } from "@/components/profile/ProfileOverflowMenu";
@@ -318,8 +315,6 @@ export default function OwnProfileScreen({
             enterIndex={1}
             onPress={() => navigation.navigate("BadgeCollection")}
           />
-
-
         </View>
       </ScrollView>
 

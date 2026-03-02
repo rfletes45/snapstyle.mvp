@@ -6,7 +6,6 @@
  * - Push notifications
  * - Streak management
  * - V2 Messaging with idempotent sends
- * - Games: Turn-based games, matchmaking, achievements
  *
  * Security Note:
  * - All onCall functions require authentication via context.auth
@@ -15,8 +14,6 @@
  * - Structured logging includes context for debugging/audit
  */
 import * as functions from "firebase-functions";
-import { cleanupOldGameSessions, cleanupOldGames, cleanupResolvedInvites, cleanupStaleMatchmakingEntries, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, processRealtimeGameCompletion, resignGame } from "./games";
-import { migrateGameInvites, migrateGameInvitesDryRun, rollbackGameInvitesMigration } from "./migrations/migrateGameInvites";
 import { grantItem, purchaseWithTokens } from "./shop";
 import { getPurchaseHistory, restorePurchases, validateReceipt } from "./iap";
 import { expireGifts, getGiftHistory, openGift, sendGift } from "./gifting";
@@ -26,8 +23,6 @@ export declare const sendMessageV2: functions.HttpsFunction & functions.Runnable
 export declare const editMessageV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const deleteMessageForAllV2: functions.HttpsFunction & functions.Runnable<any>;
 export declare const toggleReactionV2: functions.HttpsFunction & functions.Runnable<any>;
-export { cleanupOldGameSessions, cleanupOldGames, cleanupResolvedInvites, cleanupStaleMatchmakingEntries, createGameFromInvite, expireGameInvites, expireMatchmakingEntries, makeMove, onGameCompletedCreateHistory, onGameHistoryCreatedUpdateLeaderboard, onUniversalInviteUpdate, processGameCompletion, processMatchmakingQueue, processRealtimeGameCompletion, resignGame, };
-export { migrateGameInvites, migrateGameInvitesDryRun, rollbackGameInvitesMigration, };
 export { grantItem, purchaseWithTokens };
 export { getPurchaseHistory, restorePurchases, validateReceipt };
 export { expireGifts, getGiftHistory, openGift, sendGift };
@@ -106,22 +101,6 @@ export declare const onScheduledMessageCreated: functions.CloudFunction<function
  */
 export declare const cleanupOldScheduledMessages: functions.CloudFunction<unknown>;
 /**
- * onGameSessionCreated: Triggered when a new game session is recorded
- * Updates leaderboard and checks for achievements
- */
-export declare const onGameSessionCreated: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
-/**
- * onStreakUpdated: Check for streak achievements when streak changes
- * V1 DISABLED — streak achievements are now handled by V2 evaluator.
- * Keeping the export to avoid breaking deployed Cloud Functions references.
- */
-export declare const onStreakAchievementCheck: functions.CloudFunction<functions.Change<functions.firestore.QueryDocumentSnapshot>>;
-/**
- * Weekly leaderboard reset notification (optional)
- * Runs Monday at 00:00 UTC to notify top players from previous week
- */
-export declare const weeklyLeaderboardReset: functions.CloudFunction<unknown>;
-/**
  * Initialize wallet when new user is created
  * Grants starting tokens to new users
  */
@@ -143,11 +122,6 @@ export declare const onStoryViewedTaskProgress: functions.CloudFunction<function
  * Update task progress when story is posted
  */
 export declare const onStoryPostedTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
-/**
- * Update task progress when game is played
- * Note: This extends the existing onGameSessionCreated functionality
- */
-export declare const onGamePlayedTaskProgress: functions.CloudFunction<functions.firestore.QueryDocumentSnapshot>;
 /**
  * Update task progress when friend is added
  */

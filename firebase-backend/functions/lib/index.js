@@ -1,46 +1,10 @@
 "use strict";
 /** Cloud Functions entrypoint (imports/re-exports only). */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.incrementProfileViews = exports.handleCallTimeouts = exports.grantItem = exports.grantCosmeticEntitlement = exports.getTurnCredentials = exports.getRateLimitStatus = exports.getPurchaseHistory = exports.getGiftHistory = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.expireMatchmakingEntries = exports.expireGifts = exports.expireGameInvites = exports.declineMessageRequest = exports.createSessionV3 = exports.createGameFromInvite = exports.cleanupVacantGames = exports.cleanupStaleMatchmakingEntries = exports.cleanupStagingOrphans = exports.cleanupResolvedInvites = exports.cleanupOldScheduledMessages = exports.cleanupOldGames = exports.cleanupOldGameSessions = exports.cleanupOldDeals = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.cleanupExpiredPushTokens = exports.cleanupCallSignaling = exports.claimTaskReward = exports.claimLevelReward = exports.checkMessageRateLimit = exports.adminSetBan = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminLiftBan = exports.adminApplyWarning = exports.adminApplyStrike = exports.acceptMessageRequest = exports.fetchLinkPreview = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = exports.sendExpoPushNotification = exports.sanitizeForLog = exports.isValidUid = exports.isValidString = exports.isGroupChatMuted = exports.isDmChatMuted = exports.getUserPushToken = void 0;
-exports.restorePurchases = exports.resolveSessionV3 = exports.resignGame = exports.recordDailyLogin = exports.reconcileActiveInvites = exports.purchaseWithTokens = exports.purchaseCosmeticWithTokens = exports.publishTypingIndicator = exports.publishReadReceipt = exports.publishDeliveryReceipt = exports.processSinglePlayerCompletion = exports.processScheduledMessages = exports.processRealtimeGameCompletion = exports.processMatchmakingQueue = exports.processGameCompletion = exports.openGift = exports.onUserCreated = exports.onUniversalInviteUpdate = exports.onStreakAchievementCheck = exports.onStoryViewedTaskProgress = exports.onStoryViewed = exports.onStoryPostedTaskProgress = exports.onScheduledMessageCreated = exports.onNewReport = exports.onNewMessageEvent = exports.onNewMessage = exports.onNewGroupMessageV2 = exports.onNewFriendRequest = exports.onMessageSentTaskProgress = exports.onGroupMessageInbox = exports.onGameSessionCreated = exports.onGameResult = exports.onGamePlayedTaskProgress = exports.onGameHistoryCreatedUpdateLeaderboard = exports.onGameCompletedCreateHistory = exports.onFriendAddedTaskProgress = exports.onDeleteMessage = exports.onDMMessageInbox = exports.onCallUpdated = exports.onCallCreated = exports.mintChatMediaUrl = exports.migrateGameInvitesDryRun = exports.migrateGameInvites = exports.markInboxRead = exports.makeMove = exports.leaveSessionV3 = exports.joinSessionV3 = exports.inviteToSessionV3 = exports.initializeFirstAdmin = exports.initializeExistingWallets = void 0;
-exports.onInboxSettingsChanged = exports.onChatSettingsChanged = exports.verifyIAPPurchase = exports.weeklyLeaderboardReset = exports.watchdogSessionsV3 = exports.validateReceipt = exports.updateExpiredBans = exports.triggerDailyDeals = exports.streakReminder = exports.startSessionV3 = exports.sendGift = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.rollbackGameInvitesMigration = void 0;
+exports.onGroupMessageInbox = exports.onFriendAddedTaskProgress = exports.onDeleteMessage = exports.onDMMessageInbox = exports.onCallUpdated = exports.onCallCreated = exports.mintChatMediaUrl = exports.markInboxRead = exports.initializeFirstAdmin = exports.initializeExistingWallets = exports.incrementProfileViews = exports.handleCallTimeouts = exports.grantItem = exports.grantCosmeticEntitlement = exports.getTurnCredentials = exports.getRateLimitStatus = exports.getPurchaseHistory = exports.getGiftHistory = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.expireGifts = exports.declineMessageRequest = exports.cleanupStagingOrphans = exports.cleanupOldScheduledMessages = exports.cleanupOldDeals = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.cleanupExpiredPushTokens = exports.cleanupCallSignaling = exports.claimTaskReward = exports.checkMessageRateLimit = exports.adminSetBan = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminLiftBan = exports.adminApplyWarning = exports.adminApplyStrike = exports.acceptMessageRequest = exports.fetchLinkPreview = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = exports.sendExpoPushNotification = exports.sanitizeForLog = exports.isValidUid = exports.isValidString = exports.isGroupChatMuted = exports.isDmChatMuted = exports.getUserPushToken = void 0;
+exports.onInboxSettingsChanged = exports.onChatSettingsChanged = exports.verifyIAPPurchase = exports.validateReceipt = exports.updateExpiredBans = exports.triggerDailyDeals = exports.streakReminder = exports.sendGift = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.restorePurchases = exports.recordDailyLogin = exports.purchaseWithTokens = exports.purchaseCosmeticWithTokens = exports.publishTypingIndicator = exports.publishReadReceipt = exports.publishDeliveryReceipt = exports.processScheduledMessages = exports.openGift = exports.onUserCreated = exports.onStoryViewedTaskProgress = exports.onStoryViewed = exports.onStoryPostedTaskProgress = exports.onScheduledMessageCreated = exports.onNewReport = exports.onNewMessageEvent = exports.onNewMessage = exports.onNewGroupMessageV2 = exports.onNewFriendRequest = exports.onMessageSentTaskProgress = void 0;
 // V2 Messaging
 const messaging_1 = require("./messaging");
-// Games
-const games_1 = require("./games");
-Object.defineProperty(exports, "claimLevelReward", { enumerable: true, get: function () { return games_1.claimLevelReward; } });
-Object.defineProperty(exports, "cleanupOldGameSessions", { enumerable: true, get: function () { return games_1.cleanupOldGameSessions; } });
-Object.defineProperty(exports, "cleanupOldGames", { enumerable: true, get: function () { return games_1.cleanupOldGames; } });
-Object.defineProperty(exports, "cleanupResolvedInvites", { enumerable: true, get: function () { return games_1.cleanupResolvedInvites; } });
-Object.defineProperty(exports, "cleanupStaleMatchmakingEntries", { enumerable: true, get: function () { return games_1.cleanupStaleMatchmakingEntries; } });
-Object.defineProperty(exports, "cleanupVacantGames", { enumerable: true, get: function () { return games_1.cleanupVacantGames; } });
-Object.defineProperty(exports, "createGameFromInvite", { enumerable: true, get: function () { return games_1.createGameFromInvite; } });
-Object.defineProperty(exports, "expireGameInvites", { enumerable: true, get: function () { return games_1.expireGameInvites; } });
-Object.defineProperty(exports, "expireMatchmakingEntries", { enumerable: true, get: function () { return games_1.expireMatchmakingEntries; } });
-Object.defineProperty(exports, "makeMove", { enumerable: true, get: function () { return games_1.makeMove; } });
-Object.defineProperty(exports, "onGameCompletedCreateHistory", { enumerable: true, get: function () { return games_1.onGameCompletedCreateHistory; } });
-Object.defineProperty(exports, "onGameHistoryCreatedUpdateLeaderboard", { enumerable: true, get: function () { return games_1.onGameHistoryCreatedUpdateLeaderboard; } });
-Object.defineProperty(exports, "onGameResult", { enumerable: true, get: function () { return games_1.onGameResult; } });
-Object.defineProperty(exports, "onUniversalInviteUpdate", { enumerable: true, get: function () { return games_1.onUniversalInviteUpdate; } });
-Object.defineProperty(exports, "processGameCompletion", { enumerable: true, get: function () { return games_1.processGameCompletion; } });
-Object.defineProperty(exports, "processMatchmakingQueue", { enumerable: true, get: function () { return games_1.processMatchmakingQueue; } });
-Object.defineProperty(exports, "processRealtimeGameCompletion", { enumerable: true, get: function () { return games_1.processRealtimeGameCompletion; } });
-Object.defineProperty(exports, "reconcileActiveInvites", { enumerable: true, get: function () { return games_1.reconcileActiveInvites; } });
-Object.defineProperty(exports, "resignGame", { enumerable: true, get: function () { return games_1.resignGame; } });
-// Sessions V3
-const sessionsV3_1 = require("./sessionsV3");
-Object.defineProperty(exports, "createSessionV3", { enumerable: true, get: function () { return sessionsV3_1.createSessionV3; } });
-Object.defineProperty(exports, "inviteToSessionV3", { enumerable: true, get: function () { return sessionsV3_1.inviteToSessionV3; } });
-Object.defineProperty(exports, "joinSessionV3", { enumerable: true, get: function () { return sessionsV3_1.joinSessionV3; } });
-Object.defineProperty(exports, "leaveSessionV3", { enumerable: true, get: function () { return sessionsV3_1.leaveSessionV3; } });
-Object.defineProperty(exports, "resolveSessionV3", { enumerable: true, get: function () { return sessionsV3_1.resolveSessionV3; } });
-Object.defineProperty(exports, "startSessionV3", { enumerable: true, get: function () { return sessionsV3_1.startSessionV3; } });
-Object.defineProperty(exports, "watchdogSessionsV3", { enumerable: true, get: function () { return sessionsV3_1.watchdogSessionsV3; } });
-// Migrations
-const migrateGameInvites_1 = require("./migrations/migrateGameInvites");
-Object.defineProperty(exports, "migrateGameInvites", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvites; } });
-Object.defineProperty(exports, "migrateGameInvitesDryRun", { enumerable: true, get: function () { return migrateGameInvites_1.migrateGameInvitesDryRun; } });
-Object.defineProperty(exports, "rollbackGameInvitesMigration", { enumerable: true, get: function () { return migrateGameInvites_1.rollbackGameInvitesMigration; } });
 // Shop/IAP/Gifting/Deals/Calls/Preview
 const calls_1 = require("./calls");
 Object.defineProperty(exports, "cleanupCallSignaling", { enumerable: true, get: function () { return calls_1.cleanupCallSignaling; } });
@@ -70,9 +34,6 @@ Object.defineProperty(exports, "purchaseWithTokens", { enumerable: true, get: fu
 const cosmeticEntitlements_1 = require("./cosmeticEntitlements");
 Object.defineProperty(exports, "grantCosmeticEntitlement", { enumerable: true, get: function () { return cosmeticEntitlements_1.grantCosmeticEntitlement; } });
 Object.defineProperty(exports, "purchaseCosmeticWithTokens", { enumerable: true, get: function () { return cosmeticEntitlements_1.purchaseCosmeticWithTokens; } });
-// Achievements V2 (single-player completion trigger)
-const achievementsV2Evaluator_1 = require("./achievementsV2Evaluator");
-Object.defineProperty(exports, "processSinglePlayerCompletion", { enumerable: true, get: function () { return achievementsV2Evaluator_1.processSinglePlayerCompletion; } });
 // Extracted modules
 const admin_1 = require("./admin");
 Object.defineProperty(exports, "adminApplyStrike", { enumerable: true, get: function () { return admin_1.adminApplyStrike; } });
@@ -86,7 +47,6 @@ const economy_1 = require("./economy");
 Object.defineProperty(exports, "claimTaskReward", { enumerable: true, get: function () { return economy_1.claimTaskReward; } });
 Object.defineProperty(exports, "initializeExistingWallets", { enumerable: true, get: function () { return economy_1.initializeExistingWallets; } });
 Object.defineProperty(exports, "onFriendAddedTaskProgress", { enumerable: true, get: function () { return economy_1.onFriendAddedTaskProgress; } });
-Object.defineProperty(exports, "onGamePlayedTaskProgress", { enumerable: true, get: function () { return economy_1.onGamePlayedTaskProgress; } });
 Object.defineProperty(exports, "onMessageSentTaskProgress", { enumerable: true, get: function () { return economy_1.onMessageSentTaskProgress; } });
 Object.defineProperty(exports, "onStoryPostedTaskProgress", { enumerable: true, get: function () { return economy_1.onStoryPostedTaskProgress; } });
 Object.defineProperty(exports, "onStoryViewedTaskProgress", { enumerable: true, get: function () { return economy_1.onStoryViewedTaskProgress; } });
@@ -94,10 +54,6 @@ Object.defineProperty(exports, "onUserCreated", { enumerable: true, get: functio
 Object.defineProperty(exports, "recordDailyLogin", { enumerable: true, get: function () { return economy_1.recordDailyLogin; } });
 Object.defineProperty(exports, "seedDailyTasks", { enumerable: true, get: function () { return economy_1.seedDailyTasks; } });
 Object.defineProperty(exports, "seedMonthlyTasks", { enumerable: true, get: function () { return economy_1.seedMonthlyTasks; } });
-const leaderboards_1 = require("./leaderboards");
-Object.defineProperty(exports, "onGameSessionCreated", { enumerable: true, get: function () { return leaderboards_1.onGameSessionCreated; } });
-Object.defineProperty(exports, "onStreakAchievementCheck", { enumerable: true, get: function () { return leaderboards_1.onStreakAchievementCheck; } });
-Object.defineProperty(exports, "weeklyLeaderboardReset", { enumerable: true, get: function () { return leaderboards_1.weeklyLeaderboardReset; } });
 const moderation_1 = require("./moderation");
 Object.defineProperty(exports, "checkMessageRateLimit", { enumerable: true, get: function () { return moderation_1.checkMessageRateLimit; } });
 Object.defineProperty(exports, "onNewMessageEvent", { enumerable: true, get: function () { return moderation_1.onNewMessageEvent; } });

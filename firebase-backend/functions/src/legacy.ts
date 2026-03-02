@@ -6,7 +6,6 @@
  * - Push notifications
  * - Streak management
  * - V2 Messaging with idempotent sends
- * - Games: Turn-based games, matchmaking, achievements
  *
  * Security Note:
  * - All onCall functions require authentication via context.auth
@@ -26,32 +25,6 @@ import {
   sendMessageV2Function,
   toggleReactionV2Function,
 } from "./messaging";
-
-// Import Games functions
-import {
-  cleanupOldGameSessions,
-  cleanupOldGames,
-  cleanupResolvedInvites,
-  cleanupStaleMatchmakingEntries,
-  createGameFromInvite,
-  expireGameInvites,
-  expireMatchmakingEntries,
-  makeMove,
-  onGameCompletedCreateHistory,
-  onGameHistoryCreatedUpdateLeaderboard,
-  onUniversalInviteUpdate,
-  processGameCompletion,
-  processMatchmakingQueue,
-  processRealtimeGameCompletion,
-  resignGame,
-} from "./games";
-
-// Import Migration functions
-import {
-  migrateGameInvites,
-  migrateGameInvitesDryRun,
-  rollbackGameInvitesMigration,
-} from "./migrations/migrateGameInvites";
 
 // Import Shop functions
 import { grantItem, purchaseWithTokens } from "./shop";
@@ -96,32 +69,6 @@ export const sendMessageV2 = sendMessageV2Function;
 export const editMessageV2 = editMessageV2Function;
 export const deleteMessageForAllV2 = deleteMessageForAllV2Function;
 export const toggleReactionV2 = toggleReactionV2Function;
-
-// Re-export Games functions
-export {
-  cleanupOldGameSessions,
-  cleanupOldGames,
-  cleanupResolvedInvites,
-  cleanupStaleMatchmakingEntries,
-  createGameFromInvite,
-  expireGameInvites,
-  expireMatchmakingEntries,
-  makeMove,
-  onGameCompletedCreateHistory,
-  onGameHistoryCreatedUpdateLeaderboard,
-  onUniversalInviteUpdate,
-  processGameCompletion,
-  processMatchmakingQueue,
-  processRealtimeGameCompletion,
-  resignGame,
-};
-
-// Re-export Migration functions
-export {
-  migrateGameInvites,
-  migrateGameInvitesDryRun,
-  rollbackGameInvitesMigration,
-};
 
 // Re-export Shop functions
 export { grantItem, purchaseWithTokens };
@@ -1482,222 +1429,6 @@ export const cleanupOldScheduledMessages = functions.pubsub
   });
 
 // ============================================
-// LEADERBOARDS + ACHIEVEMENTS
-// ============================================
-
-/**
- * Helper: Get current ISO week key (e.g., "2026-W03")
- */
-function getCurrentWeekKey(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const oneJan = new Date(year, 0, 1);
-  const days = Math.floor(
-    (now.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000),
-  );
-  const weekNum = Math.ceil((days + oneJan.getDay() + 1) / 7);
-  return `${year}-W${String(weekNum).padStart(2, "0")}`;
-}
-
-/**
- * Helper: Validate game score bounds (anti-cheat)
- */
-function isValidScore(
-  gameId: string,
-  score: number,
-): { valid: boolean; reason?: string } {
-  return { valid: false, reason: "Unknown game type" };
-}
-
-/**
- * onGameSessionCreated: Triggered when a new game session is recorded
- * Updates leaderboard and checks for achievements
- */
-export const onGameSessionCreated = functions.firestore
-  .document("GameSessions/{sessionId}")
-  .onCreate(async (snap, context) => {
-    const session = snap.data();
-    const { sessionId } = context.params;
-
-    try {
-      console.log(`🎮 New game session: ${sessionId}`);
-      console.log(`   Player: ${session.playerId}`);
-      console.log(`   Game: ${session.gameId}`);
-      console.log(`   Score: ${session.score}`);
-
-      // Validate score
-      const validation = isValidScore(session.gameId, session.score);
-      if (!validation.valid) {
-        console.log(`❌ Invalid score: ${validation.reason}`);
-        // Mark session as invalid but don't delete (for review)
-        await snap.ref.update({
-          invalid: true,
-          invalidReason: validation.reason,
-        });
-        return;
-      }
-
-      // Get player info
-      const playerDoc = await db
-        .collection("Users")
-        .doc(session.playerId)
-        .get();
-      if (!playerDoc.exists) {
-        console.log("❌ Player not found");
-        return;
-      }
-      const player = playerDoc.data()!;
-
-      // Update weekly leaderboard
-      const weekKey = getCurrentWeekKey();
-      const leaderboardId = `${session.gameId}_${weekKey}`;
-      const entryRef = db
-        .collection("Leaderboards")
-        .doc(leaderboardId)
-        .collection("Entries")
-        .doc(session.playerId);
-
-      const existingEntry = await entryRef.get();
-      let shouldUpdate = true;
-
-      if (existingEntry.exists) {
-        const existingScore = existingEntry.data()!.score;
-        shouldUpdate = session.score > existingScore;
-      }
-
-      if (shouldUpdate) {
-        await entryRef.set({
-          uid: session.playerId,
-          displayName: player.displayName,
-          avatarConfig: player.avatarConfig,
-          score: session.score,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        console.log(`✅ Updated leaderboard entry for ${session.playerId}`);
-      } else {
-        console.log(
-          "⏭️ Score not better than existing, skipping leaderboard update",
-        );
-      }
-
-      // V1 achievements disabled — V2 evaluator handles all achievement logic
-      // await checkGameAchievements(
-      //   session.playerId,
-      //   session.gameId,
-      //   session.score,
-      // );
-
-      return;
-    } catch (error) {
-      console.error("❌ Error in onGameSessionCreated:", error);
-    }
-  });
-
-/**
- * Helper: Check and grant game achievements
- */
-async function checkGameAchievements(
-  playerId: string,
-  gameId: string,
-  score: number,
-): Promise<void> {
-  try {
-    // Count total game sessions for this player
-    const sessionsQuery = await db
-      .collection("GameSessions")
-      .where("playerId", "==", playerId)
-      .get();
-    const totalGames = sessionsQuery.size;
-
-    const achievementsRef = db
-      .collection("Users")
-      .doc(playerId)
-      .collection("Achievements");
-
-    // First game achievement
-    if (totalGames === 1) {
-      await grantAchievementIfNotEarned(achievementsRef, "game_first_play", {
-        gameId,
-      });
-    }
-
-    // Session count achievements
-    if (totalGames >= 10) {
-      await grantAchievementIfNotEarned(achievementsRef, "game_10_sessions");
-    }
-    if (totalGames >= 50) {
-      await grantAchievementIfNotEarned(achievementsRef, "game_50_sessions");
-    }
-  } catch (error) {
-    console.error("❌ Error checking game achievements:", error);
-  }
-}
-
-/**
- * Helper: Grant achievement if not already earned
- */
-async function grantAchievementIfNotEarned(
-  achievementsRef: admin.firestore.CollectionReference,
-  achievementType: string,
-  meta?: Record<string, any>,
-): Promise<boolean> {
-  const achievementRef = achievementsRef.doc(achievementType);
-  const existing = await achievementRef.get();
-
-  if (existing.exists) {
-    console.log(`⏭️ Achievement ${achievementType} already earned`);
-    return false;
-  }
-
-  await achievementRef.set({
-    type: achievementType,
-    earnedAt: admin.firestore.FieldValue.serverTimestamp(),
-    ...(meta && { meta }),
-  });
-
-  console.log(`🏆 Granted achievement: ${achievementType}`);
-  return true;
-}
-
-/**
- * onStreakUpdated: Check for streak achievements when streak changes
- * V1 DISABLED — streak achievements are now handled by V2 evaluator.
- * Keeping the export to avoid breaking deployed Cloud Functions references.
- */
-export const onStreakAchievementCheck = functions.firestore
-  .document("Friends/{friendId}")
-  .onUpdate(async (change, _context) => {
-    // V1 streak achievements disabled — V2 evaluator handles all achievement logic
-    const before = change.before.data();
-    const after = change.after.data();
-
-    if (after.streakCount <= before.streakCount) {
-      return;
-    }
-
-    console.log(
-      `🔥 [V1-DISABLED] Streak updated to ${after.streakCount} — skipping V1 achievement grants (V2 handles this)`,
-    );
-    return;
-  });
-
-/**
- * Weekly leaderboard reset notification (optional)
- * Runs Monday at 00:00 UTC to notify top players from previous week
- */
-export const weeklyLeaderboardReset = functions.pubsub
-  .schedule("0 0 * * 1") // Every Monday at 00:00 UTC
-  .timeZone("UTC")
-  .onRun(async () => {
-    console.log("🏆 Weekly leaderboard reset - new week started");
-    // This function can be extended to:
-    // - Send notifications to top players
-    // - Archive previous week's results
-    // - Generate weekly summary stats
-    return;
-  });
-
-// ============================================
 // ECONOMY + WALLET + TASKS
 // ============================================
 
@@ -2102,32 +1833,6 @@ export const onStoryPostedTaskProgress = functions.firestore
       await updateTaskProgress(authorId, "post_story");
     } catch (error) {
       console.error("❌ [onStoryPostedTaskProgress] Error:", error);
-    }
-  });
-
-/**
- * Update task progress when game is played
- * Note: This extends the existing onGameSessionCreated functionality
- */
-export const onGamePlayedTaskProgress = functions.firestore
-  .document("GameSessions/{sessionId}")
-  .onCreate(async (snap, context) => {
-    const session = snap.data();
-    const playerId = session.playerId;
-    const score = session.score;
-    const gameId = session.gameId;
-
-    try {
-      // Update "play_game" tasks
-      await updateTaskProgress(playerId, "play_game");
-
-      // For "win_game" tasks, any valid session with score > 0 counts as a win.
-      // Invalid scores are already filtered by onGameSessionCreated.
-      if (score > 0) {
-        await updateTaskProgress(playerId, "win_game");
-      }
-    } catch (error) {
-      console.error("❌ [onGamePlayedTaskProgress] Error:", error);
     }
   });
 

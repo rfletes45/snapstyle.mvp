@@ -8,48 +8,6 @@ import {
   toggleReactionV2Function,
 } from "./messaging";
 
-// Games
-import {
-  claimLevelReward,
-  cleanupOldGameSessions,
-  cleanupOldGames,
-  cleanupResolvedInvites,
-  cleanupStaleMatchmakingEntries,
-  cleanupVacantGames,
-  createGameFromInvite,
-  expireGameInvites,
-  expireMatchmakingEntries,
-  makeMove,
-  onGameCompletedCreateHistory,
-  onGameHistoryCreatedUpdateLeaderboard,
-  onGameResult,
-  onUniversalInviteUpdate,
-  processGameCompletion,
-  processMatchmakingQueue,
-  processRealtimeGameCompletion,
-  reconcileActiveInvites,
-  resignGame,
-} from "./games";
-
-// Sessions V3
-import {
-  createSessionV3,
-  inviteToSessionV3,
-  joinSessionV3,
-  leaveSessionV3,
-  processSoloGameResult,
-  resolveSessionV3,
-  startSessionV3,
-  watchdogSessionsV3,
-} from "./sessionsV3";
-
-// Migrations
-import {
-  migrateGameInvites,
-  migrateGameInvitesDryRun,
-  rollbackGameInvitesMigration,
-} from "./migrations/migrateGameInvites";
-
 // Shop/IAP/Gifting/Deals/Calls/Preview
 import {
   cleanupCallSignaling,
@@ -75,9 +33,6 @@ import {
   purchaseCosmeticWithTokens,
 } from "./cosmeticEntitlements";
 
-// Achievements V2 (single-player completion trigger)
-import { processSinglePlayerCompletion } from "./achievementsV2Evaluator";
-
 // Extracted modules
 import {
   adminApplyStrike,
@@ -92,7 +47,6 @@ import {
   claimTaskReward,
   initializeExistingWallets,
   onFriendAddedTaskProgress,
-  onGamePlayedTaskProgress,
   onMessageSentTaskProgress,
   onStoryPostedTaskProgress,
   onStoryViewedTaskProgress,
@@ -101,11 +55,6 @@ import {
   seedDailyTasks,
   seedMonthlyTasks,
 } from "./economy";
-import {
-  onGameSessionCreated,
-  onStreakAchievementCheck,
-  weeklyLeaderboardReset,
-} from "./leaderboards";
 import {
   checkMessageRateLimit,
   onNewMessageEvent,
@@ -186,26 +135,16 @@ export {
   adminSetAdminClaim,
   adminSetBan,
   checkMessageRateLimit,
-  claimLevelReward,
   claimTaskReward,
   cleanupCallSignaling,
   cleanupExpiredPushTokens,
   cleanupExpiredSnaps,
   cleanupExpiredStories,
   cleanupOldDeals,
-  cleanupOldGameSessions,
-  cleanupOldGames,
   cleanupOldScheduledMessages,
-  cleanupResolvedInvites,
   cleanupStagingOrphans,
-  cleanupStaleMatchmakingEntries,
-  cleanupVacantGames,
-  createGameFromInvite,
-  createSessionV3,
   declineMessageRequest,
-  expireGameInvites,
   expireGifts,
-  expireMatchmakingEntries,
   generateDailyDeals,
   generateWeeklyDeals,
   getGiftHistory,
@@ -218,24 +157,13 @@ export {
   incrementProfileViews,
   initializeExistingWallets,
   initializeFirstAdmin,
-  inviteToSessionV3,
-  joinSessionV3,
-  leaveSessionV3,
-  makeMove,
   markInboxRead,
-  migrateGameInvites,
-  migrateGameInvitesDryRun,
   mintChatMediaUrl,
   onCallCreated,
   onCallUpdated,
   onDMMessageInbox,
   onDeleteMessage,
   onFriendAddedTaskProgress,
-  onGameCompletedCreateHistory,
-  onGameHistoryCreatedUpdateLeaderboard,
-  onGamePlayedTaskProgress,
-  onGameResult,
-  onGameSessionCreated,
   onGroupMessageInbox,
   onMessageSentTaskProgress,
   onNewFriendRequest,
@@ -247,39 +175,25 @@ export {
   onStoryPostedTaskProgress,
   onStoryViewed,
   onStoryViewedTaskProgress,
-  onStreakAchievementCheck,
-  onUniversalInviteUpdate,
   onUserCreated,
   openGift,
-  processGameCompletion,
-  processMatchmakingQueue,
-  processRealtimeGameCompletion,
   processScheduledMessages,
-  processSinglePlayerCompletion,
-  processSoloGameResult,
   publishDeliveryReceipt,
   publishReadReceipt,
   publishTypingIndicator,
   purchaseCosmeticWithTokens,
   purchaseWithTokens,
-  reconcileActiveInvites,
   recordDailyLogin,
-  resignGame,
-  resolveSessionV3,
   restorePurchases,
-  rollbackGameInvitesMigration,
   seedDailyTasks,
   seedMonthlyTasks,
   seedShopCatalog,
   sendFriendRequestWithRateLimit,
   sendGift,
-  startSessionV3,
   streakReminder,
   triggerDailyDeals,
   updateExpiredBans,
   validateReceipt,
-  watchdogSessionsV3,
-  weeklyLeaderboardReset,
 };
 
 // ─── Callable aliases for client backward-compat ───────────────────────────
