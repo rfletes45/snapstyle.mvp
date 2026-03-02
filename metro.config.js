@@ -26,9 +26,9 @@ config.resolver.sourceExts = [...(config.resolver.sourceExts || [])];
 config.resolver.resolverMainFields = ["react-native", "browser", "main"];
 
 // Set condition names so package.json "exports" maps resolve correctly.
-// Without this, @colyseus/httpie (and similar packages) resolve to their
-// Node.js entry point which imports 'https', 'http', 'url' — unavailable
-// in React Native.  The "browser" condition selects the XHR-based build.
+// This ensures packages that offer both Node.js and browser entry points
+// resolve to the browser/RN build (which avoids importing 'https', 'http',
+// 'url' — unavailable in React Native).
 // NOTE: "default" is used instead of "import" to avoid pulling ESM-only
 // entry points for CJS helpers like @babel/runtime/helpers/* — using
 // "import" causes `_interopRequireDefault is not a function (it is Object)`.

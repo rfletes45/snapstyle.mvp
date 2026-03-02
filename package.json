@@ -11,14 +11,9 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
-    "validate:minigolf": "npx tsx tools/minigolf/validateCourses.ts",
-    "sync:minigolf": "npx tsx tools/minigolf/syncCourses.ts",
-    "verify:registry": "npx jest __tests__/games/registryCompleteness.test.ts --no-coverage",
-    "smoke": "npx jest __tests__/integration/smokeTestHarness.test.ts --no-coverage --verbose",
     "postinstall": "node scripts/patch-expo-cli-cache.js"
   },
   "dependencies": {
-    "@colyseus/sdk": "^0.17.31",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/slider": "^5.1.2",

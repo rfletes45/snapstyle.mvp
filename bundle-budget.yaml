@@ -15,19 +15,6 @@ budgets:
     path: "src/navigation/**"
     limit: 200KB
 
-  # Games feature
-  - name: "games"
-    path: "src/screens/games/**"
-    limit: 500KB
-
-  - name: "game-physics"
-    path: "src/utils/physics/**"
-    limit: 50KB
-
-  - name: "game-validation"
-    path: "src/services/gameValidation/**"
-    limit: 100KB
-
   # Chat feature
   - name: "chat"
     path: "src/screens/chat/**"
