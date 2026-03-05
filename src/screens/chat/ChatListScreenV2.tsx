@@ -19,16 +19,18 @@ import {
 import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
 import { useFriendRequests } from "@/hooks/useFriendRequests";
 import { useInboxData } from "@/hooks/useInboxData";
-import { blockUser } from "@/services/blocking";
-import { getPendingInvites } from "@/services/groups";
-import { submitReport } from "@/services/reporting";
+import {
+  acceptGroupInvite,
+  declineGroupInvite,
+  getPendingInvites,
+} from "@/services/groups";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
-import type { GroupInvite, ReportReason } from "@/types/models";
+import type { GroupInvite } from "@/types/models";
 import { usePrefetchProfileImages } from "@/utils/imagePrefetch";
-import { log } from "@/utils/log";
+import { createLogger, log } from "@/utils/log";
 import {
   useFocusEffect,
   useIsFocused,
@@ -39,8 +41,6 @@ import { FlatList, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 // Components
-import BlockUserModal from "@/components/BlockUserModal";
-import ReportUserModal from "@/components/ReportUserModal";
 import {
   ConversationContextMenu,
   ConversationItem,
@@ -56,9 +56,6 @@ import {
   SwipeableConversation,
 } from "@/components/chat/inbox";
 import { ErrorState, LoadingState } from "@/components/ui";
-import { acceptGroupInvite, declineGroupInvite } from "@/services/groups";
-
-import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/chat/ChatListScreenV2");
 // Theme
 
@@ -122,6 +119,7 @@ export default function ChatListScreen() {
 
   // Local state
   const [pendingInvites, setPendingInvites] = useState<GroupInvite[]>([]);
+  const [pendingInvitesLoading, setPendingInvitesLoading] = useState(false);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -141,28 +139,13 @@ export default function ChatListScreen() {
     useState<InboxConversation | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Block user modal state
-  const [blockModalVisible, setBlockModalVisible] = useState(false);
-  const [blockTargetUser, setBlockTargetUser] = useState<{
-    userId: string;
-    username: string;
-  } | null>(null);
-  const [blockLoading, setBlockLoading] = useState(false);
-
-  // Report user modal state
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [reportTargetUser, setReportTargetUser] = useState<{
-    userId: string;
-    username: string;
-  } | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-
   // Friend requests from useFriendRequests hook
   const {
     requests: friendRequests,
     loading: requestsLoading,
     acceptRequest,
     declineRequest,
+    refresh: refreshFriendRequests,
   } = useFriendRequests(uid);
 
   // =============================================================================
@@ -199,21 +182,23 @@ export default function ChatListScreen() {
   // Load Friend Requests / Invites
   // =============================================================================
 
+  const loadPendingInvites = useCallback(async () => {
+    if (!uid) return;
+    setPendingInvitesLoading(true);
+    try {
+      const invites = await getPendingInvites(uid);
+      setPendingInvites(invites);
+    } catch (e) {
+      logger.error("[ChatListScreen] Error loading group invites:", e);
+    } finally {
+      setPendingInvitesLoading(false);
+    }
+  }, [uid]);
+
   useFocusEffect(
     useCallback(() => {
-      if (!uid) return;
-
-      const loadInvites = async () => {
-        try {
-          const invites = await getPendingInvites(uid);
-          setPendingInvites(invites);
-        } catch (e) {
-          logger.error("[ChatListScreen] Error loading group invites:", e);
-        }
-      };
-
-      loadInvites();
-    }, [uid]),
+      loadPendingInvites();
+    }, [loadPendingInvites]),
   );
 
   // =============================================================================
@@ -452,55 +437,10 @@ export default function ChatListScreen() {
     setDeleteTargetConversation(null);
   }, []);
 
-  const handleConfirmBlock = useCallback(
-    async (reason?: string) => {
-      if (!blockTargetUser || !uid) return;
-
-      setBlockLoading(true);
-      try {
-        await blockUser(uid, blockTargetUser.userId, reason);
-        // Refresh the inbox after blocking
-        refresh();
-      } catch (error) {
-        log.error("Failed to block user", error);
-      } finally {
-        setBlockLoading(false);
-        setBlockModalVisible(false);
-        setBlockTargetUser(null);
-      }
-    },
-    [blockTargetUser, uid, refresh],
-  );
-
-  const handleCloseBlockModal = useCallback(() => {
-    setBlockModalVisible(false);
-    setBlockTargetUser(null);
-  }, []);
-
-  const handleSubmitReport = useCallback(
-    async (reason: ReportReason, description?: string) => {
-      if (!reportTargetUser || !uid) return;
-
-      setReportLoading(true);
-      try {
-        await submitReport(uid, reportTargetUser.userId, reason, {
-          description,
-        });
-      } catch (error) {
-        log.error("Failed to submit report", error);
-      } finally {
-        setReportLoading(false);
-        setReportModalVisible(false);
-        setReportTargetUser(null);
-      }
-    },
-    [reportTargetUser, uid],
-  );
-
-  const handleCloseReportModal = useCallback(() => {
-    setReportModalVisible(false);
-    setReportTargetUser(null);
-  }, []);
+  const handleRequestsRefresh = useCallback(() => {
+    refreshFriendRequests();
+    loadPendingInvites();
+  }, [refreshFriendRequests, loadPendingInvites]);
 
   // =============================================================================
   // Context Menu Action Handlers
@@ -665,6 +605,7 @@ export default function ChatListScreen() {
 
   // Determine if we're showing requests tab
   const showRequestsTab = filter === "requests";
+  const requestsRefreshing = requestsLoading || pendingInvitesLoading;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -770,8 +711,8 @@ export default function ChatListScreen() {
               }
               return `request-${(item.data as FriendRequestWithUser).id}`;
             }}
-            refreshing={requestsLoading}
-            onRefresh={refresh}
+            refreshing={requestsRefreshing}
+            onRefresh={handleRequestsRefresh}
           />
         )
       ) : (
@@ -828,24 +769,6 @@ export default function ChatListScreen() {
         conversationName={deleteTargetConversation?.name ?? ""}
         isGroup={deleteTargetConversation?.type === "group"}
         loading={deleteLoading}
-      />
-
-      {/* Block User Modal */}
-      <BlockUserModal
-        visible={blockModalVisible}
-        username={blockTargetUser?.username ?? ""}
-        onConfirm={handleConfirmBlock}
-        onCancel={handleCloseBlockModal}
-        loading={blockLoading}
-      />
-
-      {/* Report User Modal */}
-      <ReportUserModal
-        visible={reportModalVisible}
-        username={reportTargetUser?.username ?? ""}
-        onSubmit={handleSubmitReport}
-        onCancel={handleCloseReportModal}
-        loading={reportLoading}
       />
     </View>
   );

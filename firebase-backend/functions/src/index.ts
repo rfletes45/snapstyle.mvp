@@ -1,5 +1,8 @@
 /** Cloud Functions entrypoint (imports/re-exports only). */
 
+// Initialize Firebase Admin SDK BEFORE any module accesses admin services.
+import "./adminInit";
+
 // V2 Messaging
 import {
   deleteMessageForAllV2Function,
@@ -107,6 +110,23 @@ import {
 // Profile Views (server-authoritative increment)
 import { incrementProfileViews } from "./profileViews";
 
+// Games V4 — Full game system
+import {
+  cancelGameInviteV4,
+  claimLevelRewardV4,
+  createGameInviteV4,
+  createSoloSessionV4,
+  joinInviteLobbyV4,
+  leaveInviteLobbyV4,
+  onGameInviteV4Deleted,
+  onSessionV4StatusChanged,
+  resignSessionV4,
+  startGameFromInviteV4,
+  submitTurnMoveV4,
+  updateLobbySettingsV4,
+  watchdogGamesV4,
+} from "./gamesV4";
+
 // Utilities extracted from legacy index.
 export {
   getUserPushToken,
@@ -202,3 +222,20 @@ export const verifyIAPPurchase = validateReceipt;
 
 // Segment 7 Firestore triggers (named exports for stable function names)
 export { onChatSettingsChanged, onInboxSettingsChanged };
+
+// ─── Games V4 ──────────────────────────────────────────────────────────────
+export {
+  cancelGameInviteV4,
+  claimLevelRewardV4,
+  createGameInviteV4,
+  createSoloSessionV4,
+  joinInviteLobbyV4,
+  leaveInviteLobbyV4,
+  onGameInviteV4Deleted,
+  onSessionV4StatusChanged,
+  resignSessionV4,
+  startGameFromInviteV4,
+  submitTurnMoveV4,
+  updateLobbySettingsV4,
+  watchdogGamesV4,
+};

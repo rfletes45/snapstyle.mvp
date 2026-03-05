@@ -13,16 +13,19 @@
  * - User preference toggle (persisted via localStorage on web)
  */
 
+import { isInGamesArea } from "@/gamesV4/utils/isInGamesArea";
 import { getFirestoreInstance } from "@/services/firebase";
 import { getUserProfileByUid } from "@/services/friends";
 import { createLogger } from "@/utils/log";
 import {
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   Unsubscribe,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import React, {
@@ -76,7 +79,11 @@ const storage = {
 // Types
 // =============================================================================
 
-export type NotificationType = "message" | "friend_request";
+export type NotificationType =
+  | "message"
+  | "friend_request"
+  | "game_turn"
+  | "achievement_unlocked";
 
 export interface InAppNotification {
   /** Unique ID for this notification */
@@ -87,7 +94,7 @@ export interface InAppNotification {
   title: string;
   /** Display subtitle/body */
   body: string;
-  /** Entity ID (chatId for messages, requestId for friend requests) */
+  /** Entity ID (chatId for messages, requestId for friend requests, sessionId for game_turn, collapseKey for achievements) */
   entityId: string;
   /** Sender/requester user ID */
   fromUserId: string;
@@ -140,6 +147,13 @@ interface InAppNotificationsContextType {
 const MAX_VISIBLE_NOTIFICATIONS = 2;
 const AUTO_DISMISS_MS = 5000;
 const DEBOUNCE_WINDOW_MS = 3000;
+
+function getConversationTimestampKey(
+  scope: "dm" | "group",
+  conversationId: string,
+): string {
+  return `${scope}:${conversationId}`;
+}
 
 // =============================================================================
 // Context
@@ -285,6 +299,19 @@ export function InAppNotificationsProvider({
         currentScreen === "Connections"
       ) {
         log.debug("User is on Connections screen, suppressing notification");
+        return;
+      }
+
+      // Games area suppression: suppress game_turn and achievement_unlocked
+      // banners when the user is inside the Games area.
+      if (
+        (notification.type === "game_turn" ||
+          notification.type === "achievement_unlocked") &&
+        isInGamesArea(currentScreen)
+      ) {
+        log.debug(
+          `User is in Games area (${currentScreen}), suppressing ${notification.type} notification`,
+        );
         return;
       }
 
@@ -486,16 +513,17 @@ export function InAppNotificationsProvider({
             const lastMentionUids = data.lastMentionUids as
               | string[]
               | undefined;
+            const timestampKey = getConversationTimestampKey("group", groupId);
 
             // Check if this is actually a new message
             const previousTimestamp =
-              lastMessageTimestamps.current.get(groupId) || 0;
+              lastMessageTimestamps.current.get(timestampKey) || 0;
             if (lastMessageAt <= previousTimestamp) {
               continue;
             }
 
             // Update tracking
-            lastMessageTimestamps.current.set(groupId, lastMessageAt);
+            lastMessageTimestamps.current.set(timestampKey, lastMessageAt);
 
             // Skip if message is old (more than 30 seconds)
             if (Date.now() - lastMessageAt > 30000) {
@@ -582,6 +610,7 @@ export function InAppNotificationsProvider({
             const lastMessageText = data.lastMessageText || "";
             const lastMessageSenderId = data.lastMessageSenderId || "";
             const members = data.members as string[];
+            const timestampKey = getConversationTimestampKey("dm", chatId);
 
             // Find the other user
             const otherUid = members.find((m) => m !== uid);
@@ -595,13 +624,13 @@ export function InAppNotificationsProvider({
 
             // Check if this is actually a new message
             const previousTimestamp =
-              lastMessageTimestamps.current.get(chatId) || 0;
+              lastMessageTimestamps.current.get(timestampKey) || 0;
             if (lastMessageAt <= previousTimestamp) {
               continue;
             }
 
             // Update tracking
-            lastMessageTimestamps.current.set(chatId, lastMessageAt);
+            lastMessageTimestamps.current.set(timestampKey, lastMessageAt);
 
             // Skip if message is old (more than 30 seconds)
             if (Date.now() - lastMessageAt > 30000) {
@@ -659,6 +688,162 @@ export function InAppNotificationsProvider({
       );
     };
   }, [uid, enabled, pushNotification]);
+
+  // =============================================================================
+  // Game In-App Notifications Listener (InAppNotificationsV4)
+  // =============================================================================
+
+  useEffect(() => {
+    if (!uid || !enabled) return;
+
+    const db = getFirestoreInstance();
+    const notifRef = collection(db, "Users", uid, "InAppNotificationsV4");
+    const q = query(
+      notifRef,
+      where("deliveredAt", "==", null),
+      orderBy("createdAt", "desc"),
+      limit(5),
+    );
+
+    log.debug("Setting up InAppNotificationsV4 listener");
+
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        for (const change of snapshot.docChanges()) {
+          if (change.type === "added") {
+            const data = change.doc.data();
+            const notifDocId = change.doc.id;
+            const type = data.type as "game_turn" | "achievement_unlocked";
+            const payload = data.payload ?? {};
+            const createdAt = data.createdAt?.toMillis?.() ?? 0;
+
+            // Skip old notifications (more than 30 seconds)
+            if (createdAt > 0 && Date.now() - createdAt > 30000) {
+              log.debug(`Skipping old game notification: ${notifDocId}`);
+              // Mark as delivered so it won't pop later
+              try {
+                const docRef = doc(
+                  db,
+                  "Users",
+                  uid,
+                  "InAppNotificationsV4",
+                  notifDocId,
+                );
+                await updateDoc(docRef, {
+                  deliveredAt: new Date(),
+                });
+              } catch {
+                // ignore
+              }
+              continue;
+            }
+
+            // If user is in Games area, mark delivered but don't show
+            if (isInGamesArea(currentScreen)) {
+              log.debug(
+                `User in Games area, marking delivered without showing: ${notifDocId}`,
+              );
+              try {
+                const docRef = doc(
+                  db,
+                  "Users",
+                  uid,
+                  "InAppNotificationsV4",
+                  notifDocId,
+                );
+                await updateDoc(docRef, {
+                  deliveredAt: new Date(),
+                });
+              } catch {
+                // ignore
+              }
+              continue;
+            }
+
+            // Mark as delivered
+            try {
+              const docRef = doc(
+                db,
+                "Users",
+                uid,
+                "InAppNotificationsV4",
+                notifDocId,
+              );
+              await updateDoc(docRef, {
+                deliveredAt: new Date(),
+              });
+            } catch (err) {
+              log.error("Failed to mark notification as delivered", err);
+            }
+
+            // Build and push the notification
+            if (type === "game_turn") {
+              const gameName = payload.gameName ?? payload.gameId ?? "Game";
+              const opponentName = payload.opponentName;
+              const subtitle = opponentName
+                ? `${gameName} • vs ${opponentName}`
+                : gameName;
+
+              pushNotification({
+                type: "game_turn",
+                title: "Your turn",
+                body: `${subtitle} — Tap to play`,
+                entityId: payload.sessionId ?? notifDocId,
+                fromUserId: "",
+                navigateTo: {
+                  screen: "GamePlayV4",
+                  params: {
+                    sessionId: payload.sessionId,
+                    gameId: payload.gameId,
+                    // Fallback fields for navigation handler
+                    _conversationId: payload.conversationId,
+                    _conversationScope: payload.conversationScope,
+                  },
+                },
+              });
+            } else if (type === "achievement_unlocked") {
+              const achievementIds: string[] = payload.achievementIds ?? [];
+              const titles: string[] = payload.achievementTitles ?? [];
+              const count = achievementIds.length;
+              const subtitle =
+                count === 1
+                  ? (titles[0] ?? "New achievement")
+                  : `${count} achievements unlocked`;
+
+              pushNotification({
+                type: "achievement_unlocked",
+                title: "Achievement unlocked! 🏆",
+                body: subtitle,
+                entityId: data.collapseKey ?? notifDocId,
+                fromUserId: "",
+                navigateTo: {
+                  screen: payload.sectionId
+                    ? "AchievementSection"
+                    : "AchievementsHub",
+                  params: payload.sectionId
+                    ? { sectionId: payload.sectionId }
+                    : undefined,
+                },
+              });
+            }
+          }
+        }
+      },
+      (error) => {
+        log.error("InAppNotificationsV4 listener error", error);
+      },
+    );
+
+    unsubscribeRefs.current.push(unsubscribe);
+
+    return () => {
+      unsubscribe();
+      unsubscribeRefs.current = unsubscribeRefs.current.filter(
+        (u) => u !== unsubscribe,
+      );
+    };
+  }, [uid, enabled, currentScreen, pushNotification]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -442,6 +442,19 @@ service cloud.firestore {
       }
 
       // --------------------------------------------------------
+      // LevelRewardsV4 subcollection (Level Rewards System)
+      // Server-only writes. Users can read their own rewards.
+      // Users/{uid}/LevelRewardsV4/{level}
+      // --------------------------------------------------------
+      match /LevelRewardsV4/{rewardLevel} {
+        // Owner can read their own rewards
+        allow read: if isAuth() && isOwner(uid);
+
+        // All writes are server-only (Cloud Functions)
+        allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
       // mutedUsers subcollection (New Profile System)
       // Tracks users muted by this user (softer than blocking)
       // Users/{uid}/mutedUsers/{mutedUid}
@@ -627,8 +640,11 @@ service cloud.firestore {
       }
       
       // Read: member check via chatId pattern or document membership
+      // NOTE: Removed `resource != null` guard — it caused Firestore's
+      // query evaluator to reject list queries because the evaluator
+      // cannot prove resource existence from query constraints alone.
       allow read: if isAuth() && (
-                    (resource != null && request.auth.uid in resource.data.members) ||
+                    request.auth.uid in resource.data.members ||
                     isUserInChatId()
                   );
       
@@ -639,10 +655,13 @@ service cloud.firestore {
                       validTimestamp(request.resource.data.createdAt);
       
       // Update: only members can update (lastMessage, etc.)
+      // pinnedGameInviteIds is server-managed (Cloud Functions only).
       allow update: if isAuth() && 
                       request.auth.uid in resource.data.members &&
                       // Cannot change members
-                      request.resource.data.members == resource.data.members;
+                      request.resource.data.members == resource.data.members &&
+                      // Cannot change pinnedGameInviteIds (server-only)
+                      (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinnedGameInviteIds']));
 
       // --------------------------------------------------------
       // Messages subcollection (V2 Enhanced)
@@ -1123,14 +1142,17 @@ service cloud.firestore {
                       request.resource.data.memberCount >= 1 &&
                       request.resource.data.memberCount <= 20;
       
-      // Update: Simplified - allow members to update, or non-members adding self
+      // Update: Simplified - allow members to update, or non-members adding self.
+      // pinnedGameInviteIds is server-managed (Cloud Functions only).
       allow update: if isAuth() && (
                       // Case 1: Already a member (use fast check)
                       isGroupMemberFast() ||
                       // Case 2: Accepting invite - user adding self to memberIds
                       (!(request.auth.uid in resource.data.memberIds) &&
                        request.auth.uid in request.resource.data.memberIds)
-                    );
+                    ) &&
+                    // Server-only fields: clients must not change pinnedGameInviteIds
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinnedGameInviteIds']));
       
       // Delete: only owner can delete group
       allow delete: if isAuth() && isGroupOwner();
@@ -1447,13 +1469,17 @@ service cloud.firestore {
     // CALLS COLLECTION
     // Stores active and completed call documents
     match /Calls/{callId} {
-      // Helper: Check if user is a participant in the call
+      // Helper: Check if user is a participant in the call.
+      // Checks both the participantUids array (for query validation)
+      // and the participants map (backward compat with old docs).
       function isParticipant() {
-        return request.auth.uid in resource.data.participants;
+        return request.auth.uid in resource.data.get('participantUids', []) ||
+               request.auth.uid in resource.data.participants;
       }
       
       function isParticipantInNew() {
-        return request.auth.uid in request.resource.data.participants;
+        return request.auth.uid in request.resource.data.get('participantUids', []) ||
+               request.auth.uid in request.resource.data.participants;
       }
       
       // Helper: Check if user is the caller
@@ -1689,6 +1715,222 @@ service cloud.firestore {
                       resource.data.userId == request.auth.uid &&
                       request.resource.data.userId == resource.data.userId;
       allow delete: if false;
+    }
+
+    // ============================================================
+    // GAMES V4
+    // ============================================================
+
+    // ── Helper: check Chats membership (DM) ───────────────────────────
+    function isDmMember(chatId) {
+      return chatId.matches('.*' + request.auth.uid + '.*') ||
+             (exists(/databases/$(database)/documents/Chats/$(chatId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/Chats/$(chatId)).data.members);
+    }
+
+    // ── Helper: check Groups membership ───────────────────────────────
+    function isGroupMember(groupId) {
+      return exists(/databases/$(database)/documents/Groups/$(groupId)) &&
+             request.auth.uid in get(/databases/$(database)/documents/Groups/$(groupId)).data.memberIds;
+    }
+
+    // ── Helper: check conversation membership (DM or group) ───────────
+    function isConvMember(convId, scope) {
+      return (scope == 'dm' && isDmMember(convId)) ||
+             (scope == 'group' && isGroupMember(convId));
+    }
+
+    // GAME INVITES V4
+    // Chat-facing summary docs. Read by conversation members.
+    // All writes go through Cloud Functions — clients never write directly.
+    match /GameInvitesV4/{inviteId} {
+      // Read: conversation members can read invites for their conversation.
+      allow read: if isAuth() &&
+                    isConvMember(resource.data.conversationId, resource.data.conversationScope);
+
+      // Write: Cloud Functions only (server-side).
+      allow create, update, delete: if false;
+    }
+
+    // GAME SESSIONS V4
+    // Canonical session lifecycle. Server-authoritative.
+    match /GameSessionsV4/{sessionId} {
+      // Helper: check if user is a player in this session.
+      function isSessionPlayer() {
+        let players = resource.data.players;
+        // Check if uid appears in any player slot's uid field.
+        // Firestore rules can't iterate lists of maps, so we check participantUids helper field.
+        return request.auth.uid in resource.data.get('participantUids', []);
+      }
+
+      function isSessionSpectator() {
+        return request.auth.uid in resource.data.get('spectatorUids', []);
+      }
+
+      // Read: conversation members OR session participants can read session docs.
+      // The participant fallback enables solo games launched from Games Hub (no conversation).
+      allow read: if isAuth() &&
+                    (isConvMember(resource.data.conversationId, resource.data.conversationScope) ||
+                     request.auth.uid in resource.data.get('participantUids', []));
+
+      // Write: Cloud Functions only.
+      allow create, update, delete: if false;
+
+      // PUBLIC STATE subcollection
+      // Visible to all players and spectators.
+      match /PublicState/{docId} {
+        allow read: if isAuth() &&
+                      (isConvMember(
+                        get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.conversationId,
+                        get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.conversationScope
+                      ) ||
+                      request.auth.uid in get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.get('participantUids', []));
+        allow create, update, delete: if false;
+      }
+
+      // PRIVATE STATE subcollection
+      // Per-player private state. Only the owning player can read.
+      match /PrivateState/{uid} {
+        allow read: if isAuth() && request.auth.uid == uid;
+        allow create, update, delete: if false;
+      }
+
+      // MOVES subcollection
+      // Players submit moves (create only). Server validates and updates status.
+      match /Moves/{moveId} {
+        // Read: session participants/spectators and conversation members can read moves.
+        allow read: if isAuth() &&
+                      (isConvMember(
+                        get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.conversationId,
+                        get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.conversationScope
+                      ) ||
+                      request.auth.uid in get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.get('participantUids', []));
+
+        // Create: authenticated session players can submit move intents.
+        // The move must have uid == auth.uid and status == "pending".
+        allow create: if isAuth() &&
+                        request.resource.data.uid == request.auth.uid &&
+                        request.resource.data.status == 'pending' &&
+                        request.resource.data.movePayload is map &&
+                        // Verify user is a participant in the parent session.
+                        request.auth.uid in get(/databases/$(database)/documents/GameSessionsV4/$(sessionId)).data.get('participantUids', []);
+
+        // Update/delete: Cloud Functions only (server marks committed/rejected).
+        allow update, delete: if false;
+      }
+    }
+
+    // GAME RESULTS V4
+    // Server-written only. Created by resolveSessionInternal.
+    match /GameResultsV4/{sessionId} {
+      // Read: participants can read their game results.
+      allow read: if isAuth() &&
+                    request.auth.uid in resource.data.participantIds;
+
+      // Write: Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    // GAME PERSONAL BESTS (subcollection of Users)
+    // Server-written only. PBs must NEVER be client-writable.
+    match /Users/{userId}/GamePB/{gameId} {
+      // Read: owner only.
+      allow read: if isAuth() && isOwner(userId);
+
+      // Write: Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    // LEADERBOARDS V4
+    // Per-game leaderboard container.
+    match /LeaderboardsV4/{gameId} {
+      // Read: any authenticated user.
+      allow read: if isAuth();
+      // Write: Cloud Functions only.
+      allow create, update, delete: if false;
+
+      // Weekly entries subcollection.
+      match /Weeks/{weekKey} {
+        allow read: if isAuth();
+        allow create, update, delete: if false;
+
+        // Per-user entries.
+        match /Entries/{uid} {
+          allow read: if isAuth();
+          allow create, update, delete: if false;
+        }
+      }
+    }
+
+    // GAME PRESENCE
+    // Clients write their active session for notification gating.
+    // Stored as a field on the existing Users/{uid} doc or a subcollection.
+    match /Users/{userId}/GamePresence/{docId} {
+      // Read: anyone can read (for notification gating).
+      allow read: if isAuth();
+
+      // Write: owner only. Must set uid == auth.uid.
+      allow create, update: if isAuth() && isOwner(userId) &&
+                              request.resource.data.uid == request.auth.uid;
+      allow delete: if isAuth() && isOwner(userId);
+    }
+
+    // IN-APP NOTIFICATIONS V4
+    // Server writes notification docs for foreground banner display.
+    // Client can only read (owner) and update deliveredAt/readAt fields.
+    match /Users/{userId}/InAppNotificationsV4/{notifId} {
+      // Read: owner only.
+      allow read: if isAuth() && isOwner(userId);
+
+      // Create: Cloud Functions only (server writes notifications).
+      allow create: if false;
+
+      // Update: owner can only set deliveredAt and readAt.
+      // Cannot modify type, payload, collapseKey, or createdAt.
+      allow update: if isAuth() && isOwner(userId) &&
+        request.resource.data.type == resource.data.type &&
+        request.resource.data.collapseKey == resource.data.collapseKey &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.payload == resource.data.payload;
+
+      // Delete: owner can delete (cleanup).
+      allow delete: if isAuth() && isOwner(userId);
+    }
+
+    // GAME ACHIEVEMENTS (subcollection of Users)
+    // Server evaluates and writes achievements after each resolve pass.
+    match /Users/{userId}/Achievements/{achievementId} {
+      // Read: owner only (or public if needed for profiles later).
+      allow read: if isAuth() && isOwner(userId);
+
+      // Write: Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    // ACHIEVEMENT SECTIONS (subcollection of Users)
+    // Tracks section completion + badge claim. Written by claimAchievementSectionBadgeV4 callable.
+    match /Users/{userId}/AchievementSections/{sectionId} {
+      // Read: owner only.
+      allow read: if isAuth() && isOwner(userId);
+
+      // Write: Cloud Functions only (via callable).
+      allow create, update, delete: if false;
+    }
+
+    // USER STATS CACHE (subcollection of Users)
+    // Aggregated per-game and global stats, written by resolve pipeline.
+    match /Users/{userId}/UserStatsCache/{docId} {
+      // Read: owner only.
+      allow read: if isAuth() && isOwner(userId);
+
+      // Write: Cloud Functions only.
+      allow create, update, delete: if false;
+    }
+
+    // RATE LIMITS (subcollection of Users)
+    // Server-only cooldown tracking for V4 callables.
+    match /Users/{userId}/RateLimits/{action} {
+      allow read, write: if false;
     }
 
     // ============================================================

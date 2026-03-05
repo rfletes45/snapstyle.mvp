@@ -43,6 +43,7 @@ export type ProfileTabStackParamList = {
 export type AppTabsParamList = {
   Shop: undefined;
   Inbox: NavigatorScreenParams<InboxStackParamList> | undefined;
+  Games: undefined;
   Moments: NavigatorScreenParams<MomentsStackParamList> | undefined;
   Profile: NavigatorScreenParams<ProfileTabStackParamList> | undefined;
 };
@@ -87,6 +88,15 @@ export type MainStackParamList = {
     | { initialTab?: string; initialSection?: "profile" | "chat" }
     | undefined;
   ActivityFeed: undefined;
+  GameLobbyV4: { inviteId: string };
+  GamePlayV4: { sessionId: string; gameId?: string };
+  GameOverV4: { sessionId: string };
+  GameDetailV4: { gameId: string };
+  GameLeaderboardV4: { gameId: string };
+  GameStatsV4: undefined;
+  AchievementsHub: undefined;
+  AchievementSection: { sectionId: string };
+  LevelRewards: undefined;
 };
 
 export type ProfileSetupStackParamList = {

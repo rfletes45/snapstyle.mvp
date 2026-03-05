@@ -144,7 +144,11 @@ const getGroupCallService = () => {
 };
 
 // Types
-import { CALL_FEATURES, DEBUG_CHAT_V2 } from "@/constants/featureFlags";
+import {
+  CALL_FEATURES,
+  DEBUG_CHAT_V2,
+  GAMES_V4_ENABLED,
+} from "@/constants/featureFlags";
 import {
   AttachmentV2,
   LinkPreviewV2,
@@ -152,6 +156,12 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { Group, GroupMember, ScheduledMessage } from "@/types/models";
+
+// Games V4
+import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
+import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
+import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
+import type { GameId } from "@/gamesV4/types";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/groups/GroupChatScreen");
@@ -263,6 +273,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
 
   // Group call state (Phase 3)
   const [isStartingCall, setIsStartingCall] = useState(false);
+
+  // Games V4 state
+  const [gamePickerVisible, setGamePickerVisible] = useState(false);
 
   // Reply navigation state (highlight + jump-back)
   const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -636,6 +649,28 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       ],
     );
   }, [group?.name, groupMembers.length, handleStartGroupCall]);
+
+  // Games V4: handle game selection from picker
+  const handleGameSelected = useCallback(
+    async (gameId: GameId) => {
+      if (!groupId || !uid) return;
+      try {
+        const { inviteId } = await createGameInvite({
+          conversationId: groupId,
+          conversationScope: "group",
+          gameId,
+        });
+        navigation.navigate("GameLobbyV4", { inviteId });
+      } catch (err: any) {
+        const msg =
+          err?.code === "functions/not-found" || err?.message === "not-found"
+            ? "Game service is not available. Please make sure Cloud Functions are deployed."
+            : (err?.message ?? "Failed to create game invite");
+        Alert.alert("Game Error", msg);
+      }
+    },
+    [groupId, uid, navigation],
+  );
 
   const handleOpenMediaViewer = useCallback(
     (
@@ -1449,6 +1484,11 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           />
         </Appbar.Header>
 
+        {/* Games V4: Pinned invite bar at top of chat */}
+        {GAMES_V4_ENABLED && groupId && (
+          <PinnedInviteBar conversationId={groupId} scope="group" />
+        )}
+
         {/* OPTIMIZATION: Show skeleton during loading, messages when ready */}
         {showSkeleton ? (
           <ChatSkeleton bubbleCount={8} />
@@ -1556,6 +1596,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
+          onGamePress={
+            GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
+          }
           onAnimalPress={handleAnimalPress}
           animalThemeId={animalEntitlement.equippedAnimalId}
           animalLocked={!animalEntitlement.canSend}
@@ -1616,6 +1659,16 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         onSchedule={handleScheduleMessage}
         onClose={() => setScheduleModalVisible(false)}
       />
+
+      {/* Games V4: Game picker modal */}
+      {GAMES_V4_ENABLED && (
+        <GamePickerModal
+          visible={gamePickerVisible}
+          onSelect={handleGameSelected}
+          onClose={() => setGamePickerVisible(false)}
+          multiplayerOnly
+        />
+      )}
     </>
   );
 }

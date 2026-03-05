@@ -4,6 +4,7 @@
  * Displays user's level with XP progress bar.
  */
 
+import { MAX_REWARD_LEVEL } from "@/data/levelRewards";
 import { useColors } from "@/store/ThemeContext";
 import type { LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -27,7 +28,12 @@ function LevelProgressBase({
 }: LevelProgressProps) {
   const colors = useColors();
 
-  const progress = level.xpToNextLevel > 0 ? level.xp / level.xpToNextLevel : 1;
+  const isMaxLevel = level.current >= MAX_REWARD_LEVEL;
+  const progress = isMaxLevel
+    ? 1
+    : level.xpToNextLevel > 0
+      ? level.xp / level.xpToNextLevel
+      : 1;
 
   if (compact) {
     return (
@@ -48,6 +54,10 @@ function LevelProgressBase({
     );
   }
 
+  const xpRemaining = isMaxLevel
+    ? 0
+    : Math.max(0, level.xpToNextLevel - level.xp);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -59,12 +69,14 @@ function LevelProgressBase({
           />
           <Text style={[styles.levelLabel, { color: colors.text }]}>
             Level {level.current}
+            {isMaxLevel ? " (MAX)" : ""}
           </Text>
         </View>
         {showDetails && (
           <Text style={[styles.xpText, { color: colors.textSecondary }]}>
-            {level.xp.toLocaleString()} / {level.xpToNextLevel.toLocaleString()}{" "}
-            XP
+            {isMaxLevel
+              ? `${level.xpToNextLevel.toLocaleString()}/${level.xpToNextLevel.toLocaleString()} XP`
+              : `${level.xp.toLocaleString()}/${level.xpToNextLevel.toLocaleString()} XP`}
           </Text>
         )}
       </View>
@@ -73,6 +85,11 @@ function LevelProgressBase({
         color={colors.primary}
         style={[styles.progressBar, { backgroundColor: colors.surfaceVariant }]}
       />
+      {showDetails && !isMaxLevel && (
+        <Text style={[styles.xpRemainingText, { color: colors.textSecondary }]}>
+          {xpRemaining.toLocaleString()} XP to next level
+        </Text>
+      )}
     </View>
   );
 }
@@ -102,6 +119,11 @@ const styles = StyleSheet.create({
   progressBar: {
     height: 8,
     borderRadius: 4,
+  },
+  xpRemainingText: {
+    fontSize: 11,
+    marginTop: 4,
+    textAlign: "right",
   },
   // Compact styles
   compactContainer: {

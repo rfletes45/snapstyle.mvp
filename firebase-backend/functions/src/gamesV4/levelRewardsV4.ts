@@ -1,0 +1,345 @@
+/**
+ * Games V4 — Level Rewards Definitions + Unlock/Claim Logic
+ *
+ * Server-authoritative level rewards system.
+ *
+ * Static definitions: LEVEL_REWARDS_V4 (levels 1–50).
+ * Dynamic state: Users/{uid}/LevelRewardsV4/{level}
+ *
+ * Flow:
+ *   1. Level increases → unlockLevelRewards() creates reward docs
+ *   2. User taps "Claim" → claimLevelRewardV4 callable verifies & grants
+ *
+ * @module gamesV4/levelRewardsV4
+ */
+
+import * as admin from "firebase-admin";
+import * as functions from "firebase-functions";
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+export const MAX_LEVEL = 50;
+export const SCHEMA_VERSION = 1;
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface LevelRewardDefinition {
+  level: number;
+  tokenReward: number;
+  cosmeticItemId: string | null;
+  /** Display metadata */
+  title: string;
+  description: string;
+  icon: string;
+  isMilestone: boolean;
+}
+
+export interface LevelRewardDoc {
+  level: number;
+  unlockedAt: admin.firestore.Timestamp;
+  claimedAt: admin.firestore.Timestamp | null;
+  tokenReward: number;
+  cosmeticItemId: string | null;
+  schemaVersion: number;
+}
+
+// =============================================================================
+// Static Definitions (levels 1–50)
+// =============================================================================
+
+const MILESTONE_COSMETICS: Record<number, { id: string; title: string }> = {
+  5: { id: "bg_circling_waves", title: "Circling Waves Background" },
+  10: { id: "bg_aurora_borealis", title: "Aurora Borealis Background" },
+  15: { id: "badge_level_15", title: "Level 15 Badge" },
+  20: { id: "bg_rune_circles", title: "Rune Circles Background" },
+  25: { id: "badge_level_25", title: "Level 25 Badge" },
+  30: { id: "bg_synthwave", title: "Synthwave Background" },
+  35: { id: "badge_level_35", title: "Level 35 Badge" },
+  40: { id: "dec_golden_crown", title: "Golden Crown Decoration" },
+  45: { id: "badge_level_45", title: "Level 45 Badge" },
+  50: { id: "bg_synthwave_videogame", title: "Synthwave Videogame Background" },
+};
+
+function buildDefinitions(): LevelRewardDefinition[] {
+  const defs: LevelRewardDefinition[] = [];
+  for (let lvl = 1; lvl <= MAX_LEVEL; lvl++) {
+    const isMilestone = lvl % 5 === 0;
+    const milestone = MILESTONE_COSMETICS[lvl];
+
+    if (isMilestone && milestone) {
+      defs.push({
+        level: lvl,
+        tokenReward: lvl * 20, // 100 at L5, 200 at L10, ... 1000 at L50
+        cosmeticItemId: milestone.id,
+        title: milestone.title,
+        description: `Milestone reward for reaching level ${lvl}!`,
+        icon: "trophy-award",
+        isMilestone: true,
+      });
+    } else {
+      defs.push({
+        level: lvl,
+        tokenReward: 50, // standard token reward
+        cosmeticItemId: null,
+        title: `Level ${lvl} Reward`,
+        description: `+50 tokens for reaching level ${lvl}.`,
+        icon: "star-four-points",
+        isMilestone: false,
+      });
+    }
+  }
+  return defs;
+}
+
+export const LEVEL_REWARDS_V4: LevelRewardDefinition[] = buildDefinitions();
+
+export function getRewardDefinition(
+  level: number,
+): LevelRewardDefinition | undefined {
+  return LEVEL_REWARDS_V4.find((r) => r.level === level);
+}
+
+// =============================================================================
+// Unlock Logic — called after XP/level write
+// =============================================================================
+
+/**
+ * Create LevelRewardsV4 docs for each newly reached level.
+ * Idempotent: skips levels that already have docs.
+ *
+ * @param uid - User ID
+ * @param previousLevel - Level before XP was applied
+ * @param newLevel - Level after XP was applied (clamped to MAX_LEVEL)
+ */
+export async function unlockLevelRewards(
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  previousLevel: number,
+  newLevel: number,
+): Promise<number[]> {
+  // Clamp both ends
+  const from = Math.max(1, Math.min(previousLevel + 1, MAX_LEVEL + 1));
+  const to = Math.min(newLevel, MAX_LEVEL);
+
+  if (from > to) return [];
+
+  const unlockedLevels: number[] = [];
+  const batch = db.batch();
+  const now = admin.firestore.Timestamp.now();
+
+  for (let lvl = from; lvl <= to; lvl++) {
+    const def = getRewardDefinition(lvl);
+    if (!def) continue;
+
+    const rewardRef = db
+      .collection("Users")
+      .doc(uid)
+      .collection("LevelRewardsV4")
+      .doc(String(lvl));
+
+    // Idempotent: only create if not exists (checked in batch via set+merge
+    // with conditional — we use get to check first for full idempotency)
+    const existing = await rewardRef.get();
+    if (existing.exists) continue;
+
+    const rewardDoc: LevelRewardDoc = {
+      level: lvl,
+      unlockedAt: now,
+      claimedAt: null,
+      tokenReward: def.tokenReward,
+      cosmeticItemId: def.cosmeticItemId,
+      schemaVersion: SCHEMA_VERSION,
+    };
+
+    batch.set(rewardRef, rewardDoc);
+    unlockedLevels.push(lvl);
+  }
+
+  if (unlockedLevels.length > 0) {
+    await batch.commit();
+    functions.logger.info("[levelRewardsV4] Unlocked rewards", {
+      uid,
+      levels: unlockedLevels,
+    });
+  }
+
+  return unlockedLevels;
+}
+
+// =============================================================================
+// Claim callable
+// =============================================================================
+
+interface ClaimRequest {
+  level: number;
+}
+
+interface ClaimResult {
+  success: boolean;
+  alreadyClaimed?: boolean;
+  tokensGranted?: number;
+  cosmeticGranted?: string | null;
+  error?: string;
+}
+
+export const claimLevelRewardV4 = functions.https.onCall(
+  async (data: ClaimRequest, context): Promise<ClaimResult> => {
+    // Auth check
+    if (!context.auth) {
+      return { success: false, error: "Not authenticated" };
+    }
+    const uid = context.auth.uid;
+    const { level } = data;
+
+    // Validate level
+    if (
+      typeof level !== "number" ||
+      !Number.isInteger(level) ||
+      level < 1 ||
+      level > MAX_LEVEL
+    ) {
+      return { success: false, error: `Invalid level: ${level}` };
+    }
+
+    const db = admin.firestore();
+
+    // Verify user's current level >= requested level
+    const userDoc = await db.collection("Users").doc(uid).get();
+    if (!userDoc.exists) {
+      return { success: false, error: "User not found" };
+    }
+    const currentLevel = userDoc.data()?.level?.current ?? 1;
+    if (currentLevel < level) {
+      return {
+        success: false,
+        error: `Current level (${currentLevel}) is below ${level}`,
+      };
+    }
+
+    // Check reward doc exists and is unclaimed
+    const rewardRef = db
+      .collection("Users")
+      .doc(uid)
+      .collection("LevelRewardsV4")
+      .doc(String(level));
+
+    let rewardSnap = await rewardRef.get();
+
+    // Auto-create reward doc if user qualifies but doc doesn't exist yet.
+    // This handles level 1 (never "leveled up" to it) and retroactive rollouts.
+    if (!rewardSnap.exists) {
+      const def = getRewardDefinition(level);
+      if (!def) {
+        return {
+          success: false,
+          error: `No reward definition for level ${level}`,
+        };
+      }
+      const rewardDoc: LevelRewardDoc = {
+        level,
+        unlockedAt: admin.firestore.Timestamp.now(),
+        claimedAt: null,
+        tokenReward: def.tokenReward,
+        cosmeticItemId: def.cosmeticItemId,
+        schemaVersion: SCHEMA_VERSION,
+      };
+      await rewardRef.set(rewardDoc);
+      rewardSnap = await rewardRef.get();
+      functions.logger.info(
+        "[levelRewardsV4] Auto-created missing reward doc",
+        {
+          uid,
+          level,
+        },
+      );
+    }
+
+    const rewardData = rewardSnap.data() as LevelRewardDoc;
+
+    // Idempotent: already claimed
+    if (rewardData.claimedAt !== null) {
+      return { success: true, alreadyClaimed: true };
+    }
+
+    // Atomic claim: tokens + cosmetic + claimedAt
+    const walletRef = db.collection("Wallets").doc(uid);
+    const now = admin.firestore.Timestamp.now();
+    const batch = db.batch();
+
+    // 1. Grant tokens
+    if (rewardData.tokenReward > 0) {
+      batch.set(
+        walletRef,
+        {
+          tokensBalance: admin.firestore.FieldValue.increment(
+            rewardData.tokenReward,
+          ),
+          totalEarned: admin.firestore.FieldValue.increment(
+            rewardData.tokenReward,
+          ),
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
+    }
+
+    // 2. Grant cosmetic entitlement (if milestone)
+    if (rewardData.cosmeticItemId) {
+      const entRef = db
+        .collection("Users")
+        .doc(uid)
+        .collection("Entitlements")
+        .doc(rewardData.cosmeticItemId);
+
+      // Only create if not already entitled (idempotent)
+      const entSnap = await entRef.get();
+      if (!entSnap.exists) {
+        batch.set(entRef, {
+          cosmeticId: rewardData.cosmeticItemId,
+          type: inferCosmeticType(rewardData.cosmeticItemId),
+          grantedAt: now,
+          source: "milestone",
+          metadata: { levelReward: level },
+        });
+      }
+    }
+
+    // 3. Mark as claimed
+    batch.update(rewardRef, { claimedAt: now });
+
+    await batch.commit();
+
+    functions.logger.info("[levelRewardsV4] Reward claimed", {
+      uid,
+      level,
+      tokens: rewardData.tokenReward,
+      cosmetic: rewardData.cosmeticItemId,
+    });
+
+    return {
+      success: true,
+      alreadyClaimed: false,
+      tokensGranted: rewardData.tokenReward,
+      cosmeticGranted: rewardData.cosmeticItemId,
+    };
+  },
+);
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Infer CosmeticType from the item ID prefix.
+ */
+function inferCosmeticType(
+  cosmeticId: string,
+): "badge" | "background" | "decoration" {
+  if (cosmeticId.startsWith("bg_")) return "background";
+  if (cosmeticId.startsWith("dec_")) return "decoration";
+  return "badge";
+}

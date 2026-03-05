@@ -122,12 +122,8 @@ export interface UseLocalMessagesReturn {
 export function useLocalMessages(
   options: UseLocalMessagesOptions,
 ): UseLocalMessagesReturn {
-  const {
-    conversationId,
-    scope,
-    initialLimit = 50,
-    autoRefresh = true,
-  } = options;
+  const { conversationId, scope, initialLimit = 50, autoRefresh = true } =
+    options;
 
   // OPTIMIZATION: Initialize state synchronously from SQLite
   // This eliminates the loading flicker by reading cached data immediately
@@ -157,6 +153,7 @@ export function useLocalMessages(
       return { messages: [], hasMore: true };
     }
   }, [conversationId, scope, initialLimit]);
+  const shouldShowLoadingOnBootstrap = initialState.messages.length === 0;
 
   // Start with cached data - NO loading state if we have data
   const [messages, setMessages] = useState<MessageWithAttachments[]>(
@@ -172,6 +169,26 @@ export function useLocalMessages(
   const [hasMore, setHasMore] = useState(initialState.hasMore);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const hasSyncedRef = useRef(false);
+
+  // Reset per-conversation state when route params change so pagination,
+  // sync bootstrap, and visible rows never bleed across threads.
+  useEffect(() => {
+    hasSyncedRef.current = false;
+    setCurrentLimit(initialLimit);
+    setMessages(initialState.messages);
+    setHasMore(initialState.hasMore);
+    setIsLoading(initialState.messages.length === 0);
+    setError(null);
+
+    const pending = initialState.messages.filter(
+      (m: MessageWithAttachments) => m.sync_status === "pending",
+    ).length;
+    const failed = initialState.messages.filter(
+      (m: MessageWithAttachments) => m.sync_status === "failed",
+    ).length;
+    setPendingCount(pending);
+    setFailedCount(failed);
+  }, [conversationId, scope, initialLimit, initialState]);
 
   // Load messages from SQLite
   const loadMessages = useCallback(() => {
@@ -220,7 +237,7 @@ export function useLocalMessages(
 
     // Only show loading if we have no cached data
     // (initialState already loaded synchronously)
-    if (messages.length === 0) {
+    if (shouldShowLoadingOnBootstrap) {
       setIsLoading(true);
       loadMessages();
     }
@@ -242,14 +259,18 @@ export function useLocalMessages(
     }
 
     // Subscribe to real-time updates from Firestore
-    unsubscribeRef.current = subscribeToConversation(
-      scope,
-      conversationId,
-      () => {
-        // Reload messages when new ones arrive from server
-        loadMessages();
-      },
-    );
+    if (autoRefresh) {
+      unsubscribeRef.current = subscribeToConversation(
+        scope,
+        conversationId,
+        () => {
+          // Reload messages when new ones arrive from server
+          loadMessages();
+        },
+      );
+    } else {
+      unsubscribeRef.current = null;
+    }
 
     return () => {
       if (unsubscribeRef.current) {
@@ -257,7 +278,14 @@ export function useLocalMessages(
         unsubscribeRef.current = null;
       }
     };
-  }, [conversationId, scope, initialLimit, loadMessages]);
+  }, [
+    conversationId,
+    scope,
+    initialLimit,
+    autoRefresh,
+    loadMessages,
+    shouldShowLoadingOnBootstrap,
+  ]);
 
   // Refresh function
   const refresh = useCallback(() => {

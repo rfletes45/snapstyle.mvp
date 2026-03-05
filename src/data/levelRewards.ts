@@ -1,11 +1,8 @@
 /**
- * Level Rewards Catalog
+ * Level Rewards V4 — Client Catalog
  *
- * Defines the reward granted at each level (1–50).
- * Every 5th level is a "big" milestone; all others grant tokens.
- *
- * Milestone levels grant real background entitlements where available,
- * otherwise placeholder_decoration for future content.
+ * Mirrors LEVEL_REWARDS_V4 from the backend.
+ * Used for display purposes only — all grant/claim logic is server-side.
  *
  * Cap: level 50 — no rewards beyond this.
  *
@@ -16,11 +13,7 @@
 // Types
 // =============================================================================
 
-export type LevelRewardType =
-  | "tokens"
-  | "cosmetic_points"
-  | "placeholder_decoration"
-  | "background_entitlement";
+export type LevelRewardType = "tokens" | "background_entitlement";
 
 export interface LevelReward {
   /** 1-based level */
@@ -29,92 +22,98 @@ export interface LevelReward {
   isMilestone: boolean;
   /** What the player gets */
   rewardType: LevelRewardType;
-  /** Cosmetic points awarded (non-milestone levels) */
+  /** Tokens awarded (non-milestone: 50, milestone: level * 20) */
   amount: number;
   /** Display label */
   label: string;
   /** Icon name (MaterialCommunityIcons) */
   icon: string;
-  /** Cosmetic ID to grant (for background_entitlement rewards) */
+  /** Cosmetic ID to grant (for milestone rewards) */
   cosmeticId?: string;
+  /** Description text */
+  description: string;
 }
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-/** Maximum level with rewards */
+/** Maximum level with rewards (level cap) */
 export const MAX_REWARD_LEVEL = 50;
 
 /** Small reward: tokens per non-milestone level */
 export const SMALL_REWARD_POINTS = 50;
 
 /**
- * Milestone reward definitions.
- * Levels with cosmeticId grant a real background entitlement.
- * Levels without cosmeticId remain placeholders for future content.
+ * Milestone reward definitions (every 5 levels).
+ * Levels with cosmeticId grant a real cosmetic entitlement.
  */
 const MILESTONE_REWARDS: Record<
   number,
   {
     label: string;
     points: number;
-    cosmeticId?: string;
+    cosmeticId: string;
     rewardType: LevelRewardType;
   }
 > = {
   5: {
     label: "Circling Waves Background",
-    points: 200,
+    points: 100,
     cosmeticId: "bg_circling_waves",
     rewardType: "background_entitlement",
   },
   10: {
     label: "Aurora Borealis Background",
-    points: 400,
+    points: 200,
     cosmeticId: "bg_aurora_borealis",
     rewardType: "background_entitlement",
   },
   15: {
-    label: "Placeholder: Name Color (future)",
-    points: 600,
-    rewardType: "placeholder_decoration",
+    label: "Level 15 Badge",
+    points: 300,
+    cosmeticId: "badge_level_15",
+    rewardType: "background_entitlement",
   },
   20: {
     label: "Rune Circles Background",
-    points: 800,
+    points: 400,
     cosmeticId: "bg_rune_circles",
     rewardType: "background_entitlement",
   },
   25: {
-    label: "Placeholder: Avatar Border (future)",
-    points: 1000,
-    rewardType: "placeholder_decoration",
+    label: "Level 25 Badge",
+    points: 500,
+    cosmeticId: "badge_level_25",
+    rewardType: "background_entitlement",
   },
   30: {
     label: "Synthwave Background",
-    points: 1200,
+    points: 600,
     cosmeticId: "bg_synthwave",
     rewardType: "background_entitlement",
   },
   35: {
-    label: "Placeholder: Animated Emote (future)",
-    points: 1400,
-    rewardType: "placeholder_decoration",
+    label: "Level 35 Badge",
+    points: 700,
+    cosmeticId: "badge_level_35",
+    rewardType: "background_entitlement",
   },
   40: {
-    label: "Placeholder: Profile Badge (future)",
-    points: 1600,
-    rewardType: "placeholder_decoration",
+    label: "Golden Crown Decoration",
+    points: 800,
+    cosmeticId: "dec_golden_crown",
+    rewardType: "background_entitlement",
   },
   45: {
-    label: "Placeholder: Exclusive Sticker Pack (future)",
-    points: 1800,
-    rewardType: "placeholder_decoration",
+    label: "Level 45 Badge",
+    points: 900,
+    cosmeticId: "badge_level_45",
+    rewardType: "background_entitlement",
   },
   50: {
     label: "Synthwave Videogame Background",
-    points: 2000,
+    points: 1000,
     cosmeticId: "bg_synthwave_videogame",
     rewardType: "background_entitlement",
   },
@@ -135,7 +134,7 @@ function buildCatalog(): LevelReward[] {
       rewards.push({
         level: lvl,
         isMilestone: true,
-        rewardType: milestone?.rewardType ?? "placeholder_decoration",
+        rewardType: milestone?.rewardType ?? "background_entitlement",
         amount: milestone?.points ?? 500,
         label: milestone?.label ?? `Milestone Level ${lvl} Reward`,
         icon:
@@ -143,6 +142,7 @@ function buildCatalog(): LevelReward[] {
             ? "image-area"
             : "trophy-award",
         cosmeticId: milestone?.cosmeticId,
+        description: `Milestone reward for reaching level ${lvl}! Includes ${milestone?.points ?? 500} tokens + exclusive cosmetic.`,
       });
     } else {
       rewards.push({
@@ -152,6 +152,7 @@ function buildCatalog(): LevelReward[] {
         amount: SMALL_REWARD_POINTS,
         label: `+${SMALL_REWARD_POINTS} Tokens`,
         icon: "star-four-points",
+        description: `+${SMALL_REWARD_POINTS} tokens for reaching level ${lvl}.`,
       });
     }
   }

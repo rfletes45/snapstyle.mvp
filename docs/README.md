@@ -32,6 +32,18 @@ If you are new to the repo, read in this order:
   - Test matrix and required verification per subsystem.
 - `docs/operations/configuration-and-security.md`
   - Feature flags, env/config surfaces, security boundaries and hygiene.
+- `docs/GAMES_V4_SYSTEM.md`
+  - Canonical reference for the Games V4 system: adapter architecture, resolution pipeline, Firestore schemas, solo/1v1 flows.
+- `docs/GAMES_V4_RUNBOOK.md`
+  - Operational runbook for Games V4: deploy, rollback, watchdog, incident response.
+- `docs/GAME_INTEGRATION_GUIDE_V4.md`
+  - **Exhaustive AI-ready guide** for implementing a new game end-to-end: adapter contract, backend wiring, achievements, leaderboards, notifications, security, testing. Includes copy-paste templates in `docs/templates/new-game-v4/`.
+- `docs/QA_GAME_DETAIL_LEADERBOARD.md`
+  - QA playbook for game detail page & leaderboard subsystem.
+- `docs/QA_GAME_OVER_ACHIEVEMENTS.md`
+  - QA playbook for game over screen & achievement unlock flows.
+- `docs/QA_IN_APP_NOTIFICATIONS.md`
+  - QA playbook for in-app notification system (turn, achievement, invite).
 
 ## Critical Cross-Subsystem Invariants
 
@@ -45,7 +57,6 @@ These are the most important things to preserve when changing the app:
    - `firebase-backend/firestore.rules`
 4. Economy/shop/task writes should remain server-authoritative via Functions.
 5. Feature flags must be safe both enabled and disabled, especially migration flags.
-
 
 ## Documentation Maintenance Rules
 

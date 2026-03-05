@@ -3,16 +3,7 @@
  * Handles multi-participant calls, host controls, and group-specific features
  */
 
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  setDoc,
-  Unsubscribe,
-  updateDoc,
-  writeBatch,
-} from "firebase/firestore";
-import { v4 as uuidv4 } from "uuid";
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 import {
   Call,
   CallEndReason,
@@ -28,10 +19,19 @@ import {
   GroupCallSettings,
   MAX_GROUP_PARTICIPANTS,
 } from "@/types/call";
-import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
+import {
+  arrayUnion,
+  doc,
+  getDoc,
+  onSnapshot,
+  setDoc,
+  Unsubscribe,
+  updateDoc,
+  writeBatch,
+} from "firebase/firestore";
+import { v4 as uuidv4 } from "uuid";
 import { callKeepService } from "./callKeepService";
 import { webRTCService } from "./webRTCService";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/groupCallService");
@@ -180,6 +180,7 @@ class GroupCallService {
       callerId,
       callerName: callerData?.displayName || callerData?.odname || "Unknown",
       participants,
+      participantUids: Object.keys(participants),
       createdAt: now,
       answeredAt: null,
       endedAt: null,
@@ -305,6 +306,7 @@ class GroupCallService {
       // Update call document
       await updateDoc(doc(getDb(), "Calls", callId), {
         [`participants.${userId}`]: newParticipant,
+        participantUids: arrayUnion(userId),
         status: "connected" as CallStatus,
       });
 

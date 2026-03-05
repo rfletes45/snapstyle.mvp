@@ -377,14 +377,7 @@ exports.sendMessageV2 = functions.https.onCall(async (data, context) => {
     if (!["dm", "group"].includes(scope)) {
         throw new functions.https.HttpsError("invalid-argument", "Scope must be 'dm' or 'group'");
     }
-    if (![
-        "text",
-        "media",
-        "voice",
-        "file",
-        "system",
-        "animal",
-    ].includes(kind)) {
+    if (!["text", "media", "voice", "file", "system", "animal"].includes(kind)) {
         throw new functions.https.HttpsError("invalid-argument", "Invalid message kind");
     }
     if (!isValidString(clientId, 1, 100)) {

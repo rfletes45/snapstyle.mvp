@@ -155,12 +155,18 @@ export function useProfileData(
   // Computed Level (Memoized)
   // =============================================================================
 
-  const defaultLevel: LevelInfo = { current: 1, xp: 0, xpToNextLevel: 100, totalXp: 0 };
+  const defaultLevel: LevelInfo = {
+    current: 1,
+    xp: 0,
+    xpToNextLevel: 100,
+    totalXp: 0,
+  };
 
   const computedLevel = useMemo<LevelInfo | null>(() => {
     if (!uid) return cachedLevel;
 
-    const level = defaultLevel;
+    // Read level from Firestore profile; fall back to cached → default
+    const level: LevelInfo = baseProfile?.level ?? cachedLevel ?? defaultLevel;
 
     // Update cache asynchronously so other consumers see it
     setCached(uid, "level", level).catch((err) => {
@@ -168,7 +174,7 @@ export function useProfileData(
     });
 
     return level;
-  }, [uid, cachedLevel]);
+  }, [uid, baseProfile?.level, cachedLevel]);
 
   // =============================================================================
   // Extended Profile (Memoized)

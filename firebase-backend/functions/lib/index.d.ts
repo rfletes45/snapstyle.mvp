@@ -1,4 +1,5 @@
 /** Cloud Functions entrypoint (imports/re-exports only). */
+import "./adminInit";
 import { cleanupCallSignaling, getTurnCredentials, handleCallTimeouts, onCallCreated, onCallUpdated } from "./calls";
 import { cleanupOldDeals, generateDailyDeals, generateWeeklyDeals, triggerDailyDeals } from "./dailyDeals";
 import { expireGifts, getGiftHistory, openGift, sendGift } from "./gifting";
@@ -19,6 +20,7 @@ import { acceptMessageRequest, declineMessageRequest } from "./messageRequests";
 import { getRateLimitStatus } from "./rateLimiter";
 import { onChatSettingsChanged, onInboxSettingsChanged, publishDeliveryReceipt, publishReadReceipt, publishTypingIndicator } from "./privacyPublish";
 import { incrementProfileViews } from "./profileViews";
+import { cancelGameInviteV4, claimLevelRewardV4, createGameInviteV4, createSoloSessionV4, joinInviteLobbyV4, leaveInviteLobbyV4, onGameInviteV4Deleted, onSessionV4StatusChanged, resignSessionV4, startGameFromInviteV4, submitTurnMoveV4, updateLobbySettingsV4, watchdogGamesV4 } from "./gamesV4";
 export { getUserPushToken, isDmChatMuted, isGroupChatMuted, isValidString, isValidUid, sanitizeForLog, sendExpoPushNotification, } from "./utils";
 export type { ExpoPushMessage } from "./utils";
 export declare const sendMessageV2: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
@@ -29,3 +31,4 @@ export declare const fetchLinkPreview: import("firebase-functions/v1").HttpsFunc
 export { acceptMessageRequest, adminApplyStrike, adminApplyWarning, adminLiftBan, adminResolveReport, adminSetAdminClaim, adminSetBan, checkMessageRateLimit, claimTaskReward, cleanupCallSignaling, cleanupExpiredPushTokens, cleanupExpiredSnaps, cleanupExpiredStories, cleanupOldDeals, cleanupOldScheduledMessages, cleanupStagingOrphans, declineMessageRequest, expireGifts, generateDailyDeals, generateWeeklyDeals, getGiftHistory, getPurchaseHistory, getRateLimitStatus, getTurnCredentials, grantCosmeticEntitlement, grantItem, handleCallTimeouts, incrementProfileViews, initializeExistingWallets, initializeFirstAdmin, markInboxRead, mintChatMediaUrl, onCallCreated, onCallUpdated, onDeleteMessage, onDMMessageInbox, onFriendAddedTaskProgress, onGroupMessageInbox, onMessageSentTaskProgress, onNewFriendRequest, onNewGroupMessageV2, onNewMessage, onNewMessageEvent, onNewReport, onScheduledMessageCreated, onStoryPostedTaskProgress, onStoryViewed, onStoryViewedTaskProgress, onUserCreated, openGift, processScheduledMessages, publishDeliveryReceipt, publishReadReceipt, publishTypingIndicator, purchaseCosmeticWithTokens, purchaseWithTokens, recordDailyLogin, restorePurchases, seedDailyTasks, seedMonthlyTasks, seedShopCatalog, sendFriendRequestWithRateLimit, sendGift, streakReminder, triggerDailyDeals, updateExpiredBans, validateReceipt, };
 export declare const verifyIAPPurchase: import("firebase-functions/v1").HttpsFunction & import("firebase-functions/v1").Runnable<any>;
 export { onChatSettingsChanged, onInboxSettingsChanged };
+export { cancelGameInviteV4, claimLevelRewardV4, createGameInviteV4, createSoloSessionV4, joinInviteLobbyV4, leaveInviteLobbyV4, onGameInviteV4Deleted, onSessionV4StatusChanged, resignSessionV4, startGameFromInviteV4, submitTurnMoveV4, updateLobbySettingsV4, watchdogGamesV4, };

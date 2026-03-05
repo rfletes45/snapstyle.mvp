@@ -2,7 +2,9 @@
 /** Cloud Functions entrypoint (imports/re-exports only). */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onGroupMessageInbox = exports.onFriendAddedTaskProgress = exports.onDMMessageInbox = exports.onDeleteMessage = exports.onCallUpdated = exports.onCallCreated = exports.mintChatMediaUrl = exports.markInboxRead = exports.initializeFirstAdmin = exports.initializeExistingWallets = exports.incrementProfileViews = exports.handleCallTimeouts = exports.grantItem = exports.grantCosmeticEntitlement = exports.getTurnCredentials = exports.getRateLimitStatus = exports.getPurchaseHistory = exports.getGiftHistory = exports.generateWeeklyDeals = exports.generateDailyDeals = exports.expireGifts = exports.declineMessageRequest = exports.cleanupStagingOrphans = exports.cleanupOldScheduledMessages = exports.cleanupOldDeals = exports.cleanupExpiredStories = exports.cleanupExpiredSnaps = exports.cleanupExpiredPushTokens = exports.cleanupCallSignaling = exports.claimTaskReward = exports.checkMessageRateLimit = exports.adminSetBan = exports.adminSetAdminClaim = exports.adminResolveReport = exports.adminLiftBan = exports.adminApplyWarning = exports.adminApplyStrike = exports.acceptMessageRequest = exports.fetchLinkPreview = exports.toggleReactionV2 = exports.deleteMessageForAllV2 = exports.editMessageV2 = exports.sendMessageV2 = exports.sendExpoPushNotification = exports.sanitizeForLog = exports.isValidUid = exports.isValidString = exports.isGroupChatMuted = exports.isDmChatMuted = exports.getUserPushToken = void 0;
-exports.onInboxSettingsChanged = exports.onChatSettingsChanged = exports.verifyIAPPurchase = exports.validateReceipt = exports.updateExpiredBans = exports.triggerDailyDeals = exports.streakReminder = exports.sendGift = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.restorePurchases = exports.recordDailyLogin = exports.purchaseWithTokens = exports.purchaseCosmeticWithTokens = exports.publishTypingIndicator = exports.publishReadReceipt = exports.publishDeliveryReceipt = exports.processScheduledMessages = exports.openGift = exports.onUserCreated = exports.onStoryViewedTaskProgress = exports.onStoryViewed = exports.onStoryPostedTaskProgress = exports.onScheduledMessageCreated = exports.onNewReport = exports.onNewMessageEvent = exports.onNewMessage = exports.onNewGroupMessageV2 = exports.onNewFriendRequest = exports.onMessageSentTaskProgress = void 0;
+exports.watchdogGamesV4 = exports.updateLobbySettingsV4 = exports.submitTurnMoveV4 = exports.startGameFromInviteV4 = exports.resignSessionV4 = exports.onSessionV4StatusChanged = exports.onGameInviteV4Deleted = exports.leaveInviteLobbyV4 = exports.joinInviteLobbyV4 = exports.createSoloSessionV4 = exports.createGameInviteV4 = exports.claimLevelRewardV4 = exports.cancelGameInviteV4 = exports.onInboxSettingsChanged = exports.onChatSettingsChanged = exports.verifyIAPPurchase = exports.validateReceipt = exports.updateExpiredBans = exports.triggerDailyDeals = exports.streakReminder = exports.sendGift = exports.sendFriendRequestWithRateLimit = exports.seedShopCatalog = exports.seedMonthlyTasks = exports.seedDailyTasks = exports.restorePurchases = exports.recordDailyLogin = exports.purchaseWithTokens = exports.purchaseCosmeticWithTokens = exports.publishTypingIndicator = exports.publishReadReceipt = exports.publishDeliveryReceipt = exports.processScheduledMessages = exports.openGift = exports.onUserCreated = exports.onStoryViewedTaskProgress = exports.onStoryViewed = exports.onStoryPostedTaskProgress = exports.onScheduledMessageCreated = exports.onNewReport = exports.onNewMessageEvent = exports.onNewMessage = exports.onNewGroupMessageV2 = exports.onNewFriendRequest = exports.onMessageSentTaskProgress = void 0;
+// Initialize Firebase Admin SDK BEFORE any module accesses admin services.
+require("./adminInit");
 // V2 Messaging
 const messaging_1 = require("./messaging");
 // Shop/IAP/Gifting/Deals/Calls/Preview
@@ -105,6 +107,21 @@ Object.defineProperty(exports, "publishTypingIndicator", { enumerable: true, get
 // Profile Views (server-authoritative increment)
 const profileViews_1 = require("./profileViews");
 Object.defineProperty(exports, "incrementProfileViews", { enumerable: true, get: function () { return profileViews_1.incrementProfileViews; } });
+// Games V4 — Full game system
+const gamesV4_1 = require("./gamesV4");
+Object.defineProperty(exports, "cancelGameInviteV4", { enumerable: true, get: function () { return gamesV4_1.cancelGameInviteV4; } });
+Object.defineProperty(exports, "claimLevelRewardV4", { enumerable: true, get: function () { return gamesV4_1.claimLevelRewardV4; } });
+Object.defineProperty(exports, "createGameInviteV4", { enumerable: true, get: function () { return gamesV4_1.createGameInviteV4; } });
+Object.defineProperty(exports, "createSoloSessionV4", { enumerable: true, get: function () { return gamesV4_1.createSoloSessionV4; } });
+Object.defineProperty(exports, "joinInviteLobbyV4", { enumerable: true, get: function () { return gamesV4_1.joinInviteLobbyV4; } });
+Object.defineProperty(exports, "leaveInviteLobbyV4", { enumerable: true, get: function () { return gamesV4_1.leaveInviteLobbyV4; } });
+Object.defineProperty(exports, "onGameInviteV4Deleted", { enumerable: true, get: function () { return gamesV4_1.onGameInviteV4Deleted; } });
+Object.defineProperty(exports, "onSessionV4StatusChanged", { enumerable: true, get: function () { return gamesV4_1.onSessionV4StatusChanged; } });
+Object.defineProperty(exports, "resignSessionV4", { enumerable: true, get: function () { return gamesV4_1.resignSessionV4; } });
+Object.defineProperty(exports, "startGameFromInviteV4", { enumerable: true, get: function () { return gamesV4_1.startGameFromInviteV4; } });
+Object.defineProperty(exports, "submitTurnMoveV4", { enumerable: true, get: function () { return gamesV4_1.submitTurnMoveV4; } });
+Object.defineProperty(exports, "updateLobbySettingsV4", { enumerable: true, get: function () { return gamesV4_1.updateLobbySettingsV4; } });
+Object.defineProperty(exports, "watchdogGamesV4", { enumerable: true, get: function () { return gamesV4_1.watchdogGamesV4; } });
 // Utilities extracted from legacy index.
 var utils_1 = require("./utils");
 Object.defineProperty(exports, "getUserPushToken", { enumerable: true, get: function () { return utils_1.getUserPushToken; } });

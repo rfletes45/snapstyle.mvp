@@ -142,6 +142,10 @@ function ToastItem({
         return "message-text";
       case "friend_request":
         return "account-plus";
+      case "game_turn":
+        return "gamepad-variant";
+      case "achievement_unlocked":
+        return "trophy";
       default:
         return "bell";
     }
@@ -153,6 +157,10 @@ function ToastItem({
         return colors.primary;
       case "friend_request":
         return colors.secondary;
+      case "game_turn":
+        return colors.warning ?? colors.primary;
+      case "achievement_unlocked":
+        return colors.success ?? colors.secondary;
       default:
         return colors.info;
     }

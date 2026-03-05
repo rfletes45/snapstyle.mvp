@@ -1327,11 +1327,7 @@ export interface InboxConversation {
     /** Message timestamp */
     timestamp: number;
     /** Message type */
-    type:
-      | "text"
-      | "image"
-      | "voice"
-      | "attachment";
+    type: "text" | "image" | "voice" | "attachment";
   } | null;
 
   /** User's private state for this conversation */

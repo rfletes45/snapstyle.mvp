@@ -20,6 +20,9 @@ export interface User {
 
   /** Cosmetic points balance */
   cosmeticPoints?: number;
+
+  /** User level & XP (written by backend on game completion) */
+  level?: UserLevelData;
 }
 
 export interface AvatarConfig {

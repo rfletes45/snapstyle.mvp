@@ -8,6 +8,7 @@ Status: Phase 1-3 complete (discovery, cleanup, contract fixes).
 This audit maps the live Profile system in the SnapStyle client + Firebase backend, then records the cleanup and fixes applied in this pass.
 
 Primary goals completed:
+
 - map UI -> services -> Firestore/functions -> assets
 - validate profile/equip/ownership contracts
 - remove deprecated and unused profile-related modules
@@ -62,22 +63,28 @@ Asset + Catalog Registry
 ## 3) Navigation Map
 
 Canonical wiring:
+
 - `src/navigation/RootNavigator.tsx`
 - `src/types/navigation/root.ts`
 
 Entry points validated:
+
 1. Profile tab -> `ProfileStack.ProfileMain` -> `OwnProfileScreen`
 
 Route contract updates applied:
+
 - `Customization` route params now include `initialSection: "profile" | "chat"` (both profile stack and root stack)
 
 ## 4) Data Model (Exact Paths/Fields)
 
 ### 4.1 Profile document
+
 Path:
+
 - `Users/{uid}`
 
 Fields actively used by profile/customization:
+
 - identity/media: `username`, `usernameLower`, `displayName`, `profilePicture`, `avatarConfig`
 - equipped profile cosmetics:
   - `avatarDecoration.decorationId`
@@ -95,13 +102,17 @@ Fields actively used by profile/customization:
   - `cosmeticPoints`
 
 Hydration:
+
 - `src/services/profile/profileContract.ts`
 
 ### 4.2 Entitlements ownership
+
 Path:
+
 - `Users/{uid}/Entitlements/{cosmeticId}`
 
 Fields:
+
 - `cosmeticId`
 - `type` (`badge|background|decoration|theme|chat_bubble_color|chat_font|chat_animal_theme`)
 - `grantedAt`
@@ -109,27 +120,35 @@ Fields:
 - `metadata?`
 
 ### 4.3 Wallet / tokens
+
 Path:
+
 - `Wallets/{uid}`
 
 Fields used:
+
 - `tokensBalance` (canonical)
 - `tokens` (legacy/back-compat)
 - `totalEarned`, `totalSpent`
 - `updatedAt` / `lastUpdated`
 
 ### 4.4 Purchase + transaction history
+
 Paths:
+
 - `Transactions/{transactionId}`
 - `Users/{uid}/PurchaseHistory/{transactionId}`
 
 ### 4.5 Legacy badge path still active
+
 Path:
+
 - `Users/{uid}/Badges/{badgeId}`
 
 ## 5) Equip + Entitlements Flow
 
 ### 5.1 Shop purchase -> entitlement
+
 - Client: `useCosmeticsShop.purchaseItem()` -> callable `purchaseCosmeticWithTokens`
 - Server (`cosmeticEntitlements.ts`):
   1. validate catalog/pricing
@@ -140,6 +159,7 @@ Path:
   6. write legacy ownership compatibility docs
 
 ### 5.2 Customization Hub equip-only
+
 - Screen: `src/screens/customization/CustomizationHubScreen.tsx`
 - Hook: `src/hooks/useCustomizationHub.ts`
 - Ownership source: entitlements + free/starter catalog items
@@ -153,17 +173,21 @@ Path:
 ## 6) Rendering Pipeline
 
 ### 6.1 Profile headers (own + user)
+
 Files:
+
 - `src/components/profile/ProfileHeader/OwnProfileHeader.tsx`
 - `src/components/profile/ProfileHeader/UserProfileHeader.tsx`
 - `src/components/profile/ProfileHeaderVisual.tsx`
 
 Behavior:
+
 - background image resolved via `getCosmeticAsset("background", equippedBackgroundId)`
 - background is clipped to header region (`overflow: "hidden"`)
 - profile picture uses `ProfilePictureWithDecoration` with equipped decoration
 
 ### 6.2 Chat appearance rendering
+
 - Resolver: `src/cosmetics/chatAppearanceResolver.ts`
 - Message writes stamped with sender style by server in `messaging.ts`
 - animal sends validated against entitlement/equipped state in backend
@@ -171,6 +195,7 @@ Behavior:
 ## 7) Deprecated Material Cleanup (Applied)
 
 Removed after repo-wide reference and route checks:
+
 - `src/screens/profile/ProfileScreen.tsx`
   - dead legacy screen, not registered in RootNavigator
 - `src/components/profile/LegacyProfileHeader.tsx`
@@ -192,15 +217,18 @@ Removed after repo-wide reference and route checks:
   - replaced by canonical active component `src/components/profile/ProfileQuickActions.tsx`
 
 Consolidation performed:
+
 - `src/components/profile/index.ts` now exports `ProfileActions` from `ProfileQuickActions` (active canonical own-profile action list)
 
 ## 8) Known Issues Found -> Fixes Applied
 
 1. Customization route param drift
+
 - was: runtime used `initialSection`, navigation types did not
 - fixed: root/profile stack `Customization` params now include `initialSection`
 
 2. Missing dev contract guardrails
+
 - fixed: `profileContract.hydrateProfileData()` now emits dev-only warnings when equipped IDs:
   - are missing from catalog
   - have wrong type for slot
@@ -209,11 +237,13 @@ Consolidation performed:
 ## 9) Validation Notes
 
 Validation steps run in this pass:
+
 - repo-wide import/route tracing before deletion
 - post-deletion reference sweeps for removed modules
 - navigation contract checks on root/profile/play stack params
 
 Recommended final verification commands (workspace currently has unrelated in-flight changes):
+
 1. `npm run type-check`
 2. `npm run lint`
 3. `npm run build` (from `firebase-backend/functions`)

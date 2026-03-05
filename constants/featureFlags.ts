@@ -70,6 +70,22 @@ export const USE_LOCAL_STORAGE = !IS_WEB;
 export const USE_VISION_CAMERA = false;
 
 // =============================================================================
+// Games V4 Feature Flag
+// =============================================================================
+
+/**
+ * Master switch for the V4 game system (GamePigeon-style in-chat games).
+ *
+ * When enabled:
+ * - Game picker button appears in chat composer toolbar
+ * - Pinned game invite bar appears at the top of chat screens
+ * - Game lobby, play, and game-over screens are reachable
+ *
+ * @default true
+ */
+export const GAMES_V4_ENABLED = true;
+
+// =============================================================================
 // Debug Features
 // =============================================================================
 

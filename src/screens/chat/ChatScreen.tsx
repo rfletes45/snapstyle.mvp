@@ -77,6 +77,10 @@ import { DMMessageItem, MessageWithProfile } from "@/components/DMMessageItem";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
 import { EmptyState, PresenceIndicator } from "@/components/ui";
+import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
+import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
+import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
+import type { GameId } from "@/gamesV4/types";
 
 // Services
 import { blockUser } from "@/services/blocking";
@@ -93,7 +97,7 @@ import {
 import { CallButtonGroup } from "@/components/calls";
 
 // Types & Utils
-import { DEBUG_CHAT_V2 } from "@/constants/featureFlags";
+import { DEBUG_CHAT_V2, GAMES_V4_ENABLED } from "@/constants/featureFlags";
 import { Spacing } from "@/constants/theme";
 import { buildSenderStyle } from "@/cosmetics/chatAppearanceResolver";
 import { useAnimalEntitlement } from "@/hooks/useAnimalEntitlement";
@@ -199,6 +203,9 @@ export default function ChatScreen({
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
   const [animalPickerVisible, setAnimalPickerVisible] = useState(false);
+
+  // Games V4 state
+  const [gamePickerVisible, setGamePickerVisible] = useState(false);
 
   // Message actions state
   const [actionsSheetVisible, setActionsSheetVisible] = useState(false);
@@ -941,6 +948,28 @@ export default function ChatScreen({
     [],
   );
 
+  // Games V4: handle game selection from picker
+  const handleGameSelected = useCallback(
+    async (gameId: GameId) => {
+      if (!chatId || !uid) return;
+      try {
+        const { inviteId } = await createGameInvite({
+          conversationId: chatId,
+          conversationScope: "dm",
+          gameId,
+        });
+        navigation.navigate("GameLobbyV4", { inviteId });
+      } catch (err: any) {
+        const msg =
+          err?.code === "functions/not-found" || err?.message === "not-found"
+            ? "Game service is not available. Please make sure Cloud Functions are deployed."
+            : (err?.message ?? "Failed to create game invite");
+        Alert.alert("Game Error", msg);
+      }
+    },
+    [chatId, uid, navigation],
+  );
+
   const handleScheduleMessage = async (scheduledFor: Date) => {
     const text = screen.composer.text.trim();
     if (!uid || !chatId || !text) return;
@@ -1037,6 +1066,11 @@ export default function ChatScreen({
           { backgroundColor: theme.dark ? "#000" : theme.colors.background },
         ]}
       >
+        {/* Pinned Game Invites Bar */}
+        {GAMES_V4_ENABLED && chatId && (
+          <PinnedInviteBar conversationId={chatId} scope="dm" />
+        )}
+
         {/* OPTIMIZATION: Show skeleton during initialization, messages when ready */}
         {showSkeleton ? (
           <ChatSkeleton bubbleCount={8} />
@@ -1128,6 +1162,9 @@ export default function ChatScreen({
           replyTo={screen.chat.replyTo}
           onCancelReply={handleCancelReply}
           currentUid={uid}
+          onGamePress={
+            GAMES_V4_ENABLED ? () => setGamePickerVisible(true) : undefined
+          }
           onAnimalPress={handleAnimalPress}
           animalThemeId={animalEntitlement.equippedAnimalId}
           animalLocked={!animalEntitlement.canSend}
@@ -1195,6 +1232,16 @@ export default function ChatScreen({
         senderName={viewerSenderName}
         timestamp={viewerTimestamp}
       />
+
+      {/* Games V4: Game picker modal */}
+      {GAMES_V4_ENABLED && (
+        <GamePickerModal
+          visible={gamePickerVisible}
+          onSelect={handleGameSelected}
+          onClose={() => setGamePickerVisible(false)}
+          multiplayerOnly
+        />
+      )}
     </>
   );
 }

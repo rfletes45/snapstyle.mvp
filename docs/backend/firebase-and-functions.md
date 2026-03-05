@@ -45,7 +45,6 @@ Messaging:
 - `publishReadReceipt`
 - `publishDeliveryReceipt`
 
-
 Economy/shop:
 
 - `claimTaskReward`
@@ -88,7 +87,6 @@ Use `firebase-backend/firestore.rules` as the definitive contract. Important col
   - `Wallets`, `Transactions`, `Tasks`, `TaskProgress`, `ShopCatalog`, purchase collections
 - Calls and moderation:
   - `Calls`, `CallSignaling`, `Reports`, `Bans`, warning/admin artifacts
-
 
 ## Storage Contract Summary
 

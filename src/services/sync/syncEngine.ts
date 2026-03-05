@@ -96,7 +96,22 @@ let syncState: SyncState = {
 };
 
 const listeners = new Set<SyncStateListener>();
-const activeSubscriptions = new Map<string, Unsubscribe>();
+
+interface ConversationSubscription {
+  scope: "dm" | "group";
+  conversationId: string;
+  listeners: Set<(message: MessageV2) => void>;
+  unsubscribe: Unsubscribe;
+}
+
+const activeSubscriptions = new Map<string, ConversationSubscription>();
+
+function getSubscriptionKey(
+  scope: "dm" | "group",
+  conversationId: string,
+): string {
+  return `${scope}:${conversationId}`;
+}
 
 // =============================================================================
 // State Management
@@ -744,11 +759,23 @@ export function subscribeToConversation(
   }
 
   const db = getDatabase();
+  const subscriptionKey = getSubscriptionKey(scope, conversationId);
+  const listener = onNewMessage || (() => {});
 
-  // Unsubscribe from existing if any
-  const existingUnsub = activeSubscriptions.get(conversationId);
-  if (existingUnsub) {
-    existingUnsub();
+  // Reuse existing Firestore listener for this conversation and only add
+  // another callback subscriber.
+  const existing = activeSubscriptions.get(subscriptionKey);
+  if (existing) {
+    existing.listeners.add(listener);
+    return () => {
+      const current = activeSubscriptions.get(subscriptionKey);
+      if (!current) return;
+      current.listeners.delete(listener);
+      if (current.listeners.size === 0) {
+        current.unsubscribe();
+        activeSubscriptions.delete(subscriptionKey);
+      }
+    };
   }
 
   const firestore = getFirestoreInstance();
@@ -835,7 +862,19 @@ export function subscribeToConversation(
           }
 
           upsertMessageFromServer(message);
-          onNewMessage?.(message);
+          const current = activeSubscriptions.get(subscriptionKey);
+          if (current) {
+            current.listeners.forEach((callback) => {
+              try {
+                callback(message);
+              } catch (listenerError) {
+                logger.error(
+                  "[SyncEngine] Subscription listener callback error:",
+                  listenerError,
+                );
+              }
+            });
+          }
 
           // Update sync cursor using the converted numeric timestamp
           const timestamp = serverReceivedAtNum || createdAtNum;
@@ -854,11 +893,21 @@ export function subscribeToConversation(
     },
   );
 
-  activeSubscriptions.set(conversationId, unsubscribe);
+  activeSubscriptions.set(subscriptionKey, {
+    scope,
+    conversationId,
+    listeners: new Set([listener]),
+    unsubscribe,
+  });
 
   return () => {
-    unsubscribe();
-    activeSubscriptions.delete(conversationId);
+    const current = activeSubscriptions.get(subscriptionKey);
+    if (!current) return;
+    current.listeners.delete(listener);
+    if (current.listeners.size === 0) {
+      current.unsubscribe();
+      activeSubscriptions.delete(subscriptionKey);
+    }
   };
 }
 
@@ -866,17 +915,23 @@ export function subscribeToConversation(
  * Check if a conversation has an active subscription
  */
 export function hasActiveSubscription(conversationId: string): boolean {
-  return activeSubscriptions.has(conversationId);
+  for (const sub of activeSubscriptions.values()) {
+    if (sub.conversationId === conversationId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
  * Unsubscribe from a specific conversation
  */
 export function unsubscribeFromConversation(conversationId: string): void {
-  const unsub = activeSubscriptions.get(conversationId);
-  if (unsub) {
-    unsub();
-    activeSubscriptions.delete(conversationId);
+  for (const [key, sub] of activeSubscriptions.entries()) {
+    if (sub.conversationId === conversationId) {
+      sub.unsubscribe();
+      activeSubscriptions.delete(key);
+    }
   }
 }
 
@@ -884,7 +939,7 @@ export function unsubscribeFromConversation(conversationId: string): void {
  * Unsubscribe from all active subscriptions
  */
 export function unsubscribeAll(): void {
-  activeSubscriptions.forEach((unsub) => unsub());
+  activeSubscriptions.forEach((sub) => sub.unsubscribe());
   activeSubscriptions.clear();
 }
 

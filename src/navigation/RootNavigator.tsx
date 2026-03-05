@@ -9,11 +9,12 @@ import {
   NavigationContainerRef,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
 import { navigationRef } from "@/services/navigationRef";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type {
   AppTabsParamList,
@@ -87,6 +88,18 @@ import ActivityFeedScreen from "@/screens/social/ActivityFeedScreen";
 import { CALL_FEATURES } from "@/constants/featureFlags";
 import CameraScreen from "@/screens/camera/CameraScreen";
 import CameraShareScreen from "@/screens/camera/ShareScreen";
+
+// Game V4 screens
+import AchievementSectionScreen from "@/gamesV4/screens/AchievementSectionScreen";
+import AchievementsHubScreen from "@/gamesV4/screens/AchievementsHubScreen";
+import GameDetailScreenV4 from "@/gamesV4/screens/GameDetailScreenV4";
+import GameLeaderboardScreenV4 from "@/gamesV4/screens/GameLeaderboardScreenV4";
+import GameLobbyScreenV4 from "@/gamesV4/screens/GameLobbyScreenV4";
+import GameOverScreenV4 from "@/gamesV4/screens/GameOverScreenV4";
+import GamePlayDispatcherV4 from "@/gamesV4/screens/GamePlayDispatcherV4";
+import GamesHubScreenV4 from "@/gamesV4/screens/GamesHubScreenV4";
+import GameStatsScreenV4 from "@/gamesV4/screens/GameStatsScreenV4";
+import LevelRewardsScreen from "@/gamesV4/screens/LevelRewardsScreen";
 
 // Call screens
 import {
@@ -398,6 +411,9 @@ function AppTabs() {
             case "Inbox":
               iconName = "message-outline";
               break;
+            case "Games":
+              iconName = "gamepad-variant";
+              break;
             case "Moments":
               iconName = "image-multiple-outline";
               break;
@@ -423,6 +439,11 @@ function AppTabs() {
         options={{
           headerShown: false,
         }}
+      />
+      <Tab.Screen
+        name="Games"
+        component={GamesHubScreenV4}
+        options={{ headerShown: false }}
       />
       <Tab.Screen
         name="Moments"
@@ -643,6 +664,51 @@ function MainStack() {
         component={ActivityFeedScreen}
         options={{ headerShown: false }}
       />
+      <MainStack_Nav.Screen
+        name="GameLobbyV4"
+        component={GameLobbyScreenV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="GamePlayV4"
+        component={GamePlayDispatcherV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="GameOverV4"
+        component={GameOverScreenV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="GameDetailV4"
+        component={GameDetailScreenV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="GameLeaderboardV4"
+        component={GameLeaderboardScreenV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="GameStatsV4"
+        component={GameStatsScreenV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="AchievementsHub"
+        component={AchievementsHubScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="AchievementSection"
+        component={AchievementSectionScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="LevelRewards"
+        component={LevelRewardsScreen}
+        options={{ headerShown: false }}
+      />
     </MainStack_Nav.Navigator>
   );
 }
@@ -660,8 +726,21 @@ export default function RootNavigator({
   navigationRef: externalRef,
 }: RootNavigatorProps) {
   const { theme } = useAppTheme();
+  const { setCurrentScreen } = useInAppNotifications();
 
   const navRef = externalRef || navigationRef;
+
+  // Track the active route name for context-aware notification suppression
+  const handleStateChange = useCallback(() => {
+    if (!navRef || !("current" in navRef)) return;
+    const currentRef = (navRef as React.RefObject<NavigationContainerRef<any>>)
+      .current;
+    if (!currentRef) return;
+    const route = currentRef.getCurrentRoute();
+    if (route?.name) {
+      setCurrentScreen(route.name);
+    }
+  }, [navRef, setCurrentScreen]);
 
   const linking = useMemo(
     () => ({
@@ -681,6 +760,7 @@ export default function RootNavigator({
                   ChatList: "inbox",
                 },
               },
+              Games: "games",
               Moments: "moments",
               Profile: {
                 screens: {
@@ -697,6 +777,12 @@ export default function RootNavigator({
           GroupChat: "group/:groupId",
           UserProfile: "user/:userId",
           ActivityFeed: "activity",
+          GameLobbyV4: "game/lobby/:inviteId",
+          GamePlayV4: "game/play/:sessionId",
+          GameOverV4: "game/over/:sessionId",
+          GameDetailV4: "game/detail/:gameId",
+          GameLeaderboardV4: "game/leaderboard/:gameId",
+          GameStatsV4: "game/stats",
         },
       },
     }),
@@ -710,6 +796,7 @@ export default function RootNavigator({
           ref={navRef}
           linking={linking}
           theme={theme.navigation}
+          onStateChange={handleStateChange}
         >
           {hydrationState === "ready" ? (
             <>

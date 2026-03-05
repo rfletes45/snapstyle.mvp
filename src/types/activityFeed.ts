@@ -65,7 +65,6 @@ export type ActivityEventData =
   | DecorationEquipData
   | ShopPurchaseData;
 
-
 export interface AchievementData {
   type: "achievement";
   achievementId: string;

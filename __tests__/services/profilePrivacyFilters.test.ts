@@ -1,5 +1,8 @@
 import { hydrateProfileData } from "@/services/profile/profileContract";
-import { applyPrivacyFilters, DEFAULT_PRIVACY_SETTINGS } from "@/types/userProfile";
+import {
+  applyPrivacyFilters,
+  DEFAULT_PRIVACY_SETTINGS,
+} from "@/types/userProfile";
 
 function createProfile() {
   return hydrateProfileData("target-user", {

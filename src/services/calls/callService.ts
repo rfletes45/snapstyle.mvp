@@ -3,6 +3,19 @@
  * Handles call lifecycle, Firestore operations, and coordinates with WebRTC/CallKeep
  */
 
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
+import {
+  Call,
+  CALL_TIMEOUT_MS,
+  CallEndReason,
+  CallEvent,
+  CallEventHandler,
+  CallHistoryEntry,
+  CallParticipant,
+  CallStatus,
+  MAX_GROUP_PARTICIPANTS,
+  StartCallParams,
+} from "@/types/call";
 import {
   collection,
   doc,
@@ -17,19 +30,6 @@ import {
   where,
 } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
-import {
-  Call,
-  CALL_TIMEOUT_MS,
-  CallEndReason,
-  CallEvent,
-  CallEventHandler,
-  CallHistoryEntry,
-  CallParticipant,
-  CallStatus,
-  MAX_GROUP_PARTICIPANTS,
-  StartCallParams,
-} from "@/types/call";
-import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
 
 // Lazy getters to avoid Firebase initialization issues at module load time
 const getDb = () => getFirestoreInstance();
@@ -38,7 +38,6 @@ const getAuth = () => getAuthInstance();
 // Import sibling services
 import { callKeepService } from "./callKeepService";
 import { webRTCService } from "./webRTCService";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/callService");
@@ -187,6 +186,7 @@ class CallService {
       callerId,
       callerName: callerData?.displayName || callerData?.odname || "Unknown",
       participants,
+      participantUids: Object.keys(participants),
       createdAt: now,
       answeredAt: null,
       endedAt: null,
@@ -495,7 +495,7 @@ class CallService {
     const callsQuery = query(
       collection(getDb(), "Calls"),
       where("status", "==", "ringing"),
-      where(`participants.${userId}`, "!=", null),
+      where("participantUids", "array-contains", userId),
       orderBy("createdAt", "desc"),
       limit(1),
     );

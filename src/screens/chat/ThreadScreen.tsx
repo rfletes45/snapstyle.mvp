@@ -35,7 +35,10 @@ import {
   insertMessage,
   rowToMessageV2,
 } from "@/services/database/messageRepository";
-import { syncPendingMessages } from "@/services/sync/syncEngine";
+import {
+  subscribeToConversation,
+  syncPendingMessages,
+} from "@/services/sync/syncEngine";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
@@ -94,11 +97,17 @@ export default function ThreadScreen({ navigation, route }: Props) {
     loadThread();
   }, [loadThread]);
 
-  // Auto-refresh every 3 seconds to pick up synced messages
+  // Subscribe to conversation updates and reload thread from local DB when new
+  // messages are synced.
   useEffect(() => {
-    const interval = setInterval(loadThread, 3000);
-    return () => clearInterval(interval);
-  }, [loadThread]);
+    if (!conversationId) return;
+
+    const unsubscribe = subscribeToConversation(scope, conversationId, () => {
+      loadThread();
+    });
+
+    return unsubscribe;
+  }, [scope, conversationId, loadThread]);
 
   // ---------------------------------------------------------------------------
   // Send reply

@@ -73,6 +73,8 @@ export interface Call {
   callerId: string; // Who initiated the call
   callerName: string;
   participants: Record<string, CallParticipant>;
+  /** Flat array of participant UIDs for Firestore array-contains queries & security rules. */
+  participantUids: string[];
 
   // Timing
   createdAt: number;

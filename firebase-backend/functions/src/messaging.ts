@@ -405,13 +405,7 @@ async function checkRateLimit(uid: string): Promise<boolean> {
 interface SendMessageV2Input {
   conversationId: string;
   scope: "dm" | "group";
-  kind:
-    | "text"
-    | "media"
-    | "voice"
-    | "file"
-    | "system"
-    | "animal";
+  kind: "text" | "media" | "voice" | "file" | "system" | "animal";
   text?: string;
   /** Animal theme ID (required when kind="animal") */
   animalId?: string;
@@ -565,14 +559,7 @@ export const sendMessageV2 = functions.https.onCall(
     }
 
     if (
-      ![
-        "text",
-        "media",
-        "voice",
-        "file",
-        "system",
-        "animal",
-      ].includes(kind)
+      !["text", "media", "voice", "file", "system", "animal"].includes(kind)
     ) {
       throw new functions.https.HttpsError(
         "invalid-argument",

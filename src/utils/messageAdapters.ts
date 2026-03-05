@@ -99,8 +99,7 @@ export function createReplyMetadataFromMessage(
     messageId: message.id,
     senderId: message.sender,
     senderName,
-    kind:
-      message.type === "image" ? "media" : "text",
+    kind: message.type === "image" ? "media" : "text",
     textSnippet:
       message.type === "text"
         ? message.content.length > 100

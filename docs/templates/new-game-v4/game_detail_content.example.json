@@ -1,0 +1,51 @@
+{
+  "_comment": "Game Detail content for a new game. Add these entries to src/gamesV4/constants.ts",
+  "_metadata_location": "GAME_METADATA in src/gamesV4/constants.ts (already present for all 20 games; verify yours)",
+  "_descriptions_location": "GAME_DESCRIPTIONS in src/gamesV4/constants.ts",
+  "_scoreboard_location": "SCOREBOARD_DESCRIPTORS in src/gamesV4/constants.ts",
+  "_leaderboard_location": "LEADERBOARD_DESCRIPTORS in src/gamesV4/constants.ts",
+
+  "gameId": "my_game",
+
+  "metadata": {
+    "gameId": "my_game",
+    "displayName": "My Game",
+    "runtimeType": "turnBased",
+    "minPlayers": 2,
+    "maxPlayers": 2,
+    "supportsSpectate": true,
+    "icon": "gamepad-variant"
+  },
+
+  "description": {
+    "shortDescription": "A strategic board game where you out-think your opponent to control the board.",
+    "howToPlay": "Take turns placing pieces on the board. The first player to form a continuous line of 5 pieces in any direction wins. Horizontal, vertical, and diagonal lines all count. If the board fills up without a winner, the game is a draw.",
+    "tips": "Control the center of the board early. Watch for your opponent forming 3-in-a-row setups and block them. Try to create two threats at once to force a win."
+  },
+
+  "scoreboardDescriptor": {
+    "_comment_win_loss": "For win/loss games (like TTT, Connect Four):",
+    "title": "MATCH RESULT",
+    "sortDirection": "desc",
+    "formatScore_logic": "score === 1 → 'Win', score === 0 → 'Loss', else → 'Draw'",
+
+    "_comment_score": "For score-based games (like 2048):",
+    "title_alt": "FINAL SCORE",
+    "sortDirection_alt": "desc",
+    "formatScore_logic_alt": "score.toLocaleString()"
+  },
+
+  "leaderboardDescriptor": {
+    "_comment_wins": "For wins-based games:",
+    "label": "Wins",
+    "metric": "wins",
+    "sortDirection": "desc",
+    "formatValue_logic": "v → `${v} win${v !== 1 ? 's' : ''}`",
+
+    "_comment_score": "For score-based games:",
+    "label_alt": "Best Score",
+    "metric_alt": "bestScore",
+    "sortDirection_alt": "desc",
+    "formatValue_logic_alt": "v → v.toLocaleString()"
+  }
+}

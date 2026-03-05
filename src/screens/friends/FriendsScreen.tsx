@@ -823,9 +823,8 @@ export default function FriendsScreen({ navigation }: any) {
                             mode="contained"
                             onPress={() => {
                               if (friendUid) {
-                                navigation.navigate("Chats", {
-                                  screen: "ChatDetail",
-                                  params: { friendUid },
+                                navigation.navigate("ChatDetail", {
+                                  friendUid,
                                 });
                               }
                             }}

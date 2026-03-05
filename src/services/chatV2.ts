@@ -50,6 +50,7 @@ import {
   retryItem,
   updateOutboxItem,
 } from "./outbox";
+export { mergeMessagesWithOutbox } from "./messaging/messageMerge";
 
 const log = createLogger("chatV2");
 
@@ -388,91 +389,6 @@ export async function processPendingMessages(): Promise<{
 
     return result.success;
   });
-}
-
-// =============================================================================
-// Optimistic UI Helpers
-// =============================================================================
-
-/**
- * Create an optimistic MessageV2 from an outbox item
- *
- * Use this to render the message in UI immediately while send is in progress.
- *
- * @param outboxItem - Outbox item
- * @param senderId - Current user's ID
- * @param senderName - Current user's display name
- * @returns Optimistic MessageV2
- */
-function createOptimisticMessage(
-  outboxItem: OutboxItem,
-  senderId: string,
-  senderName?: string,
-): MessageV2 {
-  return {
-    id: outboxItem.messageId,
-    scope: outboxItem.scope,
-    conversationId: outboxItem.conversationId,
-    senderId,
-    senderName,
-    kind: outboxItem.kind,
-    text: outboxItem.text,
-    createdAt: outboxItem.createdAt,
-    serverReceivedAt: outboxItem.createdAt, // Placeholder until server confirms
-    replyTo: outboxItem.replyTo,
-    mentionUids: outboxItem.mentionUids,
-    clientId: "optimistic",
-    idempotencyKey: `optimistic:${outboxItem.messageId}`,
-    // Mark as local/sending for UI
-    status: "sending",
-    isLocal: true,
-    clientMessageId: outboxItem.messageId,
-  };
-}
-
-/**
- * Merge server messages with optimistic messages
- *
- * Handles deduplication when server message arrives for an optimistic message.
- *
- * @param serverMessages - Messages from Firestore subscription
- * @param outboxItems - Current outbox items
- * @param currentUid - Current user's ID
- * @param currentUserName - Current user's display name
- * @returns Merged and deduplicated message list
- */
-export function mergeMessagesWithOutbox(
-  serverMessages: MessageV2[],
-  outboxItems: OutboxItem[],
-  currentUid: string,
-  currentUserName?: string,
-): MessageV2[] {
-  // Create set of server message IDs for fast lookup
-  const serverIds = new Set(serverMessages.map((m) => m.id));
-
-  // Filter outbox to items NOT yet in server messages
-  const pendingOptimistic = outboxItems
-    .filter((item) => !serverIds.has(item.messageId))
-    .map((item) => {
-      const msg = createOptimisticMessage(item, currentUid, currentUserName);
-      // Set status based on outbox state
-      msg.status = item.state === "failed" ? "failed" : "sending";
-      msg.errorMessage = item.lastError;
-      return msg;
-    });
-
-  // Combine: server messages + pending optimistic
-  // Sort by serverReceivedAt (or createdAt for optimistic)
-  // For inverted FlatList: descending order (newest first, index 0 = newest)
-  const combined = [...serverMessages, ...pendingOptimistic];
-
-  combined.sort((a, b) => {
-    const aTime = a.serverReceivedAt || a.createdAt;
-    const bTime = b.serverReceivedAt || b.createdAt;
-    return bTime - aTime; // descending = newest first
-  });
-
-  return combined;
 }
 
 /**

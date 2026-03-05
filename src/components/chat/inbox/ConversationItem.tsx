@@ -85,6 +85,11 @@ export interface ConversationItemProps {
   highlightText?: string;
 }
 
+function formatUnreadBadge(unreadCount: number): string {
+  if (unreadCount <= 0) return "";
+  return unreadCount > 99 ? "99+" : String(unreadCount);
+}
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -101,7 +106,6 @@ export const ConversationItem = memo(function ConversationItem({
   const {
     name,
     avatarUrl,
-    avatarConfig,
     profilePictureUrl,
     decorationId,
     type,
@@ -114,6 +118,7 @@ export const ConversationItem = memo(function ConversationItem({
   const isPinned = !!memberState.pinnedAt;
   const isMuted = !!memberState.mutedUntil;
   const isUnread = unreadCount > 0 || !!memberState.lastMarkedUnreadAt;
+  const unreadBadgeText = formatUnreadBadge(unreadCount);
 
   // Format last message preview
   const previewText = useMemo(() => {
@@ -162,7 +167,7 @@ export const ConversationItem = memo(function ConversationItem({
       onLongPress={handleLongPress}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`${name}${isUnread ? ", unread" : ""}${isPinned ? ", pinned" : ""}`}
+      accessibilityLabel={`${name}${isUnread ? `, ${unreadCount > 99 ? "99 plus" : unreadCount} unread` : ""}${isPinned ? ", pinned" : ""}`}
     >
       {/* Avatar */}
       <TouchableOpacity
@@ -270,7 +275,7 @@ export const ConversationItem = memo(function ConversationItem({
               : previewText}
           </Text>
 
-          {unreadCount > 0 && (
+          {unreadBadgeText && (
             <Badge
               size={20}
               style={[
@@ -282,7 +287,7 @@ export const ConversationItem = memo(function ConversationItem({
                 },
               ]}
             >
-              !
+              {unreadBadgeText}
             </Badge>
           )}
         </View>
