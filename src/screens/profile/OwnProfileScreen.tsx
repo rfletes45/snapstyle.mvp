@@ -27,9 +27,9 @@ import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  AchievementsTrophyCaseCard,
   BadgesCard,
   FriendsCard,
-  GamesAchievementsCard,
 } from "@/components/profile/OverviewCards";
 import { ProfileBioEditor } from "@/components/profile/ProfileBio/index";
 import { OwnProfileHeader } from "@/components/profile/ProfileHeader/index";
@@ -122,6 +122,7 @@ export default function OwnProfileScreen({
 
   const friendsHidden = privacy?.showFriendsList === "nobody";
   const badgesHidden = privacy?.showBadges === "nobody";
+  const achievementsHidden = privacy?.showAchievements === "nobody";
   const streaksHidden = privacy?.showStreaks === "nobody";
   const activityHidden = privacy?.showRecentActivity === "nobody";
 
@@ -201,7 +202,7 @@ export default function OwnProfileScreen({
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
+          { paddingBottom: insets.bottom + 32 },
         ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -218,6 +219,7 @@ export default function OwnProfileScreen({
           backgroundId={profile?.equippedBackgroundId ?? null}
           bio={userBio}
           status={userStatus}
+          topInset={insets.top}
           level={
             profile?.level || {
               current: 1,
@@ -320,13 +322,19 @@ export default function OwnProfileScreen({
             onPress={() => navigation.navigate("BadgeCollection")}
           />
 
-          {/* Achievements Card — owned-only display, links to Games */}
-          <GamesAchievementsCard
-            hiddenFromOthers={false}
+          {/* Achievements Trophy Case Card */}
+          <AchievementsTrophyCaseCard
+            userId={currentFirebaseUser?.uid || ""}
+            featuredAchievementIds={
+              fullProfile?.featuredAchievements?.achievementIds ?? []
+            }
+            hiddenFromOthers={achievementsHidden}
             enterIndex={2}
             onPress={() =>
-              navigation.navigate("MainTabs", {
-                screen: "Games",
+              navigation.navigate("ProfileAchievements", {
+                userId: currentFirebaseUser?.uid || "",
+                featuredIds:
+                  fullProfile?.featuredAchievements?.achievementIds ?? [],
               })
             }
           />

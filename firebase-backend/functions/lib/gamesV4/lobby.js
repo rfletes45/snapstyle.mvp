@@ -171,9 +171,11 @@ exports.updateLobbySettingsV4 = functions.https.onCall(async (data, context) => 
     if (!settingsPatch || typeof settingsPatch !== "object") {
         throw new functions.https.HttpsError("invalid-argument", "settingsPatch must be an object.");
     }
+    // Sanitise user-provided settings to cap depth/size
+    const sanitised = (0, validation_1.sanitisePayload)(settingsPatch);
     const db = (0, helpers_1.getDb)();
     const inviteRef = db.collection(types_1.COLLECTIONS.GAME_INVITES).doc(inviteId);
-    await db.runTransaction(async (tx) => {
+    const validatedSettings = await db.runTransaction(async (tx) => {
         const snap = await tx.get(inviteRef);
         if (!snap.exists) {
             throw new functions.https.HttpsError("not-found", "Invite not found.");
@@ -187,17 +189,41 @@ exports.updateLobbySettingsV4 = functions.https.onCall(async (data, context) => 
         if (invite.status !== "sent" && invite.status !== "lobby") {
             throw new functions.https.HttpsError("failed-precondition", `Cannot update settings in status '${invite.status}'.`);
         }
-        // Apply settings patch
-        // In STOP 4, this will validate against the game adapter's settingsSchema
-        // For now, store as-is
+        // Validate against adapter's settingsSchema if available
+        const adapter = (0, adapters_1.getAdapter)(invite.gameId);
+        let finalSettings;
+        if (adapter?.validateSettings) {
+            try {
+                finalSettings = adapter.validateSettings(sanitised);
+            }
+            catch (err) {
+                throw new functions.https.HttpsError("invalid-argument", `Invalid settings: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        else if (adapter?.defaultSettings) {
+            // No validateSettings but has defaults — merge with whitelisting
+            const defaults = adapter.defaultSettings;
+            finalSettings = { ...defaults };
+            for (const key of Object.keys(defaults)) {
+                if (key in sanitised) {
+                    finalSettings[key] = sanitised[key];
+                }
+            }
+        }
+        else {
+            // No adapter or no defaults — store sanitised patch as-is
+            finalSettings = sanitised;
+        }
+        // Persist settings on the invite doc so all lobby participants
+        // can see the current configuration in real-time.
         tx.update(inviteRef, {
+            lobbySettings: finalSettings,
             updatedAt: admin.firestore.Timestamp.now(),
-            // Settings are stored on the session, not the invite
-            // This callable is a stub — the settings are passed to startGame
         });
+        return finalSettings;
     });
-    console.log(`[gamesV4] Host ${uid} updated settings for invite ${inviteId}`);
-    return { success: true };
+    console.log(`[gamesV4] Host ${uid} updated settings for invite ${inviteId}:`, JSON.stringify(validatedSettings).slice(0, 200));
+    return { success: true, settings: validatedSettings };
 });
 // =============================================================================
 // Callable: startGameFromInviteV4
@@ -310,7 +336,9 @@ exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => 
                 spectatorsAllowed: invite.allowSpectators,
                 spectateMode: invite.spectateMode,
                 spectators,
-                settings: settings ?? {},
+                settings: settings ??
+                    invite.lobbySettings ??
+                    {},
                 turnOrder,
                 currentTurnIndex: 0,
                 currentTurnPlayerId: invite.runtimeType === "turnBased" ? firstPlayer : null,
@@ -335,7 +363,10 @@ exports.startGameFromInviteV4 = functions.https.onCall(async (data, context) => 
                 .doc("state");
             let initialPublicState = {};
             if ((0, adapters_1.hasAdapter)(invite.gameId)) {
-                const initResult = (0, adapters_1.createInitialState)(invite.gameId, players.map((p) => ({ uid: p.uid, slotIndex: p.slotIndex })), settings ?? {});
+                // Use the resolved session settings (which already include
+                // lobbySettings fallback) for adapter initialization.
+                const effectiveSettings = session.settings;
+                const initResult = (0, adapters_1.createInitialState)(invite.gameId, players.map((p) => ({ uid: p.uid, slotIndex: p.slotIndex })), effectiveSettings);
                 initialPublicState = initResult.publicState;
                 // Write per-player private state docs if produced
                 for (const [pUid, privState] of Object.entries(initResult.privateStateByPlayer)) {

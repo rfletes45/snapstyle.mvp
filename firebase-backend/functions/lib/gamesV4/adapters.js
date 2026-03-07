@@ -3771,10 +3771,17 @@ registerAdapter({
 });
 const CE_ALL_COLORS = ["red", "blue", "green", "yellow"];
 const CE_DEFAULT_SETTINGS = {
-    stackDraw2: false, stackDraw4: false, stackingMode: "same_only",
-    forcePlay: true, drawMode: "draw_one_then_pass", sevenZeroRule: false,
-    jumpIn: false, wildDraw4Challenge: true, turnTimer: "off",
-    roundModel: "single_hand", targetPoints: 500,
+    stackDraw2: false,
+    stackDraw4: false,
+    stackingMode: "same_only",
+    forcePlay: true,
+    drawMode: "draw_one_then_pass",
+    sevenZeroRule: false,
+    jumpIn: false,
+    wildDraw4Challenge: true,
+    turnTimer: "off",
+    roundModel: "single_hand",
+    targetPoints: 500,
 };
 function ceCreateDeck() {
     const cards = [];
@@ -3782,7 +3789,12 @@ function ceCreateDeck() {
         cards.push({ id: `${color}_0_0`, color, type: "number", value: 0 });
         for (let v = 1; v <= 9; v++) {
             for (let c = 0; c < 2; c++) {
-                cards.push({ id: `${color}_${v}_${c}`, color, type: "number", value: v });
+                cards.push({
+                    id: `${color}_${v}_${c}`,
+                    color,
+                    type: "number",
+                    value: v,
+                });
             }
         }
         for (const at of ["skip", "reverse", "draw_two"]) {
@@ -3794,7 +3806,12 @@ function ceCreateDeck() {
     for (let i = 0; i < 4; i++)
         cards.push({ id: `wild_${i}`, color: null, type: "wild", value: null });
     for (let i = 0; i < 4; i++)
-        cards.push({ id: `wild_draw_four_${i}`, color: null, type: "wild_draw_four", value: null });
+        cards.push({
+            id: `wild_draw_four_${i}`,
+            color: null,
+            type: "wild_draw_four",
+            value: null,
+        });
     return cards;
 }
 function ceShuffle(cards) {
@@ -3816,15 +3833,21 @@ function ceIsPlayable(card, color, top) {
         return true;
     if (card.color === color)
         return true;
-    if (card.type === "number" && top.type === "number" && card.value === top.value)
+    if (card.type === "number" &&
+        top.type === "number" &&
+        card.value === top.value)
         return true;
     if (card.type !== "number" && card.type === top.type)
         return true;
     return false;
 }
 function ceCouldPlayOther(hand, color, top) {
-    return hand.some(c => c.type !== "wild" && c.type !== "wild_draw_four" &&
-        (c.color === color || (c.type === "number" && top.type === "number" && c.value === top.value) ||
+    return hand.some((c) => c.type !== "wild" &&
+        c.type !== "wild_draw_four" &&
+        (c.color === color ||
+            (c.type === "number" &&
+                top.type === "number" &&
+                c.value === top.value) ||
             (c.type !== "number" && c.type === top.type)));
 }
 function ceNextTurn(idx, dir, count, skip = 1) {
@@ -3865,28 +3888,46 @@ function ceMergeSettings(p) {
     return {
         stackDraw2: typeof p.stackDraw2 === "boolean" ? p.stackDraw2 : d.stackDraw2,
         stackDraw4: typeof p.stackDraw4 === "boolean" ? p.stackDraw4 : d.stackDraw4,
-        stackingMode: ["same_only", "draws_mix"].includes(p.stackingMode) ? p.stackingMode : d.stackingMode,
+        stackingMode: ["same_only", "draws_mix"].includes(p.stackingMode)
+            ? p.stackingMode
+            : d.stackingMode,
         forcePlay: typeof p.forcePlay === "boolean" ? p.forcePlay : d.forcePlay,
-        drawMode: ["draw_one_then_pass", "draw_until_playable"].includes(p.drawMode) ? p.drawMode : d.drawMode,
+        drawMode: ["draw_one_then_pass", "draw_until_playable"].includes(p.drawMode)
+            ? p.drawMode
+            : d.drawMode,
         sevenZeroRule: typeof p.sevenZeroRule === "boolean" ? p.sevenZeroRule : d.sevenZeroRule,
         jumpIn: false,
-        wildDraw4Challenge: typeof p.wildDraw4Challenge === "boolean" ? p.wildDraw4Challenge : d.wildDraw4Challenge,
-        turnTimer: ["off", "20s", "30s", "45s"].includes(p.turnTimer) ? p.turnTimer : d.turnTimer,
-        roundModel: ["single_hand", "match_points"].includes(p.roundModel) ? p.roundModel : d.roundModel,
-        targetPoints: typeof p.targetPoints === "number" && p.targetPoints >= 100 && p.targetPoints <= 1000 ? p.targetPoints : d.targetPoints,
+        wildDraw4Challenge: typeof p.wildDraw4Challenge === "boolean"
+            ? p.wildDraw4Challenge
+            : d.wildDraw4Challenge,
+        turnTimer: ["off", "20s", "30s", "45s"].includes(p.turnTimer)
+            ? p.turnTimer
+            : d.turnTimer,
+        roundModel: ["single_hand", "match_points"].includes(p.roundModel)
+            ? p.roundModel
+            : d.roundModel,
+        targetPoints: typeof p.targetPoints === "number" &&
+            p.targetPoints >= 100 &&
+            p.targetPoints <= 1000
+            ? p.targetPoints
+            : d.targetPoints,
     };
 }
 function ceCanStack(card, pending, settings) {
     if (pending.source === "D2") {
         if (card.type === "draw_two" && settings.stackDraw2)
             return true;
-        if (card.type === "wild_draw_four" && settings.stackingMode === "draws_mix" && settings.stackDraw4)
+        if (card.type === "wild_draw_four" &&
+            settings.stackingMode === "draws_mix" &&
+            settings.stackDraw4)
             return true;
     }
     if (pending.source === "D4") {
         if (card.type === "wild_draw_four" && settings.stackDraw4)
             return true;
-        if (card.type === "draw_two" && settings.stackingMode === "draws_mix" && settings.stackDraw2)
+        if (card.type === "draw_two" &&
+            settings.stackingMode === "draws_mix" &&
+            settings.stackDraw2)
             return true;
     }
     return false;
@@ -3902,16 +3943,18 @@ registerAdapter({
     defaultSettings: CE_DEFAULT_SETTINGS,
     createInitialPublicState(players, settings) {
         const s = ceMergeSettings(settings);
-        const turnOrder = players.sort((a, b) => a.slotIndex - b.slotIndex).map(p => p.uid);
+        const turnOrder = players
+            .sort((a, b) => a.slotIndex - b.slotIndex)
+            .map((p) => p.uid);
         const deck = ceShuffle(ceCreateDeck());
         const lookup = ceBuildLookup(deck);
         const hands = {};
         const remaining = [...deck];
         for (const uid of turnOrder)
             hands[uid] = remaining.splice(0, 7);
-        let topIdx = remaining.findIndex(c => c.type === "number");
+        let topIdx = remaining.findIndex((c) => c.type === "number");
         if (topIdx === -1)
-            topIdx = remaining.findIndex(c => c.type !== "wild" && c.type !== "wild_draw_four");
+            topIdx = remaining.findIndex((c) => c.type !== "wild" && c.type !== "wild_draw_four");
         if (topIdx === -1)
             topIdx = 0;
         const topDiscard = remaining.splice(topIdx, 1)[0];
@@ -3926,16 +3969,36 @@ registerAdapter({
         // Cache dealt hands for createInitialPrivateState
         _ceLastDealCache = { hands };
         return {
-            phase: "playing", turnOrder, currentTurnIndex: 0, currentTurnUid: turnOrder[0],
-            direction: 1, topDiscard, currentColor: topDiscard.color, drawPileCount: remaining.length,
-            discardCount: 1, handCounts: hc, pendingDraw: { count: 0, source: null },
-            callEligibleUid: null, calledCrazy: cc, turnCounter: 0, moveCount: 0,
-            lastMove: null, challengeWindow: null, scores: sc, roundNumber: 1, settings: s,
-            resolved: null, drawPile: remaining.map(c => c.id), discardPile: [topDiscard.id], cardLookup: lookup,
+            phase: "playing",
+            turnOrder,
+            currentTurnIndex: 0,
+            currentTurnUid: turnOrder[0],
+            direction: 1,
+            topDiscard,
+            currentColor: topDiscard.color,
+            drawPileCount: remaining.length,
+            discardCount: 1,
+            handCounts: hc,
+            pendingDraw: { count: 0, source: null },
+            callEligibleUid: null,
+            calledCrazy: cc,
+            turnCounter: 0,
+            moveCount: 0,
+            lastMove: null,
+            challengeWindow: null,
+            scores: sc,
+            roundNumber: 1,
+            settings: s,
+            resolved: null,
+            drawPile: remaining.map((c) => c.id),
+            discardPile: [topDiscard.id],
+            cardLookup: lookup,
         };
     },
     createInitialPrivateState(players, _settings) {
-        const turnOrder = players.sort((a, b) => a.slotIndex - b.slotIndex).map(p => p.uid);
+        const turnOrder = players
+            .sort((a, b) => a.slotIndex - b.slotIndex)
+            .map((p) => p.uid);
         // Use the cached hands from createInitialPublicState (called first in pipeline)
         const cache = _ceLastDealCache;
         _ceLastDealCache = null; // Consume cache
@@ -3962,7 +4025,8 @@ registerAdapter({
             return { ok: false, error: "Not your turn." };
         switch (payload.action) {
             case "CHALLENGE_WILD4": {
-                if (!state.challengeWindow?.active || state.challengeWindow.targetUid !== uid)
+                if (!state.challengeWindow?.active ||
+                    state.challengeWindow.targetUid !== uid)
                     return { ok: false, error: "No challenge window." };
                 if (!settings.wildDraw4Challenge)
                     return { ok: false, error: "Challenges disabled." };
@@ -3976,8 +4040,28 @@ registerAdapter({
                         const dr = ceDrawCards(4, [...state.drawPile], [...state.discardPile], state.cardLookup);
                         w4p.hand = [...w4p.hand, ...dr.drawn];
                         npm[w4uid] = w4p;
-                        ns = { ...ns, drawPile: dr.drawPile, discardPile: dr.discardPile, drawPileCount: dr.drawPile.length, discardCount: dr.discardPile.length, handCounts: { ...ns.handCounts, [w4uid]: w4p.hand.length }, pendingDraw: { count: 0, source: null }, challengeWindow: null, lastMove: { actor: uid, action: "CHALLENGE_WILD4", detail: "Succeeded! Opponent drew 4" }, moveCount: state.moveCount + 1 };
-                        return { ok: true, nextPublicState: ns, nextPrivateState: npm, turnAdvance: false };
+                        ns = {
+                            ...ns,
+                            drawPile: dr.drawPile,
+                            discardPile: dr.discardPile,
+                            drawPileCount: dr.drawPile.length,
+                            discardCount: dr.discardPile.length,
+                            handCounts: { ...ns.handCounts, [w4uid]: w4p.hand.length },
+                            pendingDraw: { count: 0, source: null },
+                            challengeWindow: null,
+                            lastMove: {
+                                actor: uid,
+                                action: "CHALLENGE_WILD4",
+                                detail: "Succeeded! Opponent drew 4",
+                            },
+                            moveCount: state.moveCount + 1,
+                        };
+                        return {
+                            ok: true,
+                            nextPublicState: ns,
+                            nextPrivateState: npm,
+                            turnAdvance: false,
+                        };
                     }
                     else {
                         const cp = { ...npm[uid] };
@@ -3985,8 +4069,32 @@ registerAdapter({
                         cp.hand = [...cp.hand, ...dr.drawn];
                         npm[uid] = cp;
                         const ni = ceNextTurn(state.currentTurnIndex, state.direction, pc);
-                        ns = { ...ns, drawPile: dr.drawPile, discardPile: dr.discardPile, drawPileCount: dr.drawPile.length, discardCount: dr.discardPile.length, handCounts: { ...ns.handCounts, [uid]: cp.hand.length }, pendingDraw: { count: 0, source: null }, challengeWindow: null, currentTurnIndex: ni, currentTurnUid: state.turnOrder[ni], turnCounter: state.turnCounter + 1, lastMove: { actor: uid, action: "CHALLENGE_WILD4", detail: "Failed! Drew 6" }, moveCount: state.moveCount + 1 };
-                        return { ok: true, nextPublicState: ns, nextPrivateState: npm, turnAdvance: false, nextTurnPlayerId: state.turnOrder[ni] };
+                        ns = {
+                            ...ns,
+                            drawPile: dr.drawPile,
+                            discardPile: dr.discardPile,
+                            drawPileCount: dr.drawPile.length,
+                            discardCount: dr.discardPile.length,
+                            handCounts: { ...ns.handCounts, [uid]: cp.hand.length },
+                            pendingDraw: { count: 0, source: null },
+                            challengeWindow: null,
+                            currentTurnIndex: ni,
+                            currentTurnUid: state.turnOrder[ni],
+                            turnCounter: state.turnCounter + 1,
+                            lastMove: {
+                                actor: uid,
+                                action: "CHALLENGE_WILD4",
+                                detail: "Failed! Drew 6",
+                            },
+                            moveCount: state.moveCount + 1,
+                        };
+                        return {
+                            ok: true,
+                            nextPublicState: ns,
+                            nextPrivateState: npm,
+                            turnAdvance: false,
+                            nextTurnPlayerId: state.turnOrder[ni],
+                        };
                     }
                 }
                 else {
@@ -3995,8 +4103,32 @@ registerAdapter({
                     ap.hand = [...ap.hand, ...dr.drawn];
                     npm[uid] = ap;
                     const ni = ceNextTurn(state.currentTurnIndex, state.direction, pc);
-                    ns = { ...ns, drawPile: dr.drawPile, discardPile: dr.discardPile, drawPileCount: dr.drawPile.length, discardCount: dr.discardPile.length, handCounts: { ...ns.handCounts, [uid]: ap.hand.length }, pendingDraw: { count: 0, source: null }, challengeWindow: null, currentTurnIndex: ni, currentTurnUid: state.turnOrder[ni], turnCounter: state.turnCounter + 1, lastMove: { actor: uid, action: "CHALLENGE_WILD4", detail: `Accepted, drew ${state.pendingDraw.count}` }, moveCount: state.moveCount + 1 };
-                    return { ok: true, nextPublicState: ns, nextPrivateState: npm, turnAdvance: false, nextTurnPlayerId: state.turnOrder[ni] };
+                    ns = {
+                        ...ns,
+                        drawPile: dr.drawPile,
+                        discardPile: dr.discardPile,
+                        drawPileCount: dr.drawPile.length,
+                        discardCount: dr.discardPile.length,
+                        handCounts: { ...ns.handCounts, [uid]: ap.hand.length },
+                        pendingDraw: { count: 0, source: null },
+                        challengeWindow: null,
+                        currentTurnIndex: ni,
+                        currentTurnUid: state.turnOrder[ni],
+                        turnCounter: state.turnCounter + 1,
+                        lastMove: {
+                            actor: uid,
+                            action: "CHALLENGE_WILD4",
+                            detail: `Accepted, drew ${state.pendingDraw.count}`,
+                        },
+                        moveCount: state.moveCount + 1,
+                    };
+                    return {
+                        ok: true,
+                        nextPublicState: ns,
+                        nextPrivateState: npm,
+                        turnAdvance: false,
+                        nextTurnPlayerId: state.turnOrder[ni],
+                    };
                 }
             }
             case "CATCH_NO_CRAZY": {
@@ -4009,66 +4141,163 @@ registerAdapter({
                 const dr = ceDrawCards(2, [...state.drawPile], [...state.discardPile], state.cardLookup);
                 tp.hand = [...tp.hand, ...dr.drawn];
                 const npm2 = { ...privMap, [tid]: tp };
-                const ns2 = { ...state, drawPile: dr.drawPile, discardPile: dr.discardPile, drawPileCount: dr.drawPile.length, discardCount: dr.discardPile.length, handCounts: { ...state.handCounts, [tid]: tp.hand.length }, callEligibleUid: null, lastMove: { actor: uid, action: "CATCH_NO_CRAZY", detail: `Caught ${tid}` }, moveCount: state.moveCount + 1 };
-                return { ok: true, nextPublicState: ns2, nextPrivateState: npm2, turnAdvance: false };
+                const ns2 = {
+                    ...state,
+                    drawPile: dr.drawPile,
+                    discardPile: dr.discardPile,
+                    drawPileCount: dr.drawPile.length,
+                    discardCount: dr.discardPile.length,
+                    handCounts: { ...state.handCounts, [tid]: tp.hand.length },
+                    callEligibleUid: null,
+                    lastMove: {
+                        actor: uid,
+                        action: "CATCH_NO_CRAZY",
+                        detail: `Caught ${tid}`,
+                    },
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: ns2,
+                    nextPrivateState: npm2,
+                    turnAdvance: false,
+                };
             }
             case "CALL_CRAZY": {
                 if (state.callEligibleUid !== uid)
                     return { ok: false, error: "Not eligible." };
                 if (state.calledCrazy[uid])
                     return { ok: false, error: "Already called." };
-                const ns3 = { ...state, calledCrazy: { ...state.calledCrazy, [uid]: true }, lastMove: { actor: uid, action: "CALL_CRAZY", detail: "CRAZY!" }, moveCount: state.moveCount + 1 };
-                return { ok: true, nextPublicState: ns3, turnAdvance: false };
+                const ns3 = {
+                    ...state,
+                    calledCrazy: { ...state.calledCrazy, [uid]: true },
+                    lastMove: { actor: uid, action: "CALL_CRAZY", detail: "CRAZY!" },
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: ns3,
+                    turnAdvance: false,
+                };
             }
             case "DRAW_CARD": {
-                if (state.challengeWindow?.active && state.challengeWindow.targetUid === uid)
+                if (state.challengeWindow?.active &&
+                    state.challengeWindow.targetUid === uid)
                     return { ok: false, error: "Resolve challenge first." };
                 if (state.pendingDraw.count > 0) {
                     const dc = state.pendingDraw.count;
                     const dr = ceDrawCards(dc, [...state.drawPile], [...state.discardPile], state.cardLookup);
-                    const mp = { ...priv, hand: [...priv.hand, ...dr.drawn], hasDrawnThisTurn: true };
+                    const mp = {
+                        ...priv,
+                        hand: [...priv.hand, ...dr.drawn],
+                        hasDrawnThisTurn: true,
+                    };
                     const ni = ceNextTurn(state.currentTurnIndex, state.direction, pc);
-                    const ns = { ...state, drawPile: dr.drawPile, discardPile: dr.discardPile, drawPileCount: dr.drawPile.length, discardCount: dr.discardPile.length, handCounts: { ...state.handCounts, [uid]: mp.hand.length }, pendingDraw: { count: 0, source: null }, currentTurnIndex: ni, currentTurnUid: state.turnOrder[ni], turnCounter: state.turnCounter + 1, callEligibleUid: null, lastMove: { actor: uid, action: "DRAW_CARD", detail: `Drew ${dc} from stack` }, moveCount: state.moveCount + 1 };
-                    return { ok: true, nextPublicState: ns, nextPrivateState: { ...privMap, [uid]: mp }, turnAdvance: false, nextTurnPlayerId: state.turnOrder[ni] };
+                    const ns = {
+                        ...state,
+                        drawPile: dr.drawPile,
+                        discardPile: dr.discardPile,
+                        drawPileCount: dr.drawPile.length,
+                        discardCount: dr.discardPile.length,
+                        handCounts: { ...state.handCounts, [uid]: mp.hand.length },
+                        pendingDraw: { count: 0, source: null },
+                        currentTurnIndex: ni,
+                        currentTurnUid: state.turnOrder[ni],
+                        turnCounter: state.turnCounter + 1,
+                        callEligibleUid: null,
+                        lastMove: {
+                            actor: uid,
+                            action: "DRAW_CARD",
+                            detail: `Drew ${dc} from stack`,
+                        },
+                        moveCount: state.moveCount + 1,
+                    };
+                    return {
+                        ok: true,
+                        nextPublicState: ns,
+                        nextPrivateState: { ...privMap, [uid]: mp },
+                        turnAdvance: false,
+                        nextTurnPlayerId: state.turnOrder[ni],
+                    };
                 }
-                if (priv?.hasDrawnThisTurn && settings.drawMode === "draw_one_then_pass")
+                if (priv?.hasDrawnThisTurn &&
+                    settings.drawMode === "draw_one_then_pass")
                     return { ok: false, error: "Already drew." };
                 const dr = ceDrawCards(1, [...state.drawPile], [...state.discardPile], state.cardLookup);
                 if (dr.drawn.length === 0)
                     return { ok: false, error: "No cards." };
-                const mp = { ...priv, hand: [...(priv?.hand ?? []), ...dr.drawn], hasDrawnThisTurn: true };
-                const ns = { ...state, drawPile: dr.drawPile, discardPile: dr.discardPile, drawPileCount: dr.drawPile.length, discardCount: dr.discardPile.length, handCounts: { ...state.handCounts, [uid]: mp.hand.length }, lastMove: { actor: uid, action: "DRAW_CARD", detail: "Drew 1" }, moveCount: state.moveCount + 1 };
-                return { ok: true, nextPublicState: ns, nextPrivateState: { ...privMap, [uid]: mp }, turnAdvance: false };
+                const mp = {
+                    ...priv,
+                    hand: [...(priv?.hand ?? []), ...dr.drawn],
+                    hasDrawnThisTurn: true,
+                };
+                const ns = {
+                    ...state,
+                    drawPile: dr.drawPile,
+                    discardPile: dr.discardPile,
+                    drawPileCount: dr.drawPile.length,
+                    discardCount: dr.discardPile.length,
+                    handCounts: { ...state.handCounts, [uid]: mp.hand.length },
+                    lastMove: { actor: uid, action: "DRAW_CARD", detail: "Drew 1" },
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    nextPrivateState: { ...privMap, [uid]: mp },
+                    turnAdvance: false,
+                };
             }
             case "PASS": {
                 if (!priv?.hasDrawnThisTurn)
                     return { ok: false, error: "Must draw first." };
                 const ni = ceNextTurn(state.currentTurnIndex, state.direction, pc);
                 const rp = { ...priv, hasDrawnThisTurn: false };
-                const ns = { ...state, currentTurnIndex: ni, currentTurnUid: state.turnOrder[ni], turnCounter: state.turnCounter + 1, callEligibleUid: null, lastMove: { actor: uid, action: "PASS", detail: "Passed" }, moveCount: state.moveCount + 1 };
-                return { ok: true, nextPublicState: ns, nextPrivateState: { ...privMap, [uid]: rp }, turnAdvance: false, nextTurnPlayerId: state.turnOrder[ni] };
+                const ns = {
+                    ...state,
+                    currentTurnIndex: ni,
+                    currentTurnUid: state.turnOrder[ni],
+                    turnCounter: state.turnCounter + 1,
+                    callEligibleUid: null,
+                    lastMove: { actor: uid, action: "PASS", detail: "Passed" },
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    nextPrivateState: { ...privMap, [uid]: rp },
+                    turnAdvance: false,
+                    nextTurnPlayerId: state.turnOrder[ni],
+                };
             }
             case "PLAY_CARD": {
                 const { cardId, declaredColor, callCrazy, swapTargetUid } = payload;
                 if (!cardId)
                     return { ok: false, error: "No cardId." };
-                if (state.challengeWindow?.active && state.challengeWindow.targetUid === uid)
+                if (state.challengeWindow?.active &&
+                    state.challengeWindow.targetUid === uid)
                     return { ok: false, error: "Resolve challenge first." };
                 if (!priv)
                     return { ok: false, error: "No private state." };
-                const card = priv.hand.find(c => c.id === cardId);
+                const card = priv.hand.find((c) => c.id === cardId);
                 if (!card)
                     return { ok: false, error: "Card not in hand." };
-                if (state.pendingDraw.count > 0 && !ceCanStack(card, state.pendingDraw, settings))
+                if (state.pendingDraw.count > 0 &&
+                    !ceCanStack(card, state.pendingDraw, settings))
                     return { ok: false, error: "Must draw or stack." };
-                if (state.pendingDraw.count === 0 && !ceIsPlayable(card, state.currentColor, state.topDiscard))
+                if (state.pendingDraw.count === 0 &&
+                    !ceIsPlayable(card, state.currentColor, state.topDiscard))
                     return { ok: false, error: "Not playable." };
-                if ((card.type === "wild" || card.type === "wild_draw_four") && !declaredColor)
+                if ((card.type === "wild" || card.type === "wild_draw_four") &&
+                    !declaredColor)
                     return { ok: false, error: "Declare color." };
                 if (declaredColor && !CE_ALL_COLORS.includes(declaredColor))
                     return { ok: false, error: "Invalid color." };
-                const newHand = priv.hand.filter(c => c.id !== cardId);
-                let npm = { ...privMap, [uid]: { ...priv, hand: newHand, hasDrawnThisTurn: false } };
+                const newHand = priv.hand.filter((c) => c.id !== cardId);
+                let npm = {
+                    ...privMap,
+                    [uid]: { ...priv, hand: newHand, hasDrawnThisTurn: false },
+                };
                 const newDiscard = [...state.discardPile, cardId];
                 const nc = declaredColor ?? card.color ?? state.currentColor;
                 let dir = state.direction;
@@ -4084,13 +4313,24 @@ registerAdapter({
                 if (card.type === "skip")
                     skip = 2;
                 if (card.type === "draw_two") {
-                    pd = { count: (settings.stackDraw2 ? pd.count : 0) + 2, source: "D2" };
+                    pd = {
+                        count: (settings.stackDraw2 ? pd.count : 0) + 2,
+                        source: "D2",
+                    };
                 }
                 if (card.type === "wild_draw_four") {
                     const cp = ceCouldPlayOther(priv.hand, state.currentColor, state.topDiscard);
-                    pd = { count: (settings.stackDraw4 ? pd.count : 0) + 4, source: "D4" };
+                    pd = {
+                        count: (settings.stackDraw4 ? pd.count : 0) + 4,
+                        source: "D4",
+                    };
                     if (settings.wildDraw4Challenge)
-                        cw = { active: true, wild4PlayerUid: uid, targetUid: "", couldHavePlayedOtherColor: cp };
+                        cw = {
+                            active: true,
+                            wild4PlayerUid: uid,
+                            targetUid: "",
+                            couldHavePlayedOtherColor: cp,
+                        };
                 }
                 // Seven-Zero
                 if (settings.sevenZeroRule && card.type === "number") {
@@ -4106,7 +4346,10 @@ registerAdapter({
                             handsCopy[u] = [...(npm[u]?.hand ?? [])];
                         for (let i = 0; i < pc; i++) {
                             const fi = (((i - dir) % pc) + pc) % pc;
-                            npm[state.turnOrder[i]] = { ...npm[state.turnOrder[i]], hand: handsCopy[state.turnOrder[fi]] };
+                            npm[state.turnOrder[i]] = {
+                                ...npm[state.turnOrder[i]],
+                                hand: handsCopy[state.turnOrder[fi]],
+                            };
                         }
                     }
                 }
@@ -4127,10 +4370,41 @@ registerAdapter({
                     const nsc = { ...state.scores };
                     for (const u of state.turnOrder)
                         nsc[u] = (nsc[u] ?? 0) + (rs[u] ?? 0);
-                    const isMatchEnd = settings.roundModel === "match_points" && nsc[uid] >= settings.targetPoints;
+                    const isMatchEnd = settings.roundModel === "match_points" &&
+                        nsc[uid] >= settings.targetPoints;
                     const phase = isMatchEnd ? "match_over" : "round_over";
-                    const ns = { ...state, phase, topDiscard: card, currentColor: nc, direction: dir, discardPile: newDiscard, discardCount: newDiscard.length, handCounts: nhc, pendingDraw: { count: 0, source: null }, callEligibleUid: null, scores: nsc, lastMove: { actor: uid, action: "PLAY_CARD", detail: "Wins!" }, moveCount: state.moveCount + 1, resolved: { winnerUid: uid, reason: "hand_empty", roundScores: rs, matchWinner: isMatchEnd ? uid : undefined } };
-                    return { ok: true, nextPublicState: ns, nextPrivateState: npm, turnAdvance: false, terminal: { type: "win", winnerIds: [uid], reason: isMatchEnd ? "match_points_reached" : "hand_empty" } };
+                    const ns = {
+                        ...state,
+                        phase,
+                        topDiscard: card,
+                        currentColor: nc,
+                        direction: dir,
+                        discardPile: newDiscard,
+                        discardCount: newDiscard.length,
+                        handCounts: nhc,
+                        pendingDraw: { count: 0, source: null },
+                        callEligibleUid: null,
+                        scores: nsc,
+                        lastMove: { actor: uid, action: "PLAY_CARD", detail: "Wins!" },
+                        moveCount: state.moveCount + 1,
+                        resolved: {
+                            winnerUid: uid,
+                            reason: "hand_empty",
+                            roundScores: rs,
+                            matchWinner: isMatchEnd ? uid : undefined,
+                        },
+                    };
+                    return {
+                        ok: true,
+                        nextPublicState: ns,
+                        nextPrivateState: npm,
+                        turnAdvance: false,
+                        terminal: {
+                            type: "win",
+                            winnerIds: [uid],
+                            reason: isMatchEnd ? "match_points_reached" : "hand_empty",
+                        },
+                    };
                 }
                 let ceUid = state.callEligibleUid;
                 let cc = { ...state.calledCrazy };
@@ -4146,8 +4420,32 @@ registerAdapter({
                 const ni = ceNextTurn(state.currentTurnIndex, dir, pc, skip);
                 if (cw)
                     cw.targetUid = state.turnOrder[ni];
-                const ns = { ...state, topDiscard: card, currentColor: nc, direction: dir, drawPileCount: state.drawPile.length, discardPile: newDiscard, discardCount: newDiscard.length, handCounts: nhc, pendingDraw: pd, callEligibleUid: ceUid, calledCrazy: cc, challengeWindow: cw, currentTurnIndex: ni, currentTurnUid: state.turnOrder[ni], turnCounter: state.turnCounter + 1, lastMove: { actor: uid, action: "PLAY_CARD" }, moveCount: state.moveCount + 1 };
-                return { ok: true, nextPublicState: ns, nextPrivateState: npm, turnAdvance: false, nextTurnPlayerId: state.turnOrder[ni] };
+                const ns = {
+                    ...state,
+                    topDiscard: card,
+                    currentColor: nc,
+                    direction: dir,
+                    drawPileCount: state.drawPile.length,
+                    discardPile: newDiscard,
+                    discardCount: newDiscard.length,
+                    handCounts: nhc,
+                    pendingDraw: pd,
+                    callEligibleUid: ceUid,
+                    calledCrazy: cc,
+                    challengeWindow: cw,
+                    currentTurnIndex: ni,
+                    currentTurnUid: state.turnOrder[ni],
+                    turnCounter: state.turnCounter + 1,
+                    lastMove: { actor: uid, action: "PLAY_CARD" },
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    nextPrivateState: npm,
+                    turnAdvance: false,
+                    nextTurnPlayerId: state.turnOrder[ni],
+                };
             }
             default:
                 return { ok: false, error: `Unknown action: ${payload.action}` };
@@ -4158,17 +4456,1501 @@ registerAdapter({
         const wu = state.resolved?.winnerUid;
         if (wu) {
             const rs = state.resolved?.roundScores ?? {};
-            const sorted = players.map(p => ({ ...p, score: rs[p.uid] ?? 0 })).sort((a, b) => b.score - a.score);
-            return { winnerIds: [wu], finalScoreboard: sorted.map((p, i) => ({ uid: p.uid, score: p.score, placement: p.uid === wu ? 1 : i + 1, stats: { handCount: state.handCounts[p.uid] ?? 0, matchScore: state.scores[p.uid] ?? 0 } })) };
+            const sorted = players
+                .map((p) => ({ ...p, score: rs[p.uid] ?? 0 }))
+                .sort((a, b) => b.score - a.score);
+            return {
+                winnerIds: [wu],
+                finalScoreboard: sorted.map((p, i) => ({
+                    uid: p.uid,
+                    score: p.score,
+                    placement: p.uid === wu ? 1 : i + 1,
+                    stats: {
+                        handCount: state.handCounts[p.uid] ?? 0,
+                        matchScore: state.scores[p.uid] ?? 0,
+                    },
+                })),
+            };
         }
-        return { winnerIds: [], finalScoreboard: players.map((p, i) => ({ uid: p.uid, score: 0, placement: i + 1, stats: {} })) };
+        return {
+            winnerIds: [],
+            finalScoreboard: players.map((p, i) => ({
+                uid: p.uid,
+                score: 0,
+                placement: i + 1,
+                stats: {},
+            })),
+        };
     },
     extractPerformanceMetrics(publicState) {
         const s = publicState;
-        return { totalMoves: s.moveCount, turnCounter: s.turnCounter, roundNumber: s.roundNumber, scores: s.scores, phase: s.phase };
+        return {
+            totalMoves: s.moveCount,
+            turnCounter: s.turnCounter,
+            roundNumber: s.roundNumber,
+            scores: s.scores,
+            phase: s.phase,
+        };
     },
     validateSettings(patch) {
         return ceMergeSettings(patch);
+    },
+});
+// =============================================================================
+// 🏌️ MINIGOLF DUELS
+// =============================================================================
+// Server adapter operates on plain Record<string, unknown> to avoid type
+// duplication friction. The canonical types live on the client; here we only
+// need structural correctness for Firestore storage.
+const courses_1 = require("./minigolf/courses");
+const quantize_1 = require("./minigolf/quantize");
+const sim_1 = require("./minigolf/sim");
+const MG_DEFAULT_SETTINGS = {
+    coursePackId: "pigeon_classic",
+    holeCount: 9,
+    maxStrokesPerHole: 10,
+    allowPickups: true,
+    assistGhostLine: false,
+};
+function mgMergeSettings(patch) {
+    const s = { ...MG_DEFAULT_SETTINGS };
+    if (patch.coursePackId === "pigeon_classic")
+        s.coursePackId = "pigeon_classic";
+    if (typeof patch.holeCount === "number" &&
+        [3, 5, 9, 18].includes(patch.holeCount))
+        s.holeCount = patch.holeCount;
+    if (typeof patch.maxStrokesPerHole === "number")
+        s.maxStrokesPerHole = Math.max(5, Math.min(15, Math.round(patch.maxStrokesPerHole)));
+    if (typeof patch.allowPickups === "boolean")
+        s.allowPickups = patch.allowPickups;
+    if (typeof patch.assistGhostLine === "boolean")
+        s.assistGhostLine = patch.assistGhostLine;
+    return s;
+}
+function mgComputeOutcome(state, players) {
+    const entries = players.map((p) => ({
+        uid: p.uid,
+        slotIndex: p.slotIndex,
+        totalStrokes: (state.strokesTotalByUid?.[p.uid] ?? 0),
+    }));
+    entries.sort((a, b) => a.totalStrokes - b.totalStrokes);
+    let placement = 1;
+    const scoreboard = [];
+    for (let i = 0; i < entries.length; i++) {
+        if (i > 0 && entries[i].totalStrokes !== entries[i - 1].totalStrokes) {
+            placement = i + 1;
+        }
+        scoreboard.push({
+            uid: entries[i].uid,
+            score: -entries[i].totalStrokes,
+            placement,
+            stats: {
+                totalStrokes: entries[i].totalStrokes,
+                holesPlayed: (state.holeIndex ?? 0) + 1,
+            },
+        });
+    }
+    const winnerIds = scoreboard
+        .filter((e) => e.placement === 1)
+        .map((e) => e.uid);
+    return { winnerIds, finalScoreboard: scoreboard };
+}
+registerAdapter({
+    gameId: "minigolf_duels",
+    runtimeType: "turnBased",
+    maxPlayers: 3,
+    minPlayers: 2,
+    defaultSettings: MG_DEFAULT_SETTINGS,
+    createInitialPublicState(players, settingsRaw) {
+        const settings = mgMergeSettings(settingsRaw);
+        const pack = (0, courses_1.getCoursePack)(settings.coursePackId) ?? courses_1.PIGEON_CLASSIC;
+        const holeCount = Math.min(settings.holeCount, pack.holes.length);
+        const firstHole = pack.holes[0];
+        const uids = players.map((p) => p.uid);
+        const ballPosByUid = {};
+        const strokesThisHoleByUid = {};
+        const strokesTotalByUid = {};
+        const ballSunkByUid = {};
+        const lastSafePosByUid = {};
+        const penaltiesByUid = {};
+        const holeScoresByUid = {};
+        const holesInOneByUid = {};
+        const birdiesByUid = {};
+        const lastShotMeta = {};
+        for (const uid of uids) {
+            ballPosByUid[uid] = { x: firstHole.tee.x, y: firstHole.tee.y };
+            lastSafePosByUid[uid] = { x: firstHole.tee.x, y: firstHole.tee.y };
+            strokesThisHoleByUid[uid] = 0;
+            strokesTotalByUid[uid] = 0;
+            ballSunkByUid[uid] = false;
+            penaltiesByUid[uid] = 0;
+            holeScoresByUid[uid] = {};
+            holesInOneByUid[uid] = 0;
+            birdiesByUid[uid] = 0;
+            lastShotMeta[uid] = {
+                wallContact: false,
+                bumperContact: false,
+                sandContact: false,
+                sunk: false,
+            };
+        }
+        return {
+            coursePackId: settings.coursePackId,
+            holeCount,
+            holeIndex: 0,
+            holeId: firstHole.id,
+            holePar: firstHole.par,
+            phase: "aim",
+            ballPosByUid,
+            strokesThisHoleByUid,
+            strokesTotalByUid,
+            ballSunkByUid,
+            lastSafePosByUid,
+            penaltiesByUid,
+            holeScoresByUid,
+            holesInOneByUid,
+            birdiesByUid,
+            lastShotMeta,
+            events: [],
+        };
+    },
+    validateMove(publicState, _privateState, movePayload, ctx) {
+        const state = JSON.parse(JSON.stringify(publicState));
+        const move = movePayload;
+        const uid = ctx.uid;
+        const maxStrokes = ctx.settings.maxStrokesPerHole ||
+            state.maxStrokesPerHole ||
+            10;
+        const pack = (0, courses_1.getCoursePack)(state.coursePackId) ?? courses_1.PIGEON_CLASSIC;
+        const currentHole = pack.holes[state.holeIndex];
+        if (!currentHole)
+            return { ok: false, error: "Invalid hole index" };
+        if (state.phase === "finished")
+            return { ok: false, error: "Game already finished" };
+        if (move.type === "shot") {
+            // Phase 1: start rolling — no teleport, no turn advance
+            if (state.phase === "rolling")
+                return { ok: false, error: "A shot is already in progress" };
+            if (state.phase !== "aim")
+                return { ok: false, error: "Not in aim phase" };
+            if (state.ballSunkByUid[uid])
+                return { ok: false, error: "Already sunk this hole" };
+            if (!(0, quantize_1.isValidAngleQ)(move.angleQ))
+                return { ok: false, error: "Invalid angle" };
+            if (!(0, quantize_1.isValidPowerQ)(move.powerQ))
+                return { ok: false, error: "Invalid power" };
+            const ballPos = state.ballPosByUid[uid];
+            if (!ballPos)
+                return { ok: false, error: "No ball position" };
+            const simResult = (0, sim_1.simulateShot)(currentHole, ballPos, move.angleQ, move.powerQ);
+            state.strokesThisHoleByUid[uid] =
+                (state.strokesThisHoleByUid[uid] ?? 0) + 1;
+            state.strokesTotalByUid[uid] = (state.strokesTotalByUid[uid] ?? 0) + 1;
+            // Update last shot meta
+            state.lastShotMeta[uid] = {
+                wallContact: simResult.wallContact,
+                bumperContact: simResult.bumperContact,
+                sandContact: simResult.sandContact,
+                sunk: simResult.sunk,
+            };
+            // Push events
+            for (const evt of simResult.events) {
+                if ((state.events?.length ?? 0) < 20) {
+                    state.events = state.events || [];
+                    state.events.push({ ...evt, uid });
+                }
+            }
+            // Calculate final position for rolling payload
+            let finalPosQ;
+            if (simResult.penalty) {
+                finalPosQ = { ...state.lastSafePosByUid[uid] };
+            }
+            else if (simResult.sunk) {
+                finalPosQ = { x: currentHole.cup.x, y: currentHole.cup.y };
+            }
+            else {
+                finalPosQ = (0, quantize_1.quantizePos)(simResult.finalPos.x, simResult.finalPos.y);
+            }
+            const rollDurationMs = Math.round(simResult.totalSteps * (1000 / 60));
+            // Set rolling state — ball stays at current position
+            state.phase = "rolling";
+            state.rolling = {
+                shotId: `${uid}_${Date.now()}_${move.angleQ}_${move.powerQ}`,
+                uid,
+                holeId: currentHole.id,
+                startPos: { ...ballPos },
+                angleQ: move.angleQ,
+                powerQ: move.powerQ,
+                startedAtMs: Date.now(),
+                rollDurationMs,
+                finalPosQ,
+                sunk: simResult.sunk,
+                penalty: simResult.penalty,
+                penaltyType: simResult.penaltyType,
+                totalSteps: simResult.totalSteps,
+            };
+            // DO NOT advance turn — roller still owns the turn
+            return {
+                ok: true,
+                nextPublicState: state,
+                turnAdvance: false,
+            };
+        }
+        if (move.type === "finish_roll") {
+            // Phase 2: commit result + advance turn (idempotent)
+            if (state.phase !== "rolling" || !state.rolling) {
+                // Already committed — idempotent success
+                return {
+                    ok: true,
+                    nextPublicState: state,
+                    turnAdvance: false,
+                };
+            }
+            const r = state.rolling;
+            if (r.shotId !== move.shotId) {
+                return { ok: false, error: "Shot ID mismatch" };
+            }
+            const rollingUid = r.uid;
+            // Apply result
+            if (r.sunk) {
+                state.ballSunkByUid[rollingUid] = true;
+                state.ballPosByUid[rollingUid] = r.finalPosQ;
+                state.holeScoresByUid[rollingUid] =
+                    state.holeScoresByUid[rollingUid] || {};
+                state.holeScoresByUid[rollingUid][currentHole.id] =
+                    state.strokesThisHoleByUid[rollingUid];
+                if (state.strokesThisHoleByUid[rollingUid] === 1) {
+                    state.holesInOneByUid[rollingUid] =
+                        (state.holesInOneByUid[rollingUid] || 0) + 1;
+                }
+                if (state.strokesThisHoleByUid[rollingUid] < currentHole.par) {
+                    state.birdiesByUid[rollingUid] =
+                        (state.birdiesByUid[rollingUid] || 0) + 1;
+                }
+            }
+            else if (r.penalty) {
+                state.penaltiesByUid[rollingUid] =
+                    (state.penaltiesByUid[rollingUid] || 0) + 1;
+                state.strokesThisHoleByUid[rollingUid] += 1; // penalty stroke
+                state.strokesTotalByUid[rollingUid] += 1;
+                state.ballPosByUid[rollingUid] = {
+                    ...state.lastSafePosByUid[rollingUid],
+                };
+            }
+            else {
+                // Normal stop — update ball position AND lastSafe to final position
+                state.ballPosByUid[rollingUid] = r.finalPosQ;
+                state.lastSafePosByUid[rollingUid] = { ...r.finalPosQ };
+            }
+            // Check max strokes
+            if (!state.ballSunkByUid[rollingUid] &&
+                state.strokesThisHoleByUid[rollingUid] >= maxStrokes) {
+                state.ballSunkByUid[rollingUid] = true;
+                state.holeScoresByUid[rollingUid] =
+                    state.holeScoresByUid[rollingUid] || {};
+                state.holeScoresByUid[rollingUid][currentHole.id] = maxStrokes;
+            }
+            // Clear rolling
+            state.rolling = null;
+            state.phase = "aim";
+            // Check if all players done
+            const allUids = ctx.turnOrder;
+            const allSunk = allUids.every((u) => state.ballSunkByUid[u]);
+            if (allSunk) {
+                if (state.holeIndex + 1 >= state.holeCount) {
+                    state.phase = "finished";
+                    const outcome = mgComputeOutcome(state, allUids.map((u, i) => ({ uid: u, slotIndex: i })));
+                    return {
+                        ok: true,
+                        nextPublicState: state,
+                        turnAdvance: false,
+                        terminal: {
+                            type: "win",
+                            winnerIds: outcome.winnerIds,
+                            reason: "All holes complete",
+                        },
+                    };
+                }
+                else {
+                    state.holeIndex += 1;
+                    state.phase = "aim";
+                    const nextHole = pack.holes[state.holeIndex];
+                    state.holeId = nextHole.id;
+                    state.holePar = nextHole.par;
+                    for (const u of allUids) {
+                        state.ballPosByUid[u] = { x: nextHole.tee.x, y: nextHole.tee.y };
+                        state.lastSafePosByUid[u] = {
+                            x: nextHole.tee.x,
+                            y: nextHole.tee.y,
+                        };
+                        state.strokesThisHoleByUid[u] = 0;
+                        state.ballSunkByUid[u] = false;
+                    }
+                }
+            }
+            return {
+                ok: true,
+                nextPublicState: state,
+                turnAdvance: true,
+                nextTurnPlayerId: mgNextTurn(rollingUid, ctx.turnOrder, state.ballSunkByUid),
+            };
+        }
+        if (move.type === "pickup") {
+            if (!state.ballSunkByUid[uid]) {
+                const prevStrokes = state.strokesThisHoleByUid[uid] || 0;
+                state.strokesTotalByUid[uid] =
+                    (state.strokesTotalByUid[uid] ?? 0) + (maxStrokes - prevStrokes);
+                state.strokesThisHoleByUid[uid] = maxStrokes;
+                state.ballSunkByUid[uid] = true;
+                state.holeScoresByUid[uid] = state.holeScoresByUid[uid] || {};
+                state.holeScoresByUid[uid][currentHole.id] = maxStrokes;
+            }
+            // Check if all players done
+            const allUids = ctx.turnOrder;
+            const allSunk = allUids.every((u) => state.ballSunkByUid[u]);
+            if (allSunk) {
+                if (state.holeIndex + 1 >= state.holeCount) {
+                    state.phase = "finished";
+                    const outcome = mgComputeOutcome(state, allUids.map((u, i) => ({ uid: u, slotIndex: i })));
+                    return {
+                        ok: true,
+                        nextPublicState: state,
+                        turnAdvance: false,
+                        terminal: {
+                            type: "win",
+                            winnerIds: outcome.winnerIds,
+                            reason: "All holes complete",
+                        },
+                    };
+                }
+                else {
+                    state.holeIndex += 1;
+                    state.phase = "aim";
+                    const nextHole = pack.holes[state.holeIndex];
+                    state.holeId = nextHole.id;
+                    state.holePar = nextHole.par;
+                    for (const u of allUids) {
+                        state.ballPosByUid[u] = { x: nextHole.tee.x, y: nextHole.tee.y };
+                        state.lastSafePosByUid[u] = {
+                            x: nextHole.tee.x,
+                            y: nextHole.tee.y,
+                        };
+                        state.strokesThisHoleByUid[u] = 0;
+                        state.ballSunkByUid[u] = false;
+                    }
+                }
+            }
+            return {
+                ok: true,
+                nextPublicState: state,
+                turnAdvance: true,
+                nextTurnPlayerId: mgNextTurn(uid, ctx.turnOrder, state.ballSunkByUid),
+            };
+        }
+        return { ok: false, error: `Unknown move type: ${move?.type}` };
+    },
+    computeOutcome(publicState, players) {
+        return mgComputeOutcome(publicState, players);
+    },
+    extractPerformanceMetrics(publicState) {
+        const s = publicState;
+        return {
+            holeIndex: s.holeIndex,
+            holeCount: s.holeCount,
+            phase: s.phase,
+            totalStrokes: s.strokesTotalByUid,
+            coursePackId: s.coursePackId,
+        };
+    },
+    validateSettings(patch) {
+        return mgMergeSettings(patch);
+    },
+});
+function mgNextTurn(currentUid, turnOrder, ballSunkByUid) {
+    const idx = turnOrder.indexOf(currentUid);
+    for (let i = 1; i <= turnOrder.length; i++) {
+        const nextIdx = (idx + i) % turnOrder.length;
+        if (!ballSunkByUid[turnOrder[nextIdx]])
+            return turnOrder[nextIdx];
+    }
+    return turnOrder[(idx + 1) % turnOrder.length];
+}
+const MS_PRESETS = {
+    easy: { difficulty: "easy", cols: 9, rows: 9, mineCount: 10 },
+    intermediate: {
+        difficulty: "intermediate",
+        cols: 16,
+        rows: 16,
+        mineCount: 40,
+    },
+    expert: { difficulty: "expert", cols: 30, rows: 16, mineCount: 99 },
+};
+// ── Minesweeper Seeded PRNG (Mulberry32) ─────────────────────────────
+function msCreateRNG(seed) {
+    let s = seed | 0;
+    return () => {
+        s = (s + 0x6d2b79f5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+function msShuffle(arr, rng) {
+    const result = [...arr];
+    for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+}
+// ── Minesweeper Board Helpers ────────────────────────────────────────
+function msToIndex(row, col, cols) {
+    return row * cols + col;
+}
+function msFromIndex(idx, cols) {
+    return [Math.floor(idx / cols), idx % cols];
+}
+function msGetNeighbors(idx, rows, cols) {
+    const [row, col] = msFromIndex(idx, cols);
+    const neighbors = [];
+    for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0)
+                continue;
+            const nr = row + dr;
+            const nc = col + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                neighbors.push(msToIndex(nr, nc, cols));
+            }
+        }
+    }
+    return neighbors;
+}
+// ── Minesweeper Board Generation ─────────────────────────────────────
+function msGenerateBoard(rows, cols, mineCount, seed, firstClickIdx) {
+    const totalCells = rows * cols;
+    const board = new Array(totalCells).fill(0);
+    const excluded = new Set([firstClickIdx]);
+    for (const n of msGetNeighbors(firstClickIdx, rows, cols)) {
+        excluded.add(n);
+    }
+    const candidates = [];
+    for (let i = 0; i < totalCells; i++) {
+        if (!excluded.has(i))
+            candidates.push(i);
+    }
+    const rng = msCreateRNG(seed);
+    const shuffled = msShuffle(candidates, rng);
+    const minesToPlace = Math.min(mineCount, shuffled.length);
+    for (let i = 0; i < minesToPlace; i++) {
+        board[shuffled[i]] = -1;
+    }
+    for (let i = 0; i < totalCells; i++) {
+        if (board[i] === -1)
+            continue;
+        let count = 0;
+        for (const n of msGetNeighbors(i, rows, cols)) {
+            if (board[n] === -1)
+                count++;
+        }
+        board[i] = count;
+    }
+    return board;
+}
+// ── Minesweeper State Helpers ────────────────────────────────────────
+function msCloneState(state) {
+    return {
+        ...state,
+        board: [...state.board],
+        cellStates: [...state.cellStates],
+    };
+}
+function msCreateInitialState(difficulty = "easy", seed) {
+    const preset = MS_PRESETS[difficulty];
+    const totalCells = preset.rows * preset.cols;
+    const gameSeed = seed ?? Math.floor(Math.random() * 2147483647);
+    return {
+        difficulty: preset.difficulty,
+        cols: preset.cols,
+        rows: preset.rows,
+        mineCount: preset.mineCount,
+        seed: gameSeed,
+        boardGenerated: false,
+        board: new Array(totalCells).fill(0),
+        cellStates: new Array(totalCells).fill("hidden"),
+        status: "idle",
+        revealedCount: 0,
+        totalSafeCells: totalCells - preset.mineCount,
+        flagCount: 0,
+        explodedCell: -1,
+        startedAtMs: 0,
+        elapsedMs: 0,
+        moveCount: 0,
+        chordCount: 0,
+        floodCount: 0,
+    };
+}
+function msFloodFill(state, startIdx) {
+    const queue = [startIdx];
+    const visited = new Set();
+    let revealed = 0;
+    while (queue.length > 0) {
+        const idx = queue.shift();
+        if (visited.has(idx))
+            continue;
+        visited.add(idx);
+        if (state.cellStates[idx] !== "hidden")
+            continue;
+        state.cellStates[idx] = "revealed";
+        state.revealedCount++;
+        revealed++;
+        if (state.board[idx] === 0) {
+            for (const n of msGetNeighbors(idx, state.rows, state.cols)) {
+                if (!visited.has(n) && state.cellStates[n] === "hidden")
+                    queue.push(n);
+            }
+        }
+    }
+    return { state, revealed };
+}
+function msRevealCell(state, cellIdx, nowMs) {
+    if (cellIdx < 0 || cellIdx >= state.rows * state.cols)
+        return { state, hitMine: false, cellsRevealed: 0 };
+    if (state.status === "won" || state.status === "lost")
+        return { state, hitMine: false, cellsRevealed: 0 };
+    if (state.cellStates[cellIdx] !== "hidden")
+        return { state, hitMine: false, cellsRevealed: 0 };
+    let ns = msCloneState(state);
+    if (!ns.boardGenerated) {
+        ns.board = msGenerateBoard(ns.rows, ns.cols, ns.mineCount, ns.seed, cellIdx);
+        ns.boardGenerated = true;
+        ns.status = "active";
+        ns.startedAtMs = nowMs;
+    }
+    ns.moveCount++;
+    if (ns.board[cellIdx] === -1) {
+        ns.cellStates[cellIdx] = "revealed";
+        ns.explodedCell = cellIdx;
+        ns.status = "lost";
+        ns.elapsedMs = nowMs - ns.startedAtMs;
+        for (let i = 0; i < ns.board.length; i++) {
+            if (ns.board[i] === -1 && ns.cellStates[i] === "hidden")
+                ns.cellStates[i] = "revealed";
+        }
+        return { state: ns, hitMine: true, cellsRevealed: 1 };
+    }
+    let cellsRevealed = 0;
+    if (ns.board[cellIdx] === 0) {
+        const fr = msFloodFill(ns, cellIdx);
+        ns = fr.state;
+        cellsRevealed = fr.revealed;
+        ns.floodCount += cellsRevealed;
+    }
+    else {
+        ns.cellStates[cellIdx] = "revealed";
+        ns.revealedCount++;
+        cellsRevealed = 1;
+    }
+    if (ns.revealedCount >= ns.totalSafeCells) {
+        ns.status = "won";
+        ns.elapsedMs = nowMs - ns.startedAtMs;
+        for (let i = 0; i < ns.board.length; i++) {
+            if (ns.board[i] === -1 && ns.cellStates[i] !== "flagged") {
+                ns.cellStates[i] = "flagged";
+                ns.flagCount++;
+            }
+        }
+    }
+    return { state: ns, hitMine: false, cellsRevealed };
+}
+// ── Minesweeper Flag Logic ───────────────────────────────────────────
+function msToggleFlag(state, cellIdx) {
+    if (cellIdx < 0 || cellIdx >= state.rows * state.cols)
+        return state;
+    if (state.status === "won" || state.status === "lost")
+        return state;
+    const cs = state.cellStates[cellIdx];
+    if (cs === "revealed")
+        return state;
+    const ns = msCloneState(state);
+    ns.moveCount++;
+    if (cs === "flagged") {
+        ns.cellStates[cellIdx] = "hidden";
+        ns.flagCount--;
+    }
+    else {
+        ns.cellStates[cellIdx] = "flagged";
+        ns.flagCount++;
+    }
+    return ns;
+}
+function msChordReveal(state, cellIdx, nowMs) {
+    if (cellIdx < 0 || cellIdx >= state.rows * state.cols)
+        return { state, hitMine: false, cellsRevealed: 0 };
+    if (state.status !== "active")
+        return { state, hitMine: false, cellsRevealed: 0 };
+    if (state.cellStates[cellIdx] !== "revealed")
+        return { state, hitMine: false, cellsRevealed: 0 };
+    const cellValue = state.board[cellIdx];
+    if (cellValue <= 0)
+        return { state, hitMine: false, cellsRevealed: 0 };
+    const neighbors = msGetNeighbors(cellIdx, state.rows, state.cols);
+    let adjFlags = 0;
+    for (const n of neighbors) {
+        if (state.cellStates[n] === "flagged")
+            adjFlags++;
+    }
+    if (adjFlags !== cellValue)
+        return { state, hitMine: false, cellsRevealed: 0 };
+    let ns = msCloneState(state);
+    ns.moveCount++;
+    ns.chordCount++;
+    let totalRevealed = 0;
+    for (const n of neighbors) {
+        if (ns.cellStates[n] !== "hidden")
+            continue;
+        if (ns.board[n] === -1) {
+            ns.cellStates[n] = "revealed";
+            ns.explodedCell = n;
+            ns.status = "lost";
+            ns.elapsedMs = nowMs - ns.startedAtMs;
+            for (let i = 0; i < ns.board.length; i++) {
+                if (ns.board[i] === -1 && ns.cellStates[i] === "hidden")
+                    ns.cellStates[i] = "revealed";
+            }
+            return { state: ns, hitMine: true, cellsRevealed: totalRevealed + 1 };
+        }
+        if (ns.board[n] === 0) {
+            const fr = msFloodFill(ns, n);
+            ns = fr.state;
+            totalRevealed += fr.revealed;
+            ns.floodCount += fr.revealed;
+        }
+        else {
+            ns.cellStates[n] = "revealed";
+            ns.revealedCount++;
+            totalRevealed++;
+        }
+    }
+    if (ns.revealedCount >= ns.totalSafeCells) {
+        ns.status = "won";
+        ns.elapsedMs = nowMs - ns.startedAtMs;
+        for (let i = 0; i < ns.board.length; i++) {
+            if (ns.board[i] === -1 && ns.cellStates[i] !== "flagged") {
+                ns.cellStates[i] = "flagged";
+                ns.flagCount++;
+            }
+        }
+    }
+    return { state: ns, hitMine: false, cellsRevealed: totalRevealed };
+}
+// ── Minesweeper PB Encoding ─────────────────────────────────────────
+function msEncodeBestScore(difficulty, elapsedMs) {
+    const tierBase = {
+        easy: 1_000_000,
+        intermediate: 2_000_000,
+        expert: 3_000_000,
+    };
+    const clamped = Math.min(Math.max(0, Math.floor(elapsedMs)), 999_999);
+    return tierBase[difficulty] + (999_999 - clamped);
+}
+function msFormatTimeShort(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+// ── Register Minesweeper Adapter ─────────────────────────────────────
+const MS_VALID_ACTIONS = new Set(["reveal", "flag", "chord", "restart"]);
+const MS_VALID_DIFFICULTIES = new Set(["easy", "intermediate", "expert"]);
+registerAdapter({
+    gameId: "minesweeper",
+    runtimeType: "solo",
+    maxPlayers: 1,
+    minPlayers: 1,
+    defaultSettings: { difficulty: "easy" },
+    createInitialPublicState(_players, settings) {
+        const difficulty = settings.difficulty || "easy";
+        return msCreateInitialState(difficulty);
+    },
+    validateMove(publicState, _priv, movePayload, ctx) {
+        const state = publicState;
+        const move = movePayload;
+        if (!move.action || !MS_VALID_ACTIONS.has(move.action))
+            return { ok: false, error: "Invalid action." };
+        const nowMs = Date.now();
+        // Restart
+        if (move.action === "restart") {
+            const diff = move.difficulty && MS_VALID_DIFFICULTIES.has(move.difficulty)
+                ? move.difficulty
+                : state.difficulty;
+            const ns = msCreateInitialState(diff);
+            return {
+                ok: true,
+                nextPublicState: ns,
+                scoreDelta: [],
+                turnAdvance: false,
+            };
+        }
+        // Validate cell
+        if (move.cell === undefined || move.cell === null)
+            return { ok: false, error: "Cell index required." };
+        const cellIdx = move.cell;
+        if (cellIdx < 0 || cellIdx >= state.rows * state.cols)
+            return { ok: false, error: "Cell index out of bounds." };
+        // Flag
+        if (move.action === "flag") {
+            const ns = msToggleFlag(state, cellIdx);
+            if (ns === state)
+                return { ok: false, error: "Cannot flag this cell." };
+            return {
+                ok: true,
+                nextPublicState: ns,
+                scoreDelta: [],
+                turnAdvance: false,
+            };
+        }
+        // Reveal
+        if (move.action === "reveal") {
+            if (state.status === "won" || state.status === "lost")
+                return { ok: false, error: "Game is already over." };
+            const result = msRevealCell(state, cellIdx, nowMs);
+            if (result.cellsRevealed === 0 && !result.hitMine)
+                return { ok: false, error: "Cannot reveal this cell." };
+            const ns = result.state;
+            const isTerminal = ns.status === "won" || ns.status === "lost";
+            if (isTerminal) {
+                const isWin = ns.status === "won";
+                const score = isWin
+                    ? msEncodeBestScore(ns.difficulty, ns.elapsedMs)
+                    : 0;
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    scoreDelta: [{ uid: ctx.uid, delta: score }],
+                    turnAdvance: false,
+                    terminal: {
+                        type: isWin ? "win" : "timeout",
+                        winnerIds: isWin ? [ctx.uid] : [],
+                        reason: isWin
+                            ? `Cleared ${ns.difficulty} in ${msFormatTimeShort(ns.elapsedMs)}!`
+                            : "Hit a mine!",
+                    },
+                };
+            }
+            return {
+                ok: true,
+                nextPublicState: ns,
+                scoreDelta: [],
+                turnAdvance: false,
+            };
+        }
+        // Chord
+        if (move.action === "chord") {
+            if (state.status !== "active")
+                return { ok: false, error: "Game is not active." };
+            const result = msChordReveal(state, cellIdx, nowMs);
+            if (result.cellsRevealed === 0 && !result.hitMine)
+                return { ok: false, error: "Cannot chord this cell." };
+            const ns = result.state;
+            const isTerminal = ns.status === "won" || ns.status === "lost";
+            if (isTerminal) {
+                const isWin = ns.status === "won";
+                const score = isWin
+                    ? msEncodeBestScore(ns.difficulty, ns.elapsedMs)
+                    : 0;
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    scoreDelta: [{ uid: ctx.uid, delta: score }],
+                    turnAdvance: false,
+                    terminal: {
+                        type: isWin ? "win" : "timeout",
+                        winnerIds: isWin ? [ctx.uid] : [],
+                        reason: isWin
+                            ? `Cleared ${ns.difficulty} in ${msFormatTimeShort(ns.elapsedMs)}!`
+                            : "Hit a mine!",
+                    },
+                };
+            }
+            return {
+                ok: true,
+                nextPublicState: ns,
+                scoreDelta: [],
+                turnAdvance: false,
+            };
+        }
+        return { ok: false, error: "Unknown action." };
+    },
+    computeOutcome(publicState, players) {
+        const state = publicState;
+        const uid = players[0]?.uid ?? "";
+        const isWin = state.status === "won";
+        const score = isWin
+            ? msEncodeBestScore(state.difficulty, state.elapsedMs)
+            : 0;
+        return {
+            winnerIds: isWin ? [uid] : [],
+            finalScoreboard: [
+                {
+                    uid,
+                    score,
+                    placement: 1,
+                    stats: {
+                        difficulty: state.difficulty,
+                        elapsedMs: state.elapsedMs,
+                        revealedCount: state.revealedCount,
+                        totalSafeCells: state.totalSafeCells,
+                        flagCount: state.flagCount,
+                        moveCount: state.moveCount,
+                        chordCount: state.chordCount,
+                        floodCount: state.floodCount,
+                        won: isWin,
+                    },
+                },
+            ],
+        };
+    },
+    extractPerformanceMetrics(publicState) {
+        const state = publicState;
+        return {
+            difficulty: state.difficulty,
+            cols: state.cols,
+            rows: state.rows,
+            mineCount: state.mineCount,
+            elapsedMs: state.elapsedMs,
+            revealedCount: state.revealedCount,
+            totalSafeCells: state.totalSafeCells,
+            flagCount: state.flagCount,
+            moveCount: state.moveCount,
+            chordCount: state.chordCount,
+            floodCount: state.floodCount,
+            won: state.status === "won",
+            lost: state.status === "lost",
+        };
+    },
+});
+const SOL_SUITS = ["S", "H", "D", "C"];
+const SOL_RANKS = [
+    "A",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "J",
+    "Q",
+    "K",
+];
+const SOL_RANK_VALUES = {
+    A: 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "10": 10,
+    J: 11,
+    Q: 12,
+    K: 13,
+};
+const SOL_SUIT_NAME = {
+    S: "spades",
+    H: "hearts",
+    D: "diamonds",
+    C: "clubs",
+};
+function solSuit(c) {
+    return c.slice(-1);
+}
+function solSuitName(c) {
+    return SOL_SUIT_NAME[solSuit(c)];
+}
+function solRank(c) {
+    return c.slice(0, -1);
+}
+function solRankVal(c) {
+    return SOL_RANK_VALUES[solRank(c)] ?? 0;
+}
+function solColor(c) {
+    const s = solSuit(c);
+    return s === "H" || s === "D" ? "red" : "black";
+}
+function solCanPlaceOnTableau(card, target) {
+    if (!target)
+        return solRank(card) === "K";
+    return (solColor(card) !== solColor(target) &&
+        solRankVal(target) === solRankVal(card) + 1);
+}
+function solCanPlaceOnFoundation(card, fTop) {
+    if (!fTop)
+        return solRank(card) === "A";
+    return (solSuit(card) === solSuit(fTop) && solRankVal(card) === solRankVal(fTop) + 1);
+}
+function solIsValidRun(cards) {
+    for (let i = 0; i < cards.length - 1; i++) {
+        if (solColor(cards[i]) === solColor(cards[i + 1]) ||
+            solRankVal(cards[i]) !== solRankVal(cards[i + 1]) + 1)
+            return false;
+    }
+    return true;
+}
+const SOL_MAX_UNDO = 30;
+// ── Deck / shuffle ───────────────────────────────────────────────────
+function solBuildDeck() {
+    const d = [];
+    for (const s of SOL_SUITS)
+        for (const r of SOL_RANKS)
+            d.push(`${r}${s}`);
+    return d;
+}
+function solShuffle(deck, seed) {
+    const a = [...deck];
+    let s = seed;
+    for (let i = a.length - 1; i > 0; i--) {
+        s = (s * 1664525 + 1013904223) & 0xffffffff;
+        const j = (s >>> 0) % (i + 1);
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+function solDeal(seed) {
+    const deck = solShuffle(solBuildDeck(), seed);
+    const tableau = [];
+    let idx = 0;
+    for (let i = 0; i < 7; i++) {
+        const down = [];
+        for (let j = 0; j < i; j++)
+            down.push(deck[idx++]);
+        const up = [deck[idx++]];
+        tableau.push({ down, up });
+    }
+    return {
+        tableau,
+        stock: deck.slice(idx),
+        waste: [],
+        foundations: { spades: [], hearts: [], diamonds: [], clubs: [] },
+        score: 0,
+        moveCount: 0,
+        recycleCount: 0,
+        faceDownRevealedCount: 0,
+        tableauMoveCount: 0,
+        wasteToTableauCount: 0,
+        foundationBacktrackCount: 0,
+        canAutoComplete: false,
+        completed: false,
+        lastMoveSummary: null,
+        undoStack: [],
+        seed,
+        startedAt: Date.now(),
+    };
+}
+// ── Helpers ──────────────────────────────────────────────────────────
+function solFPile(f, s) {
+    return f[s];
+}
+function solTotalF(f) {
+    return f.spades.length + f.hearts.length + f.diamonds.length + f.clubs.length;
+}
+function solReveal(col) {
+    if (col.up.length === 0 && col.down.length > 0) {
+        col.up.push(col.down.pop());
+        return true;
+    }
+    return false;
+}
+function solAutoEligible(st) {
+    for (const c of st.tableau)
+        if (c.down.length > 0)
+            return false;
+    return st.stock.length === 0 && st.waste.length === 0;
+}
+function solMakeUndo(st) {
+    return {
+        tableau: st.tableau.map((c) => ({ down: [...c.down], up: [...c.up] })),
+        stock: [...st.stock],
+        waste: [...st.waste],
+        foundations: {
+            spades: [...st.foundations.spades],
+            hearts: [...st.foundations.hearts],
+            diamonds: [...st.foundations.diamonds],
+            clubs: [...st.foundations.clubs],
+        },
+        score: st.score,
+        moveCount: st.moveCount,
+        recycleCount: st.recycleCount,
+        faceDownRevealedCount: st.faceDownRevealedCount,
+        tableauMoveCount: st.tableauMoveCount,
+        wasteToTableauCount: st.wasteToTableauCount,
+        foundationBacktrackCount: st.foundationBacktrackCount,
+        lastMoveSummary: st.lastMoveSummary,
+    };
+}
+function solPushUndo(st) {
+    st.undoStack = [...st.undoStack.slice(-(SOL_MAX_UNDO - 1)), solMakeUndo(st)];
+}
+function solClone(st) {
+    return {
+        tableau: st.tableau.map((c) => ({ down: [...c.down], up: [...c.up] })),
+        stock: [...st.stock],
+        waste: [...st.waste],
+        foundations: {
+            spades: [...st.foundations.spades],
+            hearts: [...st.foundations.hearts],
+            diamonds: [...st.foundations.diamonds],
+            clubs: [...st.foundations.clubs],
+        },
+        score: st.score,
+        moveCount: st.moveCount,
+        recycleCount: st.recycleCount,
+        faceDownRevealedCount: st.faceDownRevealedCount,
+        tableauMoveCount: st.tableauMoveCount,
+        wasteToTableauCount: st.wasteToTableauCount,
+        foundationBacktrackCount: st.foundationBacktrackCount,
+        canAutoComplete: st.canAutoComplete,
+        completed: st.completed,
+        lastMoveSummary: st.lastMoveSummary,
+        undoStack: st.undoStack.map((e) => ({
+            tableau: e.tableau.map((c) => ({ down: [...c.down], up: [...c.up] })),
+            stock: [...e.stock],
+            waste: [...e.waste],
+            foundations: {
+                spades: [...e.foundations.spades],
+                hearts: [...e.foundations.hearts],
+                diamonds: [...e.foundations.diamonds],
+                clubs: [...e.foundations.clubs],
+            },
+            score: e.score,
+            moveCount: e.moveCount,
+            recycleCount: e.recycleCount,
+            faceDownRevealedCount: e.faceDownRevealedCount,
+            tableauMoveCount: e.tableauMoveCount,
+            wasteToTableauCount: e.wasteToTableauCount,
+            foundationBacktrackCount: e.foundationBacktrackCount,
+            lastMoveSummary: e.lastMoveSummary,
+        })),
+        seed: st.seed,
+        startedAt: st.startedAt,
+    };
+}
+// ── Legal move detection ─────────────────────────────────────────────
+function solFindLegalMove(st) {
+    // 1. Tableau/waste → foundation
+    for (let i = 0; i < 7; i++) {
+        const col = st.tableau[i];
+        if (col.up.length === 0)
+            continue;
+        const top = col.up[col.up.length - 1];
+        const sn = solSuitName(top);
+        const fp = solFPile(st.foundations, sn);
+        const ft = fp.length > 0 ? fp[fp.length - 1] : null;
+        if (solCanPlaceOnFoundation(top, ft))
+            return { type: "move_tableau_to_foundation", sourceCol: i };
+    }
+    if (st.waste.length > 0) {
+        const wt = st.waste[st.waste.length - 1];
+        const sn = solSuitName(wt);
+        const fp = solFPile(st.foundations, sn);
+        const ft = fp.length > 0 ? fp[fp.length - 1] : null;
+        if (solCanPlaceOnFoundation(wt, ft))
+            return { type: "move_waste_to_foundation" };
+    }
+    // 2. Reveal moves
+    for (let i = 0; i < 7; i++) {
+        const src = st.tableau[i];
+        if (src.up.length === 0 || src.down.length === 0)
+            continue;
+        const bottom = src.up[0];
+        for (let j = 0; j < 7; j++) {
+            if (i === j)
+                continue;
+            const dest = st.tableau[j];
+            const dt = dest.up.length > 0 ? dest.up[dest.up.length - 1] : null;
+            if (solCanPlaceOnTableau(bottom, dt))
+                return {
+                    type: "move_tableau_to_tableau",
+                    sourceCol: i,
+                    destCol: j,
+                    startIndex: 0,
+                    count: src.up.length,
+                };
+        }
+    }
+    // 3. King to empty
+    for (let i = 0; i < 7; i++) {
+        const src = st.tableau[i];
+        if (src.up.length === 0)
+            continue;
+        if (solRank(src.up[0]) === "K" && src.down.length > 0) {
+            for (let j = 0; j < 7; j++) {
+                if (i === j)
+                    continue;
+                if (st.tableau[j].up.length === 0 && st.tableau[j].down.length === 0)
+                    return {
+                        type: "move_tableau_to_tableau",
+                        sourceCol: i,
+                        destCol: j,
+                        startIndex: 0,
+                        count: src.up.length,
+                    };
+            }
+        }
+    }
+    // 4. Waste → tableau
+    if (st.waste.length > 0) {
+        const wt = st.waste[st.waste.length - 1];
+        for (let j = 0; j < 7; j++) {
+            const d = st.tableau[j];
+            const dt = d.up.length > 0 ? d.up[d.up.length - 1] : null;
+            if (solCanPlaceOnTableau(wt, dt))
+                return { type: "move_waste_to_tableau", destCol: j };
+        }
+    }
+    // 5. General tableau-to-tableau
+    for (let i = 0; i < 7; i++) {
+        const src = st.tableau[i];
+        if (src.up.length === 0)
+            continue;
+        for (let si = 0; si < src.up.length; si++) {
+            const run = src.up.slice(si);
+            if (!solIsValidRun(run))
+                continue;
+            for (let j = 0; j < 7; j++) {
+                if (i === j)
+                    continue;
+                const d = st.tableau[j];
+                const dt = d.up.length > 0 ? d.up[d.up.length - 1] : null;
+                if (solCanPlaceOnTableau(run[0], dt))
+                    return {
+                        type: "move_tableau_to_tableau",
+                        sourceCol: i,
+                        destCol: j,
+                        startIndex: si,
+                        count: run.length,
+                    };
+            }
+        }
+    }
+    // 6. Deal / recycle
+    if (st.stock.length > 0)
+        return { type: "deal_stock" };
+    if (st.waste.length > 0)
+        return { type: "recycle_stock" };
+    return null;
+}
+function solApplyDealStock(st) {
+    if (st.stock.length === 0)
+        return { ok: false, error: "Stock empty." };
+    solPushUndo(st);
+    const cnt = Math.min(3, st.stock.length);
+    st.waste.push(...st.stock.splice(-cnt, cnt));
+    st.moveCount++;
+    st.lastMoveSummary = `Dealt ${cnt} from stock`;
+    return { ok: true };
+}
+function solApplyRecycle(st) {
+    if (st.stock.length > 0)
+        return { ok: false, error: "Stock not empty." };
+    if (st.waste.length === 0)
+        return { ok: false, error: "Nothing to recycle." };
+    solPushUndo(st);
+    st.stock = st.waste.reverse();
+    st.waste = [];
+    st.recycleCount++;
+    st.score -= 20;
+    st.moveCount++;
+    st.lastMoveSummary = "Recycled waste to stock";
+    return { ok: true };
+}
+function solApplyWasteToFoundation(st) {
+    if (st.waste.length === 0)
+        return { ok: false, error: "Waste empty." };
+    const card = st.waste[st.waste.length - 1];
+    const sn = solSuitName(card);
+    const fp = solFPile(st.foundations, sn);
+    const ft = fp.length > 0 ? fp[fp.length - 1] : null;
+    if (!solCanPlaceOnFoundation(card, ft))
+        return { ok: false, error: `Cannot place ${card} on foundation.` };
+    solPushUndo(st);
+    st.waste.pop();
+    fp.push(card);
+    st.score += 10;
+    st.moveCount++;
+    st.lastMoveSummary = `${card} → ${sn} foundation`;
+    return { ok: true };
+}
+function solApplyWasteToTableau(st, destCol) {
+    if (st.waste.length === 0)
+        return { ok: false, error: "Waste empty." };
+    if (destCol < 0 || destCol > 6)
+        return { ok: false, error: "Invalid column." };
+    const card = st.waste[st.waste.length - 1];
+    const col = st.tableau[destCol];
+    const ct = col.up.length > 0 ? col.up[col.up.length - 1] : null;
+    if (!solCanPlaceOnTableau(card, ct))
+        return { ok: false, error: `Cannot place ${card} on column ${destCol}.` };
+    solPushUndo(st);
+    st.waste.pop();
+    col.up.push(card);
+    st.score += 5;
+    st.wasteToTableauCount++;
+    st.moveCount++;
+    st.lastMoveSummary = `${card} → tableau ${destCol}`;
+    return { ok: true };
+}
+function solApplyTableauToFoundation(st, sourceCol) {
+    if (sourceCol < 0 || sourceCol > 6)
+        return { ok: false, error: "Invalid column." };
+    const col = st.tableau[sourceCol];
+    if (col.up.length === 0)
+        return { ok: false, error: "No face-up cards." };
+    const card = col.up[col.up.length - 1];
+    const sn = solSuitName(card);
+    const fp = solFPile(st.foundations, sn);
+    const ft = fp.length > 0 ? fp[fp.length - 1] : null;
+    if (!solCanPlaceOnFoundation(card, ft))
+        return { ok: false, error: `Cannot place ${card} on foundation.` };
+    solPushUndo(st);
+    col.up.pop();
+    fp.push(card);
+    st.score += 10;
+    st.moveCount++;
+    st.lastMoveSummary = `${card} → ${sn} foundation`;
+    if (solReveal(col)) {
+        st.faceDownRevealedCount++;
+        st.score += 5;
+    }
+    return { ok: true };
+}
+function solApplyTableauToTableau(st, srcCol, destCol, startIdx, count) {
+    if (srcCol < 0 || srcCol > 6 || destCol < 0 || destCol > 6)
+        return { ok: false, error: "Invalid column." };
+    if (srcCol === destCol)
+        return { ok: false, error: "Same column." };
+    const src = st.tableau[srcCol];
+    if (startIdx < 0 || startIdx >= src.up.length)
+        return { ok: false, error: "Invalid start index." };
+    const run = src.up.slice(startIdx, startIdx + count);
+    if (run.length !== count || count === 0)
+        return { ok: false, error: "Invalid run count." };
+    if (!solIsValidRun(run))
+        return { ok: false, error: "Invalid run." };
+    const dest = st.tableau[destCol];
+    const dt = dest.up.length > 0 ? dest.up[dest.up.length - 1] : null;
+    if (!solCanPlaceOnTableau(run[0], dt))
+        return { ok: false, error: `Cannot place ${run[0]} on column ${destCol}.` };
+    solPushUndo(st);
+    src.up.splice(startIdx, count);
+    dest.up.push(...run);
+    st.tableauMoveCount++;
+    st.moveCount++;
+    st.lastMoveSummary = `Moved ${count} card(s) col ${srcCol} → ${destCol}`;
+    if (solReveal(src)) {
+        st.faceDownRevealedCount++;
+        st.score += 5;
+    }
+    return { ok: true };
+}
+function solApplyFoundationToTableau(st, sourceSuit, destCol) {
+    if (destCol < 0 || destCol > 6)
+        return { ok: false, error: "Invalid column." };
+    const fp = solFPile(st.foundations, sourceSuit);
+    if (fp.length === 0)
+        return { ok: false, error: `${sourceSuit} foundation empty.` };
+    const card = fp[fp.length - 1];
+    const dest = st.tableau[destCol];
+    const dt = dest.up.length > 0 ? dest.up[dest.up.length - 1] : null;
+    if (!solCanPlaceOnTableau(card, dt))
+        return { ok: false, error: `Cannot place ${card} on column ${destCol}.` };
+    solPushUndo(st);
+    fp.pop();
+    dest.up.push(card);
+    st.score -= 15;
+    st.foundationBacktrackCount++;
+    st.moveCount++;
+    st.lastMoveSummary = `${card} ← ${sourceSuit} foundation → tableau ${destCol}`;
+    return { ok: true };
+}
+function solApplyUndo(st) {
+    if (st.undoStack.length === 0)
+        return { ok: false, error: "Nothing to undo." };
+    const prev = st.undoStack.pop();
+    st.tableau = prev.tableau.map((c) => ({ down: [...c.down], up: [...c.up] }));
+    st.stock = [...prev.stock];
+    st.waste = [...prev.waste];
+    st.foundations = {
+        spades: [...prev.foundations.spades],
+        hearts: [...prev.foundations.hearts],
+        diamonds: [...prev.foundations.diamonds],
+        clubs: [...prev.foundations.clubs],
+    };
+    st.score = prev.score;
+    st.moveCount = prev.moveCount;
+    st.recycleCount = prev.recycleCount;
+    st.faceDownRevealedCount = prev.faceDownRevealedCount;
+    st.tableauMoveCount = prev.tableauMoveCount;
+    st.wasteToTableauCount = prev.wasteToTableauCount;
+    st.foundationBacktrackCount = prev.foundationBacktrackCount;
+    st.lastMoveSummary = "Undo";
+    return { ok: true };
+}
+function solApplyAutoStep(st) {
+    if (!solAutoEligible(st))
+        return { ok: false, error: "Auto-complete not available." };
+    for (let i = 0; i < 7; i++) {
+        const col = st.tableau[i];
+        if (col.up.length === 0)
+            continue;
+        const top = col.up[col.up.length - 1];
+        const sn = solSuitName(top);
+        const fp = solFPile(st.foundations, sn);
+        const ft = fp.length > 0 ? fp[fp.length - 1] : null;
+        if (solCanPlaceOnFoundation(top, ft)) {
+            col.up.pop();
+            fp.push(top);
+            st.score += 10;
+            st.moveCount++;
+            st.lastMoveSummary = `Auto: ${top} → ${sn} foundation`;
+            return { ok: true };
+        }
+    }
+    return { ok: false, error: "No auto-complete moves." };
+}
+// ── Register adapter ─────────────────────────────────────────────────
+registerAdapter({
+    gameId: "solitaire_klondike",
+    runtimeType: "solo",
+    maxPlayers: 1,
+    minPlayers: 1,
+    defaultSettings: {},
+    createInitialPublicState(players) {
+        const uid = players[0]?.uid ?? "default";
+        let seed = 0;
+        for (let i = 0; i < uid.length; i++)
+            seed = (seed * 31 + uid.charCodeAt(i)) & 0xffffffff;
+        seed = (seed ^ (Date.now() & 0xffffffff)) & 0xffffffff;
+        return solDeal(seed);
+    },
+    validateMove(publicState, _priv, movePayload, ctx) {
+        const st = solClone(publicState);
+        const mv = movePayload;
+        if (st.completed)
+            return { ok: false, error: "Game completed." };
+        let res;
+        switch (mv.type) {
+            case "deal_stock":
+                res = solApplyDealStock(st);
+                break;
+            case "recycle_stock":
+                res = solApplyRecycle(st);
+                break;
+            case "move_waste_to_foundation":
+                res = solApplyWasteToFoundation(st);
+                break;
+            case "move_waste_to_tableau":
+                res = solApplyWasteToTableau(st, mv.destCol ?? -1);
+                break;
+            case "move_tableau_to_foundation":
+                res = solApplyTableauToFoundation(st, mv.sourceCol ?? -1);
+                break;
+            case "move_tableau_to_tableau":
+                res = solApplyTableauToTableau(st, mv.sourceCol ?? -1, mv.destCol ?? -1, mv.startIndex ?? 0, mv.count ?? 0);
+                break;
+            case "move_foundation_to_tableau":
+                res = solApplyFoundationToTableau(st, mv.sourceSuit ?? "spades", mv.destCol ?? -1);
+                break;
+            case "undo":
+                res = solApplyUndo(st);
+                break;
+            case "auto_complete_step":
+                res = solApplyAutoStep(st);
+                break;
+            default:
+                return { ok: false, error: `Unknown move type: ${mv.type}` };
+        }
+        if (!res.ok)
+            return { ok: false, error: res.error };
+        st.canAutoComplete = solAutoEligible(st);
+        const fc = solTotalF(st.foundations);
+        if (fc === 52) {
+            st.completed = true;
+            st.score += 700;
+            st.lastMoveSummary = "Game Complete!";
+            return {
+                ok: true,
+                nextPublicState: st,
+                scoreDelta: [{ uid: ctx.uid, delta: st.score }],
+                turnAdvance: false,
+                terminal: {
+                    type: "win",
+                    winnerIds: [ctx.uid],
+                    reason: "All cards on foundations!",
+                },
+            };
+        }
+        if (mv.type !== "undo" && solFindLegalMove(st) === null) {
+            return {
+                ok: true,
+                nextPublicState: st,
+                scoreDelta: [{ uid: ctx.uid, delta: st.score }],
+                turnAdvance: false,
+                terminal: {
+                    type: "timeout",
+                    winnerIds: [],
+                    reason: "No legal moves remaining",
+                },
+            };
+        }
+        return {
+            ok: true,
+            nextPublicState: st,
+            scoreDelta: [{ uid: ctx.uid, delta: 0 }],
+            turnAdvance: false,
+        };
+    },
+    computeOutcome(publicState, players) {
+        const st = publicState;
+        const uid = players[0]?.uid ?? "";
+        return {
+            winnerIds: st.completed ? [uid] : [],
+            finalScoreboard: [
+                {
+                    uid,
+                    score: st.score,
+                    placement: 1,
+                    stats: {
+                        completed: st.completed,
+                        foundationCount: solTotalF(st.foundations),
+                        moveCount: st.moveCount,
+                        recycleCount: st.recycleCount,
+                    },
+                },
+            ],
+        };
+    },
+    extractPerformanceMetrics(publicState) {
+        const st = publicState;
+        const fc = solTotalF(st.foundations);
+        return {
+            completed: st.completed,
+            finalScore: st.score,
+            foundationCount: fc,
+            moveCount: st.moveCount,
+            recycleCount: st.recycleCount,
+            faceDownRevealedCount: st.faceDownRevealedCount,
+            durationMs: Date.now() - st.startedAt,
+            cardsRemainingOutsideFoundation: 52 - fc,
+            tableauMoveCount: st.tableauMoveCount,
+            wasteToTableauCount: st.wasteToTableauCount,
+            foundationBacktrackCount: st.foundationBacktrackCount,
+        };
     },
 });
 //# sourceMappingURL=adapters.js.map

@@ -1,4 +1,5 @@
 import type { MessageV2, OutboxItem } from "@/types/messaging";
+import { mergeMessageCollections } from "@/services/chat/normalizeMessage";
 
 /**
  * Create an optimistic MessageV2 from an outbox item.
@@ -50,12 +51,5 @@ export function mergeMessagesWithOutbox(
       return msg;
     });
 
-  const combined = [...serverMessages, ...pendingOptimistic];
-  combined.sort((a, b) => {
-    const aTime = a.serverReceivedAt || a.createdAt;
-    const bTime = b.serverReceivedAt || b.createdAt;
-    return bTime - aTime;
-  });
-
-  return combined;
+  return mergeMessageCollections(serverMessages, pendingOptimistic);
 }

@@ -101,6 +101,9 @@ import GamesHubScreenV4 from "@/gamesV4/screens/GamesHubScreenV4";
 import GameStatsScreenV4 from "@/gamesV4/screens/GameStatsScreenV4";
 import LevelRewardsScreen from "@/gamesV4/screens/LevelRewardsScreen";
 
+// Profile screens (standalone routes)
+import ProfileAchievementsScreen from "@/screens/profile/ProfileAchievementsScreen";
+
 // Call screens
 import {
   AudioCallScreen,
@@ -500,7 +503,7 @@ function MainStack() {
         name="ChatDetail"
         component={ChatScreen}
         options={{
-          title: "Message",
+          headerShown: false,
         }}
       />
       <MainStack_Nav.Screen
@@ -616,7 +619,7 @@ function MainStack() {
       <MainStack_Nav.Screen
         name="Connections"
         component={FriendsScreen}
-        options={{ title: "Connections" }}
+        options={{ headerShown: false }}
       />
 
       <MainStack_Nav.Screen
@@ -702,6 +705,11 @@ function MainStack() {
       <MainStack_Nav.Screen
         name="AchievementSection"
         component={AchievementSectionScreen}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="ProfileAchievements"
+        component={ProfileAchievementsScreen}
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen

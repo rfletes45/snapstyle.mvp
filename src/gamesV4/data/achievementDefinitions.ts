@@ -25,7 +25,16 @@ export interface AchievementSectionDef {
   description: string;
   icon: string;
   sectionBadgeId: string;
+  /** Runtime category for filtering in the achievements hub. */
+  runtimeCategory: AchievementRuntimeCategory;
 }
+
+/** Runtime category used for top-level filtering in the achievements hub. */
+export type AchievementRuntimeCategory =
+  | "turn_based"
+  | "solo"
+  | "general"
+  | "realtime";
 
 export interface AchievementDef {
   type: string;
@@ -64,6 +73,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Master the classic X's and O's",
     icon: "❌",
     sectionBadgeId: "section_tic_tac_toe",
+    runtimeCategory: "turn_based",
   },
   {
     sectionId: "connect_four",
@@ -71,6 +81,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Drop discs and connect your way to victory",
     icon: "🔴",
     sectionBadgeId: "section_connect_four",
+    runtimeCategory: "turn_based",
   },
   {
     sectionId: "play_2048",
@@ -78,6 +89,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Slide, merge, and reach the highest tile",
     icon: "🧩",
     sectionBadgeId: "section_play_2048",
+    runtimeCategory: "solo",
   },
   {
     sectionId: "chess",
@@ -86,6 +98,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
       "Win with tactics, survive under pressure, and master the endgame",
     icon: "♟️",
     sectionBadgeId: "section_chess",
+    runtimeCategory: "turn_based",
   },
   {
     sectionId: "sketch_party",
@@ -93,6 +106,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Draw, guess, and climb the Sketch Party leaderboard",
     icon: "🎨",
     sectionBadgeId: "section_sketch_party",
+    runtimeCategory: "realtime",
   },
   {
     sectionId: "battleship",
@@ -100,6 +114,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Sink the enemy fleet and rule the seas",
     icon: "🚢",
     sectionBadgeId: "section_battleship",
+    runtimeCategory: "turn_based",
   },
   {
     sectionId: "brick_breaker",
@@ -107,6 +122,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Smash bricks, collect powerups, and conquer 30 levels",
     icon: "🧱",
     sectionBadgeId: "section_brick_breaker",
+    runtimeCategory: "solo",
   },
   {
     sectionId: "crazy_eights",
@@ -114,6 +130,31 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Play your cards right and go out first",
     icon: "🃏",
     sectionBadgeId: "section_crazy_eights",
+    runtimeCategory: "turn_based",
+  },
+  {
+    sectionId: "minigolf_duels",
+    name: "Mini Golf",
+    description: "Putt your way to victory across 18 creative holes",
+    icon: "⛳",
+    sectionBadgeId: "section_minigolf",
+    runtimeCategory: "turn_based",
+  },
+  {
+    sectionId: "minesweeper",
+    name: "Minesweeper",
+    description: "Clear the minefield with logic and precision",
+    icon: "💣",
+    sectionBadgeId: "section_minesweeper",
+    runtimeCategory: "solo",
+  },
+  {
+    sectionId: "solitaire_klondike",
+    name: "Solitaire",
+    description: "Master the classic card game with skill and patience",
+    icon: "🃏",
+    sectionBadgeId: "section_solitaire_klondike",
+    runtimeCategory: "solo",
   },
   // General game milestones
   {
@@ -122,6 +163,7 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Track your overall gaming journey",
     icon: "🌟",
     sectionBadgeId: "section_milestones",
+    runtimeCategory: "general",
   },
 ];
 
@@ -929,6 +971,370 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     difficulty: "legendary",
     tokenReward: 100,
   },
+
+  // ── Mini Golf ────────────────────────────────────────────────────────
+  // Easy
+  {
+    type: "mg_first_putt",
+    name: "First Putt",
+    description: "Play your first Mini Golf game",
+    sectionId: "minigolf_duels",
+    difficulty: "easy",
+    tokenReward: 5,
+  },
+  {
+    type: "mg_first_win",
+    name: "Clubhouse Champ",
+    description: "Win your first Mini Golf game",
+    badgeId: "mg_first_win",
+    sectionId: "minigolf_duels",
+    difficulty: "easy",
+    tokenReward: 10,
+  },
+  // Medium
+  {
+    type: "mg_hole_in_one",
+    name: "Ace!",
+    description: "Sink a hole-in-one on any hole",
+    badgeId: "mg_hole_in_one",
+    sectionId: "minigolf_duels",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "mg_under_par",
+    name: "Under Par",
+    description: "Finish a game under par",
+    sectionId: "minigolf_duels",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "mg_play_5",
+    name: "Putting Green Regular",
+    description: "Play 5 Mini Golf games",
+    sectionId: "minigolf_duels",
+    difficulty: "medium",
+    tokenReward: 15,
+  },
+  {
+    type: "mg_win_3",
+    name: "Hat Trick",
+    description: "Win 3 Mini Golf games",
+    sectionId: "minigolf_duels",
+    difficulty: "medium",
+    tokenReward: 25,
+  },
+  // Hard
+  {
+    type: "mg_play_18",
+    name: "Full Round",
+    description: "Complete a full 18-hole round",
+    sectionId: "minigolf_duels",
+    difficulty: "hard",
+    tokenReward: 30,
+  },
+  {
+    type: "mg_win_10",
+    name: "Pro Putter",
+    description: "Win 10 Mini Golf games",
+    sectionId: "minigolf_duels",
+    difficulty: "hard",
+    tokenReward: 40,
+  },
+  {
+    type: "mg_play_25",
+    name: "Course Veteran",
+    description: "Play 25 Mini Golf games",
+    sectionId: "minigolf_duels",
+    difficulty: "hard",
+    tokenReward: 35,
+  },
+  // Expert
+  {
+    type: "mg_low_strokes",
+    name: "Precision Putter",
+    description: "Finish a 9-hole game with 18 or fewer strokes",
+    sectionId: "minigolf_duels",
+    difficulty: "expert",
+    tokenReward: 50,
+  },
+  {
+    type: "mg_win_25",
+    name: "Mini Golf Master",
+    description: "Win 25 Mini Golf games",
+    sectionId: "minigolf_duels",
+    difficulty: "expert",
+    tokenReward: 75,
+  },
+  // Legendary
+  {
+    type: "mg_play_100",
+    name: "Golf Legend",
+    description: "Play 100 Mini Golf games",
+    sectionId: "minigolf_duels",
+    difficulty: "legendary",
+    tokenReward: 100,
+  },
+
+  // ── Minesweeper ──────────────────────────────────────────────────────────
+  // Easy
+  {
+    type: "ms_first_sweep",
+    name: "First Sweep",
+    description: "Clear an Easy board",
+    sectionId: "minesweeper",
+    difficulty: "easy",
+    tokenReward: 5,
+  },
+  {
+    type: "ms_flag_starter",
+    name: "Flag Starter",
+    description: "Place your first flag",
+    sectionId: "minesweeper",
+    difficulty: "easy",
+    tokenReward: 5,
+  },
+  {
+    type: "ms_fast_recovery",
+    name: "Fast Recovery",
+    description: "Lose and immediately restart",
+    sectionId: "minesweeper",
+    difficulty: "easy",
+    tokenReward: 5,
+  },
+  // Medium
+  {
+    type: "ms_safe_hands",
+    name: "Safe Hands",
+    description: "Clear Easy with 0 incorrect flags",
+    sectionId: "minesweeper",
+    difficulty: "medium",
+    tokenReward: 15,
+  },
+  {
+    type: "ms_intermediate_clear",
+    name: "Intermediate Clear",
+    description: "Clear an Intermediate board",
+    badgeId: "ms_intermediate_clear",
+    sectionId: "minesweeper",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "ms_ten_clears",
+    name: "Ten Clears",
+    description: "Win 10 games at any difficulty",
+    sectionId: "minesweeper",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "ms_chord_reader",
+    name: "Chord Reader",
+    description: "Use 10+ chord reveals in a single game",
+    sectionId: "minesweeper",
+    difficulty: "medium",
+    tokenReward: 15,
+  },
+  // Hard
+  {
+    type: "ms_expert_clear",
+    name: "Expert Clear",
+    description: "Clear an Expert board",
+    badgeId: "ms_expert_clear",
+    sectionId: "minesweeper",
+    difficulty: "hard",
+    tokenReward: 40,
+  },
+  {
+    type: "ms_mine_veteran",
+    name: "Mine Veteran",
+    description: "Win 50 games at any difficulty",
+    sectionId: "minesweeper",
+    difficulty: "hard",
+    tokenReward: 35,
+  },
+  {
+    type: "ms_speed_sweeper",
+    name: "Speed Sweeper",
+    description: "Clear Easy in under 30 seconds",
+    sectionId: "minesweeper",
+    difficulty: "hard",
+    tokenReward: 30,
+  },
+  {
+    type: "ms_clean_reader",
+    name: "Clean Reader",
+    description: "Clear Intermediate with 0 incorrect flags",
+    sectionId: "minesweeper",
+    difficulty: "hard",
+    tokenReward: 30,
+  },
+  // Expert
+  {
+    type: "ms_xp_ghost",
+    name: "XP Ghost",
+    description: "Clear Expert in under 120 seconds",
+    badgeId: "ms_xp_ghost",
+    sectionId: "minesweeper",
+    difficulty: "expert",
+    tokenReward: 60,
+  },
+  {
+    type: "ms_no_boom_streak",
+    name: "No Boom Streak",
+    description: "Win 5 games in a row without hitting a mine",
+    sectionId: "minesweeper",
+    difficulty: "expert",
+    tokenReward: 50,
+  },
+  {
+    type: "ms_precision_worker",
+    name: "Precision Worker",
+    description: "Clear Expert with 0 incorrect flags",
+    sectionId: "minesweeper",
+    difficulty: "expert",
+    tokenReward: 50,
+  },
+  // Legendary
+  {
+    type: "ms_master_sweeper",
+    name: "Master Sweeper",
+    description: "Clear Expert in under 60 seconds",
+    badgeId: "ms_master_sweeper",
+    sectionId: "minesweeper",
+    difficulty: "legendary",
+    tokenReward: 100,
+  },
+  {
+    type: "ms_triple_crown",
+    name: "Triple Crown",
+    description: "Clear Easy, Intermediate, and Expert in one session",
+    sectionId: "minesweeper",
+    difficulty: "legendary",
+    tokenReward: 100,
+  },
+  {
+    type: "ms_hundred_clears",
+    name: "Hundred Clears",
+    description: "Win 100 games at any difficulty",
+    sectionId: "minesweeper",
+    difficulty: "legendary",
+    tokenReward: 100,
+  },
+
+  // ── Solitaire Klondike ──────────────────────────────────────────────────────────────
+  // Easy
+  {
+    type: "solitaire_first_deal",
+    name: "First Deal",
+    description: "Play your first game of Solitaire",
+    sectionId: "solitaire_klondike",
+    difficulty: "easy",
+    tokenReward: 5,
+  },
+  {
+    type: "solitaire_first_clear",
+    name: "First Clear",
+    description: "Win your first game of Solitaire",
+    sectionId: "solitaire_klondike",
+    difficulty: "easy",
+    tokenReward: 10,
+  },
+  {
+    type: "solitaire_10_runs",
+    name: "Card Shark",
+    description: "Play 10 Solitaire runs",
+    sectionId: "solitaire_klondike",
+    difficulty: "easy",
+    tokenReward: 10,
+  },
+  // Medium
+  {
+    type: "solitaire_score_200",
+    name: "Getting Warmed Up",
+    description: "Reach a score of 200 in a single Solitaire run",
+    sectionId: "solitaire_klondike",
+    difficulty: "medium",
+    tokenReward: 15,
+  },
+  {
+    type: "solitaire_score_400",
+    name: "High Roller",
+    description: "Reach a score of 400 in a single Solitaire run",
+    sectionId: "solitaire_klondike",
+    difficulty: "medium",
+    tokenReward: 25,
+  },
+  {
+    type: "solitaire_reveal_all_hidden",
+    name: "Nothing Hidden",
+    description: "Reveal all face-down tableau cards in one Solitaire run",
+    sectionId: "solitaire_klondike",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "solitaire_5_clears",
+    name: "Regular Winner",
+    description: "Win 5 Solitaire games",
+    sectionId: "solitaire_klondike",
+    difficulty: "medium",
+    tokenReward: 25,
+  },
+  // Hard
+  {
+    type: "solitaire_10_clears",
+    name: "Solitaire Devotee",
+    description: "Win 10 Solitaire games",
+    sectionId: "solitaire_klondike",
+    difficulty: "hard",
+    tokenReward: 40,
+  },
+  {
+    type: "solitaire_under_5_min",
+    name: "Quick Hands",
+    description: "Win a Solitaire game in under 5 minutes",
+    sectionId: "solitaire_klondike",
+    difficulty: "hard",
+    tokenReward: 35,
+  },
+  {
+    type: "solitaire_low_recycle_clear",
+    name: "Efficient Player",
+    description: "Win a Solitaire game with 2 or fewer stock recycles",
+    sectionId: "solitaire_klondike",
+    difficulty: "hard",
+    tokenReward: 40,
+  },
+  // Expert
+  {
+    type: "solitaire_under_3_min",
+    name: "Speed Dealer",
+    description: "Win a Solitaire game in under 3 minutes",
+    sectionId: "solitaire_klondike",
+    difficulty: "expert",
+    tokenReward: 60,
+  },
+  {
+    type: "solitaire_600_score",
+    name: "Score Master",
+    description: "Reach a score of 600 in a single Solitaire run",
+    sectionId: "solitaire_klondike",
+    difficulty: "expert",
+    tokenReward: 50,
+  },
+  // Legendary
+  {
+    type: "solitaire_master_clear",
+    name: "Klondike Master",
+    description:
+      "Win with score \u2265 600, \u2264 2 recycles, and no foundation backtracking",
+    sectionId: "solitaire_klondike",
+    difficulty: "legendary",
+    tokenReward: 100,
+  },
 ];
 
 // =============================================================================
@@ -961,6 +1367,9 @@ export function isGameSection(sectionId: string): boolean {
     "battleship",
     "brick_breaker",
     "crazy_eights",
+    "minigolf_duels",
+    "minesweeper",
+    "solitaire_klondike",
   ].includes(sectionId);
 }
 

@@ -112,6 +112,8 @@ import { incrementProfileViews } from "./profileViews";
 
 // Games V4 — Full game system
 import {
+  adminClearConversationGamesV4,
+  adminClearGameV4,
   cancelGameInviteV4,
   claimLevelRewardV4,
   createGameInviteV4,
@@ -121,8 +123,11 @@ import {
   onGameInviteV4Deleted,
   onSessionV4StatusChanged,
   resignSessionV4,
+  restartSoloSessionV4,
+  resumeOrCreateSoloSessionV4,
   startGameFromInviteV4,
   submitTurnMoveV4,
+  suspendSoloSessionV4,
   updateLobbySettingsV4,
   watchdogGamesV4,
 } from "./gamesV4";
@@ -225,6 +230,8 @@ export { onChatSettingsChanged, onInboxSettingsChanged };
 
 // ─── Games V4 ──────────────────────────────────────────────────────────────
 export {
+  adminClearConversationGamesV4,
+  adminClearGameV4,
   cancelGameInviteV4,
   claimLevelRewardV4,
   createGameInviteV4,
@@ -234,8 +241,11 @@ export {
   onGameInviteV4Deleted,
   onSessionV4StatusChanged,
   resignSessionV4,
+  restartSoloSessionV4,
+  resumeOrCreateSoloSessionV4,
   startGameFromInviteV4,
   submitTurnMoveV4,
+  suspendSoloSessionV4,
   updateLobbySettingsV4,
   watchdogGamesV4,
 };

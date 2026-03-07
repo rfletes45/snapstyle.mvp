@@ -18,6 +18,7 @@ import { useSnackbar } from "@/store/SnackbarContext";
 import { InboxConversation } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import { useCallback, useState } from "react";
+import { CHAT_FEATURES } from "@/constants/featureFlags";
 
 // DM services
 import {
@@ -41,6 +42,7 @@ import {
 
 // Settings service
 import { getInboxSettings } from "@/services/inboxSettings";
+import { markAggregatedInboxRead } from "@/services/chat/inboxAggregation";
 
 const log = createLogger("useConversationActions");
 
@@ -417,6 +419,10 @@ export function useConversationActions(
           await markDMAsRead(conversation.id, uid);
         } else {
           await markGroupAsRead(conversation.id, uid);
+        }
+
+        if (CHAT_FEATURES.CHAT_INBOX_AGGREGATION) {
+          await markAggregatedInboxRead(conversation.type, conversation.id);
         }
 
         log.debug("[Actions] Marked conversation read", {

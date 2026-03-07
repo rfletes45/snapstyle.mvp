@@ -59,6 +59,9 @@ exports.LEADERBOARD_METRICS = {
     chess: "wins",
     sketch_party_game: "bestScore",
     battleship: "wins",
+    minigolf_duels: "bestScore",
+    minesweeper: "bestScore",
+    solitaire_klondike: "bestScore",
     // Default for unspecified games: "bestScore"
 };
 function getLeaderboardMetric(gameId) {

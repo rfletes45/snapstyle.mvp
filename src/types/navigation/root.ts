@@ -96,6 +96,11 @@ export type MainStackParamList = {
   GameStatsV4: undefined;
   AchievementsHub: undefined;
   AchievementSection: { sectionId: string };
+  ProfileAchievements: {
+    userId: string;
+    displayName?: string;
+    featuredIds?: string[];
+  };
   LevelRewards: undefined;
 };
 

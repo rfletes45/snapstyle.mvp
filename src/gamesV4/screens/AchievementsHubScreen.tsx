@@ -1,11 +1,12 @@
 /**
  * Games V4 — Achievements Hub Screen
  *
- * Lists all achievement sections as cards. Each card shows:
- * - Section name, icon, description
+ * Lists all achievement sections as cards with:
+ * - Filter bar (All / Turn-Based / Solo / General / Realtime)
+ * - Per-section unclaimed reward count badges
  * - Progress bar (earned / total achievements)
  * - "Claim Badge" button when section is complete
- * - Difficulty range indicator
+ * - Chevron affordance for tap navigation
  *
  * Navigates to AchievementSection on card tap.
  *
@@ -16,12 +17,14 @@ import {
   ACHIEVEMENT_SECTIONS,
   DIFFICULTY_META,
   getDefsForSection,
+  type AchievementRuntimeCategory,
   type AchievementSectionDef,
 } from "@/gamesV4/data/achievementDefinitions";
 import {
   claimAchievementSectionBadge,
   subscribeToAchievements,
   subscribeToAchievementSections,
+  type AchievementEntryV4,
 } from "@/gamesV4/services/gameServiceV4";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -34,6 +37,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -43,14 +47,32 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
-interface EarnedAchievement {
-  type: string;
-  sectionId?: string;
-}
-
 interface ClaimedSection {
   sectionId: string;
   claimed: boolean;
+}
+
+type FilterKey = "all" | AchievementRuntimeCategory;
+
+const FILTER_CHIPS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "turn_based", label: "Turn-Based" },
+  { key: "solo", label: "Solo" },
+  { key: "realtime", label: "Realtime" },
+  { key: "general", label: "General" },
+];
+
+/**
+ * Determine if an achievement entry is "unclaimed" (earned but reward not yet collected).
+ * Legacy docs (schemaVersion undefined / < 2) are treated as already claimed since tokens
+ * were auto-credited before the manual-claim system was introduced.
+ */
+function isUnclaimed(entry: AchievementEntryV4): boolean {
+  if (entry.schemaVersion && entry.schemaVersion >= 2) {
+    return entry.status === "earned_unclaimed";
+  }
+  // Legacy: tokens were auto-awarded, treat as claimed
+  return false;
 }
 
 export default function AchievementsHubScreen() {
@@ -59,10 +81,11 @@ export default function AchievementsHubScreen() {
   const navigation = useNavigation<Nav>();
   const uid = currentFirebaseUser?.uid;
 
-  const [earned, setEarned] = useState<EarnedAchievement[]>([]);
+  const [earned, setEarned] = useState<AchievementEntryV4[]>([]);
   const [claimedSections, setClaimedSections] = useState<ClaimedSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [claimingSection, setClaimingSection] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
   // Subscribe to achievements
   useEffect(() => {
@@ -86,10 +109,48 @@ export default function AchievementsHubScreen() {
   }, [uid]);
 
   const earnedSet = useMemo(() => new Set(earned.map((e) => e.type)), [earned]);
+  const earnedMap = useMemo(() => {
+    const map = new Map<string, AchievementEntryV4>();
+    for (const e of earned) map.set(e.type, e);
+    return map;
+  }, [earned]);
   const claimedSet = useMemo(
     () =>
       new Set(claimedSections.filter((s) => s.claimed).map((s) => s.sectionId)),
     [claimedSections],
+  );
+
+  // Per-section unclaimed counts
+  const unclaimedBySection = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const section of ACHIEVEMENT_SECTIONS) {
+      const defs = getDefsForSection(section.sectionId);
+      let count = 0;
+      for (const def of defs) {
+        const entry = earnedMap.get(def.type);
+        if (entry && isUnclaimed(entry)) count++;
+      }
+      if (count > 0) counts.set(section.sectionId, count);
+    }
+    return counts;
+  }, [earnedMap]);
+
+  // Total unclaimed
+  const totalUnclaimed = useMemo(() => {
+    let total = 0;
+    for (const v of unclaimedBySection.values()) total += v;
+    return total;
+  }, [unclaimedBySection]);
+
+  // Filtered sections
+  const filteredSections = useMemo(
+    () =>
+      activeFilter === "all"
+        ? ACHIEVEMENT_SECTIONS
+        : ACHIEVEMENT_SECTIONS.filter(
+            (s) => s.runtimeCategory === activeFilter,
+          ),
+    [activeFilter],
   );
 
   const handleClaimBadge = useCallback(async (sectionId: string) => {
@@ -127,6 +188,7 @@ export default function AchievementsHubScreen() {
       const isComplete = earnedCount === total;
       const isClaimed = claimedSet.has(section.sectionId);
       const progress = total > 0 ? earnedCount / total : 0;
+      const sectionUnclaimed = unclaimedBySection.get(section.sectionId) ?? 0;
 
       // Difficulty range
       const difficulties = [...new Set(defs.map((d) => d.difficulty))];
@@ -139,7 +201,11 @@ export default function AchievementsHubScreen() {
         <TouchableOpacity
           style={[
             styles.sectionCard,
-            { backgroundColor: theme.isDark ? "#1C1C1E" : "#FFF" },
+            {
+              backgroundColor: theme.isDark ? "#1C1C1E" : "#FFF",
+              borderLeftWidth: sectionUnclaimed > 0 ? 3 : 0,
+              borderLeftColor: sectionUnclaimed > 0 ? "#FF9500" : "transparent",
+            },
           ]}
           onPress={() =>
             navigation.navigate("AchievementSection", {
@@ -151,14 +217,23 @@ export default function AchievementsHubScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionIcon}>{section.icon}</Text>
             <View style={styles.sectionTitleArea}>
-              <Text
-                style={[
-                  styles.sectionName,
-                  { color: theme.isDark ? "#FFF" : "#000" },
-                ]}
-              >
-                {section.name}
-              </Text>
+              <View style={styles.sectionNameRow}>
+                <Text
+                  style={[
+                    styles.sectionName,
+                    { color: theme.isDark ? "#FFF" : "#000" },
+                  ]}
+                >
+                  {section.name}
+                </Text>
+                {sectionUnclaimed > 0 && (
+                  <View style={styles.unclaimedBadge}>
+                    <Text style={styles.unclaimedBadgeText}>
+                      {sectionUnclaimed}
+                    </Text>
+                  </View>
+                )}
+              </View>
               <Text
                 style={[
                   styles.sectionDesc,
@@ -175,6 +250,11 @@ export default function AchievementsHubScreen() {
                 color="#34C759"
               />
             )}
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={22}
+              color={theme.isDark ? "#666" : "#999"}
+            />
           </View>
 
           {/* Progress bar */}
@@ -245,6 +325,7 @@ export default function AchievementsHubScreen() {
       earnedSet,
       claimedSet,
       claimingSection,
+      unclaimedBySection,
       theme,
       colors,
       navigation,
@@ -297,7 +378,7 @@ export default function AchievementsHubScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Overall progress */}
+      {/* Overall progress + unclaimed summary */}
       <View
         style={[
           styles.overallCard,
@@ -330,16 +411,72 @@ export default function AchievementsHubScreen() {
               ]}
             />
           </View>
+          {totalUnclaimed > 0 && (
+            <Text style={styles.unclaimedSummaryText}>
+              {totalUnclaimed} unclaimed reward{totalUnclaimed !== 1 ? "s" : ""}
+            </Text>
+          )}
         </View>
       </View>
 
+      {/* Filter chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+      >
+        {FILTER_CHIPS.map((chip) => {
+          const isActive = activeFilter === chip.key;
+          return (
+            <TouchableOpacity
+              key={chip.key}
+              style={[
+                styles.filterChip,
+                {
+                  backgroundColor: isActive
+                    ? colors.primary
+                    : theme.isDark
+                      ? "#2C2C2E"
+                      : "#E8E8E8",
+                },
+              ]}
+              onPress={() => setActiveFilter(chip.key)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  {
+                    color: isActive ? "#FFF" : theme.isDark ? "#CCC" : "#444",
+                  },
+                ]}
+              >
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       {/* Section list */}
       <FlatList
-        data={ACHIEVEMENT_SECTIONS}
+        data={filteredSections}
         keyExtractor={(item) => item.sectionId}
         renderItem={renderSection}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text
+              style={[
+                styles.emptyText,
+                { color: theme.isDark ? "#666" : "#999" },
+              ]}
+            >
+              No sections in this category
+            </Text>
+          </View>
+        }
       />
     </SafeAreaView>
   );
@@ -366,13 +503,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     borderRadius: 12,
     padding: 16,
     gap: 12,
   },
   overallInfo: { flex: 1, gap: 6 },
   overallTitle: { fontSize: 16, fontWeight: "700" },
+  unclaimedSummaryText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FF9500",
+  },
+  filterRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
   list: { paddingHorizontal: 16, paddingBottom: 32, gap: 12 },
   sectionCard: {
     borderRadius: 12,
@@ -387,8 +543,27 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
   sectionIcon: { fontSize: 28 },
   sectionTitleArea: { flex: 1 },
+  sectionNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   sectionName: { fontSize: 16, fontWeight: "700" },
   sectionDesc: { fontSize: 12, marginTop: 2 },
+  unclaimedBadge: {
+    backgroundColor: "#FF9500",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  unclaimedBadgeText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
   progressRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   progressBarBg: { flex: 1, height: 8, borderRadius: 4, overflow: "hidden" },
   progressBarFill: { height: "100%", borderRadius: 4 },
@@ -407,4 +582,11 @@ const styles = StyleSheet.create({
   difficultyText: { fontSize: 11, fontWeight: "600" },
   claimButton: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
   claimButtonText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 14,
+  },
 });

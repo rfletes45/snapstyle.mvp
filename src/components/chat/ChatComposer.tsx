@@ -138,6 +138,17 @@ export interface ChatComposerProps {
   textInputRef?: React.RefObject<TextInput | null>;
 }
 
+function normalizeNodeForView(node: React.ReactNode): React.ReactNode {
+  return React.Children.map(node, (child) => {
+    if (typeof child === "string" || typeof child === "number") {
+      const text = String(child).trim();
+      if (!text) return null;
+      return <Text>{text}</Text>;
+    }
+    return child;
+  });
+}
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -192,6 +203,30 @@ export function ChatComposer({
   // Internal ref for TextInput - use provided ref or create our own
   const internalTextInputRef = useRef<TextInput | null>(null);
   const inputRef = textInputRef || internalTextInputRef;
+  const normalizedMentionAutocomplete = useMemo(
+    () => normalizeNodeForView(mentionAutocomplete),
+    [mentionAutocomplete],
+  );
+  const normalizedHeaderContent = useMemo(
+    () => normalizeNodeForView(headerContent),
+    [headerContent],
+  );
+  const normalizedLeftAccessory = useMemo(
+    () => normalizeNodeForView(leftAccessory),
+    [leftAccessory],
+  );
+  const normalizedRightAccessory = useMemo(
+    () => normalizeNodeForView(rightAccessory),
+    [rightAccessory],
+  );
+  const normalizedAdditionalRightAccessory = useMemo(
+    () => normalizeNodeForView(additionalRightAccessory),
+    [additionalRightAccessory],
+  );
+  const normalizedVoiceButtonComponent = useMemo(
+    () => normalizeNodeForView(voiceButtonComponent),
+    [voiceButtonComponent],
+  );
 
   // Animal button ref for anchor measurement
   const animalButtonRef = useRef<View>(null);
@@ -348,10 +383,10 @@ export function ChatComposer({
       )}
       <Animated.View style={[staticContainerStyle, animatedKeyboardStyle]}>
         {/* Mention autocomplete (groups only) - shown above everything */}
-        {scope === "group" && mentionAutocomplete}
+        {scope === "group" && normalizedMentionAutocomplete}
 
         {/* Header content (attachment tray, etc.) */}
-        {headerContent}
+        {normalizedHeaderContent}
 
         {/* Reply preview bar */}
         {replyTo && onCancelReply && (
@@ -370,7 +405,7 @@ export function ChatComposer({
           ]}
         >
           {/* Left accessory */}
-          {leftAccessory}
+          {normalizedLeftAccessory}
 
           {/* Text input container with voice button inside */}
           <View
@@ -400,7 +435,7 @@ export function ChatComposer({
 
             {/* Voice button inside text input (when no text) */}
             {showVoiceButton &&
-              (voiceButtonComponent ||
+              (normalizedVoiceButtonComponent ||
                 (onVoiceComplete ? (
                   // Built-in VoiceRecordButton (hold-to-record with visual feedback)
                   <VoiceRecordButton
@@ -428,10 +463,10 @@ export function ChatComposer({
           </View>
 
           {/* Right accessory (custom) */}
-          {rightAccessory}
+          {normalizedRightAccessory}
 
           {/* Additional right accessory (schedule button, etc.) */}
-          {additionalRightAccessory}
+          {normalizedAdditionalRightAccessory}
 
           {/* Upload progress indicator */}
           {isUploading && uploadProgress && (

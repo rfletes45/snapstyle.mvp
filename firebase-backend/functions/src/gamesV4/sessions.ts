@@ -213,10 +213,7 @@ export const submitTurnMoveV4 = functions.https.onCall(
         let nextTurnIndex = session.currentTurnIndex;
         let nextTurnPlayerId = session.currentTurnPlayerId;
 
-        if (
-          session.runtimeType === "turnBased" &&
-          !effectiveTerminal
-        ) {
+        if (session.runtimeType === "turnBased" && !effectiveTerminal) {
           if (adapterNextTurnPlayerId) {
             // Adapter specifies exactly who goes next (e.g., skip, reverse, draws)
             nextTurnPlayerId = adapterNextTurnPlayerId;
@@ -329,8 +326,14 @@ export const submitTurnMoveV4 = functions.https.onCall(
           winnerIds: result.effectiveWinnerIds,
           resolverUid: uid,
         });
-      } else if (result.nextTurnPlayerId) {
-        // Notify next turn player
+      } else if (
+        result.nextTurnPlayerId &&
+        result.session.runtimeType === "turnBased"
+      ) {
+        // Notify next turn player — only for turn-based games.
+        // Solo and realtime sessions must NOT send turn notifications
+        // (the same player is always the "turn player" and seeing
+        // "Your turn!" after every move is wrong).
         try {
           const profile = await getUserProfile(uid);
           await notifyTurn(

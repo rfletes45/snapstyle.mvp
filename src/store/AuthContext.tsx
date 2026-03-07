@@ -6,7 +6,15 @@ import {
   registerForPushNotifications,
   savePushToken,
 } from "@/services/notifications";
-import { cleanupPresence, initializePresence } from "@/services/presence";
+import {
+  normalizeNotificationPayload,
+  shouldHandleNotificationByDedupeKey,
+} from "@/services/notifications/normalizeNotification";
+import {
+  cleanupPresence,
+  initializePresence,
+  setPresenceOnline,
+} from "@/services/presence";
 import * as Notifications from "expo-notifications";
 import { User as FirebaseUser } from "firebase/auth";
 import React, {
@@ -46,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const responseListenerRef = useRef<Notifications.Subscription | null>(null);
   const previousUserIdRef = useRef<string | null>(null);
+  const recentTapKeysRef = useRef<Map<string, number>>(new Map());
 
   // Set up notification listeners
   useEffect(() => {
@@ -64,32 +73,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           response.notification.request.content,
         );
         const data = response.notification.request.content.data;
-        if (data?.type === "message" && typeof data.senderId === "string") {
-          // Navigate to the DM chat with this friend (R3-3 fix: server sends senderId)
-          globalNavigate("ChatDetail", {
-            friendUid: data.senderId,
-            initialData: {
-              chatId: data.chatId,
-              friendName:
-                typeof data.friendName === "string"
-                  ? data.friendName
-                  : undefined,
-            },
-          });
-        } else if (
-          data?.type === "group_message" &&
-          typeof data.groupId === "string"
+        const normalized = normalizeNotificationPayload(data);
+        if (!normalized) return;
+
+        if (
+          !shouldHandleNotificationByDedupeKey(
+            recentTapKeysRef.current,
+            normalized.dedupeKey,
+          )
         ) {
-          // Navigate to the group chat
-          globalNavigate("GroupChat", {
-            groupId: data.groupId,
-            groupName:
-              typeof data.groupName === "string" ? data.groupName : undefined,
-          });
-        } else if (data?.type === "friend_request") {
-          // Navigate to connections/friends screen
-          globalNavigate("Connections");
+          return;
         }
+
+        globalNavigate(
+          normalized.route.screen as any,
+          normalized.route.params as any,
+        );
       },
     );
 
@@ -162,6 +161,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     );
 
+    return () => sub.remove();
+  }, [currentFirebaseUser]);
+
+  // ── AppState-driven presence updates ────────────────────────────────
+  // When the app goes to background, mark offline immediately.
+  // When the app returns to foreground, mark online.
+  // This supplements the RTDB onDisconnect handler for cases where the
+  // RTDB connection stays alive but the user has backgrounded the app.
+  useEffect(() => {
+    if (!currentFirebaseUser) return;
+
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "active") {
+        setPresenceOnline(true);
+      } else if (nextState === "background" || nextState === "inactive") {
+        setPresenceOnline(false);
+      }
+    };
+
+    const sub = AppState.addEventListener("change", handleAppStateChange);
     return () => sub.remove();
   }, [currentFirebaseUser]);
 

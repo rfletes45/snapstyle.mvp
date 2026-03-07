@@ -53,7 +53,9 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = React.memo(
   ({ online, size = 10, position = "bottom-right", style, borderColor }) => {
     const theme = useTheme();
 
-    const dotColor = online ? "#4CAF50" : theme.colors.outline;
+    const dotColor = online
+      ? (theme.colors as any).success || "#4CAF50"
+      : theme.colors.outline;
     const border = borderColor || theme.colors.surface;
 
     const positionStyles: Record<string, ViewStyle> = {

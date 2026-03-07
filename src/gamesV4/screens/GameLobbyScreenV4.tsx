@@ -17,13 +17,23 @@
 import LobbySettingsPanel from "@/gamesV4/components/LobbySettingsPanel";
 import { GAME_METADATA, IMPLEMENTED_GAME_IDS } from "@/gamesV4/constants";
 import { useGameLobbyV4 } from "@/gamesV4/hooks/useGameLobbyV4";
+import {
+  adminClearGame,
+  updateLobbySettings,
+} from "@/gamesV4/services/gameServiceV4";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -71,7 +81,9 @@ export default function GameLobbyScreenV4() {
 
   const uid = currentFirebaseUser?.uid;
   const hasAutoNavigated = useRef(false);
-  const [lobbySettings, setLobbySettings] = useState<Record<string, unknown>>({});
+  const [lobbySettings, setLobbySettings] = useState<Record<string, unknown>>(
+    {},
+  );
   const hadInvite = useRef(false);
   if (invite) hadInvite.current = true;
   const meta = invite ? GAME_METADATA[invite.gameId] : null;
@@ -195,6 +207,67 @@ export default function GameLobbyScreenV4() {
     ]);
   }, [leaveLobby, navigation]);
 
+  // ── Overflow menu (host cancel + admin clear) ─────────────────────
+  const handleHeaderMenu = useCallback(() => {
+    if (!invite) return;
+    const actions: {
+      text: string;
+      style?: "destructive" | "cancel";
+      onPress?: () => void;
+    }[] = [];
+
+    // Host cancel (pre-start only)
+    if (isHost && !isStarted) {
+      actions.push({
+        text: "Cancel Invite",
+        style: "destructive",
+        onPress: () => handleCancel(),
+      });
+    }
+
+    // Admin/owner clear (DM participants always, group owner/admin server-checked)
+    const scope = invite.conversationScope;
+    const isDm = scope === "dm";
+    const canClear = isDm || isHost;
+    if (canClear) {
+      actions.push({
+        text: "Clear Game",
+        style: "destructive",
+        onPress: () => {
+          Alert.alert(
+            "Clear Game",
+            "This will force-close this game for all participants. This cannot be undone.",
+            [
+              { text: "Keep", style: "cancel" },
+              {
+                text: "Clear Game",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    await adminClearGame({ inviteId: invite.inviteId });
+                    navigation.goBack();
+                  } catch (err: unknown) {
+                    Alert.alert(
+                      "Error",
+                      (err as Error)?.message ?? "Failed to clear game.",
+                    );
+                  }
+                },
+              },
+            ],
+          );
+        },
+      });
+    }
+
+    if (actions.length === 0) return;
+
+    Alert.alert("Lobby Actions", undefined, [
+      ...actions,
+      { text: "Dismiss", style: "cancel" },
+    ]);
+  }, [invite, isHost, isStarted, handleCancel, navigation]);
+
   const colors = theme.colors;
 
   if (!invite) {
@@ -244,7 +317,13 @@ export default function GameLobbyScreenV4() {
         >
           Game Lobby
         </Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity onPress={handleHeaderMenu} style={styles.backButton}>
+          <MaterialCommunityIcons
+            name="dots-vertical"
+            size={24}
+            color={theme.isDark ? "#FFF" : "#000"}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Game Info */}
@@ -487,11 +566,34 @@ export default function GameLobbyScreenV4() {
           </View>
         )}
 
-        {/* Settings panel — shown to host when game has configurable settings */}
-        {isHost && !isStarted && invite && (
+        {/* Settings panel — shown to host (editable) and non-host (read-only) */}
+        {!isStarted && invite && (isHost || isParticipant || isSpectator) && (
           <LobbySettingsPanel
             gameId={invite.gameId}
-            onSettingsChange={setLobbySettings}
+            onSettingsChange={(s) => {
+              setLobbySettings(s);
+              // Persist to backend so non-host participants see updates
+              if (isHost && inviteId) {
+                updateLobbySettings({
+                  inviteId,
+                  settingsPatch: s,
+                }).catch((err) =>
+                  console.warn(
+                    "[gamesV4] Failed to persist lobby settings:",
+                    err,
+                  ),
+                );
+              }
+            }}
+            readOnly={!isHost}
+            externalValues={
+              !isHost
+                ? (((invite as Record<string, unknown>).lobbySettings as Record<
+                    string,
+                    unknown
+                  >) ?? undefined)
+                : undefined
+            }
           />
         )}
 

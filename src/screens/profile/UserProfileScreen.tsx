@@ -32,7 +32,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import BlockUserModal from "@/components/BlockUserModal";
 import ReportUserModal from "@/components/ReportUserModal";
 import { MuteOptionsModal, MutualFriendsSection } from "@/components/profile";
-import { BadgesCard, FriendsCard } from "@/components/profile/OverviewCards";
+import {
+  AchievementsTrophyCaseCard,
+  BadgesCard,
+  FriendsCard,
+} from "@/components/profile/OverviewCards";
 import {
   MoreOptionsMenu,
   ProfileActionsBar,
@@ -574,6 +578,13 @@ function UserProfileScreenContent({
     return relationship?.type !== "friend";
   })();
 
+  const achievementsPrivacyHidden = (() => {
+    const setting = profile?.privacy?.showAchievements;
+    if (!setting || setting === "everyone") return false;
+    if (setting === "nobody") return true;
+    return relationship?.type !== "friend";
+  })();
+
   const streaksPrivacyHidden = (() => {
     const setting = profile?.privacy?.showStreaks;
     if (!setting || setting === "everyone") return false;
@@ -695,8 +706,22 @@ function UserProfileScreenContent({
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.innerContainer}>
-        {/* Header Bar */}
-        <View style={[styles.header, { paddingTop: insets.top }]}>
+        {/* Header Bar — positioned above the scroll so it overlays the
+         * background image, letting the profile header bg extend to the
+         * very top of the viewport behind the status bar / dynamic island. */}
+        <View
+          style={[
+            styles.header,
+            {
+              paddingTop: insets.top,
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 10,
+            },
+          ]}
+        >
           <IconButton
             icon="arrow-left"
             onPress={() => navigation.goBack()}
@@ -727,6 +752,7 @@ function UserProfileScreenContent({
             bio={profile.bio}
             status={profile.status}
             level={profile.level}
+            topInset={insets.top}
             lastActive={
               profile.privacy.showLastActive !== "nobody"
                 ? profile.lastActive
@@ -807,6 +833,27 @@ function UserProfileScreenContent({
                           screen: "BadgeCollection",
                           params: { userId },
                         },
+                      })
+                  : undefined
+              }
+            />
+
+            {/* Achievements Trophy Case Card */}
+            <AchievementsTrophyCaseCard
+              userId={userId}
+              featuredAchievementIds={
+                profile.featuredAchievements?.achievementIds ?? []
+              }
+              privacyHidden={achievementsPrivacyHidden}
+              enterIndex={2}
+              onPress={
+                !achievementsPrivacyHidden
+                  ? () =>
+                      navigation.navigate("ProfileAchievements", {
+                        userId,
+                        displayName: profile.displayName,
+                        featuredIds:
+                          profile.featuredAchievements?.achievementIds ?? [],
                       })
                   : undefined
               }

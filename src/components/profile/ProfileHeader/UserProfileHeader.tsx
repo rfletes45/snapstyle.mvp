@@ -52,6 +52,8 @@ export interface UserProfileHeaderProps {
   level?: LevelInfo | null;
   /** Friendship details (if friends) */
   friendshipDetails?: FriendshipDetails | null;
+  /** Top safe-area inset so the background image extends behind the status bar / dynamic island */
+  topInset?: number;
   /** Handler for picture press (e.g., to view full size) */
   onPicturePress?: () => void;
   /** Custom container style */
@@ -115,6 +117,7 @@ function UserProfileHeaderBase({
   level,
   lastActive,
   friendshipDetails,
+  topInset = 0,
   onPicturePress,
   style,
 }: UserProfileHeaderProps) {
@@ -150,8 +153,15 @@ function UserProfileHeaderBase({
 
   return (
     <View style={[styles.outerWrapper, style]}>
-      {/* Header region with overflow hidden for background crop */}
-      <View style={styles.headerRegion}>
+      {/* Header region with overflow hidden for background crop.
+       * Negative top margin + extra padding pull the bg behind the status bar
+       * while keeping foreground content below the safe area. */}
+      <View
+        style={[
+          styles.headerRegion,
+          topInset > 0 && { marginTop: -topInset, paddingTop: 0 },
+        ]}
+      >
         {/* Background Image */}
         {backgroundSource && (
           <CosmeticImage
@@ -165,8 +175,13 @@ function UserProfileHeaderBase({
         {/* Scrim overlay for text readability */}
         {backgroundSource && <View style={styles.backgroundScrim} />}
 
-        {/* Foreground content */}
-        <View style={styles.foregroundContent}>
+        {/* Foreground content — padded down by the safe-area inset */}
+        <View
+          style={[
+            styles.foregroundContent,
+            topInset > 0 && { paddingTop: 24 + topInset * 2 },
+          ]}
+        >
           {/* Profile Picture with Decoration */}
           <View style={styles.pictureSection}>
             <ProfilePictureWithDecoration

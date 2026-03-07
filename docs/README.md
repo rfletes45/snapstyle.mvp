@@ -1,6 +1,6 @@
 # SnapStyle Documentation
 
-Last verified: 2026-02-22
+Last verified: 2026-03-05
 
 This is the canonical documentation set for how the app currently works in code.
 Historical plan/audit docs were removed and condensed; see `docs/archive/removed-docs-2026-02-22.md` if you need legacy context.
@@ -22,6 +22,18 @@ If you are new to the repo, read in this order:
   - Firestore/Storage contracts, callable + trigger topology, deploy and schema safety.
 - `docs/features/messaging.md`
   - DM/group architecture, hybrid local-first migration, message pipeline contracts.
+- `docs/chat-system-audit/00_INBOX_CHAT_SYSTEM_MASTER_REFERENCE.md`
+  - Single-document master reference for inbox/chat architecture, contracts, risks, tests, QA, and operations.
+- `docs/chat-system-audit/01_INBOX_CHAT_TECHNICAL_OVERVIEW.md`
+  - Inbox/chat runtime architecture map, parity guarantees, and lifecycle flows.
+- `docs/chat-system-audit/02_INBOX_CHAT_DATA_CONTRACTS.md`
+  - Canonical message, inbox, unread, requests, and notification contracts.
+- `docs/chat-system-audit/03_INBOX_CHAT_KNOWN_ISSUES_RISKS.md`
+  - Resolved risk ledger, remaining non-blocking risks, and ownership.
+- `docs/chat-system-audit/04_INBOX_CHAT_REFACTOR_PLAN.md`
+  - Sustaining hardening plan with owners, gates, and escalation criteria.
+- `docs/chat-system-audit/05_PHASE2_CHECKPOINTS.md`
+  - Historical checkpoint log covering Phase 2 through current Phase 3+.
 - `docs/features/profile-economy.md`
   - Profile data/privacy contracts, relationship/moderation flows, wallet/tasks/shop behavior.
 - `docs/PROFILE_SYSTEM.md`

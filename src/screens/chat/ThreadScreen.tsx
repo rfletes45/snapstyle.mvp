@@ -44,6 +44,7 @@ import { useAppTheme } from "@/store/ThemeContext";
 import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { createLogger } from "@/utils/log";
+import { createThreadRealtimeLifecycle } from "./threadLifecycle";
 
 const logger = createLogger("ThreadScreen");
 
@@ -69,6 +70,14 @@ export default function ThreadScreen({ navigation, route }: Props) {
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList<MessageV2>>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Load messages
@@ -79,7 +88,9 @@ export default function ThreadScreen({ navigation, route }: Props) {
       const rootRow = getMessageById(rootMessageId);
       if (rootRow) {
         const converted = rowToMessageV2(rootRow, uid);
-        setRootMessage(converted);
+        if (isMountedRef.current) {
+          setRootMessage(converted);
+        }
       }
 
       // Load thread replies
@@ -87,7 +98,9 @@ export default function ThreadScreen({ navigation, route }: Props) {
       const converted = threadRows
         .map((row) => rowToMessageV2(row, uid))
         .filter((m): m is MessageV2 => m !== null);
-      setReplies(converted);
+      if (isMountedRef.current) {
+        setReplies(converted);
+      }
     } catch (err) {
       logger.error("[ThreadScreen] Failed to load thread:", err);
     }
@@ -102,11 +115,12 @@ export default function ThreadScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!conversationId) return;
 
-    const unsubscribe = subscribeToConversation(scope, conversationId, () => {
-      loadThread();
+    return createThreadRealtimeLifecycle({
+      scope,
+      conversationId,
+      subscribeFn: subscribeToConversation,
+      onConversationUpdate: loadThread,
     });
-
-    return unsubscribe;
   }, [scope, conversationId, loadThread]);
 
   // ---------------------------------------------------------------------------

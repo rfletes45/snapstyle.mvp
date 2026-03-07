@@ -70,6 +70,7 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
+import { dedupeAndSortMessages } from "@/services/chat/normalizeMessage";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
 import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
@@ -304,9 +305,10 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // Convert local messages to MessageV2 format
   const localMessages = useMemo<MessageV2[]>(() => {
     if (!USE_LOCAL_STORAGE) return [];
-    return localMessagesHook.messages
+    const normalized = localMessagesHook.messages
       .map((row) => rowToMessageV2(row, currentUid))
       .filter((m): m is MessageV2 => m !== null);
+    return dedupeAndSortMessages(normalized);
   }, [localMessagesHook.messages, currentUid]);
 
   // Select which data source to use based on feature flag

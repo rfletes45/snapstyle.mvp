@@ -17,6 +17,16 @@
 import { isDMVisible } from "@/services/chatMembers";
 import { getFirestoreInstance } from "@/services/firebase";
 import { isGroupVisible } from "@/services/groupMembers";
+import { CHAT_FEATURES } from "@/constants/featureFlags";
+import {
+  getDefaultMemberState,
+  RECENTLY_READ_TTL_MS,
+  sortInboxConversations,
+} from "@/services/chat/normalizeInboxRow";
+import {
+  normalizeFanoutDMConversation,
+  normalizeFanoutGroupConversation,
+} from "@/services/chat/fanoutInboxNormalization";
 import { InboxConversation, MemberStatePrivate } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -30,6 +40,7 @@ import {
   where,
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useInboxAggregation } from "./useInboxAggregation";
 
 const log = createLogger("useInboxData");
 
@@ -237,28 +248,6 @@ function toMillis(value: unknown): number {
   return 0;
 }
 
-/**
- * Tolerance window (ms) for comparing lastMessageAt vs lastSeenAtPrivate.
- *
- * lastMessageAt is a Firestore server timestamp (set by Cloud Functions),
- * while lastSeenAtPrivate is client-side Date.now(). Server-vs-client clock
- * skew can cause lastMessageAt > lastSeenAtPrivate even when the user has
- * already viewed the message. A 5-second tolerance absorbs this skew.
- */
-const UNREAD_TOLERANCE_MS = 5000;
-
-/**
- * Get default member state
- */
-function getDefaultMemberState(uid: string): MemberStatePrivate {
-  return {
-    uid,
-    lastSeenAtPrivate: 0,
-    archived: false,
-    notifyLevel: "all",
-  };
-}
-
 // =============================================================================
 // Hook Implementation
 // =============================================================================
@@ -273,6 +262,9 @@ function getDefaultMemberState(uid: string): MemberStatePrivate {
  * @returns Inbox data and controls
  */
 export function useInboxData(uid: string): UseInboxDataResult {
+  const aggregation = useInboxAggregation(uid);
+  const useAggregatedInbox = CHAT_FEATURES.CHAT_INBOX_AGGREGATION;
+
   // State
   const [dmConversations, setDmConversations] = useState<InboxConversation[]>(
     [],
@@ -305,7 +297,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // =============================================================================
 
   useEffect(() => {
-    if (!uid || cacheLoadedRef.current) return;
+    if (useAggregatedInbox || !uid || cacheLoadedRef.current) return;
 
     const loadCache = async () => {
       const cached = await loadInboxCache(uid);
@@ -323,24 +315,35 @@ export function useInboxData(uid: string): UseInboxDataResult {
     };
 
     loadCache();
-  }, [uid]);
+  }, [uid, useAggregatedInbox]);
 
   // Manual refresh trigger
   const refresh = useCallback(() => {
+    if (useAggregatedInbox) {
+      aggregation.refresh();
+      return;
+    }
     setRefreshKey((k) => k + 1);
-  }, []);
+  }, [aggregation, useAggregatedInbox]);
 
   // Optimistically mark a conversation as read in local state
   // This immediately updates the UI while the actual Firestore write happens in the background
   const markConversationReadOptimistic = useCallback(
     (conversationId: string) => {
+      if (useAggregatedInbox) {
+        aggregation.markConversationReadOptimistic(conversationId);
+        return;
+      }
+
       // Track this conversation as recently read to prevent snapshot overwrites
       recentlyReadRef.current.set(conversationId, Date.now());
 
       // Clean up old entries (>30 seconds)
       const now = Date.now();
       for (const [id, ts] of recentlyReadRef.current) {
-        if (now - ts > 30000) recentlyReadRef.current.delete(id);
+        if (now - ts > RECENTLY_READ_TTL_MS) {
+          recentlyReadRef.current.delete(id);
+        }
       }
 
       // Update DM conversations
@@ -377,7 +380,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
         ),
       );
     },
-    [],
+    [aggregation, useAggregatedInbox],
   );
 
   // =============================================================================
@@ -385,7 +388,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // =============================================================================
 
   useEffect(() => {
-    if (!uid) {
+    if (useAggregatedInbox || !uid) {
       setDmLoading(false);
       return;
     }
@@ -479,26 +482,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
             // Check visibility
             if (!isDMVisible(memberState)) continue;
 
-            // Calculate unread count
             const lastMessageAt = toMillis(chatData.lastMessageAt);
-            let unreadCount = 0;
-
-            // If this conversation was recently read optimistically, force unread to 0
-            // to prevent snapshot race conditions before the Firestore write lands
             const recentlyReadAt = recentlyReadRef.current.get(chatId);
-            if (recentlyReadAt && Date.now() - recentlyReadAt < 30000) {
-              unreadCount = 0;
-            } else if (
-              memberState.lastMarkedUnreadAt &&
-              memberState.lastMarkedUnreadAt > memberState.lastSeenAtPrivate
-            ) {
-              unreadCount = 1; // Manual unread marker
-            } else if (
-              lastMessageAt >
-              memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS
-            ) {
-              unreadCount = 1; // Has new messages (with tolerance for clock skew)
-            }
 
             // Get user profile from cache
             const profile = userProfiles.get(otherUserId) || {
@@ -509,28 +494,21 @@ export function useInboxData(uid: string): UseInboxDataResult {
               decorationId: null,
             };
 
-            conversations.push({
-              id: chatId,
-              type: "dm",
-              name: profile.displayName,
-              avatarUrl: profile.avatarUrl,
-              avatarConfig: profile.avatarConfig,
-              profilePictureUrl: profile.profilePictureUrl,
-              decorationId: profile.decorationId,
-              otherUserId,
-              lastMessage: chatData.lastMessageText
-                ? {
-                    text: chatData.lastMessageText,
-                    senderName: "",
-                    timestamp: lastMessageAt,
-                    type: chatData.lastMessageType || "text",
-                  }
-                : null,
-              memberState,
-              unreadCount,
-              hasMentions: false,
-              createdAt: toMillis(chatData.createdAt),
-            });
+            conversations.push(
+              normalizeFanoutDMConversation({
+                chatId,
+                profile,
+                otherUserId,
+                memberState,
+                chatData: {
+                  lastMessageText: chatData.lastMessageText,
+                  lastMessageType: chatData.lastMessageType,
+                  lastMessageAt: lastMessageAt,
+                  createdAt: toMillis(chatData.createdAt),
+                },
+                recentlyReadAt,
+              }),
+            );
           }
 
           if (!cancelled) {
@@ -558,14 +536,14 @@ export function useInboxData(uid: string): UseInboxDataResult {
       cancelled = true;
       unsubscribe();
     };
-  }, [uid, refreshKey]);
+  }, [uid, refreshKey, useAggregatedInbox]);
 
   // =============================================================================
   // Group Subscription (OPTIMIZED - Parallel fetching)
   // =============================================================================
 
   useEffect(() => {
-    if (!uid) {
+    if (useAggregatedInbox || !uid) {
       setGroupLoading(false);
       return;
     }
@@ -642,49 +620,26 @@ export function useInboxData(uid: string): UseInboxDataResult {
             // Check visibility
             if (!isGroupVisible(memberState)) continue;
 
-            // Calculate unread count
             const lastMessageAt = toMillis(groupData.lastMessageAt);
-            let unreadCount = 0;
-
-            // If this conversation was recently read optimistically, force unread to 0
             const recentlyReadAt = recentlyReadRef.current.get(groupId);
-            if (recentlyReadAt && Date.now() - recentlyReadAt < 30000) {
-              unreadCount = 0;
-            } else if (
-              memberState.lastMarkedUnreadAt &&
-              memberState.lastMarkedUnreadAt > memberState.lastSeenAtPrivate
-            ) {
-              unreadCount = 1; // Manual unread marker
-            } else if (
-              lastMessageAt >
-              memberState.lastSeenAtPrivate + UNREAD_TOLERANCE_MS
-            ) {
-              unreadCount = 1; // Has new messages (with tolerance for clock skew)
-            }
-
-            conversations.push({
-              id: groupId,
-              type: "group",
-              name: groupData.name || "Unnamed Group",
-              avatarUrl: groupData.avatarUrl || null,
-              avatarIds: (groupData.memberIds as string[])?.slice(0, 4),
-              lastMessage: groupData.lastMessageText
-                ? {
-                    text: groupData.lastMessageText,
-                    senderName: groupData.lastMessageSenderName || "",
-                    timestamp: lastMessageAt,
-                    type: groupData.lastMessageType || "text",
-                  }
-                : null,
-              memberState,
-              unreadCount,
-              hasMentions: false,
-              createdAt: toMillis(groupData.createdAt),
-              participantCount:
-                groupData.memberCount ||
-                (groupData.memberIds as string[])?.length ||
-                0,
-            });
+            conversations.push(
+              normalizeFanoutGroupConversation({
+                groupId,
+                groupData: {
+                  name: groupData.name,
+                  avatarUrl: groupData.avatarUrl || null,
+                  memberIds: groupData.memberIds as string[] | undefined,
+                  lastMessageText: groupData.lastMessageText,
+                  lastMessageSenderName: groupData.lastMessageSenderName,
+                  lastMessageType: groupData.lastMessageType,
+                  lastMessageAt: lastMessageAt,
+                  createdAt: toMillis(groupData.createdAt),
+                  memberCount: groupData.memberCount,
+                },
+                memberState,
+                recentlyReadAt,
+              }),
+            );
           }
 
           if (!cancelled) {
@@ -712,7 +667,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       cancelled = true;
       unsubscribe();
     };
-  }, [uid, refreshKey]);
+  }, [uid, refreshKey, useAggregatedInbox]);
 
   // =============================================================================
   // Combined & Filtered List
@@ -740,25 +695,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
       // "requests" is handled separately in the UI
     }
 
-    // Sort: pinned first (by pinnedAt desc), then by last message time
-    return all.sort((a, b) => {
-      const aPinned = a.memberState.pinnedAt ?? 0;
-      const bPinned = b.memberState.pinnedAt ?? 0;
-
-      // Both pinned: sort by pinnedAt (most recent first)
-      if (aPinned && bPinned) {
-        return bPinned - aPinned;
-      }
-
-      // Only one pinned: pinned goes first
-      if (aPinned && !bPinned) return -1;
-      if (!aPinned && bPinned) return 1;
-
-      // Neither pinned: sort by last message time
-      const aTime = a.lastMessage?.timestamp ?? a.createdAt;
-      const bTime = b.lastMessage?.timestamp ?? b.createdAt;
-      return bTime - aTime;
-    });
+    return sortInboxConversations(all);
   }, [dmConversations, groupConversations, filter, showArchived]);
 
   // Separate pinned and regular
@@ -777,12 +714,12 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const allConversations = useMemo(() => {
     const all = [...dmConversations, ...groupConversations];
     // Only filter by archive status, not by the inbox filter
-    return all.filter((c) => !c.memberState.archived);
+    return sortInboxConversations(all.filter((c) => !c.memberState.archived));
   }, [dmConversations, groupConversations]);
 
   const totalUnread = useMemo(
-    () => conversations.reduce((sum, c) => sum + c.unreadCount, 0),
-    [conversations],
+    () => allConversations.reduce((sum, c) => sum + c.unreadCount, 0),
+    [allConversations],
   );
 
   // =============================================================================
@@ -792,14 +729,39 @@ export function useInboxData(uid: string): UseInboxDataResult {
   useEffect(() => {
     // Only save to cache if we have loaded fresh data from Firestore
     // (not just cached data, and both subscriptions have completed)
-    if (!uid || dmLoading || groupLoading) return;
+    if (useAggregatedInbox || !uid || dmLoading || groupLoading) return;
 
     // Only cache if we have at least some data
     if (dmConversations.length === 0 && groupConversations.length === 0) return;
 
     // Save to cache in background
     saveInboxCache(uid, dmConversations, groupConversations);
-  }, [uid, dmConversations, groupConversations, dmLoading, groupLoading]);
+  }, [
+    uid,
+    dmConversations,
+    groupConversations,
+    dmLoading,
+    groupLoading,
+    useAggregatedInbox,
+  ]);
+
+  if (useAggregatedInbox) {
+    return {
+      conversations: aggregation.conversations,
+      pinnedConversations: aggregation.pinnedConversations,
+      regularConversations: aggregation.regularConversations,
+      allConversations: aggregation.allConversations,
+      loading: aggregation.loading,
+      error: aggregation.error,
+      totalUnread: aggregation.totalUnread,
+      filter: aggregation.filter as InboxFilter,
+      setFilter: aggregation.setFilter as (filter: InboxFilter) => void,
+      showArchived: aggregation.showArchived,
+      setShowArchived: aggregation.setShowArchived,
+      refresh,
+      markConversationReadOptimistic,
+    };
+  }
 
   return {
     conversations,

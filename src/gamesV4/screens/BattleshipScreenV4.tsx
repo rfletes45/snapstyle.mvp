@@ -1,7 +1,7 @@
-/**
- * Games V4 — Battleship Game Screen
+﻿/**
+ * Games V4 — Battleship Game Screen (Polished)
  *
- * Mobile-first UI for the Battleship game.
+ * Mobile-first UI for the Battleship game with premium presentation.
  * Handles three phases: Setup (fleet placement), Battle (firing), and Spectator.
  *
  * Uses the withGameV4Shell HOC for session management, move submission,
@@ -19,18 +19,24 @@ import {
   GameShellProps,
   withGameV4Shell,
 } from "@/gamesV4/components/GameScreenShell";
-import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
-  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, { FadeIn, FadeInDown, Layout } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   autoPlaceFleet,
   computeShipCells,
@@ -39,24 +45,28 @@ import {
 import type {
   BattleshipPublicState,
   Direction,
-  GridSize,
   PlayerStats,
   ShipPlacement,
 } from "../adapters/battleship/battleshipTypes";
 import { getFleetForPreset } from "../adapters/battleship/battleshipTypes";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-// =============================================================================
-// Types
-// =============================================================================
-
-type CellStatus = "empty" | "ship" | "hit" | "miss" | "sunk" | "selected";
-
-interface GridCellData {
-  status: CellStatus;
-  shipId?: string;
-}
+import type {
+  BattleLogEntry,
+  BattlePhaseId,
+  CellStatus,
+  GridCellData,
+} from "./battleship";
+import {
+  BattleshipGrid,
+  BoardCard,
+  BS,
+  EventRibbon,
+  FleetStatus,
+  PhaseChip,
+  ShipCarousel,
+  StatBadge,
+  useBattleshipFeedback,
+  useBattleshipTheme,
+} from "./battleship";
 
 // =============================================================================
 // Helpers
@@ -69,152 +79,85 @@ function asState(
   return ps as unknown as BattleshipPublicState;
 }
 
-function getGridCellSize(gridSize: GridSize): number {
-  const padding = 32; // 16 each side
-  const labelWidth = 24; // row labels
-  return Math.floor((SCREEN_WIDTH - padding - labelWidth) / gridSize) - 1;
-}
-
 function cellKey(r: number, c: number): string {
-  return `${r},${c}`;
+  return r + "," + c;
 }
 
 function colLabel(c: number): string {
   return String.fromCharCode(65 + c);
 }
 
-// =============================================================================
-// Grid Component — Shared between setup, battle, and spectator
-// =============================================================================
-
-interface GridProps {
-  gridSize: GridSize;
-  cells: GridCellData[][];
-  onCellPress?: (r: number, c: number) => void;
-  disabled?: boolean;
-  selectedTargets?: Set<string>;
-  theme: ReturnType<typeof useAppTheme>["theme"];
-  label?: string;
-}
-
-function BattleshipGrid({
-  gridSize,
-  cells,
-  onCellPress,
-  disabled,
-  selectedTargets,
-  theme,
-  label,
-}: GridProps) {
-  const cellSize = getGridCellSize(gridSize);
-  const isDark = theme.isDark;
-
-  const getCellColor = (status: CellStatus): string => {
-    switch (status) {
-      case "ship":
-        return isDark ? "#4A90D9" : "#3478F6";
-      case "hit":
-        return "#FF3B30";
-      case "miss":
-        return isDark ? "#555" : "#CCC";
-      case "sunk":
-        return "#8B0000";
-      case "selected":
-        return "#FF9500";
-      case "empty":
-      default:
-        return isDark ? "#1A2332" : "#E8F0FE";
-    }
+function emptyStats(): PlayerStats {
+  return {
+    hits: 0,
+    misses: 0,
+    accuracy: 0,
+    shipsRemaining: 0,
+    shipsSunk: 0,
+    turnsTaken: 0,
   };
+}
 
-  return (
-    <View style={styles.gridWrapper}>
-      {label && (
-        <Text style={[styles.gridLabel, { color: theme.colors.primary }]}>
-          {label}
-        </Text>
-      )}
+/** Derive event type from the lastEvent string for ribbon styling */
+function inferEventType(
+  evt: string | null,
+): "hit" | "miss" | "sunk" | "phase" | "info" {
+  if (!evt) return "info";
+  const lower = evt.toLowerCase();
+  if (lower.includes("sunk") || lower.includes("sank")) return "sunk";
+  if (lower.includes("hit")) return "hit";
+  if (lower.includes("miss")) return "miss";
+  if (
+    lower.includes("begins") ||
+    lower.includes("deployed") ||
+    lower.includes("ready")
+  )
+    return "phase";
+  return "info";
+}
 
-      {/* Column headers */}
-      <View style={styles.gridRow}>
-        <View style={{ width: 20 }} />
-        {Array.from({ length: gridSize }).map((_, c) => (
-          <View
-            key={c}
-            style={[styles.headerCell, { width: cellSize, height: 18 }]}
-          >
-            <Text
-              style={[styles.headerText, { color: isDark ? "#AAA" : "#666" }]}
-            >
-              {colLabel(c)}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Grid rows */}
-      {Array.from({ length: gridSize }).map((_, r) => (
-        <View key={r} style={styles.gridRow}>
-          <View style={[styles.rowLabel, { width: 20, height: cellSize }]}>
-            <Text
-              style={[styles.headerText, { color: isDark ? "#AAA" : "#666" }]}
-            >
-              {r + 1}
-            </Text>
-          </View>
-          {Array.from({ length: gridSize }).map((_, c) => {
-            const cell = cells[r]?.[c] ?? { status: "empty" as CellStatus };
-            const isSelected = selectedTargets?.has(cellKey(r, c));
-            const bg = isSelected ? "#FF9500" : getCellColor(cell.status);
-
-            return (
-              <TouchableOpacity
-                key={c}
-                style={[
-                  styles.gridCell,
-                  {
-                    width: cellSize,
-                    height: cellSize,
-                    backgroundColor: bg,
-                    borderColor: isDark ? "#333" : "#B0BEC5",
-                  },
-                ]}
-                onPress={() => onCellPress?.(r, c)}
-                disabled={disabled}
-                activeOpacity={0.7}
-              >
-                {cell.status === "hit" && (
-                  <Text style={styles.cellIcon}>💥</Text>
-                )}
-                {cell.status === "miss" && (
-                  <View
-                    style={[
-                      styles.missDot,
-                      { backgroundColor: isDark ? "#888" : "#999" },
-                    ]}
-                  />
-                )}
-                {cell.status === "sunk" && (
-                  <Text style={styles.cellIcon}>🔥</Text>
-                )}
-                {isSelected && (
-                  <MaterialCommunityIcons
-                    name="crosshairs"
-                    size={cellSize * 0.6}
-                    color="#FFF"
-                  />
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      ))}
-    </View>
-  );
+/** Build a battle log from shot history */
+function buildBattleLog(
+  state: BattleshipPublicState,
+  turnOrder: string[],
+): BattleLogEntry[] {
+  const entries: BattleLogEntry[] = [];
+  for (const defenderUid of turnOrder) {
+    const shots = state.shotsByDefender[defenderUid] ?? {};
+    const attackerUid = turnOrder.find((u) => u !== defenderUid) ?? "?";
+    const attackerIdx = turnOrder.indexOf(attackerUid) + 1;
+    for (const [key, shot] of Object.entries(shots)) {
+      const [r, c] = key.split(",").map(Number);
+      const coord = colLabel(c) + (r + 1);
+      let text =
+        "P" +
+        attackerIdx +
+        " fired " +
+        coord +
+        " - " +
+        shot.result.toUpperCase();
+      if (shot.result === "sunk" && shot.shipId) {
+        text += " (" + shot.shipId + ")";
+      }
+      entries.push({
+        id: defenderUid + "-" + key,
+        text,
+        type:
+          shot.result === "sunk"
+            ? "sunk"
+            : shot.result === "hit"
+              ? "hit"
+              : "miss",
+        turn: shot.atTurn,
+      });
+    }
+  }
+  entries.sort((a, b) => (a.turn ?? 0) - (b.turn ?? 0));
+  return entries;
 }
 
 // =============================================================================
-// Setup Phase — Fleet Placement UI
+// Setup Phase - Fleet Placement UI
 // =============================================================================
 
 interface SetupPhaseProps {
@@ -222,7 +165,7 @@ interface SetupPhaseProps {
   myUid: string;
   submitMove: (payload: Record<string, unknown>) => Promise<boolean>;
   actionLoading: boolean;
-  theme: ReturnType<typeof useAppTheme>["theme"];
+  tokens: ReturnType<typeof useBattleshipTheme>;
   onPlacementsConfirmed: (placements: ShipPlacement[]) => void;
 }
 
@@ -231,13 +174,14 @@ function SetupPhase({
   myUid,
   submitMove,
   actionLoading,
-  theme,
+  tokens,
   onPlacementsConfirmed,
 }: SetupPhaseProps) {
   const gridSize = state.rules.gridSize;
   const fleet = getFleetForPreset(state.rules.fleetPreset);
-  const isDark = theme.isDark;
   const isReady = state.setup.readyByUid[myUid] ?? false;
+  const feedback = useBattleshipFeedback(true);
+  const insets = useSafeAreaInsets();
 
   const [placements, setPlacements] = useState<ShipPlacement[]>([]);
   const [selectedShipId, setSelectedShipId] = useState<string | null>(
@@ -305,38 +249,42 @@ function SetupPhase({
       for (const ck of cells) {
         const [cr, cc] = ck.split(",").map(Number);
         if (cr < 0 || cr >= gridSize || cc < 0 || cc >= gridSize) {
+          feedback.invalidFeedback();
           Alert.alert("Invalid", "Ship goes off the grid.");
           return;
         }
       }
 
-      // Check overlap with other placed ships
+      // Check overlap
       const otherCells = new Set<string>();
       for (const p of filtered) {
         for (const ck of p.cells) otherCells.add(ck);
       }
       if (cells.some((ck) => otherCells.has(ck))) {
+        feedback.invalidFeedback();
         Alert.alert("Invalid", "Ships cannot overlap.");
         return;
       }
 
-      // Check adjacency if rule requires
+      // Adjacency check
       if (!state.rules.allowAdjacentShips) {
         const blocked = new Set<string>();
         for (const ck of [...otherCells]) {
           const [ar, ac] = ck.split(",").map(Number);
           for (let dr = -1; dr <= 1; dr++) {
             for (let dc = -1; dc <= 1; dc++) {
-              if (dr !== 0 || dc !== 0) blocked.add(`${ar + dr},${ac + dc}`);
+              if (dr !== 0 || dc !== 0) blocked.add(ar + dr + "," + (ac + dc));
             }
           }
         }
         if (cells.some((ck) => blocked.has(ck))) {
+          feedback.invalidFeedback();
           Alert.alert("Invalid", "Ships must have a gap between them.");
           return;
         }
       }
 
+      feedback.placeFeedback();
       const newPlacements = [...filtered, newPlacement];
       setPlacements(newPlacements);
 
@@ -356,6 +304,7 @@ function SetupPhase({
       gridSize,
       isReady,
       state.rules.allowAdjacentShips,
+      feedback,
     ],
   );
 
@@ -366,12 +315,19 @@ function SetupPhase({
       state.rules.allowAdjacentShips,
     );
     if (result.length > 0) {
+      feedback.placeFeedback();
       setPlacements(result);
       setSelectedShipId(null);
     } else {
+      feedback.invalidFeedback();
       Alert.alert("Error", "Could not auto-place fleet. Try again.");
     }
-  }, [gridSize, state.rules.fleetPreset, state.rules.allowAdjacentShips]);
+  }, [
+    gridSize,
+    state.rules.fleetPreset,
+    state.rules.allowAdjacentShips,
+    feedback,
+  ]);
 
   const handleClear = useCallback(() => {
     setPlacements([]);
@@ -387,13 +343,12 @@ function SetupPhase({
       state.rules.allowAdjacentShips,
     );
     if (!validation.valid) {
+      feedback.invalidFeedback();
       Alert.alert("Invalid Fleet", validation.error ?? "Check your placement.");
       return;
     }
-    await submitMove({
-      action: "place_fleet",
-      placements,
-    });
+    feedback.confirmFeedback();
+    await submitMove({ action: "place_fleet", placements });
     onPlacementsConfirmed(placements);
   }, [
     allPlaced,
@@ -402,225 +357,167 @@ function SetupPhase({
     state.rules,
     submitMove,
     onPlacementsConfirmed,
+    feedback,
   ]);
 
+  // -- Waiting state --
   if (isReady) {
     return (
-      <View
-        style={[
-          styles.container,
-          { backgroundColor: isDark ? "#000" : theme.colors.background },
-        ]}
-      >
-        <MaterialCommunityIcons
-          name="check-circle"
-          size={64}
-          color="#34C759"
-          style={{ marginBottom: 16 }}
-        />
-        <Text style={[styles.statusText, { color: theme.colors.primary }]}>
-          Fleet Deployed!
-        </Text>
-        <Text style={[styles.subText, { color: isDark ? "#AAA" : "#666" }]}>
-          Waiting for opponent to deploy their fleet...
-        </Text>
+      <View style={[styles.center, { backgroundColor: tokens.screenBg }]}>
+        <Animated.View entering={FadeIn.duration(400)} style={styles.center}>
+          <MaterialCommunityIcons
+            name="check-circle"
+            size={64}
+            color={tokens.statusSuccess}
+            style={{ marginBottom: BS.spacing.lg }}
+          />
+          <Text style={[styles.statusText, { color: tokens.tabActiveTint }]}>
+            Fleet Deployed!
+          </Text>
+          <Text style={[styles.subText, { color: tokens.textSecondary }]}>
+            Waiting for opponent to deploy their fleet...
+          </Text>
+        </Animated.View>
       </View>
     );
   }
 
+  // -- Placement UI --
+  const dockPad = Math.max(insets.bottom, 8);
+
   return (
-    <ScrollView
-      style={{ backgroundColor: isDark ? "#000" : theme.colors.background }}
-      contentContainerStyle={styles.setupContainer}
-    >
-      {/* Header */}
-      <Text style={[styles.phaseTitle, { color: theme.colors.primary }]}>
-        Deploy Your Fleet
-      </Text>
-
-      {/* Grid */}
-      <BattleshipGrid
-        gridSize={gridSize}
-        cells={gridCells}
-        onCellPress={handleCellPress}
-        disabled={isReady}
-        theme={theme}
-      />
-
-      {/* Ship Carousel */}
-      <View style={styles.shipDock}>
-        <Text style={[styles.dockTitle, { color: isDark ? "#CCC" : "#333" }]}>
-          Ships
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {fleet.map((shipDef) => {
-            const isPlaced = placedShipIds.has(shipDef.shipId);
-            const isSelected = selectedShipId === shipDef.shipId;
-            return (
-              <TouchableOpacity
-                key={shipDef.shipId}
-                style={[
-                  styles.shipCard,
-                  {
-                    borderColor: isSelected
-                      ? theme.colors.primary
-                      : isDark
-                        ? "#444"
-                        : "#DDD",
-                    backgroundColor: isPlaced
-                      ? isDark
-                        ? "#1A3A1A"
-                        : "#E8F5E9"
-                      : isDark
-                        ? "#1A1A2E"
-                        : "#FFF",
-                    opacity: isPlaced && !isSelected ? 0.6 : 1,
-                  },
-                ]}
-                onPress={() => setSelectedShipId(shipDef.shipId)}
-              >
-                <Text
-                  style={[
-                    styles.shipName,
-                    {
-                      color: isSelected
-                        ? theme.colors.primary
-                        : isDark
-                          ? "#CCC"
-                          : "#333",
-                    },
-                  ]}
-                >
-                  {shipDef.name}
-                </Text>
-                <View style={styles.shipSizeRow}>
-                  {Array.from({ length: shipDef.size }).map((_, i) => (
-                    <View
-                      key={i}
-                      style={[
-                        styles.shipSizeBlock,
-                        {
-                          backgroundColor: isPlaced
-                            ? "#34C759"
-                            : isDark
-                              ? "#4A90D9"
-                              : "#3478F6",
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-                {isPlaced && (
-                  <MaterialCommunityIcons
-                    name="check"
-                    size={14}
-                    color="#34C759"
-                  />
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+    <View style={[styles.flex1, { backgroundColor: tokens.screenBg }]}>
+      {/* Board area — flex:1, board vertically centered */}
+      <View style={styles.boardArea}>
+        <BoardCard tokens={tokens}>
+          <BattleshipGrid
+            gridSize={gridSize}
+            cells={gridCells}
+            onCellPress={handleCellPress}
+            disabled={isReady}
+            tokens={tokens}
+          />
+        </BoardCard>
       </View>
 
-      {/* Action Buttons */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            { backgroundColor: isDark ? "#333" : "#E0E0E0" },
-          ]}
-          onPress={() => setDirection((d) => (d === "H" ? "V" : "H"))}
-        >
-          <MaterialCommunityIcons
-            name={direction === "H" ? "arrow-right" : "arrow-down"}
-            size={20}
-            color={isDark ? "#FFF" : "#333"}
-          />
-          <Text
-            style={[styles.actionBtnText, { color: isDark ? "#FFF" : "#333" }]}
-          >
-            {direction === "H" ? "Horizontal" : "Vertical"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            { backgroundColor: isDark ? "#333" : "#E0E0E0" },
-          ]}
-          onPress={handleAutoPlace}
-        >
-          <MaterialCommunityIcons
-            name="auto-fix"
-            size={20}
-            color={isDark ? "#FFF" : "#333"}
-          />
-          <Text
-            style={[styles.actionBtnText, { color: isDark ? "#FFF" : "#333" }]}
-          >
-            Random
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            { backgroundColor: isDark ? "#333" : "#E0E0E0" },
-          ]}
-          onPress={handleClear}
-        >
-          <MaterialCommunityIcons
-            name="eraser"
-            size={20}
-            color={isDark ? "#FFF" : "#333"}
-          />
-          <Text
-            style={[styles.actionBtnText, { color: isDark ? "#FFF" : "#333" }]}
-          >
-            Clear
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Confirm Button */}
-      <TouchableOpacity
+      {/* ── Bottom Dock — always visible, safe-area aware ── */}
+      <View
         style={[
-          styles.confirmBtn,
+          styles.dock,
           {
-            backgroundColor: allPlaced
-              ? theme.colors.primary
-              : isDark
-                ? "#333"
-                : "#CCC",
-            opacity: allPlaced && !actionLoading ? 1 : 0.5,
+            backgroundColor: tokens.surfaceSecondary,
+            borderTopColor: tokens.divider,
+            paddingBottom: dockPad,
           },
         ]}
-        onPress={handleConfirm}
-        disabled={!allPlaced || actionLoading}
       >
-        <MaterialCommunityIcons name="anchor" size={20} color="#FFF" />
-        <Text style={styles.confirmBtnText}>
-          {actionLoading ? "Deploying..." : "Confirm Fleet"}
-        </Text>
-      </TouchableOpacity>
+        {/* Ship Carousel */}
+        <ShipCarousel
+          fleet={fleet}
+          selectedShipId={selectedShipId}
+          placedShipIds={placedShipIds}
+          onSelectShip={setSelectedShipId}
+          tokens={tokens}
+          disabled={isReady}
+        />
 
-      {/* Info */}
-      {unplacedShips.length > 0 && (
-        <Text style={[styles.infoText, { color: isDark ? "#888" : "#999" }]}>
-          {unplacedShips.length} ship{unplacedShips.length !== 1 ? "s" : ""}{" "}
-          remaining
-          {selectedShipId
-            ? ` — Placing: ${fleet.find((s) => s.shipId === selectedShipId)?.name}`
-            : ""}
-        </Text>
-      )}
-    </ScrollView>
+        {/* Action Row + Confirm — single row */}
+        <View style={styles.dockActionRow}>
+          <TouchableOpacity
+            style={[styles.dockBtn, { backgroundColor: tokens.cancelBtnBg }]}
+            onPress={() => setDirection((d) => (d === "H" ? "V" : "H"))}
+            accessibilityLabel={
+              direction === "H" ? "Rotate to vertical" : "Rotate to horizontal"
+            }
+          >
+            <MaterialCommunityIcons
+              name={direction === "H" ? "arrow-right" : "arrow-down"}
+              size={18}
+              color={tokens.textPrimary}
+            />
+            <Text style={[styles.dockBtnText, { color: tokens.textPrimary }]}>
+              {direction === "H" ? "H" : "V"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dockBtn, { backgroundColor: tokens.cancelBtnBg }]}
+            onPress={handleAutoPlace}
+            accessibilityLabel="Auto-place fleet randomly"
+          >
+            <MaterialCommunityIcons
+              name="auto-fix"
+              size={18}
+              color={tokens.textPrimary}
+            />
+            <Text style={[styles.dockBtnText, { color: tokens.textPrimary }]}>
+              Rand
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.dockBtn, { backgroundColor: tokens.cancelBtnBg }]}
+            onPress={handleClear}
+            accessibilityLabel="Clear all placed ships"
+          >
+            <MaterialCommunityIcons
+              name="eraser"
+              size={18}
+              color={tokens.textPrimary}
+            />
+            <Text style={[styles.dockBtnText, { color: tokens.textPrimary }]}>
+              Clear
+            </Text>
+          </TouchableOpacity>
+
+          {/* Confirm CTA — grows to fill remaining space */}
+          <TouchableOpacity
+            style={[
+              styles.dockConfirmBtn,
+              {
+                backgroundColor: allPlaced
+                  ? tokens.confirmBtnBg
+                  : tokens.fireBtnDisabledBg,
+                opacity: allPlaced && !actionLoading ? 1 : 0.5,
+              },
+            ]}
+            onPress={handleConfirm}
+            disabled={!allPlaced || actionLoading}
+            accessibilityLabel={
+              actionLoading ? "Deploying fleet" : "Confirm fleet placement"
+            }
+          >
+            <MaterialCommunityIcons
+              name="anchor"
+              size={18}
+              color={tokens.confirmBtnText}
+            />
+            <Text
+              style={[styles.dockConfirmText, { color: tokens.confirmBtnText }]}
+            >
+              {actionLoading ? "Deploy..." : "Confirm"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Status line */}
+        {unplacedShips.length > 0 && (
+          <Text style={[styles.dockInfo, { color: tokens.textMuted }]}>
+            {unplacedShips.length} ship{unplacedShips.length !== 1 ? "s" : ""}{" "}
+            left
+            {selectedShipId
+              ? " · Placing: " +
+                (fleet.find((s) => s.shipId === selectedShipId)?.name ?? "")
+              : ""}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 }
 
 // =============================================================================
-// Battle Phase — Firing UI
+// Battle Phase - Firing UI
 // =============================================================================
 
 interface BattlePhaseProps {
@@ -630,7 +527,7 @@ interface BattlePhaseProps {
   submitMove: (payload: Record<string, unknown>) => Promise<boolean>;
   actionLoading: boolean;
   isMyTurn: boolean;
-  theme: ReturnType<typeof useAppTheme>["theme"];
+  tokens: ReturnType<typeof useBattleshipTheme>;
   settings: Record<string, unknown>;
   myPlacements: ShipPlacement[];
 }
@@ -642,26 +539,27 @@ function BattlePhase({
   submitMove,
   actionLoading,
   isMyTurn,
-  theme,
+  tokens,
   settings,
   myPlacements,
 }: BattlePhaseProps) {
-  const isDark = theme.isDark;
   const gridSize = state.rules.gridSize;
+  const fleet = getFleetForPreset(state.rules.fleetPreset);
+  const opponentUid = turnOrder.find((u) => u !== myUid) ?? "";
   const isSalvo = state.rules.shotMode === "salvo";
   const confirmBeforeFire = (settings.confirmBeforeFire as boolean) ?? true;
+  const hapticsEnabled = (settings.haptics as boolean) ?? true;
 
-  const opponentUid = turnOrder[0] === myUid ? turnOrder[1] : turnOrder[0];
+  const feedback = useBattleshipFeedback(hapticsEnabled);
 
-  // Tab state: "target" (opponent's grid) or "fleet" (my grid)
   const [activeTab, setActiveTab] = useState<"target" | "fleet">("target");
-
-  // Salvo target selection
   const [salvoTargets, setSalvoTargets] = useState<Set<string>>(new Set());
+
+  // Stats
   const myStats = state.statsByUid[myUid] ?? emptyStats();
   const opponentStats = state.statsByUid[opponentUid] ?? emptyStats();
 
-  // Build opponent's grid (shots I've fired at them)
+  // Build target grid (shots the player has fired at opponent)
   const targetGrid = useMemo(() => {
     const grid: GridCellData[][] = Array.from({ length: gridSize }, () =>
       Array.from({ length: gridSize }, () => ({
@@ -686,14 +584,13 @@ function BattlePhase({
     return grid;
   }, [state.shotsByDefender, opponentUid, gridSize]);
 
-  // Build my grid (shots opponent fired at me + my ship positions)
+  // Build fleet grid (incoming shots + own ships)
   const myGrid = useMemo(() => {
     const grid: GridCellData[][] = Array.from({ length: gridSize }, () =>
       Array.from({ length: gridSize }, () => ({
         status: "empty" as CellStatus,
       })),
     );
-    // First, overlay my ship placements so the player can see their fleet
     for (const p of myPlacements) {
       const cells = computeShipCells(
         p.startRow,
@@ -708,7 +605,6 @@ function BattlePhase({
         }
       }
     }
-    // Then, overlay incoming shots on top (hits/misses/sinks take priority)
     const shots = state.shotsByDefender[myUid] ?? {};
     for (const [key, shot] of Object.entries(shots)) {
       const [r, c] = key.split(",").map(Number);
@@ -734,26 +630,64 @@ function BattlePhase({
   const actualIsMyTurn =
     state.phase === "battle" ? state.currentTurnUid === myUid : isMyTurn;
 
+  // Build battle log for drawer
+  const battleLog = useMemo(
+    () => buildBattleLog(state, turnOrder),
+    [state, turnOrder],
+  );
+
+  // Track previous turn for haptic on turn change
+  const prevIsMyTurn = useRef(actualIsMyTurn);
+  useEffect(() => {
+    if (actualIsMyTurn && !prevIsMyTurn.current) {
+      feedback.yourTurnFeedback();
+    }
+    prevIsMyTurn.current = actualIsMyTurn;
+  }, [actualIsMyTurn, feedback]);
+
+  // Ship health for fleet status
+  const { shipHealth, sunkShips } = useMemo(() => {
+    const hp: Record<string, number> = {};
+    const sunk = new Set<string>();
+    for (const ship of fleet) {
+      hp[ship.shipId] = ship.size;
+    }
+    const shots = state.shotsByDefender[myUid] ?? {};
+    for (const shot of Object.values(shots)) {
+      if (
+        shot.result === "hit" &&
+        shot.shipId &&
+        hp[shot.shipId] !== undefined
+      ) {
+        hp[shot.shipId] = Math.max(0, hp[shot.shipId] - 1);
+      }
+      if (shot.result === "sunk" && shot.shipId) {
+        hp[shot.shipId] = 0;
+        sunk.add(shot.shipId);
+      }
+    }
+    return { shipHealth: hp, sunkShips: sunk };
+  }, [state.shotsByDefender, myUid, fleet]);
+
   const handleTargetPress = useCallback(
     async (r: number, c: number) => {
       if (!actualIsMyTurn || actionLoading) return;
       const key = cellKey(r, c);
 
-      // Check if already shot
       if (state.shotsByDefender[opponentUid]?.[key]) return;
 
       if (isSalvo) {
-        // Toggle selection
         setSalvoTargets((prev) => {
           const next = new Set(prev);
           if (next.has(key)) {
             next.delete(key);
           } else {
-            // Allow up to shipsRemaining targets
             if (next.size >= myStats.shipsRemaining) {
               Alert.alert(
                 "Salvo Limit",
-                `You can fire ${myStats.shipsRemaining} shots (ships remaining).`,
+                "You can fire " +
+                  myStats.shipsRemaining +
+                  " shots (ships remaining).",
               );
               return prev;
             }
@@ -761,20 +695,25 @@ function BattlePhase({
           }
           return next;
         });
+        feedback.placeFeedback();
         return;
       }
 
-      // Single shot mode
+      // Single shot
       if (confirmBeforeFire) {
-        Alert.alert("Confirm Fire", `Fire at ${colLabel(c)}${r + 1}?`, [
+        Alert.alert("Confirm Fire", "Fire at " + colLabel(c) + (r + 1) + "?", [
           { text: "Cancel", style: "cancel" },
           {
             text: "Fire!",
             style: "destructive",
-            onPress: () => submitMove({ action: "fire", target: { r, c } }),
+            onPress: () => {
+              feedback.fireFeedback();
+              submitMove({ action: "fire", target: { r, c } });
+            },
           },
         ]);
       } else {
+        feedback.fireFeedback();
         await submitMove({ action: "fire", target: { r, c } });
       }
     },
@@ -787,6 +726,7 @@ function BattlePhase({
       confirmBeforeFire,
       myStats.shipsRemaining,
       submitMove,
+      feedback,
     ],
   );
 
@@ -794,58 +734,44 @@ function BattlePhase({
     if (salvoTargets.size !== myStats.shipsRemaining) {
       Alert.alert(
         "Incomplete",
-        `Select exactly ${myStats.shipsRemaining} targets.`,
+        "Select exactly " + myStats.shipsRemaining + " targets.",
       );
       return;
     }
+    feedback.fireFeedback();
     const targets = Array.from(salvoTargets).map((key) => {
       const [r, c] = key.split(",").map(Number);
       return { r, c };
     });
     await submitMove({ action: "salvo_fire", targets });
     setSalvoTargets(new Set());
-  }, [salvoTargets, myStats.shipsRemaining, submitMove]);
+  }, [salvoTargets, myStats.shipsRemaining, submitMove, feedback]);
 
-  // DEBUG: Log isMyTurn prop received in BattlePhase
-  useEffect(() => {
-    console.log(
-      `[gamesV4][DEBUG] BattlePhase: myUid=${myUid}, isMyTurn(prop)=${isMyTurn}, state.currentTurnUid=${state.currentTurnUid}, stateBasedIsMyTurn=${state.currentTurnUid === myUid}, state.phase=${state.phase}, state.moveCount=${state.moveCount}, state.turnNumber=${state.turnNumber}`,
-    );
-  }, [
-    isMyTurn,
-    myUid,
-    state.phase,
-    state.currentTurnUid,
-    state.moveCount,
-    state.turnNumber,
-  ]);
-
-  const turnText = actualIsMyTurn ? "Your Turn — Fire!" : "Opponent's Turn...";
+  const turnText = actualIsMyTurn ? "Your Turn - Fire!" : "Opponent's Turn...";
 
   return (
-    <View
-      style={[
-        styles.battleContainer,
-        { backgroundColor: isDark ? "#000" : theme.colors.background },
-      ]}
-    >
-      {/* Turn indicator */}
-      <View
+    <View style={[styles.flex1, { backgroundColor: tokens.screenBg }]}>
+      {/* Turn Banner */}
+      <Animated.View
+        entering={FadeIn.duration(200)}
+        layout={Layout}
         style={[
           styles.turnBanner,
           {
             backgroundColor: actualIsMyTurn
-              ? "#34C759"
-              : isDark
-                ? "#333"
-                : "#E0E0E0",
+              ? tokens.bannerMyTurn
+              : tokens.bannerOpponentTurn,
           },
         ]}
       >
         <Text
           style={[
             styles.turnText,
-            { color: actualIsMyTurn ? "#FFF" : isDark ? "#CCC" : "#333" },
+            {
+              color: actualIsMyTurn
+                ? tokens.bannerMyTurnText
+                : tokens.bannerOpponentTurnText,
+            },
           ]}
         >
           {turnText}
@@ -853,120 +779,138 @@ function BattlePhase({
         <Text
           style={[
             styles.turnSub,
-            { color: actualIsMyTurn ? "#E8F5E9" : isDark ? "#888" : "#888" },
+            {
+              color: actualIsMyTurn
+                ? tokens.bannerMyTurnText + "CC"
+                : tokens.textMuted,
+            },
           ]}
         >
           Turn {state.turnNumber} | Ships: {myStats.shipsRemaining}
         </Text>
-      </View>
+      </Animated.View>
 
-      {/* Event ribbon */}
-      {state.lastEvent && (
-        <View
-          style={[
-            styles.eventRibbon,
-            { backgroundColor: isDark ? "#1A1A2E" : "#FFF3E0" },
-          ]}
-        >
-          <Text
-            style={[
-              styles.eventText,
-              { color: isDark ? "#FF9500" : "#E65100" },
-            ]}
-          >
-            {state.lastEvent}
-          </Text>
-        </View>
-      )}
+      {/* Event Ribbon */}
+      <EventRibbon
+        lastEvent={state.lastEvent}
+        eventType={inferEventType(state.lastEvent)}
+        tokens={tokens}
+        log={battleLog}
+      />
 
-      {/* Tabs */}
-      <View style={styles.tabRow}>
+      {/* Segmented Control */}
+      <View style={[styles.tabRow, { borderBottomColor: tokens.divider }]}>
         <TouchableOpacity
           style={[
             styles.tab,
             activeTab === "target" && {
-              borderBottomColor: theme.colors.primary,
-              borderBottomWidth: 2,
+              borderBottomColor: tokens.tabIndicator,
+              borderBottomWidth: 2.5,
             },
           ]}
-          onPress={() => setActiveTab("target")}
+          onPress={() => {
+            setActiveTab("target");
+            feedback.tabChangeFeedback();
+          }}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "target" }}
         >
+          <MaterialCommunityIcons
+            name="crosshairs-gps"
+            size={16}
+            color={
+              activeTab === "target"
+                ? tokens.tabActiveTint
+                : tokens.tabInactiveTint
+            }
+          />
           <Text
             style={[
               styles.tabText,
               {
                 color:
                   activeTab === "target"
-                    ? theme.colors.primary
-                    : isDark
-                      ? "#888"
-                      : "#999",
+                    ? tokens.tabActiveTint
+                    : tokens.tabInactiveTint,
               },
             ]}
           >
-            🎯 Target
+            Target
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[
             styles.tab,
             activeTab === "fleet" && {
-              borderBottomColor: theme.colors.primary,
-              borderBottomWidth: 2,
+              borderBottomColor: tokens.tabIndicator,
+              borderBottomWidth: 2.5,
             },
           ]}
-          onPress={() => setActiveTab("fleet")}
+          onPress={() => {
+            setActiveTab("fleet");
+            feedback.tabChangeFeedback();
+          }}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "fleet" }}
         >
+          <MaterialCommunityIcons
+            name="anchor"
+            size={16}
+            color={
+              activeTab === "fleet"
+                ? tokens.tabActiveTint
+                : tokens.tabInactiveTint
+            }
+          />
           <Text
             style={[
               styles.tabText,
               {
                 color:
                   activeTab === "fleet"
-                    ? theme.colors.primary
-                    : isDark
-                      ? "#888"
-                      : "#999",
+                    ? tokens.tabActiveTint
+                    : tokens.tabInactiveTint,
               },
             ]}
           >
-            ⚓ Fleet
+            Fleet
           </Text>
         </TouchableOpacity>
       </View>
 
+      {/* Content */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {activeTab === "target" ? (
           <>
-            <BattleshipGrid
-              gridSize={gridSize}
-              cells={targetGrid}
-              onCellPress={handleTargetPress}
-              disabled={!actualIsMyTurn || actionLoading}
-              selectedTargets={isSalvo ? salvoTargets : undefined}
-              theme={theme}
-              label="Opponent's Waters"
-            />
+            <BoardCard tokens={tokens}>
+              <BattleshipGrid
+                gridSize={gridSize}
+                cells={targetGrid}
+                onCellPress={handleTargetPress}
+                disabled={!actualIsMyTurn || actionLoading}
+                selectedTargets={isSalvo ? salvoTargets : undefined}
+                tokens={tokens}
+                label="Opponent's Waters"
+              />
+            </BoardCard>
 
-            {/* Salvo confirm */}
+            {/* Salvo controls */}
             {isSalvo && actualIsMyTurn && (
-              <View style={styles.salvoRow}>
-                <Text
-                  style={[
-                    styles.salvoText,
-                    { color: isDark ? "#CCC" : "#333" },
-                  ]}
-                >
+              <Animated.View
+                entering={FadeInDown.duration(200)}
+                style={styles.salvoRow}
+              >
+                <Text style={[styles.salvoText, { color: tokens.textPrimary }]}>
                   Salvo: {salvoTargets.size}/{myStats.shipsRemaining}
                 </Text>
                 <TouchableOpacity
                   style={[
                     styles.salvoBtn,
-                    { backgroundColor: isDark ? "#333" : "#E0E0E0" },
+                    { backgroundColor: tokens.cancelBtnBg },
                   ]}
                   onPress={() => setSalvoTargets(new Set())}
                 >
-                  <Text style={{ color: isDark ? "#FFF" : "#333" }}>Clear</Text>
+                  <Text style={{ color: tokens.cancelBtnText }}>Clear</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -974,77 +918,87 @@ function BattlePhase({
                     {
                       backgroundColor:
                         salvoTargets.size === myStats.shipsRemaining
-                          ? "#FF3B30"
-                          : isDark
-                            ? "#555"
-                            : "#CCC",
+                          ? tokens.fireBtnBg
+                          : tokens.fireBtnDisabledBg,
                     },
                   ]}
                   onPress={handleSalvoConfirm}
                   disabled={salvoTargets.size !== myStats.shipsRemaining}
                 >
-                  <Text style={{ color: "#FFF", fontWeight: "700" }}>
+                  <Text
+                    style={{
+                      color: tokens.fireBtnText,
+                      fontWeight: "700",
+                    }}
+                  >
                     Fire Salvo!
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </Animated.View>
             )}
 
-            {/* Stats summary */}
+            {/* Stats */}
             <View style={styles.statRow}>
               <StatBadge
                 label="Hits"
                 value={myStats.hits}
-                color="#FF3B30"
-                theme={theme}
+                color={tokens.markerHit}
+                tokens={tokens}
               />
               <StatBadge
                 label="Misses"
                 value={myStats.misses}
-                color={isDark ? "#555" : "#999"}
-                theme={theme}
+                color={tokens.markerMiss}
+                tokens={tokens}
               />
               <StatBadge
                 label="Accuracy"
-                value={`${myStats.accuracy}%`}
-                color="#34C759"
-                theme={theme}
+                value={myStats.accuracy + "%"}
+                color={tokens.statusSuccess}
+                tokens={tokens}
               />
               <StatBadge
                 label="Sunk"
                 value={myStats.shipsSunk}
-                color="#8B0000"
-                theme={theme}
+                color={tokens.markerSunk}
+                tokens={tokens}
               />
             </View>
           </>
         ) : (
           <>
-            <BattleshipGrid
-              gridSize={gridSize}
-              cells={myGrid}
-              disabled
-              theme={theme}
-              label="Your Waters"
+            {/* Fleet tab */}
+            <BoardCard tokens={tokens}>
+              <BattleshipGrid
+                gridSize={gridSize}
+                cells={myGrid}
+                disabled
+                tokens={tokens}
+                label="Your Waters"
+              />
+            </BoardCard>
+
+            {/* Fleet Status */}
+            <FleetStatus
+              fleet={fleet}
+              shipHealth={shipHealth}
+              sunkShips={sunkShips}
+              tokens={tokens}
             />
+
+            {/* Opponent stats */}
             <View style={styles.statRow}>
               <StatBadge
-                label="Ships Left"
-                value={myStats.shipsRemaining}
-                color="#34C759"
-                theme={theme}
-              />
-              <StatBadge
-                label="Incoming"
-                value={opponentStats.hits + opponentStats.misses}
-                color="#FF9500"
-                theme={theme}
+                label="Opp Hits"
+                value={opponentStats.hits}
+                color={tokens.statusWarning}
+                tokens={tokens}
               />
               <StatBadge
                 label="Opp Acc"
-                value={`${opponentStats.accuracy}%`}
-                color="#FF3B30"
-                theme={theme}
+                value={opponentStats.accuracy + "%"}
+                color={tokens.statusError}
+                tokens={tokens}
               />
             </View>
           </>
@@ -1061,15 +1015,14 @@ function BattlePhase({
 interface SpectatorViewProps {
   state: BattleshipPublicState;
   turnOrder: string[];
-  theme: ReturnType<typeof useAppTheme>["theme"];
+  tokens: ReturnType<typeof useBattleshipTheme>;
 }
 
-function SpectatorView({ state, turnOrder, theme }: SpectatorViewProps) {
-  const isDark = theme.isDark;
+function SpectatorView({ state, turnOrder, tokens }: SpectatorViewProps) {
   const gridSize = state.rules.gridSize;
   const [viewingPlayer, setViewingPlayer] = useState(0);
+  const [showReveal, setShowReveal] = useState(false);
 
-  // Build fog-of-war grids for each player
   const grids = useMemo(() => {
     return turnOrder.map((uid) => {
       const grid: GridCellData[][] = Array.from({ length: gridSize }, () =>
@@ -1095,45 +1048,38 @@ function SpectatorView({ state, turnOrder, theme }: SpectatorViewProps) {
     });
   }, [state.shotsByDefender, turnOrder, gridSize]);
 
+  const battleLog = useMemo(
+    () => buildBattleLog(state, turnOrder),
+    [state, turnOrder],
+  );
+
   const currentUid = turnOrder[viewingPlayer];
   const playerStats = state.statsByUid[currentUid] ?? emptyStats();
+  const canReveal = state.phase === "resolved" && !!state.resolved?.reveal;
 
   return (
     <ScrollView
-      style={{ backgroundColor: isDark ? "#000" : theme.colors.background }}
+      style={{ backgroundColor: tokens.screenBg }}
       contentContainerStyle={styles.scrollContent}
     >
-      <Text style={[styles.phaseTitle, { color: theme.colors.primary }]}>
-        📺 Spectating
-      </Text>
+      {/* Event Ribbon */}
+      <EventRibbon
+        lastEvent={state.lastEvent}
+        eventType={inferEventType(state.lastEvent)}
+        tokens={tokens}
+        log={battleLog}
+      />
 
-      {state.lastEvent && (
-        <View
-          style={[
-            styles.eventRibbon,
-            { backgroundColor: isDark ? "#1A1A2E" : "#FFF3E0" },
-          ]}
-        >
-          <Text
-            style={[
-              styles.eventText,
-              { color: isDark ? "#FF9500" : "#E65100" },
-            ]}
-          >
-            {state.lastEvent}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.tabRow}>
+      {/* Player tabs */}
+      <View style={[styles.tabRow, { borderBottomColor: tokens.divider }]}>
         {turnOrder.map((uid, idx) => (
           <TouchableOpacity
             key={uid}
             style={[
               styles.tab,
               viewingPlayer === idx && {
-                borderBottomColor: theme.colors.primary,
-                borderBottomWidth: 2,
+                borderBottomColor: tokens.tabIndicator,
+                borderBottomWidth: 2.5,
               },
             ]}
             onPress={() => setViewingPlayer(idx)}
@@ -1144,120 +1090,121 @@ function SpectatorView({ state, turnOrder, theme }: SpectatorViewProps) {
                 {
                   color:
                     viewingPlayer === idx
-                      ? theme.colors.primary
-                      : isDark
-                        ? "#888"
-                        : "#999",
+                      ? tokens.tabActiveTint
+                      : tokens.tabInactiveTint,
                 },
               ]}
             >
               Player {idx + 1}
-              {state.currentTurnUid === uid ? " 🔴" : ""}
+              {state.currentTurnUid === uid ? " *" : ""}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <BattleshipGrid
-        gridSize={gridSize}
-        cells={grids[viewingPlayer]}
-        disabled
-        theme={theme}
-        label={`Player ${viewingPlayer + 1}'s Board (Incoming Fire)`}
-      />
+      {/* Board */}
+      <BoardCard tokens={tokens}>
+        <BattleshipGrid
+          gridSize={gridSize}
+          cells={grids[viewingPlayer]}
+          disabled
+          tokens={tokens}
+          label={"Player " + (viewingPlayer + 1) + "'s Board (Incoming Fire)"}
+        />
+      </BoardCard>
 
+      {/* Stats */}
       <View style={styles.statRow}>
         <StatBadge
           label="Ships Left"
           value={playerStats.shipsRemaining}
-          color="#34C759"
-          theme={theme}
+          color={tokens.statusSuccess}
+          tokens={tokens}
         />
         <StatBadge
           label="Hits Taken"
           value={playerStats.hits}
-          color="#FF3B30"
-          theme={theme}
+          color={tokens.markerHit}
+          tokens={tokens}
+        />
+        <StatBadge
+          label="Accuracy"
+          value={playerStats.accuracy + "%"}
+          color={tokens.statusInfo}
+          tokens={tokens}
         />
       </View>
 
-      {/* Post-game reveal */}
-      {state.phase === "resolved" && state.resolved?.reveal && (
-        <View style={styles.revealSection}>
-          <Text style={[styles.revealTitle, { color: theme.colors.primary }]}>
-            Full Fleet Reveal
-          </Text>
-          {turnOrder.map((uid, idx) => {
-            const playerPlacements =
-              state.resolved?.reveal?.placementsByUid[uid] ?? [];
-            return (
-              <View key={uid} style={styles.revealPlayer}>
-                <Text
-                  style={[
-                    styles.revealPlayerName,
-                    { color: isDark ? "#CCC" : "#333" },
-                  ]}
-                >
-                  Player {idx + 1}
-                </Text>
-                {playerPlacements.map((p) => (
-                  <Text
-                    key={p.shipId}
-                    style={{ color: isDark ? "#888" : "#666", fontSize: 12 }}
-                  >
-                    {p.shipId} ({p.size}) at {colLabel(p.startCol)}
-                    {p.startRow + 1} {p.direction}
-                  </Text>
-                ))}
-              </View>
-            );
-          })}
-        </View>
+      {/* Post-game reveal toggle */}
+      {canReveal && (
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={styles.revealSection}
+        >
+          <TouchableOpacity
+            style={[
+              styles.revealToggle,
+              {
+                backgroundColor: showReveal
+                  ? tokens.tabActiveTint + "20"
+                  : tokens.surfaceSecondary,
+                borderColor: showReveal ? tokens.tabActiveTint : tokens.divider,
+              },
+            ]}
+            onPress={() => setShowReveal(!showReveal)}
+          >
+            <MaterialCommunityIcons
+              name={showReveal ? "eye-off" : "eye"}
+              size={20}
+              color={tokens.tabActiveTint}
+            />
+            <Text
+              style={[styles.revealToggleText, { color: tokens.tabActiveTint }]}
+            >
+              {showReveal ? "Hide Fleets" : "Reveal Fleets"}
+            </Text>
+          </TouchableOpacity>
+
+          {showReveal && state.resolved?.reveal && (
+            <Animated.View entering={FadeInDown.duration(300)}>
+              {turnOrder.map((uid, idx) => {
+                const playerPlacements =
+                  state.resolved?.reveal?.placementsByUid[uid] ?? [];
+                return (
+                  <View key={uid} style={styles.revealPlayer}>
+                    <Text
+                      style={[
+                        styles.revealPlayerName,
+                        { color: tokens.textPrimary },
+                      ]}
+                    >
+                      Player {idx + 1}
+                    </Text>
+                    {playerPlacements.map((p: ShipPlacement) => (
+                      <Text
+                        key={p.shipId}
+                        style={{
+                          color: tokens.textSecondary,
+                          fontSize: BS.fonts.sm,
+                        }}
+                      >
+                        {p.shipId} ({p.size}) at {colLabel(p.startCol)}
+                        {p.startRow + 1} {p.direction}
+                      </Text>
+                    ))}
+                  </View>
+                );
+              })}
+            </Animated.View>
+          )}
+        </Animated.View>
       )}
     </ScrollView>
   );
 }
 
 // =============================================================================
-// Stat Badge Component
-// =============================================================================
-
-function StatBadge({
-  label,
-  value,
-  color,
-  theme,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-  theme: ReturnType<typeof useAppTheme>["theme"];
-}) {
-  return (
-    <View style={styles.statBadge}>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text
-        style={[styles.statLabel, { color: theme.isDark ? "#888" : "#999" }]}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-function emptyStats(): PlayerStats {
-  return {
-    hits: 0,
-    misses: 0,
-    accuracy: 0,
-    shipsRemaining: 0,
-    shipsSunk: 0,
-    turnsTaken: 0,
-  };
-}
-
-// =============================================================================
-// Main Battleship UI — Wrapped by GameScreenShell
+// Main Battleship UI - Wrapped by GameScreenShell
 // =============================================================================
 
 function BattleshipUI({
@@ -1274,77 +1221,69 @@ function BattleshipUI({
   actionError,
   sessionId,
 }: GameShellProps) {
-  const { theme } = useAppTheme();
+  const tokens = useBattleshipTheme();
   const state = asState(publicState);
 
-  // Persist placements across phase transitions so the Fleet tab can show ships.
-  // This is set when the player confirms their fleet in the setup phase.
+  // Persist placements across phase transitions
   const [myPlacements, setMyPlacements] = useState<ShipPlacement[]>([]);
 
   if (!state) {
     return (
-      <View
-        style={[
-          styles.container,
-          { backgroundColor: theme.isDark ? "#000" : theme.colors.background },
-        ]}
-      >
-        <Text style={{ color: theme.colors.primary }}>Loading...</Text>
+      <View style={[styles.center, { backgroundColor: tokens.screenBg }]}>
+        <Text style={{ color: tokens.tabActiveTint }}>Loading...</Text>
       </View>
     );
   }
 
-  // Determine if user is a spectator (not in turnOrder)
   const isSpectator = !turnOrder.includes(myUid);
 
-  // DEBUG: Log phase transitions and isMyTurn in BattleshipUI
-  console.log(
-    `[gamesV4][DEBUG] BattleshipUI render: myUid=${myUid}, isMyTurn=${isMyTurn}, isTerminal=${isTerminal}, phase=${state.phase}, currentTurnUid=${state.currentTurnUid}, moveCount=${state.moveCount}, turnOrder=${JSON.stringify(turnOrder)}, currentTurnIndex=${currentTurnIndex}`,
-  );
-
-  if (isSpectator) {
-    return <SpectatorView state={state} turnOrder={turnOrder} theme={theme} />;
-  }
-
-  if (state.phase === "setup") {
-    return (
-      <SetupPhase
-        state={state}
-        myUid={myUid}
-        submitMove={submitMove}
-        actionLoading={actionLoading}
-        theme={theme}
-        onPlacementsConfirmed={setMyPlacements}
-      />
-    );
-  }
-
-  if (state.phase === "battle" || state.phase === "resolved") {
-    return (
-      <BattlePhase
-        state={state}
-        myUid={myUid}
-        turnOrder={turnOrder}
-        submitMove={submitMove}
-        actionLoading={actionLoading}
-        isMyTurn={isMyTurn && !isTerminal}
-        theme={theme}
-        settings={settings}
-        myPlacements={myPlacements}
-      />
-    );
-  }
+  // Derive phase for header
+  const headerPhase: BattlePhaseId = isSpectator
+    ? "spectate"
+    : state.phase === "resolved"
+      ? "resolved"
+      : state.phase === "battle"
+        ? "battle"
+        : "setup";
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: theme.isDark ? "#000" : theme.colors.background },
-      ]}
-    >
-      <Text style={{ color: theme.colors.primary }}>
-        Unknown phase: {state.phase}
-      </Text>
+    <View style={[styles.flex1, { backgroundColor: tokens.screenBg }]}>
+      {/* Compact phase indicator — shell already provides back/resign header */}
+      <View style={styles.phaseRow}>
+        <PhaseChip phase={headerPhase} tokens={tokens} />
+      </View>
+
+      {/* Game Content */}
+      {isSpectator ? (
+        <SpectatorView state={state} turnOrder={turnOrder} tokens={tokens} />
+      ) : state.phase === "setup" ? (
+        <SetupPhase
+          state={state}
+          myUid={myUid}
+          submitMove={submitMove}
+          actionLoading={actionLoading}
+          tokens={tokens}
+          onPlacementsConfirmed={setMyPlacements}
+        />
+      ) : state.phase === "battle" || state.phase === "resolved" ? (
+        <BattlePhase
+          state={state}
+          myUid={myUid}
+          turnOrder={turnOrder}
+          submitMove={submitMove}
+          actionLoading={actionLoading}
+          isMyTurn={isMyTurn && !isTerminal}
+          tokens={tokens}
+          settings={settings}
+          myPlacements={myPlacements}
+        />
+      ) : (
+        <View style={[styles.center, { backgroundColor: tokens.screenBg }]}>
+          <Text style={{ color: tokens.tabActiveTint }}>
+            Unknown phase: {state.phase}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1354,256 +1293,189 @@ function BattleshipUI({
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
+  flex1: {
+    flex: 1,
+  },
+  center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 16,
+    padding: BS.spacing.lg,
   },
-  setupContainer: {
+
+  // Phase indicator row
+  phaseRow: {
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 8,
+    paddingVertical: BS.spacing.xs,
   },
-  battleContainer: {
+
+  // Board area — flex:1, vertically centers the board
+  boardArea: {
     flex: 1,
-  },
-  scrollContent: {
+    justifyContent: "center",
     alignItems: "center",
-    paddingBottom: 80,
-    paddingHorizontal: 8,
+    overflow: "hidden",
   },
-  phaseTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
+
+  // Status / Waiting
   statusText: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: BS.fonts.xxl,
+    fontWeight: BS.fontWeights.bold,
   },
   subText: {
-    fontSize: 14,
-    marginTop: 8,
+    fontSize: BS.fonts.md,
+    marginTop: BS.spacing.sm,
     textAlign: "center",
   },
 
-  // Grid
-  gridWrapper: {
-    alignItems: "center",
-    marginVertical: 8,
+  // Bottom dock
+  dock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: BS.spacing.sm,
   },
-  gridLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  gridRow: {
-    flexDirection: "row",
-  },
-  headerCell: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerText: {
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  rowLabel: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  gridCell: {
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 0.5,
-    borderRadius: 2,
-    margin: 0.5,
-  },
-  cellIcon: {
-    fontSize: 12,
-  },
-  missDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-
-  // Ship dock
-  shipDock: {
-    width: "100%",
-    marginTop: 12,
-    paddingHorizontal: 8,
-  },
-  dockTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  shipCard: {
-    borderWidth: 2,
-    borderRadius: 8,
-    padding: 8,
-    marginRight: 8,
-    alignItems: "center",
-    minWidth: 72,
-  },
-  shipName: {
-    fontSize: 11,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  shipSizeRow: {
-    flexDirection: "row",
-    gap: 2,
-    marginBottom: 2,
-  },
-  shipSizeBlock: {
-    width: 14,
-    height: 14,
-    borderRadius: 2,
-  },
-
-  // Actions
-  actionRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-  actionBtn: {
+  dockActionRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
+    gap: BS.spacing.sm,
+    paddingHorizontal: BS.spacing.md,
+    marginTop: BS.spacing.xs,
   },
-  actionBtnText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  confirmBtn: {
+  dockBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 16,
-    gap: 8,
-    width: "80%",
+    paddingHorizontal: BS.spacing.sm,
+    paddingVertical: BS.spacing.sm,
+    borderRadius: BS.radius.sm,
+    gap: 3,
+    minWidth: 44,
+    minHeight: 40,
   },
-  confirmBtnText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
+  dockBtnText: {
+    fontSize: BS.fonts.xs,
+    fontWeight: BS.fontWeights.semibold,
   },
-  infoText: {
-    fontSize: 12,
-    marginTop: 8,
+  dockConfirmBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: BS.spacing.sm,
+    borderRadius: BS.radius.sm,
+    gap: BS.spacing.xs,
+    minHeight: 40,
+  },
+  dockConfirmText: {
+    fontSize: BS.fonts.md,
+    fontWeight: BS.fontWeights.bold,
+  },
+  dockInfo: {
+    fontSize: BS.fonts.xs,
     textAlign: "center",
+    marginTop: BS.spacing.xs,
+    paddingHorizontal: BS.spacing.md,
   },
 
   // Battle
   turnBanner: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: BS.spacing.md,
+    paddingHorizontal: BS.spacing.lg,
     alignItems: "center",
   },
   turnText: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: BS.fonts.lg,
+    fontWeight: BS.fontWeights.bold,
   },
   turnSub: {
-    fontSize: 12,
+    fontSize: BS.fonts.sm,
     marginTop: 2,
   },
-  eventRibbon: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginVertical: 4,
-    borderRadius: 6,
-    marginHorizontal: 16,
-    alignSelf: "center",
-  },
-  eventText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
+
+  // Tabs
   tabRow: {
     flexDirection: "row",
-    marginVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: BS.spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   tab: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: BS.spacing.xs,
+    paddingVertical: BS.spacing.md,
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: BS.fonts.md,
+    fontWeight: BS.fontWeights.semibold,
+  },
+
+  // Content
+  scrollContent: {
+    alignItems: "center",
+    paddingBottom: 80,
+    paddingHorizontal: BS.spacing.sm,
   },
 
   // Stats
   statRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 16,
-    marginTop: 12,
-  },
-  statBadge: {
-    alignItems: "center",
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  statLabel: {
-    fontSize: 10,
-    marginTop: 2,
+    gap: BS.spacing.lg,
+    marginTop: BS.spacing.md,
+    paddingHorizontal: BS.spacing.lg,
   },
 
   // Salvo
   salvoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 10,
+    gap: BS.spacing.md,
+    marginTop: BS.spacing.md,
+    paddingHorizontal: BS.spacing.lg,
   },
   salvoText: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: BS.fonts.md,
+    fontWeight: BS.fontWeights.semibold,
   },
   salvoBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: BS.spacing.lg,
+    paddingVertical: BS.spacing.sm,
+    borderRadius: BS.radius.sm,
   },
 
   // Reveal
   revealSection: {
-    marginTop: 20,
-    padding: 12,
+    marginTop: BS.spacing.xl,
+    paddingHorizontal: BS.spacing.lg,
     width: "100%",
   },
-  revealTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 8,
+  revealToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: BS.spacing.sm,
+    paddingVertical: BS.spacing.md,
+    borderRadius: BS.radius.md,
+    borderWidth: 1,
+    marginBottom: BS.spacing.md,
+  },
+  revealToggleText: {
+    fontSize: BS.fonts.md,
+    fontWeight: BS.fontWeights.semibold,
   },
   revealPlayer: {
-    marginBottom: 12,
+    marginBottom: BS.spacing.md,
   },
   revealPlayerName: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 4,
+    fontSize: BS.fonts.md,
+    fontWeight: BS.fontWeights.semibold,
+    marginBottom: BS.spacing.xs,
   },
 });
 
 // =============================================================================
-// Export — wrapped with GameV4Shell
+// Export - wrapped with GameV4Shell
 // =============================================================================
 
 export default withGameV4Shell(BattleshipUI, "battleship");

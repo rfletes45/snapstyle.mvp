@@ -8,13 +8,27 @@
 
 import * as admin from "firebase-admin";
 
+// ── Config ──────────────────────────────────────────────────────────
+const PROJECT_ID = process.env.FIREBASE_PROJECT_ID ?? "gamerapp-37e70";
+
 // ── Initialise once ─────────────────────────────────────────────────
 let initialised = false;
 
 function ensureInit() {
   if (!initialised) {
+    // In local dev `applicationDefault()` may not be available.
+    // Fall back gracefully so the server still starts.
+    let credential: admin.credential.Credential | undefined;
+    try {
+      credential = admin.credential.applicationDefault();
+    } catch {
+      // No default creds — use the emulator / anonymous init
+      credential = undefined;
+    }
+
     admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
+      ...(credential ? { credential } : {}),
+      projectId: PROJECT_ID,
     });
     initialised = true;
   }

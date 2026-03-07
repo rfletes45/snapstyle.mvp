@@ -9,7 +9,6 @@
 
 import {
   AttachmentRow,
-  intToBool,
   MessageRow,
   parseJsonColumn,
 } from "@/types/database";
@@ -20,6 +19,7 @@ import {
   ReplyToMetadata,
 } from "@/types/messaging";
 import * as Crypto from "expo-crypto";
+import { normalizeMessageFromLocalRow } from "@/services/chat/normalizeMessage";
 import { getDatabase } from "./index";
 
 import { createLogger } from "@/utils/log";
@@ -940,85 +940,7 @@ export function rowToMessageV2(
   row: MessageWithAttachments,
   currentUserId: string,
 ): MessageV2 | null {
-  const hiddenFor = parseJsonColumn<string[]>(row.hidden_for_json, []);
-
-  // Skip if hidden for current user
-  if (hiddenFor.includes(currentUserId)) {
-    return null;
-  }
-
-  const parsedSenderStyle = parseJsonColumn(row.sender_style_json, undefined);
-
-  return {
-    id: row.id,
-    scope: row.scope as "dm" | "group",
-    conversationId: row.conversation_id,
-    senderId: row.sender_id,
-    senderName: row.sender_name || undefined,
-    kind: row.kind as MessageV2["kind"],
-    text: row.kind === "animal" ? undefined : row.text || undefined,
-    // For animal messages, animalId is stored in the text column
-    animalId: row.kind === "animal" ? row.text || undefined : undefined,
-    attachments: row.attachments.map(attRowToAttachmentV2),
-    createdAt: row.created_at,
-    serverReceivedAt: row.server_received_at || row.created_at,
-    editedAt: row.edited_at || undefined,
-    replyTo: row.reply_to_preview
-      ? parseJsonColumn<ReplyToMetadata>(
-          row.reply_to_preview,
-          undefined as unknown as ReplyToMetadata,
-        )
-      : undefined,
-    threadRootId: row.thread_root_id || undefined,
-    replyCount: row.reply_count || undefined,
-    lastReplyAt: row.last_reply_at || undefined,
-    mentionUids: parseJsonColumn<string[]>(
-      row.mentions_json,
-      undefined as unknown as string[],
-    ),
-    reactionsSummary: parseJsonColumn<Record<string, number>>(
-      row.reactions_json,
-      undefined as unknown as Record<string, number>,
-    ),
-    deletedForAll: row.deleted_for_all
-      ? { by: row.deleted_by!, at: row.deleted_at! }
-      : undefined,
-    hiddenFor: hiddenFor.length > 0 ? hiddenFor : undefined,
-    linkPreview: parseJsonColumn(row.link_preview_json, undefined),
-    senderStyle: parsedSenderStyle,
-    clientId: "", // Not stored locally
-    idempotencyKey: row.id, // Use message ID
-    // UI-specific fields for sync status display
-    _syncStatus: row.sync_status,
-    _syncError: row.sync_error || undefined,
-  } as MessageV2 & { _syncStatus: string; _syncError?: string };
-}
-
-function attRowToAttachmentV2(row: AttachmentRow): AttachmentV2 & {
-  _localUri?: string;
-  _downloadStatus: string;
-  _uploadStatus: string;
-} {
-  return {
-    id: row.id,
-    kind: row.kind as AttachmentV2["kind"],
-    mime: row.mime,
-    url: row.local_uri || row.remote_url || "",
-    path: row.remote_path || "",
-    sizeBytes: row.size_bytes || 0,
-    width: row.width || undefined,
-    height: row.height || undefined,
-    durationMs: row.duration_ms || undefined,
-    thumbUrl: row.thumb_local_uri || row.thumb_remote_url || undefined,
-    thumbPath: undefined,
-    caption: row.caption || undefined,
-    viewOnce: intToBool(row.view_once),
-    expiresAt: row.expires_at || undefined,
-    // Local-specific
-    _localUri: row.local_uri || undefined,
-    _downloadStatus: row.download_status,
-    _uploadStatus: row.upload_status,
-  };
+  return normalizeMessageFromLocalRow(row, currentUserId);
 }
 
 /**
@@ -1044,6 +966,9 @@ export function messageV2ToRow(
     edited_at: message.editedAt || null,
     reply_to_id: message.replyTo?.messageId || null,
     reply_to_preview: message.replyTo ? JSON.stringify(message.replyTo) : null,
+    thread_root_id: message.threadRootId || null,
+    reply_count: message.replyCount || 0,
+    last_reply_at: message.lastReplyAt || null,
     mentions_json: message.mentionUids
       ? JSON.stringify(message.mentionUids)
       : null,

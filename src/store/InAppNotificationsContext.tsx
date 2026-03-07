@@ -13,9 +13,14 @@
  * - User preference toggle (persisted via localStorage on web)
  */
 
-import { isInGamesArea } from "@/gamesV4/utils/isInGamesArea";
+import type { GameRuntimeType } from "@/gamesV4/types/common";
+import {
+  isInGamesArea,
+  shouldSuppressAchievementBanner,
+} from "@/gamesV4/utils/isInGamesArea";
 import { getFirestoreInstance } from "@/services/firebase";
 import { getUserProfileByUid } from "@/services/friends";
+import { normalizeNotificationPayload } from "@/services/notifications/normalizeNotification";
 import { createLogger } from "@/utils/log";
 import {
   collection,
@@ -128,6 +133,8 @@ interface InAppNotificationsContextType {
   setCurrentScreen: (screen: string | null) => void;
   /** Set the current chat ID being viewed (to suppress its notifications) */
   setCurrentChatId: (chatId: string | null) => void;
+  /** Set the active game runtime type for type-aware notification gating */
+  setActiveGameRuntimeType: (type: GameRuntimeType | null) => void;
   /** The last viewed chat ID (set when leaving a chat). Consume to clear. */
   lastViewedChatId: string | null;
   /** Get and clear the last viewed chat ID (used by inbox to optimistically mark read) */
@@ -184,6 +191,8 @@ export function InAppNotificationsProvider({
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   const [currentChatId, setCurrentChatIdState] = useState<string | null>(null);
+  const [activeGameRuntimeType, setActiveGameRuntimeType] =
+    useState<GameRuntimeType | null>(null);
   const [lastViewedChatId, setLastViewedChatId] = useState<string | null>(null);
 
   // Refs for debouncing and tracking
@@ -302,15 +311,22 @@ export function InAppNotificationsProvider({
         return;
       }
 
-      // Games area suppression: suppress game_turn and achievement_unlocked
-      // banners when the user is inside the Games area.
+      // Games area suppression: type-aware gating for game notifications.
+      // game_turn: always suppressed in Games area (user is already engaged).
+      // achievement_unlocked: allowed during solo/turn-based gameplay,
+      // suppressed during realtime gameplay and on non-gameplay screens.
+      if (notification.type === "game_turn" && isInGamesArea(currentScreen)) {
+        log.debug(
+          `User is in Games area (${currentScreen}), suppressing game_turn notification`,
+        );
+        return;
+      }
       if (
-        (notification.type === "game_turn" ||
-          notification.type === "achievement_unlocked") &&
-        isInGamesArea(currentScreen)
+        notification.type === "achievement_unlocked" &&
+        shouldSuppressAchievementBanner(currentScreen, activeGameRuntimeType)
       ) {
         log.debug(
-          `User is in Games area (${currentScreen}), suppressing ${notification.type} notification`,
+          `Suppressing achievement banner (screen=${currentScreen}, runtime=${activeGameRuntimeType})`,
         );
         return;
       }
@@ -342,6 +358,7 @@ export function InAppNotificationsProvider({
       enabled,
       currentChatId,
       currentScreen,
+      activeGameRuntimeType,
       shouldShowNotification,
       generateId,
       scheduleAutoDismiss,
@@ -739,10 +756,22 @@ export function InAppNotificationsProvider({
               continue;
             }
 
-            // If user is in Games area, mark delivered but don't show
-            if (isInGamesArea(currentScreen)) {
+            // Type-aware Games area suppression:
+            // game_turn: always suppress in Games area
+            // achievement_unlocked: suppress only during realtime gameplay or non-gameplay screens
+            const shouldSuppress =
+              type === "game_turn"
+                ? isInGamesArea(currentScreen)
+                : type === "achievement_unlocked"
+                  ? shouldSuppressAchievementBanner(
+                      currentScreen,
+                      activeGameRuntimeType,
+                    )
+                  : false;
+
+            if (shouldSuppress) {
               log.debug(
-                `User in Games area, marking delivered without showing: ${notifDocId}`,
+                `Suppressing ${type} in Games area (screen=${currentScreen}, runtime=${activeGameRuntimeType}): ${notifDocId}`,
               );
               try {
                 const docRef = doc(
@@ -778,7 +807,15 @@ export function InAppNotificationsProvider({
             }
 
             // Build and push the notification
-            if (type === "game_turn") {
+            const normalized = normalizeNotificationPayload({
+              type,
+              ...payload,
+            });
+            if (!normalized) {
+              continue;
+            }
+
+            if (normalized.type === "game_turn") {
               const gameName = payload.gameName ?? payload.gameId ?? "Game";
               const opponentName = payload.opponentName;
               const subtitle = opponentName
@@ -791,18 +828,9 @@ export function InAppNotificationsProvider({
                 body: `${subtitle} — Tap to play`,
                 entityId: payload.sessionId ?? notifDocId,
                 fromUserId: "",
-                navigateTo: {
-                  screen: "GamePlayV4",
-                  params: {
-                    sessionId: payload.sessionId,
-                    gameId: payload.gameId,
-                    // Fallback fields for navigation handler
-                    _conversationId: payload.conversationId,
-                    _conversationScope: payload.conversationScope,
-                  },
-                },
+                navigateTo: normalized.route,
               });
-            } else if (type === "achievement_unlocked") {
+            } else if (normalized.type === "achievement_unlocked") {
               const achievementIds: string[] = payload.achievementIds ?? [];
               const titles: string[] = payload.achievementTitles ?? [];
               const count = achievementIds.length;
@@ -817,14 +845,7 @@ export function InAppNotificationsProvider({
                 body: subtitle,
                 entityId: data.collapseKey ?? notifDocId,
                 fromUserId: "",
-                navigateTo: {
-                  screen: payload.sectionId
-                    ? "AchievementSection"
-                    : "AchievementsHub",
-                  params: payload.sectionId
-                    ? { sectionId: payload.sectionId }
-                    : undefined,
-                },
+                navigateTo: normalized.route,
               });
             }
           }
@@ -843,7 +864,7 @@ export function InAppNotificationsProvider({
         (u) => u !== unsubscribe,
       );
     };
-  }, [uid, enabled, currentScreen, pushNotification]);
+  }, [uid, enabled, currentScreen, activeGameRuntimeType, pushNotification]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -870,6 +891,7 @@ export function InAppNotificationsProvider({
     clearAll,
     setCurrentScreen,
     setCurrentChatId,
+    setActiveGameRuntimeType,
     lastViewedChatId,
     consumeLastViewedChatId,
     registerNotificationPressHandler,

@@ -8,6 +8,7 @@
  */
 
 // ─── Callables ─────────────────────────────────────────────────────────────
+export { claimAchievementV4 } from "./claimAchievement";
 export { claimAchievementSectionBadgeV4 } from "./claimSectionBadge";
 export { createGameInviteV4 } from "./invites";
 export { claimLevelRewardV4 } from "./levelRewardsV4";
@@ -18,12 +19,18 @@ export {
   startGameFromInviteV4,
   updateLobbySettingsV4,
 } from "./lobby";
+export { adminClearConversationGamesV4, adminClearGameV4 } from "./moderation";
 export {
   resignSessionV4,
   resolveRealtimeSessionV4,
   submitTurnMoveV4,
 } from "./sessions";
-export { createSoloSessionV4 } from "./solo";
+export {
+  createSoloSessionV4,
+  restartSoloSessionV4,
+  resumeOrCreateSoloSessionV4,
+  suspendSoloSessionV4,
+} from "./solo";
 
 // ─── Triggers ──────────────────────────────────────────────────────────────
 export {

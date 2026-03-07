@@ -24,6 +24,7 @@ export type GameId =
   | "word_master"
   | "minesweeper"
   | "lights_out"
+  | "solitaire_klondike"
   // Turn-based
   | "tic_tac_toe"
   | "chess"

@@ -12,6 +12,10 @@
 
 import { GAME_METADATA } from "@/gamesV4/constants";
 import { usePinnedInvites } from "@/gamesV4/hooks/usePinnedInvites";
+import {
+  adminClearGame,
+  cancelGameInvite,
+} from "@/gamesV4/services/gameServiceV4";
 import type { GameInviteV4 } from "@/gamesV4/types";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -21,6 +25,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback } from "react";
 import {
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -131,6 +136,63 @@ export function PinnedInviteBar({
     [navigation],
   );
 
+  const handleLongPress = useCallback(
+    (invite: GameInviteV4) => {
+      const uid = currentFirebaseUser?.uid;
+      if (!uid) return;
+
+      const isInviteHost = invite.hostId === uid;
+      // DM participants always have authority; group authority is server-checked
+      const canClear = scope === "dm" || isInviteHost;
+
+      const actions: {
+        text: string;
+        style?: "destructive" | "cancel";
+        onPress?: () => void;
+      }[] = [];
+
+      // Host can cancel their own pre-start invite
+      if (
+        isInviteHost &&
+        (invite.status === "sent" || invite.status === "lobby")
+      ) {
+        actions.push({
+          text: "Cancel Invite",
+          style: "destructive",
+          onPress: () => {
+            cancelGameInvite({ inviteId: invite.inviteId }).catch((err) =>
+              Alert.alert("Error", err?.message ?? "Failed to cancel invite."),
+            );
+          },
+        });
+      }
+
+      // Clear game (works for any status — admin/owner or DM participant)
+      if (canClear) {
+        actions.push({
+          text: "Clear Game",
+          style: "destructive",
+          onPress: () => {
+            adminClearGame({ inviteId: invite.inviteId }).catch((err) =>
+              Alert.alert("Error", err?.message ?? "Failed to clear game."),
+            );
+          },
+        });
+      }
+
+      if (actions.length === 0) return;
+
+      const meta = GAME_METADATA[invite.gameId];
+      const gameName = meta?.displayName ?? invite.gameId;
+
+      Alert.alert(gameName, "What would you like to do?", [
+        ...actions,
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [currentFirebaseUser?.uid, scope],
+  );
+
   // Filter out cancelled invites (resolved without sessionId)
   const visibleInvites = invites.filter(
     (inv) => !(inv.status === "resolved" && !inv.sessionId),
@@ -158,6 +220,7 @@ export function PinnedInviteBar({
           },
         ]}
         onPress={() => handlePress(item)}
+        onLongPress={() => handleLongPress(item)}
         activeOpacity={0.7}
       >
         <MaterialCommunityIcons

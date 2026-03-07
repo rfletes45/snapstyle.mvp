@@ -700,6 +700,8 @@ interface CenterAreaProps {
   isDark: boolean;
   onDrawPress: () => void;
   drawDisabled: boolean;
+  onDiscardPress?: () => void;
+  discardDisabled?: boolean;
 }
 
 function CenterArea({
@@ -707,6 +709,8 @@ function CenterArea({
   isDark,
   onDrawPress,
   drawDisabled,
+  onDiscardPress,
+  discardDisabled = true,
 }: CenterAreaProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -746,8 +750,13 @@ function CenterArea({
       </View>
 
       <View style={ctStyles.pilesRow}>
-        {/* Discard pile */}
-        <View style={ctStyles.pile}>
+        {/* Discard pile — tap to confirm play when a card is selected */}
+        <TouchableOpacity
+          style={ctStyles.pile}
+          onPress={onDiscardPress}
+          disabled={discardDisabled}
+          activeOpacity={0.7}
+        >
           <Text
             style={[ctStyles.pileLabel, { color: isDark ? "#666" : "#AAA" }]}
           >
@@ -760,6 +769,21 @@ function CenterArea({
               isDiscard
               currentColor={state.currentColor}
             />
+            {/* Glow ring when discard is tappable */}
+            {!discardDisabled && (
+              <View
+                style={{
+                  position: "absolute",
+                  top: -4,
+                  left: -4,
+                  right: -4,
+                  bottom: -4,
+                  borderRadius: 12,
+                  borderWidth: 2,
+                  borderColor: "#34C759",
+                }}
+              />
+            )}
           </Animated.View>
           {state.pendingDraw.count > 0 && (
             <View style={ctStyles.stackBadge}>
@@ -768,7 +792,7 @@ function CenterArea({
               </Text>
             </View>
           )}
-        </View>
+        </TouchableOpacity>
 
         {/* Draw pile */}
         <TouchableOpacity
@@ -1375,9 +1399,10 @@ function CrazyEightsUI({
   const hand = privateState?.hand ?? [];
   const isSpectator = !turnOrder.includes(myUid);
 
-  const actualIsMyTurn = state
-    ? state.currentTurnUid === myUid && !isTerminal
-    : isMyTurn && !isTerminal;
+  // Use the shell's isMyTurn (centralised, includes optimistic turn-advance).
+  // Previously this was overridden locally via state.currentTurnUid — that
+  // created a second source of truth that raced with the session subscription.
+  const actualIsMyTurn = isMyTurn && !isTerminal;
 
   // ── Playable card computation ──
   const playableResult = useMemo(() => {
@@ -1434,18 +1459,6 @@ function CrazyEightsUI({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     playableCardIds?.size,
   ]);
-
-  // Play button overlay animation
-  const playBtnAnim = useRef(new Animated.Value(0)).current;
-  const showPlayBtn = !!selectedCardId && actualIsMyTurn && !isSubmitting;
-
-  useEffect(() => {
-    Animated.timing(playBtnAnim, {
-      toValue: showPlayBtn ? 1 : 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
-  }, [showPlayBtn, playBtnAnim]);
 
   // ── Card Play Logic ──
 
@@ -1518,6 +1531,20 @@ function CrazyEightsUI({
       setIsSubmitting(false);
     }
   }, [selectedCardId, state, actualIsMyTurn, isSubmitting, hand, submitMove]);
+
+  // Tap discard pile to confirm the selected card
+  const handleDiscardTap = useCallback(() => {
+    if (!selectedCardId || !actualIsMyTurn || isSubmitting) {
+      // No card selected — hint the player
+      if (!selectedCardId && actualIsMyTurn) {
+        Haptics.warning();
+        moveTrace("discard-tap-hint", { reason: "no_card_selected" });
+      }
+      return;
+    }
+    // Delegate to the existing play logic (handles wilds + normal cards)
+    handlePlaySelected();
+  }, [selectedCardId, actualIsMyTurn, isSubmitting, handlePlaySelected]);
 
   const handleColorSelected = useCallback(
     async (color: CardColor) => {
@@ -1704,6 +1731,8 @@ function CrazyEightsUI({
           isDark={isDark}
           onDrawPress={handleDraw}
           drawDisabled={!canDraw}
+          onDiscardPress={handleDiscardTap}
+          discardDisabled={!selectedCardId || !actualIsMyTurn || isSubmitting}
         />
 
         {/* Inline action buttons (Catch, Pass) above the dock */}
@@ -1767,36 +1796,12 @@ function CrazyEightsUI({
           />
         </View>
 
-        {/* Play button — absolute overlay, animated in/out */}
-        <Animated.View
-          pointerEvents={showPlayBtn ? "auto" : "none"}
-          style={[
-            ms.playBtnOverlay,
-            {
-              opacity: playBtnAnim,
-              transform: [
-                {
-                  translateY: playBtnAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [20, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={ms.playBtn}
-            onPress={handlePlaySelected}
-            disabled={actionLoading || isSubmitting}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="play" size={20} color="#FFF" />
-            <Text style={ms.playBtnText}>
-              {isSubmitting ? "Sending…" : "Play"}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
+        {/* Tap-discard hint when a card is selected */}
+        {!!selectedCardId && actualIsMyTurn && !isSubmitting && (
+          <View style={ms.discardHint}>
+            <Text style={ms.discardHintText}>Tap discard pile to play</Text>
+          </View>
+        )}
 
         {/* Turn Footer — thin bar at the very bottom */}
         <View
@@ -1925,30 +1930,20 @@ const ms = StyleSheet.create({
     height: HAND_TRAY_H,
     justifyContent: "center",
   },
-  playBtnOverlay: {
+  discardHint: {
     position: "absolute",
     top: 4,
     right: 16,
     zIndex: 50,
+    backgroundColor: "rgba(52,199,89,0.85)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
   },
-  playBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#34C759",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 22,
-    gap: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  playBtnText: {
+  discardHintText: {
     color: "#FFF",
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "700",
   },
   turnFooter: {
     height: TURN_FOOTER_H,

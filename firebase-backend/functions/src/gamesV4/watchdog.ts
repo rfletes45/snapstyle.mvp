@@ -131,7 +131,10 @@ export const watchdogGamesV4 = functions.pubsub
 
       for (const doc of staleSessions.docs) {
         const session = doc.data();
-        // Only auto-resolve turn-based (realtime sessions handle their own timeouts)
+        // Only auto-resolve turn-based (realtime sessions handle their own timeouts).
+        // Solo sessions may be suspended/paused — they should NOT be auto-resolved
+        // by the watchdog. Solo sessions are resolved explicitly by the player
+        // (resign, restart) or remain indefinitely resumable.
         if (session.runtimeType !== "turnBased") continue;
 
         try {

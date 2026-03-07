@@ -31,6 +31,7 @@
 13. [Security (Rules) and Integrity](#13-security-rules-and-integrity)
 14. [Testing and QA](#14-testing-and-qa)
 15. [Copy-Paste Templates / Skeletons](#15-copy-paste-templates--skeletons)
+16. [Animation Architecture (CRITICAL)](#16-animation-architecture-critical)
 
 ---
 
@@ -83,24 +84,24 @@ Before reading further, familiarize yourself with the project structure:
 
 ### Backend — `firebase-backend/functions/src/gamesV4/`
 
-| Path                   | Purpose                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `index.ts`             | Barrel exports (14 symbols: 11 callables, 2 triggers, 1 scheduled)            |
-| `adapters.ts`          | Server adapter registry + 3 pilot implementations (851 lines) + serialization |
-| `resolve.ts`           | 10-phase resolution chokepoint (757 lines)                                    |
-| `achievements.ts`      | 18 achievement definitions + evaluator (610 lines)                            |
-| `notifications.ts`     | Push + in-app dispatch (308 lines)                                            |
-| `sessions.ts`          | `submitTurnMoveV4`, `resignSessionV4` (277 lines)                             |
-| `solo.ts`              | `createSoloSessionV4` (134 lines)                                             |
-| `invites.ts`           | `createGameInviteV4` (302 lines)                                              |
-| `lobby.ts`             | 5 lobby callables (694 lines)                                                 |
-| `triggers.ts`          | 2 Firestore triggers (113 lines)                                              |
-| `watchdog.ts`          | 4-pass scheduled cleanup (138 lines)                                          |
-| `helpers.ts`           | Auth, membership, pins, traceId, hashing (218 lines)                          |
-| `validation.ts`        | Sanitization, cooldowns (197 lines)                                           |
-| `types.ts`             | Backend type definitions + constants (278 lines)                              |
-| `levelRewardsV4.ts`    | Level rewards definitions + unlock + claim callable (346 lines)               |
-| `claimSectionBadge.ts` | `claimAchievementSectionBadgeV4` callable (121 lines)                         |
+| Path                   | Purpose                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| `index.ts`             | Barrel exports (14 symbols: 11 callables, 2 triggers, 1 scheduled)                                   |
+| `adapters.ts`          | Server adapter registry + 3 pilot implementations (851 lines) + serialization                        |
+| `resolve.ts`           | 10-phase resolution chokepoint (757 lines)                                                           |
+| `achievements.ts`      | 18 achievement definitions + evaluator (610 lines)                                                   |
+| `notifications.ts`     | Push + in-app dispatch (308 lines)                                                                   |
+| `sessions.ts`          | `submitTurnMoveV4`, `resignSessionV4` (277 lines)                                                    |
+| `solo.ts`              | `createSoloSessionV4`, `resumeOrCreateSoloSessionV4`, `restartSoloSessionV4`, `suspendSoloSessionV4` |
+| `invites.ts`           | `createGameInviteV4` (302 lines)                                                                     |
+| `lobby.ts`             | 5 lobby callables (694 lines)                                                                        |
+| `triggers.ts`          | 2 Firestore triggers (113 lines)                                                                     |
+| `watchdog.ts`          | 4-pass scheduled cleanup (138 lines)                                                                 |
+| `helpers.ts`           | Auth, membership, pins, traceId, hashing (218 lines)                                                 |
+| `validation.ts`        | Sanitization, cooldowns (197 lines)                                                                  |
+| `types.ts`             | Backend type definitions + constants (278 lines)                                                     |
+| `levelRewardsV4.ts`    | Level rewards definitions + unlock + claim callable (346 lines)                                      |
+| `claimSectionBadge.ts` | `claimAchievementSectionBadgeV4` callable (121 lines)                                                |
 
 ### Infra
 
@@ -164,19 +165,19 @@ A game is **fully integrated** when all of these are true:
 
 ### Terminology
 
-| Term                      | Definition                                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **GameId**                | String literal from a union of 20 canonical IDs defined in `src/gamesV4/types/common.ts`. **Append-only — never rename or remove.**  |
-| **runtimeType**           | `"solo"` (1 player, no invite), `"turnBased"` (2+ players, Firestore state machine), `"realtime"` (planned, Colyseus)                |
-| **sessionId**             | Unique ID for a `GameSessionsV4` document — the authoritative game state                                                             |
-| **inviteId**              | Unique ID for a `GameInvitesV4` document — the chat-pinned challenge. Solo games have no invite.                                     |
-| **conversationId**        | DM `chatId` or `groupId` the invite is pinned to. Empty string for solo games.                                                       |
-| **Adapter**               | A stateless TypeScript object implementing `GameAdapterV4`. Shared between client (optimistic) and server (authoritative).           |
-| **GameScreenShell**       | HOC `withGameV4Shell` wrapping every game UI with session management, move dispatch, and auto-navigation.                            |
-| **Resolution chokepoint** | `resolveSessionV4Internal()` — every terminal path funnels through this single function (10 phases).                                 |
-| **PB**                    | Personal Best — server-written only, with SHA-256 integrity hash.                                                                    |
-| **Watchdog**              | Scheduled function (every 30 min) that expires stale lobbies, deletes TTL invites, retries rewards, auto-resolves inactive sessions. |
-| **IMPLEMENTED_GAME_IDS**  | `Set<GameId>` gating which games are playable. Currently: `tic_tac_toe`, `connect_four`, `play_2048`.                                |
+| Term                      | Definition                                                                                                                                                                                                                                                                  |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GameId**                | String literal from a union of 20 canonical IDs defined in `src/gamesV4/types/common.ts`. **Append-only — never rename or remove.**                                                                                                                                         |
+| **runtimeType**           | `"solo"` (1 player, no invite), `"turnBased"` (2+ players, Firestore state machine), `"realtime"` (planned, Colyseus)                                                                                                                                                       |
+| **sessionId**             | Unique ID for a `GameSessionsV4` document — the authoritative game state                                                                                                                                                                                                    |
+| **inviteId**              | Unique ID for a `GameInvitesV4` document — the chat-pinned challenge. Solo games have no invite.                                                                                                                                                                            |
+| **conversationId**        | DM `chatId` or `groupId` the invite is pinned to. Empty string for solo games.                                                                                                                                                                                              |
+| **Adapter**               | A stateless TypeScript object implementing `GameAdapterV4`. Shared between client (optimistic) and server (authoritative).                                                                                                                                                  |
+| **GameScreenShell**       | HOC `withGameV4Shell` wrapping every game UI with session management, move dispatch, overlay controls (runtime-type-specific), and auto-navigation. Solo games get a back arrow (suspend) + menu button; turn-based gets back arrow + resign; realtime gets resign overlay. |
+| **Resolution chokepoint** | `resolveSessionV4Internal()` — every terminal path funnels through this single function (10 phases).                                                                                                                                                                        |
+| **PB**                    | Personal Best — server-written only, with SHA-256 integrity hash.                                                                                                                                                                                                           |
+| **Watchdog**              | Scheduled function (every 30 min) that expires stale lobbies, deletes TTL invites, retries rewards, auto-resolves inactive sessions.                                                                                                                                        |
+| **IMPLEMENTED_GAME_IDS**  | `Set<GameId>` gating which games are playable. Currently: `tic_tac_toe`, `connect_four`, `play_2048`.                                                                                                                                                                       |
 
 ### High-Level Architecture
 
@@ -185,7 +186,7 @@ A game is **fully integrated** when all of these are true:
 │                     React Native Client                      │
 │                                                              │
 │  ChatScreen ──→ GamePickerModal ──→ createGameInviteV4()     │
-│  GamesHubScreen ──→ createSoloSessionV4() (solo games)       │
+│  GamesHubScreen ──→ resumeOrCreateSoloSessionV4() (solo)     │
 │       │                                                      │
 │  PinnedInviteBar ←─── onSnapshot(GameInvitesV4)             │
 │       │                                                      │
@@ -195,6 +196,7 @@ A game is **fully integrated** when all of these are true:
 │       │                   (wrapped by GameScreenShell)        │
 │       │                                                      │
 │  GameScreenShell ──→ submitTurnMoveV4() / resignV4()         │
+│       │              suspendSoloSessionV4() (solo exit)        │
 │       │                                                      │
 │  GameOverScreen ←─── onSnapshot(GameResultsV4)              │
 └───────────┬──────────────────────────────────────────────────┘
@@ -208,7 +210,9 @@ A game is **fully integrated** when all of these are true:
 │    leaveInviteLobbyV4     cancelGameInviteV4                 │
 │    startGameFromInviteV4  updateLobbySettingsV4              │
 │    createSoloSessionV4    submitTurnMoveV4                   │
-│    resignSessionV4        claimLevelRewardV4                 │
+│    resumeOrCreateSoloV4   suspendSoloSessionV4               │
+│    restartSoloSessionV4   resignSessionV4                    │
+│    claimLevelRewardV4                                        │
 │    claimAchievementSectionBadgeV4                            │
 │                                                              │
 │  Triggers: onGameInviteV4Deleted, onSessionV4StatusChanged   │
@@ -299,26 +303,37 @@ Everything else (lobby, session lifecycle, resolve pipeline, leaderboards, notif
 
 Same as 3.1, starting from step 3. The chat gamepad button is the primary invite creation entry point for multiplayer games.
 
-### 3.3 Solo Game: Hub → Create Session → Play → Resolve → GameOver → Return to Hub
+### 3.3 Solo Game: Hub → Resume or Create → Play → Suspend / Resolve
 
 1. User opens **Games Hub** → taps a solo game (e.g., 2048)
-2. Client calls `createSoloSession({ gameId: "play_2048" })`
-3. **Server** (`createSoloSessionV4`):
-   - Auth + 3s cooldown
-   - Validates adapter exists with `runtimeType === "solo"`
-   - Batch creates `GameSessionsV4/{sessionId}` (status `"active"`, empty `inviteId`/`conversationId`) + `PublicState/state`
+2. Client calls `resumeOrCreateSoloSession({ gameId: "play_2048" })`
+3. **Server** (`resumeOrCreateSoloSessionV4`):
+   - Auth — queries for existing active solo session for this `gameId` + `uid`
+   - If found: clears `soloSuspendedAt`, returns `{ sessionId, resumed: true }`
+   - If not found: creates new session (same as `createSoloSessionV4`), returns `{ sessionId, resumed: false }`
    - **No invite doc. No lobby. No pin.**
-4. Client navigates to **Game Play** → game screen
+4. Client navigates to **Game Play** → game screen (resumes previous state if existing)
 5. Player interacts → `submitTurnMove()` sends moves
-6. When game ends → resolve pipeline → `GameResultV4` created
-7. Auto-navigate to **Game Over** → shows score, XP, PB update
-8. User taps "Back to Games" → returns to hub
+6. **Exit paths:**
+   - **Back arrow / Android back:** calls `suspendSoloSession({ sessionId })` → sets `soloSuspendedAt` timestamp, navigates back. Session stays `"active"` — **no resign, no resolve.**
+   - **Menu → Restart:** calls `restartSoloSession({ sessionId })` → resolves old session as resign, creates new session, replaces screen.
+   - **Menu → Resign:** calls `resignSession({ sessionId })` → resolves as resign → Game Over screen.
+   - **Game ends naturally:** resolve pipeline → `GameResultV4` created → auto-navigate to Game Over.
+
+**Solo overlay controls:**
+
+| Position  | Control         | Action                                            |
+| --------- | --------------- | ------------------------------------------------- |
+| Top-left  | Back arrow (←)  | Suspend + navigate back (non-destructive)         |
+| Top-right | Menu button (⋮) | Opens solo menu modal (Restart / Resign / Resume) |
 
 ### 3.4 Resume Flow
 
 - **Minimize app:** Firestore listeners survive; state is current on return
-- **Navigate away:** `useGameSessionV4` unsubscribes; re-entering via invite chip or push notification deep link re-subscribes
+- **Navigate away (solo):** `suspendSoloSession` is called, setting `soloSuspendedAt`. Re-entering from Games Hub calls `resumeOrCreateSoloSession`, which finds the existing active session and resumes it.
+- **Navigate away (multiplayer):** `useGameSessionV4` unsubscribes; re-entering via invite chip or push notification deep link re-subscribes
 - **Push notification tap:** Deep link routes to `GamePlayV4({ sessionId })` (active) or `GameLobbyV4({ inviteId })` (lobby)
+- **Motion/physics games (e.g., Brick Breaker):** The game registers a pause callback via `registerSoloPause`. On suspend, the shell calls this callback to freeze the game loop _before_ navigating away. On resume, the game re-enters in a paused state — the player must tap to restart the physics loop.
 
 ### 3.5 Spectate Flow (Turn-Based Only)
 
@@ -781,7 +796,7 @@ Created by `createGameInviteV4`. Represents a chat-pinned game challenge.
 
 ### 7.2 GameSessionsV4/{sessionId}
 
-Created by `startGameFromInviteV4` or `createSoloSessionV4`. Authoritative game state.
+Created by `startGameFromInviteV4`, `createSoloSessionV4`, or `resumeOrCreateSoloSessionV4`. Authoritative game state.
 
 ```json
 {
@@ -824,7 +839,7 @@ Created by `startGameFromInviteV4` or `createSoloSessionV4`. Authoritative game 
 | `PrivateState/{uid}` | Player UID         | Cloud Functions               | Owner only           |
 | `Moves/{moveId}`     | Auto-ID            | Client (create) + CF (update) | Conversation members |
 
-**Solo sessions:** `inviteId: ""`, `conversationId: ""`, `conversationScope: "dm"`. No invite doc exists.
+**Solo sessions:** `inviteId: ""`, `conversationId: ""`, `conversationScope: "dm"`, `soloSuspendedAt: null | Timestamp`. No invite doc exists. `soloSuspendedAt` is set when the player leaves via back arrow and cleared on resume.
 
 ### 7.3 GameResultsV4/{sessionId}
 
@@ -1550,10 +1565,16 @@ Session-scoped callables (`submitTurnMove`, `resign`) verify participant members
 
 #### B. Game Launch — Solo
 
-- [ ] "Play Now" button on Game Detail creates solo session
+- [ ] "Play Now" button on Game Detail creates or resumes solo session
 - [ ] Navigates to game screen (no lobby)
 - [ ] No invite doc created, no pin in any chat
-- [ ] Game board renders correctly from initial state
+- [ ] Game board renders correctly from initial state (or resumed state)
+- [ ] Back arrow (top-left) suspends session and navigates back — does NOT resign
+- [ ] Menu button (top-right) opens modal with Restart / Resign / Resume
+- [ ] Restart resolves old session and starts new one
+- [ ] Resign resolves session and shows Game Over
+- [ ] Returning to Games Hub → tapping same solo game resumes the suspended session
+- [ ] Motion games (e.g., Brick Breaker) pause on suspend and reopen paused
 
 #### C. Game Launch — Multiplayer
 
@@ -1570,7 +1591,7 @@ Session-scoped callables (`submitTurnMove`, `resign`) verify participant members
 - [ ] Board state updates in real-time for both players
 - [ ] Spectator can watch (if supported) and sees correct state
 - [ ] Resign works → resolves game with resigner as loser
-- [ ] Android back button shows resign confirmation (doesn't navigate away)
+- [ ] Android back button: solo → suspends (non-destructive); multiplayer → resign confirmation
 
 #### E. Game Over
 
@@ -1632,6 +1653,8 @@ Session-scoped callables (`submitTurnMove`, `resign`) verify participant members
 - [ ] App backgrounded during game: return shows current state
 - [ ] Push notification deep link routes to correct screen
 - [ ] Solo game has no invite artifacts in any chat
+- [ ] Suspended solo session survives watchdog (not auto-resolved)
+- [ ] No duplicate solo sessions created for same gameId + uid
 - [ ] Watchdog expires stale invites after 24h of inactivity
 
 ### 14.2 Running Automated Tests
@@ -1846,8 +1869,18 @@ function MyGameUI({
   actionLoading,
   actionError,
   sessionId,
+  registerSoloPause, // Solo games only — register a callback to freeze local game state on suspend
 }: GameShellProps) {
   const state = publicState as unknown as MyGamePublicState;
+
+  // ── Solo pause registration ─────────────────────────────
+  // If your game has a local game loop, animation, or timer,
+  // register a pause callback so the shell can freeze it before
+  // suspending the session. This is REQUIRED for motion/physics games.
+  //
+  // React.useEffect(() => {
+  //   registerSoloPause?.(() => { setPaused(true); });
+  // }, [registerSoloPause]);
 
   if (!state?.board) {
     return (
@@ -2077,6 +2110,161 @@ In `firebase-backend/functions/src/gamesV4/types.ts`:
 | 9   | `firebase-backend/functions/src/gamesV4/types.ts`        | Add `LEADERBOARD_METRICS` entry (if needed)                                                             |
 | 10  | `firebase-backend/functions/src/gamesV4/achievements.ts` | Add section + achievement defs with `evaluate()` functions                                              |
 | 11  | Deploy                                                   | `npm run build` + `firebase deploy --only functions`                                                    |
+
+---
+
+## 16. Animation Architecture (CRITICAL)
+
+> **DO NOT use `react-native-reanimated` for game animations.** Use React Native's built-in `Animated` API instead. This is a **hard rule** — violating it will cause animations to silently fail on iOS and Android while appearing to work on web.
+
+### 16.1 Background
+
+The project has `react-native-reanimated` ~4.1.1 installed (required by some navigation/UI libraries). However, in our environment (React 19.1.0 + React Native 0.81.5 + Fabric + `react-native-worklets-core/plugin`), reanimated's worklet-based animation pipeline **does not produce visible animation frames on native mobile**. Animations jump instantly to their final values.
+
+This was discovered after three rounds of failed debugging across Tic-Tac-Toe, Connect Four, and Chess — all of which used reanimated and all of which had broken animations on mobile. The 2048 game, which uses the core `Animated` API, worked perfectly on all platforms from day one.
+
+**Why web works but mobile doesn't:** On web, reanimated falls back to JS-thread execution (no native worklets), so animations render correctly via `requestAnimationFrame`. On native, the worklet compilation/execution pipeline fails silently.
+
+See [ANIMATION_PIPELINE.md](ANIMATION_PIPELINE.md) for the full forensic analysis.
+
+### 16.2 Required Pattern: Core `Animated` API
+
+All game screen animations **must** use `Animated` from `react-native` (NOT from `react-native-reanimated`):
+
+```tsx
+// ✅ CORRECT — use this
+import { Animated, Easing } from "react-native";
+
+// ❌ WRONG — do NOT use for game animations
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
+```
+
+### 16.3 Animation Primitives Cheat Sheet
+
+| What You Want               | How To Do It                                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Store an animated value** | `const val = useRef(new Animated.Value(initial)).current`                                                                   |
+| **Tween to a target**       | `Animated.timing(val, { toValue: target, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start()` |
+| **Spring to a target**      | `Animated.spring(val, { toValue: target, damping: 12, stiffness: 180, useNativeDriver: true }).start()`                     |
+| **Sequential animations**   | `Animated.sequence([anim1, anim2]).start()`                                                                                 |
+| **Parallel animations**     | `Animated.parallel([anim1, anim2]).start()`                                                                                 |
+| **Looping animation**       | `Animated.loop(Animated.sequence([anim1, anim2]))`                                                                          |
+| **Fade-in on mount**        | `useEffect(() => { Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }).start() }, [])`           |
+| **Combine two values**      | `Animated.multiply(valA, valB)` — use for combined scale/opacity                                                            |
+| **Interpolation**           | `val.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] })`                                                            |
+
+### 16.4 Reference Pattern: Animated Game Piece
+
+Copy this pattern for any game piece that needs mount-time animation:
+
+```tsx
+import React, { useRef, useEffect } from "react";
+import { Animated, Easing } from "react-native";
+
+function AnimatedPiece({ animate }: { animate: boolean }) {
+  const scale = useRef(new Animated.Value(animate ? 0.5 : 1)).current;
+  const opacity = useRef(new Animated.Value(animate ? 0 : 1)).current;
+
+  useEffect(() => {
+    if (animate) {
+      Animated.parallel([
+        Animated.spring(scale, {
+          toValue: 1,
+          damping: 12,
+          stiffness: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, []); // mount only — key-based remount handles re-triggers
+
+  return (
+    <Animated.View style={{ transform: [{ scale }], opacity }}>
+      {/* Your piece content */}
+    </Animated.View>
+  );
+}
+```
+
+### 16.5 Reference Pattern: Position Slide (Offset Model)
+
+For pieces that move from one position to another (chess, checkers, etc.), use the **offset model** from 2048:
+
+```tsx
+function AnimatedPieceWrapper({
+  startX,
+  startY,
+  targetX,
+  targetY,
+  shouldAnimate,
+}) {
+  // Offset = how far from target the piece starts
+  const offsetX = useRef(
+    new Animated.Value(shouldAnimate ? startX - targetX : 0),
+  ).current;
+  const offsetY = useRef(
+    new Animated.Value(shouldAnimate ? startY - targetY : 0),
+  ).current;
+
+  useEffect(() => {
+    if (shouldAnimate) {
+      Animated.parallel([
+        Animated.timing(offsetX, {
+          toValue: 0,
+          duration: 150,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(offsetY, {
+          toValue: 0,
+          duration: 150,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        left: targetX, // ← always at correct final position
+        top: targetY,
+        transform: [{ translateX: offsetX }, { translateY: offsetY }],
+      }}
+    >
+      {/* Piece content */}
+    </Animated.View>
+  );
+}
+```
+
+**Why offset model?** If the animation fails for any reason, the piece is already at its correct final position (`left`/`top`). The `translateX`/`translateY` just add a temporary offset that animates to 0.
+
+### 16.6 Key Architectural Rules
+
+1. **Always use `useNativeDriver: true`** — this runs the animation on the native thread, not JS. It's the whole point of using core Animated.
+2. **Store values in `useRef`** — `new Animated.Value()` must be created once and stored in a ref. Never create it during render without a ref.
+3. **Use key-based remount for re-triggering** — change the React `key` to force a fresh component mount with fresh `Animated.Value` instances. Don't try to reset and re-animate existing values.
+4. **Fire animations in `useEffect(() => {}, [])`** — mount-only. The key-based remount strategy means you only need to animate once per mount.
+5. **`useNativeDriver: true` only supports `transform` and `opacity`** — you cannot animate `width`, `height`, `backgroundColor`, `left`, `top`, etc. with the native driver. Use transforms instead.
+6. **Use `Animated.View`** from `react-native`, not from `react-native-reanimated`.
+
+### 16.7 What About `react-native-reanimated`?
+
+`react-native-reanimated` is still installed and used by some non-game UI components (navigation transitions, modal overlays, etc.). **Do not uninstall it.** But for any animation inside a game screen (`src/gamesV4/screens/`), use only the core `Animated` API.
+
+If a future Expo/RN/Reanimated update fixes the worklet pipeline, this restriction can be revisited — but the core `Animated` API is stable, performant, and proven, so there's no compelling reason to switch back.
 
 ---
 

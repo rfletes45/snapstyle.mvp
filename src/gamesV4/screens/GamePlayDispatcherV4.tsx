@@ -31,8 +31,11 @@ import BrickBreakerScreenV4 from "./BrickBreakerScreenV4";
 import ChessScreenV4 from "./ChessScreenV4";
 import ConnectFourScreenV4 from "./ConnectFourScreenV4";
 import CrazyEightsScreenV4 from "./CrazyEightsScreenV4";
+import MinesweeperScreenV4 from "./MinesweeperScreenV4";
+import MinigolfScreenV4 from "./MinigolfScreenV4";
 import Play2048ScreenV4 from "./Play2048ScreenV4";
 import SketchPartyScreenV4 from "./SketchPartyScreenV4";
+import SolitaireKlondikeScreenV4 from "./SolitaireKlondikeScreenV4";
 import TicTacToeScreenV4 from "./TicTacToeScreenV4";
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
@@ -50,6 +53,9 @@ const GAME_SCREEN_MAP: Partial<Record<GameId, React.ComponentType<object>>> = {
   battleship: BattleshipScreenV4,
   brick_breaker: BrickBreakerScreenV4,
   crazy_eights: CrazyEightsScreenV4,
+  minigolf_duels: MinigolfScreenV4,
+  minesweeper: MinesweeperScreenV4,
+  solitaire_klondike: SolitaireKlondikeScreenV4,
 };
 
 export default function GamePlayDispatcherV4() {

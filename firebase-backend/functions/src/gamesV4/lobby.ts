@@ -13,7 +13,7 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { createInitialState, hasAdapter } from "./adapters";
+import { createInitialState, getAdapter, hasAdapter } from "./adapters";
 import {
   assertAuth,
   assertConversationMember,
@@ -221,10 +221,13 @@ export const updateLobbySettingsV4 = functions.https.onCall(
       );
     }
 
+    // Sanitise user-provided settings to cap depth/size
+    const sanitised = sanitisePayload(settingsPatch) as Record<string, unknown>;
+
     const db = getDb();
     const inviteRef = db.collection(COLLECTIONS.GAME_INVITES).doc(inviteId);
 
-    await db.runTransaction(async (tx) => {
+    const validatedSettings = await db.runTransaction(async (tx) => {
       const snap = await tx.get(inviteRef);
       if (!snap.exists) {
         throw new functions.https.HttpsError("not-found", "Invite not found.");
@@ -248,20 +251,48 @@ export const updateLobbySettingsV4 = functions.https.onCall(
         );
       }
 
-      // Apply settings patch
-      // In STOP 4, this will validate against the game adapter's settingsSchema
-      // For now, store as-is
+      // Validate against adapter's settingsSchema if available
+      const adapter = getAdapter(invite.gameId);
+      let finalSettings: Record<string, unknown>;
+
+      if (adapter?.validateSettings) {
+        try {
+          finalSettings = adapter.validateSettings(sanitised);
+        } catch (err) {
+          throw new functions.https.HttpsError(
+            "invalid-argument",
+            `Invalid settings: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      } else if (adapter?.defaultSettings) {
+        // No validateSettings but has defaults — merge with whitelisting
+        const defaults = adapter.defaultSettings as Record<string, unknown>;
+        finalSettings = { ...defaults };
+        for (const key of Object.keys(defaults)) {
+          if (key in sanitised) {
+            finalSettings[key] = sanitised[key];
+          }
+        }
+      } else {
+        // No adapter or no defaults — store sanitised patch as-is
+        finalSettings = sanitised;
+      }
+
+      // Persist settings on the invite doc so all lobby participants
+      // can see the current configuration in real-time.
       tx.update(inviteRef, {
+        lobbySettings: finalSettings,
         updatedAt: admin.firestore.Timestamp.now(),
-        // Settings are stored on the session, not the invite
-        // This callable is a stub — the settings are passed to startGame
       });
+
+      return finalSettings;
     });
 
     console.log(
-      `[gamesV4] Host ${uid} updated settings for invite ${inviteId}`,
+      `[gamesV4] Host ${uid} updated settings for invite ${inviteId}:`,
+      JSON.stringify(validatedSettings).slice(0, 200),
     );
-    return { success: true };
+    return { success: true, settings: validatedSettings };
   },
 );
 
@@ -428,7 +459,12 @@ export const startGameFromInviteV4 = functions.https.onCall(
           spectatorsAllowed: invite.allowSpectators,
           spectateMode: invite.spectateMode,
           spectators,
-          settings: settings ?? {},
+          settings:
+            settings ??
+            ((invite as unknown as Record<string, unknown>).lobbySettings as
+              | Record<string, unknown>
+              | undefined) ??
+            ({} as Record<string, unknown>),
           turnOrder,
           currentTurnIndex: 0,
           currentTurnPlayerId:
@@ -457,10 +493,13 @@ export const startGameFromInviteV4 = functions.https.onCall(
 
         let initialPublicState: Record<string, unknown> = {};
         if (hasAdapter(invite.gameId)) {
+          // Use the resolved session settings (which already include
+          // lobbySettings fallback) for adapter initialization.
+          const effectiveSettings = session.settings as Record<string, unknown>;
           const initResult = createInitialState(
             invite.gameId,
             players.map((p) => ({ uid: p.uid, slotIndex: p.slotIndex })),
-            settings ?? {},
+            effectiveSettings,
           );
           initialPublicState = initResult.publicState;
 

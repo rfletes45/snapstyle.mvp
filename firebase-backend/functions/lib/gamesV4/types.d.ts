@@ -6,7 +6,7 @@
  *
  * @module gamesV4/types
  */
-export type GameId = "bounce_blitz" | "play_2048" | "brick_breaker" | "word_master" | "minesweeper" | "lights_out" | "tic_tac_toe" | "chess" | "checkers" | "connect_four" | "gomoku" | "reversi" | "dots_and_boxes" | "crazy_eights" | "pong_game" | "battleship" | "sketch_party_game" | "starforge_game" | "crossword_puzzle" | "minigolf_duels" | "dot_match";
+export type GameId = "bounce_blitz" | "play_2048" | "brick_breaker" | "word_master" | "minesweeper" | "lights_out" | "solitaire_klondike" | "tic_tac_toe" | "chess" | "checkers" | "connect_four" | "gomoku" | "reversi" | "dots_and_boxes" | "crazy_eights" | "pong_game" | "battleship" | "sketch_party_game" | "starforge_game" | "crossword_puzzle" | "minigolf_duels" | "dot_match";
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";
 export type SpectateMode = "public_only" | "post_game_only" | "full_state";
 export type TimestampLike = number | FirebaseFirestore.Timestamp;
@@ -108,6 +108,11 @@ export interface GameSessionV4 {
     rewardsProcessed: boolean;
     participantUids: string[];
     spectatorUids: string[];
+    /**
+     * Solo-only: timestamp when the player suspended the session via back arrow.
+     * Null when actively playing. Set on suspend, cleared on resume.
+     */
+    soloSuspendedAt?: TimestampLike | null;
 }
 export interface MoveDoc {
     uid: string;

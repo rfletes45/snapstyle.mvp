@@ -160,9 +160,9 @@ const GAME_META = {
         supportsSpectate: false,
     },
     minigolf_duels: {
-        runtimeType: "realtime",
+        runtimeType: "turnBased",
         minPlayers: 2,
-        maxPlayers: 4,
+        maxPlayers: 3,
         supportsSpectate: false,
     },
     dot_match: {
@@ -176,6 +176,12 @@ const GAME_META = {
         minPlayers: 2,
         maxPlayers: 6,
         supportsSpectate: true,
+    },
+    solitaire_klondike: {
+        runtimeType: "solo",
+        minPlayers: 1,
+        maxPlayers: 1,
+        supportsSpectate: false,
     },
 };
 function validateInput(data) {

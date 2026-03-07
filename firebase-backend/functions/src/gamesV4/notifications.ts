@@ -52,6 +52,7 @@ const GAME_DISPLAY_NAMES: Record<GameId, string> = {
   crossword_puzzle: "Crossword",
   minigolf_duels: "Mini Golf",
   dot_match: "Dot Match",
+  solitaire_klondike: "Solitaire",
 };
 
 function gameName(gameId: GameId): string {
@@ -203,6 +204,17 @@ export async function notifyTurn(
   lastActorName: string,
 ): Promise<void> {
   if (!turnPlayerUid) return;
+
+  // Defense-in-depth: only turn-based games should receive turn
+  // notifications.  Solo and realtime sessions always have the same
+  // "turn player" — spamming "Your turn!" on every move is wrong.
+  // The primary guard is in sessions.ts; this is a safety net.
+  if (session.runtimeType !== "turnBased") {
+    console.log(
+      `[gamesV4] Skipping turn notification for non-turnBased session ${session.sessionId} (runtimeType=${session.runtimeType})`,
+    );
+    return;
+  }
 
   // Skip push if the player is already on the game screen (presence gating)
   try {

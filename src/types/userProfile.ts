@@ -513,6 +513,22 @@ export interface FeaturedBadgesConfig {
 }
 
 // =============================================================================
+// FEATURED ACHIEVEMENTS (PROFILE TROPHY CASE)
+// =============================================================================
+
+/**
+ * Featured achievements for the profile trophy case.
+ * Up to 2 achievements selected by the user to showcase on their profile.
+ * Backward-compatible — missing on legacy profiles defaults to empty array.
+ */
+export interface FeaturedAchievementsConfig {
+  /** Achievement type IDs to feature (max 2, de-duplicated, owned-only) */
+  achievementIds: string[];
+  /** When the featured selection was last updated */
+  updatedAt: number;
+}
+
+// =============================================================================
 // MUTUAL FRIENDS
 // =============================================================================
 
@@ -741,6 +757,9 @@ export interface UserProfileData {
   // Featured badges
   featuredBadges: FeaturedBadgesConfig;
 
+  // Featured achievements (trophy case — optional, backward-compatible)
+  featuredAchievements?: FeaturedAchievementsConfig;
+
   // Privacy settings
   privacy: ProfilePrivacySettings;
 
@@ -795,6 +814,10 @@ export const DEFAULT_USER_PROFILE_DATA: Omit<
   },
   featuredBadges: {
     badgeIds: [],
+    updatedAt: Date.now(),
+  },
+  featuredAchievements: {
+    achievementIds: [],
     updatedAt: Date.now(),
   },
   privacy: DEFAULT_PRIVACY_SETTINGS,

@@ -113,8 +113,13 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
     uid &&
     session &&
     ((session.runtimeType === "turnBased" &&
-      session.currentTurnPlayerId === uid) ||
-      session.runtimeType === "solo")
+      (session.currentTurnPlayerId === uid ||
+        // Fallback: if currentTurnPlayerId is null, derive from turnOrder
+        (!session.currentTurnPlayerId &&
+          session.turnOrder?.[session.currentTurnIndex ?? 0] === uid))) ||
+      session.runtimeType === "solo" ||
+      // Realtime games: all participants can act simultaneously
+      session.runtimeType === "realtime")
   );
 
   // DEBUG: Log every time session or isMyTurn changes

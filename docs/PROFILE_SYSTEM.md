@@ -12,7 +12,8 @@ The Profile system includes:
 - featured badges/master badges
 - chat appearance (bubble color, font, animal)
 - tokens/wallet and cosmetic ownership plumbing
-- **overview cards** (Friends, Badges)
+- **overview cards** (Friends, Badges, Achievements Trophy Case)
+- **profile achievements trophy case** (select up to 2 featured achievements)
 - **social proof section** (streak milestones + recent activity feed)
 - **granular privacy controls** (23 fields across visibility and boolean toggles)
 
@@ -27,8 +28,9 @@ Primary client files:
 
 - Navigation: `src/navigation/RootNavigator.tsx`, `src/types/navigation/root.ts`
 - Profile screens: `src/screens/profile/OwnProfileScreen.tsx`, `src/screens/profile/UserProfileScreen.tsx`
-- Profile sub-screens: `src/screens/profile/BadgeCollectionScreen.tsx`
-- Overview cards: `src/components/profile/OverviewCards/` (OverviewCard, FriendsCard, BadgesCard)
+- Profile sub-screens: `src/screens/profile/BadgeCollectionScreen.tsx`, `src/screens/profile/ProfileAchievementsScreen.tsx`
+- Overview cards: `src/components/profile/OverviewCards/` (OverviewCard, FriendsCard, BadgesCard, AchievementsTrophyCaseCard)
+- Profile achievements service: `src/services/profileAchievementsService.ts`
 - Social proof: `src/components/profile/SocialProof/SocialProofSection.tsx`
 - Profile overflow menu: `src/components/profile/ProfileOverflowMenu.tsx`
 - Privacy settings: `src/screens/settings/PrivacySettingsScreen.tsx`
@@ -65,6 +67,7 @@ Core profile/customization fields:
 - `equippedBackgroundId`
 - `theme.equippedThemeId`
 - `featuredBadges.badgeIds`
+- `featuredAchievements.achievementIds`
 - `chatAppearance.bubbleColorId`
 - `chatAppearance.fontId`
 - `chatAppearance.animalThemeId`
@@ -115,6 +118,18 @@ Paths:
 Legacy badge path still active:
 
 - `Users/{uid}/Badges/{badgeId}`
+
+### 3.6 Featured Achievements (Profile Trophy Case)
+
+Field on user profile document:
+
+- `featuredAchievements.achievementIds` — string[] (max 2, de-duplicated)
+- `featuredAchievements.updatedAt` — number
+
+Backward-compatible: optional/nullable, defaults to empty array in hydration.
+
+Achievement source of truth: `Users/{uid}/Achievements` subcollection
+(written by Games V4 achievement system, read by profile service).
 
 ## 4) Cosmetics Catalog
 
@@ -198,11 +213,11 @@ Equip field writes:
 
 Both `OwnProfileScreen` and `UserProfileScreen` follow a unified layout:
 
-1. **Decorative header** — PFP, decoration, background (preserved from original)
+1. **Decorative header** — PFP, decoration, background (extends behind status bar / dynamic island via `topInset` prop)
 2. **Identity chips** — status
 3. **Primary actions** — Customize + Shop (own profile) or relationship actions (other user)
 4. **Social proof section** — Streak row + recent activity row
-5. **Overview cards** — Friends, Badges
+5. **Overview cards** — Friends, Badges, Achievements Trophy Case
 
 ### 7.2 Overview Cards
 
@@ -212,6 +227,7 @@ Child cards:
 
 - `FriendsCard` — avatars from friends list, tap → Connections / MutualFriendsList
 - `BadgesCard` — badge icons from `featuredBadges`, tap → BadgeCollection
+- `AchievementsTrophyCaseCard` — featured + recent achievements, tap → ProfileAchievements trophy case screen
 
 Props pattern:
 
@@ -247,7 +263,7 @@ Privacy: respects `showStreaks` and `showRecentActivity` privacy settings. Own p
 Visibility fields (`PrivacyVisibility`: "everyone" | "friends" | "nobody"):
 
 - `showProfilePicture`, `showBio`, `showStatus`, `showOnlineStatus`
-- `showFriendsList`, `showMutualFriends`, `showBadges`
+- `showFriendsList`, `showMutualFriends`, `showBadges`, `showAchievements`
 - `showDecorations`, `showChatAppearance`
 - `showStreaks`, `showRecentActivity`
 
@@ -308,6 +324,7 @@ Routes relevant to profile system:
   - `CosmeticsShop`
   - `UserProfile`
   - `SetStatus`
+  - `ProfileAchievements` (params: `{ userId: string; displayName?: string; featuredIds?: string[] }`)
 
 Cross-tab navigation:
 

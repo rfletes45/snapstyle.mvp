@@ -73,10 +73,11 @@ import { VoiceRecordButton } from "@/components/chat/VoiceRecordButton";
 
 // UI components
 import BlockUserModal from "@/components/BlockUserModal";
+import { ChatHeader } from "@/components/chat/ChatHeader";
 import { DMMessageItem, MessageWithProfile } from "@/components/DMMessageItem";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
-import { EmptyState, PresenceIndicator } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
@@ -548,128 +549,83 @@ export default function ChatScreen({
       .catch((e) => logger.error("Failed to load scheduled messages:", e));
   }, [uid, chatId]);
 
-  // Update header
-  useEffect(() => {
-    if (!friendProfile) return;
+  // Derive header subtitle from presence / typing
+  const headerSubtitle = useMemo(() => {
+    if (typing.isOtherUserTyping && typing.typingIndicatorsEnabled) {
+      return "typing...";
+    }
+    if (presence.shouldShowOnlineIndicator && presence.isOnline) {
+      return "Online";
+    }
+    if (presence.shouldShowLastSeen && presence.lastSeen) {
+      return `Last seen ${presence.lastSeenFormatted}`;
+    }
+    return undefined;
+  }, [typing, presence]);
 
-    // Determine header subtitle based on presence
-    const getSubtitle = () => {
-      if (typing.isOtherUserTyping && typing.typingIndicatorsEnabled) {
-        return "typing...";
-      }
-      if (presence.shouldShowOnlineIndicator && presence.isOnline) {
-        return "Online";
-      }
-      if (presence.shouldShowLastSeen && presence.lastSeen) {
-        return `Last seen ${presence.lastSeenFormatted}`;
-      }
-      return undefined;
-    };
+  const headerSubtitleColor = useMemo(
+    () =>
+      typing.isOtherUserTyping && typing.typingIndicatorsEnabled
+        ? theme.colors.primary
+        : undefined,
+    [typing, theme.colors.primary],
+  );
 
-    const subtitle = getSubtitle();
-
-    navigation.setOptions({
-      headerTitle: () => (
-        <View style={styles.headerTitleContainer}>
-          <View style={styles.headerTitleRow}>
-            {presence.shouldShowOnlineIndicator && (
-              <PresenceIndicator
-                online={presence.isOnline}
-                size={8}
-                position="inline"
-              />
-            )}
-            <Text
-              style={[
-                styles.headerTitleText,
-                { color: theme.colors.onSurface },
-              ]}
-            >
-              {friendProfile.username}
-            </Text>
-          </View>
-          {subtitle && (
-            <Text
-              style={[
-                styles.headerSubtitleText,
-                {
-                  color:
-                    typing.isOtherUserTyping && typing.typingIndicatorsEnabled
-                      ? theme.colors.primary
-                      : theme.colors.onSurfaceVariant,
-                },
-              ]}
-            >
-              {subtitle}
-            </Text>
-          )}
-        </View>
-      ),
-      headerRight: () => (
-        <View style={styles.headerRightRow}>
-          {/* Call buttons */}
-          <CallButtonGroup
-            participantId={friendUid}
-            participantName={friendProfile?.username || "Friend"}
-            conversationId={chatId || ""}
-            size={22}
+  /** Right-side actions for the DM header */
+  const renderHeaderRight = useCallback(
+    () => (
+      <View style={styles.headerRightRow}>
+        <CallButtonGroup
+          participantId={friendUid}
+          participantName={friendProfile?.username || "Friend"}
+          conversationId={chatId || ""}
+          size={22}
+        />
+        <Menu
+          visible={menuVisible}
+          onDismiss={() => setMenuVisible(false)}
+          anchor={
+            <IconButton
+              icon="dots-vertical"
+              size={24}
+              onPress={() => setMenuVisible(true)}
+            />
+          }
+          contentStyle={{ backgroundColor: theme.colors.surface }}
+        >
+          <Menu.Item
+            onPress={() => {
+              setMenuVisible(false);
+              navigation.navigate("ChatSettings", {
+                chatId,
+                chatType: "dm",
+                chatName: friendProfile?.username,
+              });
+            }}
+            title="Settings"
+            leadingIcon="cog-outline"
           />
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="dots-vertical"
-                size={24}
-                onPress={() => setMenuVisible(true)}
-              />
-            }
-            contentStyle={{ backgroundColor: theme.colors.surface }}
-          >
-            <Menu.Item
-              onPress={() => {
-                setMenuVisible(false);
-                navigation.navigate("ChatSettings", {
-                  chatId,
-                  chatType: "dm",
-                  chatName: friendProfile?.username,
-                });
-              }}
-              title="Settings"
-              leadingIcon="cog-outline"
-            />
-            <Menu.Item
-              onPress={() => {
-                setMenuVisible(false);
-                setBlockModalVisible(true);
-              }}
-              title="Block User"
-              leadingIcon="block-helper"
-            />
-            <Menu.Item
-              onPress={() => {
-                setMenuVisible(false);
-                setReportModalVisible(true);
-              }}
-              title="Report User"
-              leadingIcon="flag"
-            />
-          </Menu>
-        </View>
-      ),
-    });
-  }, [
-    friendProfile,
-    navigation,
-    menuVisible,
-    theme.colors.surface,
-    theme.colors.onSurface,
-    theme.colors.onSurfaceVariant,
-    theme.colors.primary,
-    chatId,
-    presence,
-    typing,
-  ]);
+          <Menu.Item
+            onPress={() => {
+              setMenuVisible(false);
+              setBlockModalVisible(true);
+            }}
+            title="Block User"
+            leadingIcon="block-helper"
+          />
+          <Menu.Item
+            onPress={() => {
+              setMenuVisible(false);
+              setReportModalVisible(true);
+            }}
+            title="Report User"
+            leadingIcon="flag"
+          />
+        </Menu>
+      </View>
+    ),
+    [friendUid, friendProfile, chatId, menuVisible, theme, navigation],
+  );
 
   // ==========================================================================
   // Handlers
@@ -1066,6 +1022,33 @@ export default function ChatScreen({
           { backgroundColor: theme.dark ? "#000" : theme.colors.background },
         ]}
       >
+        {/* Unified custom header — matches group chat style */}
+        <ChatHeader
+          onBack={() => navigation.goBack()}
+          chatType="dm"
+          title={friendProfile?.username || "Message"}
+          subtitle={headerSubtitle}
+          subtitleColor={headerSubtitleColor}
+          profilePictureUrl={
+            friendProfile?.profilePicture?.url ||
+            friendProfile?.profilePictureUrl ||
+            friendProfile?.avatar
+          }
+          decorationId={
+            friendProfile?.avatarDecoration?.decorationId ||
+            friendProfile?.decorationId
+          }
+          avatarFallbackName={
+            friendProfile?.displayName || friendProfile?.username
+          }
+          onTitlePress={() =>
+            navigation.navigate("UserProfile", { userId: friendUid })
+          }
+          showOnlineIndicator={presence.shouldShowOnlineIndicator}
+          isOnline={presence.isOnline}
+          renderRight={renderHeaderRight}
+        />
+
         {/* Pinned Game Invites Bar */}
         {GAMES_V4_ENABLED && chatId && (
           <PinnedInviteBar conversationId={chatId} scope="dm" />
@@ -1253,21 +1236,6 @@ export default function ChatScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  headerTitleContainer: {
-    alignItems: "center",
-  },
-  headerTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerTitleText: {
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  headerSubtitleText: {
-    fontSize: 12,
-    marginTop: 2,
   },
   headerRightRow: {
     flexDirection: "row",

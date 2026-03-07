@@ -2,6 +2,9 @@
  * OverviewCards — Barrel exports for profile overview card components.
  */
 
+export { AchievementsTrophyCaseCard } from "./AchievementsTrophyCaseCard";
+export type { AchievementsTrophyCaseCardProps } from "./AchievementsTrophyCaseCard";
+
 export { BadgesCard } from "./BadgesCard";
 export type { BadgesCardProps } from "./BadgesCard";
 

@@ -29,15 +29,12 @@ import type {
 import { registerAdapter } from "../registry";
 import {
   applySevenZeroSwap,
-  buildCardLookup,
-  calculateHandPoints,
   calculateRoundScores,
   couldPlayOtherColor,
   createInitialCrazyEightsState,
   createSpectatorView,
   drawCards,
   getNextTurnIndex,
-  hasPlayableCard,
   isCardPlayable,
 } from "./crazyEightsEngine";
 import type {
@@ -49,10 +46,7 @@ import type {
   CrazyEightsSettings,
   LastMove,
 } from "./crazyEightsTypes";
-import {
-  ALL_COLORS,
-  DEFAULT_CRAZY_EIGHTS_SETTINGS,
-} from "./crazyEightsTypes";
+import { ALL_COLORS, DEFAULT_CRAZY_EIGHTS_SETTINGS } from "./crazyEightsTypes";
 
 // =============================================================================
 // Type Helpers
@@ -137,7 +131,7 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
     key: "wildDraw4Challenge",
     label: "Challenge Wild +4",
     type: "boolean",
-    default: true,
+    default: false,
   },
   {
     key: "turnTimer",
@@ -204,9 +198,7 @@ function mergeSettings(patch: Record<string, unknown>): CrazyEightsSettings {
       typeof patch.wildDraw4Challenge === "boolean"
         ? patch.wildDraw4Challenge
         : d.wildDraw4Challenge,
-    turnTimer: ["off", "20s", "30s", "45s"].includes(
-      patch.turnTimer as string,
-    )
+    turnTimer: ["off", "20s", "30s", "45s"].includes(patch.turnTimer as string)
       ? (patch.turnTimer as CrazyEightsSettings["turnTimer"])
       : d.turnTimer,
     roundModel: ["single_hand", "match_points"].includes(
@@ -227,10 +219,7 @@ function mergeSettings(patch: Record<string, unknown>): CrazyEightsSettings {
 // Move Helpers
 // =============================================================================
 
-function findCardInHand(
-  hand: Card[],
-  cardId: string,
-): Card | undefined {
+function findCardInHand(hand: Card[], cardId: string): Card | undefined {
   return hand.find((c) => c.id === cardId);
 }
 
@@ -242,7 +231,11 @@ function removeCardFromHand(hand: Card[], cardId: string): Card[] {
   return newHand;
 }
 
-function buildLastMove(actor: string, action: string, detail?: string): LastMove {
+function buildLastMove(
+  actor: string,
+  action: string,
+  detail?: string,
+): LastMove {
   return { actor, action, detail };
 }
 
@@ -387,7 +380,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
               },
               pendingDraw: { count: 0, source: null },
               challengeWindow: null,
-              lastMove: buildLastMove(uid, "CHALLENGE_WILD4", "Challenge succeeded! Opponent draws 4"),
+              lastMove: buildLastMove(
+                uid,
+                "CHALLENGE_WILD4",
+                "Challenge succeeded! Opponent draws 4",
+              ),
               moveCount: state.moveCount + 1,
             };
 
@@ -407,7 +404,10 @@ const crazyEightsAdapter: GameAdapterV4 = {
               [...state.discardPile],
               state.cardLookup,
             );
-            challengerPriv.hand = [...challengerPriv.hand, ...drawResult.drawnCards];
+            challengerPriv.hand = [
+              ...challengerPriv.hand,
+              ...drawResult.drawnCards,
+            ];
             newPrivateMap[uid] = challengerPriv;
 
             const nextIdx = getNextTurnIndex(
@@ -431,7 +431,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
               currentTurnIndex: nextIdx,
               currentTurnUid: state.turnOrder[nextIdx],
               turnCounter: state.turnCounter + 1,
-              lastMove: buildLastMove(uid, "CHALLENGE_WILD4", "Challenge failed! Drew 6 cards"),
+              lastMove: buildLastMove(
+                uid,
+                "CHALLENGE_WILD4",
+                "Challenge failed! Drew 6 cards",
+              ),
               moveCount: state.moveCount + 1,
             };
 
@@ -476,7 +480,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
             currentTurnIndex: nextIdx,
             currentTurnUid: state.turnOrder[nextIdx],
             turnCounter: state.turnCounter + 1,
-            lastMove: buildLastMove(uid, "CHALLENGE_WILD4", `Accepted, drew ${state.pendingDraw.count} cards`),
+            lastMove: buildLastMove(
+              uid,
+              "CHALLENGE_WILD4",
+              `Accepted, drew ${state.pendingDraw.count} cards`,
+            ),
             moveCount: state.moveCount + 1,
           };
 
@@ -527,7 +535,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
             [targetUid]: targetPriv.hand.length,
           },
           callEligibleUid: null,
-          lastMove: buildLastMove(uid, "CATCH_NO_CRAZY", `Caught ${targetUid} — penalty draw 2`),
+          lastMove: buildLastMove(
+            uid,
+            "CATCH_NO_CRAZY",
+            `Caught ${targetUid} — penalty draw 2`,
+          ),
           moveCount: state.moveCount + 1,
         };
 
@@ -571,7 +583,10 @@ const crazyEightsAdapter: GameAdapterV4 = {
       // ────────────────────────────────────────────────────────────────
       case "DRAW_CARD": {
         // If there's a challenge window, must resolve that first
-        if (state.challengeWindow?.active && state.challengeWindow.targetUid === uid) {
+        if (
+          state.challengeWindow?.active &&
+          state.challengeWindow.targetUid === uid
+        ) {
           return { ok: false, error: "Must resolve Wild +4 challenge first." };
         }
 
@@ -608,7 +623,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
             currentTurnUid: state.turnOrder[nextIdx],
             turnCounter: state.turnCounter + 1,
             callEligibleUid: null,
-            lastMove: buildLastMove(uid, "DRAW_CARD", `Drew ${drawCount} cards from stack`),
+            lastMove: buildLastMove(
+              uid,
+              "DRAW_CARD",
+              `Drew ${drawCount} cards from stack`,
+            ),
             moveCount: state.moveCount + 1,
           };
 
@@ -622,8 +641,14 @@ const crazyEightsAdapter: GameAdapterV4 = {
         }
 
         // Normal draw
-        if (playerPriv?.hasDrawnThisTurn && settings.drawMode === "draw_one_then_pass") {
-          return { ok: false, error: "Already drew this turn. Play a card or pass." };
+        if (
+          playerPriv?.hasDrawnThisTurn &&
+          settings.drawMode === "draw_one_then_pass"
+        ) {
+          return {
+            ok: false,
+            error: "Already drew this turn. Play a card or pass.",
+          };
         }
 
         const drawResult = drawCards(
@@ -637,7 +662,9 @@ const crazyEightsAdapter: GameAdapterV4 = {
           return { ok: false, error: "No cards available to draw." };
         }
 
-        const myPriv = { ...(playerPriv ?? { hand: [], hasDrawnThisTurn: false }) };
+        const myPriv = {
+          ...(playerPriv ?? { hand: [], hasDrawnThisTurn: false }),
+        };
         myPriv.hand = [...myPriv.hand, ...drawResult.drawnCards];
         myPriv.hasDrawnThisTurn = true;
 
@@ -663,13 +690,25 @@ const crazyEightsAdapter: GameAdapterV4 = {
           let found = false;
 
           while (currentDrawPile.length > 0 || currentDiscardPile.length > 1) {
-            const nextDraw = drawCards(1, currentDrawPile, currentDiscardPile, state.cardLookup);
+            const nextDraw = drawCards(
+              1,
+              currentDrawPile,
+              currentDiscardPile,
+              state.cardLookup,
+            );
             if (nextDraw.drawnCards.length === 0) break;
             hand = [...hand, ...nextDraw.drawnCards];
             currentDrawPile = nextDraw.newDrawPile;
             currentDiscardPile = nextDraw.newDiscardPile;
 
-            if (isCardPlayable(nextDraw.drawnCards[0], state.currentColor, state.topDiscard, settings)) {
+            if (
+              isCardPlayable(
+                nextDraw.drawnCards[0],
+                state.currentColor,
+                state.topDiscard,
+                settings,
+              )
+            ) {
               found = true;
               break;
             }
@@ -697,7 +736,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
               currentTurnUid: state.turnOrder[nextIdx],
               turnCounter: state.turnCounter + 1,
               callEligibleUid: null,
-              lastMove: buildLastMove(uid, "DRAW_CARD", `Drew ${hand.length - (playerPriv?.hand.length ?? 0)} cards`),
+              lastMove: buildLastMove(
+                uid,
+                "DRAW_CARD",
+                `Drew ${hand.length - (playerPriv?.hand.length ?? 0)} cards`,
+              ),
               moveCount: state.moveCount + 1,
             };
 
@@ -718,7 +761,11 @@ const crazyEightsAdapter: GameAdapterV4 = {
             drawPileCount: currentDrawPile.length,
             discardCount: currentDiscardPile.length,
             handCounts: { ...state.handCounts, [uid]: myPriv.hand.length },
-            lastMove: buildLastMove(uid, "DRAW_CARD", `Drew ${hand.length - (playerPriv?.hand.length ?? 0)} cards`),
+            lastMove: buildLastMove(
+              uid,
+              "DRAW_CARD",
+              `Drew ${hand.length - (playerPriv?.hand.length ?? 0)} cards`,
+            ),
             moveCount: state.moveCount + 1,
           };
 
@@ -782,7 +829,10 @@ const crazyEightsAdapter: GameAdapterV4 = {
         return {
           ok: true,
           nextPublicState: asRecord(newSt),
-          nextPrivateState: privateToRecord({ ...privateMap, [uid]: resetPriv }),
+          nextPrivateState: privateToRecord({
+            ...privateMap,
+            [uid]: resetPriv,
+          }),
           turnAdvance: false,
           nextTurnPlayerId: state.turnOrder[nextIdx],
         };
@@ -799,7 +849,10 @@ const crazyEightsAdapter: GameAdapterV4 = {
         }
 
         // If challenge window is active, must resolve first
-        if (state.challengeWindow?.active && state.challengeWindow.targetUid === uid) {
+        if (
+          state.challengeWindow?.active &&
+          state.challengeWindow.targetUid === uid
+        ) {
           return { ok: false, error: "Must resolve Wild +4 challenge first." };
         }
 
@@ -817,17 +870,30 @@ const crazyEightsAdapter: GameAdapterV4 = {
         if (state.pendingDraw.count > 0) {
           const canStack = checkCanStack(card, state, settings);
           if (!canStack) {
-            return { ok: false, error: "Cannot play this card while draws are pending. Draw or stack." };
+            return {
+              ok: false,
+              error:
+                "Cannot play this card while draws are pending. Draw or stack.",
+            };
           }
         }
 
         // Card must be playable
-        if (state.pendingDraw.count === 0 && !isCardPlayable(card, state.currentColor, state.topDiscard, settings)) {
-          return { ok: false, error: "Card is not playable on the current discard." };
+        if (
+          state.pendingDraw.count === 0 &&
+          !isCardPlayable(card, state.currentColor, state.topDiscard, settings)
+        ) {
+          return {
+            ok: false,
+            error: "Card is not playable on the current discard.",
+          };
         }
 
         // Wild cards require declaredColor
-        if ((card.type === "wild" || card.type === "wild_draw_four") && !declaredColor) {
+        if (
+          (card.type === "wild" || card.type === "wild_draw_four") &&
+          !declaredColor
+        ) {
           return { ok: false, error: "Must declare a color for wild cards." };
         }
 
@@ -855,7 +921,8 @@ const crazyEightsAdapter: GameAdapterV4 = {
         let newDirection = state.direction;
         let skipCount = 1;
         let newPendingDraw = { ...state.pendingDraw };
-        let newChallengeWindow: CrazyEightsPublicState["challengeWindow"] = null;
+        let newChallengeWindow: CrazyEightsPublicState["challengeWindow"] =
+          null;
 
         // Apply card effects
         switch (card.type) {
@@ -941,7 +1008,8 @@ const crazyEightsAdapter: GameAdapterV4 = {
         // Update hand counts after potential swaps
         const newHandCounts: Record<string, number> = {};
         for (const pUid of state.turnOrder) {
-          newHandCounts[pUid] = (newPrivateMap[pUid] as CrazyEightsPrivateState)?.hand?.length ??
+          newHandCounts[pUid] =
+            (newPrivateMap[pUid] as CrazyEightsPrivateState)?.hand?.length ??
             state.handCounts[pUid];
         }
 
@@ -1017,7 +1085,9 @@ const crazyEightsAdapter: GameAdapterV4 = {
         return {
           ok: true,
           nextPublicState: asRecord(newPublicState),
-          nextPrivateState: privateToRecord(newPrivateMap as Record<string, CrazyEightsPrivateState>),
+          nextPrivateState: privateToRecord(
+            newPrivateMap as Record<string, CrazyEightsPrivateState>,
+          ),
           turnAdvance: false,
           nextTurnPlayerId: state.turnOrder[nextIdx],
         };
@@ -1140,13 +1210,21 @@ function checkCanStack(
 
   if (pending.source === "D2") {
     if (card.type === "draw_two" && settings.stackDraw2) return true;
-    if (card.type === "wild_draw_four" && settings.stackingMode === "draws_mix" && settings.stackDraw4)
+    if (
+      card.type === "wild_draw_four" &&
+      settings.stackingMode === "draws_mix" &&
+      settings.stackDraw4
+    )
       return true;
   }
 
   if (pending.source === "D4") {
     if (card.type === "wild_draw_four" && settings.stackDraw4) return true;
-    if (card.type === "draw_two" && settings.stackingMode === "draws_mix" && settings.stackDraw2)
+    if (
+      card.type === "draw_two" &&
+      settings.stackingMode === "draws_mix" &&
+      settings.stackDraw2
+    )
       return true;
   }
 
@@ -1157,7 +1235,9 @@ function checkCanStack(
  * Format a card description for the micro-log.
  */
 function formatCardDescription(card: Card, declaredColor?: CardColor): string {
-  const colorStr = card.color ? card.color.charAt(0).toUpperCase() + card.color.slice(1) : "";
+  const colorStr = card.color
+    ? card.color.charAt(0).toUpperCase() + card.color.slice(1)
+    : "";
   switch (card.type) {
     case "number":
       return `${colorStr} ${card.value}`;

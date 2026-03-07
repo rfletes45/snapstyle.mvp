@@ -24,12 +24,13 @@ import {
 } from "@/gamesV4/constants";
 import type { LevelRewardDocV4 } from "@/gamesV4/services/gameServiceV4";
 import {
-  createSoloSession,
+  resumeOrCreateSoloSession,
   subscribeToLevelRewards,
   subscribeToMyActiveInvites,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types/common";
 import type { GameInviteV4 } from "@/gamesV4/types/invite";
+import { mapSoloLaunchError } from "@/gamesV4/utils/mapCallableError";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -165,16 +166,22 @@ export default function GamesHubScreenV4() {
 
       const meta = GAME_METADATA[_gameId];
 
-      // Solo games: create session directly and navigate to play
+      // Solo games: resume existing session or create new one, then navigate to play
       if (meta?.runtimeType === "solo") {
         if (launchingSolo) return; // Prevent double-tap
         setLaunchingSolo(_gameId);
         try {
-          const { sessionId } = await createSoloSession({ gameId: _gameId });
+          const { sessionId, resumed } = await resumeOrCreateSoloSession({
+            gameId: _gameId,
+          });
+          if (resumed) {
+            console.log(
+              `[GamesHub] Resuming existing solo session ${sessionId} for ${_gameId}`,
+            );
+          }
           navigation.navigate("GamePlayV4", { sessionId, gameId: _gameId });
         } catch (err: unknown) {
-          const msg =
-            err instanceof Error ? err.message : "Could not start game.";
+          const msg = mapSoloLaunchError(err);
           Alert.alert("Error", msg);
         } finally {
           setLaunchingSolo(null);
@@ -191,6 +198,44 @@ export default function GamesHubScreenV4() {
   const handleMyStats = useCallback(() => {
     navigation.navigate("GameStatsV4");
   }, [navigation]);
+
+  /**
+   * Long-press on a solo game card shows an action sheet:
+   * Play Now, View Details, View Achievements, View Leaderboard
+   */
+  const handleSoloLongPress = useCallback(
+    (_gameId: GameId) => {
+      if (!IMPLEMENTED_GAME_IDS.has(_gameId)) return;
+      const meta = GAME_METADATA[_gameId];
+      if (!meta) return;
+
+      Alert.alert(meta.displayName, undefined, [
+        {
+          text: "Play Now",
+          onPress: () => handleGameTap(_gameId),
+        },
+        {
+          text: "View Details",
+          onPress: () =>
+            navigation.navigate("GameDetailV4", { gameId: _gameId }),
+        },
+        {
+          text: "View Achievements",
+          onPress: () =>
+            navigation.navigate("AchievementSection", {
+              sectionId: _gameId,
+            }),
+        },
+        {
+          text: "View Leaderboard",
+          onPress: () =>
+            navigation.navigate("GameLeaderboardV4", { gameId: _gameId }),
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [navigation, handleGameTap],
+  );
 
   const handleAchievements = useCallback(() => {
     navigation.navigate("AchievementsHub");
@@ -505,9 +550,28 @@ export default function GamesHubScreenV4() {
         {/* ── Game Catalog ─────────────────────────────────────────── */}
         {sections.map((section) => (
           <View key={section.title} style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: subtextColor }]}>
-              {section.emoji} {section.title.toUpperCase()}
-            </Text>
+            <View style={styles.sectionTitleRow}>
+              <Text style={[styles.sectionTitle, { color: subtextColor }]}>
+                {section.emoji} {section.title.toUpperCase()}
+              </Text>
+              {section.title === "Solo" && (
+                <TouchableOpacity
+                  onPress={() =>
+                    Alert.alert(
+                      "Solo Games",
+                      "Tap to play instantly. Long-press for details, achievements, and leaderboards.",
+                    )
+                  }
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialCommunityIcons
+                    name="information-outline"
+                    size={16}
+                    color={subtextColor}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={[styles.catalogGrid]}>
               {section.data.map((game) => {
                 const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
@@ -522,6 +586,11 @@ export default function GamesHubScreenV4() {
                       !isImplemented && { opacity: 0.5 },
                     ]}
                     onPress={() => handleGameTap(game.gameId)}
+                    onLongPress={
+                      isSolo && isImplemented
+                        ? () => handleSoloLongPress(game.gameId)
+                        : undefined
+                    }
                     activeOpacity={isImplemented ? 0.7 : 1}
                     disabled={isLaunching}
                   >
@@ -666,6 +735,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.8,
     marginBottom: 10,
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
   // Active invite cards

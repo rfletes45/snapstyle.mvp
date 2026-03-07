@@ -2,10 +2,11 @@
  * Games V4 — Achievement Section Detail Screen
  *
  * Lists all achievements in a single section. Each achievement row shows:
- * - Earned/locked state
+ * - Three states: locked, unclaimed (earned, reward not collected), claimed
  * - Name, description, difficulty badge
  * - Token reward amount
- * - Earned date if unlocked
+ * - Claim button for unclaimed achievements
+ * - "Claim All" banner when multiple rewards are unclaimed
  *
  * @module gamesV4/screens/AchievementSectionScreen
  */
@@ -17,16 +18,21 @@ import {
   type AchievementDef,
   type AchievementDifficulty,
 } from "@/gamesV4/data/achievementDefinitions";
-import { subscribeToAchievements } from "@/gamesV4/services/gameServiceV4";
+import {
+  claimAchievementReward,
+  subscribeToAchievements,
+  type AchievementEntryV4,
+} from "@/gamesV4/services/gameServiceV4";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -37,11 +43,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
-interface EarnedData {
-  type: string;
-  name: string;
-  description: string;
-  earnedAt: unknown;
+/**
+ * Determine the display state for an achievement entry.
+ * Legacy docs (schemaVersion < 2) are treated as claimed since tokens were auto-credited.
+ */
+function getAchievementState(
+  entry: AchievementEntryV4 | undefined,
+): "locked" | "unclaimed" | "claimed" {
+  if (!entry) return "locked";
+  if (entry.schemaVersion && entry.schemaVersion >= 2) {
+    return entry.status === "earned_unclaimed" ? "unclaimed" : "claimed";
+  }
+  // Legacy: auto-awarded tokens, treat as claimed
+  return "claimed";
 }
 
 export default function AchievementSectionScreen() {
@@ -58,8 +72,10 @@ export default function AchievementSectionScreen() {
   const uid = currentFirebaseUser?.uid;
   const colors = theme.colors;
 
-  const [earned, setEarned] = useState<EarnedData[]>([]);
+  const [earned, setEarned] = useState<AchievementEntryV4[]>([]);
   const [loading, setLoading] = useState(true);
+  const [claimingType, setClaimingType] = useState<string | null>(null);
+  const [claimingAll, setClaimingAll] = useState(false);
 
   const sectionDef = useMemo(
     () => ACHIEVEMENT_SECTIONS.find((s) => s.sectionId === sectionId),
@@ -72,7 +88,7 @@ export default function AchievementSectionScreen() {
     const unsub = subscribeToAchievements(
       uid,
       (data) => {
-        setEarned(data as EarnedData[]);
+        setEarned(data);
         setLoading(false);
       },
       () => setLoading(false),
@@ -81,10 +97,8 @@ export default function AchievementSectionScreen() {
   }, [uid]);
 
   const earnedMap = useMemo(() => {
-    const map = new Map<string, EarnedData>();
-    for (const e of earned) {
-      map.set(e.type, e);
-    }
+    const map = new Map<string, AchievementEntryV4>();
+    for (const e of earned) map.set(e.type, e);
     return map;
   }, [earned]);
 
@@ -93,106 +107,220 @@ export default function AchievementSectionScreen() {
     [defs, earnedMap],
   );
 
-  const renderAchievement = ({ item: def }: { item: AchievementDef }) => {
-    const isEarned = earnedMap.has(def.type);
-    const diffMeta = DIFFICULTY_META[def.difficulty as AchievementDifficulty];
+  // Unclaimed achievements in this section
+  const unclaimedDefs = useMemo(
+    () =>
+      defs.filter(
+        (d) => getAchievementState(earnedMap.get(d.type)) === "unclaimed",
+      ),
+    [defs, earnedMap],
+  );
 
-    return (
-      <View
-        style={[
-          styles.achievementRow,
-          {
-            backgroundColor: isEarned
-              ? theme.isDark
-                ? "#1A2E1A"
-                : "#E8F5E9"
-              : theme.isDark
-                ? "#1C1C1E"
-                : "#FFF",
-          },
-        ]}
-      >
-        {/* Icon */}
-        <View
-          style={[
-            styles.iconContainer,
-            {
-              backgroundColor: isEarned
-                ? "#34C759" + "30"
-                : theme.isDark
-                  ? "#333"
-                  : "#E0E0E0",
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name={isEarned ? "check-circle" : "lock-outline"}
-            size={24}
-            color={isEarned ? "#34C759" : theme.isDark ? "#666" : "#999"}
-          />
-        </View>
+  const handleClaimOne = useCallback(async (achievementType: string) => {
+    setClaimingType(achievementType);
+    try {
+      const result = await claimAchievementReward({ achievementType });
+      if (result.alreadyClaimed) {
+        Alert.alert("Already Claimed", "This reward was already collected.");
+      }
+    } catch (err) {
+      Alert.alert(
+        "Claim Failed",
+        err instanceof Error ? err.message : "Could not claim reward.",
+      );
+    } finally {
+      setClaimingType(null);
+    }
+  }, []);
 
-        {/* Content */}
-        <View style={styles.achievementContent}>
-          <View style={styles.achievementTitleRow}>
+  const handleClaimAll = useCallback(async () => {
+    if (unclaimedDefs.length === 0) return;
+    setClaimingAll(true);
+    let successCount = 0;
+    let failCount = 0;
+    for (const def of unclaimedDefs) {
+      try {
+        await claimAchievementReward({ achievementType: def.type });
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setClaimingAll(false);
+    if (failCount > 0) {
+      Alert.alert(
+        "Claim Results",
+        `Claimed ${successCount} reward${successCount !== 1 ? "s" : ""}. ${failCount} failed — try again.`,
+      );
+    }
+  }, [unclaimedDefs]);
+
+  const renderAchievement = useCallback(
+    ({ item: def }: { item: AchievementDef }) => {
+      const entry = earnedMap.get(def.type);
+      const state = getAchievementState(entry);
+      const diffMeta = DIFFICULTY_META[def.difficulty as AchievementDifficulty];
+      const isCurrentlyClaiming = claimingType === def.type;
+
+      // Row background by state
+      const rowBg =
+        state === "claimed"
+          ? theme.isDark
+            ? "#1A2E1A"
+            : "#E8F5E9"
+          : state === "unclaimed"
+            ? theme.isDark
+              ? "#2E2A1A"
+              : "#FFF8E1"
+            : theme.isDark
+              ? "#1C1C1E"
+              : "#FFF";
+
+      // Icon by state
+      const iconName =
+        state === "claimed"
+          ? "check-circle"
+          : state === "unclaimed"
+            ? "star-circle"
+            : "lock-outline";
+      const iconColor =
+        state === "claimed"
+          ? "#34C759"
+          : state === "unclaimed"
+            ? "#FF9500"
+            : theme.isDark
+              ? "#666"
+              : "#999";
+
+      return (
+        <View style={[styles.achievementRow, { backgroundColor: rowBg }]}>
+          {/* Icon */}
+          <View
+            style={[
+              styles.iconContainer,
+              {
+                backgroundColor:
+                  state === "claimed"
+                    ? "#34C75930"
+                    : state === "unclaimed"
+                      ? "#FF950030"
+                      : theme.isDark
+                        ? "#333"
+                        : "#E0E0E0",
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={iconName}
+              size={24}
+              color={iconColor}
+            />
+          </View>
+
+          {/* Content */}
+          <View style={styles.achievementContent}>
+            <View style={styles.achievementTitleRow}>
+              <Text
+                style={[
+                  styles.achievementName,
+                  {
+                    color:
+                      state === "locked"
+                        ? theme.isDark
+                          ? "#999"
+                          : "#666"
+                        : theme.isDark
+                          ? "#FFF"
+                          : "#000",
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {def.name}
+              </Text>
+              <View
+                style={[
+                  styles.difficultyBadge,
+                  { backgroundColor: diffMeta.color + "20" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.difficultyBadgeText,
+                    { color: diffMeta.color },
+                  ]}
+                >
+                  {diffMeta.label}
+                </Text>
+              </View>
+            </View>
             <Text
               style={[
-                styles.achievementName,
-                {
-                  color: isEarned
-                    ? theme.isDark
-                      ? "#FFF"
-                      : "#000"
-                    : theme.isDark
-                      ? "#999"
-                      : "#666",
-                },
+                styles.achievementDesc,
+                { color: theme.isDark ? "#AAA" : "#666" },
               ]}
-              numberOfLines={1}
+              numberOfLines={2}
             >
-              {def.name}
+              {def.description}
             </Text>
-            <View
-              style={[
-                styles.difficultyBadge,
-                { backgroundColor: diffMeta.color + "20" },
-              ]}
-            >
+            <View style={styles.rewardRow}>
+              <MaterialCommunityIcons
+                name="star-circle"
+                size={14}
+                color="#FFD700"
+              />
               <Text
-                style={[styles.difficultyBadgeText, { color: diffMeta.color }]}
+                style={[
+                  styles.rewardText,
+                  {
+                    color:
+                      state === "claimed"
+                        ? theme.isDark
+                          ? "#888"
+                          : "#999"
+                        : theme.isDark
+                          ? "#CCC"
+                          : "#444",
+                    textDecorationLine:
+                      state === "claimed" ? "line-through" : "none",
+                  },
+                ]}
               >
-                {diffMeta.label}
+                +{def.tokenReward} tokens
               </Text>
+              {state === "claimed" && (
+                <Text
+                  style={[
+                    styles.claimedLabel,
+                    { color: theme.isDark ? "#4CAF50" : "#388E3C" },
+                  ]}
+                >
+                  Claimed
+                </Text>
+              )}
             </View>
           </View>
-          <Text
-            style={[
-              styles.achievementDesc,
-              { color: theme.isDark ? "#AAA" : "#666" },
-            ]}
-            numberOfLines={2}
-          >
-            {def.description}
-          </Text>
-          <View style={styles.rewardRow}>
-            <MaterialCommunityIcons
-              name="star-circle"
-              size={14}
-              color="#FFD700"
-            />
-            <Text
-              style={[
-                styles.rewardText,
-                { color: theme.isDark ? "#CCC" : "#444" },
-              ]}
+
+          {/* Claim button (unclaimed only) */}
+          {state === "unclaimed" && (
+            <TouchableOpacity
+              style={styles.claimRowButton}
+              onPress={() => handleClaimOne(def.type)}
+              disabled={isCurrentlyClaiming || claimingAll}
+              activeOpacity={0.7}
             >
-              +{def.tokenReward} tokens
-            </Text>
-          </View>
+              {isCurrentlyClaiming ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Text style={styles.claimRowButtonText}>Claim</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
-      </View>
-    );
-  };
+      );
+    },
+    [earnedMap, claimingType, claimingAll, theme, handleClaimOne],
+  );
 
   if (loading) {
     return (
@@ -283,6 +411,45 @@ export default function AchievementSectionScreen() {
         )}
       </View>
 
+      {/* Claim All banner */}
+      {unclaimedDefs.length > 1 && (
+        <View
+          style={[
+            styles.claimAllBanner,
+            { backgroundColor: theme.isDark ? "#2E2A1A" : "#FFF8E1" },
+          ]}
+        >
+          <View style={styles.claimAllInfo}>
+            <MaterialCommunityIcons
+              name="gift-outline"
+              size={20}
+              color="#FF9500"
+            />
+            <Text
+              style={[
+                styles.claimAllText,
+                { color: theme.isDark ? "#FFD0A0" : "#E65100" },
+              ]}
+            >
+              {unclaimedDefs.length} unclaimed reward
+              {unclaimedDefs.length !== 1 ? "s" : ""}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.claimAllButton}
+            onPress={handleClaimAll}
+            disabled={claimingAll}
+            activeOpacity={0.7}
+          >
+            {claimingAll ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <Text style={styles.claimAllButtonText}>Claim All</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Achievement list */}
       <FlatList
         data={defs}
@@ -314,7 +481,7 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 32 },
   progressCard: {
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     borderRadius: 12,
     padding: 16,
     gap: 8,
@@ -323,12 +490,43 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 8, borderRadius: 4, overflow: "hidden" },
   progressBarFill: { height: "100%", borderRadius: 4 },
   sectionDescription: { fontSize: 12, marginTop: 2 },
+  claimAllBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  claimAllInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  claimAllText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  claimAllButton: {
+    backgroundColor: "#FF9500",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  claimAllButtonText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   list: { paddingHorizontal: 16, paddingBottom: 32, gap: 10 },
   achievementRow: {
     flexDirection: "row",
     borderRadius: 12,
     padding: 14,
     gap: 12,
+    alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.03,
     shadowRadius: 3,
@@ -364,4 +562,22 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   rewardText: { fontSize: 11, fontWeight: "600" },
+  claimedLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    marginLeft: 4,
+  },
+  claimRowButton: {
+    backgroundColor: "#FF9500",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 64,
+    alignItems: "center",
+  },
+  claimRowButtonText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });

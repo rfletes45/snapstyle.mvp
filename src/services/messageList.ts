@@ -34,10 +34,10 @@ import {
   Query,
   QueryDocumentSnapshot,
   startAfter,
-  Timestamp,
   where,
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
+import { normalizeMessageFromFirestoreDoc } from "@/services/chat/normalizeMessage";
 
 // Lazy initialization - don't call at module load time
 const getDb = () => getFirestoreInstance();
@@ -119,60 +119,19 @@ function getMessagesCollection(scope: "dm" | "group", conversationId: string) {
 /**
  * Convert Firestore document to MessageV2
  */
-function docToMessage(doc: DocumentSnapshot): MessageV2 | null {
+function docToMessage(
+  doc: DocumentSnapshot,
+  scopeHint: "dm" | "group",
+  conversationIdHint: string,
+): MessageV2 | null {
   const data = doc.data();
   if (!data) return null;
-
-  // Handle Firestore Timestamps
-  const serverReceivedAt =
-    data.serverReceivedAt instanceof Timestamp
-      ? data.serverReceivedAt.toMillis()
-      : data.serverReceivedAt || data.createdAt;
-
-  const createdAt =
-    data.createdAt instanceof Timestamp
-      ? data.createdAt.toMillis()
-      : data.createdAt;
-
-  const editedAt =
-    data.editedAt instanceof Timestamp
-      ? data.editedAt.toMillis()
-      : data.editedAt;
-
-  const resolvedSenderStyle = data.senderStyle || undefined;
-
-  return {
+  return normalizeMessageFromFirestoreDoc({
     id: doc.id,
-    scope: data.scope,
-    conversationId: data.conversationId,
-    senderId: data.senderId,
-    senderName: data.senderName,
-    senderAvatarConfig: data.senderAvatarConfig,
-    kind: data.kind || "text",
-    text: data.text || data.content, // Support legacy 'content' field
-    createdAt,
-    serverReceivedAt,
-    editedAt,
-    deletedForAll: data.deletedForAll,
-    hiddenFor: data.hiddenFor,
-    replyTo: data.replyTo,
-    attachments: data.attachments,
-    mentionUids: data.mentionUids,
-    mentionSpans: data.mentionSpans,
-    reactionsSummary: data.reactionsSummary,
-    linkPreview: data.linkPreview,
-    clientId: data.clientId,
-    idempotencyKey: data.idempotencyKey,
-    senderStyle: resolvedSenderStyle,
-    animalId: data.animalId,
-    // Legacy compatibility
-    content: data.content,
-    type: data.type,
-    read: data.read,
-    status: data.status || "sent",
-    isLocal: false,
-    clientMessageId: data.clientMessageId,
-  };
+    data: data as Record<string, unknown>,
+    scopeHint,
+    conversationIdHint,
+  });
 }
 
 /**
@@ -271,7 +230,7 @@ function subscribeToMessages(
         if (index === 0) lastDoc = doc; // Most recent (in DESC order)
         firstDoc = doc; // Oldest in current batch
 
-        const msg = docToMessage(doc);
+        const msg = docToMessage(doc, scope, conversationId);
         if (msg && shouldShowMessage(msg, currentUid)) {
           messages.push(msg);
         }
@@ -367,7 +326,7 @@ export async function loadOlderMessages(
 
     snapshot.forEach((doc) => {
       newFirstDoc = doc; // Track oldest doc
-      const msg = docToMessage(doc);
+      const msg = docToMessage(doc, scope, conversationId);
       if (msg) messages.push(msg);
     });
 
@@ -438,7 +397,7 @@ export async function loadNewerMessages(
 
     const messages: MessageV2[] = [];
     snapshot.forEach((doc) => {
-      const msg = docToMessage(doc);
+      const msg = docToMessage(doc, scope, conversationId);
       if (msg) messages.push(msg);
     });
 
@@ -662,7 +621,7 @@ export async function getMessage(
   try {
     const snapshot = await getDoc(messageRef);
     if (!snapshot.exists()) return null;
-    return docToMessage(snapshot);
+    return docToMessage(snapshot, scope, conversationId);
   } catch (error) {
     log.error("Failed to get message", error);
     return null;

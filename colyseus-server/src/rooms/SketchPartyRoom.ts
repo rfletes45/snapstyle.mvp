@@ -88,6 +88,7 @@ interface SketchPartyState {
   maxHints: number;
   wordChoices: string[];
   players: Array<{ uid: string; displayName: string; connected: boolean }>;
+  effectiveSettings: RoomSettings;
 }
 
 // =============================================================================
@@ -97,6 +98,9 @@ interface SketchPartyState {
 const MAX_STROKES_PER_TURN = 500;
 const TURN_END_DELAY_MS = 4000;
 const MAX_REPLAY_BUFFER_SIZE = 2000; // max points across all strokes
+const GUESS_RATE_LIMIT_MS = 400; // min ms between guesses per player
+const REACTION_RATE_LIMIT_MS = 1200; // min ms between reactions per player
+const VALID_REACTIONS = new Set(["thumbsup", "thumbsdown", "fire", "laugh"]);
 
 // =============================================================================
 // Room Implementation
@@ -131,6 +135,8 @@ export class SketchPartyRoom extends Room {
   private playerMetrics = new Map<string, PlayerMetrics>();
   private usedWords = new Set<string>();
   private hintsUsed = 0;
+  private guessTimestamps = new Map<string, number>(); // uid → last guess time (rate limit)
+  private reactionTimestamps = new Map<string, number>(); // uid → last reaction time (rate limit)
 
   // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -140,8 +146,28 @@ export class SketchPartyRoom extends Room {
 
     // Apply settings from session if provided
     if (options.settings && typeof options.settings === "object") {
-      Object.assign(this.settings, options.settings);
+      const s = options.settings as Record<string, unknown>;
+      if (typeof s.maxPlayers === "number")
+        this.settings.maxPlayers = Math.max(2, Math.min(8, s.maxPlayers));
+      if (typeof s.rounds === "number")
+        this.settings.rounds = Math.max(1, Math.min(10, s.rounds));
+      if (typeof s.drawTimeSec === "number")
+        this.settings.drawTimeSec = Math.max(30, Math.min(180, s.drawTimeSec));
+      if (typeof s.turnChooseTimeSec === "number")
+        this.settings.turnChooseTimeSec = Math.max(
+          5,
+          Math.min(15, s.turnChooseTimeSec),
+        );
+      if (typeof s.wordChoices === "number")
+        this.settings.wordChoices = Math.max(1, Math.min(5, s.wordChoices));
+      if (typeof s.hints === "number")
+        this.settings.hints = Math.max(0, Math.min(3, s.hints));
+      if (typeof s.customWordsEnabled === "boolean")
+        this.settings.customWordsEnabled = s.customWordsEnabled;
+      if (typeof s.customWordsList === "string")
+        this.settings.customWordsList = s.customWordsList.slice(0, 2000);
     }
+    this.maxClients = this.settings.maxPlayers;
 
     // Initialize game state (broadcast via messages, NOT Schema state)
     this.gs = {
@@ -162,9 +188,13 @@ export class SketchPartyRoom extends Room {
       maxHints: this.settings.hints,
       wordChoices: [],
       players: [],
+      effectiveSettings: { ...this.settings },
     };
 
-    console.log(`[SketchParty] Room created for session ${this.sessionId}`);
+    console.log(
+      `[SketchParty] Room created for session ${this.sessionId} with settings:`,
+      JSON.stringify(this.settings),
+    );
 
     // Register message handlers
     // Broadcast state to all clients on a 1-second tick
@@ -177,6 +207,7 @@ export class SketchPartyRoom extends Room {
     this.onMessage("word_choice", this.handleWordChoice.bind(this));
     this.onMessage("undo", this.handleUndo.bind(this));
     this.onMessage("clear", this.handleClear.bind(this));
+    this.onMessage("reaction", this.handleReaction.bind(this));
   }
 
   onJoin(client: Client, options: Record<string, unknown>) {
@@ -221,6 +252,8 @@ export class SketchPartyRoom extends Room {
 
     // Send current state to the joining client immediately
     client.send("state_sync", this.getPublicState());
+    // Send effective settings so client can display them
+    client.send("settings_applied", { ...this.settings });
     // Send board snapshot for reconnect / late join
     client.send("board_snapshot", { strokes: this.strokes });
 
@@ -568,6 +601,22 @@ export class SketchPartyRoom extends Room {
     const text = (msg.text as string)?.trim();
     if (!text) return;
 
+    // Rate limit: 1 guess per GUESS_RATE_LIMIT_MS per player
+    const now = Date.now();
+    const lastGuess = this.guessTimestamps.get(uid) ?? 0;
+    if (now - lastGuess < GUESS_RATE_LIMIT_MS) {
+      client.send("chat", {
+        uid: "system",
+        displayName: "System",
+        text: "Slow down! You're guessing too fast.",
+        isCorrect: false,
+        isSystem: true,
+        timestamp: now,
+      });
+      return;
+    }
+    this.guessTimestamps.set(uid, now);
+
     const player = this.players.get(uid);
     const displayName = player?.displayName ?? uid;
 
@@ -653,6 +702,28 @@ export class SketchPartyRoom extends Room {
     this.broadcast("clear_canvas", {});
   }
 
+  private handleReaction(client: Client, msg: Record<string, unknown>) {
+    const uid = this.getUidByClient(client);
+    if (!uid) return;
+
+    const kind = msg.kind as string;
+    if (!kind || !VALID_REACTIONS.has(kind)) return;
+
+    // Rate limit
+    const now = Date.now();
+    const last = this.reactionTimestamps.get(uid) ?? 0;
+    if (now - last < REACTION_RATE_LIMIT_MS) return;
+    this.reactionTimestamps.set(uid, now);
+
+    const player = this.players.get(uid);
+    this.broadcast("reaction_event", {
+      uid,
+      displayName: player?.displayName ?? uid,
+      kind,
+      ts: now,
+    });
+  }
+
   // ── State broadcasting ────────────────────────────────────────────
 
   /**
@@ -675,6 +746,7 @@ export class SketchPartyRoom extends Room {
       hintsUsed: this.gs.hintsUsed,
       maxHints: this.gs.maxHints,
       players: this.gs.players,
+      effectiveSettings: this.gs.effectiveSettings,
     };
   }
 

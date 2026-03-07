@@ -38,9 +38,12 @@ export type {
 // Pilot adapters — import triggers auto-registration
 import "./battleship";
 import "./brickBreaker";
-import "./crazyEights";
 import "./chess";
 import "./connectFour";
+import "./crazyEights";
+import "./minesweeper";
+import "./minigolf";
 import "./play2048";
 import "./sketchParty";
+import "./solitaireKlondike";
 import "./ticTacToe";

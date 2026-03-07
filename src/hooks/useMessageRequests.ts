@@ -13,10 +13,13 @@
 import { CHAT_FEATURES } from "@/constants/featureFlags";
 import { getFirestoreInstance } from "@/services/firebase";
 import {
-  decodeMessageRequest,
-  isMessageRequestResponse,
   MessageRequest,
 } from "@/types/messaging";
+import {
+  callAcceptMessageRequest,
+  callDeclineMessageRequest,
+  normalizePendingMessageRequests,
+} from "@/services/chat/messageRequestsContract";
 import { createLogger } from "@/utils/log";
 import {
   collection,
@@ -47,6 +50,13 @@ export interface UseMessageRequestsResult {
   accept: (chatId: string) => Promise<void>;
   /** Decline a request (optionally block) */
   decline: (chatId: string, blockRequester?: boolean) => Promise<void>;
+  /** Manual refresh */
+  refresh: () => void;
+}
+
+interface MessageRequestDocLike {
+  id: string;
+  data: unknown;
 }
 
 // =============================================================================
@@ -62,6 +72,7 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
   const [requests, setRequests] = useState<MessageRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const enabled = CHAT_FEATURES.CHAT_MESSAGE_REQUESTS;
 
@@ -85,10 +96,13 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
       q,
       (snapshot) => {
         try {
-          const items: MessageRequest[] = snapshot.docs
-            .map((docSnap) => decodeMessageRequest(docSnap.data(), docSnap.id))
-            .filter((item): item is MessageRequest => item !== null);
-          setRequests(items);
+          const items: MessageRequestDocLike[] = snapshot.docs
+            .map((docSnap) => ({
+              id: docSnap.id,
+              data: docSnap.data(),
+            }));
+          const normalized = normalizePendingMessageRequests(items);
+          setRequests(normalized);
           setError(null);
         } catch (e) {
           log.error("Error processing message requests", {
@@ -107,7 +121,7 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
     );
 
     return unsub;
-  }, [uid, enabled]);
+  }, [uid, enabled, refreshKey]);
 
   // Memoised pending count
   const pendingCount = useMemo(() => requests.length, [requests]);
@@ -117,10 +131,7 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
     try {
       const fns = getFunctions();
       const callable = httpsCallable(fns, "acceptMessageRequest");
-      const response = await callable({ chatId });
-      if (!isMessageRequestResponse(response.data) || !response.data.success) {
-        throw new Error("acceptMessageRequest returned an invalid response");
-      }
+      await callAcceptMessageRequest(chatId, callable);
       log.info("Accepted message request", { data: { chatId } });
     } catch (e) {
       log.error("Failed to accept message request", { data: { error: e } });
@@ -134,10 +145,7 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
       try {
         const fns = getFunctions();
         const callable = httpsCallable(fns, "declineMessageRequest");
-        const response = await callable({ chatId, blockRequester });
-        if (!isMessageRequestResponse(response.data) || !response.data.success) {
-          throw new Error("declineMessageRequest returned an invalid response");
-        }
+        await callDeclineMessageRequest(chatId, blockRequester, callable);
         log.info("Declined message request", {
           data: { chatId, blockRequester },
         });
@@ -149,6 +157,10 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
     [],
   );
 
+  const refresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
   return {
     requests,
     pendingCount,
@@ -156,5 +168,6 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
     error,
     accept,
     decline,
+    refresh,
   };
 }

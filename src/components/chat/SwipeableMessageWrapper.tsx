@@ -18,7 +18,7 @@ import { ReplyToMetadata } from "@/types/messaging";
 import React, { useCallback, useRef } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { IconButton, useTheme } from "react-native-paper";
+import { IconButton, Text, useTheme } from "react-native-paper";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -54,6 +54,17 @@ const SWIPE_THRESHOLD = 60;
 /** Maximum swipe distance (for visual cap) */
 const MAX_SWIPE = 80;
 
+function normalizeNodeForView(node: React.ReactNode): React.ReactNode {
+  return React.Children.map(node, (child) => {
+    if (typeof child === "string" || typeof child === "number") {
+      const text = String(child).trim();
+      if (!text) return null;
+      return <Text>{text}</Text>;
+    }
+    return child;
+  });
+}
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -66,6 +77,7 @@ export function SwipeableMessageWrapper<T>({
   children,
 }: SwipeableMessageWrapperProps<T>) {
   const theme = useTheme();
+  const normalizedChildren = normalizeNodeForView(children);
 
   // Reanimated shared values for smooth animation
   const translateX = useSharedValue(0);
@@ -134,7 +146,7 @@ export function SwipeableMessageWrapper<T>({
 
   // Don't add gesture handlers if disabled
   if (!enabled) {
-    return <View style={styles.container}>{children}</View>;
+    return <View style={styles.container}>{normalizedChildren}</View>;
   }
 
   return (
@@ -159,7 +171,7 @@ export function SwipeableMessageWrapper<T>({
       {/* Message content with gesture detector */}
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[styles.messageWrapper, messageStyle]}>
-          {children}
+          {normalizedChildren}
         </Animated.View>
       </GestureDetector>
     </View>

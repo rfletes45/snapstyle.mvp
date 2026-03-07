@@ -59,6 +59,12 @@ import {
   OutboxItem,
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
+import {
+  createUnifiedMessagesSubscriptionManager,
+  mergePaginatedOlderMessages,
+  mergeRealtimeSnapshotMessages,
+  runIfMounted,
+} from "@/services/chat/unifiedMessagesLifecycle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useUnifiedMessages");
@@ -148,12 +154,18 @@ export function useUnifiedMessages(
   const [error, setError] = useState<Error | null>(null);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [inboxSettings, setInboxSettings] = useState<InboxSettings>(
     DEFAULT_INBOX_SETTINGS,
   );
 
   // Refs
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const subscriptionManagerRef = useRef(
+    createUnifiedMessagesSubscriptionManager(
+      subscribeToMessages,
+      resetPaginationCursor,
+    ),
+  );
   const lastWatermarkRef = useRef<number>(0);
   const lastDeliveryWatermarkRef = useRef<number>(0);
   const updateWatermarkRef = useRef<
@@ -163,6 +175,14 @@ export function useUnifiedMessages(
     ((timestamp: number) => Promise<void>) | undefined
   >(undefined);
   const lastLoadOlderTimeRef = useRef<number>(0);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Resolve effective settings via the V3 resolver
   const effectiveSettings = useMemo(
@@ -220,16 +240,23 @@ export function useUnifiedMessages(
     setLoading(true);
     setError(null);
 
-    // Reset pagination cursor on new conversation
-    resetPaginationCursor(scope, conversationId);
-
-    // Subscribe using unified messaging service
-    unsubscribeRef.current = subscribeToMessages(scope, conversationId, {
+    subscriptionManagerRef.current.replace({
+      scope,
+      conversationId,
       initialLimit,
       currentUid,
+      debug,
       onMessages: (msgs) => {
-        setServerMessages(msgs);
-        setLoading(false);
+        if (
+          !runIfMounted(isMountedRef, () => {
+            setServerMessages((prev) =>
+              mergeRealtimeSnapshotMessages(prev, msgs),
+            );
+            setLoading(false);
+          })
+        ) {
+          return;
+        }
 
         // Update hasMoreOlder based on returned count
         setHasMoreOlder(msgs.length >= initialLimit);
@@ -265,28 +292,36 @@ export function useUnifiedMessages(
         }
       },
       onPaginationState: (state) => {
-        setHasMoreOlder(state.hasMoreBefore);
+        runIfMounted(isMountedRef, () => {
+          setHasMoreOlder(state.hasMoreBefore);
+        });
       },
       onError: (err) => {
         log.error("Subscription error", err);
-        setError(err);
-        setLoading(false);
+        runIfMounted(isMountedRef, () => {
+          setError(err);
+          setLoading(false);
+        });
       },
-      debug,
     });
 
     // Load outbox items for this conversation
     loadOutboxItems();
 
     return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-        unsubscribeRef.current = null;
-      }
+      subscriptionManagerRef.current.cleanup();
     };
     // Note: loadOutboxItems is stable via useCallback with [conversationId] deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, conversationId, currentUid, initialLimit, autoMarkRead, debug]);
+  }, [
+    scope,
+    conversationId,
+    currentUid,
+    initialLimit,
+    autoMarkRead,
+    debug,
+    refreshKey,
+  ]);
 
   // Notify parent of message changes
   useEffect(() => {
@@ -298,7 +333,9 @@ export function useUnifiedMessages(
     if (!conversationId) return;
     try {
       const items = await getPendingForConversation(scope, conversationId);
-      setOutboxItems(items);
+      runIfMounted(isMountedRef, () => {
+        setOutboxItems(items);
+      });
     } catch (err) {
       log.error("Failed to load outbox items", err);
     }
@@ -391,9 +428,17 @@ export function useUnifiedMessages(
         25,
       );
 
-      // Append older messages to the end
-      setServerMessages((prev) => [...prev, ...result.messages]);
-      setHasMoreOlder(result.hasMore);
+      if (
+        !runIfMounted(isMountedRef, () => {
+          // Merge and dedupe to protect against page-boundary overlap.
+          setServerMessages((prev) =>
+            mergePaginatedOlderMessages(prev, result.messages),
+          );
+          setHasMoreOlder(result.hasMore);
+        })
+      ) {
+        return;
+      }
 
       if (debug) {
         log.debug("Loaded older messages", {
@@ -406,9 +451,13 @@ export function useUnifiedMessages(
       }
     } catch (err) {
       log.error("Failed to load older messages", err);
-      setError(err as Error);
+      runIfMounted(isMountedRef, () => {
+        setError(err as Error);
+      });
     } finally {
-      setIsLoadingOlder(false);
+      runIfMounted(isMountedRef, () => {
+        setIsLoadingOlder(false);
+      });
     }
   }, [
     scope,
@@ -423,13 +472,11 @@ export function useUnifiedMessages(
   const refresh = useCallback(() => {
     if (!conversationId) return;
 
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current();
-    }
+    subscriptionManagerRef.current.cleanup();
     setServerMessages([]);
     setLoading(true);
     resetPaginationCursor(scope, conversationId);
-    // Re-subscribe will happen via useEffect
+    setRefreshKey((k) => k + 1);
   }, [scope, conversationId]);
 
   return {

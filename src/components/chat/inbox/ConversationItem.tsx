@@ -26,6 +26,7 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import { Badge, Text } from "react-native-paper";
+import { formatUnreadBadge } from "./unreadBadge";
 
 // =============================================================================
 // Text Highlighting Helper
@@ -85,10 +86,7 @@ export interface ConversationItemProps {
   highlightText?: string;
 }
 
-function formatUnreadBadge(unreadCount: number): string {
-  if (unreadCount <= 0) return "";
-  return unreadCount > 99 ? "99+" : String(unreadCount);
-}
+export { formatUnreadBadge } from "./unreadBadge";
 
 // =============================================================================
 // Component

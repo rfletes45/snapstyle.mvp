@@ -182,6 +182,12 @@ export interface GameSessionV4 {
    * Flat array of spectator UIDs (derived from spectators[].uid).
    */
   spectatorUids: string[];
+
+  /**
+   * Solo-only: timestamp when the player suspended the session via back arrow.
+   * Null when actively playing. Set on suspend, cleared on resume.
+   */
+  soloSuspendedAt?: TimestampLike | null;
 }
 
 // =============================================================================

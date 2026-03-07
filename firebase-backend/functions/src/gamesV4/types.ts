@@ -18,6 +18,7 @@ export type GameId =
   | "word_master"
   | "minesweeper"
   | "lights_out"
+  | "solitaire_klondike"
   | "tic_tac_toe"
   | "chess"
   | "checkers"
@@ -182,6 +183,11 @@ export interface GameSessionV4 {
   rewardsProcessed: boolean;
   participantUids: string[];
   spectatorUids: string[];
+  /**
+   * Solo-only: timestamp when the player suspended the session via back arrow.
+   * Null when actively playing. Set on suspend, cleared on resume.
+   */
+  soloSuspendedAt?: TimestampLike | null;
 }
 
 export interface MoveDoc {
@@ -329,6 +335,9 @@ export const LEADERBOARD_METRICS: Partial<Record<GameId, LeaderboardMetric>> = {
   chess: "wins",
   sketch_party_game: "bestScore",
   battleship: "wins",
+  minigolf_duels: "bestScore",
+  minesweeper: "bestScore",
+  solitaire_klondike: "bestScore",
   // Default for unspecified games: "bestScore"
 };
 

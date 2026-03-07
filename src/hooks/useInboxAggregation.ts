@@ -16,6 +16,12 @@
 import { CHAT_FEATURES } from "@/constants/featureFlags";
 import { getFirestoreInstance } from "@/services/firebase";
 import {
+  getDefaultMemberState,
+  normalizeConversationFromInboxEntry,
+  RECENTLY_READ_TTL_MS,
+  sortInboxConversations,
+} from "@/services/chat/normalizeInboxRow";
+import {
   InboxConversation,
   InboxEntry,
   MemberStatePrivate,
@@ -23,12 +29,13 @@ import {
 import { createLogger } from "@/utils/log";
 import {
   collection,
+  doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
-  Timestamp,
 } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const log = createLogger("useInboxAggregation");
 
@@ -36,7 +43,7 @@ const log = createLogger("useInboxAggregation");
 // Types
 // =============================================================================
 
-type InboxFilter = "all" | "dms" | "groups" | "unread";
+type InboxFilter = "all" | "dms" | "groups" | "unread" | "requests";
 
 export interface UseInboxAggregationResult {
   /** Filtered & sorted conversations */
@@ -63,67 +70,77 @@ export interface UseInboxAggregationResult {
   setShowArchived: (v: boolean) => void;
   /** Force refresh */
   refresh: () => void;
+  /** Optimistically mark a conversation as read in local state */
+  markConversationReadOptimistic: (conversationId: string) => void;
 }
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
-function toMillis(value: unknown): number {
-  if (!value) return 0;
-  if (value instanceof Timestamp) return value.toMillis();
+function toMillisLike(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
   if (typeof value === "number") return value;
-  return 0;
+  if (
+    typeof value === "object" &&
+    value &&
+    "toMillis" in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  return null;
 }
 
-/**
- * Map an InboxEntry doc to the InboxConversation shape expected by the UI.
- */
-function mapEntryToConversation(entry: InboxEntry): InboxConversation {
-  const isDm = entry.scope === "dm";
+async function getMemberPrivateStateForEntry(
+  uid: string,
+  entry: InboxEntry,
+): Promise<MemberStatePrivate> {
+  const db = getFirestoreInstance();
+  const collectionPath = entry.scope === "dm" ? "Chats" : "Groups";
+  const privateRef = doc(
+    db,
+    collectionPath,
+    entry.conversationId,
+    "MembersPrivate",
+    uid,
+  );
 
-  // Map message kind to legacy lastMessage.type
-  const legacyTypeMap: Record<string, string> = {
-    text: "text",
-    media: "image",
-    voice: "voice",
-    file: "attachment",
-    scorecard: "scorecard",
-    system: "text",
-  };
-
-  const memberState: MemberStatePrivate = {
-    uid: "", // will be set by caller if needed
-    lastSeenAtPrivate: 0,
-    archived: entry.archived ?? false,
-    notifyLevel: entry.notifyLevel ?? "all",
-    pinnedAt: entry.pinnedAt ?? undefined,
-    mutedUntil: entry.mutedUntil ?? undefined,
-  };
-
-  return {
-    id: entry.conversationId,
-    type: isDm ? "dm" : "group",
-    name: isDm
-      ? entry.otherUserName || "Chat"
-      : entry.groupName || "Group Chat",
-    avatarUrl: null,
-    otherUserId: isDm ? entry.otherUserId : undefined,
-    lastMessage: {
-      text: entry.lastMessagePreview || "",
-      senderName: "", // we don't store sender name in inbox entry
-      timestamp: toMillis(entry.lastActivityAt),
-      type: (legacyTypeMap[entry.lastMessageKind || "text"] ||
-        "text") as InboxConversation["lastMessage"] extends null
-        ? never
-        : NonNullable<InboxConversation["lastMessage"]>["type"],
-    },
-    memberState,
-    unreadCount: entry.unreadCount ?? 0,
-    hasMentions: false, // could be extended later
-    createdAt: toMillis(entry.lastActivityAt),
-    participantCount: entry.memberCount,
-  };
+  try {
+    const snap = await getDoc(privateRef);
+    if (!snap.exists()) {
+      return {
+        ...getDefaultMemberState(uid),
+        archived: entry.archived ?? false,
+        notifyLevel: entry.notifyLevel ?? "all",
+        pinnedAt: entry.pinnedAt ?? null,
+        mutedUntil: entry.mutedUntil ?? null,
+      };
+    }
+    const data = snap.data();
+    return {
+      uid,
+      archived: data.archived ?? entry.archived ?? false,
+      mutedUntil:
+        toMillisLike(data.mutedUntil) ??
+        toMillisLike(entry.mutedUntil) ??
+        null,
+      notifyLevel: data.notifyLevel ?? entry.notifyLevel ?? "all",
+      sendReadReceipts: data.sendReadReceipts ?? true,
+      lastSeenAtPrivate: toMillisLike(data.lastSeenAtPrivate) ?? 0,
+      lastMarkedUnreadAt: toMillisLike(data.lastMarkedUnreadAt) ?? undefined,
+      pinnedAt:
+        toMillisLike(data.pinnedAt) ?? toMillisLike(entry.pinnedAt) ?? null,
+      deletedAt: toMillisLike(data.deletedAt) ?? null,
+      hiddenUntilNewMessage: data.hiddenUntilNewMessage ?? false,
+      showMemberChatStyles: data.showMemberChatStyles ?? true,
+    };
+  } catch (e) {
+    log.warn("Failed to load MembersPrivate for inbox aggregation", {
+      data: { conversationId: entry.conversationId, scope: entry.scope, error: e },
+    });
+    return getDefaultMemberState(uid);
+  }
 }
 
 // =============================================================================
@@ -143,6 +160,7 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const recentlyReadRef = useRef<Map<string, number>>(new Map());
 
   const enabled = CHAT_FEATURES.CHAT_INBOX_AGGREGATION;
 
@@ -162,13 +180,23 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
 
     const unsub = onSnapshot(
       q,
-      (snapshot) => {
+      async (snapshot) => {
         try {
-          const convos: InboxConversation[] = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data() as InboxEntry;
-            return mapEntryToConversation(data);
-          });
-          setEntries(convos);
+          const inboxEntries = snapshot.docs.map(
+            (docSnap) => docSnap.data() as InboxEntry,
+          );
+          const memberStates = await Promise.all(
+            inboxEntries.map((entry) => getMemberPrivateStateForEntry(uid, entry)),
+          );
+          const convos = inboxEntries.map((entry, index) =>
+            normalizeConversationFromInboxEntry(
+              entry,
+              memberStates[index] || getDefaultMemberState(uid),
+              recentlyReadRef.current.get(entry.conversationId),
+            ),
+          );
+
+          setEntries(sortInboxConversations(convos));
           setError(null);
         } catch (e) {
           log.error("Error processing inbox snapshot", { data: { error: e } });
@@ -204,8 +232,9 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     if (filter === "dms") list = list.filter((c) => c.type === "dm");
     else if (filter === "groups") list = list.filter((c) => c.type === "group");
     else if (filter === "unread") list = list.filter((c) => c.unreadCount > 0);
+    // "requests" is handled by ChatListScreen tabs and not part of inbox rows.
 
-    return list;
+    return sortInboxConversations(list);
   }, [allConversations, filter, showArchived]);
 
   const pinnedConversations = useMemo(
@@ -226,7 +255,35 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     [allConversations],
   );
 
-  const refresh = () => setRefreshKey((k) => k + 1);
+  const refresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  const markConversationReadOptimistic = useCallback((conversationId: string) => {
+    recentlyReadRef.current.set(conversationId, Date.now());
+
+    const now = Date.now();
+    for (const [id, ts] of recentlyReadRef.current) {
+      if (now - ts > RECENTLY_READ_TTL_MS) {
+        recentlyReadRef.current.delete(id);
+      }
+    }
+
+    setEntries((prev) =>
+      prev.map((conversation) => {
+        if (conversation.id !== conversationId) return conversation;
+        return {
+          ...conversation,
+          unreadCount: 0,
+          memberState: {
+            ...conversation.memberState,
+            lastSeenAtPrivate: now,
+            lastMarkedUnreadAt: undefined,
+          },
+        };
+      }),
+    );
+  }, []);
 
   return {
     conversations,
@@ -241,5 +298,6 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     showArchived,
     setShowArchived,
     refresh,
+    markConversationReadOptimistic,
   };
 }

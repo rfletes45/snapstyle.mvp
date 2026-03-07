@@ -97,6 +97,17 @@ export interface StrokeData {
   points: Array<{ x: number; y: number }>;
 }
 
+/** Reaction kinds supported by the server. */
+export type ReactionKind = "thumbsup" | "thumbsdown" | "fire" | "laugh";
+
+/** Reaction event received from server. */
+export interface ReactionEvent {
+  uid: string;
+  displayName: string;
+  kind: ReactionKind;
+  ts: number;
+}
+
 // =============================================================================
 // Room state shape (mirrors Colyseus schema; used for typed access)
 // =============================================================================
@@ -123,6 +134,16 @@ export interface SketchPartyRoomState {
     displayName: string;
     connected: boolean;
   }>;
+  effectiveSettings: {
+    maxPlayers: number;
+    rounds: number;
+    drawTimeSec: number;
+    turnChooseTimeSec: number;
+    wordChoices: number;
+    hints: number;
+    customWordsEnabled: boolean;
+    customWordsList: string;
+  };
 }
 
 // =============================================================================
@@ -140,6 +161,11 @@ export type SketchPartyEvent =
   | { type: "board_snapshot"; strokes: StrokeData[] }
   | { type: "word_reveal"; word: string }
   | { type: "turn_scores"; scores: Record<string, number> }
+  | {
+      type: "settings_applied";
+      settings: SketchPartyRoomState["effectiveSettings"];
+    }
+  | { type: "reaction_event"; data: ReactionEvent }
   | { type: "error"; message: string };
 
 // =============================================================================
@@ -166,6 +192,7 @@ function getClient(): Client {
  * @param uid       Player's UID
  * @param displayName Player's display name
  * @param token     Firebase ID token for server-side auth verification
+ * @param settings  Lobby settings from session.settings (applied on room create)
  * @returns The Colyseus Room instance
  */
 export async function joinSketchPartyRoom(
@@ -173,6 +200,7 @@ export async function joinSketchPartyRoom(
   uid: string,
   displayName: string,
   token: string,
+  settings?: Record<string, unknown>,
 ): Promise<Room> {
   const client = getClient();
   console.log(
@@ -185,6 +213,7 @@ export async function joinSketchPartyRoom(
     uid,
     displayName,
     token,
+    settings,
   });
   console.log(
     `[SketchParty] Joined room ${room.roomId} (session ${room.sessionId})`,
@@ -229,6 +258,10 @@ export function sendWordChoice(room: Room, wordIndex: number): void {
 
 export function sendUndo(room: Room): void {
   room.send("undo", {});
+}
+
+export function sendReaction(room: Room, kind: ReactionKind): void {
+  room.send("reaction", { kind });
 }
 
 export function sendClearCanvas(room: Room): void {

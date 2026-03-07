@@ -88,7 +88,7 @@ export const DEFAULT_CRAZY_EIGHTS_SETTINGS: CrazyEightsSettings = {
   drawMode: "draw_one_then_pass",
   sevenZeroRule: false,
   jumpIn: false,
-  wildDraw4Challenge: true,
+  wildDraw4Challenge: false,
   turnTimer: "off",
   roundModel: "single_hand",
   targetPoints: 500,

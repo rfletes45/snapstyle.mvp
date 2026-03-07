@@ -8,7 +8,7 @@
  * @module gamesV4/components/LobbySettingsPanel
  */
 
-import { getAdapter } from "@/gamesV4/adapters/registry";
+import { getAdapter } from "@/gamesV4/adapters";
 import type { SettingsFieldDef } from "@/gamesV4/types/adapter";
 import type { GameId } from "@/gamesV4/types/common";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -29,8 +29,12 @@ import {
 
 interface LobbySettingsPanelProps {
   gameId: GameId;
-  /** Called when settings change. */
+  /** Called when settings change (host only). */
   onSettingsChange: (settings: Record<string, unknown>) => void;
+  /** When true, settings are read-only (non-host participants). */
+  readOnly?: boolean;
+  /** External settings values to display (e.g. from invite.lobbySettings). */
+  externalValues?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -40,6 +44,8 @@ interface LobbySettingsPanelProps {
 export default function LobbySettingsPanel({
   gameId,
   onSettingsChange,
+  readOnly = false,
+  externalValues,
 }: LobbySettingsPanelProps) {
   const { theme } = useAppTheme();
   const isDark = theme.isDark;
@@ -49,28 +55,50 @@ export default function LobbySettingsPanel({
   const defaults = adapter?.defaultSettings ?? {};
 
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
-  // Initialize with defaults
+  // Initialize with defaults (or external values for read-only)
   useEffect(() => {
     const init: Record<string, unknown> = {};
     for (const field of schema) {
       init[field.key] =
-        (defaults as Record<string, unknown>)[field.key] ?? field.default;
+        externalValues?.[field.key] ??
+        (defaults as Record<string, unknown>)[field.key] ??
+        field.default;
     }
     setValues(init);
-    onSettingsChange(init);
-  }, [gameId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!readOnly) {
+      // Defer to avoid setState-during-render warning when parent
+      // updates its own state inside onSettingsChange.
+      setTimeout(() => onSettingsChange(init), 0);
+    }
+  }, [gameId, externalValues]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync external values when they change (e.g. host updates settings)
+  useEffect(() => {
+    if (readOnly && externalValues) {
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const field of schema) {
+          if (field.key in externalValues) {
+            next[field.key] = externalValues[field.key];
+          }
+        }
+        return next;
+      });
+    }
+  }, [readOnly, externalValues, schema]);
 
   const handleChange = useCallback(
     (key: string, value: unknown) => {
+      if (readOnly) return;
       setValues((prev) => {
         const next = { ...prev, [key]: value };
         onSettingsChange(next);
         return next;
       });
     },
-    [onSettingsChange],
+    [onSettingsChange, readOnly],
   );
 
   if (schema.length === 0) return null;
@@ -97,7 +125,7 @@ export default function LobbySettingsPanel({
           color={theme.colors.primary}
         />
         <Text style={[styles.headerText, { color: theme.colors.primary }]}>
-          Game Settings
+          {readOnly ? "Game Settings (View Only)" : "Game Settings"}
         </Text>
         <MaterialCommunityIcons
           name={expanded ? "chevron-up" : "chevron-down"}
@@ -120,6 +148,7 @@ export default function LobbySettingsPanel({
               onChange={(v) => handleChange(field.key, v)}
               isDark={isDark}
               primaryColor={theme.colors.primary}
+              disabled={readOnly}
             />
           ))}
         </ScrollView>
@@ -138,6 +167,7 @@ interface SettingsFieldProps {
   onChange: (value: unknown) => void;
   isDark: boolean;
   primaryColor: string;
+  disabled?: boolean;
 }
 
 function SettingsField({
@@ -146,17 +176,21 @@ function SettingsField({
   onChange,
   isDark,
   primaryColor,
+  disabled = false,
 }: SettingsFieldProps) {
   switch (field.type) {
     case "boolean":
       return (
         <View style={styles.fieldRow}>
-          <Text style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}>
+          <Text
+            style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
+          >
             {field.label}
           </Text>
           <Switch
             value={value as boolean}
             onValueChange={onChange}
+            disabled={disabled}
             trackColor={{ false: "#767577", true: primaryColor + "80" }}
             thumbColor={(value as boolean) ? primaryColor : "#f4f3f4"}
           />
@@ -166,15 +200,18 @@ function SettingsField({
     case "number":
       return (
         <View style={styles.fieldRow}>
-          <Text style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}>
+          <Text
+            style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
+          >
             {field.label}
           </Text>
-          <View style={styles.stepperRow}>
+          <View style={[styles.stepperRow, disabled && { opacity: 0.5 }]}>
             <TouchableOpacity
               style={[
                 styles.stepperBtn,
                 { backgroundColor: isDark ? "#333" : "#E0E0E0" },
               ]}
+              disabled={disabled}
               onPress={() => {
                 const cur = (value as number) ?? (field.default as number);
                 const next = Math.max(field.min ?? 0, cur - (field.step ?? 1));
@@ -186,10 +223,7 @@ function SettingsField({
               </Text>
             </TouchableOpacity>
             <Text
-              style={[
-                styles.stepperValue,
-                { color: isDark ? "#FFF" : "#333" },
-              ]}
+              style={[styles.stepperValue, { color: isDark ? "#FFF" : "#333" }]}
             >
               {String(value ?? field.default)}
             </Text>
@@ -198,6 +232,7 @@ function SettingsField({
                 styles.stepperBtn,
                 { backgroundColor: isDark ? "#333" : "#E0E0E0" },
               ]}
+              disabled={disabled}
               onPress={() => {
                 const cur = (value as number) ?? (field.default as number);
                 const next = Math.min(
@@ -218,10 +253,12 @@ function SettingsField({
     case "select":
       return (
         <View style={styles.fieldColumn}>
-          <Text style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}>
+          <Text
+            style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
+          >
             {field.label}
           </Text>
-          <View style={styles.selectRow}>
+          <View style={[styles.selectRow, disabled && { opacity: 0.5 }]}>
             {(field.options ?? []).map((opt) => {
               const isSelected =
                 JSON.stringify(value) === JSON.stringify(opt.value);
@@ -238,6 +275,7 @@ function SettingsField({
                           : "#E0E0E0",
                     },
                   ]}
+                  disabled={disabled}
                   onPress={() => onChange(opt.value)}
                 >
                   <Text

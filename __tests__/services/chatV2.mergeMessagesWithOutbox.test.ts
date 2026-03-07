@@ -115,4 +115,77 @@ describe("mergeMessagesWithOutbox", () => {
       "server-old",
     ]);
   });
+
+  it("handles pagination overlap without duplicate messages", () => {
+    const pageOne: MessageV2[] = [
+      makeServerMessage({ id: "m3", serverReceivedAt: 3000 }),
+      makeServerMessage({ id: "m2", serverReceivedAt: 2000 }),
+    ];
+    const pageTwoWithOverlap: MessageV2[] = [
+      makeServerMessage({ id: "m2", serverReceivedAt: 2000 }),
+      makeServerMessage({ id: "m1", serverReceivedAt: 1000 }),
+    ];
+
+    const merged = mergeMessagesWithOutbox(
+      [...pageOne, ...pageTwoWithOverlap],
+      [],
+      "user-a",
+      "User A",
+    );
+
+    expect(merged.map((m) => m.id)).toEqual(["m3", "m2", "m1"]);
+  });
+
+  it("prefers newer modified snapshot over older version with same id", () => {
+    const olderSnapshot: MessageV2 = makeServerMessage({
+      id: "msg-1",
+      text: "old text",
+      serverReceivedAt: 5000,
+    });
+    const modifiedSnapshot: MessageV2 = makeServerMessage({
+      id: "msg-1",
+      text: "new text",
+      serverReceivedAt: 7000,
+    });
+
+    const merged = mergeMessagesWithOutbox(
+      [olderSnapshot, modifiedSnapshot],
+      [],
+      "user-a",
+      "User A",
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].text).toBe("new text");
+    expect(merged[0].serverReceivedAt).toBe(7000);
+  });
+
+  it("reconciles optimistic outbox with server ack by id", () => {
+    const outboxItems: OutboxItem[] = [
+      makeOutboxItem({
+        messageId: "ack-msg",
+        state: "sending",
+        createdAt: 4_000,
+      }),
+    ];
+    const serverMessages: MessageV2[] = [
+      makeServerMessage({
+        id: "ack-msg",
+        text: "acked",
+        serverReceivedAt: 4_500,
+      }),
+    ];
+
+    const merged = mergeMessagesWithOutbox(
+      serverMessages,
+      outboxItems,
+      "user-a",
+      "User A",
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("ack-msg");
+    expect(merged[0].status).toBeUndefined();
+    expect(merged[0].text).toBe("acked");
+  });
 });

@@ -296,6 +296,10 @@ export function hydrateProfileData(
       badgeIds: [],
       updatedAt: now,
     },
+    featuredAchievements: source.featuredAchievements || {
+      achievementIds: [],
+      updatedAt: now,
+    },
     privacy,
     equippedBackgroundId: source.equippedBackgroundId ?? null,
     level: source.level || {

@@ -44,6 +44,8 @@ export interface OwnProfileHeaderProps {
   status?: ProfileStatus | null;
   /** Level information */
   level: LevelInfo;
+  /** Top safe-area inset so the background image extends behind the status bar / dynamic island */
+  topInset?: number;
   /** Handler for picture/decoration edit */
   onEditPicturePress: () => void;
   /** Handler for bio edit */
@@ -71,6 +73,7 @@ function OwnProfileHeaderBase({
   bio,
   status,
   level,
+  topInset = 0,
   onEditPicturePress,
   onEditBioPress,
   onEditStatusPress,
@@ -106,8 +109,15 @@ function OwnProfileHeaderBase({
 
   return (
     <View style={[styles.outerWrapper, style]}>
-      {/* Header region with overflow hidden for background crop */}
-      <View style={styles.headerRegion}>
+      {/* Header region with overflow hidden for background crop.
+       * Negative top margin + extra padding pull the bg behind the status bar
+       * while keeping foreground content below the safe area. */}
+      <View
+        style={[
+          styles.headerRegion,
+          topInset > 0 && { marginTop: -topInset, paddingTop: 0 },
+        ]}
+      >
         {/* Background Image (fills entire header region, cropped at level bar) */}
         {backgroundSource && (
           <CosmeticImage
@@ -121,8 +131,13 @@ function OwnProfileHeaderBase({
         {/* Scrim overlay for text readability when background is present */}
         {backgroundSource && <View style={styles.backgroundScrim} />}
 
-        {/* Foreground content */}
-        <View style={styles.foregroundContent}>
+        {/* Foreground content — padded down by the safe-area inset */}
+        <View
+          style={[
+            styles.foregroundContent,
+            topInset > 0 && { paddingTop: 24 + topInset * 2 },
+          ]}
+        >
           {/* Profile Picture with Decoration */}
           <View style={styles.pictureSection}>
             <ProfilePictureWithDecoration

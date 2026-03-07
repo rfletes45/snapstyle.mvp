@@ -15,6 +15,10 @@
  */
 
 import {
+  ConversationPickerModal,
+  type ConversationPickerResult,
+} from "@/gamesV4/components/ConversationPickerModal";
+import {
   GAME_DESCRIPTIONS,
   GAME_METADATA,
   IMPLEMENTED_GAME_IDS,
@@ -30,6 +34,7 @@ import { useAchievementsV4 } from "@/gamesV4/hooks/useAchievementsV4";
 import { useGamePBV4 } from "@/gamesV4/hooks/useGameStatsV4";
 import { useLeaderboardV4 } from "@/gamesV4/hooks/useLeaderboardV4";
 import {
+  createGameInvite,
   createSoloSession,
   fetchFriendsLeaderboard,
   fetchGameHistoryByGame,
@@ -37,6 +42,7 @@ import {
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types/common";
 import type { GameResultV4 } from "@/gamesV4/types/result";
+import { mapSoloLaunchError } from "@/gamesV4/utils/mapCallableError";
 import { getCachedProfile } from "@/services/cache/profileCache";
 import { getFriends } from "@/services/friends";
 import { useAuth } from "@/store/AuthContext";
@@ -96,6 +102,8 @@ export default function GameDetailScreenV4() {
   const [launching, setLaunching] = useState(false);
   const [showAllAchievements, setShowAllAchievements] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [showConversationPicker, setShowConversationPicker] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   // ── Hooks ──────────────────────────────────────────────────────────────
   const { pb, loading: pbLoading } = useGamePBV4(gameId);
@@ -172,12 +180,65 @@ export default function GameDetailScreenV4() {
       const { sessionId } = await createSoloSession({ gameId });
       navigation.navigate("GamePlayV4", { sessionId, gameId });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not start game.";
+      const msg = mapSoloLaunchError(err);
       Alert.alert("Error", msg);
     } finally {
       setLaunching(false);
     }
   }, [gameId, launching, navigation]);
+
+  const handleInviteFriend = useCallback(() => {
+    setShowConversationPicker(true);
+  }, []);
+
+  const handleConversationSelected = useCallback(
+    async (result: ConversationPickerResult) => {
+      setShowConversationPicker(false);
+      if (inviting) return;
+      setInviting(true);
+      try {
+        const { inviteId } = await createGameInvite({
+          conversationId: result.conversationId,
+          conversationScope: result.conversationScope,
+          gameId,
+        });
+        // Navigate to the chat where the invite was sent
+        if (result.conversationScope === "dm") {
+          // For DM: extract friend UID from chat ID
+          const parts = result.conversationId.split("_");
+          const friendUid = parts.find((p: string) => p !== uid);
+          if (friendUid) {
+            navigation.navigate("ChatDetail", {
+              friendUid,
+              friendName: result.displayName,
+            });
+          } else {
+            navigation.navigate("GameLobbyV4", { inviteId });
+          }
+        } else {
+          navigation.navigate("GroupChat", {
+            groupId: result.conversationId,
+            groupName: result.displayName,
+          });
+        }
+        Alert.alert(
+          "Invite Sent!",
+          `Game invite sent to ${result.displayName}.`,
+        );
+      } catch (err: unknown) {
+        const errObj = err as { code?: string; message?: string };
+        const msg =
+          errObj?.code === "functions/not-found" ||
+          errObj?.message === "not-found"
+            ? "Game service is not available. Please make sure Cloud Functions are deployed."
+            : (errObj?.message ?? "Failed to create game invite");
+        Alert.alert("Invite Error", msg);
+      } finally {
+        setInviting(false);
+      }
+    },
+    [gameId, uid, navigation, inviting],
+  );
 
   // ── Colors ─────────────────────────────────────────────────────────────
   const bgColor = theme.isDark ? "#000" : theme.colors.background;
@@ -358,6 +419,34 @@ export default function GameDetailScreenV4() {
               </TouchableOpacity>
             ) : (
               <View style={styles.actionRow}>
+                {/* Invite a Friend CTA */}
+                <TouchableOpacity
+                  style={[
+                    styles.playButton,
+                    { backgroundColor: theme.colors.primary },
+                  ]}
+                  onPress={handleInviteFriend}
+                  disabled={inviting}
+                  activeOpacity={0.7}
+                >
+                  {inviting ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons
+                        name="account-plus"
+                        size={20}
+                        color="#FFF"
+                      />
+                      <Text style={styles.playButtonText}>Invite a Friend</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <Text style={[styles.inviteHintText, { color: subtextColor }]}>
+                  Choose a chat to send this game invite.
+                </Text>
+
+                {/* Alternate info */}
                 <View
                   style={[styles.actionInfoBox, { backgroundColor: accentBg }]}
                 >
@@ -367,7 +456,7 @@ export default function GameDetailScreenV4() {
                     color={theme.colors.primary}
                   />
                   <Text style={[styles.actionInfoText, { color: textColor }]}>
-                    Challenge a friend from any chat conversation using the
+                    You can also challenge a friend from any chat using the
                     gamepad icon
                   </Text>
                 </View>
@@ -375,6 +464,13 @@ export default function GameDetailScreenV4() {
             )}
           </View>
         )}
+
+        {/* Conversation Picker Modal */}
+        <ConversationPickerModal
+          visible={showConversationPicker}
+          onSelect={handleConversationSelected}
+          onClose={() => setShowConversationPicker(false)}
+        />
 
         {/* ─── 3. Your Progress ──────────────────────────────────── */}
         <View style={[styles.card, { backgroundColor: cardBg }]}>
@@ -825,6 +921,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   actionInfoText: { fontSize: 13, flex: 1, lineHeight: 18 },
+  inviteHintText: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: -2,
+    marginBottom: 8,
+  },
 
   // Progress
   progressRow: {

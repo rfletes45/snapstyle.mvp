@@ -1934,6 +1934,14 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // GAME MODERATION AUDIT (server-only)
+    // ============================================================
+    match /GameModerationAuditV4/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // ============================================================
     // CATCH-ALL: Deny everything else
     // ============================================================
 

@@ -57,14 +57,6 @@ export interface SketchPartyPublicState {
 
 const SETTINGS_SCHEMA: SettingsFieldDef[] = [
   {
-    key: "maxPlayers",
-    label: "Max Players",
-    type: "number",
-    default: 8,
-    min: 2,
-    max: 8,
-  },
-  {
     key: "rounds",
     label: "Rounds",
     type: "number",

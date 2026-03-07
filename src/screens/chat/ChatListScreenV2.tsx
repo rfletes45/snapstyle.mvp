@@ -16,21 +16,18 @@ import {
   useConversationActions,
   type MuteDuration,
 } from "@/hooks/useConversationActions";
-import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
-import { useFriendRequests } from "@/hooks/useFriendRequests";
 import { useInboxData } from "@/hooks/useInboxData";
 import {
-  acceptGroupInvite,
-  declineGroupInvite,
-  getPendingInvites,
-} from "@/services/groups";
+  useUnifiedInboxRequests,
+} from "@/hooks/useUnifiedInboxRequests";
+import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import type { GroupInvite } from "@/types/models";
 import { usePrefetchProfileImages } from "@/utils/imagePrefetch";
-import { createLogger, log } from "@/utils/log";
+import { log } from "@/utils/log";
 import {
   useFocusEffect,
   useIsFocused,
@@ -38,7 +35,7 @@ import {
 } from "@react-navigation/native";
 import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
-import { Text } from "react-native-paper";
+import { Button, Text } from "react-native-paper";
 
 // Components
 import {
@@ -56,7 +53,10 @@ import {
   SwipeableConversation,
 } from "@/components/chat/inbox";
 import { ErrorState, LoadingState } from "@/components/ui";
-const logger = createLogger("screens/chat/ChatListScreenV2");
+import {
+  getUnifiedRequestsCount,
+  isRequestsTabEmpty,
+} from "./requestsTabUtils";
 // Theme
 
 // =============================================================================
@@ -117,10 +117,6 @@ export default function ChatListScreen() {
   // Pass refresh callback to trigger UI update after actions
   const actions = useConversationActions(uid, { onActionComplete: refresh });
 
-  // Local state
-  const [pendingInvites, setPendingInvites] = useState<GroupInvite[]>([]);
-  const [pendingInvitesLoading, setPendingInvitesLoading] = useState(false);
-
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
@@ -139,14 +135,22 @@ export default function ChatListScreen() {
     useState<InboxConversation | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Friend requests from useFriendRequests hook
+  // Unified inbox requests (friend requests + group invites + message requests)
   const {
-    requests: friendRequests,
+    items: requestItems,
     loading: requestsLoading,
-    acceptRequest,
-    declineRequest,
-    refresh: refreshFriendRequests,
-  } = useFriendRequests(uid);
+    error: requestsError,
+    friendRequests,
+    groupInvites,
+    messageRequests,
+    refresh: refreshUnifiedRequests,
+    acceptFriendRequest,
+    declineFriendRequest,
+    acceptGroupInviteRequest,
+    declineGroupInviteRequest,
+    acceptMessageRequest,
+    declineMessageRequest,
+  } = useUnifiedInboxRequests(uid);
 
   // =============================================================================
   // Register Notification Press Handler
@@ -176,29 +180,6 @@ export default function ChatListScreen() {
       setCurrentScreen("ChatList");
       return () => setCurrentScreen(null);
     }, [setCurrentScreen]),
-  );
-
-  // =============================================================================
-  // Load Friend Requests / Invites
-  // =============================================================================
-
-  const loadPendingInvites = useCallback(async () => {
-    if (!uid) return;
-    setPendingInvitesLoading(true);
-    try {
-      const invites = await getPendingInvites(uid);
-      setPendingInvites(invites);
-    } catch (e) {
-      logger.error("[ChatListScreen] Error loading group invites:", e);
-    } finally {
-      setPendingInvitesLoading(false);
-    }
-  }, [uid]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadPendingInvites();
-    }, [loadPendingInvites]),
   );
 
   // =============================================================================
@@ -313,23 +294,23 @@ export default function ChatListScreen() {
   const handleAcceptRequest = useCallback(
     async (requestId: string) => {
       try {
-        await acceptRequest(requestId);
+        await acceptFriendRequest(requestId);
       } catch (e) {
         log.error("Failed to accept friend request", e);
       }
     },
-    [acceptRequest],
+    [acceptFriendRequest],
   );
 
   const handleDeclineRequest = useCallback(
     async (requestId: string) => {
       try {
-        await declineRequest(requestId);
+        await declineFriendRequest(requestId);
       } catch (e) {
         log.error("Failed to decline friend request", e);
       }
     },
-    [declineRequest],
+    [declineFriendRequest],
   );
 
   const handleRequestPress = useCallback(
@@ -346,11 +327,8 @@ export default function ChatListScreen() {
 
   const handleAcceptGroupInvite = useCallback(
     async (invite: GroupInvite) => {
-      if (!uid) return;
       try {
-        await acceptGroupInvite(invite.id, uid);
-        // Remove from local state
-        setPendingInvites((prev) => prev.filter((i) => i.id !== invite.id));
+        await acceptGroupInviteRequest(invite);
         // Navigate to the group
         navigation.navigate("GroupChat", {
           groupId: invite.groupId,
@@ -360,21 +338,40 @@ export default function ChatListScreen() {
         log.error("Failed to accept group invite", e);
       }
     },
-    [uid, navigation],
+    [acceptGroupInviteRequest, navigation],
   );
 
   const handleDeclineGroupInvite = useCallback(
     async (invite: GroupInvite) => {
-      if (!uid) return;
       try {
-        await declineGroupInvite(invite.id, uid);
-        // Remove from local state
-        setPendingInvites((prev) => prev.filter((i) => i.id !== invite.id));
+        await declineGroupInviteRequest(invite);
       } catch (e) {
         log.error("Failed to decline group invite", e);
       }
     },
-    [uid],
+    [declineGroupInviteRequest],
+  );
+
+  const handleAcceptMessageRequest = useCallback(
+    async (chatId: string) => {
+      try {
+        await acceptMessageRequest(chatId);
+      } catch (e) {
+        log.error("Failed to accept message request", e);
+      }
+    },
+    [acceptMessageRequest],
+  );
+
+  const handleDeclineMessageRequest = useCallback(
+    async (chatId: string) => {
+      try {
+        await declineMessageRequest(chatId, false);
+      } catch (e) {
+        log.error("Failed to decline message request", e);
+      }
+    },
+    [declineMessageRequest],
   );
 
   // =============================================================================
@@ -438,9 +435,10 @@ export default function ChatListScreen() {
   }, []);
 
   const handleRequestsRefresh = useCallback(() => {
-    refreshFriendRequests();
-    loadPendingInvites();
-  }, [refreshFriendRequests, loadPendingInvites]);
+    refreshUnifiedRequests().catch((e) => {
+      log.error("Failed to refresh inbox requests", e);
+    });
+  }, [refreshUnifiedRequests]);
 
   // =============================================================================
   // Context Menu Action Handlers
@@ -605,7 +603,7 @@ export default function ChatListScreen() {
 
   // Determine if we're showing requests tab
   const showRequestsTab = filter === "requests";
-  const requestsRefreshing = requestsLoading || pendingInvitesLoading;
+  const requestsRefreshing = requestsLoading;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -623,13 +621,25 @@ export default function ChatListScreen() {
           activeTab={filter}
           onTabChange={setFilter}
           unreadCount={totalUnread}
-          requestsCount={friendRequests.length + pendingInvites.length}
+          requestsCount={getUnifiedRequestsCount({
+            friendRequestsCount: friendRequests.length,
+            groupInvitesCount: groupInvites.length,
+            messageRequestsCount: messageRequests.length,
+          })}
         />
       )}
 
-      {/* Requests List (Friend Requests + Group Invites when Requests tab is active) */}
+      {/* Requests List (friend + group + message requests) */}
       {showRequestsTab ? (
-        friendRequests.length === 0 && pendingInvites.length === 0 ? (
+        requestsLoading && requestItems.length === 0 ? (
+          <LoadingState message="Loading requests..." />
+        ) : requestsError && requestItems.length === 0 ? (
+          <ErrorState
+            title="Could not load requests"
+            message={requestsError.message}
+            onRetry={handleRequestsRefresh}
+          />
+        ) : isRequestsTabEmpty(requestItems.length) ? (
           <View style={styles.emptyContainer}>
             <EmptyState
               type="noRequests"
@@ -640,77 +650,68 @@ export default function ChatListScreen() {
           </View>
         ) : (
           <FlatList
-            data={[
-              // Group invites section header
-              ...(pendingInvites.length > 0
-                ? [{ type: "header" as const, title: "Group Invites" }]
-                : []),
-              // Group invites
-              ...pendingInvites.map((invite) => ({
-                type: "invite" as const,
-                data: invite,
-              })),
-              // Friend requests section header
-              ...(friendRequests.length > 0
-                ? [{ type: "header" as const, title: "Friend Requests" }]
-                : []),
-              // Friend requests
-              ...friendRequests.map((request) => ({
-                type: "request" as const,
-                data: request,
-              })),
-            ]}
+            data={requestItems}
             renderItem={({ item }) => {
-              if (item.type === "header") {
-                return (
-                  <View
-                    style={[
-                      styles.sectionHeader,
-                      { backgroundColor: colors.background },
-                    ]}
-                    accessibilityRole="header"
-                  >
-                    <Text
-                      style={[
-                        styles.sectionHeaderText,
-                        { color: colors.textSecondary },
-                      ]}
-                    >
-                      {item.title}
-                    </Text>
-                  </View>
-                );
-              }
-              if (item.type === "invite") {
-                const invite = item.data as GroupInvite;
+              if (item.kind === "group_invite") {
                 return (
                   <GroupInviteItem
-                    invite={invite}
-                    onAccept={() => handleAcceptGroupInvite(invite)}
-                    onDecline={() => handleDeclineGroupInvite(invite)}
+                    invite={item.groupInvite}
+                    onAccept={() => handleAcceptGroupInvite(item.groupInvite)}
+                    onDecline={() => handleDeclineGroupInvite(item.groupInvite)}
                   />
                 );
               }
-              // Friend request
-              const request = item.data as FriendRequestWithUser;
+
+              if (item.kind === "friend_request") {
+                return (
+                  <FriendRequestItem
+                    request={item.friendRequest}
+                    onAccept={() => handleAcceptRequest(item.friendRequest.id)}
+                    onDecline={() => handleDeclineRequest(item.friendRequest.id)}
+                    onPress={() => handleRequestPress(item.friendRequest)}
+                  />
+                );
+              }
+
+              const request = item.messageRequest;
               return (
-                <FriendRequestItem
-                  request={request}
-                  onAccept={() => handleAcceptRequest(request.id)}
-                  onDecline={() => handleDeclineRequest(request.id)}
-                  onPress={() => handleRequestPress(request)}
-                />
+                <View
+                  style={[styles.requestRow, { backgroundColor: colors.surface }]}
+                >
+                  <View style={styles.requestRowContent}>
+                    <Text style={[styles.requestTitle, { color: colors.text }]}>
+                      {request.requesterName}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.requestSubtitle,
+                        { color: colors.textSecondary },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {request.messagePreview || "Sent you a message request"}
+                    </Text>
+                  </View>
+                  <View style={styles.requestActions}>
+                    <Button
+                      mode="contained"
+                      compact
+                      onPress={() => handleAcceptMessageRequest(request.chatId)}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      mode="outlined"
+                      compact
+                      onPress={() => handleDeclineMessageRequest(request.chatId)}
+                    >
+                      Decline
+                    </Button>
+                  </View>
+                </View>
               );
             }}
-            keyExtractor={(item) => {
-              if (item.type === "header") {
-                return `header-${item.title}`;
-              }
-              if (item.type === "invite") {
-                return `invite-${(item.data as GroupInvite).id}`;
-              }
-              return `request-${(item.data as FriendRequestWithUser).id}`;
-            }}
+            keyExtractor={(item) => `${item.kind}:${item.id}`}
             refreshing={requestsRefreshing}
             onRefresh={handleRequestsRefresh}
           />
@@ -785,15 +786,24 @@ const styles = StyleSheet.create({
   emptyContainer: {
     flex: 1,
   },
-  sectionHeader: {
+  requestRow: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingTop: 16,
+    paddingVertical: 12,
   },
-  sectionHeaderText: {
-    fontSize: 13,
+  requestRowContent: {
+    marginBottom: 10,
+  },
+  requestTitle: {
+    fontSize: 16,
     fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  requestSubtitle: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  requestActions: {
+    flexDirection: "row",
+    gap: 8,
   },
 });

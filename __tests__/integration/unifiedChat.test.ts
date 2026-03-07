@@ -1,454 +1,119 @@
-/**
- * Integration Tests for Unified Chat System (UNI-10)
- *
- * These tests verify the integration between:
- * - useUnifiedChatScreen
- * - useChatComposer
- * - useChat
- * - ChatComposer component
- * - ChatMessageList component
- *
- * Tests both DM and Group chat scenarios.
- */
-
-import { sendMessage } from "@/services/messaging/send";
 import {
-  getScheduledMessagesForChat,
-  scheduleMessage,
-} from "@/services/scheduledMessages";
+  createUnifiedMessagesSubscriptionManager,
+  mergePaginatedOlderMessages,
+  mergeRealtimeSnapshotMessages,
+  runIfMounted,
+} from "../../src/services/chat/unifiedMessagesLifecycle";
+import type { MessageV2 } from "../../src/types/messaging";
 
-// Mock messaging services
-jest.mock("@/services/messaging/send", () => ({
-  sendMessage: jest.fn().mockResolvedValue({
-    outboxItem: { messageId: "msg123", state: "queued" },
-    sendPromise: Promise.resolve({ success: true }),
-  }),
-}));
-
-// Mock scheduled messages service
-jest.mock("@/services/scheduledMessages", () => ({
-  scheduleMessage: jest.fn().mockResolvedValue({
-    id: "scheduled123",
-    senderId: "user1",
-    chatId: "chat123",
+function buildMessage(
+  id: string,
+  serverReceivedAt: number,
+  overrides: Partial<MessageV2> = {},
+): MessageV2 {
+  return {
+    id,
     scope: "dm",
-    content: "Hello",
-    type: "text",
-    scheduledFor: Date.now() + 3600000,
-    createdAt: Date.now(),
-    status: "pending",
-  }),
-  getScheduledMessagesForChat: jest.fn().mockResolvedValue([]),
-}));
+    conversationId: "chat-1",
+    senderId: "user-b",
+    kind: "text",
+    text: id,
+    createdAt: serverReceivedAt,
+    serverReceivedAt,
+    clientId: "client-a",
+    idempotencyKey: `client-a:${id}`,
+    ...overrides,
+  };
+}
 
-// Mock feature flags
-jest.mock("../../constants/featureFlags", () => ({
-  DEBUG_UNIFIED_MESSAGING: false,
-  DEBUG_CHAT_V2: false,
-}));
+describe("Unified chat lifecycle integration", () => {
+  it("re-subscribes on route change and cleans up previous listener", () => {
+    const unsubA = jest.fn();
+    const unsubB = jest.fn();
+    const subscribeFn = jest
+      .fn()
+      .mockReturnValueOnce(unsubA)
+      .mockReturnValueOnce(unsubB);
+    const resetCursorFn = jest.fn();
 
-const mockSendMessage = jest.requireMock(
-  "@/services/messaging/send",
-).sendMessage;
-const mockScheduleMessage = jest.requireMock(
-  "@/services/scheduledMessages",
-).scheduleMessage;
-const mockGetScheduled = jest.requireMock(
-  "@/services/scheduledMessages",
-).getScheduledMessagesForChat;
+    const manager = createUnifiedMessagesSubscriptionManager(
+      subscribeFn as any,
+      resetCursorFn as any,
+    );
 
-describe("Unified Chat Integration", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+    manager.replace({
+      scope: "dm",
+      conversationId: "chat-1",
+      initialLimit: 50,
+      currentUid: "user-a",
+      debug: false,
+      onMessages: jest.fn(),
+      onPaginationState: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    manager.replace({
+      scope: "dm",
+      conversationId: "chat-2",
+      initialLimit: 50,
+      currentUid: "user-a",
+      debug: false,
+      onMessages: jest.fn(),
+      onPaginationState: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    expect(subscribeFn).toHaveBeenCalledTimes(2);
+    expect(resetCursorFn).toHaveBeenNthCalledWith(1, "dm", "chat-1");
+    expect(resetCursorFn).toHaveBeenNthCalledWith(2, "dm", "chat-2");
+    expect(unsubA).toHaveBeenCalledTimes(1);
+    expect(unsubB).toHaveBeenCalledTimes(0);
+    expect(manager.getActiveKey()).toBe("dm:chat-2");
+
+    manager.cleanup();
+    expect(unsubB).toHaveBeenCalledTimes(1);
+    expect(manager.getActiveKey()).toBeNull();
   });
 
-  describe("DM Chat Flows", () => {
-    describe("Text Message Send Flow", () => {
-      it("should call sendMessage with correct DM parameters", async () => {
-        await sendMessage({
-          scope: "dm",
-          conversationId: "chat123",
-          kind: "text",
-          text: "Hello world!",
-        });
+  it("avoids state updates when unmounted", () => {
+    const mountedRef = { current: true };
+    const setState = jest.fn();
 
-        expect(mockSendMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            scope: "dm",
-            conversationId: "chat123",
-            kind: "text",
-            text: "Hello world!",
-          }),
-        );
-      });
+    expect(
+      runIfMounted(mountedRef, () => {
+        setState("ran");
+      }),
+    ).toBe(true);
+    expect(setState).toHaveBeenCalledTimes(1);
 
-      it("should include replyTo when replying to a message", async () => {
-        const replyTo = {
-          messageId: "original-msg",
-          senderId: "user456",
-          kind: "text" as const,
-          textSnippet: "Original text",
-        };
-
-        await sendMessage({
-          scope: "dm",
-          conversationId: "chat123",
-          kind: "text",
-          text: "Reply text",
-          replyTo,
-        });
-
-        expect(mockSendMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            replyTo,
-          }),
-        );
-      });
-    });
-
-    describe("Scheduled Message Flow", () => {
-      it("should schedule a DM message with correct parameters", async () => {
-        const scheduledFor = new Date(Date.now() + 3600000); // 1 hour from now
-
-        await scheduleMessage({
-          senderId: "user1",
-          recipientId: "user2",
-          chatId: "chat123",
-          scope: "dm",
-          content: "Scheduled hello!",
-          type: "text",
-          scheduledFor,
-        });
-
-        expect(mockScheduleMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            senderId: "user1",
-            recipientId: "user2",
-            chatId: "chat123",
-            scope: "dm",
-            content: "Scheduled hello!",
-            type: "text",
-          }),
-        );
-      });
-
-      it("should retrieve scheduled messages for a chat", async () => {
-        await getScheduledMessagesForChat("user1", "chat123");
-
-        expect(mockGetScheduled).toHaveBeenCalledWith("user1", "chat123");
-      });
-    });
+    mountedRef.current = false;
+    expect(
+      runIfMounted(mountedRef, () => {
+        setState("should-not-run");
+      }),
+    ).toBe(false);
+    expect(setState).toHaveBeenCalledTimes(1);
   });
 
-  describe("Group Chat Flows", () => {
-    describe("Text Message Send Flow", () => {
-      it("should call sendMessage with correct group parameters", async () => {
-        await sendMessage({
-          scope: "group",
-          conversationId: "group123",
-          kind: "text",
-          text: "Hello group!",
-        });
+  it("dedupes realtime + pagination overlap without duplicate messages", () => {
+    const initial = [buildMessage("m3", 3000), buildMessage("m2", 2000)];
+    const realtimeSnapshot = [buildMessage("m4", 4000), buildMessage("m3", 3000)];
+    const paginatedOlder = [buildMessage("m2", 2000), buildMessage("m1", 1000)];
 
-        expect(mockSendMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            scope: "group",
-            conversationId: "group123",
-            kind: "text",
-            text: "Hello group!",
-          }),
-        );
-      });
+    const mergedRealtime = mergeRealtimeSnapshotMessages(initial, realtimeSnapshot);
+    const mergedAll = mergePaginatedOlderMessages(mergedRealtime, paginatedOlder);
 
-      it("should include mentionUids for group messages", async () => {
-        await sendMessage({
-          scope: "group",
-          conversationId: "group123",
-          kind: "text",
-          text: "Hey @john and @jane!",
-          mentionUids: ["user-john", "user-jane"],
-        });
-
-        expect(mockSendMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            mentionUids: ["user-john", "user-jane"],
-          }),
-        );
-      });
-
-      it("should include replyTo when replying in group", async () => {
-        const replyTo = {
-          messageId: "group-msg-123",
-          senderId: "user789",
-          kind: "text" as const,
-          textSnippet: "Group original",
-        };
-
-        await sendMessage({
-          scope: "group",
-          conversationId: "group123",
-          kind: "text",
-          text: "Group reply",
-          replyTo,
-        });
-
-        expect(mockSendMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            scope: "group",
-            replyTo,
-          }),
-        );
-      });
-    });
-
-    describe("Scheduled Message Flow", () => {
-      it("should schedule a group message with correct parameters", async () => {
-        const scheduledFor = new Date(Date.now() + 7200000); // 2 hours from now
-
-        await scheduleMessage({
-          senderId: "user1",
-          chatId: "group123",
-          scope: "group",
-          content: "Scheduled group message!",
-          type: "text",
-          scheduledFor,
-          mentionUids: ["user2", "user3"],
-        });
-
-        expect(mockScheduleMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            senderId: "user1",
-            chatId: "group123",
-            scope: "group",
-            content: "Scheduled group message!",
-            type: "text",
-            mentionUids: ["user2", "user3"],
-          }),
-        );
-      });
-
-      it("should schedule group message without mentions", async () => {
-        const scheduledFor = new Date(Date.now() + 3600000);
-
-        await scheduleMessage({
-          senderId: "user1",
-          chatId: "group123",
-          scope: "group",
-          content: "No mentions here",
-          type: "text",
-          scheduledFor,
-        });
-
-        expect(mockScheduleMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            scope: "group",
-            chatId: "group123",
-          }),
-        );
-      });
-    });
+    expect(mergedAll.map((m) => m.id)).toEqual(["m4", "m3", "m2", "m1"]);
+    expect(new Set(mergedAll.map((m) => m.id)).size).toBe(4);
   });
 
-  describe("Voice Message Flows", () => {
-    it("should send voice message in DM", async () => {
-      await sendMessage({
-        scope: "dm",
-        conversationId: "chat123",
-        kind: "voice",
-        text: "",
-        localAttachments: [
-          {
-            id: "voice123",
-            uri: "file:///voice.m4a",
-            kind: "audio",
-            mime: "audio/m4a",
-          },
-        ],
-      });
+  it("keeps modified snapshots by preferring newer timestamp", () => {
+    const existing = [buildMessage("m1", 2000, { text: "old" })];
+    const modified = [buildMessage("m1", 3500, { text: "new" })];
 
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: "voice",
-          localAttachments: expect.arrayContaining([
-            expect.objectContaining({
-              mime: "audio/m4a",
-            }),
-          ]),
-        }),
-      );
-    });
-
-    it("should send voice message in group", async () => {
-      await sendMessage({
-        scope: "group",
-        conversationId: "group123",
-        kind: "voice",
-        text: "",
-        localAttachments: [
-          {
-            id: "voice456",
-            uri: "file:///group-voice.m4a",
-            kind: "audio",
-            mime: "audio/m4a",
-          },
-        ],
-      });
-
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          scope: "group",
-          kind: "voice",
-        }),
-      );
-    });
-  });
-
-  describe("Media Attachment Flows", () => {
-    it("should send image attachment in DM", async () => {
-      await sendMessage({
-        scope: "dm",
-        conversationId: "chat123",
-        kind: "media",
-        text: "Check this out!",
-        localAttachments: [
-          {
-            id: "img123",
-            uri: "file:///image.jpg",
-            kind: "image",
-            mime: "image/jpeg",
-          },
-        ],
-      });
-
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: "media",
-          text: "Check this out!",
-          localAttachments: expect.arrayContaining([
-            expect.objectContaining({
-              mime: "image/jpeg",
-            }),
-          ]),
-        }),
-      );
-    });
-
-    it("should send multiple attachments in group", async () => {
-      await sendMessage({
-        scope: "group",
-        conversationId: "group123",
-        kind: "media",
-        text: "Multiple images",
-        localAttachments: [
-          {
-            id: "img1",
-            uri: "file:///img1.jpg",
-            kind: "image",
-            mime: "image/jpeg",
-          },
-          {
-            id: "img2",
-            uri: "file:///img2.png",
-            kind: "image",
-            mime: "image/png",
-          },
-        ],
-      });
-
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          localAttachments: expect.arrayContaining([
-            expect.objectContaining({ id: "img1" }),
-            expect.objectContaining({ id: "img2" }),
-          ]),
-        }),
-      );
-    });
-  });
-
-  describe("Feature Parity", () => {
-    it("should support same text message flow for DM and group", async () => {
-      // DM
-      await sendMessage({
-        scope: "dm",
-        conversationId: "chat123",
-        kind: "text",
-        text: "Hello",
-      });
-
-      // Group
-      await sendMessage({
-        scope: "group",
-        conversationId: "group123",
-        kind: "text",
-        text: "Hello",
-      });
-
-      expect(mockSendMessage).toHaveBeenCalledTimes(2);
-    });
-
-    it("should support scheduled messages in both DM and group", async () => {
-      const scheduledFor = new Date(Date.now() + 3600000);
-
-      // DM scheduled message
-      await scheduleMessage({
-        senderId: "user1",
-        recipientId: "user2",
-        chatId: "chat123",
-        scope: "dm",
-        content: "DM scheduled",
-        type: "text",
-        scheduledFor,
-      });
-
-      // Group scheduled message
-      await scheduleMessage({
-        senderId: "user1",
-        chatId: "group123",
-        scope: "group",
-        content: "Group scheduled",
-        type: "text",
-        scheduledFor,
-      });
-
-      expect(mockScheduleMessage).toHaveBeenCalledTimes(2);
-    });
-
-    it("should support reply-to in both DM and group", async () => {
-      const replyTo = {
-        messageId: "msg123",
-        senderId: "user2",
-        kind: "text" as const,
-        textSnippet: "Original",
-      };
-
-      // DM reply
-      await sendMessage({
-        scope: "dm",
-        conversationId: "chat123",
-        kind: "text",
-        text: "Reply",
-        replyTo,
-      });
-
-      // Group reply
-      await sendMessage({
-        scope: "group",
-        conversationId: "group123",
-        kind: "text",
-        text: "Reply",
-        replyTo,
-      });
-
-      expect(mockSendMessage).toHaveBeenCalledTimes(2);
-      expect(mockSendMessage).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ scope: "dm", replyTo }),
-      );
-      expect(mockSendMessage).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ scope: "group", replyTo }),
-      );
-    });
+    const merged = mergeRealtimeSnapshotMessages(existing, modified);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].text).toBe("new");
+    expect(merged[0].serverReceivedAt).toBe(3500);
   });
 });

@@ -131,23 +131,23 @@ Ship a **GamePigeon-style** game system embedded inside chat conversations:
 
 ## 3. Core Concepts & Glossary
 
-| Term                      | Definition                                                                                                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Invite**                | A chat-pinned document (`GameInvitesV4`) representing a game challenge. Visible to all conversation members.                                                                                  |
-| **Session**               | The server-authoritative game state (`GameSessionsV4`). Created when the host starts the game.                                                                                                |
-| **Adapter**               | A pure, stateless TypeScript object implementing `GameAdapterV4`. Defines initial state, move validation, outcome computation. Shared between client (optimistic) and server (authoritative). |
-| **GameScreenShell**       | HOC (`withGameV4Shell`) that wraps every game UI with session management, move dispatch, resign FAB, and auto-navigation.                                                                     |
-| **Resolution chokepoint** | `resolveSessionV4Internal()` — every terminal path (win/draw/resign/timeout/error) funnels through this single function.                                                                      |
-| **PB**                    | Personal Best — server-written only, with integrity hash. Never derived from client data.                                                                                                     |
-| **Summary**               | `InviteSummary` embedded in invite doc — phase, turnPlayerId, scoreSummary, lastMoveAt, lastActorId. Powers real-time card updates.                                                           |
-| **Pin**                   | Invite IDs stored in `pinnedGameInviteIds[]` on `Chats` or `Groups` docs. Max 5 (FIFO eviction).                                                                                              |
-| **Watchdog**              | `watchdogGamesV4` — scheduled function (every 30 min) that expires stale lobbies, deletes TTL invites, retries rewards, and auto-resolves inactive sessions.                                  |
-| **traceId**               | 32-char hex string (`crypto.randomBytes(16)`) stored in `session.integrity.traceId` for end-to-end debugging.                                                                                 |
-| **GameId**                | String union of all 20 canonical game identifiers. Defined in `src/gamesV4/types/common.ts`. **Never rename or remove an existing ID — only append.**                                         |
-| **IMPLEMENTED_GAME_IDS**  | `Set<GameId>` gating which games are playable. Currently 3: `tic_tac_toe`, `connect_four`, `play_2048`. Unimplemented games show "Coming Soon" in the Games Hub.                              |
-| **Serialization**         | Firestore rejects native 2D arrays. Game boards are serialized to `{ _nestedArray: true, length: N, "0": [...] }` maps by `serializeStateForFirestore()` and deserialized on read.            |
-| **GameRunner**            | Orchestration layer (`gameRunner.ts`) that delegates to the correct adapter. Entry points: `createInitialState()`, `runMove()`, `computeOutcome()`.                                           |
-| **Cooldown**              | Firestore-backed per-user rate limit. Transactional check-and-set on `Users/{uid}/RateLimits/{action}`. Throws `resource-exhausted` if within window.                                         |
+| Term                      | Definition                                                                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Invite**                | A chat-pinned document (`GameInvitesV4`) representing a game challenge. Visible to all conversation members.                                                                                                                      |
+| **Session**               | The server-authoritative game state (`GameSessionsV4`). Created when the host starts the game.                                                                                                                                    |
+| **Adapter**               | A pure, stateless TypeScript object implementing `GameAdapterV4`. Defines initial state, move validation, outcome computation. Shared between client (optimistic) and server (authoritative).                                     |
+| **GameScreenShell**       | HOC (`withGameV4Shell`) that wraps every game UI with session management, move dispatch, overlay controls, and auto-navigation. Solo games get overlay back arrow + menu; turn-based get header row; realtime get overlay resign. |
+| **Resolution chokepoint** | `resolveSessionV4Internal()` — every terminal path (win/draw/resign/timeout/error) funnels through this single function.                                                                                                          |
+| **PB**                    | Personal Best — server-written only, with integrity hash. Never derived from client data.                                                                                                                                         |
+| **Summary**               | `InviteSummary` embedded in invite doc — phase, turnPlayerId, scoreSummary, lastMoveAt, lastActorId. Powers real-time card updates.                                                                                               |
+| **Pin**                   | Invite IDs stored in `pinnedGameInviteIds[]` on `Chats` or `Groups` docs. Max 5 (FIFO eviction).                                                                                                                                  |
+| **Watchdog**              | `watchdogGamesV4` — scheduled function (every 30 min) that expires stale lobbies, deletes TTL invites, retries rewards, and auto-resolves inactive sessions.                                                                      |
+| **traceId**               | 32-char hex string (`crypto.randomBytes(16)`) stored in `session.integrity.traceId` for end-to-end debugging.                                                                                                                     |
+| **GameId**                | String union of all 20 canonical game identifiers. Defined in `src/gamesV4/types/common.ts`. **Never rename or remove an existing ID — only append.**                                                                             |
+| **IMPLEMENTED_GAME_IDS**  | `Set<GameId>` gating which games are playable. Currently 3: `tic_tac_toe`, `connect_four`, `play_2048`. Unimplemented games show "Coming Soon" in the Games Hub.                                                                  |
+| **Serialization**         | Firestore rejects native 2D arrays. Game boards are serialized to `{ _nestedArray: true, length: N, "0": [...] }` maps by `serializeStateForFirestore()` and deserialized on read.                                                |
+| **GameRunner**            | Orchestration layer (`gameRunner.ts`) that delegates to the correct adapter. Entry points: `createInitialState()`, `runMove()`, `computeOutcome()`.                                                                               |
+| **Cooldown**              | Firestore-backed per-user rate limit. Transactional check-and-set on `Users/{uid}/RateLimits/{action}`. Throws `resource-exhausted` if within window.                                                                             |
 
 ### Game Catalog (20 Games)
 
@@ -192,28 +192,29 @@ Ship a **GamePigeon-style** game system embedded inside chat conversations:
 
 ### 4.2 GameSessionsV4/{sessionId}
 
-| Field                                    | Type                                                                 | Description                                                                    |
-| ---------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `sessionId`                              | string                                                               | Same as doc ID                                                                 |
-| `inviteId`                               | string                                                               | Back-reference                                                                 |
-| `conversationId` / `conversationScope`   | string                                                               | For rules/queries                                                              |
-| `gameId` / `runtimeType`                 |                                                                      |                                                                                |
-| `status`                                 | `"lobby_open" \| "active" \| "resolved" \| "abandoned" \| "expired"` |                                                                                |
-| `hostId`                                 | string                                                               |                                                                                |
-| `players`                                | PlayerSlot[]                                                         | `{ uid, slotIndex, teamId?, displayName?, avatarConfig?, profilePictureUrl? }` |
-| `spectators`                             | SpectatorSlot[]                                                      | `{ uid, joinedAt }`                                                            |
-| `spectatorsAllowed` / `spectateMode`     |                                                                      |                                                                                |
-| `settings`                               | Record                                                               | Game-specific, immutable after start                                           |
-| `turnOrder`                              | string[]                                                             | UIDs (turn-based only)                                                         |
-| `currentTurnIndex`                       | number                                                               |                                                                                |
-| `currentTurnPlayerId`                    | string \| null                                                       |                                                                                |
-| `scoreboardSummary`                      | ScoreSummaryEntry[]                                                  |                                                                                |
-| `integrity`                              | IntegrityEnvelope                                                    | `{ version, schemaVersion, traceId }`                                          |
-| `rewardsProcessed`                       | boolean                                                              |                                                                                |
-| `participantUids`                        | string[]                                                             | Flat array for rules/queries                                                   |
-| `spectatorUids`                          | string[]                                                             |                                                                                |
-| `resolution`                             | SessionResolution \| null                                            | `{ type, winnerIds, reason? }`                                                 |
-| `createdAt` / `startedAt` / `resolvedAt` | Timestamp                                                            |                                                                                |
+| Field                                    | Type                                                                 | Description                                                                                                   |
+| ---------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `sessionId`                              | string                                                               | Same as doc ID                                                                                                |
+| `inviteId`                               | string                                                               | Back-reference                                                                                                |
+| `conversationId` / `conversationScope`   | string                                                               | For rules/queries                                                                                             |
+| `gameId` / `runtimeType`                 |                                                                      |                                                                                                               |
+| `status`                                 | `"lobby_open" \| "active" \| "resolved" \| "abandoned" \| "expired"` |                                                                                                               |
+| `hostId`                                 | string                                                               |                                                                                                               |
+| `players`                                | PlayerSlot[]                                                         | `{ uid, slotIndex, teamId?, displayName?, avatarConfig?, profilePictureUrl? }`                                |
+| `spectators`                             | SpectatorSlot[]                                                      | `{ uid, joinedAt }`                                                                                           |
+| `spectatorsAllowed` / `spectateMode`     |                                                                      |                                                                                                               |
+| `settings`                               | Record                                                               | Game-specific, immutable after start                                                                          |
+| `turnOrder`                              | string[]                                                             | UIDs (turn-based only)                                                                                        |
+| `currentTurnIndex`                       | number                                                               |                                                                                                               |
+| `currentTurnPlayerId`                    | string \| null                                                       |                                                                                                               |
+| `scoreboardSummary`                      | ScoreSummaryEntry[]                                                  |                                                                                                               |
+| `integrity`                              | IntegrityEnvelope                                                    | `{ version, schemaVersion, traceId }`                                                                         |
+| `rewardsProcessed`                       | boolean                                                              |                                                                                                               |
+| `participantUids`                        | string[]                                                             | Flat array for rules/queries                                                                                  |
+| `spectatorUids`                          | string[]                                                             |                                                                                                               |
+| `soloSuspendedAt`                        | Timestamp \| null                                                    | Solo-only. Set when player suspends via back arrow; cleared on resume. `null` = actively playing or not solo. |
+| `resolution`                             | SessionResolution \| null                                            | `{ type, winnerIds, reason? }`                                                                                |
+| `createdAt` / `startedAt` / `resolvedAt` | Timestamp                                                            |                                                                                                               |
 
 **Subcollections:**
 
@@ -455,8 +456,23 @@ Solo games bypass the invite system entirely. When `createSoloSessionV4` is call
 
 - **Minimize (app background):** Firestore listeners survive; state is current on return
 - **Leave screen (navigate away):** `useGameSessionV4` unsubs; re-entering via invite chip or deep link re-subscribes
-- **Android back button:** Intercepted by `GameScreenShell` — shows resign confirmation alert, does NOT navigate back during active game
-- **Resume:** Tapping a pinned invite chip or push notification deep link routes to `GamePlayV4` (active) or `GameLobbyV4` (lobby)
+- **Android back button behavior by runtime type:**
+  - **Turn-based:** Non-destructive leave — navigates back, session stays active. User can rejoin via invite chip, deep link, or notification.
+  - **Solo:** Non-destructive suspend — calls the game's registered pause callback (if any), marks the session as suspended (`soloSuspendedAt`), and navigates away. The session remains `status: "active"` and is **not resigned**. The game can be resumed later from the Games Hub.
+  - **Realtime:** Destructive — shows resign confirmation alert, does NOT navigate back without confirmation.
+- **Solo suspend/resume model:**
+  - The solo back arrow (overlay, top-left) triggers suspend: pauses local game loops, calls `suspendSoloSessionV4` to set `soloSuspendedAt`, then navigates away
+  - The solo game's `PublicState/state` persists the full game state in Firestore — no separate save file
+  - Reopening from Games Hub calls `resumeOrCreateSoloSessionV4`, which finds the existing active session and clears `soloSuspendedAt`
+  - Games with continuous animation loops (e.g. Brick Breaker) register a pause callback via `registerSoloPause` and must reopen in a paused state when resuming
+  - Games that are purely input-driven (e.g. 2048, Minesweeper) require no special pause handling — their state is already fully persisted
+- **Solo overlay controls:**
+  - Top-left: overlay back arrow (suspend & leave)
+  - Top-right: overlay menu button (options: Restart Game, Resign)
+  - Both are absolutely positioned with high z-index, safe-area-aware, and do NOT cause layout shift
+  - The old solo "Quit" button is removed; resign is now inside the menu
+- **Resume (multiplayer):** Tapping a pinned invite chip or push notification deep link routes to `GamePlayV4` (active) or `GameLobbyV4` (lobby)
+- **Resume (solo):** Tapping the same solo game in the Games Hub detects the existing unresolved session and reopens it
 
 ### 6.5 Spectator Join (Turn-based)
 
@@ -492,15 +508,31 @@ Solo games bypass the invite system entirely. When `createSoloSessionV4` is call
 Solo games bypass the invite/lobby system entirely:
 
 1. User taps a solo game (e.g., 2048) in `GamesHubScreenV4`
-2. Client calls `createSoloSession({ gameId: "play_2048" })`
-3. **Server** (`createSoloSessionV4`):
-   - `assertAuth()` + `enforceCooldown(3s)`
-   - Validates `gameId` has an adapter with `runtimeType === "solo"`
-   - Fetches creator's profile for `displayName`
-   - **Batch write:** creates `GameSessionV4` doc (status `"active"`, empty `inviteId`/`conversationId`) + `PublicState/state` from adapter
-   - No invite doc. No lobby. No pin
-4. Returns `{ sessionId }` → client navigates to `GamePlayV4` with `{ sessionId, gameId }`
-5. `GameScreenShell` opens → writes `GamePresence` doc → game begins
+2. Client calls `resumeOrCreateSoloSession({ gameId: "play_2048" })`
+3. **Server** (`resumeOrCreateSoloSessionV4`):
+   - `assertAuth()`
+   - Queries for an existing active solo session for this user + gameId
+   - **If found:** clears `soloSuspendedAt`, returns `{ sessionId, resumed: true }`
+   - **If not found:** enforces cooldown, validates adapter, creates new session (same as `createSoloSessionV4`), returns `{ sessionId, resumed: false }`
+4. Returns `{ sessionId, resumed }` → client navigates to `GamePlayV4` with `{ sessionId, gameId }`
+5. `GameScreenShell` opens → writes `GamePresence` doc → game begins (or resumes from saved state)
+
+**Solo restart flow:**
+
+1. Player taps menu button (top-right overlay) → taps "Restart Game" → confirms
+2. Client calls `restartSoloSession({ sessionId })`
+3. **Server** (`restartSoloSessionV4`):
+   - Resolves old session via `resolveSessionV4Internal` (resign)
+   - Creates a fresh solo session for the same game
+4. Client replaces the current GamePlayV4 screen with the new session
+
+**Solo suspend flow:**
+
+1. Player taps back arrow (top-left overlay) or presses Android back
+2. Shell calls registered pause callback (freezes animation loops for motion games)
+3. Client calls `suspendSoloSession({ sessionId })` (fire-and-forget)
+4. Server sets `soloSuspendedAt` timestamp on the session doc
+5. Client navigates away — session remains `status: "active"`, state is preserved
 
 ### 6.8 Cancel Invite (Host Only)
 
@@ -527,16 +559,27 @@ Solo games bypass the invite/lobby system entirely:
 
 ### 7.1 Solo
 
-| Property        | Value                                                           |
-| --------------- | --------------------------------------------------------------- |
-| Players         | 1                                                               |
-| State authority | Server (adapter validates each move)                            |
-| Turn switching  | N/A (`turnAdvance: false` always)                               |
-| Spectating      | **Not supported** (`supportsSpectate: false`)                   |
-| Invite system   | **Bypassed** — uses `createSoloSessionV4` (no invite/lobby/pin) |
-| Example         | `play_2048`                                                     |
+| Property         | Value                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| Players          | 1                                                                                   |
+| State authority  | Server (adapter validates each move)                                                |
+| Turn switching   | N/A (`turnAdvance: false` always)                                                   |
+| Spectating       | **Not supported** (`supportsSpectate: false`)                                       |
+| Invite system    | **Bypassed** — uses `resumeOrCreateSoloSessionV4` (no invite/lobby/pin)             |
+| Suspend/resume   | **Supported** — back arrow suspends without resigning, hub resumes existing session |
+| Overlay controls | Back arrow (top-left) + menu button (top-right), both absolute-positioned overlays  |
+| Menu actions     | Restart Game, Resign                                                                |
+| Example          | `play_2048`, `brick_breaker`, `minesweeper`                                         |
 
-**Flow:** User taps solo game in Games Hub → `createSoloSessionV4` creates session directly → player swipes → `submitTurnMoveV4` → adapter validates slide/merge → terminal when no moves left or 2048 reached.
+**Flow:** User taps solo game in Games Hub → `resumeOrCreateSoloSessionV4` finds existing or creates new → player interacts → `submitTurnMoveV4` → adapter validates → terminal when game ends.
+
+**Exit model:**
+
+- Back arrow (top-left overlay): suspends session, navigates away without resigning. Session stays active and resumable.
+- Menu button (top-right overlay): opens modal with "Restart Game" and "Resign" options.
+- Android back button: same as back arrow — suspend and leave.
+- Games with animation loops (Brick Breaker) must register a pause callback via `registerSoloPause` in `GameShellProps` and reopen paused when resumed.
+- Input-driven games (2048, Minesweeper) need no special pause handling.
 
 **Important:** Solo games do NOT create invites and do NOT appear in the pinned invite bar. They are launched exclusively from `GamesHubScreenV4` via `createSoloSession()` in `gameServiceV4.ts`, which calls the `createSoloSessionV4` Cloud Function (`firebase-backend/functions/src/gamesV4/solo.ts`).
 

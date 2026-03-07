@@ -292,10 +292,10 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
   minigolf_duels: {
     gameId: "minigolf_duels",
     displayName: "Mini Golf",
-    runtimeType: "realtime",
+    runtimeType: "turnBased",
     minPlayers: 2,
-    maxPlayers: 4,
-    supportsSpectate: false,
+    maxPlayers: 3,
+    supportsSpectate: true,
     icon: "golf",
   },
   dot_match: {
@@ -306,6 +306,15 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     maxPlayers: 2,
     supportsSpectate: false,
     icon: "dots-horizontal-circle",
+  },
+  solitaire_klondike: {
+    gameId: "solitaire_klondike",
+    displayName: "Solitaire",
+    runtimeType: "solo",
+    minPlayers: 1,
+    maxPlayers: 1,
+    supportsSpectate: false,
+    icon: "cards-playing-spade-multiple",
   },
 };
 
@@ -327,6 +336,9 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
   "battleship",
   "brick_breaker",
   "crazy_eights",
+  "minesweeper",
+  "solitaire_klondike",
+  // "minigolf_duels", // disabled — not working, deferred until ready
 ]);
 
 // =============================================================================
@@ -426,8 +438,34 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
   },
   crazy_eights: {
     title: "ROUND RESULT",
-    formatScore: (s) =>
-      s > 0 ? `+${s} pts` : s === 0 ? "0 pts" : `${s} pts`,
+    formatScore: (s) => (s > 0 ? `+${s} pts` : s === 0 ? "0 pts" : `${s} pts`),
+    sortDirection: "desc",
+  },
+  minigolf_duels: {
+    title: "TOTAL STROKES",
+    formatScore: (s) => `${Math.abs(s)}`,
+    sortDirection: "desc",
+  },
+  minesweeper: {
+    title: "CLEAR TIME",
+    formatScore: (s) => {
+      if (s <= 0) return "No clear";
+      // Decode: tier * 1_000_000 + inverted time
+      let tier = "Easy";
+      let base = 1_000_000;
+      if (s >= 3_000_000) {
+        tier = "Expert";
+        base = 3_000_000;
+      } else if (s >= 2_000_000) {
+        tier = "Intermediate";
+        base = 2_000_000;
+      }
+      const ms = 999_999 - (s - base);
+      const sec = Math.floor(ms / 1000);
+      const m = Math.floor(sec / 60);
+      const ss = sec % 60;
+      return `${tier} • ${m}:${String(ss).padStart(2, "0")}`;
+    },
     sortDirection: "desc",
   },
 };
@@ -502,6 +540,40 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     sortDirection: "desc",
     formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
+  minigolf_duels: {
+    label: "Best (Strokes)",
+    metric: "bestScore",
+    sortDirection: "desc",
+    formatValue: (v) => `${Math.abs(v)} strokes`,
+  },
+  minesweeper: {
+    label: "Best Clear",
+    metric: "bestScore",
+    sortDirection: "desc",
+    formatValue: (v) => {
+      if (v <= 0) return "No clear";
+      let tier = "Easy";
+      let base = 1_000_000;
+      if (v >= 3_000_000) {
+        tier = "Expert";
+        base = 3_000_000;
+      } else if (v >= 2_000_000) {
+        tier = "Intermediate";
+        base = 2_000_000;
+      }
+      const ms = 999_999 - (v - base);
+      const sec = Math.floor(ms / 1000);
+      const m = Math.floor(sec / 60);
+      const ss = sec % 60;
+      return `${tier} • ${m}:${String(ss).padStart(2, "0")}`;
+    },
+  },
+  solitaire_klondike: {
+    label: "Best Score",
+    metric: "bestScore",
+    sortDirection: "desc",
+    formatValue: (v) => v.toLocaleString(),
+  },
 };
 
 // =============================================================================
@@ -517,17 +589,17 @@ export interface GameDescription {
 export const GAME_DESCRIPTIONS: Partial<Record<GameId, GameDescription>> = {
   tic_tac_toe: {
     shortDescription:
-      "The classic game of X's and O's. Take turns placing your mark on a 3x3 grid. Get three in a row to win!",
+      "The timeless duel of X's and O's — elegant, fast, and deceptively strategic. Challenge a friend and prove you can think one step ahead.",
     howToPlay:
-      "Tap any empty cell to place your mark. Players alternate between X and O. The first player to get three marks in a row (horizontal, vertical, or diagonal) wins. If all 9 cells are filled with no winner, it's a draw.",
-    tips: "Control the center and corners for the best advantage. If your opponent takes the center, take a corner.",
+      "Tap any empty cell to place your mark. Players alternate turns — first player is X, second is O. Line up three of your marks in a row, column, or diagonal to win. If all nine cells are filled with no winner, the match ends in a draw.",
+    tips: "Start in the center or a corner for the strongest opening. If your opponent takes the center, always grab a corner. Watch for forks — positions where you create two threats at once.",
   },
   connect_four: {
     shortDescription:
-      "Drop colored discs into a vertical grid. Connect four of your color in a row to win!",
+      "A gravity-powered strategy classic. Drop your discs, build your line, and outsmart your opponent in this addictive head-to-head showdown.",
     howToPlay:
-      "Tap a column to drop your disc. Discs fall to the lowest available position. Connect four of your discs horizontally, vertically, or diagonally to win. If the board fills up with no winner, it's a draw.",
-    tips: "Try to set up multiple threats at once. The center column is the most powerful starting position.",
+      "Tap a column to drop your disc — it falls to the lowest open slot. Be the first to connect four discs in a row horizontally, vertically, or diagonally to win. If the board fills completely with no winner, the match is a draw.",
+    tips: "The center column gives you the most connection options — fight for it early. Build threats in multiple directions to force your opponent into a losing position. Watch both offence and defence — block their three-in-a-row before it becomes four.",
   },
   play_2048: {
     shortDescription:
@@ -563,10 +635,33 @@ export const GAME_DESCRIPTIONS: Partial<Record<GameId, GameDescription>> = {
     howToPlay:
       "Drag your finger to move the paddle. Tap to launch the ball. Break all breakable bricks to clear each level. Lose a life when the ball falls past your paddle. Collect falling powerups for boosts. Complete all 30 levels to finish the campaign.",
     tips: "Aim for the edges of your paddle to steer the ball at sharper angles. Build combos by breaking bricks without losing a ball. Target explosive (yellow) bricks to chain-destroy neighbors. Power bricks (purple) always drop a powerup. Keep an eye on moving bricks — they shift position!",
-  },  crazy_eights: {
+  },
+  crazy_eights: {
     shortDescription:
       "The classic party card game for 2\u20136 players! Match colors or numbers, play action cards, and be the first to empty your hand. Call CRAZY! when you\u2019re down to one card!",
     howToPlay:
       "Players take turns playing cards that match the top discard by color or number. Action cards (Skip, Reverse, +2) shake things up. Wild cards let you change the color. Wild +4 forces the next player to draw four\u00a0\u2014 but they can challenge if they think you\u2019re bluffing! Run out of cards first to win. Don\u2019t forget to call CRAZY! when you have one card left, or you\u2019ll draw a penalty!",
     tips: "Save your Wild cards for when you really need them. Watch opponents\u2019 card counts \u2014 catch them if they forget to call CRAZY! In points mode, high-value cards in opponents\u2019 hands score big for you.",
-  },};
+  },
+  minigolf_duels: {
+    shortDescription:
+      "Putt your way through creative holes in this turn-based mini golf duel! Bank shots off walls, dodge hazards, and sink it in the fewest strokes to win.",
+    howToPlay:
+      "Take turns putting your ball by dragging to aim and set power (slingshot style). Each shot moves your ball across the course. Sink the ball in the cup in as few strokes as possible. Avoid water and out-of-bounds hazards \u2014 they add penalty strokes. The player with the lowest total strokes after all holes wins!",
+    tips: "Use bank shots off walls to navigate tricky corners. Watch for surface types \u2014 sand slows you down, ice makes you slide. Keep power low near the cup for an easy sink. Study the hole layout before your first shot!",
+  },
+  minesweeper: {
+    shortDescription:
+      "The classic logic puzzle! Reveal cells, use numbered clues to deduce mine locations, and clear the board without hitting a mine. Three difficulty levels from Easy to Expert.",
+    howToPlay:
+      "Tap a cell to reveal it. Numbers indicate how many adjacent cells contain mines. Use logic to figure out where mines are and flag them. Reveal all safe cells to win! Long-press or use Flag Mode to place flags. Tap a revealed number with matching adjacent flags to chord-reveal the remaining neighbors. Your first click is always safe.",
+    tips: "Start near the center for larger openings. Use chord reveals to clear faster once you've flagged correctly. The mine counter shows remaining mines minus placed flags — keep it balanced. Expert boards support scrolling for the full 30×16 grid.",
+  },
+  solitaire_klondike: {
+    shortDescription:
+      "A polished solo Klondike experience where careful sequencing, stock management, and efficient foundation building determine your final score.",
+    howToPlay:
+      "Build four foundation piles by suit from Ace to King. On the tableau, stack cards in descending rank with alternating colors (red on black, black on red). Move entire valid runs between columns. Only Kings can fill empty tableau slots. Tap the stock to deal 3 cards to the waste pile — play the top waste card to tableau or foundation. When the stock is empty, tap to recycle the waste back into the stock.",
+    tips: "Prioritize revealing hidden tableau cards — the more face-up cards you have, the more options you create. Avoid unnecessary foundation backtracking as it costs points. Use empty columns strategically for Kings that unlock buried cards. Think before recycling the waste — each recycle costs 20 points.",
+  },
+};

@@ -1,172 +1,285 @@
 # Inbox & Chat System - Refactor Plan
 
-Last verified: 2026-03-05  
-Status: Phase 2 in progress (Steps 1-7 completed in this pass)
+Last verified: 2026-03-05
+Status: Phase 3 implementation complete, hardening plan active
 
-## Goals
+## 1) Purpose
 
-- Fix correctness/reliability issues without changing intended UX.
-- Reduce dead code and ambiguity in inbox/chat surfaces.
-- Keep all changes incremental and reversible.
+This document tracks the inbox/chat hardening roadmap after the Phase 3 cleanup landed.
+It is intentionally operational: each stream has owners, target files, acceptance criteria, and rollback guidance.
 
-## Completed Steps
+Scope:
 
-## Step 1 - Thread Realtime Lifecycle Fix
+- DM + group inbox behavior
+- runtime parity (SQLite-first and Firestore fallback)
+- requests tab behavior
+- notification payload normalization and dedupe
+- thread lifecycle safety
+- regression testing and observability
 
-Target files:
+Out of scope:
+
+- redesigning chat UX
+- replacing SQLite-first architecture
+- schema-breaking Firestore migrations
+
+## 2) Baseline Already Completed
+
+The following are now baseline contracts and should not be re-opened unless regressions are found:
+
+1. Canonical message normalization for local + Firestore payloads.
+2. Canonical message ordering and dedupe helpers.
+3. Canonical inbox row normalization across fan-out and aggregated inbox.
+4. Unified typed requests source for friend requests + group invites + message requests.
+5. Notification payload adapter shared by push-tap and in-app handlers.
+6. Thread realtime lifecycle extraction with unsubscribe guards.
+7. Targeted tests for prior high-risk drift areas.
+
+References:
+
+- `docs/chat-system-audit/01_INBOX_CHAT_TECHNICAL_OVERVIEW.md`
+- `docs/chat-system-audit/02_INBOX_CHAT_DATA_CONTRACTS.md`
+- `docs/chat-system-audit/03_INBOX_CHAT_KNOWN_ISSUES_RISKS.md`
+
+## 3) Engineering Principles
+
+1. Preserve user behavior unless fixing a documented bug.
+2. Keep fan-out and aggregated inbox semantics equivalent.
+3. Keep SQLite-first and fallback runtime outputs equivalent.
+4. Move drift-prone logic into shared normalization helpers.
+5. Validate with deterministic tests, not call-signature tests.
+6. Keep rollouts reversible through feature flags where possible.
+
+## 4) Active Sustaining Streams
+
+## S1 - Notification Migration Guardrails
+
+Owner: Backend notifications
+Priority: Medium
+
+Objective:
+
+- Prevent accidental duplicate delivery when legacy triggers coexist with in-app channels.
+
+Primary targets:
+
+- `firebase-backend/functions/src/notifications.ts`
+- release/deploy runbooks
+
+Actions:
+
+1. Enforce explicit environment intent for `CHAT_LEGACY_PUSH_ENABLED`.
+2. Log active mode at cold start in functions runtime.
+3. Add deployment checklist item for migration flag verification.
+
+Acceptance criteria:
+
+- each environment has an explicit flag value in config records
+- no duplicate user-visible notifications in staging smoke tests
+
+Rollback plan:
+
+- toggle `CHAT_LEGACY_PUSH_ENABLED` and redeploy triggers
+
+## S2 - High-Volume Merge Stress Testing
+
+Owner: Client messaging
+Priority: Medium
+
+Objective:
+
+- Increase confidence under heavy realtime plus pagination overlap.
+
+Primary targets:
+
+- `__tests__/integration/unifiedChat.test.ts`
+- `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts`
+- `src/services/chat/unifiedMessagesLifecycle.ts`
+
+Actions:
+
+1. Add larger synthetic fixtures (hundreds of messages).
+2. Repeat modified-snapshot merges with overlapping page windows.
+3. Assert stable identity and no duplicate row IDs.
+
+Acceptance criteria:
+
+- deterministic tests with fixed fixtures
+- no flake across repeated local runs
+
+Rollback plan:
+
+- keep helper-level merge semantics unchanged if test-only additions fail CI
+
+## S3 - Inbox Parity Telemetry
+
+Owner: Client inbox + Observability
+Priority: Low
+
+Objective:
+
+- Detect fan-out and aggregated drift before user reports.
+
+Primary targets:
+
+- `src/hooks/useInboxData.ts`
+- `src/hooks/useInboxAggregation.ts`
+
+Actions:
+
+1. Emit diagnostic counters in debug builds for row count and unread deltas.
+2. Add lightweight analytics event for parity mismatches during canary windows.
+3. Track pinned ordering mismatches.
+
+Acceptance criteria:
+
+- parity mismatch events are visible in telemetry dashboards
+- canary period shows no sustained mismatch trend
+
+Rollback plan:
+
+- disable telemetry emission behind debug guard if noisy
+
+## S4 - Aggregated Inbox Enrichment (Optional)
+
+Owner: Inbox backend
+Priority: Low
+
+Objective:
+
+- Reduce client fallback lookups for display metadata in aggregated mode.
+
+Primary targets:
+
+- `firebase-backend/functions/src/inboxTriggers.ts`
+- `src/services/chat/normalizeInboxRow.ts`
+
+Actions:
+
+1. Evaluate adding richer avatar/profile snapshots to `InboxEntry`.
+2. Keep normalized output backward-compatible when fields are absent.
+3. Validate no write-amplification regressions from trigger updates.
+
+Acceptance criteria:
+
+- optional enriched fields read safely by existing clients
+- no regression in unread semantics or row ordering
+
+Rollback plan:
+
+- remove new optional fields from trigger writes; client falls back automatically
+
+## S5 - Thread Lifecycle Reliability Sweep
+
+Owner: Client messaging
+Priority: Medium
+
+Objective:
+
+- Validate repeated open/close cycles and route churn behavior.
+
+Primary targets:
 
 - `src/screens/chat/ThreadScreen.tsx`
-- `src/services/sync/syncEngine.ts`
+- `src/screens/chat/threadLifecycle.ts`
+- `__tests__/screens/threadScreen.lifecycle.test.ts`
 
-Change:
+Actions:
 
-- Replaced interval polling refresh loop with realtime subscription callback (`subscribeToConversation`) plus initial load.
+1. Add route churn tests for rapid thread switching.
+2. Verify no callback execution after cleanup.
+3. Confirm unsubscribe counts match subscribe counts.
 
-Verification:
+Acceptance criteria:
 
-- Static verification and linting on touched files.
-- Manual verification checklist item retained for device-level realtime behavior.
+- lifecycle tests pass consistently
+- no post-unmount state update warnings in manual smoke runs
 
-Risk:
+Rollback plan:
 
-- Low. Web path still no-op subscription by design; initial local load remains.
+- revert thread lifecycle helper changes in isolation
 
-## Step 2 - Notification Dedupe Key Hardening
+## S6 - Documentation + Test Governance
 
-Target files:
+Owner: Chat maintainers
+Priority: Medium
 
-- `src/store/InAppNotificationsContext.tsx`
+Objective:
 
-Change:
+- Keep docs, tests, and runtime contracts synchronized in each chat PR.
 
-- Scoped conversation timestamp tracking keys with explicit prefix (`dm:` / `group:`).
+Primary targets:
 
-Verification:
+- `docs/chat-system-audit/*`
+- `docs/features/messaging.md`
+- `docs/QA_IN_APP_NOTIFICATIONS.md`
+- `docs/operations/testing.md`
 
-- Code-path inspection and lint on touched files.
+Actions:
 
-Risk:
+1. Require path-level docs updates when contracts change.
+2. Require targeted chat test evidence in PR descriptions.
+3. Keep known-risks ledger current with owner and status.
 
-- Very low; isolated keying change.
+Acceptance criteria:
 
-## Step 3 - Requests Tab Refresh Correctness
+- no contract-changing chat PR merges without doc delta or explicit exemption
 
-Target files:
+Rollback plan:
 
-- `src/screens/chat/ChatListScreenV2.tsx`
+- none required (process change)
 
-Change:
+## 5) Release Gates For Chat Changes
 
-- Added request-specific refresh callback that refreshes friend requests and reloads group invites.
-- Bound requests list `onRefresh` to request-specific callback.
+Minimum required gates:
 
-Verification:
+1. Targeted test suites pass.
+2. Functions build passes when backend notification or trigger code changes.
+3. Manual smoke matrix passes for inbox tabs, thread lifecycle, and routing.
 
-- Lint run on file.
+Targeted suites:
 
-Risk:
+- `__tests__/services/normalizeMessage.test.ts`
+- `__tests__/services/normalizeInboxRow.test.ts`
+- `__tests__/services/normalizeNotification.test.ts`
+- `__tests__/services/messageRequests.test.ts`
+- `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts`
+- `__tests__/integration/unifiedChat.test.ts`
+- `__tests__/hooks/inboxPathParity.test.ts`
+- `__tests__/hooks/useUnifiedInboxRequests.test.ts`
+- `__tests__/components/conversationItem.unreadBadge.test.ts`
+- `__tests__/screens/threadScreen.lifecycle.test.ts`
 
-- Low; scoped to requests tab refresh wiring.
+## 6) Manual Validation Matrix
 
-## Step 4 - Inbox Dead Code Cleanup
+1. Inbox list parity with `CHAT_INBOX_AGGREGATION` off and on.
+2. Requests tab lists friend/group/message requests and refreshes all sources.
+3. DM and group send path has no duplicates under realtime updates.
+4. Pagination plus realtime overlap retains stable ordering.
+5. Thread screen open/close does not leak listeners.
+6. Push tap and in-app notification routing land on correct destinations.
 
-Target files:
+## 7) Risk Escalation Rules
 
-- `src/screens/chat/ChatListScreenV2.tsx`
+Escalate immediately if any of these occur:
 
-Change:
+1. unread count drift between inbox modes in the same account/session
+2. duplicate message rows after merge of realtime + pagination
+3. notification double-fire from legacy + in-app channel overlap
+4. state updates after unmount in thread or message hooks
 
-- Removed unreachable block/report modal imports, state, handlers, and JSX.
+Escalation output should include:
 
-Verification:
+- exact repro steps
+- affected feature flags
+- relevant file paths
+- failing test or missing test coverage
 
-- Lint run on file and adjacent chat files.
+## 8) Definition of Done (Sustaining Cycle)
 
-Risk:
+This plan can move to maintenance mode when:
 
-- Low; no remaining callers in current menu actions.
-
-## Step 5 - Unread Badge Count Rendering Fix
-
-Target files:
-
-- `src/components/chat/inbox/ConversationItem.tsx`
-
-Change:
-
-- Replaced hardcoded `"!"` badge with formatted unread count (`1..99+`).
-- Updated accessibility label to include unread quantity.
-
-Verification:
-
-- Lint run on file.
-
-Risk:
-
-- Low visual change; intentional bug fix.
-
-## Step 6 - Local Message Lifecycle Hardening
-
-Target files:
-
-- `src/hooks/useLocalMessages.ts`
-
-Change:
-
-- Added per-conversation state reset (`hasSyncedRef`, limit, cached rows/counters/error) to prevent stale state across thread switches.
-- Applied explicit `autoRefresh` gating for subscription setup.
-
-Verification:
-
-- Lint run on file.
-
-Risk:
-
-- Low; state reset is scoped to conversation/scope/limit changes.
-
-## Step 7 - Testability + Merge/Dedupe Unit Coverage
-
-Target files:
-
-- `src/services/messaging/messageMerge.ts` (new)
-- `src/services/chatV2.ts`
-- `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts` (new)
-
-Change:
-
-- Extracted outbox/server merge helper into Firebase-free module.
-- Added focused unit tests for dedupe, status mapping, and ordering.
-
-Verification:
-
-- `npx jest __tests__/services/chatV2.mergeMessagesWithOutbox.test.ts --runInBand` (pass)
-
-Risk:
-
-- Low; `chatV2` re-exports same helper API.
-
-## Remaining Steps
-
-## Step 8 - Manual QA Sweep
-
-Manual flows:
-
-1. Open Inbox and verify list rendering, unread badges, tab filters.
-2. Open DM and group chats, send text/media/voice.
-3. Open thread and verify realtime updates without polling delay.
-4. Requests tab refresh behavior (friend requests + group invites).
-5. Notification tap opens correct chat/group route.
-6. Chat settings and inbox settings toggles still persist.
-
-## Step 9 - Extended Test Coverage
-
-Planned tests:
-
-1. Thread subscription lifecycle/unsubscribe tests.
-2. Inbox unread badge formatting unit tests.
-3. Merge overlap tests for realtime + pagination race conditions.
-
-## Rollback Strategy
-
-- Each step is isolated to small files and can be reverted independently.
-- No schema changes were made in this phase.
+1. notification migration flag governance is codified in deployment workflow
+2. high-volume merge stress tests are in CI and stable
+3. inbox parity telemetry is live and monitored
+4. docs and targeted tests stay in lockstep with contract changes
