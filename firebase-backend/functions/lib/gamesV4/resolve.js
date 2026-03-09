@@ -580,6 +580,7 @@ async function updateLeaderboards(db, gameId, weekKey, scoreboard) {
 // =============================================================================
 async function updatePersonalBests(db, gameId, scoreboard, sessionId) {
     const batch = db.batch();
+    const metric = (0, types_1.getLeaderboardMetric)(gameId);
     for (const entry of scoreboard) {
         const pbRef = db
             .collection("Users")
@@ -587,38 +588,55 @@ async function updatePersonalBests(db, gameId, scoreboard, sessionId) {
             .collection(types_1.COLLECTIONS.GAME_PB)
             .doc(gameId);
         try {
-            const existing = await pbRef.get();
-            const currentPb = existing.exists
-                ? (existing.data()?.pbValue ?? -Infinity)
-                : -Infinity;
-            // Only update if new score is better
-            if (entry.score > currentPb) {
-                const hash = (0, helpers_1.computeIntegrityHash)(entry.uid, gameId, entry.score, sessionId);
-                batch.set(pbRef, {
-                    gameId,
-                    pbValue: entry.score,
-                    pbMeta: entry.stats || {},
-                    achievedAt: admin.firestore.Timestamp.now(),
-                    sessionId,
-                    totalPlays: admin.firestore.FieldValue.increment(1),
-                    totalWins: entry.placement === 1
-                        ? admin.firestore.FieldValue.increment(1)
-                        : admin.firestore.FieldValue.increment(0),
-                    integrityHash: hash,
-                    schemaVersion: 1,
-                }, { merge: true });
-            }
-            else {
-                // Still increment play count even if not a PB.
-                // Use set+merge (not update) so first-time players whose score
-                // is somehow ≤ –Infinity (NaN, etc.) don't crash the batch.
+            if (metric === "wins") {
+                // ── Wins-based games (TTT, Connect4, Chess, Crazy 8s, Battleship) ──
+                // PB value comparison is meaningless (score is always 1 or 0).
+                // Only track totalPlays / totalWins — the client reads totalWins
+                // for leaderboard display.
                 batch.set(pbRef, {
                     gameId,
                     totalPlays: admin.firestore.FieldValue.increment(1),
                     ...(entry.placement === 1
                         ? { totalWins: admin.firestore.FieldValue.increment(1) }
                         : {}),
+                    schemaVersion: 1,
                 }, { merge: true });
+            }
+            else {
+                // ── Best-score games (2048, Brick Breaker, Minesweeper, etc.) ──
+                // Keep running MAX of pbValue.
+                const existing = await pbRef.get();
+                const currentPb = existing.exists
+                    ? (existing.data()?.pbValue ?? -Infinity)
+                    : -Infinity;
+                if (entry.score > currentPb) {
+                    const hash = (0, helpers_1.computeIntegrityHash)(entry.uid, gameId, entry.score, sessionId);
+                    batch.set(pbRef, {
+                        gameId,
+                        pbValue: entry.score,
+                        pbMeta: entry.stats || {},
+                        achievedAt: admin.firestore.Timestamp.now(),
+                        sessionId,
+                        totalPlays: admin.firestore.FieldValue.increment(1),
+                        totalWins: entry.placement === 1
+                            ? admin.firestore.FieldValue.increment(1)
+                            : admin.firestore.FieldValue.increment(0),
+                        integrityHash: hash,
+                        schemaVersion: 1,
+                    }, { merge: true });
+                }
+                else {
+                    // Still increment play count even if not a PB.
+                    // Use set+merge (not update) so first-time players whose score
+                    // is somehow ≤ –Infinity (NaN, etc.) don't crash the batch.
+                    batch.set(pbRef, {
+                        gameId,
+                        totalPlays: admin.firestore.FieldValue.increment(1),
+                        ...(entry.placement === 1
+                            ? { totalWins: admin.firestore.FieldValue.increment(1) }
+                            : {}),
+                    }, { merge: true });
+                }
             }
         }
         catch (err) {

@@ -142,6 +142,17 @@ export default function AchievementsHubScreen() {
     return total;
   }, [unclaimedBySection]);
 
+  // Total unclaimed token value
+  const totalUnclaimedTokens = useMemo(() => {
+    let total = 0;
+    for (const entry of earned) {
+      if (isUnclaimed(entry)) {
+        total += entry.tokenReward || 0;
+      }
+    }
+    return total;
+  }, [earned]);
+
   // Filtered sections
   const filteredSections = useMemo(
     () =>
@@ -413,7 +424,8 @@ export default function AchievementsHubScreen() {
           </View>
           {totalUnclaimed > 0 && (
             <Text style={styles.unclaimedSummaryText}>
-              {totalUnclaimed} unclaimed reward{totalUnclaimed !== 1 ? "s" : ""}
+              {totalUnclaimed} unclaimed reward{totalUnclaimed !== 1 ? "s" : ""}{" "}
+              (+{totalUnclaimedTokens} tokens)
             </Text>
           )}
         </View>

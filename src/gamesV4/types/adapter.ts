@@ -189,4 +189,62 @@ export interface GameAdapterV4 {
    * Returns the validated settings or throws on invalid input.
    */
   validateSettings?(patch: Record<string, unknown>): Record<string, unknown>;
+
+  // ── Persistent solo / idle game hooks (all optional) ───────────────
+
+  /**
+   * Whether this adapter supports deterministic offline progression.
+   * If true, `applyOfflineProgression` should also be implemented.
+   */
+  supportsOfflineProgression?: boolean;
+
+  /**
+   * Apply deterministic offline gains for `elapsedMs` of elapsed time.
+   * Called server-side on resume when the game has `supportsOfflineProgression`.
+   * Must be pure/deterministic — no random draws, no external IO.
+   *
+   * @returns The updated public state and an optional summary of what was gained.
+   */
+  applyOfflineProgression?(
+    publicState: Record<string, unknown>,
+    elapsedMs: number,
+    context: { uid: string; settings: Record<string, unknown> },
+  ): {
+    nextPublicState: Record<string, unknown>;
+    offlineSummary?: Record<string, unknown>;
+  };
+
+  /**
+   * Produce a summary object for a persistent solo run (for hub cards, archive screen).
+   */
+  getPersistentSoloSummary?(
+    publicState: Record<string, unknown>,
+  ): Record<string, unknown>;
+
+  /**
+   * Whether the current state is eligible for explicit archive/finalization.
+   */
+  canArchive?(publicState: Record<string, unknown>): boolean;
+
+  /**
+   * Whether the current state is eligible for restart (reset to fresh run).
+   */
+  canRestart?(publicState: Record<string, unknown>): boolean;
+
+  /**
+   * Produce the final archive summary when the run is explicitly finalized.
+   * Called by `archiveSoloSessionV4`.
+   */
+  archiveRun?(
+    publicState: Record<string, unknown>,
+    context: { uid: string; settings: Record<string, unknown> },
+  ): {
+    finalScoreboard: Array<{
+      uid: string;
+      score: number;
+      placement: number;
+      stats: Record<string, unknown>;
+    }>;
+    archiveSummary?: Record<string, unknown>;
+  };
 }

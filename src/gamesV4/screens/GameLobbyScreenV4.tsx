@@ -15,6 +15,7 @@
  */
 
 import LobbySettingsPanel from "@/gamesV4/components/LobbySettingsPanel";
+import UserAvatar from "@/gamesV4/components/UserAvatar";
 import { GAME_METADATA, IMPLEMENTED_GAME_IDS } from "@/gamesV4/constants";
 import { useGameLobbyV4 } from "@/gamesV4/hooks/useGameLobbyV4";
 import {
@@ -38,7 +39,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -391,22 +391,12 @@ export default function GameLobbyScreenV4() {
                 },
               ]}
             >
-              {pfpUrl ? (
-                <Image source={{ uri: pfpUrl }} style={styles.playerAvatar} />
-              ) : (
-                <View
-                  style={[
-                    styles.playerAvatarFallback,
-                    { backgroundColor: theme.isDark ? "#333" : "#DDD" },
-                  ]}
-                >
-                  <MaterialCommunityIcons
-                    name="account"
-                    size={18}
-                    color={theme.isDark ? "#AAA" : "#666"}
-                  />
-                </View>
-              )}
+              <UserAvatar
+                profilePictureUrl={pfpUrl}
+                displayName={summary?.displayName}
+                uid={playerId}
+                size={32}
+              />
               <Text
                 style={[
                   styles.playerName,
@@ -466,22 +456,13 @@ export default function GameLobbyScreenV4() {
                   },
                 ]}
               >
-                {pfpUrl ? (
-                  <Image source={{ uri: pfpUrl }} style={styles.playerAvatar} />
-                ) : (
-                  <View
-                    style={[
-                      styles.playerAvatarFallback,
-                      { backgroundColor: theme.isDark ? "#333" : "#DDD" },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name="eye"
-                      size={18}
-                      color={theme.isDark ? "#AAA" : "#666"}
-                    />
-                  </View>
-                )}
+                <UserAvatar
+                  profilePictureUrl={pfpUrl}
+                  displayName={summary?.displayName}
+                  uid={specId}
+                  size={32}
+                  fallbackIcon="eye"
+                />
                 <Text
                   style={[
                     styles.playerName,
@@ -736,19 +717,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
-  },
-  playerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#DDD",
-  },
-  playerAvatarFallback: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
   },
   playerName: {
     flex: 1,

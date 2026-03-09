@@ -1,12 +1,13 @@
-/**
+﻿/**
  * PremiumBundleCard Component
  *
  * Displays a premium bundle for purchase in the shop.
- * Shows included items, value savings, and price.
+ * Shows included items with larger previews, value savings, and price.
  *
  * @see docs/SHOP_OVERHAUL_PLAN.md Section 7
  */
 
+import AppImage from "@/components/AppImage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { memo } from "react";
@@ -26,11 +27,8 @@ import { RARITY_COLORS } from "@/types/shop";
 // =============================================================================
 
 export interface PremiumBundleCardProps {
-  /** The bundle to display */
   bundle: PremiumBundle;
-  /** Handler for purchase */
   onPress: () => void;
-  /** Whether purchase is in progress */
   purchasing?: boolean;
 }
 
@@ -40,14 +38,26 @@ export interface PremiumBundleCardProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Theme gradients for bundles
 const BUNDLE_THEMES: Record<string, readonly [string, string, ...string[]]> = {
-  starter: ["#4CAF50", "#2E7D32"],
-  premium: ["#9C27B0", "#6A1B9A"],
-  legendary: ["#FF9800", "#E65100"],
-  mythic: ["#E91E63", "#880E4F"],
-  default: ["#2196F3", "#1565C0"],
+  starter: ["#388E3C", "#1B5E20"],
+  premium: ["#8E24AA", "#4A148C"],
+  legendary: ["#EF6C00", "#BF360C"],
+  mythic: ["#C2185B", "#880E4F"],
+  default: ["#1565C0", "#0D47A1"],
 };
+
+function isImageUri(path?: string): boolean {
+  if (!path) return false;
+  return (
+    path.startsWith("http") ||
+    path.startsWith("/") ||
+    path.startsWith("file") ||
+    path.includes(".png") ||
+    path.includes(".jpg") ||
+    path.includes(".webp") ||
+    path.includes(".svg")
+  );
+}
 
 // =============================================================================
 // Component
@@ -61,15 +71,12 @@ function PremiumBundleCardBase({
   const theme = useTheme();
   const scale = useSharedValue(1);
 
-  // Get gradient based on bundle theme
   const gradientColors = BUNDLE_THEMES[bundle.theme] || BUNDLE_THEMES.default;
 
-  // Animated styles
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
-  // Handle press in/out for animation
   const handlePressIn = () => {
     scale.value = withSpring(0.98, { damping: 15, stiffness: 200 });
   };
@@ -78,7 +85,6 @@ function PremiumBundleCardBase({
     scale.value = withSpring(1, { damping: 15, stiffness: 200 });
   };
 
-  // Format price
   const formatPrice = (price: number) =>
     bundle.localizedPrice || `$${price.toFixed(2)}`;
 
@@ -96,54 +102,47 @@ function PremiumBundleCardBase({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
-        {/* Badge */}
-        {bundle.featured && (
-          <View style={styles.featuredBadge}>
-            <MaterialCommunityIcons name="star" size={12} color="#FFD700" />
-            <Text style={styles.badgeText}>Featured</Text>
-          </View>
-        )}
+        {/* Top badges row */}
+        <View style={styles.topBadges}>
+          {bundle.featured && !bundle.owned && (
+            <View style={styles.featuredBadge}>
+              <MaterialCommunityIcons name="star" size={12} color="#FFD700" />
+              <Text style={styles.badgeText}>Featured</Text>
+            </View>
+          )}
+          {bundle.owned && (
+            <View style={[styles.featuredBadge, styles.ownedBadge]}>
+              <MaterialCommunityIcons name="check-circle" size={12} color="#fff" />
+              <Text style={styles.badgeText}>Owned</Text>
+            </View>
+          )}
+          {bundle.limitedTime && !bundle.owned && (
+            <View style={[styles.featuredBadge, styles.limitedBadge]}>
+              <MaterialCommunityIcons name="clock-outline" size={12} color="#fff" />
+              <Text style={styles.badgeText}>Limited Time</Text>
+            </View>
+          )}
+          {bundle.savingsPercent > 0 && (
+            <View style={styles.savingsPill}>
+              <Text style={styles.savingsPillText}>Save {bundle.savingsPercent}%</Text>
+            </View>
+          )}
+        </View>
 
-        {/* Owned badge */}
-        {bundle.owned && (
-          <View style={[styles.featuredBadge, styles.ownedBadge]}>
-            <MaterialCommunityIcons
-              name="check-circle"
-              size={12}
-              color="#fff"
-            />
-            <Text style={styles.badgeText}>Owned</Text>
-          </View>
-        )}
-
-        {/* Limited time badge */}
-        {bundle.limitedTime && !bundle.owned && (
-          <View style={[styles.featuredBadge, styles.limitedBadge]}>
-            <MaterialCommunityIcons
-              name="clock-outline"
-              size={12}
-              color="#fff"
-            />
-            <Text style={styles.badgeText}>Limited</Text>
-          </View>
-        )}
-
-        {/* Header */}
+        {/* Header: Name + Price */}
         <View style={styles.header}>
-          <View style={styles.headerText}>
+          <View style={styles.headerLeft}>
             <Text style={styles.bundleName}>{bundle.name}</Text>
             <Text style={styles.bundleDescription} numberOfLines={2}>
               {bundle.description}
             </Text>
           </View>
-          <View style={styles.priceContainer}>
+          <View style={styles.priceBlock}>
             <Text style={styles.price}>{formatPrice(bundle.basePriceUSD)}</Text>
             {bundle.savingsPercent > 0 && (
-              <View style={styles.savingsBadge}>
-                <Text style={styles.savingsText}>
-                  Save {bundle.savingsPercent}%
-                </Text>
-              </View>
+              <Text style={styles.valueStrikethrough}>
+                ${bundle.valueUSD.toFixed(2)}
+              </Text>
             )}
           </View>
         </View>
@@ -151,26 +150,54 @@ function PremiumBundleCardBase({
         {/* Divider */}
         <View style={styles.divider} />
 
-        {/* Items preview */}
-        <View style={styles.itemsContainer}>
-          <Text style={styles.itemsTitle}>Includes:</Text>
-          <View style={styles.itemsList}>
-            {bundle.items.slice(0, 4).map((item, index) => (
-              <View
-                key={item.itemId}
-                style={[
-                  styles.itemPreview,
-                  { borderColor: RARITY_COLORS[item.rarity] || "#9E9E9E" },
-                ]}
-              >
-                <Text style={styles.itemEmoji}>{item.imagePath || "🎁"}</Text>
-              </View>
-            ))}
-            {bundle.items.length > 4 && (
-              <View style={styles.moreItems}>
-                <Text style={styles.moreItemsText}>
-                  +{bundle.items.length - 4}
-                </Text>
+        {/* Items showcase */}
+        <View style={styles.itemsSection}>
+          <Text style={styles.itemsSectionLabel}>
+            {bundle.items.length} Items Included
+          </Text>
+          <View style={styles.itemsGrid}>
+            {bundle.items.slice(0, 5).map((item) => {
+              const borderColor = RARITY_COLORS[item.rarity] || "#9E9E9E";
+              const hasImage = isImageUri(item.imagePath);
+              return (
+                <View key={item.itemId} style={styles.itemSlot}>
+                  <View
+                    style={[
+                      styles.itemPreviewFrame,
+                      { borderColor: borderColor + "70" },
+                    ]}
+                  >
+                    <LinearGradient
+                      colors={[borderColor + "20", "rgba(0,0,0,0.2)"]}
+                      style={StyleSheet.absoluteFill}
+                      start={{ x: 0.5, y: 0 }}
+                      end={{ x: 0.5, y: 1 }}
+                    />
+                    {hasImage ? (
+                      <AppImage
+                        source={{ uri: item.imagePath }}
+                        style={styles.itemPreviewImage}
+                        contentFit="contain"
+                        debugLabel="BundleItem"
+                      />
+                    ) : (
+                      <Text style={styles.itemEmoji}>{item.imagePath || "\u{1F381}"}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.itemSlotName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                </View>
+              );
+            })}
+            {bundle.items.length > 5 && (
+              <View style={styles.itemSlot}>
+                <View style={[styles.itemPreviewFrame, styles.moreItemsFrame]}>
+                  <Text style={styles.moreItemsText}>
+                    +{bundle.items.length - 5}
+                  </Text>
+                </View>
+                <Text style={styles.itemSlotName}>more</Text>
               </View>
             )}
           </View>
@@ -178,7 +205,7 @@ function PremiumBundleCardBase({
 
         {/* Bonus tokens */}
         {bundle.bonusTokens > 0 && (
-          <View style={styles.bonusContainer}>
+          <View style={styles.bonusRow}>
             <MaterialCommunityIcons name="gold" size={16} color="#FFD700" />
             <Text style={styles.bonusText}>
               +{bundle.bonusTokens.toLocaleString()} Bonus Tokens
@@ -186,35 +213,36 @@ function PremiumBundleCardBase({
           </View>
         )}
 
-        {/* Value indicator */}
-        <View style={styles.valueContainer}>
-          <Text style={styles.valueLabel}>Value:</Text>
-          <Text style={styles.valueAmount}>${bundle.valueUSD.toFixed(2)}</Text>
-          {bundle.savingsPercent > 0 && (
-            <Text style={styles.valueSavings}>
-              (Save ${(bundle.valueUSD - bundle.basePriceUSD).toFixed(2)})
-            </Text>
-          )}
-        </View>
-
-        {/* Purchase button */}
-        <View style={styles.buttonContainer}>
-          <View
-            style={[
-              styles.purchaseButton,
-              bundle.owned && styles.purchaseButtonDisabled,
-            ]}
+        {/* Purchase CTA */}
+        <View style={styles.ctaContainer}>
+          <LinearGradient
+            colors={
+              bundle.owned
+                ? ["rgba(255,255,255,0.05)", "rgba(255,255,255,0.05)"]
+                : ["rgba(255,255,255,0.28)", "rgba(255,255,255,0.12)"]
+            }
+            style={styles.ctaButton}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
           >
             {purchasing ? (
-              <Text style={styles.buttonText}>Purchasing...</Text>
+              <Text style={styles.ctaText}>Purchasing...</Text>
             ) : bundle.owned ? (
-              <Text style={styles.buttonText}>Purchased</Text>
+              <>
+                <MaterialCommunityIcons name="check" size={18} color="rgba(255,255,255,0.5)" />
+                <Text style={[styles.ctaText, { color: "rgba(255,255,255,0.5)" }]}>
+                  Purchased
+                </Text>
+              </>
             ) : (
-              <Text style={styles.buttonText}>
-                Buy Now • {formatPrice(bundle.basePriceUSD)}
-              </Text>
+              <>
+                <MaterialCommunityIcons name="diamond-stone" size={16} color="#fff" />
+                <Text style={styles.ctaText}>
+                  Buy Now {"\u2022"} {formatPrice(bundle.basePriceUSD)}
+                </Text>
+              </>
             )}
-          </View>
+          </LinearGradient>
         </View>
       </LinearGradient>
     </AnimatedPressable>
@@ -229,178 +257,191 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 20,
     overflow: "hidden",
-    marginBottom: 4,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   gradient: {
-    padding: 16,
+    padding: 18,
     position: "relative",
   },
+
+  // Top badges
+  topBadges: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 14,
+    flexWrap: "wrap",
+  },
   featuredBadge: {
-    position: "absolute",
-    top: 12,
-    right: 12,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.4)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 12,
     gap: 4,
   },
   ownedBadge: {
-    backgroundColor: "rgba(76,175,80,0.8)",
+    backgroundColor: "rgba(76,175,80,0.7)",
   },
   limitedBadge: {
-    backgroundColor: "rgba(255,152,0,0.8)",
+    backgroundColor: "rgba(230,81,0,0.7)",
   },
   badgeText: {
     color: "#fff",
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
   },
+  savingsPill: {
+    backgroundColor: "#43A047",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  savingsPillText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  headerText: {
+  headerLeft: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 16,
   },
   bundleName: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     color: "#fff",
     marginBottom: 4,
+    letterSpacing: 0.2,
   },
   bundleDescription: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(255,255,255,0.7)",
     lineHeight: 18,
   },
-  priceContainer: {
+  priceBlock: {
     alignItems: "flex-end",
   },
   price: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "800",
     color: "#fff",
   },
-  savingsBadge: {
-    backgroundColor: "#4CAF50",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginTop: 4,
+  valueStrikethrough: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.4)",
+    textDecorationLine: "line-through",
+    marginTop: 2,
   },
-  savingsText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
-  },
+
+  // Divider
   divider: {
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    marginVertical: 12,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginBottom: 14,
   },
-  itemsContainer: {
-    marginBottom: 12,
+
+  // Items showcase
+  itemsSection: {
+    marginBottom: 14,
   },
-  itemsTitle: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
-    marginBottom: 8,
-    fontWeight: "600",
+  itemsSectionLabel: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.55)",
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 10,
   },
-  itemsList: {
+  itemsGrid: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
+    flexWrap: "wrap",
   },
-  itemPreview: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  itemSlot: {
     alignItems: "center",
+    width: 62,
+  },
+  itemPreviewFrame: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 1.5,
     justifyContent: "center",
-    borderWidth: 2,
+    alignItems: "center",
+    overflow: "hidden",
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  itemPreviewImage: {
+    width: 42,
+    height: 42,
   },
   itemEmoji: {
-    fontSize: 20,
+    fontSize: 26,
   },
-  moreItems: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    alignItems: "center",
-    justifyContent: "center",
+  itemSlotName: {
+    fontSize: 9,
+    color: "rgba(255,255,255,0.55)",
+    marginTop: 4,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  moreItemsFrame: {
+    borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   moreItemsText: {
-    color: "#fff",
-    fontSize: 14,
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 16,
     fontWeight: "700",
   },
-  bonusContainer: {
+
+  // Bonus tokens
+  bonusRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.2)",
     alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
     gap: 6,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   bonusText: {
     color: "#FFD700",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  valueContainer: {
+
+  // CTA
+  ctaContainer: {
+    marginTop: 2,
+  },
+  ctaButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 12,
-  },
-  valueLabel: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 12,
-  },
-  valueAmount: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-    textDecorationLine: "line-through",
-    textDecorationStyle: "solid",
-  },
-  valueSavings: {
-    color: "#4CAF50",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  buttonContainer: {
-    marginTop: 4,
-  },
-  purchaseButton: {
-    backgroundColor: "rgba(255,255,255,0.25)",
+    justifyContent: "center",
+    gap: 8,
     paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
+    borderRadius: 14,
   },
-  purchaseButtonDisabled: {
-    backgroundColor: "rgba(255,255,255,0.1)",
-  },
-  buttonText: {
+  ctaText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
+    letterSpacing: 0.2,
   },
 });
 

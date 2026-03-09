@@ -26,6 +26,7 @@ export {
   submitTurnMoveV4,
 } from "./sessions";
 export {
+  archiveSoloSessionV4,
   createSoloSessionV4,
   restartSoloSessionV4,
   resumeOrCreateSoloSessionV4,

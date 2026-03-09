@@ -348,14 +348,37 @@ exports.resignSessionV4 = functions.https.onCall(async (data, context) => {
  * This is NOT a callable — it's exported for use by the Colyseus bridge.
  */
 async function resolveRealtimeSessionV4(sessionId, resolutionType, winnerIds, scoreboard) {
+    // If a pre-built scoreboard is provided, enrich with profilePictureUrl from
+    // the session's player slots so the result doc carries avatar data.
+    let enrichedScoreboard = scoreboard?.map((e) => ({
+        ...e,
+        profilePictureUrl: null,
+    }));
+    if (enrichedScoreboard) {
+        try {
+            const db = (0, helpers_1.getDb)();
+            const sessionSnap = await db
+                .collection(types_1.COLLECTIONS.GAME_SESSIONS)
+                .doc(sessionId)
+                .get();
+            if (sessionSnap.exists) {
+                const sessionData = sessionSnap.data();
+                const playerMap = new Map((sessionData.players ?? []).map((p) => [p.uid, p]));
+                enrichedScoreboard = enrichedScoreboard.map((e) => ({
+                    ...e,
+                    profilePictureUrl: playerMap.get(e.uid)?.profilePictureUrl ?? null,
+                }));
+            }
+        }
+        catch (err) {
+            console.warn("[gamesV4] Failed to enrich realtime scoreboard with profile pics:", err);
+        }
+    }
     await (0, resolve_1.resolveSessionV4Internal)({
         sessionId,
         resolutionType,
         winnerIds,
-        scoreboard: scoreboard?.map((e) => ({
-            ...e,
-            profilePictureUrl: null,
-        })),
+        scoreboard: enrichedScoreboard,
     });
 }
 //# sourceMappingURL=sessions.js.map

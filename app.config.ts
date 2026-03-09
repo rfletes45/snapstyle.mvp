@@ -5,15 +5,26 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "Vibe",
   slug: "snapstyle-mvp", // Must match EAS projectId slug
   version: "1.0.0",
+  runtimeVersion: {
+    policy: "appVersion",
+  },
   orientation: "default",
   userInterfaceStyle: "automatic",
+  icon: "./assets/images/icon.png",
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",
+    buildNumber: "4",
     infoPlist: {
       // Camera & Microphone permissions
       NSCameraUsageDescription: "Vibe needs camera access for video calls",
       NSMicrophoneUsageDescription: "Vibe needs microphone access for calls",
+      // Photo library permission (required for App Store)
+      NSPhotoLibraryUsageDescription:
+        "Vibe needs photo library access to save and share photos",
+      // Location (required by WebRTC / CallKeep dependencies)
+      NSLocationWhenInUseUsageDescription:
+        "Vibe uses your location to connect you with nearby friends",
       // Background modes for calls
       UIBackgroundModes: ["audio", "voip", "remote-notification", "fetch"],
       // CallKit configuration
@@ -26,10 +37,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     entitlements: {
       "aps-environment": "production",
     },
+    config: {
+      usesNonExemptEncryption: false,
+    },
   },
   android: {
     adaptiveIcon: {
-      foregroundImage: undefined, // Icon will be added later
+      foregroundImage: "./assets/images/android-icon-foreground.png",
+      backgroundImage: "./assets/images/android-icon-background.png",
+      monochromeImage: "./assets/images/android-icon-monochrome.png",
       backgroundColor: "#eff1f5",
     },
     package: "com.vibeapp.mobile",
@@ -59,12 +75,43 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   },
   web: {
-    favicon: "./src/assets/favicon.png",
+    output: "single",
+    favicon: "./assets/images/favicon.png",
   },
   scheme: "vibe",
+  splash: {
+    image: "./assets/images/splash-icon.png",
+    resizeMode: "contain",
+    backgroundColor: "#ffffff",
+  },
   plugins: [
+    [
+      "expo-build-properties",
+      {
+        ios: {
+          deploymentTarget: "16.0",
+        },
+        android: {
+          minSdkVersion: 24,
+          compileSdkVersion: 35,
+          targetSdkVersion: 35,
+        },
+      },
+    ],
     "expo-audio",
     "expo-sqlite",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/images/splash-icon.png",
+        imageWidth: 200,
+        resizeMode: "contain",
+        backgroundColor: "#ffffff",
+        dark: {
+          backgroundColor: "#000000",
+        },
+      },
+    ],
     [
       "expo-screen-orientation",
       {
@@ -86,4 +133,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // expo-dev-client for native module support. They don't have
     // Expo config plugins but work with bare workflow / dev client.
   ],
+  experiments: {
+    typedRoutes: true,
+  },
+  extra: {
+    eas: {
+      projectId: "a57e6af7-ac18-4751-90ee-3b9cda7ea645",
+    },
+  },
+  owner: "rfletes",
 });

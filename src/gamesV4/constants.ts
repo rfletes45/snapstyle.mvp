@@ -7,7 +7,7 @@
  * @module gamesV4/constants
  */
 
-import type { GameId, GameRuntimeType } from "./types/common";
+import type { GameId, GameRuntimeType, SoloMode } from "./types/common";
 
 // =============================================================================
 // Firestore Collection Paths
@@ -106,6 +106,26 @@ export interface GameMetadata {
   maxPlayers: number;
   supportsSpectate: boolean;
   icon: string; // MaterialCommunityIcons name
+
+  // ── Persistent solo / lifecycle policy fields ───────────────────────
+  // All optional — existing games default to standard solo behaviour.
+
+  /** Solo sub-mode: "standard" (default) or "persistent" (idle/incremental). */
+  soloMode?: SoloMode;
+  /** Whether this game exposes a Resign/Forfeit action (default true). */
+  allowResign?: boolean;
+  /** Whether the in-game menu shows Restart (default true for solo). */
+  allowRestart?: boolean;
+  /** Whether the Hub should auto-resume an existing active session (default true for solo). */
+  autoResumeExisting?: boolean;
+  /** Whether leaving the game shows a Game Over screen (default false). */
+  showGameOverOnSuspend?: boolean;
+  /** Whether archiving/finalizing the run shows a Game Over screen (default true). */
+  showGameOverOnArchive?: boolean;
+  /** Whether the game supports deterministic offline progression (default false). */
+  supportsOfflineProgression?: boolean;
+  /** Whether this game uses long-lived sessions (exempt from inactivity auto-resolve). */
+  longLivedSession?: boolean;
 }
 
 /**
@@ -364,6 +384,80 @@ export const PRESENCE_STALE_MS = 60 * 1000; // 60 seconds
 export const TURN_INACTIVITY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // =============================================================================
+// Persistent Solo — Lifecycle Policy & Helpers
+// =============================================================================
+
+/**
+ * Session lifecycle policy derived from game metadata.
+ * Controls how the shell, service layer, and backend treat sessions.
+ */
+export interface SessionLifecyclePolicy {
+  runtimeType: GameRuntimeType;
+  soloMode: SoloMode;
+  /** Can the player resign / forfeit? */
+  allowResign: boolean;
+  /** Should the session be saved/suspended when the player exits? */
+  suspendOnExit: boolean;
+  /** Should the session be resolved (terminal) when the player exits? */
+  resolveOnExit: boolean;
+  /** Should the Hub auto-resume an existing active/suspended session? */
+  autoResumeExisting: boolean;
+  /** Should the watchdog auto-resolve this session after inactivity? */
+  inactivityAutoResolve: boolean;
+  /** Should the terminal/game-over screen be shown when the player suspends? */
+  showTerminalScreenOnSuspend: boolean;
+  /** Can the player restart the run from the in-game menu? */
+  allowRestart: boolean;
+  /** Does this game support deterministic offline progression? */
+  supportsOfflineProgression: boolean;
+}
+
+/**
+ * Return the effective `SoloMode` for a game.
+ * Non-solo games return "standard" (callers should gate on runtimeType).
+ */
+export function getSoloMode(gameId: GameId): SoloMode {
+  return GAME_METADATA[gameId]?.soloMode ?? "standard";
+}
+
+/** Convenience: `true` when `soloMode === "persistent"`. */
+export function isPersistentSoloGame(gameId: GameId): boolean {
+  const meta = GAME_METADATA[gameId];
+  return (
+    meta?.runtimeType === "solo" &&
+    (meta.soloMode ?? "standard") === "persistent"
+  );
+}
+
+/**
+ * Build the full lifecycle policy for a game.
+ * Uses metadata fields with sensible defaults so existing games are unaffected.
+ */
+export function getGameLifecyclePolicy(gameId: GameId): SessionLifecyclePolicy {
+  const meta = GAME_METADATA[gameId];
+  const rt: GameRuntimeType = meta?.runtimeType ?? "turnBased";
+  const sm: SoloMode = meta?.soloMode ?? "standard";
+  const persistent = rt === "solo" && sm === "persistent";
+
+  return {
+    runtimeType: rt,
+    soloMode: sm,
+
+    allowResign: meta?.allowResign ?? !persistent,
+    suspendOnExit: rt === "solo", // all solo games suspend on exit
+    resolveOnExit: false, // no game auto-resolves on exit currently
+    autoResumeExisting: meta?.autoResumeExisting ?? rt === "solo",
+    inactivityAutoResolve: !persistent && rt === "turnBased",
+    showTerminalScreenOnSuspend: meta?.showGameOverOnSuspend ?? false,
+    allowRestart: meta?.allowRestart ?? rt === "solo",
+    supportsOfflineProgression: meta?.supportsOfflineProgression ?? false,
+  };
+}
+
+/** Maximum offline time (ms) that can be claimed in a single resume. */
+export const MAX_OFFLINE_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// =============================================================================
 // XP Configuration
 // =============================================================================
 
@@ -468,6 +562,11 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
     },
     sortDirection: "desc",
   },
+  solitaire_klondike: {
+    title: "FINAL SCORE",
+    formatScore: (s) => s.toLocaleString(),
+    sortDirection: "desc",
+  },
 };
 
 // =============================================================================
@@ -523,10 +622,10 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     formatValue: (v) => v.toLocaleString(),
   },
   battleship: {
-    label: "Fleet Score",
-    metric: "bestScore",
+    label: "Wins",
+    metric: "wins",
     sortDirection: "desc",
-    formatValue: (v) => `${v} pts`,
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
   brick_breaker: {
     label: "Best Campaign",

@@ -20,11 +20,14 @@ import { MAX_REWARD_LEVEL } from "@/data/levelRewards";
 import {
   GAME_METADATA,
   IMPLEMENTED_GAME_IDS,
+  isPersistentSoloGame,
   type GameMetadata,
 } from "@/gamesV4/constants";
 import type { LevelRewardDocV4 } from "@/gamesV4/services/gameServiceV4";
 import {
+  archiveSoloSession,
   resumeOrCreateSoloSession,
+  subscribeToActiveSoloSessions,
   subscribeToLevelRewards,
   subscribeToMyActiveInvites,
 } from "@/gamesV4/services/gameServiceV4";
@@ -79,6 +82,10 @@ export default function GamesHubScreenV4() {
   const [refreshing, setRefreshing] = useState(false);
   const [launchingSolo, setLaunchingSolo] = useState<GameId | null>(null);
   const [rewardDocs, setRewardDocs] = useState<LevelRewardDocV4[]>([]);
+  /** Map of gameId → sessionId for solo games with an active/suspended session. */
+  const [activeSoloSessions, setActiveSoloSessions] = useState<
+    Record<string, string>
+  >({});
 
   // ── Level/XP data ──────────────────────────────────────────────────────
   const { levelInfo: profileLevel } = useProfileData(uid);
@@ -120,6 +127,22 @@ export default function GamesHubScreenV4() {
       () => {
         setInvitesLoading(false);
         setRefreshing(false);
+      },
+    );
+    return unsub;
+  }, [uid]);
+
+  // ── Subscribe to active solo sessions (for resume affordances) ──────────
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeToActiveSoloSessions(
+      uid,
+      (sessions) => setActiveSoloSessions(sessions),
+      (err) => {
+        console.warn(
+          "[GamesHub] Active solo sessions subscription error:",
+          err.message,
+        );
       },
     );
     return unsub;
@@ -200,8 +223,8 @@ export default function GamesHubScreenV4() {
   }, [navigation]);
 
   /**
-   * Long-press on a solo game card shows an action sheet:
-   * Play Now, View Details, View Achievements, View Leaderboard
+   * Long-press on a solo game card shows an action sheet.
+   * Persistent solo games with an active session get extra options.
    */
   const handleSoloLongPress = useCallback(
     (_gameId: GameId) => {
@@ -209,32 +232,75 @@ export default function GamesHubScreenV4() {
       const meta = GAME_METADATA[_gameId];
       if (!meta) return;
 
-      Alert.alert(meta.displayName, undefined, [
-        {
-          text: "Play Now",
-          onPress: () => handleGameTap(_gameId),
-        },
-        {
-          text: "View Details",
-          onPress: () =>
-            navigation.navigate("GameDetailV4", { gameId: _gameId }),
-        },
-        {
-          text: "View Achievements",
-          onPress: () =>
-            navigation.navigate("AchievementSection", {
-              sectionId: _gameId,
-            }),
-        },
-        {
-          text: "View Leaderboard",
-          onPress: () =>
-            navigation.navigate("GameLeaderboardV4", { gameId: _gameId }),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      const isPersistent = isPersistentSoloGame(_gameId);
+      const activeSessionId = activeSoloSessions[_gameId];
+
+      const buttons: Array<{
+        text: string;
+        onPress?: () => void;
+        style?: "cancel" | "destructive";
+      }> = [];
+
+      // Primary action
+      buttons.push({
+        text: isPersistent && activeSessionId ? "Resume Run" : "Play Now",
+        onPress: () => handleGameTap(_gameId),
+      });
+
+      // Archive existing persistent run (destructive)
+      if (isPersistent && activeSessionId) {
+        buttons.push({
+          text: "Archive Run",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Archive Run?",
+              "This will end the current run, award XP, and let you start a fresh run.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Archive",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await archiveSoloSession({ sessionId: activeSessionId });
+                    } catch (err) {
+                      Alert.alert(
+                        "Archive Failed",
+                        err instanceof Error
+                          ? err.message
+                          : "Could not archive run.",
+                      );
+                    }
+                  },
+                },
+              ],
+            );
+          },
+        });
+      }
+
+      buttons.push({
+        text: "View Details",
+        onPress: () => navigation.navigate("GameDetailV4", { gameId: _gameId }),
+      });
+      buttons.push({
+        text: "View Achievements",
+        onPress: () =>
+          navigation.navigate("AchievementSection", {
+            sectionId: _gameId,
+          }),
+      });
+      buttons.push({
+        text: "View Leaderboard",
+        onPress: () =>
+          navigation.navigate("GameLeaderboardV4", { gameId: _gameId }),
+      });
+      buttons.push({ text: "Cancel", style: "cancel" });
+
+      Alert.alert(meta.displayName, undefined, buttons);
     },
-    [navigation, handleGameTap],
+    [navigation, handleGameTap, activeSoloSessions],
   );
 
   const handleAchievements = useCallback(() => {
@@ -577,6 +643,8 @@ export default function GamesHubScreenV4() {
                 const isImplemented = IMPLEMENTED_GAME_IDS.has(game.gameId);
                 const isLaunching = launchingSolo === game.gameId;
                 const isSolo = game.runtimeType === "solo";
+                const hasActiveSession = !!activeSoloSessions[game.gameId];
+                const isPersistent = isPersistentSoloGame(game.gameId);
                 return (
                   <TouchableOpacity
                     key={game.gameId}
@@ -638,7 +706,11 @@ export default function GamesHubScreenV4() {
                             { color: theme.colors.primary },
                           ]}
                         >
-                          {isLaunching ? "Starting…" : "Play Now"}
+                          {isLaunching
+                            ? "Starting…"
+                            : hasActiveSession && isPersistent
+                              ? "Resume"
+                              : "Play Now"}
                         </Text>
                       ) : (
                         <Text

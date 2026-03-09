@@ -345,11 +345,6 @@ function ProfileStack() {
         options={{ title: "Settings" }}
       />
       <ProfileStack_Nav.Screen
-        name="Wallet"
-        component={WalletScreen}
-        options={{ headerShown: false }}
-      />
-      <ProfileStack_Nav.Screen
         name="Tasks"
         component={TasksScreen}
         options={{ headerShown: false }}
@@ -717,6 +712,11 @@ function MainStack() {
         component={LevelRewardsScreen}
         options={{ headerShown: false }}
       />
+      <MainStack_Nav.Screen
+        name="Wallet"
+        component={WalletScreen}
+        options={{ headerShown: false }}
+      />
     </MainStack_Nav.Navigator>
   );
 }
@@ -775,7 +775,6 @@ export default function RootNavigator({
                   ProfileMain: "profile",
                   Settings: "settings",
                   BadgeCollection: "badges",
-                  Wallet: "wallet",
                 },
               },
             },
@@ -791,6 +790,7 @@ export default function RootNavigator({
           GameDetailV4: "game/detail/:gameId",
           GameLeaderboardV4: "game/leaderboard/:gameId",
           GameStatsV4: "game/stats",
+          Wallet: "wallet",
         },
       },
     }),

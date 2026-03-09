@@ -77,7 +77,6 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { DMMessageItem, MessageWithProfile } from "@/components/DMMessageItem";
 import ReportUserModal from "@/components/ReportUserModal";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
-import { EmptyState } from "@/components/ui";
 import { GamePickerModal } from "@/gamesV4/components/GamePickerModal";
 import { PinnedInviteBar } from "@/gamesV4/components/PinnedInviteBar";
 import { createGameInvite } from "@/gamesV4/services/gameServiceV4";
@@ -1078,12 +1077,22 @@ export default function ChatScreen({
             }
             ListEmptyComponent={
               <View style={styles.emptyStateContainer}>
-                <Text style={styles.emptyEmoji}>👋</Text>
-                <EmptyState
-                  icon="message-text-outline"
-                  title={`Say hi to ${friendProfile?.username || "your friend"}!`}
-                  subtitle="Send a message, snap a photo, or challenge them to a game 🎮"
-                />
+                <Text
+                  style={[
+                    styles.emptyTitle,
+                    { color: theme.colors.onBackground },
+                  ]}
+                >
+                  {`Say hi to ${friendProfile?.username || "your friend"}!`}
+                </Text>
+                <Text
+                  style={[
+                    styles.emptySubtitle,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  Send a message, snap a photo, or challenge them to a game 🎮
+                </Text>
               </View>
             }
             flatListProps={{
@@ -1246,11 +1255,19 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingBottom: 48,
   },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 8,
-    transform: [{ scaleY: -1 }],
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 260,
   },
   loadMoreContainer: {
     alignItems: "center",

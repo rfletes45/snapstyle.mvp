@@ -28,9 +28,14 @@
  */
 
 import { getAdapter } from "@/gamesV4/adapters";
-import { GAME_METADATA } from "@/gamesV4/constants";
+import {
+  GAME_METADATA,
+  getGameLifecyclePolicy,
+  isPersistentSoloGame,
+} from "@/gamesV4/constants";
 import { useGameSessionV4 } from "@/gamesV4/hooks/useGameSessionV4";
 import {
+  archiveSoloSession,
   restartSoloSession,
   suspendSoloSession,
 } from "@/gamesV4/services/gameServiceV4";
@@ -413,11 +418,20 @@ export function withGameV4Shell<P extends GameShellProps>(
     //   solo       → overlay back arrow (left) + overlay menu button (right)
     //               back arrow suspends and exits without resigning
     //   realtime   → resign/quit button (top-right) only
+    //
+    // Persistent solo overrides:
+    //   - No resign action ever (allowResign = false)
+    //   - No auto-navigate to Game Over on suspend
+    //   - Menu shows: Return to Hub, Restart Run, Archive Run (no Resign)
+    const lifecyclePolicy = getGameLifecyclePolicy(gameId);
+    const isPersistent = isPersistentSoloGame(gameId);
+
     const canNavigateBackWithoutResign =
       runtimeType === "turnBased" || runtimeType === "solo";
     const showBackArrow =
       (runtimeType === "turnBased" || runtimeType === "solo") && !isTerminal;
-    const showResignAction = !isTerminal && runtimeType !== "solo"; // solo uses menu instead
+    const showResignAction =
+      !isTerminal && runtimeType !== "solo" && !isPersistent; // solo uses menu; persistent never shows resign
 
     // Solo menu state
     const [soloMenuVisible, setSoloMenuVisible] = useState(false);
@@ -450,7 +464,10 @@ export function withGameV4Shell<P extends GameShellProps>(
     }, [sessionId, navigation]);
 
     // ── Resign with confirmation ────────────────────────────────────
+    // Persistent solo games never expose resign. Guard here just in case.
     const handleResign = useCallback(() => {
+      if (isPersistent) return; // should never be called, but safety guard
+
       const title = runtimeType === "solo" ? "Resign Game" : "Resign Game";
       const message =
         runtimeType === "solo"
@@ -468,42 +485,70 @@ export function withGameV4Shell<P extends GameShellProps>(
           },
         },
       ]);
-    }, [hookResign, runtimeType]);
+    }, [hookResign, runtimeType, isPersistent]);
 
     // ── Solo restart ────────────────────────────────────────────────
     const handleSoloRestart = useCallback(() => {
+      const title = isPersistent ? "Restart Run" : "Restart Game";
+      const message = isPersistent
+        ? "Are you sure? Your current run will be archived and a fresh run will start."
+        : "Are you sure? Your current run will be discarded.";
+
+      Alert.alert(title, message, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: isPersistent ? "Restart Run" : "Restart",
+          style: "destructive",
+          onPress: async () => {
+            setSoloMenuVisible(false);
+            try {
+              const { sessionId: newSessionId } = await restartSoloSession({
+                sessionId,
+                gameId,
+              });
+              // Replace the current screen with the new session
+              navigation.replace("GamePlayV4", {
+                sessionId: newSessionId,
+                gameId,
+              });
+            } catch (err) {
+              const msg =
+                err instanceof Error ? err.message : "Could not restart game.";
+              Alert.alert("Error", msg);
+            }
+          },
+        },
+      ]);
+    }, [sessionId, gameId, navigation, isPersistent]);
+
+    // ── Persistent solo: archive run ────────────────────────────────
+    const handleArchiveRun = useCallback(() => {
+      if (!isPersistent) return;
+
       Alert.alert(
-        "Restart Game",
-        "Are you sure? Your current run will be discarded.",
+        "Archive Run",
+        "This will finalize your current run, calculate your final score, and unlock any end-of-run rewards. You can start a fresh run afterwards.",
         [
           { text: "Cancel", style: "cancel" },
           {
-            text: "Restart",
-            style: "destructive",
+            text: "Archive Run",
+            style: "default",
             onPress: async () => {
               setSoloMenuVisible(false);
               try {
-                const { sessionId: newSessionId } = await restartSoloSession({
-                  sessionId,
-                  gameId,
-                });
-                // Replace the current screen with the new session
-                navigation.replace("GamePlayV4", {
-                  sessionId: newSessionId,
-                  gameId,
-                });
+                await archiveSoloSession({ sessionId });
+                // Navigate to Game Over to show the final summary
+                navigation.replace("GameOverV4", { sessionId });
               } catch (err) {
                 const msg =
-                  err instanceof Error
-                    ? err.message
-                    : "Could not restart game.";
+                  err instanceof Error ? err.message : "Could not archive run.";
                 Alert.alert("Error", msg);
               }
             },
           },
         ],
       );
-    }, [sessionId, gameId, navigation]);
+    }, [isPersistent, sessionId, navigation]);
 
     // ── Back handler (runtime-aware) ────────────────────────────────
     useEffect(() => {
@@ -528,8 +573,16 @@ export function withGameV4Shell<P extends GameShellProps>(
           {
             text: "Leave & Resign",
             style: "destructive",
-            onPress: () => {
-              hookResign();
+            onPress: async () => {
+              // Await resign so the session is resolved server-side before
+              // we tear down snapshot listeners via navigation. This prevents
+              // the "Missing Firebase permissions" error that occurred when
+              // listeners fired during the mid-resolution window.
+              try {
+                await hookResign();
+              } catch {
+                // Resign already sets actionError internally; swallow here.
+              }
               navigation.goBack();
             },
           },
@@ -549,8 +602,13 @@ export function withGameV4Shell<P extends GameShellProps>(
     // ── Auto-navigate to GameOverV4 on terminal ─────────────────────
     // Navigate as soon as terminal is detected — don't wait for result doc.
     // GameOverScreenV4 handles its own loading state if results are delayed.
+    //
+    // EXCEPTION: Persistent solo games do NOT auto-navigate to Game Over
+    // when the session becomes terminal due to archive. The archive handler
+    // explicitly navigates to GameOverV4 after the callable completes.
+    // This prevents unexpected navigation during normal suspend/resume.
     useEffect(() => {
-      if (isTerminal && !hasNavigatedToResult.current) {
+      if (isTerminal && !hasNavigatedToResult.current && !isPersistent) {
         hasNavigatedToResult.current = true;
         // Small delay to let the terminal state render briefly
         const timer = setTimeout(() => {
@@ -709,32 +767,92 @@ export function withGameV4Shell<P extends GameShellProps>(
                     { color: theme.isDark ? "#FFF" : "#333" },
                   ]}
                 >
-                  Game Menu
+                  {isPersistent ? "Session Menu" : "Game Menu"}
                 </Text>
 
-                <TouchableOpacity
-                  style={[
-                    styles.soloMenuItem,
-                    { backgroundColor: theme.colors.primary },
-                  ]}
-                  onPress={handleSoloRestart}
-                >
-                  <Ionicons name="refresh" size={18} color="#FFF" />
-                  <Text style={styles.soloMenuItemText}>Restart Game</Text>
-                </TouchableOpacity>
+                {/* Restart — shown for all solo games */}
+                {lifecyclePolicy.allowRestart && (
+                  <TouchableOpacity
+                    style={[
+                      styles.soloMenuItem,
+                      { backgroundColor: theme.colors.primary },
+                    ]}
+                    onPress={handleSoloRestart}
+                  >
+                    <Ionicons name="refresh" size={18} color="#FFF" />
+                    <Text style={styles.soloMenuItemText}>
+                      {isPersistent ? "Restart Run" : "Restart Game"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                  style={[styles.soloMenuItem, { backgroundColor: "#FF3B30" }]}
-                  onPress={handleResign}
-                >
-                  <MaterialCommunityIcons
-                    name="flag-outline"
-                    size={18}
-                    color="#FFF"
-                  />
-                  <Text style={styles.soloMenuItemText}>Resign</Text>
-                </TouchableOpacity>
+                {/* Archive Run — persistent solo only */}
+                {isPersistent && (
+                  <TouchableOpacity
+                    style={[
+                      styles.soloMenuItem,
+                      { backgroundColor: "#FF9500" },
+                    ]}
+                    onPress={handleArchiveRun}
+                  >
+                    <MaterialCommunityIcons
+                      name="archive-outline"
+                      size={18}
+                      color="#FFF"
+                    />
+                    <Text style={styles.soloMenuItemText}>Archive Run</Text>
+                  </TouchableOpacity>
+                )}
 
+                {/* Resign — standard solo only (NEVER shown for persistent) */}
+                {!isPersistent && (
+                  <TouchableOpacity
+                    style={[
+                      styles.soloMenuItem,
+                      { backgroundColor: "#FF3B30" },
+                    ]}
+                    onPress={handleResign}
+                  >
+                    <MaterialCommunityIcons
+                      name="flag-outline"
+                      size={18}
+                      color="#FFF"
+                    />
+                    <Text style={styles.soloMenuItemText}>Resign</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Return to Hub — persistent solo gets friendlier label */}
+                {isPersistent && (
+                  <TouchableOpacity
+                    style={[
+                      styles.soloMenuItem,
+                      {
+                        backgroundColor: theme.isDark ? "#444" : "#E0E0E0",
+                      },
+                    ]}
+                    onPress={() => {
+                      setSoloMenuVisible(false);
+                      handleSoloSuspendAndLeave();
+                    }}
+                  >
+                    <Ionicons
+                      name="arrow-back"
+                      size={18}
+                      color={theme.isDark ? "#FFF" : "#333"}
+                    />
+                    <Text
+                      style={[
+                        styles.soloMenuItemText,
+                        { color: theme.isDark ? "#FFF" : "#333" },
+                      ]}
+                    >
+                      Save & Return to Hub
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Resume — close menu and continue playing */}
                 <TouchableOpacity
                   style={[
                     styles.soloMenuItem,

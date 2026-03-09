@@ -10,30 +10,11 @@
  * - Feature highlights carousel showing app value
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Button, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
-
-// Feature highlights shown below the CTA buttons
-const FEATURES = [
-  {
-    icon: "message-text-outline" as const,
-    title: "Chat & Connect",
-    desc: "Message friends, create group chats, and share moments",
-  },
-  {
-    icon: "gamepad-variant-outline" as const,
-    title: "Play Games",
-    desc: "Challenge friends to 10+ built-in games",
-  },
-  {
-    icon: "account-group-outline" as const,
-    title: "Build Your Vibe",
-    desc: "Customize your avatar, earn badges, and climb leaderboards",
-  },
-] as const;
 
 export default function WelcomeScreen({ navigation }: any) {
   const theme = useTheme();
@@ -67,7 +48,7 @@ export default function WelcomeScreen({ navigation }: any) {
             variant="displayMedium"
             style={[styles.appName, { color: theme.colors.primary }]}
           >
-            Vibe
+            WIP
           </Text>
 
           <Text
@@ -141,43 +122,6 @@ export default function WelcomeScreen({ navigation }: any) {
           </Button>
         </View>
 
-        {/* ── Feature Highlights ── */}
-        <View style={styles.featuresSection}>
-          {FEATURES.map((feature, index) => (
-            <View key={index} style={styles.featureCard}>
-              <View
-                style={[
-                  styles.featureIconContainer,
-                  { backgroundColor: theme.colors.primaryContainer },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={feature.icon}
-                  size={24}
-                  color={theme.colors.primary}
-                />
-              </View>
-              <View style={styles.featureTextContainer}>
-                <Text
-                  variant="titleSmall"
-                  style={{ color: theme.colors.onBackground }}
-                >
-                  {feature.title}
-                </Text>
-                <Text
-                  variant="bodySmall"
-                  style={{
-                    color: theme.colors.onSurfaceVariant,
-                    lineHeight: 18,
-                  }}
-                >
-                  {feature.desc}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
         {/* ── Footer ── */}
         <Text
           variant="bodySmall"
@@ -200,10 +144,10 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: Spacing.xl,
-    paddingTop: Platform.OS === "ios" ? 80 : 60,
-    paddingBottom: Spacing.xxl,
+    paddingTop: Platform.OS === "ios" ? 160 : 140,
+    paddingBottom: Spacing.xxxl,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     maxWidth: 420,
     alignSelf: "center",
     width: "100%",
@@ -236,7 +180,7 @@ const styles = StyleSheet.create({
   // ── CTA ──
   ctaSection: {
     width: "100%",
-    marginBottom: Spacing.xxl,
+    marginBottom: Spacing.xl,
   },
   primaryBtn: {
     borderRadius: BorderRadius.md,
@@ -265,29 +209,6 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-  },
-
-  // ── Features ──
-  featuresSection: {
-    width: "100%",
-    gap: Spacing.lg,
-    marginBottom: Spacing.xxl,
-  },
-  featureCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-  },
-  featureIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  featureTextContainer: {
-    flex: 1,
-    gap: 2,
   },
 
   // ── Footer ──

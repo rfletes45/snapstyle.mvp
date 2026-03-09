@@ -34,7 +34,6 @@ export type ProfileTabStackParamList = {
   PrivacySettings: undefined;
   BadgeCollection: { userId?: string } | undefined;
   Settings: undefined;
-  Wallet: undefined;
   Tasks: { tab?: "daily" | "monthly" } | undefined;
   Shop: undefined;
   AdminReports: undefined;
@@ -102,6 +101,7 @@ export type MainStackParamList = {
     featuredIds?: string[];
   };
   LevelRewards: undefined;
+  Wallet: undefined;
 };
 
 export type ProfileSetupStackParamList = {

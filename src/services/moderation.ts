@@ -28,7 +28,6 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { getFirestoreInstance, getFunctionsInstance } from "./firebase";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/moderation");
 // =============================================================================

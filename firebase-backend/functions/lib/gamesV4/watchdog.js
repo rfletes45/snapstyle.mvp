@@ -151,6 +151,12 @@ exports.watchdogGamesV4 = functions.pubsub
             // Solo sessions may be suspended/paused — they should NOT be auto-resolved
             // by the watchdog. Solo sessions are resolved explicitly by the player
             // (resign, restart) or remain indefinitely resumable.
+            //
+            // IMPORTANT: Persistent solo sessions (soloMode === "persistent") are
+            // ALWAYS exempt from inactivity auto-resolve. They represent long-lived
+            // idle/incremental games that save on exit and resume later. They should
+            // only become terminal via explicit archiveSoloSessionV4 or restart.
+            // Standard solo sessions are also exempt (existing behaviour).
             if (session.runtimeType !== "turnBased")
                 continue;
             try {

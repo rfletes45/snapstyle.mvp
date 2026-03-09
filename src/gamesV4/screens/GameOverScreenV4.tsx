@@ -16,7 +16,12 @@
  * @module gamesV4/screens/GameOverScreenV4
  */
 
-import { GAME_METADATA, SCOREBOARD_DESCRIPTORS } from "@/gamesV4/constants";
+import UserAvatar from "@/gamesV4/components/UserAvatar";
+import {
+  GAME_METADATA,
+  SCOREBOARD_DESCRIPTORS,
+  isPersistentSoloGame,
+} from "@/gamesV4/constants";
 import { ACHIEVEMENT_BY_TYPE } from "@/gamesV4/data/achievementDefinitions";
 import {
   createGameInvite,
@@ -123,15 +128,18 @@ export default function GameOverScreenV4() {
   const conversationScope = session?.conversationScope ?? "dm";
   const isChatGame = !!conversationId;
   const isSolo = session?.runtimeType === "solo";
+  const isPersistent = gameId ? isPersistentSoloGame(gameId) : false;
 
-  // Winner text
+  // Winner text — persistent solo "win" resolution means the run was archived
   const winnerText = (() => {
     if (!result) return "";
     if (result.resolutionType === "resign") {
+      if (isSolo) return "Game Over";
       return result.winnerIds.includes(uid ?? "")
         ? "Opponent Resigned"
         : "You Resigned";
     }
+    if (isPersistent && result.resolutionType === "win") return "Run Archived";
     if (result.winnerIds.length === 0) return "It's a Draw!";
     if (result.winnerIds.includes(uid ?? "")) return "You Won! 🏆";
     if (isSolo) return "Game Over";
@@ -140,6 +148,9 @@ export default function GameOverScreenV4() {
 
   const winnerColor = (() => {
     if (!result) return theme.isDark ? "#FFF" : "#000";
+    // Persistent solo archive → neutral color (not red)
+    if (isPersistent && result.resolutionType === "win")
+      return theme.isDark ? "#FFF" : "#333";
     if (result.winnerIds.includes(uid ?? "")) return "#34C759";
     if (result.winnerIds.length === 0) return "#FF9500";
     return "#FF3B30";
@@ -425,6 +436,12 @@ export default function GameOverScreenV4() {
                   </Text>
                 </View>
                 <View style={styles.playerInfo}>
+                  <UserAvatar
+                    profilePictureUrl={item.profilePictureUrl}
+                    displayName={item.displayName}
+                    uid={item.uid}
+                    size={28}
+                  />
                   <Text
                     style={[
                       styles.playerName,
@@ -636,24 +653,57 @@ export default function GameOverScreenV4() {
                 { backgroundColor: theme.isDark ? "#1C1C1E" : "#F2F2F7" },
               ]}
             >
-              {myAchievements.map((a, i) => (
-                <View key={`ach-${i}`} style={styles.rewardRow}>
-                  <MaterialCommunityIcons
-                    name="trophy"
-                    size={20}
-                    color="#FF9500"
-                  />
-                  <Text
-                    style={[
-                      styles.rewardText,
-                      { color: theme.isDark ? "#FFF" : "#000" },
-                    ]}
-                  >
-                    {ACHIEVEMENT_BY_TYPE[a.achievementType]?.name ??
-                      a.achievementType}
-                  </Text>
-                </View>
-              ))}
+              {myAchievements.map((a, i) => {
+                const def = ACHIEVEMENT_BY_TYPE[a.achievementType];
+                return (
+                  <View key={`ach-${i}`} style={styles.rewardRow}>
+                    <MaterialCommunityIcons
+                      name="trophy"
+                      size={20}
+                      color="#FF9500"
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.rewardText,
+                          { color: theme.isDark ? "#FFF" : "#000" },
+                        ]}
+                      >
+                        {def?.name ?? a.achievementType}
+                      </Text>
+                      {def?.tokenReward ? (
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: "#FF9500",
+                            fontWeight: "600",
+                            marginTop: 2,
+                          }}
+                        >
+                          +{def.tokenReward} tokens (claim to collect)
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+              <TouchableOpacity
+                style={{
+                  marginTop: 8,
+                  paddingVertical: 8,
+                  paddingHorizontal: 14,
+                  backgroundColor: "#FF9500",
+                  borderRadius: 8,
+                  alignSelf: "center",
+                }}
+                onPress={() => navigation.navigate("AchievementsHub")}
+              >
+                <Text
+                  style={{ color: "#FFF", fontWeight: "700", fontSize: 13 }}
+                >
+                  🏆 Claim Achievements
+                </Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -718,7 +768,11 @@ export default function GameOverScreenV4() {
                     { color: colors.primary },
                   ]}
                 >
-                  {isSolo ? "Play Again" : "Rematch"}
+                  {isSolo
+                    ? isPersistent
+                      ? "Start New Run"
+                      : "Play Again"
+                    : "Rematch"}
                 </Text>
               </>
             )}
@@ -843,7 +897,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   rankText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
-  playerInfo: { flex: 1 },
+  playerInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
   playerName: { fontSize: 15 },
   scoreText: { fontSize: 17, fontWeight: "700" },
   rewardCard: { marginHorizontal: 16, borderRadius: 12, padding: 12, gap: 8 },

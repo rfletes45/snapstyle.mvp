@@ -25,8 +25,8 @@ import {
   CommonActions,
   NavigationContainerRef,
 } from "@react-navigation/native";
-import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -165,14 +165,35 @@ function AppContent() {
   // Show error fallback if boot failed catastrophically
   if (bootError) {
     return (
-      <View style={[styles.container, styles.errorContainer, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.onBackground, fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>
+      <View
+        style={[
+          styles.container,
+          styles.errorContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <Text
+          style={{
+            color: colors.onBackground,
+            fontSize: 18,
+            fontWeight: "bold",
+            marginBottom: 8,
+          }}
+        >
           Something went wrong
         </Text>
-        <Text style={{ color: colors.onBackground, fontSize: 14, textAlign: "center" }}>
+        <Text
+          style={{
+            color: colors.onBackground,
+            fontSize: 14,
+            textAlign: "center",
+          }}
+        >
           {bootError}
         </Text>
-        <Text style={{ color: colors.onBackground, fontSize: 12, marginTop: 16 }}>
+        <Text
+          style={{ color: colors.onBackground, fontSize: 12, marginTop: 16 }}
+        >
           Please restart the app.
         </Text>
       </View>

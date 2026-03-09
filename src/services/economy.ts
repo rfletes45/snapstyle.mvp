@@ -24,7 +24,6 @@ import {
 } from "firebase/firestore";
 import { getFirestoreInstance } from "./firebase";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/economy");
 // =============================================================================
@@ -252,10 +251,14 @@ export function formatTokenAmount(amount: number): string {
 export function getTransactionReasonDisplay(reason: string): string {
   const reasonMap: Record<string, string> = {
     task_reward: "Task Completed",
-    achievement_reward: "Achievement Earned",
+    achievement_reward: "Achievement Claimed",
+    achievement_claim: "Achievement Claimed",
+    level_reward: "Level Reward Claimed",
+    level_reward_claim: "Level Reward Claimed",
     daily_bonus: "Daily Bonus",
     streak_bonus: "Streak Bonus",
     shop_purchase: "Shop Purchase",
+    cosmetic_purchase: "Cosmetic Purchase",
     admin_grant: "Bonus Tokens",
     refund: "Refund",
   };
@@ -270,9 +273,13 @@ export function getTransactionIcon(reason: string): string {
   const iconMap: Record<string, string> = {
     task_reward: "checkbox-marked-circle",
     achievement_reward: "trophy",
+    achievement_claim: "trophy",
+    level_reward: "arrow-up-bold-circle",
+    level_reward_claim: "arrow-up-bold-circle",
     daily_bonus: "calendar-check",
     streak_bonus: "fire",
     shop_purchase: "shopping",
+    cosmetic_purchase: "palette",
     admin_grant: "gift",
     refund: "cash-refund",
   };

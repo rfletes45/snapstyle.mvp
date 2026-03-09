@@ -2,7 +2,7 @@
 
 > **Purpose:** Everything an external AI agent or developer needs to implement a new game that integrates seamlessly into the SnapStyle Games V4 system — from adapter code to Firestore schemas to QA checklists.
 >
-> **Source of truth:** This document was generated from a full codebase audit (2026-03-04). When in doubt, the code wins over this doc.
+> **Source of truth:** This document was generated from a full codebase audit (2026-03-04, updated 2026-03-07 with wallet/achievement claim synchronization fixes). When in doubt, the code wins over this doc.
 >
 > **Companion docs:**
 >
@@ -81,12 +81,16 @@ Before reading further, familiarize yourself with the project structure:
 | `src/gamesV4/hooks/useGameStatsV4.ts`              | Aggregated stats hook                                                                                                                            |
 | `src/gamesV4/hooks/usePinnedInvites.ts`            | Pinned invite bar data                                                                                                                           |
 | `src/data/levelRewards.ts`                         | Client mirror of 50 level rewards                                                                                                                |
+| `src/hooks/useWallet.ts`                           | Shared wallet subscription hook (balance + optional transactions)                                                                                |
+| `src/hooks/usePendingRewards.ts`                   | Aggregates unclaimed achievement + level reward counts/tokens                                                                                    |
+| `src/screens/wallet/WalletScreen.tsx`              | Token wallet with pending rewards card, quick actions, activity feed                                                                             |
+| `src/services/economy.ts`                          | Client-side wallet read service + transaction display helpers                                                                                    |
 
 ### Backend — `firebase-backend/functions/src/gamesV4/`
 
 | Path                   | Purpose                                                                                              |
 | ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| `index.ts`             | Barrel exports (14 symbols: 11 callables, 2 triggers, 1 scheduled)                                   |
+| `index.ts`             | Barrel exports (21 symbols: 15 callables, 2 admin callables, 3 triggers, 1 scheduled)                |
 | `adapters.ts`          | Server adapter registry + 3 pilot implementations (851 lines) + serialization                        |
 | `resolve.ts`           | 10-phase resolution chokepoint (757 lines)                                                           |
 | `achievements.ts`      | 18 achievement definitions + evaluator (610 lines)                                                   |
@@ -101,6 +105,7 @@ Before reading further, familiarize yourself with the project structure:
 | `validation.ts`        | Sanitization, cooldowns (197 lines)                                                                  |
 | `types.ts`             | Backend type definitions + constants (278 lines)                                                     |
 | `levelRewardsV4.ts`    | Level rewards definitions + unlock + claim callable (346 lines)                                      |
+| `claimAchievement.ts`  | `claimAchievementV4` callable — transactional achievement reward claim + Transaction audit record    |
 | `claimSectionBadge.ts` | `claimAchievementSectionBadgeV4` callable (121 lines)                                                |
 
 ### Infra
@@ -113,17 +118,18 @@ Before reading further, familiarize yourself with the project structure:
 
 ### Tests — `__tests__/gamesV4/`
 
-| Path                                   | Purpose                 |
-| -------------------------------------- | ----------------------- |
-| `adapters/ticTacToe.test.ts`           | TTT adapter validation  |
-| `adapters/connectFour.test.ts`         | C4 adapter validation   |
-| `adapters/play2048.test.ts`            | 2048 adapter validation |
-| `adapters/registry.test.ts`            | Registry unit tests     |
-| `constants/constants.test.ts`          | Constants integrity     |
-| `validation/validation.test.ts`        | Payload sanitization    |
-| `resolve/resolvePipeline.test.ts`      | Resolution pipeline     |
-| `resolve/achievementEvaluator.test.ts` | Achievement evaluation  |
-| `lobbyBugRegression.test.ts`           | Lobby race conditions   |
+| Path                                   | Purpose                  |
+| -------------------------------------- | ------------------------ |
+| `adapters/ticTacToe.test.ts`           | TTT adapter validation   |
+| `adapters/connectFour.test.ts`         | C4 adapter validation    |
+| `adapters/play2048.test.ts`            | 2048 adapter validation  |
+| `adapters/registry.test.ts`            | Registry unit tests      |
+| `constants/constants.test.ts`          | Constants integrity      |
+| `validation/validation.test.ts`        | Payload sanitization     |
+| `resolve/resolvePipeline.test.ts`      | Resolution pipeline      |
+| `resolve/achievementEvaluator.test.ts` | Achievement evaluation   |
+| `resolve/walletRewardSync.test.ts`     | Wallet/reward claim sync |
+| `lobbyBugRegression.test.ts`           | Lobby race conditions    |
 
 ---
 
@@ -205,17 +211,19 @@ A game is **fully integrated** when all of these are true:
 ┌──────────────────────────────────────────────────────────────┐
 │              Firebase Cloud Functions (Node 20)               │
 │                                                              │
-│  Callables (11):                                             │
+│  Callables (15 user + 2 admin):                              │
 │    createGameInviteV4     joinInviteLobbyV4                  │
 │    leaveInviteLobbyV4     cancelGameInviteV4                 │
 │    startGameFromInviteV4  updateLobbySettingsV4              │
 │    createSoloSessionV4    submitTurnMoveV4                   │
 │    resumeOrCreateSoloV4   suspendSoloSessionV4               │
 │    restartSoloSessionV4   resignSessionV4                    │
-│    claimLevelRewardV4                                        │
+│    claimLevelRewardV4     claimAchievementV4                 │
 │    claimAchievementSectionBadgeV4                            │
+│    adminClearGameV4       adminClearConversationGamesV4      │
 │                                                              │
-│  Triggers: onGameInviteV4Deleted, onSessionV4StatusChanged   │
+│  Triggers: onGameInviteV4Deleted, onSessionV4StatusChanged,  │
+│            onRealtimeResolutionRequest                       │
 │  Scheduled: watchdogGamesV4 (every 30 min)                   │
 │  Internal: resolveSessionV4Internal (single chokepoint)      │
 └───────────┬──────────────────────────────────────────────────┘
@@ -239,6 +247,8 @@ A game is **fully integrated** when all of these are true:
 │  Users/{uid}/InAppNotificationsV4/{notifId}                  │
 │  Users/{uid}/GamePresence/{docId}                            │
 │  Users/{uid}/RateLimits/{action}                             │
+│  Wallets/{uid}                                               │
+│  Transactions/{txId}                                         │
 │  Chats/{id}.pinnedGameInviteIds []                           │
 │  Groups/{id}.pinnedGameInviteIds []                          │
 └──────────────────────────────────────────────────────────────┘
@@ -296,7 +306,7 @@ Everything else (lobby, session lifecycle, resolve pipeline, leaderboards, notif
     - Sends notifications (push + in-app)
 18. **Firestore updated:** Session, invite, result, user levels, leaderboards, PBs, achievements, wallet, stats cache
 19. `GameScreenShell` detects terminal → 1.5s delay → navigates to **Game Over** (`GameOverScreenV4`)
-20. GameOver subscribes to `GameResultsV4/{sessionId}`, displays scoreboard, XP, achievements
+20. GameOver subscribes to `GameResultsV4/{sessionId}`, displays scoreboard, XP, achievements with token values, and "Claim Achievements" button
 21. User taps "Back to Chat" → `CommonActions.reset()` clears stack → returns to chat
 
 ### 3.2 Chat "Game Button" → Auto-Create Invite → Join → Play → Resolve → Return to Chat
@@ -706,12 +716,15 @@ These are **generic** — no changes needed per game:
 | 3     | Compute result: scoreboard, XP, achievements, leaderboard updates | (in-memory)                                       |
 | 4     | Write `GameResultV4`                                              | `GameResultsV4`                                   |
 | 5     | Apply XP, handle level-ups, unlock level rewards                  | `Users/{uid}`, `UserStatsCache`, `LevelRewardsV4` |
+| 5b    | Write achievement docs (`status: "earned_unclaimed"`)             | `Users/{uid}/Achievements`                        |
 | 6     | Update leaderboard entries (weekly, metric-driven)                | `LeaderboardsV4`                                  |
 | 7     | Update personal bests (PB only if improved)                       | `Users/{uid}/GamePB`                              |
 | 8     | Unpin invite from conversation (skipped for solo)                 | `Chats`/`Groups`                                  |
 | 9     | Mark `rewardsProcessed: true`                                     | `GameSessionsV4`                                  |
 | 9.5   | Send achievement unlock in-app notifications                      | `InAppNotificationsV4`                            |
 | 10    | Send resolved push/in-app notifications                           | Push + `InAppNotificationsV4`                     |
+
+> **Note:** Phase 5b writes achievement docs but does **not** credit tokens. Token rewards require a separate manual claim via `claimAchievementV4` (§12.9). Level rewards (Phase 5) are also written as unclaimed (`claimedAt: null`) and require `claimLevelRewardV4` (§12.6).
 
 **Idempotency:** If session is already resolved/abandoned/expired, returns `null` (no-op).
 
@@ -947,9 +960,21 @@ Personal bests — server-written with integrity hash.
   "tokenReward": 10,
   "earnedAt": "...",
   "sourceSessionId": "sess_xyz",
-  "sourceGameId": "tic_tac_toe"
+  "sourceGameId": "tic_tac_toe",
+  "schemaVersion": 2,
+  "status": "earned_unclaimed",
+  "claimedAt": null
 }
 ```
+
+**Schema versions:**
+
+| Version       | Behavior           | `status` field                     | Token grant                                       |
+| ------------- | ------------------ | ---------------------------------- | ------------------------------------------------- |
+| 1 (or absent) | Legacy auto-credit | Not present                        | Tokens credited at earn time                      |
+| 2             | Manual claim       | `"earned_unclaimed"` → `"claimed"` | Tokens credited via `claimAchievementV4` callable |
+
+**Legacy backward compatibility:** Achievements with no `schemaVersion` or `schemaVersion: 1` are treated as already claimed. The `claimAchievementV4` callable detects these and backfills them as `status: "claimed"` without granting duplicate tokens.
 
 ### 7.7 Users/{uid}/AchievementSections/{sectionId}
 
@@ -1032,11 +1057,65 @@ All V4 collection rules are **already generic** — they don't reference specifi
 - `LeaderboardsV4` — any auth read, server-only write
 - `GamePresence` — any auth read, owner write
 - `InAppNotificationsV4` — owner read, server create, owner update (limited fields)
+- `Wallets` — owner read, server-only write
+- `Transactions` — server-only write (user filterable via `userId`)
 - `RateLimits` — fully locked to server
 
 ### 7.13 Required Indexes
 
 All 14 V4 composite indexes are **already generic** — they don't reference game IDs. No new indexes needed for a new game unless you add a custom query pattern.
+
+### 7.14 Wallets/{uid}
+
+Token balance for the user. Server-write-only.
+
+```json
+{
+  "tokensBalance": 350,
+  "totalEarned": 500,
+  "totalSpent": 150,
+  "updatedAt": "..."
+}
+```
+
+**Read pattern (client):** `walletData.tokensBalance ?? walletData.tokens ?? 0` (dual-field for legacy compatibility).
+
+**Written by:** Cloud Functions only — `claimAchievementV4`, `claimLevelRewardV4`, shop purchase callables, task rewards. All writes use `FieldValue.increment()` inside Firestore transactions to prevent race conditions.
+
+### 7.15 Transactions/{txId}
+
+Audit trail for every token balance change. Server-write-only.
+
+```json
+{
+  "userId": "uid_alice",
+  "amount": 25,
+  "reason": "achievement_reward",
+  "description": "Achievement Claimed: First Blood",
+  "type": "credit",
+  "refType": "achievement",
+  "refId": "game_first_win",
+  "sourceType": "achievement_claim",
+  "sourceId": "game_first_win",
+  "metadata": {
+    "achievementType": "game_first_win",
+    "sectionId": "getting_started"
+  },
+  "createdAt": "..."
+}
+```
+
+**`reason` values from game system:**
+
+| Reason               | Source                        | Type   |
+| -------------------- | ----------------------------- | ------ |
+| `achievement_reward` | `claimAchievementV4` callable | credit |
+| `level_reward`       | `claimLevelRewardV4` callable | credit |
+| `cosmetic_purchase`  | Shop purchase callable        | debit  |
+| `task_reward`        | Task completion               | credit |
+| `daily_bonus`        | Daily login bonus             | credit |
+
+**Display helpers** in `src/services/economy.ts`: `getTransactionReasonDisplay()` maps reasons to human-readable labels, `getTransactionIcon()` maps to MaterialCommunityIcons.
 
 ---
 
@@ -1089,7 +1168,9 @@ All 14 V4 composite indexes are **already generic** — they don't reference gam
 2. Pre-increments `totalPlays`/`totalWins` on `GamePB` and `gamesPlayed`/`gamesWon` on `UserStatsCache` **before** evaluation (so milestones fire on the correct game)
 3. For each achievement definition, calls `evaluate()` with context: `{ uid, gameId, session, result, pb, statsCache }`
 4. Skips already-earned achievements (reads `Users/{uid}/Achievements/{type}`)
-5. For each new unlock: writes `Achievements/{type}` doc + increments `Wallets/{uid}.tokensBalance`
+5. For each new unlock: writes `Achievements/{type}` doc with `schemaVersion: 2`, `status: "earned_unclaimed"`, `claimedAt: null`
+
+**Important:** Tokens are **NOT** auto-credited at earn time. The player must manually claim each achievement reward via `claimAchievementV4` (§12.9). This prevents silent token loss and enables the Pending Rewards UI in the wallet.
 
 ### 8.6 Adding Achievements for a New Game
 
@@ -1470,7 +1551,12 @@ Rewards are **NOT auto-claimed**. User must manually claim each via:
 
 1. Validates auth, level range (1–50), user level ≥ requested level
 2. Checks reward doc exists and `claimedAt === null`
-3. Atomic batch: increment `Wallets/{uid}.tokensBalance` + create entitlement (if milestone cosmetic) + set `claimedAt`
+3. **Firestore transaction** (race-condition safe):
+   - Re-reads reward doc inside transaction
+   - Increments `Wallets/{uid}.tokensBalance` and `totalEarned` via `FieldValue.increment()`
+   - Creates entitlement doc (if milestone cosmetic)
+   - Sets `claimedAt` on reward doc
+   - Creates `Transactions/{txId}` audit record with `reason: "level_reward"`, `sourceType: "level_reward_claim"`
 
 ### 12.7 UI Entry Points
 
@@ -1493,6 +1579,76 @@ Rewards are **NOT auto-claimed**. User must manually claim each via:
 
 - [ ] Nothing — XP, leveling, and rewards are fully automatic via the resolve pipeline
 
+### 12.9 Achievement Reward Claiming
+
+Achievements use the **manual claim model** (same as level rewards). When an achievement is unlocked during resolution, it is written with `status: "earned_unclaimed"` and `claimedAt: null`. The player must explicitly claim the token reward.
+
+- **Callable:** `claimAchievementV4({ achievementType })`
+- **Idempotent:** Returns `{ success: true, alreadyClaimed: true }` if already claimed
+- **Batch claim:** Client "Claim All" in `AchievementSectionScreen` iterates unclaimed achievements sequentially
+
+**Claim flow (`claimAchievementV4`):**
+
+1. Validates auth, reads `Users/{uid}/Achievements/{achievementType}`
+2. **Legacy detection:** If doc has no `status` and no `claimedAt`, it's from the old auto-credit model — backfills as `status: "claimed"` without granting tokens
+3. **Fast-path check:** If `status !== "earned_unclaimed"`, returns `alreadyClaimed: true`
+4. **Firestore transaction** (concurrent-safe):
+   - Re-reads achievement doc inside transaction
+   - Updates `status → "claimed"`, sets `claimedAt`
+   - Increments `Wallets/{uid}.tokensBalance` and `totalEarned` via `FieldValue.increment()`
+   - Creates `Transactions/{txId}` audit record with `reason: "achievement_reward"`, `sourceType: "achievement_claim"`
+5. Returns `{ success: true, alreadyClaimed: false, tokenRewardClaimed: N }`
+
+### 12.10 Wallet System
+
+The token wallet is the central balance for all game rewards:
+
+| Field           | Type   | Description               |
+| --------------- | ------ | ------------------------- |
+| `tokensBalance` | number | Current spendable balance |
+| `totalEarned`   | number | Lifetime credits          |
+| `totalSpent`    | number | Lifetime debits           |
+
+**Source of truth:** `Wallets/{uid}.tokensBalance` — server-write-only.
+
+**Token sources:** Achievement claims, level reward claims, task rewards, daily/streak bonuses.
+**Token sinks:** Shop purchases, cosmetic purchases.
+
+All writes use `FieldValue.increment()` inside Firestore transactions to prevent race conditions on concurrent claims.
+
+### 12.11 Client Hooks
+
+| Hook                              | File                             | Purpose                                                                                                                                                                                                                                    |
+| --------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `useWallet(includeTransactions?)` | `src/hooks/useWallet.ts`         | Shared real-time wallet subscription. Returns `{ wallet, transactions, loading, error }`. Subscribes to `Wallets/{uid}` and optionally `Transactions` (ordered by `createdAt` desc).                                                       |
+| `usePendingRewards()`             | `src/hooks/usePendingRewards.ts` | Aggregates unclaimed achievement + level reward counts/tokens. Returns `{ unclaimedAchievementCount, unclaimedAchievementTokens, unclaimedLevelRewardCount, unclaimedLevelRewardTokens, totalPendingTokens, totalPendingCount, loading }`. |
+
+**`usePendingRewards` classification logic:**
+
+- Achievement is "unclaimed" if `schemaVersion >= 2 && status === "earned_unclaimed"`
+- Legacy achievements (no `schemaVersion`) are treated as "claimed" (auto-credited under old model)
+- Level reward is "unclaimed" if `claimedAt === null`
+
+### 12.12 Wallet Screen
+
+`WalletScreen` (`src/screens/wallet/WalletScreen.tsx`) uses both hooks:
+
+| Section             | Content                                                                                       |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| **Hero balance**    | Current balance + lifetime earned/spent stats                                                 |
+| **Pending Rewards** | Amber card showing unclaimed achievement/level reward counts with navigation to claim screens |
+| **Quick Actions**   | 3 cards: Achievements (badge count), Level Rewards (badge count), Shop                        |
+| **Activity**        | Transaction history with All/Earned/Spent filter chips                                        |
+
+### 12.13 Game-Over → Claim Funnel
+
+`GameOverScreenV4` connects the earn → claim flow:
+
+- Achievement unlocks section shows per-achievement **token values** (e.g., "+25 tokens (claim to collect)")
+- A **"Claim Achievements"** navigation button routes to `AchievementsHub`
+- `AchievementsHubScreen` shows **total unclaimed token value** in the progress summary
+- `AchievementSectionScreen` claim actions show token amounts in success alerts and the "Claim All" banner shows the combined total
+
 ---
 
 ## 13. Security (Rules) and Integrity
@@ -1512,6 +1668,8 @@ These collections **cannot** be written by clients:
 | `Users/{uid}/UserStatsCache/stats`                      | Server-computed aggregates        |
 | `Users/{uid}/RateLimits/{action}`                       | Completely locked (server-only)   |
 | `Users/{uid}/LevelRewardsV4/{level}`                    | Via callable only                 |
+| `Wallets/{uid}`                                         | Via callable only                 |
+| `Transactions/{txId}`                                   | Server-only audit trail           |
 | `LeaderboardsV4/**`                                     | Prevents leaderboard manipulation |
 
 ### 13.2 Client-Writable Collections
@@ -1600,7 +1758,8 @@ Session-scoped callables (`submitTurnMove`, `resign`) verify participant members
 - [ ] Scoreboard formatted correctly via `SCOREBOARD_DESCRIPTORS`
 - [ ] XP earned displays (base + bonus)
 - [ ] Level-up callout shows if applicable
-- [ ] Achievement unlocks display with correct names
+- [ ] Achievement unlocks display with correct names and token values
+- [ ] "Claim Achievements" button navigates to AchievementsHub
 - [ ] Action buttons work: Back to Chat / Back to Games / Rematch / Leaderboard / My Stats
 
 #### F. Achievements
@@ -1608,10 +1767,17 @@ Session-scoped callables (`submitTurnMove`, `resign`) verify participant members
 - [ ] `game_first_play` unlocks on first game
 - [ ] `game_first_win` unlocks on first win
 - [ ] Game-specific achievements evaluate correctly
-- [ ] Token rewards credited to wallet
-- [ ] Achievement section shows in Achievements Hub with progress bar
+- [ ] New achievements written with `schemaVersion: 2`, `status: "earned_unclaimed"`
+- [ ] Tokens are NOT auto-credited at earn time (balance unchanged until claim)
+- [ ] Achievement section shows in Achievements Hub with progress bar and total unclaimed token value
+- [ ] Tapping "Claim" on individual achievement credits tokens + shows success alert with amount
+- [ ] Tapping "Claim All" credits all unclaimed tokens + shows combined total
+- [ ] Retry same claim → no duplicate credit (`alreadyClaimed: true`)
+- [ ] Transaction record created in `Transactions/{txId}` with `reason: "achievement_reward"`
+- [ ] Wallet balance updates in real-time after claim
 - [ ] Completing all achievements → "Claim Badge" button works
 - [ ] Section badge appears in profile customization
+- [ ] Legacy achievements (no schemaVersion) show as already claimed, not re-claimable
 
 #### G. Leaderboards
 
@@ -1642,9 +1808,14 @@ Session-scoped callables (`submitTurnMove`, `resign`) verify participant members
 
 - [ ] XP awarded on game end (check Firestore `Users/{uid}.level`)
 - [ ] Level-up computed correctly when threshold crossed
-- [ ] Level rewards unlocked on level-up (`LevelRewardsV4/{level}` docs created)
+- [ ] Level rewards unlocked on level-up (`LevelRewardsV4/{level}` docs created with `claimedAt: null`)
 - [ ] Level rewards claimable via LevelRewards screen
-- [ ] Tokens credited to wallet on claim
+- [ ] Tokens credited to wallet on claim (via Firestore transaction, not batch)
+- [ ] Transaction record created in `Transactions/{txId}` with `reason: "level_reward"`
+- [ ] Milestone cosmetic entitlement created on claim
+- [ ] Retry same claim → no duplicate credit (`alreadyClaimed: true`)
+- [ ] Wallet screen shows pending level reward count in Pending Rewards card
+- [ ] Quick Actions card shows badge count for unclaimed level rewards
 
 #### K. Edge Cases
 
@@ -1665,7 +1836,7 @@ npx jest --testPathPattern=gamesV4
 
 # Specific suites
 npx jest --testPathPattern=gamesV4/adapters     # Adapter validation
-npx jest --testPathPattern=gamesV4/resolve       # Resolution pipeline
+npx jest --testPathPattern=gamesV4/resolve       # Resolution pipeline + wallet/reward sync
 npx jest --testPathPattern=gamesV4/validation    # Payload sanitization
 
 # TypeScript compile checks
@@ -1690,6 +1861,10 @@ cd firebase-backend/functions; npm run build; cd ../..                # Backend
 | Notifications not appearing     | Presence doc suppressing turn, or muted     | Check `GamePresence` doc, mute state                   |
 | 2D array Firestore error        | Missing serialization                       | Use `serializeStateForFirestore()`                     |
 | Scoreboard shows raw numbers    | Missing `SCOREBOARD_DESCRIPTORS`            | `src/gamesV4/constants.ts`                             |
+| Claim returns no tokens         | Achievement is legacy (no schemaVersion)    | Check `Achievements/{type}.schemaVersion` in Firestore |
+| Wallet not updating after claim | `claimAchievementV4` not deployed           | Check Cloud Functions list in Firebase Console         |
+| Transaction not in wallet feed  | Transaction record not created              | Check `Transactions` collection, verify callable code  |
+| Double token grant on claim     | Using batch instead of transaction          | Verify claim uses `db.runTransaction()` not `batch()`  |
 
 ---
 
@@ -2332,10 +2507,17 @@ If a future Expo/RN/Reanimated update fixes the worklet pipeline, this restricti
 | `updateLobbySettingsV4`          | Callable  | Client call      |
 | `startGameFromInviteV4`          | Callable  | Client call      |
 | `createSoloSessionV4`            | Callable  | Client call      |
+| `resumeOrCreateSoloSessionV4`    | Callable  | Client call      |
+| `suspendSoloSessionV4`           | Callable  | Client call      |
+| `restartSoloSessionV4`           | Callable  | Client call      |
 | `submitTurnMoveV4`               | Callable  | Client call      |
 | `resignSessionV4`                | Callable  | Client call      |
 | `claimLevelRewardV4`             | Callable  | Client call      |
+| `claimAchievementV4`             | Callable  | Client call      |
 | `claimAchievementSectionBadgeV4` | Callable  | Client call      |
+| `adminClearGameV4`               | Admin     | Admin call       |
+| `adminClearConversationGamesV4`  | Admin     | Admin call       |
 | `onGameInviteV4Deleted`          | Trigger   | Firestore delete |
 | `onSessionV4StatusChanged`       | Trigger   | Firestore update |
+| `onRealtimeResolutionRequest`    | Trigger   | Firestore create |
 | `watchdogGamesV4`                | Scheduled | Every 30 minutes |

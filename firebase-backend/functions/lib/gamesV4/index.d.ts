@@ -13,7 +13,7 @@ export { claimLevelRewardV4 } from "./levelRewardsV4";
 export { cancelGameInviteV4, joinInviteLobbyV4, leaveInviteLobbyV4, startGameFromInviteV4, updateLobbySettingsV4, } from "./lobby";
 export { adminClearConversationGamesV4, adminClearGameV4 } from "./moderation";
 export { resignSessionV4, resolveRealtimeSessionV4, submitTurnMoveV4, } from "./sessions";
-export { createSoloSessionV4, restartSoloSessionV4, resumeOrCreateSoloSessionV4, suspendSoloSessionV4, } from "./solo";
+export { archiveSoloSessionV4, createSoloSessionV4, restartSoloSessionV4, resumeOrCreateSoloSessionV4, suspendSoloSessionV4, } from "./solo";
 export { onGameInviteV4Deleted, onRealtimeResolutionRequest, onSessionV4StatusChanged, } from "./triggers";
 export { watchdogGamesV4 } from "./watchdog";
 export { resolveSessionV4Internal } from "./resolve";

@@ -8,7 +8,14 @@
  * - Game categories are well-formed
  */
 
-import { COLLECTIONS, GAME_METADATA, XP_CONFIG } from "@/gamesV4/constants";
+import {
+  COLLECTIONS,
+  GAME_METADATA,
+  XP_CONFIG,
+  getGameLifecyclePolicy,
+  getSoloMode,
+  isPersistentSoloGame,
+} from "@/gamesV4/constants";
 
 // =============================================================================
 // Tests
@@ -16,9 +23,9 @@ import { COLLECTIONS, GAME_METADATA, XP_CONFIG } from "@/gamesV4/constants";
 
 describe("V4 Constants & Contracts", () => {
   describe("GAME_METADATA", () => {
-    it("contains exactly 20 games", () => {
+    it("contains exactly 23 games", () => {
       const ids = Object.keys(GAME_METADATA);
-      expect(ids.length).toBe(20);
+      expect(ids.length).toBe(23);
     });
 
     it("every entry has required fields", () => {
@@ -47,6 +54,7 @@ describe("V4 Constants & Contracts", () => {
       "gomoku",
       "reversi",
       "dots_and_boxes",
+      "crazy_eights",
       "pong_game",
       "battleship",
       "sketch_party_game",
@@ -54,6 +62,7 @@ describe("V4 Constants & Contracts", () => {
       "crossword_puzzle",
       "minigolf_duels",
       "dot_match",
+      "solitaire_klondike",
     ];
 
     it("contains all expected game IDs", () => {
@@ -129,6 +138,74 @@ describe("V4 Constants & Contracts", () => {
       expect(COLLECTIONS.MOVES).toBeDefined();
       expect(COLLECTIONS.PUBLIC_STATE).toBeDefined();
       expect(COLLECTIONS.PRIVATE_STATE).toBeDefined();
+    });
+  });
+
+  // ===========================================================================
+  // Persistent Solo — Lifecycle Policy & Helpers
+  // ===========================================================================
+
+  describe("Persistent Solo helpers", () => {
+    it("getSoloMode returns 'standard' for a regular solo game", () => {
+      expect(getSoloMode("play_2048")).toBe("standard");
+    });
+
+    it("getSoloMode returns 'standard' for a multiplayer game", () => {
+      expect(getSoloMode("tic_tac_toe")).toBe("standard");
+    });
+
+    it("isPersistentSoloGame returns false for standard solo games", () => {
+      expect(isPersistentSoloGame("play_2048")).toBe(false);
+      expect(isPersistentSoloGame("brick_breaker")).toBe(false);
+    });
+
+    it("isPersistentSoloGame returns false for multiplayer games", () => {
+      expect(isPersistentSoloGame("chess")).toBe(false);
+      expect(isPersistentSoloGame("tic_tac_toe")).toBe(false);
+    });
+  });
+
+  describe("getGameLifecyclePolicy", () => {
+    it("standard solo: allow resign, auto-resume, no inactivity resolve", () => {
+      const policy = getGameLifecyclePolicy("play_2048");
+      expect(policy.runtimeType).toBe("solo");
+      expect(policy.soloMode).toBe("standard");
+      expect(policy.allowResign).toBe(true);
+      expect(policy.autoResumeExisting).toBe(true);
+      expect(policy.inactivityAutoResolve).toBe(false);
+      expect(policy.suspendOnExit).toBe(true);
+    });
+
+    it("turn-based multiplayer: resign allowed, inactivity resolve on", () => {
+      const policy = getGameLifecyclePolicy("chess");
+      expect(policy.runtimeType).toBe("turnBased");
+      expect(policy.soloMode).toBe("standard");
+      expect(policy.allowResign).toBe(true);
+      expect(policy.inactivityAutoResolve).toBe(true);
+      expect(policy.suspendOnExit).toBe(false);
+    });
+
+    it("standard games have supportsOfflineProgression false", () => {
+      const policy = getGameLifecyclePolicy("play_2048");
+      expect(policy.supportsOfflineProgression).toBe(false);
+    });
+
+    it("all games return a valid policy object shape", () => {
+      for (const gameId of Object.keys(GAME_METADATA)) {
+        const policy = getGameLifecyclePolicy(
+          gameId as import("@/gamesV4/types/common").GameId,
+        );
+        expect(policy).toHaveProperty("runtimeType");
+        expect(policy).toHaveProperty("soloMode");
+        expect(policy).toHaveProperty("allowResign");
+        expect(policy).toHaveProperty("suspendOnExit");
+        expect(policy).toHaveProperty("resolveOnExit");
+        expect(policy).toHaveProperty("autoResumeExisting");
+        expect(policy).toHaveProperty("inactivityAutoResolve");
+        expect(policy).toHaveProperty("showTerminalScreenOnSuspend");
+        expect(policy).toHaveProperty("allowRestart");
+        expect(policy).toHaveProperty("supportsOfflineProgression");
+      }
     });
   });
 });

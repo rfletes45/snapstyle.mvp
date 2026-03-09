@@ -95,7 +95,7 @@ import type { ChatMessageListRef } from "@/components/chat/ChatMessageList";
 import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { ProfilePictureWithDecoration } from "@/components/profile/ProfilePicture";
 import ScheduleMessageModal from "@/components/ScheduleMessageModal";
-import { EmptyState, ErrorState } from "@/components/ui";
+import { ErrorState } from "@/components/ui";
 
 // Services
 import { getUserProfileByUid } from "@/services/friends";
@@ -1108,6 +1108,22 @@ export default function GroupChatScreen({ route, navigation }: Props) {
         : incomingStyle!.fontFamily;
 
       if (item.kind === "system") {
+        // Defensive: extract displayText from legacy JSON-encoded system
+        // payloads that may still exist in local DB from older builds.
+        let displayText = item.text ?? "";
+        if (displayText.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(displayText);
+            displayText =
+              parsed.displayText ?? parsed.content ?? parsed.text ?? "";
+          } catch {
+            // Not valid JSON – show as-is (last resort)
+          }
+        }
+        // If displayText is still empty or looks like raw data, hide it
+        if (!displayText || displayText.startsWith("{")) {
+          return null;
+        }
         return (
           <View style={styles.systemMessage}>
             <Text
@@ -1119,7 +1135,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
                 },
               ]}
             >
-              {item.text}
+              {displayText}
             </Text>
           </View>
         );
@@ -1510,11 +1526,21 @@ export default function GroupChatScreen({ route, navigation }: Props) {
             }
             ListEmptyComponent={
               <View style={styles.emptyStateContainer}>
-                <EmptyState
-                  icon="chat-outline"
-                  title="No Messages Yet"
-                  subtitle="Be the first to send a message!"
-                />
+                <Text
+                  variant="titleMedium"
+                  style={[styles.emptyTitle, { color: colors.text }]}
+                >
+                  No messages yet
+                </Text>
+                <Text
+                  variant="bodyMedium"
+                  style={[
+                    styles.emptySubtitle,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Be the first to send a message!
+                </Text>
               </View>
             }
             flatListProps={{
@@ -1755,6 +1781,18 @@ const styles = StyleSheet.create({
     transform: [{ scaleY: -1 }],
     flexGrow: 1,
     justifyContent: "center",
+    alignItems: "center",
+    paddingBottom: 48,
+  },
+  emptyTitle: {
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 260,
   },
   avatarSpacer: {
     width: 37,

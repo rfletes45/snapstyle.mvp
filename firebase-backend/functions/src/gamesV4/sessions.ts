@@ -459,13 +459,42 @@ export async function resolveRealtimeSessionV4(
     stats: Record<string, unknown>;
   }>,
 ): Promise<void> {
+  // If a pre-built scoreboard is provided, enrich with profilePictureUrl from
+  // the session's player slots so the result doc carries avatar data.
+  let enrichedScoreboard = scoreboard?.map((e) => ({
+    ...e,
+    profilePictureUrl: null as string | null,
+  }));
+
+  if (enrichedScoreboard) {
+    try {
+      const db = getDb();
+      const sessionSnap = await db
+        .collection(COLLECTIONS.GAME_SESSIONS)
+        .doc(sessionId)
+        .get();
+      if (sessionSnap.exists) {
+        const sessionData = sessionSnap.data() as GameSessionV4;
+        const playerMap = new Map(
+          (sessionData.players ?? []).map((p) => [p.uid, p]),
+        );
+        enrichedScoreboard = enrichedScoreboard.map((e) => ({
+          ...e,
+          profilePictureUrl: playerMap.get(e.uid)?.profilePictureUrl ?? null,
+        }));
+      }
+    } catch (err) {
+      console.warn(
+        "[gamesV4] Failed to enrich realtime scoreboard with profile pics:",
+        err,
+      );
+    }
+  }
+
   await resolveSessionV4Internal({
     sessionId,
     resolutionType,
     winnerIds,
-    scoreboard: scoreboard?.map((e) => ({
-      ...e,
-      profilePictureUrl: null,
-    })),
+    scoreboard: enrichedScoreboard,
   });
 }

@@ -277,14 +277,11 @@ export function fromGroupMessage(msg: GroupMessage): MessageV2 {
   };
 
   // Handle system message metadata
-  if (msg.type === "system" && msg.systemType) {
-    // Store system metadata in text field as JSON
-    messageV2.text = JSON.stringify({
-      type: "system",
-      systemType: msg.systemType,
-      meta: msg.systemMeta,
-      displayText: msg.content,
-    });
+  // Keep the human-readable display text in `text` — never serialize JSON into it.
+  // The original `msg.content` already contains the display string
+  // (e.g. "Alice created the group"), so we leave `text` as-is.
+  if (msg.type === "system") {
+    messageV2.text = msg.content || "";
   }
 
   return messageV2;

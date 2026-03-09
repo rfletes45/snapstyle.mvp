@@ -121,7 +121,12 @@ export default function AchievementSectionScreen() {
     try {
       const result = await claimAchievementReward({ achievementType });
       if (result.alreadyClaimed) {
-        Alert.alert("Already Claimed", "This reward was already collected.");
+        Alert.alert("Already Claimed", "This reward was already claimed.");
+      } else if (result.tokenRewardClaimed > 0) {
+        Alert.alert(
+          "Reward Claimed!",
+          `+${result.tokenRewardClaimed} tokens added to your wallet.`,
+        );
       }
     } catch (err) {
       Alert.alert(
@@ -137,11 +142,17 @@ export default function AchievementSectionScreen() {
     if (unclaimedDefs.length === 0) return;
     setClaimingAll(true);
     let successCount = 0;
+    let totalTokens = 0;
     let failCount = 0;
     for (const def of unclaimedDefs) {
       try {
-        await claimAchievementReward({ achievementType: def.type });
-        successCount++;
+        const result = await claimAchievementReward({
+          achievementType: def.type,
+        });
+        if (!result.alreadyClaimed) {
+          successCount++;
+          totalTokens += result.tokenRewardClaimed || 0;
+        }
       } catch {
         failCount++;
       }
@@ -150,7 +161,12 @@ export default function AchievementSectionScreen() {
     if (failCount > 0) {
       Alert.alert(
         "Claim Results",
-        `Claimed ${successCount} reward${successCount !== 1 ? "s" : ""}. ${failCount} failed — try again.`,
+        `Claimed ${successCount} reward${successCount !== 1 ? "s" : ""} (+${totalTokens} tokens). ${failCount} failed — try again.`,
+      );
+    } else if (successCount > 0) {
+      Alert.alert(
+        "All Rewards Claimed!",
+        `+${totalTokens} tokens added to your wallet.`,
       );
     }
   }, [unclaimedDefs]);
@@ -425,15 +441,26 @@ export default function AchievementSectionScreen() {
               size={20}
               color="#FF9500"
             />
-            <Text
-              style={[
-                styles.claimAllText,
-                { color: theme.isDark ? "#FFD0A0" : "#E65100" },
-              ]}
-            >
-              {unclaimedDefs.length} unclaimed reward
-              {unclaimedDefs.length !== 1 ? "s" : ""}
-            </Text>
+            <View>
+              <Text
+                style={[
+                  styles.claimAllText,
+                  { color: theme.isDark ? "#FFD0A0" : "#E65100" },
+                ]}
+              >
+                {unclaimedDefs.length} unclaimed reward
+                {unclaimedDefs.length !== 1 ? "s" : ""}
+              </Text>
+              <Text
+                style={[
+                  styles.claimAllSubtext,
+                  { color: theme.isDark ? "#CCA050" : "#BF360C" },
+                ]}
+              >
+                +{unclaimedDefs.reduce((sum, d) => sum + d.tokenReward, 0)}{" "}
+                tokens
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             style={styles.claimAllButton}
@@ -508,6 +535,11 @@ const styles = StyleSheet.create({
   claimAllText: {
     fontSize: 13,
     fontWeight: "600",
+  },
+  claimAllSubtext: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 1,
   },
   claimAllButton: {
     backgroundColor: "#FF9500",

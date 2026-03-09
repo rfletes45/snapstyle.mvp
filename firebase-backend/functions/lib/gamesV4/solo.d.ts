@@ -1,12 +1,22 @@
 /**
- * Games V4 — Solo Session Creation
+ * Games V4 — Solo Session Callables
  *
- * Callable: createSoloSessionV4
+ * Supports two solo modes:
+ * - "standard" — current run-based behaviour (2048, Minesweeper, etc.)
+ * - "persistent" — long-lived idle/incremental (no games currently use this)
  *
- * Creates a GameSessionV4 directly for a solo game (e.g. 2048),
- * bypassing the invite system entirely. Solo games don't need
- * lobbies, invites, or conversation pinning — the player taps
- * "Play" from the Games Hub and immediately enters the game.
+ * Persistent solo games:
+ * - always save/suspend on exit (no resign, no resolve)
+ * - resume the same active session on re-entry
+ * - support deterministic offline progression on resume
+ * - finalize only via explicit archiveSoloSessionV4
+ *
+ * Callables:
+ *   createSoloSessionV4
+ *   resumeOrCreateSoloSessionV4
+ *   restartSoloSessionV4
+ *   suspendSoloSessionV4
+ *   archiveSoloSessionV4  (NEW — persistent solo finalization)
  *
  * @module gamesV4/solo
  */
@@ -31,3 +41,21 @@ export declare const restartSoloSessionV4: functions.HttpsFunction & functions.R
  * Sets `soloSuspendedAt` timestamp. Does NOT resolve the session.
  */
 export declare const suspendSoloSessionV4: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * Explicitly archive/finalize a persistent solo run.
+ *
+ * This is the ONLY path that creates a terminal result for persistent solo.
+ * Exiting the game, suspending, or being idle does NOT resolve the session.
+ *
+ * Steps:
+ *  1. Validate ownership and session state.
+ *  2. Optionally run adapter.archiveRun() for custom summary/scoreboard.
+ *  3. Delegate to resolveSessionV4Internal (the single chokepoint) to:
+ *     - Mark session resolved
+ *     - Create GameResultV4
+ *     - Compute XP, achievements, leaderboards, PBs
+ *  4. Return success + sessionId for the client to navigate to Game Over.
+ *
+ * Only valid for persistent solo sessions (soloMode === "persistent").
+ */
+export declare const archiveSoloSessionV4: functions.HttpsFunction & functions.Runnable<any>;

@@ -1,7 +1,8 @@
-/**
+﻿/**
  * Premium Shop Screen
  *
  * Main screen for browsing and purchasing items with real money (IAP).
+ * Polished premium storefront with curated cosmetic presentation.
  *
  * Features:
  * - Tab navigation (Tokens, Bundles, Exclusives, Gifts)
@@ -20,7 +21,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -28,7 +31,11 @@ import {
   View,
 } from "react-native";
 import { Text } from "react-native-paper";
-import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -37,7 +44,7 @@ import {
   PurchaseConfirmationModal,
   TokenPackCard,
 } from "@/components/shop";
-import { EmptyState, LoadingState } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import type { CosmeticBundle } from "@/data/cosmeticBundles";
 import { usePremiumShop } from "@/hooks";
 import { useAuth } from "@/store/AuthContext";
@@ -59,9 +66,6 @@ type NavigationProp = NativeStackNavigationProp<
   "PremiumShop"
 >;
 
-/**
- * Tab configuration for premium shop
- */
 interface PremiumTab {
   id: string;
   label: string;
@@ -78,6 +82,8 @@ type SelectedItem =
 // =============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const CARD_GAP = 12;
+const EXCLUSIVE_CARD_WIDTH = (SCREEN_WIDTH - 32 - CARD_GAP) / 2;
 
 const TABS: PremiumTab[] = [
   { id: "tokens", label: "Tokens", icon: "gold" },
@@ -86,19 +92,25 @@ const TABS: PremiumTab[] = [
   { id: "gifts", label: "Gifts", icon: "gift" },
 ];
 
-// Premium shop gradient colors
-const PREMIUM_GRADIENT: readonly [string, string, ...string[]] = [
-  "#1a0a2e",
+const PREMIUM_HEADER_GRADIENT: readonly [string, string, ...string[]] = [
+  "#2a1052",
+  "#1a0a3e",
   "#0d0d1a",
 ];
+
+const PREM = {
+  gold: "#FFD700",
+  purple: "#B24BF3",
+  purpleLight: "#D084FF",
+  purpleDark: "#7B1FA2",
+  surface: "rgba(180, 100, 255, 0.08)",
+  surfaceBorder: "rgba(180, 100, 255, 0.15)",
+} as const;
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-/**
- * Map bundle theme to rarity
- */
 function themeToRarity(
   theme: string,
 ): "common" | "rare" | "epic" | "legendary" | "mythic" {
@@ -115,9 +127,6 @@ function themeToRarity(
   }
 }
 
-/**
- * Convert PremiumBundle to CosmeticBundle format for the confirmation modal
- */
 function mapPremiumBundleToCosmeticBundle(
   bundle: PremiumBundle,
 ): CosmeticBundle {
@@ -135,7 +144,7 @@ function mapPremiumBundleToCosmeticBundle(
       rarity: item.rarity,
       priceTokens: 0,
     })),
-    priceTokens: 0, // Premium bundles are IAP only
+    priceTokens: 0,
     originalPriceTokens: 0,
     discountPercent: bundle.savingsPercent,
     priceUSD: bundle.basePriceUSD,
@@ -156,7 +165,6 @@ export default function PremiumShopScreen() {
   const { currentFirebaseUser } = useAuth();
   const user = currentFirebaseUser;
 
-  // Premium shop hook
   const {
     catalog,
     tokenPacks,
@@ -174,47 +182,38 @@ export default function PremiumShopScreen() {
     refresh,
   } = usePremiumShop(user?.uid);
 
-  // Local state
   const [activeTab, setActiveTab] = useState(0);
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // Current tab
   const currentTab = TABS[activeTab];
 
-  // Handle back navigation
   const handleBack = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
 
-  // Handle tab change
   const handleTabChange = useCallback((index: number) => {
     setActiveTab(index);
   }, []);
 
-  // Handle token pack press
   const handleTokenPackPress = useCallback((pack: TokenPack) => {
     setSelectedItem({ type: "token_pack", item: pack });
     setShowPurchaseModal(true);
   }, []);
 
-  // Handle bundle press
   const handleBundlePress = useCallback((bundle: PremiumBundle) => {
     setSelectedItem({ type: "bundle", item: bundle });
     setShowPurchaseModal(true);
   }, []);
 
-  // Handle exclusive press
   const handleExclusivePress = useCallback((item: PremiumExclusiveItem) => {
     setSelectedItem({ type: "exclusive", item: item });
     setShowPurchaseModal(true);
   }, []);
 
-  // Handle purchase confirmation
   const handlePurchase = useCallback(async () => {
     if (!selectedItem) return;
-
     try {
       switch (selectedItem.type) {
         case "token_pack":
@@ -227,21 +226,18 @@ export default function PremiumShopScreen() {
           await purchaseExclusive(selectedItem.item.id);
           break;
       }
-
       setShowPurchaseModal(false);
       setSelectedItem(null);
-    } catch (err) {
+    } catch (_err) {
       // Error handled by hook
     }
   }, [selectedItem, purchaseTokenPack, purchaseBundle, purchaseExclusive]);
 
-  // Handle purchase modal close
   const handleClosePurchaseModal = useCallback(() => {
     setShowPurchaseModal(false);
     setSelectedItem(null);
   }, []);
 
-  // Handle restore purchases
   const handleRestorePurchases = useCallback(async () => {
     setIsRestoring(true);
     try {
@@ -251,33 +247,49 @@ export default function PremiumShopScreen() {
     }
   }, [restorePurchases]);
 
-  // Render header
+  // === Hero Header ===
   const renderHeader = () => (
     <LinearGradient
-      colors={PREMIUM_GRADIENT}
-      style={[styles.header, { paddingTop: insets.top + 12 }]}
+      colors={PREMIUM_HEADER_GRADIENT}
+      style={[styles.header, { paddingTop: insets.top + 8 }]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
     >
-      <TouchableOpacity style={styles.headerButton} onPress={handleBack}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
-      </TouchableOpacity>
-
-      <Text style={styles.headerTitle}>Premium Shop</Text>
-
-      <TouchableOpacity
-        style={styles.headerButton}
-        onPress={handleRestorePurchases}
-        disabled={isRestoring}
-      >
-        <MaterialCommunityIcons
-          name="restore"
-          size={24}
-          color={isRestoring ? "#666" : "#fff"}
-        />
-      </TouchableOpacity>
+      <View style={styles.headerNav}>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={handleBack}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={handleRestorePurchases}
+          disabled={isRestoring}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <MaterialCommunityIcons
+            name="restore"
+            size={22}
+            color={isRestoring ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.7)"}
+          />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.headerBranding}>
+        <MaterialCommunityIcons name="diamond-stone" size={28} color={PREM.gold} />
+        <Text style={styles.headerTitle}>Premium Collection</Text>
+        <Text style={styles.headerSubtitle}>Exclusive cosmetics & limited editions</Text>
+      </View>
+      <View style={styles.headerDivider}>
+        <View style={styles.headerDividerLine} />
+        <MaterialCommunityIcons name="diamond" size={10} color={PREM.purpleLight} />
+        <View style={styles.headerDividerLine} />
+      </View>
     </LinearGradient>
   );
 
-  // Render tabs
+  // === Tab Bar ===
   const renderTabs = () => (
     <View style={styles.tabsContainer}>
       <ScrollView
@@ -285,61 +297,86 @@ export default function PremiumShopScreen() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.tabsContent}
       >
-        {TABS.map((tab, index) => (
-          <TouchableOpacity
-            key={tab.id}
-            style={[
-              styles.tab,
-              activeTab === index && styles.tabActive,
-              activeTab === index && {
-                backgroundColor: SHOP_COLORS.premium.primary + "30",
-              },
-            ]}
-            onPress={() => handleTabChange(index)}
-          >
-            <MaterialCommunityIcons
-              name={tab.icon}
-              size={20}
-              color={
-                activeTab === index
-                  ? SHOP_COLORS.premium.primary
-                  : colors.textSecondary
-              }
-            />
-            <Text
-              style={[
-                styles.tabLabel,
-                {
-                  color:
-                    activeTab === index
-                      ? SHOP_COLORS.premium.primary
-                      : colors.textSecondary,
-                },
-              ]}
+        {TABS.map((tab, index) => {
+          const isActive = activeTab === index;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.tab, isActive && styles.tabActive]}
+              onPress={() => handleTabChange(index)}
+              activeOpacity={0.7}
             >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              {isActive && (
+                <LinearGradient
+                  colors={["rgba(178,75,243,0.25)", "rgba(178,75,243,0.08)"]}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                />
+              )}
+              <MaterialCommunityIcons
+                name={tab.icon}
+                size={18}
+                color={isActive ? PREM.purpleLight : "rgba(255,255,255,0.35)"}
+              />
+              <Text
+                style={[
+                  styles.tabLabel,
+                  {
+                    color: isActive ? "#fff" : "rgba(255,255,255,0.35)",
+                    fontWeight: isActive ? "700" : "500",
+                  },
+                ]}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </View>
   );
 
-  // Render token packs section
+  // === Section Header ===
+  const renderSectionHeader = (
+    title: string,
+    subtitle: string,
+    icon: keyof typeof MaterialCommunityIcons.glyphMap,
+  ) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleRow}>
+        <View style={styles.sectionIconBg}>
+          <MaterialCommunityIcons name={icon} size={18} color={PREM.purpleLight} />
+        </View>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      </View>
+      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+    </View>
+  );
+
+  // === Premium Empty State ===
+  const renderPremiumEmpty = (
+    icon: keyof typeof MaterialCommunityIcons.glyphMap,
+    title: string,
+    subtitle: string,
+  ) => (
+    <View style={styles.premiumEmptyState}>
+      <MaterialCommunityIcons name={icon} size={48} color={PREM.purpleLight} />
+      <Text style={styles.premiumEmptyTitle}>{title}</Text>
+      <Text style={styles.premiumEmptySubtitle}>{subtitle}</Text>
+    </View>
+  );
+
+  // === Token Packs ===
   const renderTokenPacks = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        Token Packs
-      </Text>
-      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-        Get tokens to spend in the Shop
-      </Text>
-
+      {renderSectionHeader("Token Packs", "Get tokens to spend in the Shop", "gold")}
       <View style={styles.tokenPacksGrid}>
         {tokenPacks.map((pack, index) => (
           <Animated.View
             key={pack.id}
-            entering={FadeInDown.delay(index * 100).duration(300)}
+            entering={FadeInDown.delay(index * 80).duration(350)}
+            style={styles.tokenPackWrapper}
           >
             <TokenPackCard
               id={pack.id}
@@ -356,28 +393,18 @@ export default function PremiumShopScreen() {
     </Animated.View>
   );
 
-  // Render bundles section
+  // === Bundles ===
   const renderBundles = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        Premium Bundles
-      </Text>
-      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-        Great value packs with exclusive items
-      </Text>
-
+      {renderSectionHeader("Premium Bundles", "Curated collections with exclusive items", "package-variant")}
       {bundles.length === 0 ? (
-        <EmptyState
-          icon="package-variant"
-          title="No Bundles Available"
-          subtitle="Check back soon for new bundles!"
-        />
+        renderPremiumEmpty("package-variant", "No Bundles Available", "New premium bundles are added regularly. Check back soon!")
       ) : (
         <View style={styles.bundlesContainer}>
           {bundles.map((bundle, index) => (
             <Animated.View
               key={bundle.id}
-              entering={FadeInDown.delay(index * 100).duration(300)}
+              entering={FadeInDown.delay(index * 100).duration(350)}
             >
               <PremiumBundleCard
                 bundle={bundle}
@@ -391,28 +418,19 @@ export default function PremiumShopScreen() {
     </Animated.View>
   );
 
-  // Render exclusives section
+  // === Exclusives ===
   const renderExclusives = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        Exclusive Items
-      </Text>
-      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-        Premium-only items you can&apos;t get anywhere else
-      </Text>
-
+      {renderSectionHeader("Exclusive Items", "Premium-only cosmetics you can't get anywhere else", "star-circle")}
       {exclusives.length === 0 ? (
-        <EmptyState
-          icon="star-circle"
-          title="No Exclusives Available"
-          subtitle="Check back soon for exclusive items!"
-        />
+        renderPremiumEmpty("star-circle", "No Exclusives Available", "Exclusive premium items drop periodically. Stay tuned!")
       ) : (
         <View style={styles.exclusivesGrid}>
           {exclusives.map((item, index) => (
             <Animated.View
               key={item.id}
-              entering={FadeInDown.delay(index * 100).duration(300)}
+              entering={FadeInDown.delay(index * 80).duration(350)}
+              style={styles.exclusiveCardWrapper}
             >
               <PremiumExclusiveCard
                 item={item}
@@ -426,57 +444,75 @@ export default function PremiumShopScreen() {
     </Animated.View>
   );
 
-  // Render gifts section
+  // === Gifts ===
   const renderGifts = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        Gift Shop
-      </Text>
-      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-        Send gifts to your friends
-      </Text>
-
+      {renderSectionHeader("Gift Shop", "Send gifts to your friends", "gift")}
       <View style={styles.giftComingSoon}>
-        <MaterialCommunityIcons
-          name="gift-outline"
-          size={64}
-          color={SHOP_COLORS.premium.primary}
-        />
-        <Text style={[styles.comingSoonTitle, { color: colors.text }]}>
-          Coming Soon!
-        </Text>
+        <View style={styles.giftIconContainer}>
+          <LinearGradient
+            colors={["rgba(178,75,243,0.2)", "rgba(178,75,243,0.05)"]}
+            style={styles.giftIconGlow}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+          />
+          <MaterialCommunityIcons name="gift-outline" size={56} color={PREM.purpleLight} />
+        </View>
+        <Text style={[styles.comingSoonTitle, { color: colors.text }]}>Coming Soon</Text>
         <Text style={[styles.comingSoonText, { color: colors.textSecondary }]}>
-          Gift tokens and exclusive items to your friends. Stay tuned!
+          Gift tokens and exclusive items to your friends. We're putting the finishing touches on this feature!
         </Text>
       </View>
     </Animated.View>
   );
 
-  // Render content based on active tab
+  // === Content Router ===
   const renderContent = () => {
     if (loading) {
-      return <LoadingState message="Loading premium shop..." />;
+      return (
+        <Animated.View entering={FadeIn.duration(300)} style={styles.premiumLoadingContainer}>
+          <View style={styles.premiumLoadingGlow}>
+            <LinearGradient
+              colors={["rgba(178,75,243,0.15)", "transparent"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
+          </View>
+          <MaterialCommunityIcons name="diamond-stone" size={36} color={PREM.purpleLight} />
+          <ActivityIndicator size="small" color={PREM.purpleLight} style={{ marginTop: 16 }} />
+          <Text style={styles.premiumLoadingText}>Loading premium collection...</Text>
+        </Animated.View>
+      );
     }
 
     if (error) {
       return (
-        <EmptyState
-          icon="alert-circle"
-          title="Failed to Load"
-          subtitle={error.message || "Please try again later"}
-          actionLabel="Retry"
-          onAction={refresh}
-        />
+        <Animated.View entering={FadeIn.duration(300)} style={styles.premiumErrorContainer}>
+          <View style={styles.premiumErrorIcon}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#EF5350" />
+          </View>
+          <Text style={styles.premiumErrorTitle}>Unable to Load</Text>
+          <Text style={styles.premiumErrorSubtitle}>
+            {error.message || "Something went wrong. Please try again."}
+          </Text>
+          <TouchableOpacity style={styles.premiumRetryButton} onPress={refresh} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="refresh" size={18} color="#fff" />
+            <Text style={styles.premiumRetryText}>Try Again</Text>
+          </TouchableOpacity>
+        </Animated.View>
       );
     }
 
     if (!iapReady) {
       return (
-        <EmptyState
-          icon="store-off"
-          title="Store Not Available"
-          subtitle="In-app purchases are not available on this device"
-        />
+        <Animated.View entering={FadeIn.duration(300)} style={styles.premiumErrorContainer}>
+          <View style={[styles.premiumErrorIcon, { backgroundColor: "rgba(255,255,255,0.05)" }]}>
+            <MaterialCommunityIcons name="store-off-outline" size={48} color="rgba(255,255,255,0.35)" />
+          </View>
+          <Text style={styles.premiumErrorTitle}>Store Unavailable</Text>
+          <Text style={styles.premiumErrorSubtitle}>In-app purchases are not available on this device.</Text>
+        </Animated.View>
       );
     }
 
@@ -495,29 +531,25 @@ export default function PremiumShopScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: "#0D0D1A" }]}>
       {renderHeader()}
       {renderTabs()}
-
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + 24 },
-        ]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={loading}
             onRefresh={refresh}
-            tintColor={SHOP_COLORS.premium.primary}
+            tintColor={PREM.purpleLight}
+            progressBackgroundColor="#1a1a2e"
           />
         }
       >
         {renderContent()}
       </ScrollView>
 
-      {/* Purchase Modal */}
       {selectedItem && (
         <PurchaseConfirmationModal
           visible={showPurchaseModal}
@@ -582,93 +614,230 @@ export default function PremiumShopScreen() {
 // =============================================================================
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
+  container: { flex: 1 },
+
+  // Header
+  header: { paddingHorizontal: 16, paddingBottom: 16 },
+  headerNav: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    alignItems: "center",
+    marginBottom: 16,
   },
   headerButton: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    justifyContent: "center",
+    alignItems: "center",
   },
+  headerBranding: { alignItems: "center", paddingBottom: 12, gap: 6 },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 26,
+    fontWeight: "800",
     color: "#fff",
+    letterSpacing: 0.5,
+    textAlign: "center",
   },
+  headerSubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.5)",
+    textAlign: "center",
+    letterSpacing: 0.3,
+  },
+  headerDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 8,
+  },
+  headerDividerLine: {
+    width: 40,
+    height: 1,
+    backgroundColor: "rgba(178,75,243,0.3)",
+  },
+
+  // Tabs
   tabsContainer: {
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(13,13,26,0.95)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(178,75,243,0.12)",
   },
-  tabsContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
+  tabsContent: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   tab: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
-    gap: 6,
-  },
-  tabActive: {
+    borderRadius: 24,
+    gap: 7,
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: SHOP_COLORS.premium.primary + "50",
+    borderColor: "transparent",
   },
-  tabLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-  },
-  section: {
-    marginTop: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+  tabActive: { borderColor: "rgba(178,75,243,0.3)" },
+  tabLabel: { fontSize: 13, letterSpacing: 0.2 },
+
+  // Scroll
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 16 },
+
+  // Sections
+  section: { marginTop: 24 },
+  sectionHeader: { marginBottom: 16 },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     marginBottom: 4,
   },
-  sectionSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
+  sectionIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "rgba(178,75,243,0.12)",
+    justifyContent: "center",
+    alignItems: "center",
   },
+  sectionTitle: { fontSize: 20, fontWeight: "700", letterSpacing: 0.2 },
+  sectionSubtitle: { fontSize: 13, marginTop: 2, marginLeft: 42, lineHeight: 18 },
+
+  // Token Packs
   tokenPacksGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: CARD_GAP,
     justifyContent: "center",
   },
-  bundlesContainer: {
-    gap: 16,
+  tokenPackWrapper: {
+    width: (SCREEN_WIDTH - 32 - CARD_GAP * 2) / 3,
+    minWidth: 100,
   },
-  exclusivesGrid: {
+
+  // Bundles
+  bundlesContainer: { gap: 16 },
+
+  // Exclusives
+  exclusivesGrid: { flexDirection: "row", flexWrap: "wrap", gap: CARD_GAP },
+  exclusiveCardWrapper: { width: EXCLUSIVE_CARD_WIDTH },
+
+  // Empty state
+  premiumEmptyState: {
+    alignItems: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(178,75,243,0.12)",
+    borderStyle: "dashed",
+    backgroundColor: "rgba(178,75,243,0.04)",
+  },
+  premiumEmptyTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.8)",
+    marginTop: 16,
+    textAlign: "center",
+  },
+  premiumEmptySubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.45)",
+    marginTop: 6,
+    textAlign: "center",
+    lineHeight: 18,
+    maxWidth: 260,
+  },
+
+  // Loading
+  premiumLoadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 80,
+  },
+  premiumLoadingGlow: {
+    position: "absolute",
+    top: 20,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    overflow: "hidden",
+  },
+  premiumLoadingText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.45)",
+    marginTop: 12,
+    letterSpacing: 0.3,
+  },
+
+  // Error
+  premiumErrorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+  },
+  premiumErrorIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(239,83,80,0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  premiumErrorTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.85)",
+    textAlign: "center",
+  },
+  premiumErrorSubtitle: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.45)",
+    marginTop: 6,
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 280,
+  },
+  premiumRetryButton: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: "rgba(178,75,243,0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(178,75,243,0.3)",
   },
+  premiumRetryText: { fontSize: 14, fontWeight: "600", color: "#D084FF" },
+
+  // Gifts
   giftComingSoon: {
     alignItems: "center",
     paddingVertical: 48,
-    gap: 12,
+    paddingHorizontal: 24,
+    gap: 8,
   },
-  comingSoonTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+  giftIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
   },
+  giftIconGlow: { ...StyleSheet.absoluteFillObject, borderRadius: 48 },
+  comingSoonTitle: { fontSize: 20, fontWeight: "700" },
   comingSoonText: {
     fontSize: 14,
     textAlign: "center",
     maxWidth: 280,
+    lineHeight: 20,
   },
 });

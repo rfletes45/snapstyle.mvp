@@ -21,7 +21,7 @@ import {
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameResultV4, GameSessionV4 } from "@/gamesV4/types";
 import { useAuth } from "@/store/AuthContext";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseGameSessionV4Result {
   /** Live session document. */
@@ -67,23 +67,56 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
     null,
   );
 
+  // Track whether a resign/resolution is in progress so we can suppress
+  // transient Firestore permission errors that occur during the status
+  // transition (e.g. snapshot listener fires while security rules evaluate
+  // against the mid-write document). This prevents "Missing Firebase
+  // permissions" from surfacing to the user.
+  const resolvingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Suppressed error setter: ignores permission errors while resolving.
+  const handleSnapshotError = useCallback((err: Error) => {
+    if (resolvingRef.current) {
+      console.warn(
+        "[gamesV4] Suppressed snapshot error during resolution:",
+        err.message,
+      );
+      return;
+    }
+    if (mountedRef.current) {
+      setSubscriptionError(err.message);
+    }
+  }, []);
+
   // Subscribe to session doc
   useEffect(() => {
     if (!sessionId) return;
-    const unsub = subscribeToSession(sessionId, setSession, (err) =>
-      setSubscriptionError(err.message),
+    const unsub = subscribeToSession(
+      sessionId,
+      setSession,
+      handleSnapshotError,
     );
     return unsub;
-  }, [sessionId]);
+  }, [sessionId, handleSnapshotError]);
 
   // Subscribe to public state
   useEffect(() => {
     if (!sessionId) return;
-    const unsub = subscribeToPublicState(sessionId, setPublicState, (err) =>
-      setSubscriptionError(err.message),
+    const unsub = subscribeToPublicState(
+      sessionId,
+      setPublicState,
+      handleSnapshotError,
     );
     return unsub;
-  }, [sessionId]);
+  }, [sessionId, handleSnapshotError]);
 
   // Subscribe to result when session is resolved
   useEffect(() => {
@@ -96,11 +129,22 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
     ) {
       return;
     }
-    const unsub = subscribeToResult(sessionId, setResult, (err) =>
-      setSubscriptionError(err.message),
-    );
+    const unsub = subscribeToResult(sessionId, setResult, handleSnapshotError);
     return unsub;
-  }, [sessionId, session?.status]);
+  }, [sessionId, session?.status, handleSnapshotError]);
+
+  // Clear subscription errors when session reaches terminal — the game is over,
+  // any lingering snapshot error is no longer relevant.
+  useEffect(() => {
+    if (
+      session &&
+      (session.status === "resolved" ||
+        session.status === "abandoned" ||
+        session.status === "expired")
+    ) {
+      setSubscriptionError(null);
+    }
+  }, [session?.status]);
 
   const isTerminal = !!(
     session &&
@@ -165,14 +209,24 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
   );
 
   const resign = useCallback(async () => {
+    resolvingRef.current = true;
     setActionLoading(true);
     setActionError(null);
+    setSubscriptionError(null);
     try {
       await resignSession({ sessionId });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to resign.");
+      if (mountedRef.current) {
+        setActionError(
+          err instanceof Error ? err.message : "Failed to resign.",
+        );
+      }
     } finally {
-      setActionLoading(false);
+      if (mountedRef.current) {
+        setActionLoading(false);
+      }
+      // Keep resolvingRef true — snapshot suppression stays active until
+      // component unmounts or session reaches terminal (cleared above).
     }
   }, [sessionId]);
 

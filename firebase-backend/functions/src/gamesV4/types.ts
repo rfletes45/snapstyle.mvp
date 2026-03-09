@@ -36,6 +36,13 @@ export type GameId =
   | "dot_match";
 
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";
+
+/**
+ * Solo sub-mode that controls session lifecycle policy.
+ * "standard"   — current behaviour (run-based, resign allowed).
+ * "persistent" — long-lived idle/incremental (save on exit, resume later).
+ */
+export type SoloMode = "standard" | "persistent";
 export type SpectateMode = "public_only" | "post_game_only" | "full_state";
 export type TimestampLike = number | FirebaseFirestore.Timestamp;
 
@@ -188,6 +195,20 @@ export interface GameSessionV4 {
    * Null when actively playing. Set on suspend, cleared on resume.
    */
   soloSuspendedAt?: TimestampLike | null;
+
+  // ── Persistent solo fields ─────────────────────────────────────────────────────
+
+  /** Solo sub-mode ("standard" | "persistent"). */
+  soloMode?: SoloMode;
+
+  /** Timestamp of the last server-side simulation tick (epoch ms). */
+  lastSimulatedAt?: TimestampLike | null;
+
+  /** Timestamp when the run was first opened (epoch ms). */
+  runStartedAt?: TimestampLike | null;
+
+  /** Timestamp of the last server-side save (epoch ms). */
+  lastServerSaveAt?: TimestampLike | null;
 }
 
 export interface MoveDoc {
@@ -335,6 +356,8 @@ export const LEADERBOARD_METRICS: Partial<Record<GameId, LeaderboardMetric>> = {
   chess: "wins",
   sketch_party_game: "bestScore",
   battleship: "wins",
+  brick_breaker: "bestScore",
+  crazy_eights: "wins",
   minigolf_duels: "bestScore",
   minesweeper: "bestScore",
   solitaire_klondike: "bestScore",

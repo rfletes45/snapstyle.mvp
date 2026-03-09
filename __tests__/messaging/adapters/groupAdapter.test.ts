@@ -318,13 +318,8 @@ describe("fromGroupMessage", () => {
       const v2 = fromGroupMessage(legacy);
 
       expect(v2.kind).toBe("system");
-      expect(v2.text).toContain("system");
-
-      const parsed = JSON.parse(v2.text!);
-      expect(parsed.type).toBe("system");
-      expect(parsed.systemType).toBe("member_joined");
-      expect(parsed.displayText).toBe("John joined the group");
-      expect(parsed.meta.targetUid).toBe("user-456");
+      // text should contain the human-readable display string, not JSON
+      expect(v2.text).toBe("John joined the group");
     });
   });
 

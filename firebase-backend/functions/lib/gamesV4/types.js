@@ -59,6 +59,8 @@ exports.LEADERBOARD_METRICS = {
     chess: "wins",
     sketch_party_game: "bestScore",
     battleship: "wins",
+    brick_breaker: "bestScore",
+    crazy_eights: "wins",
     minigolf_duels: "bestScore",
     minesweeper: "bestScore",
     solitaire_klondike: "bestScore",

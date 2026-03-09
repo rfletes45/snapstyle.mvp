@@ -1,12 +1,13 @@
-/**
+﻿/**
  * PurchaseConfirmationModal Component
  *
- * Confirms purchase before proceeding with payment.
- * Shows item details, price, and payment method options.
+ * Premium-styled confirmation modal before purchase.
+ * Shows larger item preview, clear price breakdown, and payment method options.
  *
  * @see docs/PROFILE_SCREEN_OVERHAUL_PLAN.md Phase 6
  */
 
+import AppImage from "@/components/AppImage";
 import type { CosmeticBundle } from "@/data/cosmeticBundles";
 import type { ShopItemWithStatus } from "@/types/models";
 import { RARITY_COLORS } from "@/types/profile";
@@ -32,31 +33,42 @@ export type PurchaseType = "item" | "bundle" | "tokens";
 export type PaymentMethod = "tokens" | "iap";
 
 export interface PurchaseConfirmationModalProps {
-  /** Whether modal is visible */
   visible: boolean;
-  /** Handler to close modal */
   onDismiss: () => void;
-  /** Handler when purchase is confirmed */
   onConfirm: (paymentMethod: PaymentMethod) => void;
-  /** Purchase type */
   type: PurchaseType;
-  /** Item being purchased (for single items) */
   item?: ShopItemWithStatus;
-  /** Bundle being purchased */
   bundle?: CosmeticBundle;
-  /** Token pack info */
   tokenPack?: {
     tokens: number;
     bonusTokens: number;
     priceUSD: number;
   };
-  /** User's current token balance */
   tokenBalance: number;
-  /** Whether purchase is in progress */
   purchasing?: boolean;
-  /** Error message to display */
   error?: string | null;
 }
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function isImageUri(path?: string): boolean {
+  if (!path) return false;
+  return (
+    path.startsWith("http") ||
+    path.startsWith("/") ||
+    path.startsWith("file") ||
+    path.includes(".png") ||
+    path.includes(".jpg") ||
+    path.includes(".webp") ||
+    path.includes(".svg")
+  );
+}
+
+// =============================================================================
+// Component
+// =============================================================================
 
 function PurchaseConfirmationModalBase({
   visible,
@@ -73,13 +85,11 @@ function PurchaseConfirmationModalBase({
   const theme = useTheme();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("tokens");
 
-  // Determine prices and availability
   const priceTokens = item?.priceTokens ?? bundle?.priceTokens ?? 0;
   const priceUSD = item?.priceUSD ?? bundle?.priceUSD ?? tokenPack?.priceUSD;
   const canAffordTokens = tokenBalance >= priceTokens;
   const hasIAPOption = !!priceUSD;
 
-  // Auto-select payment method based on availability
   React.useEffect(() => {
     if (!canAffordTokens && hasIAPOption) {
       setPaymentMethod("iap");
@@ -88,79 +98,93 @@ function PurchaseConfirmationModalBase({
     }
   }, [canAffordTokens, hasIAPOption]);
 
-  // Get item details for display
   const itemName = item?.name ?? bundle?.name ?? "Token Pack";
   const itemDescription =
     item?.description ?? bundle?.description ?? "Get more tokens!";
-  const itemImage = item?.imagePath ?? bundle?.imagePath ?? "🪙";
+  const itemImage = item?.imagePath ?? bundle?.imagePath ?? "\u{1FA99}";
   const itemRarity = item?.rarity ?? bundle?.rarity ?? "common";
   const rarityColor = RARITY_COLORS[itemRarity] || "#9E9E9E";
+  const hasRealImage = isImageUri(itemImage);
 
-  // Gradient colors based on rarity
-  const gradientColors: readonly [string, string, ...string[]] = [
-    rarityColor + "40",
-    rarityColor + "10",
-  ];
-
+  // === Item Preview ===
   const renderItemPreview = () => (
-    <LinearGradient
-      colors={gradientColors}
-      style={styles.previewContainer}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-    >
-      <Text style={styles.previewEmoji}>{itemImage}</Text>
-      <Text style={[styles.itemName, { color: theme.colors.onSurface }]}>
-        {itemName}
-      </Text>
-      {itemDescription && (
-        <Text
-          style={[
-            styles.itemDescription,
-            { color: theme.colors.onSurfaceVariant },
-          ]}
-          numberOfLines={2}
-        >
-          {itemDescription}
-        </Text>
-      )}
+    <View style={styles.previewSection}>
+      <LinearGradient
+        colors={[rarityColor + "30", rarityColor + "08"]}
+        style={styles.previewContainer}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      >
+        {/* Rarity glow */}
+        <View style={[styles.previewGlow, { backgroundColor: rarityColor + "20" }]} />
+
+        {/* Preview frame */}
+        <View style={[styles.previewFrame, { borderColor: rarityColor + "40" }]}>
+          {hasRealImage ? (
+            <AppImage
+              source={{ uri: itemImage }}
+              style={styles.previewImage}
+              contentFit="contain"
+              debugLabel="PurchasePreview"
+            />
+          ) : (
+            <Text style={styles.previewEmoji}>{itemImage}</Text>
+          )}
+        </View>
+
+        {/* Item name + rarity */}
+        <View style={styles.previewInfo}>
+          <Text style={[styles.itemName, { color: theme.colors.onSurface }]}>
+            {itemName}
+          </Text>
+          <View style={[styles.rarityPill, { backgroundColor: rarityColor + "20" }]}>
+            <View style={[styles.rarityDot, { backgroundColor: rarityColor }]} />
+            <Text style={[styles.rarityText, { color: rarityColor }]}>
+              {itemRarity.charAt(0).toUpperCase() + itemRarity.slice(1)}
+            </Text>
+          </View>
+          {itemDescription && (
+            <Text
+              style={[styles.itemDescription, { color: theme.colors.onSurfaceVariant }]}
+              numberOfLines={2}
+            >
+              {itemDescription}
+            </Text>
+          )}
+        </View>
+      </LinearGradient>
 
       {/* Bundle items preview */}
-      {bundle && (
-        <View style={styles.bundleItems}>
-          <Text
-            style={[
-              styles.bundleItemsLabel,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
+      {bundle && bundle.items.length > 0 && (
+        <View style={styles.bundleItemsSection}>
+          <Text style={[styles.bundleLabel, { color: theme.colors.onSurfaceVariant }]}>
             Includes {bundle.items.length} items
           </Text>
           <View style={styles.bundleItemsRow}>
-            {bundle.items.slice(0, 4).map((bundleItem) => (
-              <View
-                key={bundleItem.cosmeticId}
-                style={[
-                  styles.bundleItemBubble,
-                  {
-                    backgroundColor:
-                      RARITY_COLORS[bundleItem.rarity] + "30" || "#9E9E9E30",
-                  },
-                ]}
-              >
-                <Text style={styles.bundleItemEmoji}>
-                  {bundleItem.imagePath}
-                </Text>
-              </View>
-            ))}
-            {bundle.items.length > 4 && (
-              <Text
-                style={[
-                  styles.moreItems,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                +{bundle.items.length - 4} more
+            {bundle.items.slice(0, 5).map((bundleItem) => {
+              const bColor = RARITY_COLORS[bundleItem.rarity] || "#9E9E9E";
+              const bHasImage = isImageUri(bundleItem.imagePath);
+              return (
+                <View
+                  key={bundleItem.cosmeticId}
+                  style={[styles.bundleItemBubble, { borderColor: bColor + "40" }]}
+                >
+                  {bHasImage ? (
+                    <AppImage
+                      source={{ uri: bundleItem.imagePath }}
+                      style={styles.bundleItemImage}
+                      contentFit="contain"
+                      debugLabel="BundleConfirmItem"
+                    />
+                  ) : (
+                    <Text style={styles.bundleItemEmoji}>{bundleItem.imagePath}</Text>
+                  )}
+                </View>
+              );
+            })}
+            {bundle.items.length > 5 && (
+              <Text style={[styles.moreItems, { color: theme.colors.onSurfaceVariant }]}>
+                +{bundle.items.length - 5}
               </Text>
             )}
           </View>
@@ -170,181 +194,126 @@ function PurchaseConfirmationModalBase({
       {/* Token pack display */}
       {tokenPack && (
         <View style={styles.tokenPackInfo}>
-          <Text style={styles.tokenAmount}>
-            {tokenPack.tokens.toLocaleString()} 🪙
-          </Text>
+          <View style={styles.tokenPackRow}>
+            <Text style={styles.tokenPackEmoji}>{"\u{1FA99}"}</Text>
+            <Text style={styles.tokenAmount}>
+              {tokenPack.tokens.toLocaleString()}
+            </Text>
+          </View>
           {tokenPack.bonusTokens > 0 && (
-            <Text style={[styles.bonusTokens, { color: "#4CAF50" }]}>
-              +{tokenPack.bonusTokens.toLocaleString()} Bonus!
+            <Text style={styles.bonusTokens}>
+              +{tokenPack.bonusTokens.toLocaleString()} Bonus Tokens
             </Text>
           )}
         </View>
       )}
-    </LinearGradient>
+    </View>
   );
 
+  // === Price Section ===
   const renderPriceSection = () => (
     <View style={styles.priceSection}>
       <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
         Price
       </Text>
 
-      {/* Original price (if discounted) */}
       {bundle && bundle.discountPercent > 0 && (
         <View style={styles.originalPriceRow}>
-          <Text
-            style={[
-              styles.originalPrice,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            Original: {bundle.originalPriceTokens.toLocaleString()} 🪙
+          <Text style={[styles.originalPrice, { color: theme.colors.onSurfaceVariant }]}>
+            Original: {bundle.originalPriceTokens.toLocaleString()} {"\u{1FA99}"}
           </Text>
-          <View style={[styles.savingsBadge, { backgroundColor: "#4CAF50" }]}>
-            <Text style={styles.savingsText}>
-              Save {bundle.discountPercent}%
-            </Text>
+          <View style={styles.savingsBadge}>
+            <Text style={styles.savingsText}>Save {bundle.discountPercent}%</Text>
           </View>
         </View>
       )}
 
-      {/* Current price */}
       {priceTokens > 0 && (
         <View style={styles.priceRow}>
           <Text style={[styles.priceValue, { color: rarityColor }]}>
-            {priceTokens.toLocaleString()} 🪙
+            {priceTokens.toLocaleString()} {"\u{1FA99}"}
           </Text>
           {!canAffordTokens && (
-            <Text
-              style={[styles.insufficientFunds, { color: theme.colors.error }]}
-            >
+            <Text style={[styles.insufficientFunds, { color: theme.colors.error }]}>
               (Need {(priceTokens - tokenBalance).toLocaleString()} more)
             </Text>
           )}
         </View>
       )}
 
-      {/* USD price option */}
       {priceUSD && (
-        <Text
-          style={[styles.usdPrice, { color: theme.colors.onSurfaceVariant }]}
-        >
+        <Text style={[styles.usdPrice, { color: theme.colors.onSurfaceVariant }]}>
           or ${priceUSD.toFixed(2)} USD
         </Text>
       )}
     </View>
   );
 
+  // === Payment Options ===
   const renderPaymentOptions = () => {
-    // Only show options if both are available
     if (!hasIAPOption || type === "tokens") {
       return null;
     }
-
     return (
       <View style={styles.paymentSection}>
         <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
           Payment Method
         </Text>
-
         <RadioButton.Group
           onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}
           value={paymentMethod}
         >
-          {/* Tokens option */}
-          <View
+          <Pressable
+            onPress={() => canAffordTokens && setPaymentMethod("tokens")}
             style={[
               styles.paymentOption,
-              paymentMethod === "tokens" && {
-                backgroundColor: theme.colors.primaryContainer,
-              },
+              paymentMethod === "tokens" && { backgroundColor: theme.colors.primaryContainer },
               !canAffordTokens && { opacity: 0.5 },
             ]}
           >
-            <RadioButton.Android
-              value="tokens"
-              disabled={!canAffordTokens}
-              color={theme.colors.primary}
-            />
+            <RadioButton.Android value="tokens" disabled={!canAffordTokens} color={theme.colors.primary} />
             <View style={styles.paymentOptionContent}>
-              <Text
-                style={[
-                  styles.paymentOptionTitle,
-                  { color: theme.colors.onSurface },
-                ]}
-              >
+              <Text style={[styles.paymentOptionTitle, { color: theme.colors.onSurface }]}>
                 Pay with Tokens
               </Text>
-              <Text
-                style={[
-                  styles.paymentOptionSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Balance: {tokenBalance.toLocaleString()} 🪙
+              <Text style={[styles.paymentOptionSubtitle, { color: theme.colors.onSurfaceVariant }]}>
+                Balance: {tokenBalance.toLocaleString()} {"\u{1FA99}"}
               </Text>
             </View>
             {!canAffordTokens && (
-              <MaterialCommunityIcons
-                name="alert-circle-outline"
-                size={20}
-                color={theme.colors.error}
-              />
+              <MaterialCommunityIcons name="alert-circle-outline" size={20} color={theme.colors.error} />
             )}
-          </View>
+          </Pressable>
 
-          {/* Real money option */}
-          <View
+          <Pressable
+            onPress={() => setPaymentMethod("iap")}
             style={[
               styles.paymentOption,
-              paymentMethod === "iap" && {
-                backgroundColor: theme.colors.primaryContainer,
-              },
+              paymentMethod === "iap" && { backgroundColor: theme.colors.primaryContainer },
             ]}
           >
             <RadioButton.Android value="iap" color={theme.colors.primary} />
             <View style={styles.paymentOptionContent}>
-              <Text
-                style={[
-                  styles.paymentOptionTitle,
-                  { color: theme.colors.onSurface },
-                ]}
-              >
+              <Text style={[styles.paymentOptionTitle, { color: theme.colors.onSurface }]}>
                 Pay ${priceUSD?.toFixed(2)}
               </Text>
-              <Text
-                style={[
-                  styles.paymentOptionSubtitle,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
+              <Text style={[styles.paymentOptionSubtitle, { color: theme.colors.onSurfaceVariant }]}>
                 Credit card / App Store
               </Text>
             </View>
-          </View>
+          </Pressable>
         </RadioButton.Group>
       </View>
     );
   };
 
+  // === Error ===
   const renderError = () => {
     if (!error) return null;
-
     return (
-      <View
-        style={[
-          styles.errorContainer,
-          { backgroundColor: theme.colors.errorContainer },
-        ]}
-      >
-        <MaterialCommunityIcons
-          name="alert-circle"
-          size={20}
-          color={theme.colors.error}
-        />
-        <Text
-          style={[styles.errorText, { color: theme.colors.onErrorContainer }]}
-        >
+      <View style={[styles.errorContainer, { backgroundColor: theme.colors.errorContainer }]}>
+        <MaterialCommunityIcons name="alert-circle" size={20} color={theme.colors.error} />
+        <Text style={[styles.errorText, { color: theme.colors.onErrorContainer }]}>
           {error}
         </Text>
       </View>
@@ -360,40 +329,28 @@ function PurchaseConfirmationModalBase({
       <Modal
         visible={visible}
         onDismiss={onDismiss}
-        contentContainerStyle={[
-          styles.modal,
-          { backgroundColor: theme.colors.surface },
-        ]}
+        contentContainerStyle={[styles.modal, { backgroundColor: theme.colors.surface }]}
       >
         <ScrollView showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-              Confirm Purchase
-            </Text>
-            <Pressable onPress={onDismiss} style={styles.closeButton}>
-              <MaterialCommunityIcons
-                name="close"
-                size={24}
-                color={theme.colors.onSurfaceVariant}
-              />
+            <View style={styles.headerLeft}>
+              <MaterialCommunityIcons name="diamond-stone" size={20} color={rarityColor} />
+              <Text style={[styles.title, { color: theme.colors.onSurface }]}>
+                Confirm Purchase
+              </Text>
+            </View>
+            <Pressable onPress={onDismiss} style={styles.closeButton} hitSlop={8}>
+              <MaterialCommunityIcons name="close" size={22} color={theme.colors.onSurfaceVariant} />
             </Pressable>
           </View>
 
           <Divider />
 
-          {/* Item Preview */}
           {renderItemPreview()}
-
-          {/* Price Section */}
           {renderPriceSection()}
-
           <Divider style={styles.divider} />
-
-          {/* Payment Options */}
           {renderPaymentOptions()}
-
-          {/* Error */}
           {renderError()}
 
           {/* Action Buttons */}
@@ -412,22 +369,18 @@ function PurchaseConfirmationModalBase({
               style={styles.confirmButton}
               disabled={isConfirmDisabled}
               loading={purchasing}
+              icon={paymentMethod === "iap" ? "diamond-stone" : undefined}
             >
               {purchasing
                 ? "Processing..."
                 : paymentMethod === "tokens"
-                  ? `Pay ${priceTokens.toLocaleString()} 🪙`
+                  ? `Pay ${priceTokens.toLocaleString()} \u{1FA99}`
                   : `Pay $${priceUSD?.toFixed(2)}`}
             </Button>
           </View>
 
           {/* Disclaimer */}
-          <Text
-            style={[
-              styles.disclaimer,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
+          <Text style={[styles.disclaimer, { color: theme.colors.onSurfaceVariant }]}>
             {paymentMethod === "iap"
               ? "Payment will be processed through your app store account."
               : "Tokens will be deducted from your balance immediately."}
@@ -438,11 +391,16 @@ function PurchaseConfirmationModalBase({
   );
 }
 
+// =============================================================================
+// Styles
+// =============================================================================
+
 const styles = StyleSheet.create({
   modal: {
     margin: 20,
-    borderRadius: 16,
-    maxHeight: "80%",
+    borderRadius: 20,
+    maxHeight: "85%",
+    overflow: "hidden",
   },
   header: {
     flexDirection: "row",
@@ -450,38 +408,100 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
   },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
   },
   closeButton: {
     padding: 4,
   },
+
+  // Preview
+  previewSection: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
   previewContainer: {
+    borderRadius: 16,
     padding: 24,
     alignItems: "center",
+    overflow: "hidden",
+    position: "relative",
+  },
+  previewGlow: {
+    position: "absolute",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: "10%",
+  },
+  previewFrame: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    overflow: "hidden",
+    marginBottom: 14,
+  },
+  previewImage: {
+    width: 80,
+    height: 80,
   },
   previewEmoji: {
-    fontSize: 64,
-    marginBottom: 12,
+    fontSize: 52,
+  },
+  previewInfo: {
+    alignItems: "center",
   },
   itemName: {
     fontSize: 18,
     fontWeight: "700",
     textAlign: "center",
+    marginBottom: 6,
+  },
+  rarityPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 5,
+    marginBottom: 8,
+  },
+  rarityDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  rarityText: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   itemDescription: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: "center",
-    marginTop: 4,
+    lineHeight: 18,
   },
-  bundleItems: {
+
+  // Bundle items
+  bundleItemsSection: {
     marginTop: 16,
     alignItems: "center",
   },
-  bundleItemsLabel: {
+  bundleLabel: {
     fontSize: 12,
-    marginBottom: 8,
+    fontWeight: "600",
+    marginBottom: 10,
   },
   bundleItemsRow: {
     flexDirection: "row",
@@ -489,38 +509,61 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   bundleItemBubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    overflow: "hidden",
+  },
+  bundleItemImage: {
+    width: 34,
+    height: 34,
   },
   bundleItemEmoji: {
-    fontSize: 18,
+    fontSize: 20,
   },
   moreItems: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: "600",
   },
+
+  // Token pack
   tokenPackInfo: {
     marginTop: 16,
     alignItems: "center",
   },
-  tokenAmount: {
+  tokenPackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  tokenPackEmoji: {
     fontSize: 28,
-    fontWeight: "700",
+  },
+  tokenAmount: {
+    fontSize: 30,
+    fontWeight: "800",
     color: "#FFD700",
   },
   bonusTokens: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
+    color: "#4CAF50",
     marginTop: 4,
   },
+
+  // Price
   priceSection: {
     padding: 16,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
     marginBottom: 12,
   },
   originalPriceRow: {
@@ -535,13 +578,14 @@ const styles = StyleSheet.create({
   savingsBadge: {
     marginLeft: 8,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 8,
+    backgroundColor: "#4CAF50",
   },
   savingsText: {
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
   },
   priceRow: {
     flexDirection: "row",
@@ -560,8 +604,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   divider: {
-    marginVertical: 8,
+    marginVertical: 4,
   },
+
+  // Payment
   paymentSection: {
     padding: 16,
     paddingTop: 8,
@@ -579,24 +625,29 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   paymentOptionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
   },
   paymentOptionSubtitle: {
     fontSize: 12,
+    marginTop: 1,
   },
+
+  // Error
   errorContainer: {
     flexDirection: "row",
     alignItems: "center",
     margin: 16,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     gap: 8,
   },
   errorText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
   },
+
+  // Actions
   actions: {
     flexDirection: "row",
     padding: 16,
@@ -613,6 +664,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 16,
     paddingBottom: 16,
+    lineHeight: 15,
   },
 });
 

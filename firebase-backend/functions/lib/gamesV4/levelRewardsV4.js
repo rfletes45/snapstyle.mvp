@@ -220,55 +220,100 @@ exports.claimLevelRewardV4 = functions.https.onCall(async (data, context) => {
         });
     }
     const rewardData = rewardSnap.data();
-    // Idempotent: already claimed
+    // Idempotent: already claimed (fast-path)
     if (rewardData.claimedAt !== null) {
         return { success: true, alreadyClaimed: true };
     }
-    // Atomic claim: tokens + cosmetic + claimedAt
-    const walletRef = db.collection("Wallets").doc(uid);
-    const now = admin.firestore.Timestamp.now();
-    const batch = db.batch();
-    // 1. Grant tokens
-    if (rewardData.tokenReward > 0) {
-        batch.set(walletRef, {
-            tokensBalance: admin.firestore.FieldValue.increment(rewardData.tokenReward),
-            totalEarned: admin.firestore.FieldValue.increment(rewardData.tokenReward),
-            updatedAt: Date.now(),
-        }, { merge: true });
-    }
-    // 2. Grant cosmetic entitlement (if milestone)
-    if (rewardData.cosmeticItemId) {
-        const entRef = db
-            .collection("Users")
-            .doc(uid)
-            .collection("Entitlements")
-            .doc(rewardData.cosmeticItemId);
-        // Only create if not already entitled (idempotent)
-        const entSnap = await entRef.get();
-        if (!entSnap.exists) {
-            batch.set(entRef, {
-                cosmeticId: rewardData.cosmeticItemId,
-                type: inferCosmeticType(rewardData.cosmeticItemId),
-                grantedAt: now,
-                source: "milestone",
-                metadata: { levelReward: level },
+    // ─── Transactional claim: tokens + cosmetic + claimedAt + audit ────
+    const claimResult = await db.runTransaction(async (txn) => {
+        // Re-read inside transaction to prevent double-claim race
+        const txnSnap = await txn.get(rewardRef);
+        if (!txnSnap.exists) {
+            return { success: false, error: "reward-missing" };
+        }
+        const txnData = txnSnap.data();
+        // Re-check claimed state inside transaction
+        if (txnData.claimedAt !== null) {
+            return { success: true, alreadyClaimed: true };
+        }
+        const now = admin.firestore.Timestamp.now();
+        const walletRef = db.collection("Wallets").doc(uid);
+        // 1. Grant tokens
+        if (txnData.tokenReward > 0) {
+            txn.set(walletRef, {
+                tokensBalance: admin.firestore.FieldValue.increment(txnData.tokenReward),
+                totalEarned: admin.firestore.FieldValue.increment(txnData.tokenReward),
+                updatedAt: Date.now(),
+            }, { merge: true });
+        }
+        // 2. Grant cosmetic entitlement (if milestone)
+        if (txnData.cosmeticItemId) {
+            const entRef = db
+                .collection("Users")
+                .doc(uid)
+                .collection("Entitlements")
+                .doc(txnData.cosmeticItemId);
+            const entSnap = await txn.get(entRef);
+            if (!entSnap.exists) {
+                txn.set(entRef, {
+                    cosmeticId: txnData.cosmeticItemId,
+                    type: inferCosmeticType(txnData.cosmeticItemId),
+                    grantedAt: now,
+                    source: "milestone",
+                    metadata: { levelReward: level },
+                });
+            }
+        }
+        // 3. Mark as claimed
+        txn.update(rewardRef, { claimedAt: now });
+        // 4. Write Transaction audit record
+        if (txnData.tokenReward > 0) {
+            const def = getRewardDefinition(level);
+            const txnDocRef = db.collection("Transactions").doc();
+            txn.set(txnDocRef, {
+                uid,
+                type: "earn",
+                amount: txnData.tokenReward,
+                reason: "level_reward",
+                description: def?.isMilestone
+                    ? `Level ${level} Milestone Reward`
+                    : `Level ${level} Reward`,
+                refId: String(level),
+                refType: "level_reward",
+                createdAt: now,
+                transactionId: txnDocRef.id,
+                sourceType: "level_reward_claim",
+                sourceId: String(level),
+                metadata: {
+                    level,
+                    isMilestone: def?.isMilestone ?? false,
+                    cosmeticItemId: txnData.cosmeticItemId,
+                },
             });
         }
-    }
-    // 3. Mark as claimed
-    batch.update(rewardRef, { claimedAt: now });
-    await batch.commit();
-    functions.logger.info("[levelRewardsV4] Reward claimed", {
-        uid,
-        level,
-        tokens: rewardData.tokenReward,
-        cosmetic: rewardData.cosmeticItemId,
+        return {
+            success: true,
+            alreadyClaimed: false,
+            tokensGranted: txnData.tokenReward,
+            cosmeticGranted: txnData.cosmeticItemId,
+        };
     });
+    if (claimResult.error) {
+        return { success: false, error: claimResult.error };
+    }
+    if (!claimResult.alreadyClaimed && (claimResult.tokensGranted ?? 0) > 0) {
+        functions.logger.info("[levelRewardsV4] Reward claimed", {
+            uid,
+            level,
+            tokens: claimResult.tokensGranted,
+            cosmetic: claimResult.cosmeticGranted,
+        });
+    }
     return {
-        success: true,
-        alreadyClaimed: false,
-        tokensGranted: rewardData.tokenReward,
-        cosmeticGranted: rewardData.cosmeticItemId,
+        success: claimResult.success,
+        alreadyClaimed: claimResult.alreadyClaimed,
+        tokensGranted: claimResult.tokensGranted,
+        cosmeticGranted: claimResult.cosmeticGranted,
     };
 });
 // =============================================================================

@@ -46,6 +46,17 @@ export type GameId =
 /** Runtime classification for a game. */
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";
 
+/**
+ * Solo sub-mode that controls session lifecycle policy.
+ *
+ * - "standard"   — current behaviour: run-based, resign allowed, sessions
+ *                   may be resolved on exit or restart.
+ * - "persistent" — long-lived idle/incremental: always save on exit,
+ *                   resume on re-entry, no resign action, explicit
+ *                   archive/reset flow for finalization.
+ */
+export type SoloMode = "standard" | "persistent";
+
 /** Spectate mode controlling what spectators can see. */
 export type SpectateMode = "public_only" | "post_game_only" | "full_state";
 

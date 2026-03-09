@@ -18,6 +18,7 @@ import type {
   IntegrityEnvelope,
   PlayerSlot,
   ScoreSummaryEntry,
+  SoloMode,
   SpectateMode,
   SpectatorSlot,
   TimestampLike,
@@ -188,6 +189,33 @@ export interface GameSessionV4 {
    * Null when actively playing. Set on suspend, cleared on resume.
    */
   soloSuspendedAt?: TimestampLike | null;
+
+  // ── Persistent solo fields ────────────────────────────────────────────
+
+  /**
+   * Solo sub-mode controlling lifecycle policy.
+   * Omitted or "standard" = current default. "persistent" = long-lived idle/incremental.
+   */
+  soloMode?: SoloMode;
+
+  /**
+   * Timestamp of the last server-side simulation tick (epoch ms).
+   * Used to compute deterministic offline progression on resume.
+   * Only relevant for games with `supportsOfflineProgression`.
+   */
+  lastSimulatedAt?: TimestampLike | null;
+
+  /**
+   * Timestamp when the session was first opened (epoch ms).
+   * Distinct from createdAt for future season-rollover logic.
+   */
+  runStartedAt?: TimestampLike | null;
+
+  /**
+   * Timestamp of the last server-side save (epoch ms).
+   * Used for staleness checks and dedup guards.
+   */
+  lastServerSaveAt?: TimestampLike | null;
 }
 
 // =============================================================================

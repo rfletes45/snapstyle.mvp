@@ -36,7 +36,6 @@ import { GroupCallLayout, GroupCallParticipant } from "@/types/call";
 import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const auth = getAuthInstance();
 
 type GroupCallRouteParams = {
   GroupCall: {
@@ -66,7 +65,7 @@ export function GroupCallScreen(): JSX.Element {
   const { callId, groupName, isOutgoing } = route.params;
   const colors = useColors();
 
-  const currentUserId = auth.currentUser?.uid || "";
+  const currentUserId = getAuthInstance().currentUser?.uid || "";
 
   // Call context
   const { currentCall, isReconnecting, reconnectionAttempts, networkQuality } =

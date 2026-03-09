@@ -198,10 +198,13 @@ export default function ShopHubScreen() {
           Shop
         </Text>
 
-        {/* Wallet Balance */}
-        <View
+        {/* Wallet Balance — tappable, navigates to Wallet screen */}
+        <Pressable
           style={styles.walletContainer}
-          accessibilityLabel={`Token balance: ${walletLoading ? "loading" : walletError ? "error" : (wallet?.tokensBalance?.toLocaleString() ?? "0")}`}
+          onPress={() => navigation.navigate("Wallet")}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Token balance: ${walletLoading ? "loading" : walletError ? "error" : (wallet?.tokensBalance?.toLocaleString() ?? "0")}. Tap to open wallet`}
         >
           <MaterialCommunityIcons
             name="star-circle"
@@ -224,7 +227,7 @@ export default function ShopHubScreen() {
                 ? "Error"
                 : (wallet?.tokensBalance?.toLocaleString() ?? "0")}
           </Text>
-        </View>
+        </Pressable>
       </Animated.View>
 
       {/* Content */}

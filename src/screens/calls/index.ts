@@ -70,11 +70,25 @@ let VideoCallScreen: React.ComponentType<any>;
 let GroupCallScreen: React.ComponentType<any>;
 
 if (areNativeCallsAvailable) {
-  // Only require native modules on supported platforms
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  VideoCallScreen = require("./VideoCallScreen").VideoCallScreen;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  GroupCallScreen = require("./GroupCallScreen").GroupCallScreen;
+  // Only require native modules on supported platforms.
+  // Wrapped in try-catch so a module-scope crash in any call screen
+  // (e.g. missing native module, premature Firebase access) cannot
+  // kill the entire app before React even renders.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    VideoCallScreen = require("./VideoCallScreen").VideoCallScreen;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    GroupCallScreen = require("./GroupCallScreen").GroupCallScreen;
+  } catch (e) {
+    console.error("[CallScreens] Failed to load native call screens:", e);
+    // Fall through to stub screens below
+    VideoCallScreen = function VideoCallScreenUnavailable() {
+      return React.createElement(UnavailableScreen, { screenName: "Video Calls" });
+    };
+    GroupCallScreen = function GroupCallScreenUnavailable() {
+      return React.createElement(UnavailableScreen, { screenName: "Group Calls" });
+    };
+  }
 } else {
   // Provide stub screens for web/Expo Go
   VideoCallScreen = function VideoCallScreenUnavailable() {

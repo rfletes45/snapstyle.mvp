@@ -15,6 +15,7 @@ export type {
   ParticipantSummary,
   PlayerSlot,
   ScoreSummaryEntry,
+  SoloMode,
   SpectateMode,
   SpectatorSlot,
   TimestampLike,

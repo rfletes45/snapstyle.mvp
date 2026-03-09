@@ -297,6 +297,25 @@ export async function suspendSoloSession(params: {
   }
 }
 
+/**
+ * Archive/finalize a persistent solo session.
+ *
+ * This explicitly ends a long-lived run, computes the final summary,
+ * creates a GameResultV4 doc, and processes rewards/PBs/achievements.
+ *
+ * Only valid for persistent solo sessions (soloMode === "persistent").
+ */
+export async function archiveSoloSession(params: {
+  sessionId: string;
+}): Promise<{ success: boolean; resultSessionId: string }> {
+  const fn = httpsCallable<
+    typeof params,
+    { success: boolean; resultSessionId: string }
+  >(getFunctionsInstance(), "archiveSoloSessionV4");
+  const result = await fn(params);
+  return result.data;
+}
+
 // =============================================================================
 // Admin / Moderation callables
 // =============================================================================
@@ -541,6 +560,42 @@ export function subscribeToMyActiveInvites(
     (snap) => {
       const invites = snap.docs.map((d) => d.data() as GameInviteV4);
       onData(invites);
+    },
+    onError,
+  );
+}
+
+// =============================================================================
+// Active Solo Session Queries (for Hub resume affordances)
+// =============================================================================
+
+/**
+ * Subscribe to the current user's active or suspended solo sessions.
+ * Returns a map of `gameId → sessionId` for games with a resumable session.
+ * Used by the Games Hub to show "Resume" vs "Play Now" labels.
+ */
+export function subscribeToActiveSoloSessions(
+  uid: string,
+  onData: (activeSessions: Record<string, string>) => void,
+  onError?: (err: Error) => void,
+): Unsubscribe {
+  const db = getFirestoreInstance();
+  const q = query(
+    collection(db, COLLECTIONS.GAME_SESSIONS),
+    where("participantUids", "array-contains", uid),
+    where("runtimeType", "==", "solo"),
+    where("status", "in", ["active", "suspended"]),
+    limit(20),
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const map: Record<string, string> = {};
+      for (const d of snap.docs) {
+        const data = d.data() as GameSessionV4;
+        map[data.gameId] = data.sessionId;
+      }
+      onData(map);
     },
     onError,
   );

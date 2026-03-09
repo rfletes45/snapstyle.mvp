@@ -1,10 +1,10 @@
 import type {
   AttachmentRow,
-  MessageSyncStatus,
   MessageRow,
+  MessageSyncStatus,
 } from "@/types/database";
-import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 import { intToBool, parseJsonColumn } from "@/types/database";
+import type { MessageV2, ReplyToMetadata } from "@/types/messaging";
 
 // Keep this as a shared, explicit rule so all runtimes (SQLite-first and
 // Firestore-first) produce stable ordering.
@@ -12,7 +12,29 @@ export function getCanonicalMessageTimestamp(message: MessageV2): number {
   return message.serverReceivedAt || message.createdAt || 0;
 }
 
-export function compareMessagesCanonicalDesc(a: MessageV2, b: MessageV2): number {
+/**
+ * Safely extract display text for system messages.
+ *
+ * Older builds stored JSON-encoded metadata in the `text` column for system
+ * messages (e.g. `{"type":"system","systemType":"groupCreated", ...}`).
+ * This helper detects that pattern and returns the embedded `displayText`
+ * (or `content`) instead, so serialized JSON never leaks to the UI.
+ */
+export function safeSystemText(raw: string | undefined | null): string {
+  if (!raw) return "";
+  if (!raw.startsWith("{")) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.displayText ?? parsed.content ?? parsed.text ?? "";
+  } catch {
+    return raw;
+  }
+}
+
+export function compareMessagesCanonicalDesc(
+  a: MessageV2,
+  b: MessageV2,
+): number {
   const aPrimary = getCanonicalMessageTimestamp(a);
   const bPrimary = getCanonicalMessageTimestamp(b);
   if (aPrimary !== bPrimary) return bPrimary - aPrimary;
@@ -24,7 +46,9 @@ export function compareMessagesCanonicalDesc(a: MessageV2, b: MessageV2): number
   return b.id.localeCompare(a.id);
 }
 
-function getMessageStatusFromSync(syncStatus: MessageSyncStatus): MessageV2["status"] {
+function getMessageStatusFromSync(
+  syncStatus: MessageSyncStatus,
+): MessageV2["status"] {
   if (syncStatus === "pending") return "sending";
   if (syncStatus === "failed") return "failed";
   return "sent";
@@ -72,7 +96,12 @@ export function normalizeMessageFromLocalRow(
     senderId: row.sender_id,
     senderName: row.sender_name || undefined,
     kind: row.kind,
-    text: row.kind === "animal" ? undefined : row.text || undefined,
+    text:
+      row.kind === "animal"
+        ? undefined
+        : row.kind === "system"
+          ? safeSystemText(row.text) || undefined
+          : row.text || undefined,
     animalId: row.kind === "animal" ? row.text || undefined : undefined,
     attachments: row.attachments.map(normalizeAttachmentFromRow),
     createdAt: row.created_at,
@@ -153,18 +182,17 @@ export function normalizeMessageFromFirestoreDoc(
 
   return {
     id,
-    scope:
-      (data.scope as MessageV2["scope"] | undefined) ||
-      scopeHint,
+    scope: (data.scope as MessageV2["scope"] | undefined) || scopeHint,
     conversationId:
-      (data.conversationId as string | undefined) ||
-      conversationIdHint,
-    senderId: (data.senderId as string | undefined) || (data.sender as string) || "",
+      (data.conversationId as string | undefined) || conversationIdHint,
+    senderId:
+      (data.senderId as string | undefined) || (data.sender as string) || "",
     senderName:
       (data.senderName as string | undefined) ||
       (data.senderDisplayName as string | undefined) ||
       undefined,
-    senderAvatarConfig: data.senderAvatarConfig as MessageV2["senderAvatarConfig"],
+    senderAvatarConfig:
+      data.senderAvatarConfig as MessageV2["senderAvatarConfig"],
     kind:
       (data.kind as MessageV2["kind"] | undefined) ||
       (data.type as MessageV2["kind"] | undefined) ||
@@ -186,7 +214,9 @@ export function normalizeMessageFromFirestoreDoc(
     attachments: data.attachments as MessageV2["attachments"],
     mentionUids: data.mentionUids as string[] | undefined,
     mentionSpans: data.mentionSpans as MessageV2["mentionSpans"],
-    reactionsSummary: data.reactionsSummary as Record<string, number> | undefined,
+    reactionsSummary: data.reactionsSummary as
+      | Record<string, number>
+      | undefined,
     linkPreview: data.linkPreview as MessageV2["linkPreview"],
     clientId: (data.clientId as string | undefined) || "",
     idempotencyKey: (data.idempotencyKey as string | undefined) || id,
@@ -206,10 +236,16 @@ function choosePreferredMessage(a: MessageV2, b: MessageV2): MessageV2 {
   if (aTime !== bTime) return aTime > bTime ? a : b;
 
   // Prefer non-local/server-confirmed version when timestamps tie.
-  if ((a.isLocal || a.status === "sending") && !(b.isLocal || b.status === "sending")) {
+  if (
+    (a.isLocal || a.status === "sending") &&
+    !(b.isLocal || b.status === "sending")
+  ) {
     return b;
   }
-  if ((b.isLocal || b.status === "sending") && !(a.isLocal || a.status === "sending")) {
+  if (
+    (b.isLocal || b.status === "sending") &&
+    !(a.isLocal || a.status === "sending")
+  ) {
     return a;
   }
 

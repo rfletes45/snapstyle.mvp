@@ -10,10 +10,12 @@
  * 1. Validates the achievement exists and belongs to the caller
  * 2. Ensures it is earned
  * 3. If already claimed, returns success with alreadyClaimed=true (idempotent)
- * 4. Atomically sets claimedAt + status to "claimed" and increments wallet
+ * 4. Inside a Firestore transaction:
+ *    - Re-reads achievement to prevent race conditions
+ *    - Updates achievement to "claimed"
+ *    - Increments wallet balance
+ *    - Creates an immutable Transaction record for audit
  * 5. Returns structured result
- *
- * Mirrors the safety patterns of claimLevelRewardV4 and claimSectionBadgeV4.
  *
  * @module gamesV4/claimAchievement
  */

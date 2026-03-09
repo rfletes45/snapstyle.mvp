@@ -523,10 +523,12 @@ export type TransactionType = "earn" | "spend";
  */
 export type TransactionReason =
   | "task_reward" // Completed a task
-  | "achievement_reward" // Earned an achievement
+  | "achievement_reward" // Claimed an achievement reward
+  | "level_reward" // Claimed a level reward
   | "daily_bonus" // Daily login bonus
   | "streak_bonus" // Streak milestone bonus
   | "shop_purchase" // Bought item from shop
+  | "cosmetic_purchase" // Bought cosmetic item
   | "admin_grant" // Admin manually granted tokens
   | "refund"; // Refund for failed purchase
 
@@ -542,10 +544,15 @@ export interface Transaction {
   reason: TransactionReason;
   createdAt: number;
   // Optional reference to related item
-  refId?: string; // Task ID, achievement ID, shop item ID, etc.
-  refType?: "task" | "achievement" | "shop_item" | "other";
+  refId?: string; // Task ID, achievement ID, shop item ID, level, etc.
+  refType?: "task" | "achievement" | "level_reward" | "shop_item" | "other";
+  // Source identifiers for traceability
+  sourceType?: string; // e.g. "achievement_claim", "level_reward_claim"
+  sourceId?: string;
   // Description for display
   description?: string;
+  // Additional metadata
+  metadata?: Record<string, unknown>;
 }
 
 // =============================================================================
