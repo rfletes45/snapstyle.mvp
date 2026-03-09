@@ -16,7 +16,10 @@ import { subscribeToUserBan } from "@/services/moderation";
 import { useAuth } from "@/store/AuthContext";
 import { useUser } from "@/store/UserContext";
 import type { Ban } from "@/types/models";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+/** Maximum time (ms) to wait for hydration before force-proceeding */
+const HYDRATION_TIMEOUT_MS = 15_000;
 
 /**
  * Hydration state machine states
@@ -62,6 +65,36 @@ export function AppGate({
   const [ban, setBan] = useState<Ban | null>(null);
   const [banChecked, setBanChecked] = useState(false);
 
+  // Hydration timeout — if auth/profile/ban takes too long, force-proceed
+  // so the user doesn't stare at a loading screen forever.
+  const [timedOut, setTimedOut] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    timeoutRef.current = setTimeout(() => {
+      setTimedOut(true);
+      console.warn(
+        "[AppGate] Hydration timed out after " +
+          HYDRATION_TIMEOUT_MS +
+          "ms — force-proceeding",
+      );
+    }, HYDRATION_TIMEOUT_MS);
+
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  // Clear timeout once hydrated
+  useEffect(() => {
+    if (authHydrated && profileHydrated && banChecked) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    }
+  }, [authHydrated, profileHydrated, banChecked]);
+
   // Subscribe to ban status when user is authenticated
   useEffect(() => {
     if (!currentFirebaseUser?.uid) {
@@ -84,8 +117,8 @@ export function AppGate({
   }, [currentFirebaseUser?.uid]);
 
   const state = useMemo<AppGateState>(() => {
-    // Still loading auth
-    if (authLoading || !authHydrated) {
+    // Still loading auth (unless timed out)
+    if ((authLoading || !authHydrated) && !timedOut) {
       return {
         hydrationState: "loading",
         isHydrated: false,
@@ -112,7 +145,8 @@ export function AppGate({
     // IMPORTANT: Once profileHydrated is true we do NOT fall back to
     // "loading" on a subsequent refreshProfile() call — that would unmount
     // the entire navigation tree and reset the user to the Inbox tab.
-    if (!profileHydrated || !banChecked) {
+    // If timed out, skip waiting and proceed to the app.
+    if ((!profileHydrated || !banChecked) && !timedOut) {
       return {
         hydrationState: "loading",
         isHydrated: false,
@@ -170,6 +204,7 @@ export function AppGate({
     profile,
     ban,
     banChecked,
+    timedOut,
   ]);
 
   // Show loading screen during hydration

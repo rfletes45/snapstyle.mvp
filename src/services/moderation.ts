@@ -105,11 +105,14 @@ export function subscribeToUserBan(
       onUpdate(ban);
     },
     (error) => {
-      // Permission errors mean no ban exists for this user
+      // Permission errors mean no ban exists for this user.
+      // For ANY error (including network/unavailable), treat as "no ban"
+      // so AppGate hydration is never blocked by a Firestore failure.
       if (error.code === "permission-denied") {
         onUpdate(null);
       } else {
         logger.error("[moderation] Error subscribing to ban:", error);
+        onUpdate(null);
       }
     },
   );

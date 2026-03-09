@@ -26,18 +26,32 @@ import {
   NavigationContainerRef,
 } from "@react-navigation/native";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { PaperProvider } from "react-native-paper";
 
+// Keep splash screen visible until we explicitly hide it
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Already hidden or not available — safe to ignore
+});
+
+console.log("[BOOT] Module-level init starting");
+
 // Initialize Firebase synchronously before rendering
-initializeFirebase(firebaseConfig);
+try {
+  initializeFirebase(firebaseConfig);
+  console.log("[BOOT] Firebase initialized");
+} catch (e) {
+  console.error("[BOOT] Firebase init failed:", e);
+}
 
 // Lock the app to portrait at startup. Individual screens (e.g. Tropical
 // Fishing) can temporarily switch to landscape via useScreenOrientation().
 lockToPortrait();
+console.log("[BOOT] lockToPortrait called");
 
 /**
  * Root error handler for ErrorBoundary
@@ -59,17 +73,44 @@ function AppContent() {
 
   // ── Font loading gate ───────────────────────────────────────────────────
   const [fontsReady, setFontsReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    loadCustomFonts().then((ok) => {
-      if (mounted) setFontsReady(true);
-      if (!ok && __DEV__) {
-        console.warn(
-          "[App] Custom fonts failed to load — using system defaults",
-        );
-      }
-    });
+    console.log("[BOOT] Font loading started");
+
+    // Race font loading against a 5-second timeout so a corrupt/missing
+    // font asset can never hang the app indefinitely.
+    const fontTimeout = new Promise<boolean>((resolve) =>
+      setTimeout(() => {
+        console.warn("[BOOT] Font loading timed out after 5s");
+        resolve(false);
+      }, 5_000),
+    );
+
+    Promise.race([loadCustomFonts(), fontTimeout])
+      .then((ok) => {
+        console.log("[BOOT] Font loading completed, success:", ok);
+        if (mounted) setFontsReady(true);
+        if (!ok) {
+          console.warn(
+            "[App] Custom fonts failed to load — using system defaults",
+          );
+        }
+      })
+      .catch((err) => {
+        console.error("[BOOT] Font loading error:", err);
+        if (mounted) {
+          setFontsReady(true); // proceed anyway
+          setBootError("Font loading failed");
+        }
+      })
+      .finally(() => {
+        // Hide the native splash screen once fonts are resolved
+        console.log("[BOOT] Hiding splash screen");
+        SplashScreen.hideAsync().catch(() => {});
+      });
+
     return () => {
       mounted = false;
     };
@@ -117,6 +158,23 @@ function AppContent() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  // Show error fallback if boot failed catastrophically
+  if (bootError) {
+    return (
+      <View style={[styles.container, styles.errorContainer, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.onBackground, fontSize: 18, fontWeight: "bold", marginBottom: 8 }}>
+          Something went wrong
+        </Text>
+        <Text style={{ color: colors.onBackground, fontSize: 14, textAlign: "center" }}>
+          {bootError}
+        </Text>
+        <Text style={{ color: colors.onBackground, fontSize: 12, marginTop: 16 }}>
+          Please restart the app.
+        </Text>
       </View>
     );
   }
@@ -193,5 +251,10 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  errorContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
 });

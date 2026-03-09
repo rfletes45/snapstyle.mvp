@@ -198,14 +198,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Fetch custom claims when user logs in
           if (user) {
             try {
-              // Force refresh to get the latest custom claims
-              const idTokenResult = await user.getIdTokenResult(true);
+              // Force refresh to get the latest custom claims.
+              // Race against a 10-second timeout so we never hang on
+              // a slow/offline network during first launch.
+              const idTokenResult = await Promise.race([
+                user.getIdTokenResult(true),
+                new Promise<never>((_, reject) =>
+                  setTimeout(
+                    () => reject(new Error("getIdTokenResult timed out")),
+                    10_000,
+                  ),
+                ),
+              ]);
               setCustomClaims(idTokenResult.claims);
               logger.info(
                 "🔵 [AuthContext] Custom claims loaded:",
                 idTokenResult.claims,
               );
-              // Log admin status specifically for debugging
               logger.info(
                 "🔵 [AuthContext] Admin status:",
                 idTokenResult.claims.admin,
@@ -219,6 +228,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 error,
               );
               setCustomClaims(null);
+              // Still initialize presence even if claims failed
+              try {
+                initializePresence(user.uid);
+              } catch {
+                // non-critical
+              }
             }
           } else {
             // Clean up presence when logging out
