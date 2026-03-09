@@ -19,6 +19,7 @@ import {
   isDisplayablePreview,
   truncatePreviewText,
 } from "@/services/linkPreview";
+import { useColors } from "@/store/ThemeContext";
 import { LinkPreviewV2 } from "@/types/messaging";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo, useCallback, useState } from "react";
@@ -70,6 +71,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
   maxWidth = DEFAULT_MAX_WIDTH,
 }: LinkPreviewCardProps) {
   const theme = useTheme();
+  const colors = useColors();
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
@@ -101,11 +103,16 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         style={[
           styles.container,
           styles.loadingContainer,
-          { maxWidth, borderColor: isOwn ? "rgba(0,0,0,0.1)" : "#333" },
+          { maxWidth, borderColor: isOwn ? "rgba(0,0,0,0.1)" : colors.border },
         ]}
       >
         <ActivityIndicator size="small" color={theme.colors.primary} />
-        <Text style={[styles.loadingText, { color: isOwn ? "#000" : "#888" }]}>
+        <Text
+          style={[
+            styles.loadingText,
+            { color: isOwn ? "#000" : colors.textMuted },
+          ]}
+        >
           Loading preview...
         </Text>
       </View>
@@ -119,7 +126,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         style={[
           styles.container,
           styles.minimalContainer,
-          { maxWidth, borderColor: isOwn ? "rgba(0,0,0,0.1)" : "#333" },
+          { maxWidth, borderColor: isOwn ? "rgba(0,0,0,0.1)" : colors.border },
         ]}
         onPress={handlePress}
         activeOpacity={0.7}
@@ -127,12 +134,12 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         <MaterialCommunityIcons
           name="link-variant"
           size={16}
-          color={isOwn ? "rgba(0,0,0,0.6)" : "#888"}
+          color={isOwn ? "rgba(0,0,0,0.6)" : colors.textMuted}
         />
         <Text
           style={[
             styles.minimalDomain,
-            { color: isOwn ? "rgba(0,0,0,0.6)" : "#888" },
+            { color: isOwn ? "rgba(0,0,0,0.6)" : colors.textMuted },
           ]}
           numberOfLines={1}
         >
@@ -141,7 +148,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         <MaterialCommunityIcons
           name="open-in-new"
           size={14}
-          color={isOwn ? "rgba(0,0,0,0.4)" : "#666"}
+          color={isOwn ? "rgba(0,0,0,0.4)" : colors.textMuted}
         />
       </TouchableOpacity>
     );
@@ -153,8 +160,8 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         styles.container,
         {
           maxWidth,
-          backgroundColor: isOwn ? "rgba(0,0,0,0.08)" : "#1A1A1A",
-          borderColor: isOwn ? "rgba(0,0,0,0.1)" : "#333",
+          backgroundColor: isOwn ? "rgba(0,0,0,0.08)" : colors.surface,
+          borderColor: isOwn ? "rgba(0,0,0,0.1)" : colors.border,
         },
       ]}
       onPress={handlePress}
@@ -190,12 +197,12 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
           <MaterialCommunityIcons
             name="web"
             size={12}
-            color={isOwn ? "rgba(0,0,0,0.5)" : "#666"}
+            color={isOwn ? "rgba(0,0,0,0.5)" : colors.textMuted}
           />
           <Text
             style={[
               styles.siteName,
-              { color: isOwn ? "rgba(0,0,0,0.5)" : "#666" },
+              { color: isOwn ? "rgba(0,0,0,0.5)" : colors.textMuted },
             ]}
             numberOfLines={1}
           >
@@ -206,7 +213,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
         {/* Title */}
         {preview.title && (
           <Text
-            style={[styles.title, { color: isOwn ? "#000" : "#FFF" }]}
+            style={[styles.title, { color: isOwn ? "#000" : colors.text }]}
             numberOfLines={2}
           >
             {preview.title}
@@ -218,7 +225,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({
           <Text
             style={[
               styles.description,
-              { color: isOwn ? "rgba(0,0,0,0.7)" : "#AAA" },
+              { color: isOwn ? "rgba(0,0,0,0.7)" : colors.textSecondary },
             ]}
             numberOfLines={3}
           >

@@ -178,9 +178,9 @@ export function AnimalPickerBubble({
   // Bubble bottom sits above the anchor — generous gap so it clears the composer
   const bubbleBottom = SCREEN_HEIGHT - anchorLayout.y + 12;
 
-  const bubbleBg = theme.dark ? "#1E1E1E" : "#FFFFFF";
+  const bubbleBg = theme.dark ? theme.colors.elevation.level2 : "#FFFFFF";
   const stemColor = bubbleBg;
-  const tileBg = theme.dark ? "#2A2A2A" : "#F5F5F5";
+  const tileBg = theme.dark ? theme.colors.elevation.level3 : "#F5F5F5";
 
   return (
     <>

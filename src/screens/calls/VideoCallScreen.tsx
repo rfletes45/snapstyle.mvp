@@ -2,6 +2,17 @@
  * VideoCallScreen - Screen for video calls
  */
 
+import Avatar from "@/components/Avatar";
+import { CallControls } from "@/components/calls/CallControls";
+import {
+  CallQualityIndicator,
+  NetworkQuality,
+} from "@/components/calls/CallQualityIndicator";
+import { useCallContext } from "@/contexts/CallContext";
+import { useCall, useLocalMedia, useRemoteParticipants } from "@/hooks/calls";
+import { useColors } from "@/store/ThemeContext";
+import { createLogger } from "@/utils/log";
+import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
 import { Ionicons } from "@expo/vector-icons";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import React, { JSX, useEffect } from "react";
@@ -16,20 +27,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RTCView } from "react-native-webrtc";
-import Avatar from "@/components/Avatar";
-import { CallControls } from "@/components/calls/CallControls";
-import {
-  CallQualityIndicator,
-  NetworkQuality,
-} from "@/components/calls/CallQualityIndicator";
-import { useCallContext } from "@/contexts/CallContext";
-import {
-  useCall,
-  useLocalMedia,
-  useRemoteParticipants,
-} from "@/hooks/calls";
-import { useColors } from "@/store/ThemeContext";
-import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
+
+const logger = createLogger("screens/calls/VideoCallScreen");
+const logInfo = (msg: string, data?: any) =>
+  logger.info(`[VIDEO_CALL] ${msg}`, data ?? "");
+const logDebug = (msg: string, data?: any) =>
+  __DEV__ && logger.info(`[VIDEO_CALL] ${msg}`, data ?? "");
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -74,6 +77,12 @@ export function VideoCallScreen(): JSX.Element {
 
   const call = currentCall || incomingCall;
 
+  // Log screen lifecycle
+  useEffect(() => {
+    logInfo("VideoCallScreen mounted", { callId, participantName, isOutgoing });
+    return () => logInfo("VideoCallScreen unmounted", { callId });
+  }, [callId]);
+
   // Map network quality to component type
   const mapQualityToIndicator = (quality: string): NetworkQuality => {
     switch (quality) {
@@ -91,6 +100,7 @@ export function VideoCallScreen(): JSX.Element {
   // Handle call ended
   useEffect(() => {
     if (!call && !isConnecting) {
+      logInfo("Call ended, navigating back", { callId });
       navigation.goBack();
     }
   }, [call, isConnecting, navigation]);
@@ -121,6 +131,7 @@ export function VideoCallScreen(): JSX.Element {
   };
 
   const handleEndCall = async () => {
+    logInfo("User ending video call", { callId });
     await endCall();
     navigation.goBack();
   };

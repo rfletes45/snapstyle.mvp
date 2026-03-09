@@ -3,6 +3,8 @@
  * Displays participant status, roles, and provides host controls
  */
 
+import Avatar from "@/components/Avatar";
+import { GroupCallParticipant } from "@/types/call";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useState } from "react";
 import {
@@ -16,8 +18,6 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { GroupCallParticipant } from "@/types/call";
-import Avatar from "@/components/Avatar";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   sheet: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#0f0f17",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: SCREEN_HEIGHT * 0.7,
@@ -441,10 +441,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    borderBottomColor: "#24243a",
   },
   title: {
-    color: "#fff",
+    color: "#cdd6f4",
     fontSize: 18,
     fontWeight: "600",
   },
@@ -456,12 +456,12 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    borderBottomColor: "#24243a",
   },
   hostButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#333",
+    backgroundColor: "#24243a",
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 12,
     borderRadius: 12,
-    backgroundColor: "#252525",
+    backgroundColor: "#1a1a2e",
   },
   speakingItem: {
     backgroundColor: "rgba(76, 175, 80, 0.15)",
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#444",
+    backgroundColor: "#35355a",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: "#4CAF50",
     borderWidth: 2,
-    borderColor: "#1a1a1a",
+    borderColor: "#0f0f17",
   },
   infoSection: {
     flex: 1,
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   actionMenu: {
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1a1a2e",
     borderRadius: 16,
     padding: 16,
     width: "80%",
@@ -600,7 +600,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#444",
+    borderBottomColor: "#35355a",
   },
   actionItem: {
     flexDirection: "row",
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
   },
   removeAction: {
     borderTopWidth: 1,
-    borderTopColor: "#444",
+    borderTopColor: "#35355a",
     marginTop: 8,
     paddingTop: 16,
   },

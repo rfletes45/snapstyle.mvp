@@ -2,8 +2,9 @@
  * useCosmeticsShop Hook
  *
  * State manager for the Cosmetics Shop screen (backgrounds, decorations,
- * badges, themes). Uses the local COSMETICS_CATALOG + purchaseCosmeticWithTokens
- * Cloud Function + Entitlements subcollection ownership system.
+ * themes, chat cosmetics). Uses the local COSMETICS_CATALOG +
+ * purchaseCosmeticWithTokens Cloud Function + Entitlements subcollection
+ * ownership system.
  *
  * @module hooks/useCosmeticsShop
  */

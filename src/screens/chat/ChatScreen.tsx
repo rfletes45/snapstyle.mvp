@@ -1016,10 +1016,7 @@ export default function ChatScreen({
   return (
     <>
       <View
-        style={[
-          styles.container,
-          { backgroundColor: theme.dark ? "#000" : theme.colors.background },
-        ]}
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
         {/* Unified custom header — matches group chat style */}
         <ChatHeader

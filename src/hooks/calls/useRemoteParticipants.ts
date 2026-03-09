@@ -2,9 +2,10 @@
  * useRemoteParticipants - Hook for managing remote participant streams
  */
 
-import { useMemo } from "react";
 import { useCallContext } from "@/contexts/CallContext";
+import { getAuthInstance } from "@/services/firebase";
 import { AvatarConfig } from "@/types/models";
+import { useMemo } from "react";
 
 // Use 'any' type for MediaStream to avoid importing react-native-webrtc
 type MediaStreamType = any;
@@ -29,15 +30,14 @@ export function useRemoteParticipants(): UseRemoteParticipantsReturn {
   const { currentCall, remoteStreams } = useCallContext();
 
   // Build participant info with streams
+  // Remote = everyone except the current (local) user
   const participants = useMemo((): RemoteParticipantInfo[] => {
     if (!currentCall) return [];
 
+    const currentUserId = getAuthInstance().currentUser?.uid;
+
     return Object.values(currentCall.participants)
-      .filter(
-        (p) =>
-          p.odId !== currentCall.callerId ||
-          currentCall.participants[currentCall.callerId]?.joinedAt,
-      )
+      .filter((p) => p.odId !== currentUserId)
       .map((participant) => ({
         odId: participant.odId,
         displayName: participant.displayName,

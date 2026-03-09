@@ -350,11 +350,11 @@ export function ChatComposer({
     replyTo && currentUid ? replyTo.senderId === currentUid : false;
 
   // Background colors based on theme
-  const containerBg = theme.dark ? "#000" : "#fff";
-  const inputBg = theme.dark ? "#1A1A1A" : "#f0f0f0";
-  const inputColor = theme.dark ? "#FFF" : "#000";
-  const borderColor = theme.dark ? "#222" : "#e0e0e0";
-  const placeholderColor = theme.dark ? "#888" : "#999";
+  const containerBg = theme.colors.background;
+  const inputBg = theme.dark ? theme.colors.surface : "#f0f0f0";
+  const inputColor = theme.colors.onSurface;
+  const borderColor = theme.dark ? theme.colors.outlineVariant : "#e0e0e0";
+  const placeholderColor = theme.dark ? theme.colors.onSurfaceDisabled : "#999";
 
   // Static container style (non-animated properties)
   // When absolutePosition is true, position at bottom of screen to prevent jumping

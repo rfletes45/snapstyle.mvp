@@ -8,6 +8,7 @@
  */
 
 import { formatScheduledTime } from "@/services/scheduledMessages";
+import { useColors } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
@@ -25,7 +26,6 @@ import {
   TextInput,
   useTheme,
 } from "react-native-paper";
-import { useColors } from "@/store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -239,39 +239,70 @@ export default function ScheduleMessageModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.container}>
+        <View
+          style={[styles.container, { backgroundColor: theme.colors.surface }]}
+        >
           {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Schedule Message</Text>
+          <View
+            style={[
+              styles.header,
+              { borderBottomColor: theme.colors.outlineVariant },
+            ]}
+          >
+            <Text style={[styles.title, { color: theme.colors.onSurface }]}>
+              Schedule Message
+            </Text>
             <IconButton
               icon="close"
-              iconColor="#888"
+              iconColor={theme.colors.onSurfaceDisabled}
               size={24}
               onPress={onClose}
             />
           </View>
 
           {/* Message Preview */}
-          <View style={styles.previewContainer}>
+          <View
+            style={[
+              styles.previewContainer,
+              { backgroundColor: theme.colors.elevation.level1 },
+            ]}
+          >
             <MaterialCommunityIcons
               name="message-text-outline"
               size={16}
-              color="#888"
+              color={theme.colors.onSurfaceDisabled}
             />
-            <Text style={styles.previewText} numberOfLines={1}>
+            <Text
+              style={[
+                styles.previewText,
+                { color: theme.colors.onSurfaceDisabled },
+              ]}
+              numberOfLines={1}
+            >
               {previewText}
             </Text>
           </View>
 
           <ScrollView style={styles.content}>
             {/* Quick Options */}
-            <Text style={styles.sectionTitle}>Quick Options</Text>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: theme.colors.onSurfaceDisabled },
+              ]}
+            >
+              Quick Options
+            </Text>
             <View style={styles.quickOptions}>
               {QUICK_OPTIONS.map((option, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[
                     styles.quickOption,
+                    {
+                      backgroundColor: theme.colors.elevation.level1,
+                      borderColor: theme.colors.outlineVariant,
+                    },
                     selectedDate &&
                       formatScheduledTime(selectedDate.getTime()) ===
                         formatScheduledTime(option.getDate().getTime()) && [
@@ -282,19 +313,22 @@ export default function ScheduleMessageModal({
                   onPress={() => handleQuickOption(option)}
                 >
                   <MaterialCommunityIcons
-                    name={option.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                    name={
+                      option.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                    }
                     size={24}
                     color={
                       selectedDate &&
                       formatScheduledTime(selectedDate.getTime()) ===
                         formatScheduledTime(option.getDate().getTime())
                         ? theme.colors.primary
-                        : "#888"
+                        : theme.colors.onSurfaceDisabled
                     }
                   />
                   <Text
                     style={[
                       styles.quickOptionText,
+                      { color: theme.colors.onSurfaceDisabled },
                       selectedDate &&
                         formatScheduledTime(selectedDate.getTime()) ===
                           formatScheduledTime(option.getDate().getTime()) && [
@@ -317,9 +351,14 @@ export default function ScheduleMessageModal({
               <MaterialCommunityIcons
                 name={showCustomPicker ? "chevron-up" : "chevron-down"}
                 size={20}
-                color="#888"
+                color={theme.colors.onSurfaceDisabled}
               />
-              <Text style={styles.customToggleText}>
+              <Text
+                style={[
+                  styles.customToggleText,
+                  { color: theme.colors.onSurfaceDisabled },
+                ]}
+              >
                 {showCustomPicker ? "Hide custom time" : "Set custom time"}
               </Text>
             </TouchableOpacity>
@@ -328,32 +367,52 @@ export default function ScheduleMessageModal({
               <View style={styles.customPicker}>
                 <View style={styles.customInputRow}>
                   <View style={styles.customInputContainer}>
-                    <Text style={styles.customInputLabel}>Date</Text>
+                    <Text
+                      style={[
+                        styles.customInputLabel,
+                        { color: theme.colors.onSurfaceDisabled },
+                      ]}
+                    >
+                      Date
+                    </Text>
                     <TextInput
                       mode="outlined"
                       placeholder="MM/DD"
                       value={customDate}
                       onChangeText={setCustomDate}
-                      style={styles.customInput}
-                      outlineColor="#333"
+                      style={[
+                        styles.customInput,
+                        { backgroundColor: theme.colors.elevation.level1 },
+                      ]}
+                      outlineColor={theme.colors.outlineVariant}
                       activeOutlineColor={theme.colors.primary}
-                      textColor="#fff"
-                      placeholderTextColor="#666"
+                      textColor={theme.colors.onSurface}
+                      placeholderTextColor={theme.colors.onSurfaceDisabled}
                       keyboardType="numeric"
                     />
                   </View>
                   <View style={styles.customInputContainer}>
-                    <Text style={styles.customInputLabel}>Time</Text>
+                    <Text
+                      style={[
+                        styles.customInputLabel,
+                        { color: theme.colors.onSurfaceDisabled },
+                      ]}
+                    >
+                      Time
+                    </Text>
                     <TextInput
                       mode="outlined"
                       placeholder="HH:MM"
                       value={customTime}
                       onChangeText={setCustomTime}
-                      style={styles.customInput}
-                      outlineColor="#333"
+                      style={[
+                        styles.customInput,
+                        { backgroundColor: theme.colors.elevation.level1 },
+                      ]}
+                      outlineColor={theme.colors.outlineVariant}
                       activeOutlineColor={theme.colors.primary}
-                      textColor="#fff"
-                      placeholderTextColor="#666"
+                      textColor={theme.colors.onSurface}
+                      placeholderTextColor={theme.colors.onSurfaceDisabled}
                       keyboardType="numeric"
                     />
                   </View>
@@ -361,7 +420,7 @@ export default function ScheduleMessageModal({
                     mode="contained"
                     onPress={handleApplyCustom}
                     style={styles.applyButton}
-                    buttonColor="#333"
+                    buttonColor={theme.colors.surfaceVariant}
                     compact
                   >
                     Apply
@@ -387,7 +446,14 @@ export default function ScheduleMessageModal({
                   color={theme.colors.primary}
                 />
                 <View style={styles.selectedPreviewText}>
-                  <Text style={styles.selectedLabel}>Will be sent</Text>
+                  <Text
+                    style={[
+                      styles.selectedLabel,
+                      { color: theme.colors.onSurfaceDisabled },
+                    ]}
+                  >
+                    Will be sent
+                  </Text>
                   <Text
                     style={[styles.selectedTime, { color: colors.primary }]}
                   >
@@ -399,12 +465,17 @@ export default function ScheduleMessageModal({
           </ScrollView>
 
           {/* Actions */}
-          <View style={styles.actions}>
+          <View
+            style={[
+              styles.actions,
+              { borderTopColor: theme.colors.outlineVariant },
+            ]}
+          >
             <Button
               mode="outlined"
               onPress={onClose}
               style={styles.actionButton}
-              textColor="#888"
+              textColor={theme.colors.onSurfaceDisabled}
             >
               Cancel
             </Button>

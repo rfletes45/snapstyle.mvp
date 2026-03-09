@@ -155,20 +155,40 @@ function buildCallNotification(
   };
 
   if (recipient.platform === "ios") {
-    // iOS: Send VoIP push for CallKit
+    // iOS: Send high-priority alert notification via FCM.
+    // IMPORTANT: FCM cannot send true PushKit/VoIP pushes. The previous
+    // implementation used "apns-push-type": "voip" which FCM silently
+    // drops or fails to deliver via APNs. Instead, we send a time-sensitive
+    // alert notification that wakes the app and displays a call UI.
+    //
+    // For true CallKit/PushKit VoIP pushes, you would need:
+    // 1. react-native-voip-push-notification in the app
+    // 2. A PushKit token stored separately from FCM token
+    // 3. Direct APNs integration (e.g., via node-apn) with the .voip topic
+    //
+    // This alert approach works reliably for foreground + background delivery.
     return {
       token: recipient.fcmToken,
       data,
       apns: {
         headers: {
-          "apns-push-type": "voip",
+          "apns-push-type": "alert",
           "apns-priority": "10",
-          "apns-topic": "com.vibeapp.mobile.voip",
+          "apns-topic": "com.vibeapp.mobile",
+          "apns-expiration": String(Math.floor(Date.now() / 1000) + 30),
         },
         payload: {
           aps: {
+            alert: {
+              title: isVideo ? "📹 Incoming Video Call" : "📞 Incoming Call",
+              body: `${callerName} is calling...`,
+            },
+            sound: "ringtone.caf",
             "content-available": 1,
+            "interruption-level": "time-sensitive",
+            category: "INCOMING_CALL",
           },
+          // Include call data at the root so the app can read it
           ...data,
         },
       },
@@ -210,7 +230,13 @@ export const onCallUpdated = functions.firestore
     const { callId } = context.params;
 
     // Check for status transition to terminal state
-    const terminalStates = ["ended", "declined", "missed", "failed"];
+    const terminalStates = [
+      "ended",
+      "declined",
+      "missed",
+      "failed",
+      "cancelled",
+    ];
     const wasTerminal = terminalStates.includes(before.status);
     const isTerminal = terminalStates.includes(after.status);
 
@@ -461,181 +487,177 @@ export const getTurnCredentials = functions.https.onCall(
 // HTTP: Register VoIP Push Token (iOS)
 // ============================================================================
 
-const registerVoIPToken = functions.https.onCall(
-  async (data, context) => {
-    // Verify authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "Must be logged in to register VoIP token",
-      );
-    }
+const registerVoIPToken = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Must be logged in to register VoIP token",
+    );
+  }
 
-    const { voipToken, platform, appVersion, deviceId } = data;
+  const { voipToken, platform, appVersion, deviceId } = data;
 
-    if (!voipToken || typeof voipToken !== "string") {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "VoIP token is required",
-      );
-    }
+  if (!voipToken || typeof voipToken !== "string") {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "VoIP token is required",
+    );
+  }
 
-    const userId = context.auth.uid;
+  const userId = context.auth.uid;
 
-    try {
-      await db
-        .collection("Users")
-        .doc(userId)
-        .update({
-          voipToken,
-          voipTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          platform: platform || "ios",
-          appVersion: appVersion || null,
-          deviceId: deviceId || null,
-        });
-
-      functions.logger.info("VoIP token registered", {
-        userId,
-        platform,
-        tokenLength: voipToken.length,
+  try {
+    await db
+      .collection("Users")
+      .doc(userId)
+      .update({
+        voipToken,
+        voipTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        platform: platform || "ios",
+        appVersion: appVersion || null,
+        deviceId: deviceId || null,
       });
 
-      return { success: true };
-    } catch (error) {
-      functions.logger.error("Failed to register VoIP token", {
-        userId,
-        error,
-      });
-      throw new functions.https.HttpsError(
-        "internal",
-        "Failed to register VoIP token",
-      );
-    }
-  },
-);
+    functions.logger.info("VoIP token registered", {
+      userId,
+      platform,
+      tokenLength: voipToken.length,
+    });
+
+    return { success: true };
+  } catch (error) {
+    functions.logger.error("Failed to register VoIP token", {
+      userId,
+      error,
+    });
+    throw new functions.https.HttpsError(
+      "internal",
+      "Failed to register VoIP token",
+    );
+  }
+});
 
 // ============================================================================
 // HTTP: Send Call Push Notification (for testing/manual trigger)
 // ============================================================================
 
-const sendCallNotification = functions.https.onCall(
-  async (data, context) => {
-    // Verify authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "Must be logged in",
-      );
-    }
+const sendCallNotification = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Must be logged in",
+    );
+  }
 
-    const { recipientId, callType, callerName } = data;
+  const { recipientId, callType, callerName } = data;
 
-    if (!recipientId) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Recipient ID is required",
-      );
-    }
+  if (!recipientId) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Recipient ID is required",
+    );
+  }
 
-    const callerId = context.auth.uid;
+  const callerId = context.auth.uid;
 
-    // Get recipient's tokens
-    const recipientDoc = await db.collection("Users").doc(recipientId).get();
-    const recipientData = recipientDoc.data();
+  // Get recipient's tokens
+  const recipientDoc = await db.collection("Users").doc(recipientId).get();
+  const recipientData = recipientDoc.data();
 
-    if (!recipientData) {
-      throw new functions.https.HttpsError("not-found", "Recipient not found");
-    }
+  if (!recipientData) {
+    throw new functions.https.HttpsError("not-found", "Recipient not found");
+  }
 
-    const fcmToken = recipientData.fcmToken;
-    const voipToken = recipientData.voipToken;
-    const platform = recipientData.platform || "ios";
+  const fcmToken = recipientData.fcmToken;
+  const voipToken = recipientData.voipToken;
+  const platform = recipientData.platform || "ios";
 
-    if (!fcmToken && !voipToken) {
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "Recipient has no push tokens",
-      );
-    }
+  if (!fcmToken && !voipToken) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Recipient has no push tokens",
+    );
+  }
 
-    const callId = db.collection("Calls").doc().id;
-    const isVideo = callType === "video";
+  const callId = db.collection("Calls").doc().id;
+  const isVideo = callType === "video";
 
-    const payload: Record<string, string> = {
-      type: "incoming_call",
-      callId,
-      callerId,
-      callerName: callerName || "Unknown",
-      callType: callType || "audio",
-      hasVideo: isVideo ? "true" : "false",
-      uuid: callId,
-    };
+  const payload: Record<string, string> = {
+    type: "incoming_call",
+    callId,
+    callerId,
+    callerName: callerName || "Unknown",
+    callType: callType || "audio",
+    hasVideo: isVideo ? "true" : "false",
+    uuid: callId,
+  };
 
-    try {
-      // For iOS with VoIP token, use APNs directly
-      if (platform === "ios" && voipToken) {
-        // Note: In production, you'd use a library like node-apn
-        // to send directly to APNs with the voip topic
-        // For now, use FCM with VoIP headers
-        if (fcmToken) {
-          await messaging.send({
-            token: fcmToken,
-            data: payload,
-            apns: {
-              headers: {
-                "apns-push-type": "voip",
-                "apns-priority": "10",
-                "apns-topic": "com.vibeapp.mobile.voip",
-                "apns-expiration": String(Math.floor(Date.now() / 1000) + 30),
-              },
-              payload: {
-                aps: {
-                  "content-available": 1,
-                },
-                ...payload,
-              },
-            },
-          });
-        }
-      } else if (fcmToken) {
-        // For Android, send high-priority FCM
+  try {
+    // For iOS with VoIP token, use APNs directly
+    if (platform === "ios" && voipToken) {
+      // Note: In production, you'd use a library like node-apn
+      // to send directly to APNs with the voip topic
+      // For now, use FCM with VoIP headers
+      if (fcmToken) {
         await messaging.send({
           token: fcmToken,
           data: payload,
-          android: {
-            priority: "high",
-            ttl: 30000,
-            notification: {
-              channelId: "vibe-incoming-calls",
-              priority: "max",
-              visibility: "public",
-              title: isVideo ? "📹 Incoming Video Call" : "📞 Incoming Call",
-              body: `${callerName || "Someone"} is calling...`,
-              sound: "ringtone",
+          apns: {
+            headers: {
+              "apns-push-type": "voip",
+              "apns-priority": "10",
+              "apns-topic": "com.vibeapp.mobile.voip",
+              "apns-expiration": String(Math.floor(Date.now() / 1000) + 30),
+            },
+            payload: {
+              aps: {
+                "content-available": 1,
+              },
+              ...payload,
             },
           },
         });
       }
-
-      functions.logger.info("Call notification sent manually", {
-        callId,
-        recipientId,
-        platform,
+    } else if (fcmToken) {
+      // For Android, send high-priority FCM
+      await messaging.send({
+        token: fcmToken,
+        data: payload,
+        android: {
+          priority: "high",
+          ttl: 30000,
+          notification: {
+            channelId: "vibe-incoming-calls",
+            priority: "max",
+            visibility: "public",
+            title: isVideo ? "📹 Incoming Video Call" : "📞 Incoming Call",
+            body: `${callerName || "Someone"} is calling...`,
+            sound: "ringtone",
+          },
+        },
       });
-
-      return { success: true, callId };
-    } catch (error) {
-      functions.logger.error("Failed to send call notification", {
-        recipientId,
-        error,
-      });
-      throw new functions.https.HttpsError(
-        "internal",
-        "Failed to send notification",
-      );
     }
-  },
-);
+
+    functions.logger.info("Call notification sent manually", {
+      callId,
+      recipientId,
+      platform,
+    });
+
+    return { success: true, callId };
+  } catch (error) {
+    functions.logger.error("Failed to send call notification", {
+      recipientId,
+      error,
+    });
+    throw new functions.https.HttpsError(
+      "internal",
+      "Failed to send notification",
+    );
+  }
+});
 
 // ============================================================================
 // HTTP: Cancel Call (cleanup for incomplete calls)
@@ -901,124 +923,119 @@ const onGroupCallParticipantJoined = functions.firestore
 // Group Call - Host Controls Notifications
 // ============================================================================
 
-const onGroupCallHostAction = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "Must be authenticated",
+const onGroupCallHostAction = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Must be authenticated",
+    );
+  }
+
+  const { callId, action, targetUserId } = data;
+
+  if (!callId || !action) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Call ID and action are required",
+    );
+  }
+
+  const userId = context.auth.uid;
+  const callRef = db.collection("Calls").doc(callId);
+  const callDoc = await callRef.get();
+
+  if (!callDoc.exists) {
+    throw new functions.https.HttpsError("not-found", "Call not found");
+  }
+
+  const call = callDoc.data() as Call & { hostId?: string };
+
+  // Verify user is host or co-host
+  const isHost = call.hostId === userId || call.callerId === userId;
+  const participant = call.participants[userId] as CallParticipant & {
+    role?: string;
+  };
+  const isCoHost = participant?.role === "co-host";
+
+  if (!isHost && !isCoHost) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Only host or co-host can perform this action",
+    );
+  }
+
+  // Handle different actions
+  switch (action) {
+    case "mute_all": {
+      // Get all non-host participants to notify
+      const recipientIds = Object.keys(call.participants).filter(
+        (id) => id !== userId,
       );
+
+      await sendGroupCallNotification(callId, recipientIds, {
+        type: "group_call_muted",
+        message: "Host has muted all participants",
+      });
+      break;
     }
 
-    const { callId, action, targetUserId } = data;
-
-    if (!callId || !action) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Call ID and action are required",
-      );
-    }
-
-    const userId = context.auth.uid;
-    const callRef = db.collection("Calls").doc(callId);
-    const callDoc = await callRef.get();
-
-    if (!callDoc.exists) {
-      throw new functions.https.HttpsError("not-found", "Call not found");
-    }
-
-    const call = callDoc.data() as Call & { hostId?: string };
-
-    // Verify user is host or co-host
-    const isHost = call.hostId === userId || call.callerId === userId;
-    const participant = call.participants[userId] as CallParticipant & {
-      role?: string;
-    };
-    const isCoHost = participant?.role === "co-host";
-
-    if (!isHost && !isCoHost) {
-      throw new functions.https.HttpsError(
-        "permission-denied",
-        "Only host or co-host can perform this action",
-      );
-    }
-
-    // Handle different actions
-    switch (action) {
-      case "mute_all": {
-        // Get all non-host participants to notify
-        const recipientIds = Object.keys(call.participants).filter(
-          (id) => id !== userId,
-        );
-
-        await sendGroupCallNotification(callId, recipientIds, {
-          type: "group_call_muted",
-          message: "Host has muted all participants",
-        });
-        break;
-      }
-
-      case "remove_participant": {
-        if (!targetUserId) {
-          throw new functions.https.HttpsError(
-            "invalid-argument",
-            "Target user ID required for remove action",
-          );
-        }
-
-        // Notify the removed participant
-        await sendGroupCallNotification(callId, [targetUserId], {
-          type: "group_call_removed",
-          message: "You have been removed from the call",
-        });
-        break;
-      }
-
-      case "end_call": {
-        // Notify all participants
-        const allParticipantIds = Object.keys(call.participants).filter(
-          (id) => id !== userId,
-        );
-
-        await sendGroupCallNotification(callId, allParticipantIds, {
-          type: "group_call_ended_by_host",
-          message: "Host has ended the call",
-        });
-        break;
-      }
-
-      case "lock_call":
-      case "unlock_call": {
-        const activeParticipantIds = Object.values(call.participants)
-          .filter(
-            (p) =>
-              p.joinedAt !== null && p.leftAt === null && p.odId !== userId,
-          )
-          .map((p) => p.odId);
-
-        await sendGroupCallNotification(callId, activeParticipantIds, {
-          type:
-            action === "lock_call"
-              ? "group_call_locked"
-              : "group_call_unlocked",
-          message:
-            action === "lock_call"
-              ? "Host has locked the call"
-              : "Host has unlocked the call",
-        });
-        break;
-      }
-
-      default:
+    case "remove_participant": {
+      if (!targetUserId) {
         throw new functions.https.HttpsError(
           "invalid-argument",
-          `Unknown action: ${action}`,
+          "Target user ID required for remove action",
         );
+      }
+
+      // Notify the removed participant
+      await sendGroupCallNotification(callId, [targetUserId], {
+        type: "group_call_removed",
+        message: "You have been removed from the call",
+      });
+      break;
     }
 
-    return { success: true };
-  },
-);
+    case "end_call": {
+      // Notify all participants
+      const allParticipantIds = Object.keys(call.participants).filter(
+        (id) => id !== userId,
+      );
+
+      await sendGroupCallNotification(callId, allParticipantIds, {
+        type: "group_call_ended_by_host",
+        message: "Host has ended the call",
+      });
+      break;
+    }
+
+    case "lock_call":
+    case "unlock_call": {
+      const activeParticipantIds = Object.values(call.participants)
+        .filter(
+          (p) => p.joinedAt !== null && p.leftAt === null && p.odId !== userId,
+        )
+        .map((p) => p.odId);
+
+      await sendGroupCallNotification(callId, activeParticipantIds, {
+        type:
+          action === "lock_call" ? "group_call_locked" : "group_call_unlocked",
+        message:
+          action === "lock_call"
+            ? "Host has locked the call"
+            : "Host has unlocked the call",
+      });
+      break;
+    }
+
+    default:
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        `Unknown action: ${action}`,
+      );
+  }
+
+  return { success: true };
+});
 
 // ============================================================================
 // Helper: Send Group Call Notification

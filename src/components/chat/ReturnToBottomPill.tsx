@@ -7,6 +7,8 @@
  * @module components/chat/ReturnToBottomPill
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
+import { useColors } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import {
@@ -23,8 +25,6 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
-import { BorderRadius, Spacing } from "@/constants/theme";
-import { useColors } from "@/store/ThemeContext";
 
 // =============================================================================
 // Types
@@ -87,7 +87,11 @@ export function ReturnToBottomPill({
     >
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [styles.pill, pressed && styles.pillPressed]}
+        style={({ pressed }) => [
+          styles.pill,
+          { backgroundColor: colors.surface },
+          pressed && styles.pillPressed,
+        ]}
         accessibilityLabel={label}
         accessibilityRole="button"
         accessibilityHint="Scrolls to the latest messages"
@@ -97,7 +101,7 @@ export function ReturnToBottomPill({
           size={20}
           color={colors.primary}
         />
-        <Text style={styles.text}>{label}</Text>
+        <Text style={[styles.text, { color: colors.text }]}>{label}</Text>
       </Pressable>
     </Animated.View>
   );

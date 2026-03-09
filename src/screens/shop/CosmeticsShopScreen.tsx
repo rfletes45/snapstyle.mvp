@@ -1,9 +1,11 @@
 /**
  * CosmeticsShopScreen
  *
- * Browse and purchase cosmetics (Backgrounds, Decorations, Badges, Themes)
- * with tokens. Features:
- *   - Category tabs (All, Decorations, Backgrounds, Themes, Badges)
+ * Browse and purchase cosmetics (Backgrounds, Decorations, Themes,
+ * Chat Bubble Colors, Chat Fonts, Animal Themes) with tokens.
+ * Features:
+ *   - Section toggle (Profile / Chat)
+ *   - Category tabs (All, Decorations, Backgrounds, Themes / Bubble Colors, Fonts, Animals)
  *   - Featured items carousel
  *   - Bundle deals section
  *   - Item grid with owned/purchasable status
@@ -28,6 +30,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -111,7 +114,6 @@ const PROFILE_TABS: TabConfig[] = [
   { id: "decoration", label: "Decorations", icon: "star-circle" },
   { id: "background", label: "Backgrounds", icon: "image" },
   { id: "theme", label: "Themes", icon: "palette" },
-  { id: "badge", label: "Badges", icon: "shield-star" },
 ];
 
 const CHAT_TABS: TabConfig[] = [
@@ -128,12 +130,7 @@ const CHAT_TYPES = new Set<string>([
   "chat_animal_theme",
 ]);
 /** Types that belong to the Profile section. */
-const PROFILE_TYPES = new Set<string>([
-  "decoration",
-  "background",
-  "theme",
-  "badge",
-]);
+const PROFILE_TYPES = new Set<string>(["decoration", "background", "theme"]);
 
 // =============================================================================
 // Shop Item Card
@@ -190,9 +187,7 @@ const ShopGridItem = React.memo(function ShopGridItem({
                 ? "star-circle"
                 : item.type === "theme"
                   ? "palette"
-                  : item.type === "badge"
-                    ? "shield-star"
-                    : "image"
+                  : "image"
             }
             size={32}
             color={colors.primary}
@@ -501,6 +496,120 @@ function formatCosmeticTypeLabel(type: string): string {
       return type.charAt(0).toUpperCase() + type.slice(1);
   }
 }
+
+// =============================================================================
+// Animal Theme Card (dedicated card with image + sound preview)
+// =============================================================================
+
+interface ShopAnimalCardProps {
+  item: CosmeticDefinition;
+  isOwned: boolean;
+  onPress: (item: CosmeticDefinition) => void;
+}
+
+const ShopAnimalCard = React.memo(function ShopAnimalCard({
+  item,
+  isOwned,
+  onPress,
+}: ShopAnimalCardProps) {
+  const colors = useColors();
+  const rarityColor = RARITY_COLORS[item.rarity] ?? colors.textSecondary;
+  const emoji = (item.metadata?.emoji as string) ?? "🐾";
+
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name} animal theme${isOwned ? ", owned" : item.priceTokens ? `, ${item.priceTokens} tokens` : ", free"}`}
+      style={({ pressed }) => [
+        styles.gridItem,
+        {
+          backgroundColor: colors.surfaceVariant,
+          borderColor: isOwned ? colors.primary + "50" : rarityColor + "30",
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+    >
+      {/* Animal image preview */}
+      <View
+        style={[
+          styles.animalPreviewContainer,
+          { backgroundColor: colors.surface },
+        ]}
+      >
+        <CosmeticImage
+          source={getAnimalImage(item.id)}
+          style={styles.animalPreviewImage}
+          contentFit="cover"
+          recyclingKey={item.id}
+          debugLabel={`shop-animal-${item.id}`}
+        />
+        <View style={styles.animalEmojiOverlay}>
+          <Text style={styles.animalEmoji}>{emoji}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={(e) => {
+            e.stopPropagation?.();
+            playAnimalSound(item.id);
+          }}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[
+            styles.animalSoundButton,
+            { backgroundColor: colors.primary },
+          ]}
+        >
+          <MaterialCommunityIcons name="volume-high" size={14} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Name */}
+      <Text
+        style={[styles.gridItemName, { color: colors.text }]}
+        numberOfLines={1}
+      >
+        {item.name}
+      </Text>
+
+      {/* Price or owned badge */}
+      <View style={styles.gridItemFooter}>
+        {isOwned ? (
+          <View
+            style={[
+              styles.ownedBadge,
+              { backgroundColor: colors.primary + "20" },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="check-circle"
+              size={12}
+              color={colors.primary}
+            />
+            <Text style={[styles.ownedText, { color: colors.primary }]}>
+              Owned
+            </Text>
+          </View>
+        ) : item.priceTokens ? (
+          <View style={styles.priceRow}>
+            <MaterialCommunityIcons
+              name="star-circle"
+              size={14}
+              color="#FFD700"
+            />
+            <Text style={[styles.priceText, { color: colors.text }]}>
+              {formatTokenAmount(item.priceTokens)}
+            </Text>
+          </View>
+        ) : (
+          <Text style={[styles.freeText, { color: colors.primary }]}>Free</Text>
+        )}
+      </View>
+
+      {/* Rarity dot */}
+      <View style={[styles.rarityDot, { backgroundColor: rarityColor }]} />
+    </Pressable>
+  );
+});
 
 // =============================================================================
 // Shop Theme Card (ThemePicker-style with color preview + price)
@@ -1001,9 +1110,11 @@ export default function CosmeticsShopScreen() {
   useEffect(() => {
     prefetchShopCategory("background");
     prefetchShopCategory("decoration");
-    prefetchShopCategory("badge");
     prefetchShopCategory("chat_animal_theme");
   }, []);
+
+  // ── FlatList ref for stable scroll management ──
+  const flatListRef = useRef<FlatList<CosmeticDefinition>>(null);
 
   // ── Section state (Profile / Chat) ───────────────────────────────────
   const [shopSection, setShopSection] = useState<ShopSection>("profile");
@@ -1018,6 +1129,11 @@ export default function CosmeticsShopScreen() {
     // When a specific tab is selected, shopItems is already filtered by type
     return shop.shopItems;
   }, [shop.shopItems, shop.activeTab, shopSection]);
+
+  // ── Scroll to top on category/section change to prevent layout shift ──
+  useEffect(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [shop.activeTab, shopSection]);
 
   // ── Dev-only assertion: warn about misconfigured purchasable items ────
   useEffect(() => {
@@ -1210,6 +1326,15 @@ export default function CosmeticsShopScreen() {
           />
         );
       }
+      if (item.type === "chat_animal_theme") {
+        return (
+          <ShopAnimalCard
+            item={item}
+            isOwned={shop.isOwned(item.id)}
+            onPress={handleItemPress}
+          />
+        );
+      }
       return (
         <ShopGridItem
           item={item}
@@ -1362,12 +1487,21 @@ export default function CosmeticsShopScreen() {
                   backgroundColor: isActive
                     ? colors.primary
                     : colors.surfaceVariant,
+                  ...(isActive
+                    ? {
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 4,
+                        elevation: 3,
+                      }
+                    : {}),
                 },
               ]}
             >
               <MaterialCommunityIcons
                 name={s === "profile" ? "account" : "chat"}
-                size={16}
+                size={18}
                 color={isActive ? "#fff" : colors.textSecondary}
               />
               <Text
@@ -1375,7 +1509,7 @@ export default function CosmeticsShopScreen() {
                   styles.shopSectionToggleText,
                   {
                     color: isActive ? "#fff" : colors.textSecondary,
-                    fontWeight: isActive ? "600" : "400",
+                    fontWeight: isActive ? "700" : "500",
                   },
                 ]}
               >
@@ -1387,49 +1521,61 @@ export default function CosmeticsShopScreen() {
       </View>
 
       {/* Category Tabs */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabsContainer}
-      >
-        {sectionTabs.map((tab) => {
-          const isActive = shop.activeTab === tab.id;
-          return (
-            <Pressable
-              key={tab.id}
-              onPress={() => shop.setActiveTab(tab.id)}
-              style={[
-                styles.tabItem,
-                {
-                  backgroundColor: isActive
-                    ? colors.primary + "18"
-                    : "transparent",
-                  borderColor: isActive
-                    ? colors.primary
-                    : colors.surfaceVariant,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={tab.icon as any}
-                size={16}
-                color={isActive ? colors.primary : colors.textSecondary}
-              />
-              <Text
+      <View style={styles.tabsOuter}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          contentContainerStyle={styles.tabsContainer}
+          style={styles.tabsScroll}
+        >
+          {sectionTabs.map((tab) => {
+            const isActive = shop.activeTab === tab.id;
+            return (
+              <Pressable
+                key={tab.id}
+                onPress={() => shop.setActiveTab(tab.id)}
                 style={[
-                  styles.tabLabel,
+                  styles.tabItem,
                   {
-                    color: isActive ? colors.primary : colors.textSecondary,
-                    fontWeight: isActive ? "600" : "400",
+                    backgroundColor: isActive
+                      ? colors.primary + "15"
+                      : colors.surfaceVariant + "80",
+                    borderColor: isActive ? colors.primary : "transparent",
+                    ...(isActive
+                      ? {
+                          shadowColor: colors.primary,
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.15,
+                          shadowRadius: 3,
+                          elevation: 2,
+                        }
+                      : {}),
                   },
                 ]}
               >
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+                <MaterialCommunityIcons
+                  name={tab.icon as any}
+                  size={16}
+                  color={isActive ? colors.primary : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: isActive ? colors.primary : colors.textSecondary,
+                      fontWeight: isActive ? "700" : "500",
+                    },
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Search */}
       <View style={styles.searchRow}>
@@ -1437,9 +1583,14 @@ export default function CosmeticsShopScreen() {
           placeholder="Search cosmetics..."
           value={shop.searchQuery}
           onChangeText={shop.setSearchQuery}
+          onBlur={() => Keyboard.dismiss()}
           style={[styles.searchbar, { backgroundColor: colors.surfaceVariant }]}
           inputStyle={styles.searchInput}
           elevation={0}
+          onClearIconPress={() => {
+            shop.setSearchQuery("");
+            Keyboard.dismiss();
+          }}
         />
       </View>
 
@@ -1453,13 +1604,19 @@ export default function CosmeticsShopScreen() {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={sectionFilteredItems}
           renderItem={renderGridItem}
           keyExtractor={keyExtractor}
           numColumns={GRID_COLUMNS}
-          contentContainerStyle={styles.gridContent}
+          contentContainerStyle={[
+            styles.gridContent,
+            { paddingBottom: insets.bottom + 24 },
+          ]}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           initialNumToRender={10}
           windowSize={7}
           maxToRenderPerBatch={6}
@@ -1469,9 +1626,12 @@ export default function CosmeticsShopScreen() {
             <View style={styles.emptyContainer}>
               <MaterialCommunityIcons
                 name="shopping-outline"
-                size={48}
-                color={colors.textSecondary}
+                size={56}
+                color={colors.textSecondary + "60"}
               />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {shop.searchQuery ? "No Results" : "Nothing Here Yet"}
+              </Text>
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                 {shop.searchQuery
                   ? `No results for "${shop.searchQuery}"`
@@ -1882,24 +2042,26 @@ const styles = StyleSheet.create({
   walletChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(255, 215, 0, 0.12)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
+    gap: 5,
+    backgroundColor: "rgba(255, 215, 0, 0.15)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.25)",
   },
   walletText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   // ── Section Toggle (Profile / Chat) ────────────────────────────────────
   shopSectionToggleContainer: {
     flexDirection: "row",
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    paddingBottom: 0,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
     gap: Spacing.sm,
   },
   shopSectionToggle: {
@@ -1907,93 +2069,141 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.md,
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.lg,
   },
   shopSectionToggleText: {
-    fontSize: 14,
+    fontSize: 15,
+    letterSpacing: 0.2,
   },
 
   // ── Tabs ──────────────────────────────────────────────────────────────
+  tabsOuter: {
+    overflow: "visible",
+  },
+  tabsScroll: {
+    flexGrow: 0,
+    overflow: "visible",
+  },
   tabsContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    gap: Spacing.xs,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
     alignItems: "center",
   },
   tabItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    minHeight: 40,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
+    minHeight: 42,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1.5,
   },
   tabLabel: {
     fontSize: 13,
     lineHeight: 18,
+    letterSpacing: 0.1,
   },
 
   // ── Search ────────────────────────────────────────────────────────────
   searchRow: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
   searchbar: {
-    height: 40,
-    borderRadius: BorderRadius.sm,
+    height: 42,
+    borderRadius: BorderRadius.xl,
   },
   searchInput: {
     fontSize: 14,
-    minHeight: 40,
+    minHeight: 42,
   },
 
   // ── Grid ──────────────────────────────────────────────────────────────
   gridContent: {
     paddingHorizontal: GRID_PADDING,
-    paddingBottom: 80,
+    paddingTop: Spacing.xs,
   },
   gridRow: {
     gap: GRID_GAP,
-    marginBottom: GRID_GAP,
+    marginBottom: GRID_GAP + 2,
   },
   gridItem: {
     width: ITEM_SIZE,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1.5,
     overflow: "hidden",
   },
   gridItemImage: {
     width: "100%",
-    height: ITEM_SIZE * 0.65,
+    height: ITEM_SIZE * 0.7,
   },
   gridItemPlaceholder: {
     width: "100%",
-    height: ITEM_SIZE * 0.65,
+    height: ITEM_SIZE * 0.7,
     justifyContent: "center",
     alignItems: "center",
   },
   gridItemName: {
-    fontSize: 12,
-    fontWeight: "600",
-    paddingHorizontal: 8,
-    paddingTop: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    paddingHorizontal: 10,
+    paddingTop: 8,
   },
   gridItemFooter: {
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    paddingTop: 4,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    paddingTop: 5,
   },
   rarityDot: {
     position: "absolute",
+    top: 8,
+    left: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.7)",
+  },
+
+  // ── Animal Card ───────────────────────────────────────────────────────
+  animalPreviewContainer: {
+    width: "100%",
+    height: ITEM_SIZE * 0.7,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  animalPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
+  animalEmojiOverlay: {
+    position: "absolute",
     top: 6,
-    left: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    right: 6,
+  },
+  animalEmoji: {
+    fontSize: 18,
+  },
+  animalSoundButton: {
+    position: "absolute",
+    bottom: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
   },
 
   // ── Owned / Price ─────────────────────────────────────────────────────
@@ -2001,14 +2211,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignSelf: "flex-start",
   },
   ownedText: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   priceRow: {
     flexDirection: "row",
@@ -2016,94 +2226,101 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   priceText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "800",
   },
   freeText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "800",
   },
 
   // ── Sections ──────────────────────────────────────────────────────────
   sectionContainer: {
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingBottom: Spacing.sm,
+    gap: 8,
+    paddingBottom: Spacing.md,
+    paddingTop: Spacing.xs,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: 0.2,
   },
 
   // ── Featured ──────────────────────────────────────────────────────────
   featuredScroll: {
-    gap: Spacing.sm,
+    gap: Spacing.md,
     paddingRight: Spacing.lg,
   },
   featuredCard: {
     width: FEATURED_CARD_WIDTH,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   featuredCardImage: {
     width: "100%",
-    height: FEATURED_CARD_WIDTH * 0.5,
+    height: FEATURED_CARD_WIDTH * 0.55,
   },
   featuredCardPlaceholder: {
     width: "100%",
-    height: FEATURED_CARD_WIDTH * 0.5,
+    height: FEATURED_CARD_WIDTH * 0.55,
     justifyContent: "center",
     alignItems: "center",
   },
   featuredBadge: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    top: 10,
+    right: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   featuredBadgeText: {
     color: "#fff",
     fontSize: 10,
     fontWeight: "800",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   featuredInfo: {
-    padding: Spacing.sm,
+    padding: Spacing.md,
   },
   featuredHeadline: {
     fontSize: 10,
-    fontWeight: "600",
+    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   featuredName: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: 2,
+    fontSize: 15,
+    fontWeight: "800",
+    marginTop: 3,
   },
   featuredPriceRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+    marginTop: 8,
   },
 
   // ── Bundles ───────────────────────────────────────────────────────────
   bundleCard: {
     flexDirection: "row",
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
     overflow: "hidden",
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   bundleImageWrapper: {
-    width: 90,
-    height: 90,
+    width: 100,
+    height: 100,
   },
   bundleImage: {
     width: "100%",
@@ -2117,56 +2334,57 @@ const styles = StyleSheet.create({
   },
   discountBadge: {
     position: "absolute",
-    top: 6,
-    left: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   discountText: {
     color: "#fff",
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "800",
   },
   bundleInfo: {
     flex: 1,
-    padding: Spacing.sm,
+    padding: Spacing.md,
     justifyContent: "center",
   },
   bundleNameRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
   bundleName: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "800",
     flexShrink: 1,
   },
   bundleBadgeChip: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   bundleBadgeText: {
     color: "#fff",
     fontSize: 9,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   bundleDesc: {
-    fontSize: 11,
-    marginTop: 2,
-    lineHeight: 14,
+    fontSize: 12,
+    marginTop: 3,
+    lineHeight: 16,
   },
   bundleItemCount: {
-    fontSize: 10,
-    marginTop: 3,
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: "500",
   },
   bundlePriceRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginTop: 4,
+    marginTop: 6,
   },
   bundleOrigPrice: {
     fontSize: 12,
@@ -2179,20 +2397,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingTop: 80,
-    gap: Spacing.md,
+    gap: Spacing.lg,
   },
   loadingText: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: "500",
   },
   emptyContainer: {
     alignItems: "center",
-    paddingTop: 48,
-    gap: Spacing.md,
+    paddingTop: 64,
+    gap: Spacing.sm,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: Spacing.sm,
   },
   emptyText: {
     fontSize: 14,
     textAlign: "center",
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.xxl,
+    lineHeight: 20,
   },
 
   // ── Purchase Sheet ────────────────────────────────────────────────────
@@ -2202,124 +2427,131 @@ const styles = StyleSheet.create({
   },
   sheetBackdropTouch: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   sheet: {
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    paddingHorizontal: Spacing.lg,
+    borderTopLeftRadius: BorderRadius.xxl,
+    borderTopRightRadius: BorderRadius.xxl,
+    paddingHorizontal: Spacing.xl,
   },
   sheetHandleRow: {
     alignItems: "center",
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.md,
   },
   sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
+    width: 40,
+    height: 5,
+    borderRadius: 3,
   },
   sheetPreview: {
     alignItems: "center",
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.xl,
   },
   sheetImage: {
-    width: 120,
-    height: 120,
-    borderRadius: BorderRadius.md,
+    width: 140,
+    height: 140,
+    borderRadius: BorderRadius.lg,
   },
   sheetImageWide: {
-    width: 200,
-    height: 120,
-    borderRadius: BorderRadius.md,
+    width: 220,
+    height: 140,
+    borderRadius: BorderRadius.lg,
   },
   sheetPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: BorderRadius.md,
+    width: 140,
+    height: 140,
+    borderRadius: BorderRadius.lg,
     justifyContent: "center",
     alignItems: "center",
   },
   sheetAnimalPreview: {
     alignItems: "center",
-    gap: Spacing.md,
+    gap: Spacing.lg,
   },
   sheetAnimalImage: {
-    width: 140,
-    height: 140,
-    borderRadius: BorderRadius.lg,
+    width: 160,
+    height: 160,
+    borderRadius: BorderRadius.xl,
   },
   sheetPlaySoundButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 24,
   },
   sheetPlaySoundText: {
     color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 15,
+    fontWeight: "700",
   },
   sheetInfo: {
     alignItems: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.xl,
   },
   sheetName: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     textAlign: "center",
     marginBottom: Spacing.sm,
   },
   sheetChipRow: {
     flexDirection: "row",
-    gap: Spacing.xs,
-    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   sheetRarityChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 14,
   },
   sheetRarityText: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
   },
   sheetSourceChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 14,
   },
   sheetSourceText: {
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: "500",
   },
   sheetDesc: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: "center",
     paddingHorizontal: Spacing.lg,
   },
   sheetActions: {
     alignItems: "center",
-    gap: Spacing.sm,
-    paddingBottom: Spacing.sm,
+    gap: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   sheetButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
     width: "100%",
-    paddingVertical: 14,
-    borderRadius: BorderRadius.md,
+    paddingVertical: 16,
+    borderRadius: BorderRadius.lg,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sheetButtonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
   },
   sheetWalletInfo: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: "500",
   },
 
   // ── Shop Theme Card (ThemePicker-style with color preview) ────────────
@@ -2329,7 +2561,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   shopThemePreview: {
-    height: 80,
+    height: 85,
     overflow: "hidden",
   },
   shopThemePreviewBg: {
@@ -2374,25 +2606,25 @@ const styles = StyleSheet.create({
   },
   shopThemeCardName: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
     flex: 1,
   },
   shopThemeCheckmark: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
   },
   shopThemeCardDesc: {
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 3,
   },
   shopThemeCardBottom: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: Spacing.xs,
+    marginTop: Spacing.sm,
   },
   shopThemeCardBadges: {
     flexDirection: "row",
@@ -2401,89 +2633,89 @@ const styles = StyleSheet.create({
   shopThemeCardBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
     gap: 3,
   },
   shopThemeCardBadgeText: {
     fontSize: 10,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   shopThemeOwnedBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
     gap: 3,
   },
   shopThemeOwnedText: {
     fontSize: 10,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   shopThemePriceRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: 4,
   },
   shopThemePriceText: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   // ── Chat Bubble Color Card ────────────────────────────────────────────
   chatBubblePreviewContainer: {
     width: "100%",
-    height: ITEM_SIZE * 0.65,
+    height: ITEM_SIZE * 0.7,
     justifyContent: "center",
     alignItems: "flex-end",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 5,
   },
   chatBubblePreview: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     maxWidth: "90%",
   },
   chatBubblePreviewText: {
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   chatBubblePreviewSmall: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     maxWidth: "75%",
   },
   chatBubblePreviewTextSm: {
     fontSize: 10,
-    fontWeight: "400",
+    fontWeight: "500",
   },
 
   // ── Chat Font Card ────────────────────────────────────────────────────
   chatFontPreviewContainer: {
     width: "100%",
-    height: ITEM_SIZE * 0.65,
+    height: ITEM_SIZE * 0.7,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
   },
   chatFontPreviewLarge: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "600",
     letterSpacing: 1,
   },
   chatFontPreviewBubble: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
     maxWidth: "90%",
   },
   chatFontPreviewBubbleText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "500",
     color: "#FFFFFF",
   },
@@ -2491,30 +2723,30 @@ const styles = StyleSheet.create({
   // ── Purchase Sheet: Chat Preview ──────────────────────────────────────
   sheetChatPreview: {
     width: "100%",
-    paddingHorizontal: Spacing.md,
-    gap: 8,
+    paddingHorizontal: Spacing.lg,
+    gap: 10,
   },
   sheetChatBubbleIncoming: {
     alignSelf: "flex-start",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
     borderBottomLeftRadius: 4,
     maxWidth: "80%",
   },
   sheetChatBubbleInText: {
-    fontSize: 14,
+    fontSize: 15,
   },
   sheetChatBubbleOutgoing: {
     alignSelf: "flex-end",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
     borderBottomRightRadius: 4,
     maxWidth: "80%",
   },
   sheetChatBubbleOutText: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#FFFFFF",
   },
 });

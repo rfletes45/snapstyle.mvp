@@ -569,9 +569,9 @@ function ChatPreview({ chatAppearance, isDark }: ChatPreviewProps) {
     appearanceMode: isDark ? "dark" : "light",
   });
 
-  const composerInputBg = isDark ? "#1A1A1A" : "#f0f0f0";
-  const composerBorderColor = isDark ? "#222" : "#e0e0e0";
-  const composerPlaceholderColor = isDark ? "#888" : "#999";
+  const composerInputBg = isDark ? colors.surface : "#f0f0f0";
+  const composerBorderColor = isDark ? colors.border : "#e0e0e0";
+  const composerPlaceholderColor = isDark ? colors.textMuted : "#999";
 
   return (
     <View

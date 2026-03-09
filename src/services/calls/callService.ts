@@ -127,6 +127,12 @@ class CallService {
 
   async startCall(params: StartCallParams): Promise<string> {
     const { conversationId, participantIds, type, scope } = params;
+    logInfo("[CALL] Starting call", {
+      type,
+      scope,
+      participantIds,
+      conversationId,
+    });
 
     const currentUser = getAuth().currentUser;
     if (!currentUser) {
@@ -195,6 +201,7 @@ class CallService {
 
     try {
       // Save to Firestore (triggers Cloud Function to send push notifications)
+      logInfo("[CALL] Saving call to Firestore", { callId });
       await setDoc(doc(getDb(), "Calls", callId), call);
 
       this.currentCallId = callId;
@@ -203,9 +210,11 @@ class CallService {
       this.subscribeToCall(callId);
 
       // Initialize WebRTC
+      logInfo("[CALL] Initializing WebRTC for outgoing call", { callId });
       await webRTCService.initialize(callId, callerId, type === "video");
 
       // Create offer for each participant
+      logInfo("[CALL] Creating offers for participants", { participantIds });
       for (const odId of participantIds) {
         await webRTCService.createOffer(odId);
       }
@@ -251,6 +260,8 @@ class CallService {
     const userId = currentUser.uid;
 
     try {
+      logInfo("[CALL] Answering call", { callId, userId });
+
       // Get call document
       const callDoc = await getDoc(doc(getDb(), "Calls", callId));
       if (!callDoc.exists()) {
@@ -419,7 +430,20 @@ class CallService {
   }
 
   toggleSpeaker(): boolean {
-    return webRTCService.toggleSpeaker();
+    const newSpeaker = webRTCService.toggleSpeaker();
+    // Route audio through CallKeep's native audio routing when in an active call
+    if (this.currentCallId) {
+      logInfo("[CALL] Speaker toggled", {
+        speaker: newSpeaker,
+        callId: this.currentCallId,
+      });
+      callKeepService
+        .setAudioRoute(this.currentCallId, newSpeaker ? "Speaker" : "Phone")
+        .catch((error: any) =>
+          logError("Failed to set audio route via CallKeep", { error }),
+        );
+    }
+    return newSpeaker;
   }
 
   toggleVideo(): boolean {

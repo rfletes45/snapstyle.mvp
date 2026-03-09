@@ -5,7 +5,6 @@
 
 import { NativeEventEmitter, Platform } from "react-native";
 
-
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/audioSessionService");
 // Logging helpers
@@ -57,6 +56,7 @@ class AudioSessionService {
   private routeChangeListeners: Set<(route: AudioRoute) => void> = new Set();
   private deviceChangeListeners: Set<(devices: AudioDevice[]) => void> =
     new Set();
+  private currentCallId: string | null = null;
 
   private constructor() {}
 
@@ -109,20 +109,32 @@ class AudioSessionService {
     }
   }
 
-  private async initializeIOS(isVideoCall: boolean): Promise<void> {
-    // iOS uses AVAudioSession via native module
-    // For now, we'll rely on react-native-webrtc's audio session handling
-    // In production, you might want to use react-native-incall-manager
+  /**
+   * Set the active call ID for audio routing through CallKeep
+   */
+  setCurrentCallId(callId: string | null): void {
+    this.currentCallId = callId;
+    logDebug("Current call ID set", { callId });
+  }
 
-    logDebug("iOS audio session initialized (via WebRTC)");
+  private async initializeIOS(isVideoCall: boolean): Promise<void> {
+    // iOS audio session is managed via CallKit (react-native-callkeep)
+    // WebRTC also configures AVAudioSession internally
+    // CallKeep.setAudioRoute handles speaker/earpiece switching
+    logInfo("[AUDIO] iOS audio session initialized", {
+      isVideoCall,
+      defaultRoute: isVideoCall ? "speaker" : "earpiece",
+    });
   }
 
   private async initializeAndroid(isVideoCall: boolean): Promise<void> {
-    // Android uses AudioManager via native module
-    // react-native-webrtc handles basic audio routing
-    // For advanced features, consider react-native-incall-manager
-
-    logDebug("Android audio session initialized (via WebRTC)");
+    // Android audio is managed via ConnectionService (react-native-callkeep)
+    // WebRTC configures AudioManager internally
+    // CallKeep.setAudioRoute handles speaker/earpiece switching
+    logInfo("[AUDIO] Android audio session initialized", {
+      isVideoCall,
+      defaultRoute: isVideoCall ? "speaker" : "earpiece",
+    });
   }
 
   // ============================================================================
@@ -151,15 +163,40 @@ class AudioSessionService {
   }
 
   private async setRouteIOS(route: AudioRoute): Promise<void> {
-    // In a full implementation, this would call native AVAudioSession APIs
-    // For now, we log the intent
-    logDebug("iOS: Setting route", { route });
+    logInfo("[AUDIO] iOS: Setting route", {
+      route,
+      callId: this.currentCallId,
+    });
+    await this.setRouteViaCallKeep(route);
   }
 
   private async setRouteAndroid(route: AudioRoute): Promise<void> {
-    // In a full implementation, this would call native AudioManager APIs
-    // For now, we log the intent
-    logDebug("Android: Setting route", { route });
+    logInfo("[AUDIO] Android: Setting route", {
+      route,
+      callId: this.currentCallId,
+    });
+    await this.setRouteViaCallKeep(route);
+  }
+
+  /**
+   * Route audio through CallKeep (CallKit on iOS / ConnectionService on Android)
+   * This is the actual native audio routing mechanism.
+   */
+  private async setRouteViaCallKeep(route: AudioRoute): Promise<void> {
+    if (!this.currentCallId) {
+      logDebug("[AUDIO] No active call ID — skipping CallKeep audio route");
+      return;
+    }
+    try {
+      // Lazily import to avoid circular dependencies
+      const { callKeepService } = require("./callKeepService");
+      const callKeepRoute = route === "speaker" ? "Speaker" : "Phone";
+      await callKeepService.setAudioRoute(this.currentCallId, callKeepRoute);
+      logInfo("[AUDIO] CallKeep audio route set", { route: callKeepRoute });
+    } catch (error) {
+      logError("[AUDIO] Failed to set CallKeep audio route", { route, error });
+      // Audio may still work via WebRTC's default routing
+    }
   }
 
   /**
@@ -355,7 +392,9 @@ class AudioSessionService {
       return;
     }
 
-    logInfo("Deactivating audio session");
+    logInfo("[AUDIO] Deactivating audio session", {
+      callId: this.currentCallId,
+    });
 
     try {
       this.disableProximitySensor();
@@ -363,11 +402,12 @@ class AudioSessionService {
       // Reset to default state
       this.currentRoute = "earpiece";
       this.availableDevices = [];
+      this.currentCallId = null;
       this.isActive = false;
 
-      logInfo("Audio session deactivated");
+      logInfo("[AUDIO] Audio session deactivated");
     } catch (error) {
-      logError("Failed to deactivate audio session", error);
+      logError("[AUDIO] Failed to deactivate audio session", error);
     }
   }
 

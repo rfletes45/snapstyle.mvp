@@ -3,6 +3,10 @@
  * Includes ringtone and vibration handling
  */
 
+import Avatar from "@/components/Avatar";
+import { useCallContext } from "@/contexts/CallContext";
+import { ringtoneService } from "@/services/calls/ringtoneService";
+import { useColors } from "@/store/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { JSX, useEffect, useRef } from "react";
@@ -15,11 +19,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCallContext } from "@/contexts/CallContext";
-import { ringtoneService } from "@/services/calls/ringtoneService";
-import { useColors } from "@/store/ThemeContext";
-import Avatar from "@/components/Avatar";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/calls/IncomingCallOverlay");
@@ -28,10 +27,16 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 interface IncomingCallOverlayProps {
   /** Whether to show the overlay */
   visible?: boolean;
+  /** Callback to navigate to the call screen after answering */
+  onNavigateToCall?: (
+    screenName: string,
+    params: Record<string, unknown>,
+  ) => void;
 }
 
 export function IncomingCallOverlay({
   visible: visibleProp,
+  onNavigateToCall,
 }: IncomingCallOverlayProps): JSX.Element | null {
   const insets = useSafeAreaInsets();
   const {
@@ -107,9 +112,27 @@ export function IncomingCallOverlay({
   const handleAnswer = async () => {
     if (incomingCall) {
       try {
+        // Capture call info BEFORE answering (state may change)
+        const callType = incomingCall.type;
+        const callId = incomingCall.id;
+        const callerInfo = incomingCall.participants[incomingCall.callerId];
+        const callerDisplayName = callerInfo?.displayName || "Unknown";
+
         // Stop ringtone immediately when answering
         await ringtoneService.stopRingtone();
-        await answerCall(incomingCall.id);
+        await answerCall(callId);
+
+        // Navigate to the appropriate call screen
+        logger.info("[CALL_UI] Navigating to call screen after answer", {
+          callType,
+          callId,
+        });
+        const screenName = callType === "video" ? "VideoCall" : "AudioCall";
+        onNavigateToCall?.(screenName, {
+          callId,
+          participantName: callerDisplayName,
+          isOutgoing: false,
+        });
       } catch (error) {
         logger.error("Failed to answer call:", error);
       }

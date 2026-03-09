@@ -497,8 +497,10 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
 
   if (loading && purchases.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
@@ -517,9 +519,11 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -609,14 +613,14 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
 // =============================================================================
 
 const DEFAULT_COLORS = {
-  background: "#eff1f5",
-  surface: "#ffffff",
-  text: "#4c4f69",
-  textSecondary: "#5c5f77",
-  textMuted: "#9ca0b0",
-  primary: "#8839ef",
-  border: "#dce0e8",
-  gray: "#9ca0b0",
+  background: "#0f0f17",
+  surface: "#1a1a2e",
+  text: "#cdd6f4",
+  textSecondary: "#bac2de",
+  textMuted: "#7f849c",
+  primary: "#cba6f7",
+  border: "#24243a",
+  gray: "#7f849c",
 };
 
 const styles = StyleSheet.create({
@@ -694,7 +698,7 @@ const styles = StyleSheet.create({
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEE2E2",
+    backgroundColor: "#301a1a",
     marginHorizontal: 16,
     marginTop: 12,
     padding: 12,
@@ -703,7 +707,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     flex: 1,
-    color: "#DC2626",
+    color: "#f38ba8",
     fontSize: 14,
   },
   retryText: {

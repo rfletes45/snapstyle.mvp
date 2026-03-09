@@ -3,6 +3,8 @@
  * Manages RTCPeerConnection, streams, and Firestore signaling for calls
  */
 
+import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
+import { DEFAULT_ICE_SERVERS, IceConfig, SignalingMessage } from "@/types/call";
 import {
   collection,
   deleteDoc,
@@ -15,6 +17,7 @@ import {
   Unsubscribe,
   where,
 } from "firebase/firestore";
+import { PermissionsAndroid, Platform } from "react-native";
 import {
   mediaDevices,
   MediaStream,
@@ -23,13 +26,6 @@ import {
   RTCSessionDescription,
 } from "react-native-webrtc";
 import { v4 as uuidv4 } from "uuid";
-import {
-  DEFAULT_ICE_SERVERS,
-  IceConfig,
-  SignalingMessage,
-} from "@/types/call";
-import { getAuthInstance, getFirestoreInstance } from "@/services/firebase";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("services/calls/webRTCService");
@@ -66,7 +62,10 @@ const VIDEO_CONSTRAINTS = {
 type UserMediaConstraints = Parameters<typeof mediaDevices.getUserMedia>[0];
 type RtcSdpType = RTCSessionDescriptionInit["type"];
 type PeerConnectionWithEvents = RTCPeerConnection & {
-  addEventListener: (eventName: string, listener: (event: unknown) => void) => void;
+  addEventListener: (
+    eventName: string,
+    listener: (event: unknown) => void,
+  ) => void;
   connectionState?: RTCPeerConnectionState;
 };
 
@@ -92,6 +91,9 @@ class WebRTCService {
 
   // Signaling subscription
   private signalingSubscription: Unsubscribe | null = null;
+
+  // Deduplicate signaling messages (prevents race between realtime sub and pending query)
+  private processedSignalIds: Set<string> = new Set();
 
   // ICE configuration
   private iceConfig: IceConfig = {
@@ -141,14 +143,30 @@ class WebRTCService {
     userId: string,
     enableVideo: boolean,
   ): Promise<void> {
-    logInfo("Initializing WebRTC", { callId, userId, enableVideo });
+    logInfo("[WEBRTC] Initializing", {
+      callId,
+      userId,
+      enableVideo,
+      platform: Platform.OS,
+    });
 
     this.currentCallId = callId;
     this.currentUserId = userId;
     this.isVideoEnabled = enableVideo;
+    this.processedSignalIds.clear();
 
     // Fetch TURN credentials if available
     await this.fetchTurnCredentials();
+
+    // Request platform permissions before acquiring media
+    const permissionsGranted = await this.requestMediaPermissions(enableVideo);
+    if (!permissionsGranted) {
+      throw new Error(
+        enableVideo
+          ? "Camera and microphone permissions are required for video calls"
+          : "Microphone permission is required for voice calls",
+      );
+    }
 
     // Get local media stream
     await this.initializeLocalStream(enableVideo);
@@ -159,17 +177,87 @@ class WebRTCService {
 
   private async fetchTurnCredentials(): Promise<void> {
     try {
-      // TURN credentials are optional in local/dev; default ICE servers remain the fallback.
-      // const response = await httpsCallable(functions, 'getTurnCredentials')();
-      // const { username, credential, urls } = response.data;
-      // this.iceConfig.iceServers.push({ urls, username, credential });
-
-      logDebug("Using default ICE servers (TURN credentials unavailable)");
+      logInfo("[WEBRTC] Fetching TURN credentials from Cloud Function");
+      const { getFunctions, httpsCallable } =
+        await import("firebase/functions");
+      const functions = getFunctions();
+      const getTurnCreds = httpsCallable(functions, "getTurnCredentials");
+      const response = await getTurnCreds();
+      const data = response.data as {
+        iceServers?: IceServer[];
+        ttl?: number;
+      } | null;
+      if (data?.iceServers && data.iceServers.length > 0) {
+        // Merge with default STUN servers
+        this.iceConfig = {
+          iceServers: [...DEFAULT_ICE_SERVERS, ...data.iceServers],
+        };
+        logInfo("[WEBRTC] TURN credentials loaded", {
+          serverCount: data.iceServers.length,
+        });
+      } else {
+        logWarn(
+          "[WEBRTC] TURN endpoint returned no additional servers, using STUN only",
+        );
+      }
     } catch (error) {
-      logWarn("Failed to fetch TURN credentials, using STUN only", {
+      logWarn("[WEBRTC] Failed to fetch TURN credentials, using STUN only", {
         error,
       });
+      // Non-fatal: continue with STUN servers. Calls may fail on symmetric NAT.
     }
+  }
+
+  /**
+   * Request platform-level media permissions before getUserMedia.
+   * On iOS, getUserMedia itself triggers the system dialog via Info.plist strings.
+   * On Android, we must explicitly request via PermissionsAndroid.
+   */
+  private async requestMediaPermissions(
+    enableVideo: boolean,
+  ): Promise<boolean> {
+    logInfo("[WEBRTC] Requesting media permissions", {
+      enableVideo,
+      platform: Platform.OS,
+    });
+
+    if (Platform.OS === "android") {
+      try {
+        const permissions: string[] = [
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ];
+        if (enableVideo) {
+          permissions.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+        }
+
+        const results = await PermissionsAndroid.requestMultiple(
+          permissions as Array<
+            (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS]
+          >,
+        );
+
+        const audioGranted =
+          results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+          PermissionsAndroid.RESULTS.GRANTED;
+        const videoGranted =
+          !enableVideo ||
+          results[PermissionsAndroid.PERMISSIONS.CAMERA] ===
+            PermissionsAndroid.RESULTS.GRANTED;
+
+        logInfo("[WEBRTC] Android permissions result", {
+          audioGranted,
+          videoGranted,
+        });
+        return audioGranted && videoGranted;
+      } catch (error) {
+        logError("[WEBRTC] Android permission request failed", { error });
+        return false;
+      }
+    }
+
+    // iOS: getUserMedia triggers system dialog via Info.plist permission strings
+    // We return true here; actual denial is caught in initializeLocalStream
+    return true;
   }
 
   // ============================================================================
@@ -177,6 +265,7 @@ class WebRTCService {
   // ============================================================================
 
   private async initializeLocalStream(enableVideo: boolean): Promise<void> {
+    logInfo("[WEBRTC] Acquiring local media", { enableVideo });
     try {
       const constraints = {
         audio: AUDIO_CONSTRAINTS as UserMediaConstraints["audio"],
@@ -188,13 +277,33 @@ class WebRTCService {
       this.localStream = await mediaDevices.getUserMedia(constraints);
       this.isVideoEnabled = enableVideo;
 
-      logInfo("Got local media stream", {
+      logInfo("[WEBRTC] Local media acquired", {
         audioTracks: this.localStream.getAudioTracks().length,
         videoTracks: this.localStream.getVideoTracks().length,
       });
-    } catch (error) {
-      logError("Failed to get local media", { error });
-      throw new Error("Failed to access camera/microphone");
+    } catch (error: any) {
+      const errorName = error?.name || "unknown";
+      const errorMessage = error?.message || String(error);
+      logError("[WEBRTC] Failed to get local media", {
+        errorName,
+        errorMessage,
+      });
+
+      if (
+        errorName === "NotAllowedError" ||
+        errorName === "PermissionDeniedError"
+      ) {
+        throw new Error(
+          "Camera/microphone permission was denied. Please enable it in your device Settings.",
+        );
+      } else if (
+        errorName === "NotFoundError" ||
+        errorName === "DevicesNotFoundError"
+      ) {
+        throw new Error("No camera or microphone found on this device.");
+      } else {
+        throw new Error(`Failed to access camera/microphone: ${errorMessage}`);
+      }
     }
   }
 
@@ -448,15 +557,36 @@ class WebRTCService {
         for (const change of snapshot.docChanges()) {
           if (change.type === "added") {
             const signal = change.doc.data() as SignalingMessage;
+            // Deduplicate: skip if already processed (race between subscription & pending query)
+            if (this.processedSignalIds.has(signal.id)) {
+              logDebug("[SIGNALING] Skipping already-processed signal", {
+                id: signal.id,
+                type: signal.type,
+              });
+              // Still delete the doc
+              await deleteDoc(change.doc.ref).catch(() => {});
+              continue;
+            }
+            this.processedSignalIds.add(signal.id);
+            logInfo("[SIGNALING] Processing signal", {
+              id: signal.id,
+              type: signal.type,
+              from: signal.from,
+            });
             await this.handleSignalingMessage(signal);
 
             // Delete processed signal
-            await deleteDoc(change.doc.ref);
+            await deleteDoc(change.doc.ref).catch((err) =>
+              logWarn("[SIGNALING] Failed to delete processed signal", {
+                id: signal.id,
+                err,
+              }),
+            );
           }
         }
       },
       (error) => {
-        logError("Signaling subscription error", { error });
+        logError("[SIGNALING] Subscription error", { error });
       },
     );
   }
@@ -497,9 +627,10 @@ class WebRTCService {
   private async handleSignalingMessage(
     signal: SignalingMessage,
   ): Promise<void> {
-    logDebug("Handling signaling message", {
+    logInfo("[SIGNALING] Handling message", {
       type: signal.type,
       from: signal.from,
+      callId: signal.callId,
     });
 
     const pc = this.getPeerConnection(signal.from);
@@ -606,7 +737,10 @@ class WebRTCService {
   // ============================================================================
 
   async createOffer(remoteUserId: string): Promise<void> {
-    logDebug("Creating offer for", { remoteUserId });
+    logInfo("[WEBRTC] Creating offer", {
+      remoteUserId,
+      callId: this.currentCallId,
+    });
 
     const pc = this.getPeerConnection(remoteUserId);
 
@@ -616,6 +750,9 @@ class WebRTCService {
     });
 
     await pc.setLocalDescription(offer);
+    logInfo("[WEBRTC] Offer created and local description set", {
+      remoteUserId,
+    });
 
     await this.sendSignalingMessage({
       type: "offer",
@@ -627,6 +764,8 @@ class WebRTCService {
   async processPendingSignals(callId: string): Promise<void> {
     if (!this.currentUserId) return;
 
+    logInfo("[SIGNALING] Processing pending signals", { callId });
+
     // Get any signals that arrived before we subscribed
     const signalsQuery = query(
       collection(getDb(), "CallSignaling", callId, "Signals"),
@@ -635,10 +774,25 @@ class WebRTCService {
     );
 
     const snapshot = await getDocs(signalsQuery);
+    logInfo("[SIGNALING] Found pending signals", { count: snapshot.size });
+
     for (const docSnap of snapshot.docs) {
       const signal = docSnap.data() as SignalingMessage;
+      // Deduplicate: skip if already processed by realtime subscription
+      if (this.processedSignalIds.has(signal.id)) {
+        logDebug("[SIGNALING] Skipping already-processed pending signal", {
+          id: signal.id,
+        });
+        await deleteDoc(docSnap.ref).catch(() => {});
+        continue;
+      }
+      this.processedSignalIds.add(signal.id);
+      logInfo("[SIGNALING] Processing pending signal", {
+        id: signal.id,
+        type: signal.type,
+      });
       await this.handleSignalingMessage(signal);
-      await deleteDoc(docSnap.ref);
+      await deleteDoc(docSnap.ref).catch(() => {});
     }
   }
 
@@ -872,38 +1026,58 @@ class WebRTCService {
   // ============================================================================
 
   async cleanup(): Promise<void> {
-    logInfo("Cleaning up WebRTC");
+    logInfo("[WEBRTC] Cleanup starting", { callId: this.currentCallId });
 
-    // Send bye to all peers
-    for (const remoteUserId of Array.from(this.peerConnections.keys())) {
-      await this.sendSignalingMessage({
-        type: "bye",
-        to: remoteUserId,
-        payload: null,
-      });
-    }
+    // Send bye to all peers (best-effort, don't block on failure)
+    const byePromises = Array.from(this.peerConnections.keys()).map(
+      (remoteUserId) =>
+        this.sendSignalingMessage({
+          type: "bye",
+          to: remoteUserId,
+          payload: null,
+        }).catch(() => {}),
+    );
+    await Promise.allSettled(byePromises);
 
     // Unsubscribe from signaling
     this.signalingSubscription?.();
     this.signalingSubscription = null;
 
     // Close all peer connections
-    this.peerConnections.forEach((pc) => {
-      pc.close();
+    this.peerConnections.forEach((pc, peerId) => {
+      try {
+        pc.close();
+      } catch (e) {
+        logWarn("[WEBRTC] Error closing peer connection", { peerId, error: e });
+      }
     });
     this.peerConnections.clear();
 
     // Stop all remote streams
     this.remoteStreams.forEach((stream) => {
-      stream.getTracks().forEach((track) => track.stop());
+      try {
+        stream.getTracks().forEach((track: any) => track.stop());
+      } catch {
+        // ignore
+      }
     });
     this.remoteStreams.clear();
 
     // Stop local stream
     if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => track.stop());
+      try {
+        this.localStream.getTracks().forEach((track: any) => track.stop());
+      } catch {
+        // ignore
+      }
       this.localStream = null;
     }
+
+    // Clear signal dedup set
+    this.processedSignalIds.clear();
+
+    // Reset reconnection state
+    this.reconnectionAttempts.clear();
 
     // Reset state
     this.currentCallId = null;
@@ -913,7 +1087,7 @@ class WebRTCService {
     this.isSpeakerOn = false;
     this.isFrontCamera = true;
 
-    logDebug("WebRTC cleanup completed");
+    logInfo("[WEBRTC] Cleanup completed");
   }
 }
 

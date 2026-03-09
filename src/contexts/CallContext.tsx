@@ -6,6 +6,14 @@
  * On web and Expo Go, a no-op context is provided.
  */
 
+import { CALL_FEATURES } from "@/constants/featureFlags";
+import {
+  Call,
+  CallActions,
+  CallEvent,
+  CallState,
+  StartCallParams,
+} from "@/types/call";
 import Constants from "expo-constants";
 import React, {
   createContext,
@@ -18,14 +26,6 @@ import React, {
   useState,
 } from "react";
 import { AppState, AppStateStatus, Platform } from "react-native";
-import {
-  Call,
-  CallActions,
-  CallEvent,
-  CallState,
-  StartCallParams,
-} from "@/types/call";
-import { CALL_FEATURES } from "@/constants/featureFlags";
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("contexts/CallContext");
@@ -34,8 +34,7 @@ const isWeb = Platform.OS === "web";
 const isExpoGo = Constants.appOwnership === "expo";
 const areNativeCallsAvailable = !isWeb && !isExpoGo;
 const isCallsFeatureEnabled = CALL_FEATURES.CALLS_ENABLED;
-const isCallRuntimeEnabled =
-  areNativeCallsAvailable && isCallsFeatureEnabled;
+const isCallRuntimeEnabled = areNativeCallsAvailable && isCallsFeatureEnabled;
 
 // Conditionally import native modules
 let MediaStream: any = null;
@@ -220,6 +219,10 @@ function NativeCallProvider({ children }: CallProviderProps): JSX.Element {
     "good" | "fair" | "poor" | "unknown"
   >("unknown");
 
+  // Ref for stable access to currentCall in callbacks (avoids stale closures)
+  const currentCallRef = useRef<Call | null>(null);
+  currentCallRef.current = currentCall;
+
   // Refs for duration timer
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
@@ -312,9 +315,10 @@ function NativeCallProvider({ children }: CallProviderProps): JSX.Element {
       onReconnectFailed: () => {
         setIsReconnecting(false);
         logError("Reconnection failed, ending call");
-        // End call after failed reconnection
-        if (currentCall) {
-          endCall(currentCall.id);
+        // End call after failed reconnection — use ref for stable access
+        const activeCall = currentCallRef.current;
+        if (activeCall) {
+          endCall(activeCall.id);
         }
       },
     });
@@ -342,12 +346,21 @@ function NativeCallProvider({ children }: CallProviderProps): JSX.Element {
 
     switch (event.type) {
       case "call_started":
-        if (event.call.callerId === callService.getCurrentCallId()) {
-          // Outgoing call
+        // Compare by call document ID, not caller UID
+        // When WE start a call, callService.currentCallId is set BEFORE this event fires
+        if (event.call.id === callService.getCurrentCallId()) {
+          // Outgoing call — we initiated this
+          logInfo("Outgoing call started", { callId: event.call.id });
           setCurrentCall(event.call);
           setIsConnecting(true);
+          // Set call ID on audio session for speaker routing
+          audioSessionService?.setCurrentCallId?.(event.call.id);
         } else {
-          // Incoming call
+          // Incoming call from someone else
+          logInfo("Incoming call detected", {
+            callId: event.call.id,
+            caller: event.call.callerName,
+          });
           setIncomingCall(event.call);
           setShowIncomingCallUI(true);
         }
@@ -359,6 +372,8 @@ function NativeCallProvider({ children }: CallProviderProps): JSX.Element {
         setShowIncomingCallUI(false);
         setIsConnecting(true);
         startDurationTimer();
+        // Set call ID on audio session for speaker routing
+        audioSessionService?.setCurrentCallId?.(event.call.id);
         break;
 
       case "call_ended":
@@ -402,6 +417,10 @@ function NativeCallProvider({ children }: CallProviderProps): JSX.Element {
     setReconnectionAttempts(0);
     stopDurationTimer();
 
+    // Clear audio session call ID
+    audioSessionService?.setCurrentCallId?.(null);
+    audioSessionService?.deactivate?.();
+
     // Stop foreground service on Android
     if (Platform.OS === "android") {
       await foregroundServiceManager.stopService();
@@ -412,41 +431,48 @@ function NativeCallProvider({ children }: CallProviderProps): JSX.Element {
   }, []);
 
   const handleConnectionLost = useCallback(async () => {
-    if (!currentCall) return;
+    const activeCall = currentCallRef.current;
+    if (!activeCall) return;
 
-    logInfo("Connection lost, starting reconnection");
+    logInfo("Connection lost, starting reconnection", {
+      callId: activeCall.id,
+    });
     setIsReconnecting(true);
 
     // Start reconnection monitoring
-    callReconnectionService.startMonitoring(currentCall.id);
-  }, [currentCall]);
+    callReconnectionService.startMonitoring(activeCall.id);
+  }, []);
 
   const handleAppStateChange = useCallback(
     async (nextAppState: AppStateStatus) => {
-      logDebug("App state changed", { nextAppState });
+      const activeCall = currentCallRef.current;
+      logDebug("App state changed", {
+        nextAppState,
+        hasActiveCall: !!activeCall,
+      });
 
       // Start foreground service when going to background with active call
       if (
         Platform.OS === "android" &&
-        currentCall &&
+        activeCall &&
         nextAppState === "background"
       ) {
         await foregroundServiceManager.startService(
-          currentCall.id,
-          currentCall.callerName ?? "Unknown",
-          currentCall.type === "video",
+          activeCall.id,
+          activeCall.callerName ?? "Unknown",
+          activeCall.type === "video",
         );
       }
 
       // Stop foreground service when coming to foreground
       if (Platform.OS === "android" && nextAppState === "active") {
         // Keep service if call is active
-        if (!currentCall) {
+        if (!activeCall) {
           await foregroundServiceManager.stopService();
         }
       }
     },
-    [currentCall],
+    [],
   );
 
   // ============================================================================

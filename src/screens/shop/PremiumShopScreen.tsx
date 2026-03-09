@@ -23,7 +23,6 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -44,7 +43,6 @@ import {
   PurchaseConfirmationModal,
   TokenPackCard,
 } from "@/components/shop";
-import { EmptyState } from "@/components/ui";
 import type { CosmeticBundle } from "@/data/cosmeticBundles";
 import { usePremiumShop } from "@/hooks";
 import { useAuth } from "@/store/AuthContext";
@@ -55,7 +53,6 @@ import type {
   ShopStackParamList,
   TokenPack,
 } from "@/types/shop";
-import { SHOP_COLORS } from "@/types/shop";
 
 // =============================================================================
 // Types
@@ -94,8 +91,8 @@ const TABS: PremiumTab[] = [
 
 const PREMIUM_HEADER_GRADIENT: readonly [string, string, ...string[]] = [
   "#2a1052",
-  "#1a0a3e",
-  "#0d0d1a",
+  "#150830",
+  "#0f0f17",
 ];
 
 const PREM = {
@@ -272,18 +269,30 @@ export default function PremiumShopScreen() {
           <MaterialCommunityIcons
             name="restore"
             size={22}
-            color={isRestoring ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.7)"}
+            color={
+              isRestoring ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.7)"
+            }
           />
         </TouchableOpacity>
       </View>
       <View style={styles.headerBranding}>
-        <MaterialCommunityIcons name="diamond-stone" size={28} color={PREM.gold} />
+        <MaterialCommunityIcons
+          name="diamond-stone"
+          size={28}
+          color={PREM.gold}
+        />
         <Text style={styles.headerTitle}>Premium Collection</Text>
-        <Text style={styles.headerSubtitle}>Exclusive cosmetics & limited editions</Text>
+        <Text style={styles.headerSubtitle}>
+          Exclusive cosmetics & limited editions
+        </Text>
       </View>
       <View style={styles.headerDivider}>
         <View style={styles.headerDividerLine} />
-        <MaterialCommunityIcons name="diamond" size={10} color={PREM.purpleLight} />
+        <MaterialCommunityIcons
+          name="diamond"
+          size={10}
+          color={PREM.purpleLight}
+        />
         <View style={styles.headerDividerLine} />
       </View>
     </LinearGradient>
@@ -346,11 +355,19 @@ export default function PremiumShopScreen() {
     <View style={styles.sectionHeader}>
       <View style={styles.sectionTitleRow}>
         <View style={styles.sectionIconBg}>
-          <MaterialCommunityIcons name={icon} size={18} color={PREM.purpleLight} />
+          <MaterialCommunityIcons
+            name={icon}
+            size={18}
+            color={PREM.purpleLight}
+          />
         </View>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          {title}
+        </Text>
       </View>
-      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+      <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+        {subtitle}
+      </Text>
     </View>
   );
 
@@ -370,7 +387,11 @@ export default function PremiumShopScreen() {
   // === Token Packs ===
   const renderTokenPacks = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      {renderSectionHeader("Token Packs", "Get tokens to spend in the Shop", "gold")}
+      {renderSectionHeader(
+        "Token Packs",
+        "Get tokens to spend in the Shop",
+        "gold",
+      )}
       <View style={styles.tokenPacksGrid}>
         {tokenPacks.map((pack, index) => (
           <Animated.View
@@ -396,9 +417,17 @@ export default function PremiumShopScreen() {
   // === Bundles ===
   const renderBundles = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      {renderSectionHeader("Premium Bundles", "Curated collections with exclusive items", "package-variant")}
+      {renderSectionHeader(
+        "Premium Bundles",
+        "Curated collections with exclusive items",
+        "package-variant",
+      )}
       {bundles.length === 0 ? (
-        renderPremiumEmpty("package-variant", "No Bundles Available", "New premium bundles are added regularly. Check back soon!")
+        renderPremiumEmpty(
+          "package-variant",
+          "No Bundles Available",
+          "New premium bundles are added regularly. Check back soon!",
+        )
       ) : (
         <View style={styles.bundlesContainer}>
           {bundles.map((bundle, index) => (
@@ -421,9 +450,17 @@ export default function PremiumShopScreen() {
   // === Exclusives ===
   const renderExclusives = () => (
     <Animated.View entering={FadeInUp.duration(400)} style={styles.section}>
-      {renderSectionHeader("Exclusive Items", "Premium-only cosmetics you can't get anywhere else", "star-circle")}
+      {renderSectionHeader(
+        "Exclusive Items",
+        "Premium-only cosmetics you can't get anywhere else",
+        "star-circle",
+      )}
       {exclusives.length === 0 ? (
-        renderPremiumEmpty("star-circle", "No Exclusives Available", "Exclusive premium items drop periodically. Stay tuned!")
+        renderPremiumEmpty(
+          "star-circle",
+          "No Exclusives Available",
+          "Exclusive premium items drop periodically. Stay tuned!",
+        )
       ) : (
         <View style={styles.exclusivesGrid}>
           {exclusives.map((item, index) => (
@@ -456,11 +493,18 @@ export default function PremiumShopScreen() {
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
           />
-          <MaterialCommunityIcons name="gift-outline" size={56} color={PREM.purpleLight} />
+          <MaterialCommunityIcons
+            name="gift-outline"
+            size={56}
+            color={PREM.purpleLight}
+          />
         </View>
-        <Text style={[styles.comingSoonTitle, { color: colors.text }]}>Coming Soon</Text>
+        <Text style={[styles.comingSoonTitle, { color: colors.text }]}>
+          Coming Soon
+        </Text>
         <Text style={[styles.comingSoonText, { color: colors.textSecondary }]}>
-          Gift tokens and exclusive items to your friends. We're putting the finishing touches on this feature!
+          Gift tokens and exclusive items to your friends. We're putting the
+          finishing touches on this feature!
         </Text>
       </View>
     </Animated.View>
@@ -470,7 +514,10 @@ export default function PremiumShopScreen() {
   const renderContent = () => {
     if (loading) {
       return (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.premiumLoadingContainer}>
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={styles.premiumLoadingContainer}
+        >
           <View style={styles.premiumLoadingGlow}>
             <LinearGradient
               colors={["rgba(178,75,243,0.15)", "transparent"]}
@@ -479,24 +526,45 @@ export default function PremiumShopScreen() {
               end={{ x: 0.5, y: 1 }}
             />
           </View>
-          <MaterialCommunityIcons name="diamond-stone" size={36} color={PREM.purpleLight} />
-          <ActivityIndicator size="small" color={PREM.purpleLight} style={{ marginTop: 16 }} />
-          <Text style={styles.premiumLoadingText}>Loading premium collection...</Text>
+          <MaterialCommunityIcons
+            name="diamond-stone"
+            size={36}
+            color={PREM.purpleLight}
+          />
+          <ActivityIndicator
+            size="small"
+            color={PREM.purpleLight}
+            style={{ marginTop: 16 }}
+          />
+          <Text style={styles.premiumLoadingText}>
+            Loading premium collection...
+          </Text>
         </Animated.View>
       );
     }
 
     if (error) {
       return (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.premiumErrorContainer}>
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={styles.premiumErrorContainer}
+        >
           <View style={styles.premiumErrorIcon}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#EF5350" />
+            <MaterialCommunityIcons
+              name="alert-circle-outline"
+              size={48}
+              color="#EF5350"
+            />
           </View>
           <Text style={styles.premiumErrorTitle}>Unable to Load</Text>
           <Text style={styles.premiumErrorSubtitle}>
             {error.message || "Something went wrong. Please try again."}
           </Text>
-          <TouchableOpacity style={styles.premiumRetryButton} onPress={refresh} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.premiumRetryButton}
+            onPress={refresh}
+            activeOpacity={0.7}
+          >
             <MaterialCommunityIcons name="refresh" size={18} color="#fff" />
             <Text style={styles.premiumRetryText}>Try Again</Text>
           </TouchableOpacity>
@@ -506,12 +574,26 @@ export default function PremiumShopScreen() {
 
     if (!iapReady) {
       return (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.premiumErrorContainer}>
-          <View style={[styles.premiumErrorIcon, { backgroundColor: "rgba(255,255,255,0.05)" }]}>
-            <MaterialCommunityIcons name="store-off-outline" size={48} color="rgba(255,255,255,0.35)" />
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={styles.premiumErrorContainer}
+        >
+          <View
+            style={[
+              styles.premiumErrorIcon,
+              { backgroundColor: "rgba(255,255,255,0.05)" },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="store-off-outline"
+              size={48}
+              color="rgba(255,255,255,0.35)"
+            />
           </View>
           <Text style={styles.premiumErrorTitle}>Store Unavailable</Text>
-          <Text style={styles.premiumErrorSubtitle}>In-app purchases are not available on this device.</Text>
+          <Text style={styles.premiumErrorSubtitle}>
+            In-app purchases are not available on this device.
+          </Text>
         </Animated.View>
       );
     }
@@ -531,19 +613,22 @@ export default function PremiumShopScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: "#0D0D1A" }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {renderHeader()}
       {renderTabs()}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + 32 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={loading}
             onRefresh={refresh}
             tintColor={PREM.purpleLight}
-            progressBackgroundColor="#1a1a2e"
+            progressBackgroundColor={colors.surface}
           />
         }
       >
@@ -661,7 +746,7 @@ const styles = StyleSheet.create({
 
   // Tabs
   tabsContainer: {
-    backgroundColor: "rgba(13,13,26,0.95)",
+    backgroundColor: "rgba(10,10,20,0.95)",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(178,75,243,0.12)",
   },
@@ -702,7 +787,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sectionTitle: { fontSize: 20, fontWeight: "700", letterSpacing: 0.2 },
-  sectionSubtitle: { fontSize: 13, marginTop: 2, marginLeft: 42, lineHeight: 18 },
+  sectionSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+    marginLeft: 42,
+    lineHeight: 18,
+  },
 
   // Token Packs
   tokenPacksGrid: {

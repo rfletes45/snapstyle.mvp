@@ -542,13 +542,13 @@ DMMessageItem.displayName = "DMMessageItem";
 
 const styles = StyleSheet.create({
   messageContainer: {
-    marginBottom: 12,
+    marginBottom: 14,
     width: "100%",
   },
   sentMessageContainer: {},
   receivedMessageContainer: {},
   groupedMessageContainer: {
-    marginBottom: 2,
+    marginBottom: 3,
   },
   messageBubbleWrapper: {
     flexDirection: "column",
@@ -570,19 +570,19 @@ const styles = StyleSheet.create({
     flexDirection: "column",
   },
   messageBubble: {
-    padding: 12,
-    borderRadius: 16,
+    padding: 10,
+    borderRadius: 20,
     maxWidth: "100%",
   },
   sentBubble: {
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 6,
   },
   receivedBubble: {
-    borderBottomLeftRadius: 4,
+    borderBottomLeftRadius: 6,
   },
   messageText: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 20,
+    lineHeight: 29,
   },
   timestamp: {
     fontSize: 10,
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
   timestampStatusRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 6,
     gap: 4,
   },
   timestampStatusRowSent: {

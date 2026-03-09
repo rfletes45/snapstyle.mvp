@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: "#0f0f17",
   },
   title: {
     fontSize: 24,
@@ -83,19 +83,27 @@ if (areNativeCallsAvailable) {
     console.error("[CallScreens] Failed to load native call screens:", e);
     // Fall through to stub screens below
     VideoCallScreen = function VideoCallScreenUnavailable() {
-      return React.createElement(UnavailableScreen, { screenName: "Video Calls" });
+      return React.createElement(UnavailableScreen, {
+        screenName: "Video Calls",
+      });
     };
     GroupCallScreen = function GroupCallScreenUnavailable() {
-      return React.createElement(UnavailableScreen, { screenName: "Group Calls" });
+      return React.createElement(UnavailableScreen, {
+        screenName: "Group Calls",
+      });
     };
   }
 } else {
   // Provide stub screens for web/Expo Go
   VideoCallScreen = function VideoCallScreenUnavailable() {
-    return React.createElement(UnavailableScreen, { screenName: "Video Calls" });
+    return React.createElement(UnavailableScreen, {
+      screenName: "Video Calls",
+    });
   };
   GroupCallScreen = function GroupCallScreenUnavailable() {
-    return React.createElement(UnavailableScreen, { screenName: "Group Calls" });
+    return React.createElement(UnavailableScreen, {
+      screenName: "Group Calls",
+    });
   };
 }
 

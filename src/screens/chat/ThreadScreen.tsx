@@ -431,26 +431,26 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 22,
     maxWidth: "85%",
   },
   ownBubble: {
     alignSelf: "flex-end",
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 6,
   },
   otherBubble: {
     alignSelf: "flex-start",
-    borderBottomLeftRadius: 4,
+    borderBottomLeftRadius: 6,
   },
   messageText: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: 20,
+    lineHeight: 29,
   },
   timestamp: {
     fontSize: 11,
-    marginTop: 4,
+    marginTop: 6,
     alignSelf: "flex-end",
   },
 

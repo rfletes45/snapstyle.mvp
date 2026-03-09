@@ -3,6 +3,8 @@
  * Automatically adjusts grid based on participant count
  */
 
+import Avatar from "@/components/Avatar";
+import { AvatarConfig } from "@/types/models";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo } from "react";
 import {
@@ -14,8 +16,6 @@ import {
   ViewStyle,
 } from "react-native";
 import { MediaStream, RTCView } from "react-native-webrtc";
-import { AvatarConfig } from "@/types/models";
-import Avatar from "@/components/Avatar";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     margin: 2,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#0f0f17",
     position: "relative",
   },
   activeSpeakerTile: {
@@ -382,13 +382,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1a1a2e",
   },
   placeholderAvatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "#444",
+    backgroundColor: "#35355a",
     justifyContent: "center",
     alignItems: "center",
   },

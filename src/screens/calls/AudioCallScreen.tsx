@@ -2,16 +2,23 @@
  * AudioCallScreen - Screen for audio-only calls
  */
 
-import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
-import React, { JSX, useEffect } from "react";
-import { StatusBar, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import Avatar from "@/components/Avatar";
 import { CallControls } from "@/components/calls/CallControls";
 import { useCallContext } from "@/contexts/CallContext";
 import { useCall } from "@/hooks/calls";
 import { useColors } from "@/store/ThemeContext";
+import { createLogger } from "@/utils/log";
 import { formatDurationSecondsPadded as formatDuration } from "@/utils/time";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import React, { JSX, useEffect } from "react";
+import { StatusBar, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+const logger = createLogger("screens/calls/AudioCallScreen");
+const logInfo = (msg: string, data?: any) =>
+  logger.info(`[AUDIO_CALL] ${msg}`, data ?? "");
+const logDebug = (msg: string, data?: any) =>
+  __DEV__ && logger.info(`[AUDIO_CALL] ${msg}`, data ?? "");
 
 type AudioCallRouteParams = {
   AudioCall: {
@@ -41,21 +48,35 @@ export function AudioCallScreen(): JSX.Element {
 
   const call = currentCall || incomingCall;
 
+  // Log screen lifecycle
+  useEffect(() => {
+    logInfo("AudioCallScreen mounted", { callId, participantName, isOutgoing });
+    return () => logInfo("AudioCallScreen unmounted", { callId });
+  }, [callId]);
+
   // Handle call ended
   useEffect(() => {
     if (!call && !isConnecting) {
+      logInfo("Call ended, navigating back", { callId });
       // Call ended, go back
       navigation.goBack();
     }
   }, [call, isConnecting, navigation]);
 
   // Get other participant info
+  // For 1:1 DM calls: if we initiated (isOutgoing), the other person is NOT the callerId.
+  // If we received the call, the other person IS the callerId.
   const otherParticipant = call
-    ? Object.values(call.participants).find(
-        (p) =>
-          p.odId !== call.callerId ||
-          call.participants[call.callerId]?.joinedAt,
-      )
+    ? (() => {
+        const participants = Object.values(call.participants);
+        if (isOutgoing) {
+          // We are the caller — show the other person
+          return participants.find((p) => p.odId !== call.callerId) || null;
+        } else {
+          // We received the call — show the caller
+          return call.participants[call.callerId] || null;
+        }
+      })()
     : null;
 
   const displayName =

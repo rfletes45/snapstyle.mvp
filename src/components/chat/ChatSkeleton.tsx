@@ -7,10 +7,10 @@
  * @file src/components/chat/ChatSkeleton.tsx
  */
 
+import { Spacing } from "@/constants/theme";
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { useTheme } from "react-native-paper";
-import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Props
@@ -108,7 +108,7 @@ export function ChatSkeleton({ bubbleCount = 8 }: ChatSkeletonProps) {
       // Alternate sides with some variation
       const isRight = index % 3 === 0 || index % 4 === 1;
       // Vary widths based on index
-      const widthVariants = [160, 200, 140, 220, 180, 240, 150, 190];
+      const widthVariants = [190, 240, 170, 260, 210, 280, 180, 220];
       const width = widthVariants[index % widthVariants.length];
       // Some messages have multiple lines
       const hasSecondLine = index % 2 === 1;
@@ -148,8 +148,8 @@ export function ChatSkeleton({ bubbleCount = 8 }: ChatSkeletonProps) {
             {/* Message bubble */}
             <ShimmerPlaceholder
               width={pattern.width}
-              height={pattern.hasSecondLine ? 56 : 36}
-              borderRadius={16}
+              height={pattern.hasSecondLine ? 76 : 52}
+              borderRadius={20}
             />
 
             {/* Timestamp placeholder */}

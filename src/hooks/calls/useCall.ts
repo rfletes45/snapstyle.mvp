@@ -3,9 +3,16 @@
  * Provides simplified API for call operations
  */
 
-import { useCallback, useMemo } from "react";
 import { useCallContext } from "@/contexts/CallContext";
 import { CallType, StartCallParams } from "@/types/call";
+import { createLogger } from "@/utils/log";
+import { useCallback, useMemo } from "react";
+
+const logger = createLogger("hooks/calls/useCall");
+const logInfo = (msg: string, data?: any) =>
+  logger.info(`[useCall] ${msg}`, data ?? "");
+const logError = (msg: string, error?: any) =>
+  logger.error(`[useCall] ${msg}`, error ?? "");
 
 export interface UseCallReturn {
   // State
@@ -84,6 +91,7 @@ export function useCall(): UseCallReturn {
   // Start 1:1 audio call
   const startAudioCall = useCallback(
     async (conversationId: string, participantId: string): Promise<string> => {
+      logInfo("Starting audio call", { conversationId, participantId });
       const params: StartCallParams = {
         conversationId,
         participantIds: [participantId],
@@ -98,6 +106,7 @@ export function useCall(): UseCallReturn {
   // Start 1:1 video call
   const startVideoCall = useCallback(
     async (conversationId: string, participantId: string): Promise<string> => {
+      logInfo("Starting video call", { conversationId, participantId });
       const params: StartCallParams = {
         conversationId,
         participantIds: [participantId],
@@ -130,19 +139,26 @@ export function useCall(): UseCallReturn {
   // Answer incoming call
   const answerCall = useCallback(async (): Promise<void> => {
     if (incomingCall) {
+      logInfo("Answering incoming call", { callId: incomingCall.id });
       await answerCallContext(incomingCall.id);
+    } else {
+      logError("answerCall called but no incoming call");
     }
   }, [incomingCall, answerCallContext]);
 
   // Decline incoming call
   const declineCall = useCallback(async (): Promise<void> => {
     if (incomingCall) {
+      logInfo("Declining incoming call", { callId: incomingCall.id });
       await declineCallContext(incomingCall.id);
+    } else {
+      logError("declineCall called but no incoming call");
     }
   }, [incomingCall, declineCallContext]);
 
   // End current call
   const endCall = useCallback(async (): Promise<void> => {
+    logInfo("Ending current call");
     await endCallContext();
   }, [endCallContext]);
 

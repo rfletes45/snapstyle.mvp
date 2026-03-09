@@ -217,7 +217,14 @@ function AppContent() {
                   >
                     <RootNavigator navigationRef={navigationRef} />
                     <InAppToast onNavigate={handleToastNavigate} />
-                    <IncomingCallOverlay />
+                    <IncomingCallOverlay
+                      onNavigateToCall={(screenName, params) => {
+                        navigationRef.current?.navigate(
+                          screenName as any,
+                          params as any,
+                        );
+                      }}
+                    />
                   </View>
                   <ExpoStatusBar style={isDark ? "light" : "dark"} />
                 </CameraProvider>

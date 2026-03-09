@@ -397,6 +397,105 @@ export default function GamesHubScreenV4() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
+        {/* ── Level & Rewards Card ───────────────────────────────── */}
+        <TouchableOpacity
+          style={[
+            styles.levelRewardsCard,
+            {
+              backgroundColor: cardBg,
+              borderColor,
+            },
+          ]}
+          onPress={handleLevelRewards}
+          activeOpacity={0.7}
+        >
+          {/* Top row: Level badge + XP numbers */}
+          <View style={styles.lrTopRow}>
+            <View
+              style={[
+                styles.lrLevelBadge,
+                { backgroundColor: theme.colors.primary },
+              ]}
+            >
+              <Text style={styles.lrLevelBadgeText}>{currentLevel}</Text>
+            </View>
+            <View style={styles.lrXpInfo}>
+              <Text style={[styles.lrLevelLabel, { color: textColor }]}>
+                Level {currentLevel}
+                {isMaxLevel ? " (MAX)" : ""}
+              </Text>
+              <Text style={[styles.lrXpText, { color: subtextColor }]}>
+                {isMaxLevel
+                  ? "MAX LEVEL"
+                  : `${xpCurrent.toLocaleString()}/${xpNeeded.toLocaleString()} XP`}
+              </Text>
+            </View>
+            {unclaimedRewards > 0 && (
+              <View style={styles.lrUnclaimedPill}>
+                <MaterialCommunityIcons name="gift" size={14} color="#FFF" />
+                <Text style={styles.lrUnclaimedText}>{unclaimedRewards}</Text>
+              </View>
+            )}
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={22}
+              color={subtextColor}
+            />
+          </View>
+
+          {/* XP progress bar */}
+          <View style={styles.lrBarRow}>
+            <ProgressBar
+              progress={xpProgress}
+              color={theme.colors.primary}
+              style={[styles.lrBar, { backgroundColor: accentBg }]}
+            />
+          </View>
+
+          {/* Bottom label */}
+          <Text style={[styles.lrBottomHint, { color: subtextColor }]}>
+            {unclaimedRewards > 0
+              ? `${unclaimedRewards} reward${unclaimedRewards !== 1 ? "s" : ""} ready to claim!`
+              : isMaxLevel
+                ? "All tiers unlocked — claim your rewards!"
+                : `${Math.max(0, xpNeeded - xpCurrent).toLocaleString()} XP to next level`}
+          </Text>
+        </TouchableOpacity>
+
+        {/* ── Your Progress Card (Achievements entry) ─────────────── */}
+        <TouchableOpacity
+          style={[
+            styles.progressCard,
+            {
+              backgroundColor: theme.colors.primary + "12",
+              borderColor: theme.colors.primary + "30",
+            },
+          ]}
+          onPress={handleAchievements}
+          activeOpacity={0.7}
+        >
+          <View style={styles.progressCardLeft}>
+            <MaterialCommunityIcons
+              name="trophy-outline"
+              size={28}
+              color={theme.colors.primary}
+            />
+          </View>
+          <View style={styles.progressCardCenter}>
+            <Text style={[styles.progressCardTitle, { color: textColor }]}>
+              Achievements & Progress
+            </Text>
+            <Text style={[styles.progressCardSub, { color: subtextColor }]}>
+              Track your milestones, earn badges
+            </Text>
+          </View>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={22}
+            color={subtextColor}
+          />
+        </TouchableOpacity>
+
         {/* ── Active Games Section ─────────────────────────────────── */}
         {invitesLoading ? (
           <View style={styles.loadingRow}>
@@ -493,103 +592,6 @@ export default function GamesHubScreenV4() {
           </View>
         )}
 
-        {/* ── Your Progress Card (Achievements entry) ─────────────── */}
-        <TouchableOpacity
-          style={[
-            styles.progressCard,
-            {
-              backgroundColor: theme.colors.primary + "12",
-              borderColor: theme.colors.primary + "30",
-            },
-          ]}
-          onPress={handleAchievements}
-          activeOpacity={0.7}
-        >
-          <View style={styles.progressCardLeft}>
-            <MaterialCommunityIcons
-              name="trophy-outline"
-              size={28}
-              color={theme.colors.primary}
-            />
-          </View>
-          <View style={styles.progressCardCenter}>
-            <Text style={[styles.progressCardTitle, { color: textColor }]}>
-              Achievements & Progress
-            </Text>
-            <Text style={[styles.progressCardSub, { color: subtextColor }]}>
-              Track your milestones, earn badges
-            </Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={subtextColor}
-          />
-        </TouchableOpacity>
-        {/* ── Level & Rewards Card ───────────────────────────────── */}
-        <TouchableOpacity
-          style={[
-            styles.levelRewardsCard,
-            {
-              backgroundColor: cardBg,
-              borderColor,
-            },
-          ]}
-          onPress={handleLevelRewards}
-          activeOpacity={0.7}
-        >
-          {/* Top row: Level badge + XP numbers */}
-          <View style={styles.lrTopRow}>
-            <View
-              style={[
-                styles.lrLevelBadge,
-                { backgroundColor: theme.colors.primary },
-              ]}
-            >
-              <Text style={styles.lrLevelBadgeText}>{currentLevel}</Text>
-            </View>
-            <View style={styles.lrXpInfo}>
-              <Text style={[styles.lrLevelLabel, { color: textColor }]}>
-                Level {currentLevel}
-                {isMaxLevel ? " (MAX)" : ""}
-              </Text>
-              <Text style={[styles.lrXpText, { color: subtextColor }]}>
-                {isMaxLevel
-                  ? "MAX LEVEL"
-                  : `${xpCurrent.toLocaleString()}/${xpNeeded.toLocaleString()} XP`}
-              </Text>
-            </View>
-            {unclaimedRewards > 0 && (
-              <View style={styles.lrUnclaimedPill}>
-                <MaterialCommunityIcons name="gift" size={14} color="#FFF" />
-                <Text style={styles.lrUnclaimedText}>{unclaimedRewards}</Text>
-              </View>
-            )}
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={22}
-              color={subtextColor}
-            />
-          </View>
-
-          {/* XP progress bar */}
-          <View style={styles.lrBarRow}>
-            <ProgressBar
-              progress={xpProgress}
-              color={theme.colors.primary}
-              style={[styles.lrBar, { backgroundColor: accentBg }]}
-            />
-          </View>
-
-          {/* Bottom label */}
-          <Text style={[styles.lrBottomHint, { color: subtextColor }]}>
-            {unclaimedRewards > 0
-              ? `${unclaimedRewards} reward${unclaimedRewards !== 1 ? "s" : ""} ready to claim!`
-              : isMaxLevel
-                ? "All tiers unlocked — claim your rewards!"
-                : `${Math.max(0, xpNeeded - xpCurrent).toLocaleString()} XP to next level`}
-          </Text>
-        </TouchableOpacity>
         {/* ── How to Play Banner ───────────────────────────────────── */}
         <View
           style={[

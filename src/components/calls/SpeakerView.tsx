@@ -3,6 +3,8 @@
  * Shows active speaker in large view with thumbnails of other participants
  */
 
+import Avatar from "@/components/Avatar";
+import { AvatarConfig } from "@/types/models";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef } from "react";
 import {
@@ -16,8 +18,6 @@ import {
   ViewStyle,
 } from "react-native";
 import { MediaStream, RTCView } from "react-native-webrtc";
-import { AvatarConfig } from "@/types/models";
-import Avatar from "@/components/Avatar";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#0f0f17",
     position: "relative",
   },
   activeSpeakerBorder: {
@@ -400,13 +400,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1a1a2e",
   },
   placeholderAvatar: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: "#444",
+    backgroundColor: "#35355a",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
     height: THUMBNAIL_SIZE,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1a1a2e",
     marginRight: THUMBNAIL_GAP,
     position: "relative",
   },
@@ -547,13 +547,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1a1a2e",
   },
   thumbnailPlaceholder: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: "#444",
+    backgroundColor: "#35355a",
     justifyContent: "center",
     alignItems: "center",
   },
