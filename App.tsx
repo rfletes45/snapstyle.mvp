@@ -13,7 +13,7 @@ import {
   initializeBackgroundCallHandler,
 } from "@/services/calls";
 import { initializeFirebase } from "@/services/firebase";
-import { firebaseConfig } from "@/services/firebaseConfig.local";
+import { firebaseConfig } from "@/services/firebaseConfig";
 import { AuthProvider } from "@/store/AuthContext";
 import { CameraProvider } from "@/store/CameraContext";
 import { InAppNotificationsProvider } from "@/store/InAppNotificationsContext";
