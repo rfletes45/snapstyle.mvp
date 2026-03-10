@@ -236,24 +236,6 @@ export default function OwnProfileScreen({
         />
 
         {/* ============================================================ */}
-        {/* Identity chips row (Level + Tokens — read-only) */}
-        {/* ============================================================ */}
-        <View style={styles.chipsRow}>
-          <View
-            style={[styles.chip, { backgroundColor: colors.primary + "15" }]}
-          >
-            <MaterialCommunityIcons
-              name="star-circle-outline"
-              size={14}
-              color={colors.primary}
-            />
-            <Text style={[styles.chipText, { color: colors.primary }]}>
-              Lv {profile?.level?.current ?? 1}
-            </Text>
-          </View>
-        </View>
-
-        {/* ============================================================ */}
         {/* B) Primary Actions (max 2-3) */}
         {/* ============================================================ */}
         <View style={styles.primaryActions}>
@@ -394,25 +376,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: Spacing.md,
     zIndex: 10,
-  },
-  chipsRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  chipText: {
-    fontSize: FontSizes.sm,
-    fontWeight: "600",
   },
   primaryActions: {
     flexDirection: "row",

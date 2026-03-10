@@ -5953,4 +5953,633 @@ registerAdapter({
         };
     },
 });
+const RV_SIZE = 8;
+const RV_DIRS = [
+    [-1, -1],
+    [-1, 0],
+    [-1, 1],
+    [0, -1],
+    [0, 1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+];
+function rvInBounds(r, c) {
+    return r >= 0 && r < RV_SIZE && c >= 0 && c < RV_SIZE;
+}
+function rvOpp(color) {
+    return color === "B" ? "W" : "B";
+}
+function rvComputeFlips(board, row, col, color) {
+    if (board[row][col] !== null)
+        return [];
+    const opp = rvOpp(color);
+    const allFlips = [];
+    for (const [dr, dc] of RV_DIRS) {
+        const lineFlips = [];
+        let r = row + dr;
+        let c = col + dc;
+        while (rvInBounds(r, c) && board[r][c] === opp) {
+            lineFlips.push([r, c]);
+            r += dr;
+            c += dc;
+        }
+        if (lineFlips.length > 0 && rvInBounds(r, c) && board[r][c] === color) {
+            allFlips.push(...lineFlips);
+        }
+    }
+    return allFlips;
+}
+function rvGetLegalMoves(board, color) {
+    const moves = [];
+    for (let r = 0; r < RV_SIZE; r++) {
+        for (let c = 0; c < RV_SIZE; c++) {
+            if (board[r][c] === null &&
+                rvComputeFlips(board, r, c, color).length > 0) {
+                moves.push([r, c]);
+            }
+        }
+    }
+    return moves;
+}
+function rvCountDiscs(board) {
+    let black = 0;
+    let white = 0;
+    for (let r = 0; r < RV_SIZE; r++) {
+        for (let c = 0; c < RV_SIZE; c++) {
+            if (board[r][c] === "B")
+                black++;
+            else if (board[r][c] === "W")
+                white++;
+        }
+    }
+    return { black, white };
+}
+function rvIsBoardFull(board) {
+    for (let r = 0; r < RV_SIZE; r++) {
+        for (let c = 0; c < RV_SIZE; c++) {
+            if (board[r][c] === null)
+                return false;
+        }
+    }
+    return true;
+}
+function rvCountCorners(board, color) {
+    const corners = [
+        [0, 0],
+        [0, 7],
+        [7, 0],
+        [7, 7],
+    ];
+    return corners.filter(([r, c]) => board[r][c] === color).length;
+}
+function rvCreateInitialBoard() {
+    const board = Array.from({ length: RV_SIZE }, () => Array(RV_SIZE).fill(null));
+    board[3][3] = "W";
+    board[3][4] = "B";
+    board[4][3] = "B";
+    board[4][4] = "W";
+    return board;
+}
+registerAdapter({
+    gameId: "reversi",
+    runtimeType: "turnBased",
+    maxPlayers: 2,
+    minPlayers: 2,
+    defaultSettings: {},
+    createInitialPublicState(players) {
+        const blackPlayer = players.find((p) => p.slotIndex === 0);
+        const whitePlayer = players.find((p) => p.slotIndex === 1);
+        const board = rvCreateInitialBoard();
+        const legalMoves = rvGetLegalMoves(board, "B");
+        return {
+            board,
+            blackUid: blackPlayer.uid,
+            whiteUid: whitePlayer.uid,
+            currentColor: "B",
+            legalMoves,
+            blackCount: 2,
+            whiteCount: 2,
+            consecutivePasses: 0,
+            turnNumber: 1,
+            lastMove: null,
+            lastAction: null,
+            gamePhase: "playing",
+        };
+    },
+    validateMove(publicState, _priv, movePayload, ctx) {
+        const state = publicState;
+        const moveType = movePayload.type;
+        const playerColor = ctx.currentTurnIndex === 0 ? "B" : "W";
+        // ── Pass move
+        if (moveType === "pass") {
+            if (state.legalMoves.length > 0) {
+                return { ok: false, error: "You have legal moves — cannot pass." };
+            }
+            const newBoard = state.board.map((r) => [...r]);
+            const nextColor = rvOpp(playerColor);
+            const newConsecutivePasses = state.consecutivePasses + 1;
+            if (newConsecutivePasses >= 2) {
+                const counts = rvCountDiscs(newBoard);
+                const newState = {
+                    ...state,
+                    board: newBoard,
+                    currentColor: nextColor,
+                    legalMoves: [],
+                    blackCount: counts.black,
+                    whiteCount: counts.white,
+                    consecutivePasses: newConsecutivePasses,
+                    turnNumber: state.turnNumber + 1,
+                    lastMove: { type: "pass" },
+                    lastAction: "pass",
+                    gamePhase: "finished",
+                };
+                const terminal = rvResolveTerminal(newState);
+                return {
+                    ok: true,
+                    nextPublicState: newState,
+                    turnAdvance: false,
+                    terminal,
+                };
+            }
+            const nextMoves = rvGetLegalMoves(newBoard, nextColor);
+            const newState = {
+                ...state,
+                board: newBoard,
+                currentColor: nextColor,
+                legalMoves: nextMoves,
+                consecutivePasses: newConsecutivePasses,
+                turnNumber: state.turnNumber + 1,
+                lastMove: { type: "pass" },
+                lastAction: "pass",
+                gamePhase: "playing",
+            };
+            return {
+                ok: true,
+                nextPublicState: newState,
+                turnAdvance: true,
+            };
+        }
+        // ── Place move
+        if (moveType === "place") {
+            const row = movePayload.row;
+            const col = movePayload.col;
+            if (typeof row !== "number" ||
+                typeof col !== "number" ||
+                row < 0 ||
+                row >= RV_SIZE ||
+                col < 0 ||
+                col >= RV_SIZE) {
+                return { ok: false, error: "Invalid coordinates." };
+            }
+            if (state.board[row][col] !== null) {
+                return { ok: false, error: "Cell is not empty." };
+            }
+            const flips = rvComputeFlips(state.board, row, col, playerColor);
+            if (flips.length === 0) {
+                return {
+                    ok: false,
+                    error: "Illegal move — must flip at least one disc.",
+                };
+            }
+            const newBoard = state.board.map((r) => [...r]);
+            newBoard[row][col] = playerColor;
+            for (const [fr, fc] of flips) {
+                newBoard[fr][fc] = playerColor;
+            }
+            const counts = rvCountDiscs(newBoard);
+            const nextColor = rvOpp(playerColor);
+            const nextMoves = rvGetLegalMoves(newBoard, nextColor);
+            const boardFull = rvIsBoardFull(newBoard);
+            const currentCanMoveAfter = rvGetLegalMoves(newBoard, playerColor);
+            const isTerminal = boardFull ||
+                (nextMoves.length === 0 && currentCanMoveAfter.length === 0);
+            const newState = {
+                ...state,
+                board: newBoard,
+                currentColor: nextColor,
+                legalMoves: isTerminal ? [] : nextMoves,
+                blackCount: counts.black,
+                whiteCount: counts.white,
+                consecutivePasses: 0,
+                turnNumber: state.turnNumber + 1,
+                lastMove: { type: "place", row, col },
+                lastAction: "place",
+                gamePhase: isTerminal ? "finished" : "playing",
+            };
+            if (isTerminal) {
+                const terminal = rvResolveTerminal(newState);
+                return {
+                    ok: true,
+                    nextPublicState: newState,
+                    turnAdvance: false,
+                    terminal,
+                };
+            }
+            return {
+                ok: true,
+                nextPublicState: newState,
+                turnAdvance: true,
+            };
+        }
+        return { ok: false, error: `Unknown move type: ${moveType}` };
+    },
+    computeOutcome(publicState, players) {
+        const state = publicState;
+        const { blackCount, whiteCount } = state;
+        const blackPlayer = players.find((p) => p.slotIndex === 0);
+        const whitePlayer = players.find((p) => p.slotIndex === 1);
+        const cornersBlack = rvCountCorners(state.board, "B");
+        const cornersWhite = rvCountCorners(state.board, "W");
+        if (blackCount > whiteCount) {
+            return {
+                winnerIds: [blackPlayer.uid],
+                finalScoreboard: [
+                    {
+                        uid: blackPlayer.uid,
+                        score: 1,
+                        placement: 1,
+                        stats: {
+                            color: "B",
+                            discCount: blackCount,
+                            corners: cornersBlack,
+                            margin: blackCount - whiteCount,
+                        },
+                    },
+                    {
+                        uid: whitePlayer.uid,
+                        score: 0,
+                        placement: 2,
+                        stats: {
+                            color: "W",
+                            discCount: whiteCount,
+                            corners: cornersWhite,
+                            margin: whiteCount - blackCount,
+                        },
+                    },
+                ],
+            };
+        }
+        if (whiteCount > blackCount) {
+            return {
+                winnerIds: [whitePlayer.uid],
+                finalScoreboard: [
+                    {
+                        uid: whitePlayer.uid,
+                        score: 1,
+                        placement: 1,
+                        stats: {
+                            color: "W",
+                            discCount: whiteCount,
+                            corners: cornersWhite,
+                            margin: whiteCount - blackCount,
+                        },
+                    },
+                    {
+                        uid: blackPlayer.uid,
+                        score: 0,
+                        placement: 2,
+                        stats: {
+                            color: "B",
+                            discCount: blackCount,
+                            corners: cornersBlack,
+                            margin: blackCount - whiteCount,
+                        },
+                    },
+                ],
+            };
+        }
+        // Draw
+        return {
+            winnerIds: [],
+            finalScoreboard: players.map((p) => ({
+                uid: p.uid,
+                score: 0,
+                placement: 1,
+                stats: {
+                    color: p.slotIndex === 0 ? "B" : "W",
+                    discCount: p.slotIndex === 0 ? blackCount : whiteCount,
+                    corners: p.slotIndex === 0 ? cornersBlack : cornersWhite,
+                    margin: 0,
+                },
+            })),
+        };
+    },
+    extractPerformanceMetrics(publicState) {
+        const state = publicState;
+        return {
+            totalMoves: state.turnNumber - 1,
+            blackCount: state.blackCount,
+            whiteCount: state.whiteCount,
+            cornersBlack: rvCountCorners(state.board, "B"),
+            cornersWhite: rvCountCorners(state.board, "W"),
+            consecutivePasses: state.consecutivePasses,
+        };
+    },
+});
+function rvResolveTerminal(state) {
+    const { blackCount, whiteCount } = state;
+    if (blackCount > whiteCount)
+        return { type: "win", winnerIds: [state.blackUid] };
+    if (whiteCount > blackCount)
+        return { type: "win", winnerIds: [state.whiteUid] };
+    return { type: "draw" };
+}
+const DAB_PRESETS = {
+    quick: { rows: 3, cols: 3 },
+    standard: { rows: 4, cols: 4 },
+    expert: { rows: 5, cols: 5 },
+};
+function dabGetDims(settings) {
+    const preset = settings.boardSize ?? "standard";
+    const dims = DAB_PRESETS[preset] ?? DAB_PRESETS.standard;
+    return { ...dims, boardKey: `${dims.rows}x${dims.cols}` };
+}
+function dabHIdx(r, c, cols) {
+    return r * cols + c;
+}
+function dabVIdx(r, c, cols) {
+    return r * (cols + 1) + c;
+}
+function dabBoxIdx(r, c, cols) {
+    return r * cols + c;
+}
+function dabIsBoxComplete(bRow, bCol, hEdges, vEdges, cols) {
+    return (hEdges[dabHIdx(bRow, bCol, cols)] &&
+        hEdges[dabHIdx(bRow + 1, bCol, cols)] &&
+        vEdges[dabVIdx(bRow, bCol, cols)] &&
+        vEdges[dabVIdx(bRow, bCol + 1, cols)]);
+}
+function dabFindCompletedBoxes(edgeType, row, col, hEdges, vEdges, rows, cols) {
+    const completed = [];
+    if (edgeType === "h") {
+        if (row > 0 && dabIsBoxComplete(row - 1, col, hEdges, vEdges, cols)) {
+            completed.push(dabBoxIdx(row - 1, col, cols));
+        }
+        if (row < rows && dabIsBoxComplete(row, col, hEdges, vEdges, cols)) {
+            completed.push(dabBoxIdx(row, col, cols));
+        }
+    }
+    else {
+        if (col > 0 && dabIsBoxComplete(row, col - 1, hEdges, vEdges, cols)) {
+            completed.push(dabBoxIdx(row, col - 1, cols));
+        }
+        if (col < cols && dabIsBoxComplete(row, col, hEdges, vEdges, cols)) {
+            completed.push(dabBoxIdx(row, col, cols));
+        }
+    }
+    return completed;
+}
+registerAdapter({
+    gameId: "dots_and_boxes",
+    runtimeType: "turnBased",
+    maxPlayers: 2,
+    minPlayers: 2,
+    defaultSettings: { boardSize: "standard" },
+    createInitialPublicState(players, settings) {
+        const { rows, cols, boardKey } = dabGetDims(settings);
+        const hCount = (rows + 1) * cols;
+        const vCount = rows * (cols + 1);
+        const edgeCount = hCount + vCount;
+        const scoresByUid = {};
+        const extraTurnsEarnedByUid = {};
+        const largestSingleTurnCaptureByUid = {};
+        const largestChainCapturedByUid = {};
+        const currentChainByUid = {};
+        for (const p of players) {
+            scoresByUid[p.uid] = 0;
+            extraTurnsEarnedByUid[p.uid] = 0;
+            largestSingleTurnCaptureByUid[p.uid] = 0;
+            largestChainCapturedByUid[p.uid] = 0;
+            currentChainByUid[p.uid] = 0;
+        }
+        const state = {
+            rows,
+            cols,
+            boardKey,
+            horizontalEdges: new Array(hCount).fill(false),
+            verticalEdges: new Array(vCount).fill(false),
+            boxOwners: new Array(rows * cols).fill(null),
+            scoresByUid,
+            boxesClaimed: 0,
+            remainingEdges: edgeCount,
+            moveNumber: 0,
+            lastMove: null,
+            turnRetained: false,
+            lastCapturedBoxes: [],
+            extraTurnsEarnedByUid,
+            largestSingleTurnCaptureByUid,
+            largestChainCapturedByUid,
+            currentChainByUid,
+            finalBoxOwnerUid: null,
+        };
+        return state;
+    },
+    validateMove(publicState, _privateStateByPlayer, movePayload, ctx) {
+        const state = publicState;
+        const edgeType = movePayload.edgeType;
+        const row = movePayload.row;
+        const col = movePayload.col;
+        if (edgeType !== "h" && edgeType !== "v") {
+            return { ok: false, error: "Invalid edge type." };
+        }
+        if (typeof row !== "number" || typeof col !== "number") {
+            return { ok: false, error: "Invalid coordinates." };
+        }
+        const { rows, cols } = state;
+        if (edgeType === "h") {
+            if (row < 0 || row > rows || col < 0 || col >= cols) {
+                return { ok: false, error: "Edge out of bounds." };
+            }
+            if (state.horizontalEdges[dabHIdx(row, col, cols)]) {
+                return { ok: false, error: "Edge already taken." };
+            }
+        }
+        else {
+            if (row < 0 || row >= rows || col < 0 || col > cols) {
+                return { ok: false, error: "Edge out of bounds." };
+            }
+            if (state.verticalEdges[dabVIdx(row, col, cols)]) {
+                return { ok: false, error: "Edge already taken." };
+            }
+        }
+        const newHEdges = [...state.horizontalEdges];
+        const newVEdges = [...state.verticalEdges];
+        const newBoxOwners = [...state.boxOwners];
+        if (edgeType === "h") {
+            newHEdges[dabHIdx(row, col, cols)] = true;
+        }
+        else {
+            newVEdges[dabVIdx(row, col, cols)] = true;
+        }
+        const completedBoxIndices = dabFindCompletedBoxes(edgeType, row, col, newHEdges, newVEdges, rows, cols);
+        for (const bi of completedBoxIndices) {
+            newBoxOwners[bi] = ctx.uid;
+        }
+        const boxesScored = completedBoxIndices.length;
+        const newScores = { ...state.scoresByUid };
+        newScores[ctx.uid] = (newScores[ctx.uid] ?? 0) + boxesScored;
+        const newBoxesClaimed = state.boxesClaimed + boxesScored;
+        const newRemainingEdges = state.remainingEdges - 1;
+        const turnRetained = boxesScored > 0;
+        const newExtraTurns = { ...state.extraTurnsEarnedByUid };
+        const newLargestSingle = { ...state.largestSingleTurnCaptureByUid };
+        const newLargestChain = { ...state.largestChainCapturedByUid };
+        const newCurrentChain = { ...state.currentChainByUid };
+        if (boxesScored > 0) {
+            newExtraTurns[ctx.uid] = (newExtraTurns[ctx.uid] ?? 0) + 1;
+            if (boxesScored > (newLargestSingle[ctx.uid] ?? 0)) {
+                newLargestSingle[ctx.uid] = boxesScored;
+            }
+            newCurrentChain[ctx.uid] = (newCurrentChain[ctx.uid] ?? 0) + boxesScored;
+            if (newCurrentChain[ctx.uid] > (newLargestChain[ctx.uid] ?? 0)) {
+                newLargestChain[ctx.uid] = newCurrentChain[ctx.uid];
+            }
+        }
+        else {
+            newCurrentChain[ctx.uid] = 0;
+        }
+        const newFinalBoxOwner = newRemainingEdges === 0 && boxesScored > 0
+            ? ctx.uid
+            : newRemainingEdges === 0
+                ? state.finalBoxOwnerUid
+                : boxesScored > 0
+                    ? ctx.uid
+                    : state.finalBoxOwnerUid;
+        const newState = {
+            rows,
+            cols,
+            boardKey: state.boardKey,
+            horizontalEdges: newHEdges,
+            verticalEdges: newVEdges,
+            boxOwners: newBoxOwners,
+            scoresByUid: newScores,
+            boxesClaimed: newBoxesClaimed,
+            remainingEdges: newRemainingEdges,
+            moveNumber: state.moveNumber + 1,
+            lastMove: { edgeType: edgeType, row, col },
+            turnRetained,
+            lastCapturedBoxes: completedBoxIndices,
+            extraTurnsEarnedByUid: newExtraTurns,
+            largestSingleTurnCaptureByUid: newLargestSingle,
+            largestChainCapturedByUid: newLargestChain,
+            currentChainByUid: newCurrentChain,
+            finalBoxOwnerUid: newFinalBoxOwner,
+        };
+        if (newRemainingEdges === 0) {
+            const p0 = ctx.turnOrder[0];
+            const p1 = ctx.turnOrder[1];
+            const s0 = newScores[p0] ?? 0;
+            const s1 = newScores[p1] ?? 0;
+            if (s0 === s1) {
+                return {
+                    ok: true,
+                    nextPublicState: newState,
+                    turnAdvance: false,
+                    terminal: { type: "draw" },
+                };
+            }
+            const winnerId = s0 > s1 ? p0 : p1;
+            return {
+                ok: true,
+                nextPublicState: newState,
+                turnAdvance: false,
+                terminal: { type: "win", winnerIds: [winnerId] },
+            };
+        }
+        return {
+            ok: true,
+            nextPublicState: newState,
+            turnAdvance: !turnRetained,
+        };
+    },
+    computeOutcome(publicState, players) {
+        const state = publicState;
+        const entries = players
+            .map((p) => ({
+            uid: p.uid,
+            score: state.scoresByUid[p.uid] ?? 0,
+            slotIndex: p.slotIndex,
+        }))
+            .sort((a, b) => b.score - a.score);
+        const isTie = entries.length > 1 && entries[0].score === entries[1].score;
+        if (isTie) {
+            return {
+                winnerIds: [],
+                finalScoreboard: entries.map((e) => ({
+                    uid: e.uid,
+                    score: e.score,
+                    placement: 1,
+                    stats: {
+                        boxesClaimed: e.score,
+                        boardKey: state.boardKey,
+                        winMargin: 0,
+                    },
+                })),
+            };
+        }
+        const winnerId = entries[0].uid;
+        const winMargin = entries[0].score - (entries[1]?.score ?? 0);
+        return {
+            winnerIds: [winnerId],
+            finalScoreboard: entries.map((e, i) => ({
+                uid: e.uid,
+                score: e.score,
+                placement: i + 1,
+                stats: {
+                    boxesClaimed: e.score,
+                    boardKey: state.boardKey,
+                    winMargin: e.uid === winnerId ? winMargin : -winMargin,
+                },
+            })),
+        };
+    },
+    extractPerformanceMetrics(publicState, players) {
+        const state = publicState;
+        const { rows, cols } = state;
+        const tb = rows * cols;
+        const te = (rows + 1) * cols + rows * (cols + 1);
+        const scores = state.scoresByUid;
+        const uids = players.map((p) => p.uid);
+        const p0 = uids[0];
+        const p1 = uids[1];
+        const s0 = scores[p0] ?? 0;
+        const s1 = scores[p1] ?? 0;
+        const winMargin = Math.abs(s0 - s1);
+        const opponentBoxesByUid = {};
+        if (p0 && p1) {
+            opponentBoxesByUid[p0] = s1;
+            opponentBoxesByUid[p1] = s0;
+        }
+        const shutoutByUid = {};
+        for (const uid of uids) {
+            const oppScore = opponentBoxesByUid[uid] ?? 0;
+            shutoutByUid[uid] = oppScore === 0 && (scores[uid] ?? 0) > 0;
+        }
+        return {
+            boardKey: state.boardKey,
+            boardRows: rows,
+            boardCols: cols,
+            totalBoxes: tb,
+            totalEdges: te,
+            totalMoves: state.moveNumber,
+            scoresByUid: scores,
+            winMargin,
+            opponentBoxesByUid,
+            finalBoxOwnerUid: state.finalBoxOwnerUid,
+            largestSingleTurnCaptureByUid: state.largestSingleTurnCaptureByUid,
+            largestChainCapturedByUid: state.largestChainCapturedByUid,
+            extraTurnsEarnedByUid: state.extraTurnsEarnedByUid,
+            shutoutByUid,
+        };
+    },
+    validateSettings(patch) {
+        const boardSize = patch.boardSize;
+        if (typeof boardSize === "string" &&
+            Object.prototype.hasOwnProperty.call(DAB_PRESETS, boardSize)) {
+            return { boardSize };
+        }
+        return { boardSize: "standard" };
+    },
+});
 //# sourceMappingURL=adapters.js.map

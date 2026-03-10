@@ -98,6 +98,9 @@ import { acceptMessageRequest, declineMessageRequest } from "./messageRequests";
 // Global Rate Limiter (Segment 6)
 import { getRateLimitStatus } from "./rateLimiter";
 
+// Account Deletion (comprehensive server-side cleanup)
+import { deleteAccountFunction } from "./deleteAccount";
+
 // Privacy-Enforced Publish APIs (Segment 7)
 import {
   onChatSettingsChanged,
@@ -223,6 +226,9 @@ export {
   updateExpiredBans,
   validateReceipt,
 };
+
+// ─── Account Deletion ──────────────────────────────────────────────────────
+export const deleteAccount = deleteAccountFunction;
 
 // ─── Callable aliases for client backward-compat ───────────────────────────
 // Client iap.ts calls "verifyIAPPurchase" — map it to the canonical handler.

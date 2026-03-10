@@ -483,7 +483,14 @@ export default function GameOverScreenV4() {
             moveCount: { label: "Moves", icon: "swap-horizontal" },
             mergeCount: { label: "Merges", icon: "merge" },
             bestTile: { label: "Best Tile", icon: "numeric" },
+            // Reversi stats
+            discCount: { label: "Discs", icon: "circle-half-full" },
+            corners: { label: "Corners", icon: "square-outline" },
+            margin: { label: "Margin", icon: "plus-minus-variant" },
           };
+
+          /** Keys to suppress from the stats grid */
+          const HIDDEN_STAT_KEYS = new Set(["color"]);
 
           const formatStatValue = (key: string, value: unknown): string => {
             if (key === "durationMs" && typeof value === "number") {
@@ -495,12 +502,19 @@ export default function GameOverScreenV4() {
             if (key === "maxCombo" && typeof value === "number") {
               return `x${value}`;
             }
+            if (key === "margin" && typeof value === "number") {
+              return value > 0 ? `+${value}` : `${value}`;
+            }
             if (typeof value === "number") return value.toLocaleString();
             return String(value ?? "");
           };
 
           const entries = Object.entries(stats).filter(
-            ([, v]) => v !== undefined && v !== null && v !== 0,
+            ([k, v]) =>
+              v !== undefined &&
+              v !== null &&
+              v !== 0 &&
+              !HIDDEN_STAT_KEYS.has(k),
           );
           if (entries.length === 0) return null;
 

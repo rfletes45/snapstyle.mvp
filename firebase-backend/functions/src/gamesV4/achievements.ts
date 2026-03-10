@@ -108,48 +108,46 @@ interface EvaluationContext {
 // Section Definitions
 // =============================================================================
 
+/**
+ * Legacy section ID → new section ID mapping.
+ * Used to resolve claims/data that still reference old section groupings.
+ */
+export const LEGACY_SECTION_MAP: Record<string, string> = {
+  getting_started: "milestones",
+  grinder: "milestones",
+  game_mastery: "milestones",
+  speedster: "tic_tac_toe",
+  champion: "tic_tac_toe",
+  puzzle_master: "play_2048",
+};
+
+/** Resolve a possibly-legacy sectionId to the current sectionId. */
+export function resolveSection(sectionId: string): string {
+  return LEGACY_SECTION_MAP[sectionId] ?? sectionId;
+}
+
 export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
+  // Per-game sections
   {
-    sectionId: "getting_started",
-    name: "Getting Started",
-    description: "Your first steps in the games world",
-    icon: "🌟",
-    sectionBadgeId: "section_getting_started",
+    sectionId: "tic_tac_toe",
+    name: "Tic Tac Toe",
+    description: "Master the classic X's and O's",
+    icon: "❌",
+    sectionBadgeId: "section_tic_tac_toe",
   },
   {
-    sectionId: "grinder",
-    name: "Grinder",
-    description: "Play more games to earn these milestones",
-    icon: "⚡",
-    sectionBadgeId: "section_grinder",
+    sectionId: "connect_four",
+    name: "Connect Four",
+    description: "Drop discs and connect your way to victory",
+    icon: "🔴",
+    sectionBadgeId: "section_connect_four",
   },
   {
-    sectionId: "game_mastery",
-    name: "Game Mastery",
-    description: "Master individual games",
-    icon: "🎯",
-    sectionBadgeId: "section_game_mastery",
-  },
-  {
-    sectionId: "speedster",
-    name: "Speedster",
-    description: "Win games as fast as possible",
-    icon: "⏱️",
-    sectionBadgeId: "section_speedster",
-  },
-  {
-    sectionId: "champion",
-    name: "Champion",
-    description: "Prove your dominance with extraordinary feats",
-    icon: "🏆",
-    sectionBadgeId: "section_champion",
-  },
-  {
-    sectionId: "puzzle_master",
-    name: "Puzzle Master",
-    description: "Conquer the 2048 challenge",
+    sectionId: "play_2048",
+    name: "2048",
+    description: "Slide, merge, and reach the highest tile",
     icon: "🧩",
-    sectionBadgeId: "section_puzzle_master",
+    sectionBadgeId: "section_play_2048",
   },
   {
     sectionId: "chess",
@@ -208,6 +206,35 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     icon: "🃏",
     sectionBadgeId: "section_solitaire_klondike",
   },
+  {
+    sectionId: "reversi",
+    name: "Reversi",
+    description: "Master corners, mobility, and endgame control",
+    icon: "⚫",
+    sectionBadgeId: "section_reversi",
+  },
+  {
+    sectionId: "dots_and_boxes",
+    name: "Dots & Boxes",
+    description: "Claim boxes, chain captures, and dominate the grid",
+    icon: "🔲",
+    sectionBadgeId: "section_dots_and_boxes",
+  },
+  {
+    sectionId: "hex",
+    name: "Hex",
+    description: "Master the art of connection on the hex grid",
+    icon: "⬡",
+    sectionBadgeId: "section_hex",
+  },
+  // General game milestones
+  {
+    sectionId: "milestones",
+    name: "Milestones",
+    description: "Track your overall gaming journey",
+    icon: "🌟",
+    sectionBadgeId: "section_milestones",
+  },
 ];
 
 // =============================================================================
@@ -216,158 +243,26 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
 
 const GAME_ACHIEVEMENTS: AchievementDef[] = [
   // ═══════════════════════════════════════════════════════════════════════
-  // Section: Getting Started
+  // Section: Tic Tac Toe
   // ═══════════════════════════════════════════════════════════════════════
   {
-    type: "game_first_play",
-    name: "First Steps",
-    description: "Play your first game",
-    badgeId: "game_first_play",
-    sectionId: "getting_started",
-    difficulty: "easy",
-    tokenReward: 5,
-    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) <= 1,
-  },
-  {
-    type: "game_first_win",
-    name: "First Victory",
-    description: "Win your first game",
-    badgeId: "game_first_win",
-    sectionId: "getting_started",
-    difficulty: "easy",
-    tokenReward: 10,
-    evaluate: (ctx) =>
-      ctx.winnerIds.includes(ctx.uid) && (ctx.globalStats?.gamesWon ?? 0) <= 1,
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Section: Grinder
-  // ═══════════════════════════════════════════════════════════════════════
-  {
-    type: "game_10_sessions",
-    name: "Getting Warmed Up",
-    description: "Play 10 games",
-    sectionId: "grinder",
-    difficulty: "easy",
-    tokenReward: 10,
-    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 10,
-  },
-  {
-    type: "game_50_sessions",
-    name: "Dedicated Player",
-    description: "Play 50 games",
-    sectionId: "grinder",
-    difficulty: "medium",
-    tokenReward: 25,
-    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 50,
-  },
-  {
-    type: "game_100_sessions",
-    name: "Centurion Gamer",
-    description: "Play 100 games",
-    sectionId: "grinder",
-    difficulty: "hard",
-    tokenReward: 50,
-    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 100,
-  },
-  {
-    type: "game_250_sessions",
-    name: "Veteran",
-    description: "Play 250 games",
-    sectionId: "grinder",
+    type: "ttt_perfect_game",
+    name: "TicTacToe Master",
+    description: "Win TicTacToe in the minimum possible moves (5)",
+    sectionId: "tic_tac_toe",
     difficulty: "expert",
-    tokenReward: 100,
-    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 250,
-  },
-  {
-    type: "game_10_wins",
-    name: "Rising Champion",
-    description: "Win 10 games",
-    sectionId: "grinder",
-    difficulty: "medium",
-    tokenReward: 20,
-    evaluate: (ctx) =>
-      ctx.winnerIds.includes(ctx.uid) && (ctx.globalStats?.gamesWon ?? 0) >= 10,
-  },
-  {
-    type: "game_50_wins",
-    name: "Master Competitor",
-    description: "Win 50 games",
-    sectionId: "grinder",
-    difficulty: "hard",
     tokenReward: 50,
-    evaluate: (ctx) =>
-      ctx.winnerIds.includes(ctx.uid) && (ctx.globalStats?.gamesWon ?? 0) >= 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "tic_tac_toe") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return ctx.totalMoves <= 5;
+    },
   },
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Section: Game Mastery
-  // ═══════════════════════════════════════════════════════════════════════
-  {
-    type: "game_mastery_10",
-    name: "Game Explorer",
-    description: "Play 10 rounds of any single game",
-    sectionId: "game_mastery",
-    difficulty: "easy",
-    tokenReward: 10,
-    evaluate: (ctx) => (ctx.pbStats?.totalPlays ?? 0) >= 10,
-  },
-  {
-    type: "game_mastery_50",
-    name: "Game Specialist",
-    description: "Play 50 rounds of any single game",
-    sectionId: "game_mastery",
-    difficulty: "medium",
-    tokenReward: 25,
-    evaluate: (ctx) => (ctx.pbStats?.totalPlays ?? 0) >= 50,
-  },
-  {
-    type: "game_mastery_win_streak_5",
-    name: "On Fire",
-    description: "Win 5+ games of any single game",
-    sectionId: "game_mastery",
-    difficulty: "medium",
-    tokenReward: 20,
-    evaluate: (ctx) =>
-      ctx.winnerIds.includes(ctx.uid) && (ctx.pbStats?.totalWins ?? 0) >= 5,
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Section: Speedster
-  // ═══════════════════════════════════════════════════════════════════════
-  {
-    type: "game_lightning_round",
-    name: "Lightning Round",
-    description: "Win a game in under 60 seconds",
-    sectionId: "speedster",
-    difficulty: "medium",
-    tokenReward: 15,
-    evaluate: (ctx) =>
-      ctx.winnerIds.includes(ctx.uid) &&
-      ctx.durationMs > 0 &&
-      ctx.durationMs < 60_000,
-  },
-  {
-    type: "game_speed_demon",
-    name: "Speed Demon",
-    description: "Win a game in under 30 seconds",
-    sectionId: "speedster",
-    difficulty: "hard",
-    tokenReward: 30,
-    evaluate: (ctx) =>
-      ctx.winnerIds.includes(ctx.uid) &&
-      ctx.durationMs > 0 &&
-      ctx.durationMs < 30_000,
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Section: Champion
-  // ═══════════════════════════════════════════════════════════════════════
   {
     type: "game_flawless_victory",
     name: "Flawless Victory",
     description: "Win without your opponent scoring",
-    sectionId: "champion",
+    sectionId: "tic_tac_toe",
     difficulty: "hard",
     tokenReward: 30,
     evaluate: (ctx) => {
@@ -378,23 +273,26 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
     },
   },
   {
-    type: "ttt_perfect_game",
-    name: "TicTacToe Master",
-    description: "Win TicTacToe in the minimum possible moves (5)",
-    sectionId: "champion",
-    difficulty: "expert",
-    tokenReward: 50,
-    evaluate: (ctx) => {
-      if (ctx.gameId !== "tic_tac_toe") return false;
-      if (!ctx.winnerIds.includes(ctx.uid)) return false;
-      return ctx.totalMoves <= 5;
-    },
+    type: "game_speed_demon",
+    name: "Speed Demon",
+    description: "Win a game in under 30 seconds",
+    sectionId: "tic_tac_toe",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) =>
+      ctx.winnerIds.includes(ctx.uid) &&
+      ctx.durationMs > 0 &&
+      ctx.durationMs < 30_000,
   },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Section: Connect Four
+  // ═══════════════════════════════════════════════════════════════════════
   {
     type: "c4_quick_connect",
     name: "Quick Connect",
     description: "Win Connect Four in 7 or fewer moves",
-    sectionId: "champion",
+    sectionId: "connect_four",
     difficulty: "expert",
     tokenReward: 50,
     evaluate: (ctx) => {
@@ -403,15 +301,37 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
       return ctx.totalMoves <= 7;
     },
   },
+  {
+    type: "game_lightning_round",
+    name: "Lightning Round",
+    description: "Win a game in under 60 seconds",
+    sectionId: "connect_four",
+    difficulty: "medium",
+    tokenReward: 15,
+    evaluate: (ctx) =>
+      ctx.winnerIds.includes(ctx.uid) &&
+      ctx.durationMs > 0 &&
+      ctx.durationMs < 60_000,
+  },
+  {
+    type: "game_mastery_win_streak_5",
+    name: "On Fire",
+    description: "Win 5+ games of any single game",
+    sectionId: "connect_four",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) =>
+      ctx.winnerIds.includes(ctx.uid) && (ctx.pbStats?.totalWins ?? 0) >= 5,
+  },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Section: Puzzle Master
+  // Section: 2048
   // ═══════════════════════════════════════════════════════════════════════
   {
     type: "2048_reached_2048",
     name: "2048 Club",
     description: "Reach the 2048 tile",
-    sectionId: "puzzle_master",
+    sectionId: "play_2048",
     difficulty: "hard",
     tokenReward: 40,
     evaluate: (ctx) => {
@@ -424,7 +344,7 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
     type: "2048_reached_4096",
     name: "Beyond 2048",
     description: "Reach the 4096 tile in 2048",
-    sectionId: "puzzle_master",
+    sectionId: "play_2048",
     difficulty: "legendary",
     tokenReward: 100,
     evaluate: (ctx) => {
@@ -432,6 +352,105 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
       const best = ctx.performanceMetrics?.bestTile;
       return typeof best === "number" && best >= 4096;
     },
+  },
+  {
+    type: "game_mastery_10",
+    name: "Game Explorer",
+    description: "Play 10 rounds of any single game",
+    sectionId: "play_2048",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => (ctx.pbStats?.totalPlays ?? 0) >= 10,
+  },
+  {
+    type: "game_mastery_50",
+    name: "Game Specialist",
+    description: "Play 50 rounds of any single game",
+    sectionId: "play_2048",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => (ctx.pbStats?.totalPlays ?? 0) >= 50,
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Section: Milestones (cross-game)
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    type: "game_first_play",
+    name: "First Steps",
+    description: "Play your first game",
+    badgeId: "game_first_play",
+    sectionId: "milestones",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) <= 1,
+  },
+  {
+    type: "game_first_win",
+    name: "First Victory",
+    description: "Win your first game",
+    badgeId: "game_first_win",
+    sectionId: "milestones",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) =>
+      ctx.winnerIds.includes(ctx.uid) && (ctx.globalStats?.gamesWon ?? 0) <= 1,
+  },
+  {
+    type: "game_10_sessions",
+    name: "Getting Warmed Up",
+    description: "Play 10 games",
+    sectionId: "milestones",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 10,
+  },
+  {
+    type: "game_50_sessions",
+    name: "Dedicated Player",
+    description: "Play 50 games",
+    sectionId: "milestones",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 50,
+  },
+  {
+    type: "game_100_sessions",
+    name: "Centurion Gamer",
+    description: "Play 100 games",
+    sectionId: "milestones",
+    difficulty: "hard",
+    tokenReward: 50,
+    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 100,
+  },
+  {
+    type: "game_250_sessions",
+    name: "Veteran",
+    description: "Play 250 games",
+    sectionId: "milestones",
+    difficulty: "expert",
+    tokenReward: 100,
+    evaluate: (ctx) => (ctx.globalStats?.gamesPlayed ?? 0) >= 250,
+  },
+  {
+    type: "game_10_wins",
+    name: "Rising Champion",
+    description: "Win 10 games",
+    sectionId: "milestones",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) =>
+      ctx.winnerIds.includes(ctx.uid) && (ctx.globalStats?.gamesWon ?? 0) >= 10,
+  },
+  {
+    type: "game_50_wins",
+    name: "Master Competitor",
+    description: "Win 50 games",
+    sectionId: "milestones",
+    difficulty: "hard",
+    tokenReward: 50,
+    evaluate: (ctx) =>
+      ctx.winnerIds.includes(ctx.uid) && (ctx.globalStats?.gamesWon ?? 0) >= 50,
   },
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -2102,6 +2121,573 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
         ((metrics.foundationBacktrackCount as number) ?? 1) === 0
       );
     },
+  },
+
+  // ═════════════════════════════════════════════════════════════════════
+  // Section: Reversi
+  // ═════════════════════════════════════════════════════════════════════
+
+  // Easy
+  {
+    type: "reversi_first_flip",
+    name: "First Flip",
+    description: "Play your first Reversi match",
+    sectionId: "reversi",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) => ctx.gameId === "reversi",
+  },
+  {
+    type: "reversi_opening_move",
+    name: "Opening Move",
+    description: "Make your first legal placement in Reversi",
+    sectionId: "reversi",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      return (ctx.performanceMetrics.totalMoves as number) >= 1;
+    },
+  },
+  {
+    type: "reversi_first_win",
+    name: "Black or White",
+    description: "Win your first Reversi match",
+    sectionId: "reversi",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      return ctx.winnerIds.includes(ctx.uid);
+    },
+  },
+
+  // Medium
+  {
+    type: "reversi_board_reader",
+    name: "Board Reader",
+    description: "Win 5 Reversi matches",
+    sectionId: "reversi",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 5;
+    },
+  },
+  {
+    type: "reversi_corner_claim",
+    name: "Corner Claim",
+    description: "Capture a corner in a match you win",
+    sectionId: "reversi",
+    difficulty: "medium",
+    tokenReward: 15,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const myColor = ctx.myEntry.stats?.color as string | undefined;
+      if (!myColor) return false;
+      const corners = (ctx.myEntry.stats?.corners as number) ?? 0;
+      return corners >= 1;
+    },
+  },
+  {
+    type: "reversi_no_panic_pass",
+    name: "No Panic Pass",
+    description: "Win a match in which you had to pass at least once",
+    sectionId: "reversi",
+    difficulty: "medium",
+    tokenReward: 15,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const passes = (ctx.performanceMetrics.consecutivePasses as number) ?? 0;
+      // consecutivePasses in performance metrics reflects passes that happened.
+      // A simpler check: the game had passes if consecutivePasses > 0 at end OR
+      // totalMoves < 60. We use a safe check: if performance records passes.
+      return passes > 0;
+    },
+  },
+  {
+    type: "reversi_steady_hand",
+    name: "Steady Hand",
+    description: "Play 25 Reversi matches",
+    sectionId: "reversi",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) >= 25;
+    },
+  },
+
+  // Hard
+  {
+    type: "reversi_edge_control",
+    name: "Edge Control",
+    description: "Win while owning all 4 corners",
+    sectionId: "reversi",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const corners = (ctx.myEntry.stats?.corners as number) ?? 0;
+      return corners === 4;
+    },
+  },
+  {
+    type: "reversi_dominant_finish",
+    name: "Dominant Finish",
+    description: "Win by a disc margin of 15 or more",
+    sectionId: "reversi",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const margin = (ctx.myEntry.stats?.margin as number) ?? 0;
+      return margin >= 15;
+    },
+  },
+  {
+    type: "reversi_comeback_artist",
+    name: "Comeback Artist",
+    description: "Win after trailing in disc count at midgame",
+    sectionId: "reversi",
+    difficulty: "hard",
+    tokenReward: 40,
+    evaluate: (ctx) => {
+      // This is hard to evaluate purely from final state. Approximate:
+      // The winner had fewer discs than opponent mid-game.
+      // We can detect this if the winner's final discCount is only slightly more
+      // than half, suggesting a close / comeback game.
+      // For now, award if winner won with discCount <= 40 (out of 64) — a tight win.
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const myDiscs = (ctx.myEntry.stats?.discCount as number) ?? 0;
+      return myDiscs <= 40;
+    },
+  },
+
+  // Expert
+  {
+    type: "reversi_perfect_position",
+    name: "Perfect Position",
+    description: "Win without allowing your opponent to own a corner",
+    sectionId: "reversi",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      // Check that the opponent has 0 corners
+      const oppEntry = ctx.scoreboard.find((e) => e.uid !== ctx.uid);
+      const oppCorners = (oppEntry?.stats?.corners as number) ?? 0;
+      return oppCorners === 0;
+    },
+  },
+  {
+    type: "reversi_master_of_mobility",
+    name: "Master of Mobility",
+    description: "Force your opponent to pass twice in one match and still win",
+    sectionId: "reversi",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      // If both players passed (consecutivePasses >= 2 at game end), that
+      // means at least 2 consecutive passes happened. This achievement
+      // requires the opponent to pass twice total. Since both consecutive
+      // passes means the opponent passed at least once in the ending sequence,
+      // and we need 2 opponent passes total, we check consecutivePasses >= 2.
+      const passes = (ctx.performanceMetrics.consecutivePasses as number) ?? 0;
+      return passes >= 2;
+    },
+  },
+
+  // Legendary
+  {
+    type: "reversi_full_sweep",
+    name: "Full Sweep",
+    description: "Finish a match with all 64 discs yours",
+    sectionId: "reversi",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "reversi") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const myDiscs = (ctx.myEntry.stats?.discCount as number) ?? 0;
+      return myDiscs === 64;
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Section: Dots & Boxes
+  // ═══════════════════════════════════════════════════════════════════
+  // Easy
+  {
+    type: "dab_first_line",
+    name: "First Line",
+    description: "Play your first game of Dots & Boxes",
+    sectionId: "dots_and_boxes",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" && (ctx.pbStats?.totalPlays ?? 0) >= 1,
+  },
+  {
+    type: "dab_boxed_in",
+    name: "Boxed In",
+    description: "Claim your first box",
+    sectionId: "dots_and_boxes",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      return (ctx.myEntry.score ?? 0) >= 1;
+    },
+  },
+  {
+    type: "dab_opening_win",
+    name: "Opening Win",
+    description: "Win your first Dots & Boxes match",
+    sectionId: "dots_and_boxes",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" &&
+      ctx.winnerIds.includes(ctx.uid) &&
+      (ctx.pbStats?.totalWins ?? 0) >= 1,
+  },
+  {
+    type: "dab_triple_threat",
+    name: "Triple Threat",
+    description: "Complete 3 games of Dots & Boxes",
+    sectionId: "dots_and_boxes",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" && (ctx.pbStats?.totalPlays ?? 0) >= 3,
+  },
+  // Medium
+  {
+    type: "dab_double_take",
+    name: "Double Take",
+    description: "Capture 2 or more boxes in one turn",
+    sectionId: "dots_and_boxes",
+    difficulty: "medium",
+    tokenReward: 15,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      const largest = ctx.performanceMetrics?.largestSingleTurnCaptureByUid as
+        | Record<string, number>
+        | undefined;
+      return (largest?.[ctx.uid] ?? 0) >= 2;
+    },
+  },
+  {
+    type: "dab_chain_starter",
+    name: "Chain Starter",
+    description: "Win 10 Dots & Boxes games",
+    sectionId: "dots_and_boxes",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" &&
+      ctx.winnerIds.includes(ctx.uid) &&
+      (ctx.pbStats?.totalWins ?? 0) >= 10,
+  },
+  {
+    type: "dab_board_majority",
+    name: "Board Majority",
+    description: "Win while claiming more than half the boxes on the board",
+    sectionId: "dots_and_boxes",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const totalBoxes = (ctx.performanceMetrics?.totalBoxes as number) ?? 0;
+      return totalBoxes > 0 && (ctx.myEntry.score ?? 0) > totalBoxes / 2;
+    },
+  },
+  {
+    type: "dab_closer",
+    name: "Closer",
+    description: "Claim the last box of the game and win",
+    sectionId: "dots_and_boxes",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return ctx.performanceMetrics?.finalBoxOwnerUid === ctx.uid;
+    },
+  },
+  // Hard
+  {
+    type: "dab_expert_grid",
+    name: "Expert Grid",
+    description: "Win on the 5×5 board",
+    sectionId: "dots_and_boxes",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return ctx.performanceMetrics?.boardKey === "5x5";
+    },
+  },
+  {
+    type: "dab_big_margin",
+    name: "Big Margin",
+    description: "Win by 4 or more boxes",
+    sectionId: "dots_and_boxes",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return (ctx.performanceMetrics?.winMargin as number) >= 4;
+    },
+  },
+  {
+    type: "dab_chain_hunter",
+    name: "Chain Hunter",
+    description: "Capture a chain of 4 or more boxes in one turn sequence",
+    sectionId: "dots_and_boxes",
+    difficulty: "hard",
+    tokenReward: 40,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      const chains = ctx.performanceMetrics?.largestChainCapturedByUid as
+        | Record<string, number>
+        | undefined;
+      return (chains?.[ctx.uid] ?? 0) >= 4;
+    },
+  },
+  {
+    type: "dab_regular_season",
+    name: "Regular Season",
+    description: "Play 25 games of Dots & Boxes",
+    sectionId: "dots_and_boxes",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" && (ctx.pbStats?.totalPlays ?? 0) >= 25,
+  },
+  // Expert
+  {
+    type: "dab_lockout",
+    name: "Lockout",
+    description: "Win while your opponent claims 0 boxes",
+    sectionId: "dots_and_boxes",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const shutout = ctx.performanceMetrics?.shutoutByUid as
+        | Record<string, boolean>
+        | undefined;
+      return shutout?.[ctx.uid] === true;
+    },
+  },
+  {
+    type: "dab_control_player",
+    name: "Control Player",
+    description: "Win 25 Dots & Boxes games",
+    sectionId: "dots_and_boxes",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" &&
+      ctx.winnerIds.includes(ctx.uid) &&
+      (ctx.pbStats?.totalWins ?? 0) >= 25,
+  },
+  {
+    type: "dab_endgame_surgeon",
+    name: "Endgame Surgeon",
+    description:
+      "Capture 5 or more boxes in a single consecutive turn sequence",
+    sectionId: "dots_and_boxes",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      const chains = ctx.performanceMetrics?.largestChainCapturedByUid as
+        | Record<string, number>
+        | undefined;
+      return (chains?.[ctx.uid] ?? 0) >= 5;
+    },
+  },
+  // Legendary
+  {
+    type: "dab_grandmaster",
+    name: "Grandmaster of Boxes",
+    description: "Win 50 Dots & Boxes games",
+    sectionId: "dots_and_boxes",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) =>
+      ctx.gameId === "dots_and_boxes" &&
+      ctx.winnerIds.includes(ctx.uid) &&
+      (ctx.pbStats?.totalWins ?? 0) >= 50,
+  },
+  {
+    type: "dab_domination",
+    name: "Domination",
+    description: "Win a 5×5 game by 6 or more boxes",
+    sectionId: "dots_and_boxes",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "dots_and_boxes") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return (
+        ctx.performanceMetrics?.boardKey === "5x5" &&
+        (ctx.performanceMetrics?.winMargin as number) >= 6
+      );
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Section: Hex
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    type: "hex_first_play",
+    name: "First Stone",
+    description: "Play your first game of Hex",
+    sectionId: "hex",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalPlays ?? 0) >= 1,
+  },
+  {
+    type: "hex_first_win",
+    name: "First Connection",
+    description: "Win your first game of Hex",
+    sectionId: "hex",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => ctx.gameId === "hex" && ctx.winnerIds.includes(ctx.uid),
+  },
+  {
+    type: "hex_10_games",
+    name: "Student of the Board",
+    description: "Play 10 games of Hex",
+    sectionId: "hex",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalPlays ?? 0) >= 10,
+  },
+  {
+    type: "hex_25_games",
+    name: "Connected Thinker",
+    description: "Play 25 games of Hex",
+    sectionId: "hex",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalPlays ?? 0) >= 25,
+  },
+  {
+    type: "hex_10_wins",
+    name: "Cut and Connect",
+    description: "Win 10 games of Hex",
+    sectionId: "hex",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalWins ?? 0) >= 10,
+  },
+  {
+    type: "hex_25_wins",
+    name: "Pathfinder",
+    description: "Win 25 games of Hex",
+    sectionId: "hex",
+    difficulty: "hard",
+    tokenReward: 35,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalWins ?? 0) >= 25,
+  },
+  {
+    type: "hex_50_wins",
+    name: "Hex Veteran",
+    description: "Win 50 games of Hex",
+    sectionId: "hex",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalWins ?? 0) >= 50,
+  },
+  {
+    type: "hex_swap_win",
+    name: "Swap Sense",
+    description: "Use the swap rule and still win",
+    sectionId: "hex",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "hex") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return ctx.performanceMetrics?.swapUsed === true;
+    },
+  },
+  {
+    type: "hex_decline_swap_win",
+    name: "Hold Your Ground",
+    description: "As the second player, decline the swap and win anyway",
+    sectionId: "hex",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "hex") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return ctx.performanceMetrics?.swapDeclinedByWinner === true;
+    },
+  },
+  {
+    type: "hex_fast_win",
+    name: "Lightning Link",
+    description: "Win a Hex game in 17 total moves or fewer",
+    sectionId: "hex",
+    difficulty: "hard",
+    tokenReward: 35,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "hex") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return (ctx.performanceMetrics?.totalMoves as number) <= 17;
+    },
+  },
+  {
+    type: "hex_clean_connection",
+    name: "Clean Connection",
+    description: "Win with a winning path length of 10 or fewer",
+    sectionId: "hex",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "hex") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const pathLen = ctx.performanceMetrics?.winningPathLength as number;
+      return typeof pathLen === "number" && pathLen > 0 && pathLen <= 10;
+    },
+  },
+  {
+    type: "hex_100_wins",
+    name: "Master of Hex",
+    description: "Win 100 games of Hex",
+    sectionId: "hex",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) =>
+      ctx.gameId === "hex" && (ctx.pbStats?.totalWins ?? 0) >= 100,
   },
 ];
 

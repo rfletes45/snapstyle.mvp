@@ -63,6 +63,7 @@ describe("V4 Constants & Contracts", () => {
       "minigolf_duels",
       "dot_match",
       "solitaire_klondike",
+      "hex",
     ];
 
     it("contains all expected game IDs", () => {

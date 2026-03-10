@@ -65,9 +65,14 @@ export const USE_LOCAL_STORAGE = !IS_WEB;
  *               once we ship via EAS builds only.
  * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
- * @default false â€” safe for Expo Go during development
+ * NOTE: Even when `true`, CameraScreen performs a runtime check:
+ *       if VisionCamera fails to load (e.g. Expo Go) it gracefully falls
+ *       back to expo-camera + CameraFilterOverlay.  So this is safe to
+ *       leave `true` for EAS / dev-client / TestFlight / production builds.
+ *
+ * @default true â€" enables real-time GPU-filtered camera preview
  */
-export const USE_VISION_CAMERA = false;
+export const USE_VISION_CAMERA = true;
 
 // =============================================================================
 // Games V4 Feature Flag

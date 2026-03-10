@@ -1,9 +1,15 @@
 /**
- * Games V4 — Battlepass-style Level Rewards Track
+ * Games V4 — Vertical Level Rewards Journey
  *
- * Horizontal scrollable tier track with progress rail and tier nodes.
- * Displays all 50 levels with locked/unlocked/claimed states.
- * Tapping a tier node opens the TierDetailsSheet for claim/details.
+ * Connected vertical timeline showing all 50 reward levels.
+ * Replaces the old horizontal battlepass rail with a premium
+ * roadmap-style vertical progression path.
+ *
+ * - Vertical connecting line fills to current progress
+ * - Compact regular tier rows (~60px)
+ * - Premium milestone tier cards (~96px) with gold accents
+ * - Current level highlighted with glow
+ * - Tappable items open TierDetailsSheet
  *
  * @module gamesV4/components/LevelRewardsTrack
  */
@@ -14,47 +20,31 @@ import type { LevelRewardDocV4 } from "@/gamesV4/services/gameServiceV4";
 import { useColors } from "@/store/ThemeContext";
 import type { LevelInfo } from "@/types/profile";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React, { memo, useCallback, useMemo, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import TierDetailsSheet from "./TierDetailsSheet";
 
 // =============================================================================
 // Constants
 // =============================================================================
 
-const TIER_CELL_WIDTH = 72;
-/** Height of the rail line */
-const RAIL_HEIGHT = 4;
-/** Fixed vertical position of the rail centerline in every cell */
-const RAIL_CENTER_Y = 58;
-/** Raise applied to milestone content (node + label + icons) */
-const MILESTONE_RAISE = 10;
+/** Width of the vertical timeline line */
+const LINE_WIDTH = 3;
+/** Regular tier node diameter */
+const NODE_SIZE = 34;
+/** Milestone tier node diameter */
+const MILESTONE_NODE_SIZE = 46;
+/** Width of the timeline column */
+const TIMELINE_COL_WIDTH = 56;
 
 // =============================================================================
 // Types
 // =============================================================================
 
 export interface LevelRewardsTrackProps {
-  /** User's current level info */
   levelInfo: LevelInfo;
-  /** User's unlocked/claimed reward docs from Firestore */
   rewardDocs: LevelRewardDocV4[];
-  /** Called when user taps Claim in the tier details */
   onClaim: (level: number) => Promise<void>;
-  /** Level currently being claimed (null if none) */
   claimingLevel: number | null;
 }
 
@@ -68,7 +58,374 @@ interface TierData {
 }
 
 // =============================================================================
-// Component
+// Tier Row Components
+// =============================================================================
+
+/** Regular (non-milestone) tier row */
+const RegularTierRow = memo(function RegularTierRow({
+  tier,
+  lineTopColor,
+  lineBottomColor,
+  onPress,
+}: {
+  tier: TierData;
+  lineTopColor: string;
+  lineBottomColor: string;
+  onPress: (t: TierData) => void;
+}) {
+  const colors = useColors();
+  const { def, state, isCurrent } = tier;
+
+  const nodeColor =
+    state === "claimed"
+      ? "#34C759"
+      : state === "unlocked"
+        ? colors.primary
+        : colors.surfaceVariant;
+
+  const nodeBorder = isCurrent
+    ? { borderWidth: 2.5, borderColor: "#FFD700" }
+    : {};
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.65}
+      onPress={() => onPress(tier)}
+      style={styles.tierRow}
+    >
+      {/* Timeline column */}
+      <View style={styles.timelineCol}>
+        <View style={[styles.lineSegment, { backgroundColor: lineTopColor }]} />
+        <View
+          style={[
+            styles.node,
+            {
+              width: NODE_SIZE,
+              height: NODE_SIZE,
+              borderRadius: NODE_SIZE / 2,
+              backgroundColor: nodeColor,
+            },
+            nodeBorder,
+            isCurrent && {
+              shadowColor: "#FFD700",
+              shadowOpacity: 0.5,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: 4,
+            },
+          ]}
+        >
+          {state === "claimed" ? (
+            <MaterialCommunityIcons name="check" size={16} color="#FFF" />
+          ) : (
+            <Text
+              style={[
+                styles.nodeText,
+                {
+                  color: state === "locked" ? colors.textSecondary : "#FFF",
+                },
+              ]}
+            >
+              {def.level}
+            </Text>
+          )}
+        </View>
+        <View
+          style={[styles.lineSegment, { backgroundColor: lineBottomColor }]}
+        />
+      </View>
+
+      {/* Content */}
+      <View
+        style={[
+          styles.tierContent,
+          isCurrent && {
+            backgroundColor: colors.primary + "0D",
+            borderColor: colors.primary + "30",
+            borderWidth: 1,
+          },
+        ]}
+      >
+        <View style={styles.tierContentLeft}>
+          <Text
+            style={[
+              styles.tierLevelText,
+              {
+                color: isCurrent
+                  ? colors.primary
+                  : state === "locked"
+                    ? colors.textMuted
+                    : colors.text,
+              },
+            ]}
+          >
+            Level {def.level}
+            {isCurrent ? "  ← You" : ""}
+          </Text>
+          <View style={styles.rewardRow}>
+            <MaterialCommunityIcons
+              name="star-four-points"
+              size={14}
+              color={state === "locked" ? colors.textMuted : "#F5A623"}
+            />
+            <Text
+              style={[
+                styles.rewardText,
+                {
+                  color:
+                    state === "locked"
+                      ? colors.textMuted
+                      : colors.textSecondary,
+                },
+              ]}
+            >
+              +{def.amount} Tokens
+            </Text>
+          </View>
+        </View>
+
+        {/* State badge */}
+        {state === "claimed" && (
+          <View style={styles.stateBadgeClaimed}>
+            <MaterialCommunityIcons
+              name="check-circle"
+              size={16}
+              color="#34C759"
+            />
+          </View>
+        )}
+        {state === "unlocked" && (
+          <View
+            style={[
+              styles.stateBadgeClaim,
+              { backgroundColor: colors.primary },
+            ]}
+          >
+            <Text style={styles.stateBadgeClaimText}>Claim</Text>
+          </View>
+        )}
+        {state === "locked" && (
+          <MaterialCommunityIcons
+            name="lock-outline"
+            size={16}
+            color={colors.textMuted}
+          />
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+/** Milestone tier row — premium card treatment */
+const MilestoneTierRow = memo(function MilestoneTierRow({
+  tier,
+  lineTopColor,
+  lineBottomColor,
+  onPress,
+}: {
+  tier: TierData;
+  lineTopColor: string;
+  lineBottomColor: string;
+  onPress: (t: TierData) => void;
+}) {
+  const colors = useColors();
+  const { def, state, isCurrent } = tier;
+
+  const nodeColor =
+    state === "claimed"
+      ? "#34C759"
+      : state === "unlocked"
+        ? "#FFD700"
+        : colors.surfaceVariant;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.6}
+      onPress={() => onPress(tier)}
+      style={styles.milestoneTierRow}
+    >
+      {/* Timeline column */}
+      <View style={styles.timelineCol}>
+        <View style={[styles.lineSegment, { backgroundColor: lineTopColor }]} />
+        <View
+          style={[
+            styles.node,
+            {
+              width: MILESTONE_NODE_SIZE,
+              height: MILESTONE_NODE_SIZE,
+              borderRadius: MILESTONE_NODE_SIZE / 2,
+              backgroundColor: nodeColor,
+              borderWidth: 2.5,
+              borderColor:
+                state === "claimed"
+                  ? "#34C759"
+                  : isCurrent
+                    ? "#FFD700"
+                    : state === "unlocked"
+                      ? "#FFD700"
+                      : colors.surfaceVariant,
+            },
+            (state !== "locked" || isCurrent) && {
+              shadowColor: "#FFD700",
+              shadowOpacity: 0.45,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: 5,
+            },
+          ]}
+        >
+          {state === "claimed" ? (
+            <MaterialCommunityIcons name="check" size={22} color="#FFF" />
+          ) : (
+            <MaterialCommunityIcons
+              name={
+                (def.icon as keyof typeof MaterialCommunityIcons.glyphMap) ??
+                "trophy-award"
+              }
+              size={22}
+              color={state === "locked" ? colors.textSecondary : "#FFF"}
+            />
+          )}
+        </View>
+        <View
+          style={[styles.lineSegment, { backgroundColor: lineBottomColor }]}
+        />
+      </View>
+
+      {/* Milestone content card */}
+      <View
+        style={[
+          styles.milestoneCard,
+          {
+            backgroundColor:
+              state === "unlocked"
+                ? "#FFD70010"
+                : isCurrent
+                  ? colors.primary + "0D"
+                  : colors.surface,
+            borderColor:
+              state === "unlocked"
+                ? "#FFD70040"
+                : isCurrent
+                  ? colors.primary + "30"
+                  : colors.surfaceVariant,
+          },
+        ]}
+      >
+        {/* Milestone badge */}
+        <View style={styles.milestoneTopRow}>
+          <View style={styles.milestoneBadge}>
+            <MaterialCommunityIcons name="star" size={12} color="#FFD700" />
+            <Text style={styles.milestoneBadgeText}>MILESTONE</Text>
+          </View>
+          {isCurrent && (
+            <Text style={[styles.currentTag, { color: colors.primary }]}>
+              ← You
+            </Text>
+          )}
+        </View>
+
+        <Text
+          style={[
+            styles.milestoneLevelText,
+            {
+              color: state === "locked" ? colors.textMuted : colors.text,
+            },
+          ]}
+        >
+          Level {def.level}
+        </Text>
+
+        {/* Rewards breakdown */}
+        <View style={styles.milestoneRewards}>
+          <View style={styles.milestoneRewardItem}>
+            <MaterialCommunityIcons
+              name="star-four-points"
+              size={14}
+              color={state === "locked" ? colors.textMuted : "#F5A623"}
+            />
+            <Text
+              style={[
+                styles.milestoneRewardText,
+                {
+                  color:
+                    state === "locked"
+                      ? colors.textMuted
+                      : colors.textSecondary,
+                },
+              ]}
+            >
+              +{def.amount} Tokens
+            </Text>
+          </View>
+          {def.cosmeticId && (
+            <View style={styles.milestoneRewardItem}>
+              <MaterialCommunityIcons
+                name="image-area"
+                size={14}
+                color={state === "locked" ? colors.textMuted : "#9B59B6"}
+              />
+              <Text
+                style={[
+                  styles.milestoneRewardText,
+                  {
+                    color:
+                      state === "locked"
+                        ? colors.textMuted
+                        : colors.textSecondary,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {def.label}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* State indicator */}
+        <View style={styles.milestoneStateRow}>
+          {state === "claimed" && (
+            <View style={styles.milestoneClaimedBadge}>
+              <MaterialCommunityIcons
+                name="check-circle"
+                size={14}
+                color="#34C759"
+              />
+              <Text style={styles.milestoneClaimedText}>Claimed</Text>
+            </View>
+          )}
+          {state === "unlocked" && (
+            <View style={styles.milestoneClaimBtn}>
+              <MaterialCommunityIcons name="gift-open" size={14} color="#FFF" />
+              <Text style={styles.milestoneClaimBtnText}>Claim Reward</Text>
+            </View>
+          )}
+          {state === "locked" && (
+            <View style={styles.milestoneLockedBadge}>
+              <MaterialCommunityIcons
+                name="lock-outline"
+                size={13}
+                color={colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.milestoneLockedText,
+                  { color: colors.textMuted },
+                ]}
+              >
+                Reach Level {def.level}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+// =============================================================================
+// Main Component
 // =============================================================================
 
 function LevelRewardsTrackBase({
@@ -78,66 +435,54 @@ function LevelRewardsTrackBase({
   claimingLevel,
 }: LevelRewardsTrackProps) {
   const colors = useColors();
-  const flatListRef = useRef<FlatList>(null);
   const [selectedTier, setSelectedTier] = useState<TierData | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
 
   const currentLevel = levelInfo.current;
-  const isMaxLevel = currentLevel >= MAX_REWARD_LEVEL;
 
-  // Build reward doc lookup map
+  // Build reward doc lookup
   const docMap = useMemo(() => {
     const map = new Map<number, LevelRewardDocV4>();
     for (const d of rewardDocs) map.set(d.level, d);
     return map;
   }, [rewardDocs]);
 
-  // Build tier data array for all 50 levels
+  // Build tier data for all 50 levels
   const tiers: TierData[] = useMemo(() => {
     return LEVEL_REWARDS.map((def) => {
       const doc = docMap.get(def.level) ?? null;
       const isClaimed =
         doc !== null && doc.claimedAt !== null && doc.claimedAt !== undefined;
       const isUnlocked = doc !== null;
-      // If user's level >= tier level but no doc exists yet, treat as
-      // unlocked (claimable). This handles level 1 and any levels where
-      // the unlock doc was never created (e.g. retroactive feature rollout).
       const reachedButNoDoc = doc === null && currentLevel >= def.level;
       const state: TierState = isClaimed
         ? "claimed"
         : isUnlocked || reachedButNoDoc
           ? "unlocked"
           : "locked";
-      return {
-        def,
-        state,
-        doc,
-        isCurrent: def.level === currentLevel,
-      };
+      return { def, state, doc, isCurrent: def.level === currentLevel };
     });
   }, [docMap, currentLevel]);
 
-  // XP progress ratio between current level and next (for rail fill)
-  const xpProgress = useMemo(() => {
-    if (isMaxLevel) return 1;
-    if (levelInfo.xpToNextLevel <= 0) return 1;
-    return Math.min(1, Math.max(0, levelInfo.xp / levelInfo.xpToNextLevel));
-  }, [levelInfo, isMaxLevel]);
+  // Line color helpers
+  const filledColor = colors.primary;
+  const emptyColor = colors.surfaceVariant;
 
-  // Scroll to current level on mount
-  useEffect(() => {
-    const rawIdx = (currentLevel ?? 0) - 1;
-    const idx = Number.isFinite(rawIdx) ? Math.max(0, rawIdx) : 0;
-    const safeIdx = Math.min(idx, LEVEL_REWARDS.length - 1);
-    const timer = setTimeout(() => {
-      flatListRef.current?.scrollToIndex({
-        index: safeIdx,
-        viewPosition: 0.35,
-        animated: true,
-      });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [currentLevel]);
+  const getLineTopColor = useCallback(
+    (level: number) => {
+      if (level === 1) return "transparent"; // first item, no line above
+      return level <= currentLevel ? filledColor : emptyColor;
+    },
+    [currentLevel, filledColor, emptyColor],
+  );
+
+  const getLineBottomColor = useCallback(
+    (level: number) => {
+      if (level >= MAX_REWARD_LEVEL) return "transparent"; // last item
+      return level < currentLevel ? filledColor : emptyColor;
+    },
+    [currentLevel, filledColor, emptyColor],
+  );
 
   // Handle tier tap
   const handleTierPress = useCallback((tier: TierData) => {
@@ -145,255 +490,39 @@ function LevelRewardsTrackBase({
     setSheetVisible(true);
   }, []);
 
-  // Close sheet
   const handleCloseSheet = useCallback(() => {
     setSheetVisible(false);
     setSelectedTier(null);
   }, []);
 
-  // Jump to current level
-  const handleJumpToCurrent = useCallback(() => {
-    const rawIdx = (currentLevel ?? 0) - 1;
-    const idx = Number.isFinite(rawIdx) ? Math.max(0, rawIdx) : 0;
-    const safeIdx = Math.min(idx, LEVEL_REWARDS.length - 1);
-    flatListRef.current?.scrollToIndex({
-      index: safeIdx,
-      viewPosition: 0.35,
-      animated: true,
-    });
-  }, [currentLevel]);
-
-  // Render a single tier node
-  const renderTier = useCallback(
-    ({ item, index }: { item: TierData; index: number }) => {
-      const { def, state, isCurrent } = item;
-      const isMilestone = def.isMilestone;
-      const cellWidth = TIER_CELL_WIDTH;
-
-      // Node colors
-      const nodeColor =
-        state === "claimed"
-          ? "#34C759"
-          : state === "unlocked"
-            ? "#007AFF"
-            : colors.surfaceVariant;
-
-      const nodeBorderColor = isCurrent
-        ? "#FFD700"
-        : state === "claimed"
-          ? "#34C759"
-          : state === "unlocked"
-            ? "#007AFF"
-            : "transparent";
-
-      const nodeSize = isMilestone ? 48 : 36;
-
-      // Rail segment: filled up to current level, partial on current
-      const isBeforeCurrent = def.level < currentLevel;
-      const isCurrentLevel = def.level === currentLevel;
-      const railFill = isBeforeCurrent ? 1 : isCurrentLevel ? xpProgress : 0;
-
-      return (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => handleTierPress(item)}
-          style={[styles.tierCell, { width: cellWidth }]}
-        >
-          {/* Rail segment — fixed vertical position for all cells */}
-          <View
-            style={[
-              styles.railSegment,
-              {
-                top: RAIL_CENTER_Y - RAIL_HEIGHT / 2,
-                backgroundColor: colors.surfaceVariant,
-              },
-            ]}
-          >
-            <View
-              style={[
-                styles.railFill,
-                {
-                  width: `${railFill * 100}%`,
-                  backgroundColor:
-                    railFill > 0 ? colors.primary : "transparent",
-                },
-              ]}
-            />
-          </View>
-
-          {/* Content wrapper — milestones raised significantly */}
-          <View
-            style={
-              isMilestone
-                ? {
-                    alignItems: "center",
-                    transform: [{ translateY: -MILESTONE_RAISE }],
-                  }
-                : { alignItems: "center" }
-            }
-          >
-            {/* Node circle */}
-            <View
-              style={[
-                styles.tierNode,
-                {
-                  width: nodeSize,
-                  height: nodeSize,
-                  borderRadius: nodeSize / 2,
-                  backgroundColor: nodeColor,
-                  borderWidth: isCurrent ? 3 : isMilestone ? 2 : 0,
-                  borderColor: nodeBorderColor,
-                },
-                isMilestone &&
-                  state !== "locked" && {
-                    shadowColor: "#FFD700",
-                    shadowOpacity: 0.4,
-                    shadowRadius: 6,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: 4,
-                  },
-              ]}
-            >
-              {state === "claimed" ? (
-                <MaterialCommunityIcons
-                  name="check"
-                  size={isMilestone ? 22 : 16}
-                  color="#FFF"
-                />
-              ) : isMilestone ? (
-                <MaterialCommunityIcons
-                  name={
-                    (def.icon as keyof typeof MaterialCommunityIcons.glyphMap) ??
-                    "trophy-award"
-                  }
-                  size={20}
-                  color={state === "locked" ? colors.textSecondary : "#FFF"}
-                />
-              ) : (
-                <Text
-                  style={[
-                    styles.tierNodeText,
-                    {
-                      color: state === "locked" ? colors.textSecondary : "#FFF",
-                      fontSize: 11,
-                    },
-                  ]}
-                >
-                  {def.level}
-                </Text>
-              )}
-            </View>
-
-            {/* Level label */}
-            <Text
-              style={[
-                styles.tierLabel,
-                {
-                  color: isCurrent
-                    ? "#FFD700"
-                    : state === "locked"
-                      ? colors.textSecondary
-                      : colors.text,
-                  fontWeight: isCurrent || isMilestone ? "800" : "600",
-                  fontSize: isMilestone ? 12 : 10,
-                },
-              ]}
-              numberOfLines={1}
-            >
-              {isMilestone ? `Lv ${def.level}` : `${def.level}`}
-            </Text>
-
-            {/* Reward indicator icons */}
-            <View style={styles.tierIcons}>
-              <MaterialCommunityIcons
-                name="star-four-points"
-                size={14}
-                color={state === "locked" ? colors.textSecondary : "#FFD700"}
-              />
-              {isMilestone && (
-                <MaterialCommunityIcons
-                  name="image-area"
-                  size={12}
-                  color={state === "locked" ? colors.textSecondary : "#9B59B6"}
-                />
-              )}
-            </View>
-
-            {/* Unclaimed dot indicator */}
-            {state === "unlocked" && <View style={styles.unclaimedDot} />}
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [colors, currentLevel, xpProgress, handleTierPress],
-  );
-
-  const getItemLayout = useCallback((_data: unknown, index: number) => {
-    return {
-      length: TIER_CELL_WIDTH,
-      offset: TIER_CELL_WIDTH * index,
-      index,
-    };
-  }, []);
-
-  const unclaimedCount = useMemo(
-    () => tiers.filter((t) => t.state === "unlocked").length,
-    [tiers],
-  );
-
   return (
     <View style={styles.container}>
-      {/* Track header */}
-      <View style={styles.trackHeader}>
-        <Text style={[styles.trackTitle, { color: colors.text }]}>
-          Reward Track
-        </Text>
-        {unclaimedCount > 0 && (
-          <View style={[styles.unclaimedBadge, { backgroundColor: "#007AFF" }]}>
-            <Text style={styles.unclaimedBadgeText}>{unclaimedCount}</Text>
-          </View>
-        )}
-        <View style={{ flex: 1 }} />
-        <TouchableOpacity
-          style={[
-            styles.jumpButton,
-            { backgroundColor: colors.surfaceVariant },
-          ]}
-          onPress={handleJumpToCurrent}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons
-            name="crosshairs-gps"
-            size={14}
-            color={colors.primary}
-          />
-          <Text style={[styles.jumpButtonText, { color: colors.primary }]}>
-            Lv {currentLevel}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {tiers.map((tier) => {
+        const lineTopColor = getLineTopColor(tier.def.level);
+        const lineBottomColor = getLineBottomColor(tier.def.level);
 
-      {/* Horizontal tier track */}
-      <FlatList
-        ref={flatListRef}
-        data={tiers}
-        keyExtractor={(item) => String(item.def.level)}
-        renderItem={renderTier}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.trackContent}
-        getItemLayout={getItemLayout}
-        onScrollToIndexFailed={(info) => {
-          // Fallback scroll
-          flatListRef.current?.scrollToOffset({
-            offset: info.averageItemLength * info.index,
-            animated: true,
-          });
-        }}
-        initialNumToRender={15}
-        maxToRenderPerBatch={10}
-        windowSize={7}
-      />
+        if (tier.def.isMilestone) {
+          return (
+            <MilestoneTierRow
+              key={tier.def.level}
+              tier={tier}
+              lineTopColor={lineTopColor}
+              lineBottomColor={lineBottomColor}
+              onPress={handleTierPress}
+            />
+          );
+        }
+
+        return (
+          <RegularTierRow
+            key={tier.def.level}
+            tier={tier}
+            lineTopColor={lineTopColor}
+            lineBottomColor={lineBottomColor}
+            onPress={handleTierPress}
+          />
+        );
+      })}
 
       {/* Tier Details Bottom Sheet */}
       {selectedTier && (
@@ -418,91 +547,170 @@ function LevelRewardsTrackBase({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 8,
-  },
-  trackHeader: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 16,
-    marginBottom: 8,
-    gap: 6,
+    paddingTop: 12,
   },
-  trackTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  unclaimedBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: "center",
+
+  // ── Timeline column ───────────────────────────────────────────────
+  timelineCol: {
+    width: TIMELINE_COL_WIDTH,
     alignItems: "center",
-    paddingHorizontal: 6,
   },
-  unclaimedBadgeText: {
-    color: "#FFF",
-    fontSize: 11,
-    fontWeight: "800",
+  lineSegment: {
+    width: LINE_WIDTH,
+    flex: 1,
+    borderRadius: LINE_WIDTH / 2,
   },
-  jumpButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  jumpButtonText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  trackContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  tierCell: {
-    alignItems: "center",
-    paddingTop: 18,
-    paddingBottom: 4,
-    position: "relative",
-  },
-  railSegment: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: RAIL_HEIGHT,
-    borderRadius: RAIL_HEIGHT / 2,
-    overflow: "hidden",
-  },
-  railFill: {
-    height: "100%",
-    borderRadius: RAIL_HEIGHT / 2,
-  },
-  tierNode: {
+  node: {
     justifyContent: "center",
     alignItems: "center",
     zIndex: 2,
-    marginBottom: 4,
   },
-  tierNodeText: {
+  nodeText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  // ── Regular tier row ──────────────────────────────────────────────
+  tierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 58,
+  },
+  tierContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginRight: 4,
+  },
+  tierContentLeft: {
+    flex: 1,
+  },
+  tierLevelText: {
+    fontSize: 14,
     fontWeight: "700",
   },
-  tierLabel: {
-    marginTop: 2,
-  },
-  tierIcons: {
+  rewardRow: {
     flexDirection: "row",
-    gap: 2,
-    marginTop: 2,
-    height: 14,
     alignItems: "center",
-  },
-  unclaimedDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#FF3B30",
+    gap: 4,
     marginTop: 2,
+  },
+  rewardText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  stateBadgeClaimed: {
+    padding: 4,
+  },
+  stateBadgeClaim: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  stateBadgeClaimText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  // ── Milestone tier row ────────────────────────────────────────────
+  milestoneTierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 96,
+    marginVertical: 4,
+  },
+  milestoneCard: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginRight: 4,
+  },
+  milestoneTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  milestoneBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFD70015",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  milestoneBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#FFD700",
+    letterSpacing: 0.8,
+  },
+  currentTag: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  milestoneLevelText: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  milestoneRewards: {
+    gap: 4,
+    marginBottom: 8,
+  },
+  milestoneRewardItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  milestoneRewardText: {
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+  },
+  milestoneStateRow: {
+    alignItems: "flex-start",
+  },
+  milestoneClaimedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  milestoneClaimedText: {
+    color: "#34C759",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  milestoneClaimBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#007AFF",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  milestoneClaimBtnText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  milestoneLockedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  milestoneLockedText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
 

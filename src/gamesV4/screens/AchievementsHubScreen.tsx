@@ -533,13 +533,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: "600",
+    lineHeight: 18,
   },
   list: { paddingHorizontal: 16, paddingBottom: 32, gap: 12 },
   sectionCard: {

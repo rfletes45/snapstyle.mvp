@@ -9,6 +9,11 @@
  * - Account management section
  */
 
+import {
+  DeleteAccountError,
+  executeAccountDeletion,
+  reauthenticateUser,
+} from "@/services/accountDeletion";
 import { logout } from "@/services/auth";
 import { equipTheme, updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
@@ -20,9 +25,15 @@ import { isValidDisplayName } from "@/utils/validators";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
-import { deleteUser } from "firebase/auth";
-import React, { useCallback, useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import {
   Button,
   Dialog,
@@ -101,6 +112,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   // Delete account state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteStep, setDeleteStep] = useState<
+    "confirm" | "reauth" | "deleting" | "error"
+  >("confirm");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [reauthPassword, setReauthPassword] = useState("");
+  const [reauthLoading, setReauthLoading] = useState(false);
+  const deleteInProgressRef = useRef(false);
 
   // =============================================================================
   // Handlers
@@ -207,25 +225,125 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       return;
     }
 
+    // Prevent double-submit
+    if (deleteInProgressRef.current) return;
+    deleteInProgressRef.current = true;
+
+    setDeleteStep("deleting");
+    setDeleteError(null);
+
     try {
-      // Note: Full account deletion requires Cloud Function
-      // This just deletes the Firebase Auth user for now
-      await deleteUser(currentFirebaseUser);
-      showSuccess("Account deleted");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+      const result = await executeAccountDeletion(currentFirebaseUser);
+
+      if (result.success) {
+        // Deletion succeeded — the auth user is now deleted, so
+        // onAuthStateChanged will fire with null. The app will
+        // navigate to the auth screen automatically via AppGate.
+        showSuccess("Your account has been permanently deleted.");
+        setShowDeleteDialog(false);
+      } else {
+        // Partial failure — some steps had errors
+        setDeleteStep("error");
+        setDeleteError(
+          result.message ||
+            "Some data could not be deleted. Please try again or contact support.",
+        );
+      }
     } catch (error: any) {
       logger.error("Delete account error:", error);
-      if (error.code === "auth/requires-recent-login") {
-        showError(
-          "Please sign out and sign in again before deleting your account",
-        );
+
+      const typedError = error as DeleteAccountError;
+
+      if (typedError.type === "requires-reauth") {
+        // Need re-authentication — show password prompt
+        setDeleteStep("reauth");
+        setReauthPassword("");
+      } else if (typedError.type === "network") {
+        setDeleteStep("error");
+        setDeleteError(typedError.message);
+      } else if (typedError.type === "server") {
+        setDeleteStep("error");
+        setDeleteError(typedError.message);
       } else {
-        showError("Failed to delete account. Please try again.");
+        setDeleteStep("error");
+        setDeleteError(
+          typedError.message ||
+            "An unexpected error occurred. Please try again.",
+        );
       }
     } finally {
-      setShowDeleteDialog(false);
-      setDeleteConfirmText("");
+      deleteInProgressRef.current = false;
     }
   }, [deleteConfirmText, currentFirebaseUser, showError, showSuccess]);
+
+  const handleReauthAndDelete = useCallback(async () => {
+    if (!currentFirebaseUser || !reauthPassword) {
+      showError("Please enter your password");
+      return;
+    }
+
+    setReauthLoading(true);
+
+    try {
+      await reauthenticateUser(currentFirebaseUser, reauthPassword);
+
+      // Re-authentication succeeded — now retry deletion
+      setReauthPassword("");
+      setDeleteStep("deleting");
+      setReauthLoading(false);
+
+      // Retry the deletion
+      deleteInProgressRef.current = true;
+      try {
+        const result = await executeAccountDeletion(currentFirebaseUser);
+
+        if (result.success) {
+          showSuccess("Your account has been permanently deleted.");
+          setShowDeleteDialog(false);
+        } else {
+          setDeleteStep("error");
+          setDeleteError(
+            result.message ||
+              "Some data could not be deleted. Please try again.",
+          );
+        }
+      } catch (retryError: any) {
+        logger.error("Delete account retry error:", retryError);
+        setDeleteStep("error");
+        setDeleteError(
+          retryError.message || "Deletion failed after re-authentication.",
+        );
+      } finally {
+        deleteInProgressRef.current = false;
+      }
+    } catch (err: any) {
+      logger.error("Re-auth error:", err);
+      setReauthLoading(false);
+
+      if (
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/invalid-credential"
+      ) {
+        showError("Incorrect password. Please try again.");
+      } else if (err.code === "auth/too-many-requests") {
+        showError("Too many attempts. Please wait and try again.");
+      } else {
+        showError(err.message || "Re-authentication failed.");
+      }
+    }
+  }, [currentFirebaseUser, reauthPassword, showError, showSuccess]);
+
+  const resetDeleteDialog = useCallback(() => {
+    setShowDeleteDialog(false);
+    setDeleteConfirmText("");
+    setDeleteStep("confirm");
+    setDeleteError(null);
+    setReauthPassword("");
+    setReauthLoading(false);
+    deleteInProgressRef.current = false;
+  }, []);
 
   // =============================================================================
   // Render
@@ -574,42 +692,160 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       <Portal>
         <Dialog
           visible={showDeleteDialog}
-          onDismiss={() => setShowDeleteDialog(false)}
+          onDismiss={deleteStep === "deleting" ? undefined : resetDeleteDialog}
+          dismissable={deleteStep !== "deleting"}
         >
-          <Dialog.Title>Delete Account</Dialog.Title>
-          <Dialog.Content>
-            <Text style={[styles.deleteWarning, { color: theme.colors.error }]}>
-              This action cannot be undone. All your data will be permanently
-              deleted.
-            </Text>
-            <Text style={styles.deleteInstruction}>
-              Type DELETE to confirm:
-            </Text>
-            <TextInput
-              value={deleteConfirmText}
-              onChangeText={setDeleteConfirmText}
-              mode="outlined"
-              placeholder="DELETE"
-              style={styles.deleteInput}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button
-              onPress={() => {
-                setShowDeleteDialog(false);
-                setDeleteConfirmText("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onPress={handleDeleteAccount}
-              textColor={theme.colors.error}
-              disabled={deleteConfirmText !== "DELETE"}
-            >
-              Delete Forever
-            </Button>
-          </Dialog.Actions>
+          {/* ── Step: Confirm ── */}
+          {deleteStep === "confirm" && (
+            <>
+              <Dialog.Title style={{ color: theme.colors.error }}>
+                Delete Account
+              </Dialog.Title>
+              <Dialog.Content>
+                <Text
+                  style={[styles.deleteWarning, { color: theme.colors.error }]}
+                >
+                  ⚠️ This is permanent and cannot be undone.
+                </Text>
+                <Text style={styles.deleteDetail}>
+                  Deleting your account will permanently remove:
+                </Text>
+                <Text style={styles.deleteBullet}>
+                  • Your profile, avatar, and all settings
+                </Text>
+                <Text style={styles.deleteBullet}>
+                  • All messages, photos, and stories you sent
+                </Text>
+                <Text style={styles.deleteBullet}>
+                  • Friends list, game history, and achievements
+                </Text>
+                <Text style={styles.deleteBullet}>
+                  • Your wallet balance and all purchased items
+                </Text>
+                <Text style={styles.deleteBullet}>
+                  • Your badges, streaks, and leaderboard entries
+                </Text>
+
+                <Text style={styles.deleteNote}>
+                  Your username will become available for others to claim.
+                </Text>
+                <Text style={styles.deleteNote}>
+                  You can use the same email to create a new account later.
+                </Text>
+
+                <Text style={[styles.deleteInstruction, { marginTop: 16 }]}>
+                  Type DELETE to confirm:
+                </Text>
+                <TextInput
+                  value={deleteConfirmText}
+                  onChangeText={setDeleteConfirmText}
+                  mode="outlined"
+                  placeholder="DELETE"
+                  autoCapitalize="characters"
+                  style={styles.deleteInput}
+                />
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={resetDeleteDialog}>Cancel</Button>
+                <Button
+                  onPress={handleDeleteAccount}
+                  textColor={theme.colors.error}
+                  disabled={deleteConfirmText !== "DELETE"}
+                  icon="delete-forever"
+                >
+                  Delete My Account
+                </Button>
+              </Dialog.Actions>
+            </>
+          )}
+
+          {/* ── Step: Re-authentication ── */}
+          {deleteStep === "reauth" && (
+            <>
+              <Dialog.Title>Verify Your Identity</Dialog.Title>
+              <Dialog.Content>
+                <Text style={styles.deleteDetail}>
+                  For security, please enter your password to continue with
+                  account deletion.
+                </Text>
+                <TextInput
+                  label="Password"
+                  value={reauthPassword}
+                  onChangeText={setReauthPassword}
+                  mode="outlined"
+                  secureTextEntry
+                  autoFocus
+                  style={styles.deleteInput}
+                />
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={resetDeleteDialog}>Cancel</Button>
+                <Button
+                  onPress={handleReauthAndDelete}
+                  textColor={theme.colors.error}
+                  disabled={!reauthPassword || reauthLoading}
+                  loading={reauthLoading}
+                >
+                  Verify & Delete
+                </Button>
+              </Dialog.Actions>
+            </>
+          )}
+
+          {/* ── Step: Deleting (in progress) ── */}
+          {deleteStep === "deleting" && (
+            <>
+              <Dialog.Title>Deleting Account...</Dialog.Title>
+              <Dialog.Content>
+                <View style={styles.deletingContainer}>
+                  <ActivityIndicator
+                    size="large"
+                    color={theme.colors.error}
+                    style={{ marginBottom: 16 }}
+                  />
+                  <Text style={styles.deletingText}>
+                    Please wait while we permanently remove your account and all
+                    associated data. This may take a moment.
+                  </Text>
+                  <Text style={styles.deletingSubtext}>
+                    Do not close the app.
+                  </Text>
+                </View>
+              </Dialog.Content>
+            </>
+          )}
+
+          {/* ── Step: Error ── */}
+          {deleteStep === "error" && (
+            <>
+              <Dialog.Title style={{ color: theme.colors.error }}>
+                Deletion Error
+              </Dialog.Title>
+              <Dialog.Content>
+                <Text style={styles.deleteDetail}>
+                  {deleteError ||
+                    "Something went wrong during account deletion."}
+                </Text>
+                <Text style={[styles.deleteNote, { marginTop: 12 }]}>
+                  Your deletion request has been recorded. You can retry now or
+                  contact support for assistance.
+                </Text>
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={resetDeleteDialog}>Close</Button>
+                <Button
+                  onPress={() => {
+                    setDeleteStep("confirm");
+                    setDeleteConfirmText("");
+                    setDeleteError(null);
+                  }}
+                  textColor={theme.colors.error}
+                >
+                  Retry
+                </Button>
+              </Dialog.Actions>
+            </>
+          )}
         </Dialog>
       </Portal>
     </ScrollView>
@@ -666,13 +902,50 @@ const styles = StyleSheet.create({
     // color applied inline via theme.colors.onSurfaceVariant
   },
   deleteWarning: {
-    marginBottom: 16,
-    // color applied inline via theme.colors.error
+    marginBottom: 12,
+    fontWeight: "bold" as const,
+    fontSize: 15,
+  },
+  deleteDetail: {
+    marginBottom: 8,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  deleteBullet: {
+    fontSize: 13,
+    lineHeight: 20,
+    paddingLeft: 8,
+    marginBottom: 2,
+    opacity: 0.85,
+  },
+  deleteNote: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 8,
+    fontStyle: "italic" as const,
+    opacity: 0.7,
   },
   deleteInstruction: {
     marginBottom: 8,
+    fontWeight: "600" as const,
   },
   deleteInput: {
     marginTop: 8,
+  },
+  deletingContainer: {
+    alignItems: "center" as const,
+    paddingVertical: 24,
+  },
+  deletingText: {
+    textAlign: "center" as const,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  deletingSubtext: {
+    textAlign: "center" as const,
+    fontSize: 12,
+    fontWeight: "bold" as const,
+    opacity: 0.7,
   },
 });

@@ -313,7 +313,10 @@ export default function GamesHubScreenV4() {
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    // The subscription will auto-refresh; we just set the indicator
+    // Subscriptions are live (onSnapshot), so there's nothing to re-fetch.
+    // Clear the indicator after a short delay to avoid it getting stuck
+    // when Firestore data hasn't changed and the callback never fires.
+    setTimeout(() => setRefreshing(false), 1200);
   }, []);
 
   // ── Colors ─────────────────────────────────────────────────────────────

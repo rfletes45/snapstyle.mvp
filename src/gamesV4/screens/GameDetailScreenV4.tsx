@@ -762,7 +762,12 @@ export default function GameDetailScreenV4() {
                         style={[styles.historyDate, { color: subtextColor }]}
                       >
                         {formatDate(result.createdAt)} ·{" "}
-                        {Math.round(result.durationMs / 1000)}s
+                        {(() => {
+                          const secs = Math.round(result.durationMs / 1000);
+                          const m = Math.floor(secs / 60);
+                          const s = secs % 60;
+                          return m > 0 ? `${m}m ${s}s` : `${s}s`;
+                        })()}
                       </Text>
                     </View>
                     <Text

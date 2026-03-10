@@ -162,7 +162,12 @@ export const ProfileOverflowMenu = memo(function ProfileOverflowMenu({
 
 const styles = StyleSheet.create({
   trigger: {
-    padding: Spacing.xs,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   overlay: {
     flex: 1,

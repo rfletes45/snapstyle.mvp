@@ -34,6 +34,7 @@ export type GameId =
   | "reversi"
   | "dots_and_boxes"
   | "crazy_eights"
+  | "hex"
   // Realtime
   | "pong_game"
   | "battleship"

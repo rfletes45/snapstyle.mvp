@@ -16,7 +16,11 @@
 
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { getAchievementTypesForSection, getSectionDef } from "./achievements";
+import {
+  getAchievementTypesForSection,
+  getSectionDef,
+  resolveSection,
+} from "./achievements";
 import { assertAuth, getDb } from "./helpers";
 
 // =============================================================================
@@ -27,14 +31,17 @@ export const claimAchievementSectionBadgeV4 = functions.https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
 
-    const { sectionId } = data as { sectionId: string };
+    const { sectionId: rawSectionId } = data as { sectionId: string };
 
-    if (!sectionId || typeof sectionId !== "string") {
+    if (!rawSectionId || typeof rawSectionId !== "string") {
       throw new functions.https.HttpsError(
         "invalid-argument",
         "sectionId is required.",
       );
     }
+
+    // Resolve legacy section IDs (e.g. "speedster" → "tic_tac_toe")
+    const sectionId = resolveSection(rawSectionId);
 
     // Validate section exists
     const sectionDef = getSectionDef(sectionId);

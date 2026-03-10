@@ -27,6 +27,7 @@ export type GameId =
   | "reversi"
   | "dots_and_boxes"
   | "crazy_eights"
+  | "hex"
   | "pong_game"
   | "battleship"
   | "sketch_party_game"
@@ -361,6 +362,9 @@ export const LEADERBOARD_METRICS: Partial<Record<GameId, LeaderboardMetric>> = {
   minigolf_duels: "bestScore",
   minesweeper: "bestScore",
   solitaire_klondike: "bestScore",
+  reversi: "wins",
+  dots_and_boxes: "wins",
+  hex: "wins",
   // Default for unspecified games: "bestScore"
 };
 

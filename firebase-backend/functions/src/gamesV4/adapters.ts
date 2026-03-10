@@ -7359,3 +7359,1117 @@ registerAdapter({
     };
   },
 });
+
+// =============================================================================
+// ── Reversi / Othello Adapter ────────────────────────────────────────────────
+// =============================================================================
+
+type RvDisc = "B" | "W" | null;
+type RvBoard = RvDisc[][];
+
+interface ReversiState {
+  board: RvBoard;
+  blackUid: string;
+  whiteUid: string;
+  currentColor: "B" | "W";
+  legalMoves: Array<[number, number]>;
+  blackCount: number;
+  whiteCount: number;
+  consecutivePasses: number;
+  turnNumber: number;
+  lastMove:
+    | { type: "place"; row: number; col: number }
+    | { type: "pass" }
+    | null;
+  lastAction: "place" | "pass" | null;
+  gamePhase: "playing" | "finished";
+}
+
+const RV_SIZE = 8;
+const RV_DIRS: ReadonlyArray<[number, number]> = [
+  [-1, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, -1],
+  [0, 1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
+];
+
+function rvInBounds(r: number, c: number): boolean {
+  return r >= 0 && r < RV_SIZE && c >= 0 && c < RV_SIZE;
+}
+
+function rvOpp(color: "B" | "W"): "B" | "W" {
+  return color === "B" ? "W" : "B";
+}
+
+function rvComputeFlips(
+  board: RvBoard,
+  row: number,
+  col: number,
+  color: "B" | "W",
+): Array<[number, number]> {
+  if (board[row][col] !== null) return [];
+  const opp = rvOpp(color);
+  const allFlips: Array<[number, number]> = [];
+  for (const [dr, dc] of RV_DIRS) {
+    const lineFlips: Array<[number, number]> = [];
+    let r = row + dr;
+    let c = col + dc;
+    while (rvInBounds(r, c) && board[r][c] === opp) {
+      lineFlips.push([r, c]);
+      r += dr;
+      c += dc;
+    }
+    if (lineFlips.length > 0 && rvInBounds(r, c) && board[r][c] === color) {
+      allFlips.push(...lineFlips);
+    }
+  }
+  return allFlips;
+}
+
+function rvGetLegalMoves(
+  board: RvBoard,
+  color: "B" | "W",
+): Array<[number, number]> {
+  const moves: Array<[number, number]> = [];
+  for (let r = 0; r < RV_SIZE; r++) {
+    for (let c = 0; c < RV_SIZE; c++) {
+      if (
+        board[r][c] === null &&
+        rvComputeFlips(board, r, c, color).length > 0
+      ) {
+        moves.push([r, c]);
+      }
+    }
+  }
+  return moves;
+}
+
+function rvCountDiscs(board: RvBoard): { black: number; white: number } {
+  let black = 0;
+  let white = 0;
+  for (let r = 0; r < RV_SIZE; r++) {
+    for (let c = 0; c < RV_SIZE; c++) {
+      if (board[r][c] === "B") black++;
+      else if (board[r][c] === "W") white++;
+    }
+  }
+  return { black, white };
+}
+
+function rvIsBoardFull(board: RvBoard): boolean {
+  for (let r = 0; r < RV_SIZE; r++) {
+    for (let c = 0; c < RV_SIZE; c++) {
+      if (board[r][c] === null) return false;
+    }
+  }
+  return true;
+}
+
+function rvCountCorners(board: RvBoard, color: "B" | "W"): number {
+  const corners: Array<[number, number]> = [
+    [0, 0],
+    [0, 7],
+    [7, 0],
+    [7, 7],
+  ];
+  return corners.filter(([r, c]) => board[r][c] === color).length;
+}
+
+function rvCreateInitialBoard(): RvBoard {
+  const board: RvBoard = Array.from({ length: RV_SIZE }, () =>
+    Array(RV_SIZE).fill(null),
+  );
+  board[3][3] = "W";
+  board[3][4] = "B";
+  board[4][3] = "B";
+  board[4][4] = "W";
+  return board;
+}
+
+registerAdapter({
+  gameId: "reversi",
+  runtimeType: "turnBased",
+  maxPlayers: 2,
+  minPlayers: 2,
+  defaultSettings: {},
+
+  createInitialPublicState(
+    players: Array<{ uid: string; slotIndex: number }>,
+  ): Record<string, unknown> {
+    const blackPlayer = players.find((p) => p.slotIndex === 0)!;
+    const whitePlayer = players.find((p) => p.slotIndex === 1)!;
+    const board = rvCreateInitialBoard();
+    const legalMoves = rvGetLegalMoves(board, "B");
+
+    return {
+      board,
+      blackUid: blackPlayer.uid,
+      whiteUid: whitePlayer.uid,
+      currentColor: "B",
+      legalMoves,
+      blackCount: 2,
+      whiteCount: 2,
+      consecutivePasses: 0,
+      turnNumber: 1,
+      lastMove: null,
+      lastAction: null,
+      gamePhase: "playing",
+    } as unknown as Record<string, unknown>;
+  },
+
+  validateMove(
+    publicState: Record<string, unknown>,
+    _priv: Record<string, Record<string, unknown>>,
+    movePayload: Record<string, unknown>,
+    ctx,
+  ): MoveValidationResult {
+    const state = publicState as unknown as ReversiState;
+    const moveType = movePayload.type as string;
+    const playerColor: "B" | "W" = ctx.currentTurnIndex === 0 ? "B" : "W";
+
+    // ── Pass move
+    if (moveType === "pass") {
+      if (state.legalMoves.length > 0) {
+        return { ok: false, error: "You have legal moves — cannot pass." };
+      }
+
+      const newBoard: RvBoard = state.board.map((r) => [...r]);
+      const nextColor = rvOpp(playerColor);
+      const newConsecutivePasses = state.consecutivePasses + 1;
+
+      if (newConsecutivePasses >= 2) {
+        const counts = rvCountDiscs(newBoard);
+        const newState: ReversiState = {
+          ...state,
+          board: newBoard,
+          currentColor: nextColor,
+          legalMoves: [],
+          blackCount: counts.black,
+          whiteCount: counts.white,
+          consecutivePasses: newConsecutivePasses,
+          turnNumber: state.turnNumber + 1,
+          lastMove: { type: "pass" },
+          lastAction: "pass",
+          gamePhase: "finished",
+        };
+
+        const terminal = rvResolveTerminal(newState);
+        return {
+          ok: true,
+          nextPublicState: newState as unknown as Record<string, unknown>,
+          turnAdvance: false,
+          terminal,
+        };
+      }
+
+      const nextMoves = rvGetLegalMoves(newBoard, nextColor);
+      const newState: ReversiState = {
+        ...state,
+        board: newBoard,
+        currentColor: nextColor,
+        legalMoves: nextMoves,
+        consecutivePasses: newConsecutivePasses,
+        turnNumber: state.turnNumber + 1,
+        lastMove: { type: "pass" },
+        lastAction: "pass",
+        gamePhase: "playing",
+      };
+
+      return {
+        ok: true,
+        nextPublicState: newState as unknown as Record<string, unknown>,
+        turnAdvance: true,
+      };
+    }
+
+    // ── Place move
+    if (moveType === "place") {
+      const row = movePayload.row as number;
+      const col = movePayload.col as number;
+
+      if (
+        typeof row !== "number" ||
+        typeof col !== "number" ||
+        row < 0 ||
+        row >= RV_SIZE ||
+        col < 0 ||
+        col >= RV_SIZE
+      ) {
+        return { ok: false, error: "Invalid coordinates." };
+      }
+
+      if (state.board[row][col] !== null) {
+        return { ok: false, error: "Cell is not empty." };
+      }
+
+      const flips = rvComputeFlips(state.board, row, col, playerColor);
+      if (flips.length === 0) {
+        return {
+          ok: false,
+          error: "Illegal move — must flip at least one disc.",
+        };
+      }
+
+      const newBoard: RvBoard = state.board.map((r) => [...r]);
+      newBoard[row][col] = playerColor;
+      for (const [fr, fc] of flips) {
+        newBoard[fr][fc] = playerColor;
+      }
+
+      const counts = rvCountDiscs(newBoard);
+      const nextColor = rvOpp(playerColor);
+      const nextMoves = rvGetLegalMoves(newBoard, nextColor);
+      const boardFull = rvIsBoardFull(newBoard);
+      const currentCanMoveAfter = rvGetLegalMoves(newBoard, playerColor);
+      const isTerminal =
+        boardFull ||
+        (nextMoves.length === 0 && currentCanMoveAfter.length === 0);
+
+      const newState: ReversiState = {
+        ...state,
+        board: newBoard,
+        currentColor: nextColor,
+        legalMoves: isTerminal ? [] : nextMoves,
+        blackCount: counts.black,
+        whiteCount: counts.white,
+        consecutivePasses: 0,
+        turnNumber: state.turnNumber + 1,
+        lastMove: { type: "place", row, col },
+        lastAction: "place",
+        gamePhase: isTerminal ? "finished" : "playing",
+      };
+
+      if (isTerminal) {
+        const terminal = rvResolveTerminal(newState);
+        return {
+          ok: true,
+          nextPublicState: newState as unknown as Record<string, unknown>,
+          turnAdvance: false,
+          terminal,
+        };
+      }
+
+      return {
+        ok: true,
+        nextPublicState: newState as unknown as Record<string, unknown>,
+        turnAdvance: true,
+      };
+    }
+
+    return { ok: false, error: `Unknown move type: ${moveType}` };
+  },
+
+  computeOutcome(publicState: Record<string, unknown>, players): GameOutcome {
+    const state = publicState as unknown as ReversiState;
+    const { blackCount, whiteCount } = state;
+    const blackPlayer = players.find((p) => p.slotIndex === 0)!;
+    const whitePlayer = players.find((p) => p.slotIndex === 1)!;
+    const cornersBlack = rvCountCorners(state.board, "B");
+    const cornersWhite = rvCountCorners(state.board, "W");
+
+    if (blackCount > whiteCount) {
+      return {
+        winnerIds: [blackPlayer.uid],
+        finalScoreboard: [
+          {
+            uid: blackPlayer.uid,
+            score: 1,
+            placement: 1,
+            stats: {
+              color: "B",
+              discCount: blackCount,
+              corners: cornersBlack,
+              margin: blackCount - whiteCount,
+            },
+          },
+          {
+            uid: whitePlayer.uid,
+            score: 0,
+            placement: 2,
+            stats: {
+              color: "W",
+              discCount: whiteCount,
+              corners: cornersWhite,
+              margin: whiteCount - blackCount,
+            },
+          },
+        ],
+      };
+    }
+    if (whiteCount > blackCount) {
+      return {
+        winnerIds: [whitePlayer.uid],
+        finalScoreboard: [
+          {
+            uid: whitePlayer.uid,
+            score: 1,
+            placement: 1,
+            stats: {
+              color: "W",
+              discCount: whiteCount,
+              corners: cornersWhite,
+              margin: whiteCount - blackCount,
+            },
+          },
+          {
+            uid: blackPlayer.uid,
+            score: 0,
+            placement: 2,
+            stats: {
+              color: "B",
+              discCount: blackCount,
+              corners: cornersBlack,
+              margin: blackCount - whiteCount,
+            },
+          },
+        ],
+      };
+    }
+    // Draw
+    return {
+      winnerIds: [],
+      finalScoreboard: players.map((p) => ({
+        uid: p.uid,
+        score: 0,
+        placement: 1,
+        stats: {
+          color: p.slotIndex === 0 ? "B" : "W",
+          discCount: p.slotIndex === 0 ? blackCount : whiteCount,
+          corners: p.slotIndex === 0 ? cornersBlack : cornersWhite,
+          margin: 0,
+        },
+      })),
+    };
+  },
+
+  extractPerformanceMetrics(publicState): Record<string, unknown> {
+    const state = publicState as unknown as ReversiState;
+    return {
+      totalMoves: state.turnNumber - 1,
+      blackCount: state.blackCount,
+      whiteCount: state.whiteCount,
+      cornersBlack: rvCountCorners(state.board, "B"),
+      cornersWhite: rvCountCorners(state.board, "W"),
+      consecutivePasses: state.consecutivePasses,
+    };
+  },
+});
+
+function rvResolveTerminal(state: ReversiState): {
+  type: "win" | "draw";
+  winnerIds?: string[];
+} {
+  const { blackCount, whiteCount } = state;
+  if (blackCount > whiteCount)
+    return { type: "win", winnerIds: [state.blackUid] };
+  if (whiteCount > blackCount)
+    return { type: "win", winnerIds: [state.whiteUid] };
+  return { type: "draw" };
+}
+
+// =============================================================================
+// ── Dots & Boxes Adapter ─────────────────────────────────────────────────────
+// =============================================================================
+
+interface DotsAndBoxesState {
+  rows: number;
+  cols: number;
+  boardKey: string;
+  horizontalEdges: boolean[];
+  verticalEdges: boolean[];
+  boxOwners: (string | null)[];
+  scoresByUid: Record<string, number>;
+  boxesClaimed: number;
+  remainingEdges: number;
+  moveNumber: number;
+  lastMove: { edgeType: "h" | "v"; row: number; col: number } | null;
+  turnRetained: boolean;
+  lastCapturedBoxes: number[];
+  extraTurnsEarnedByUid: Record<string, number>;
+  largestSingleTurnCaptureByUid: Record<string, number>;
+  largestChainCapturedByUid: Record<string, number>;
+  currentChainByUid: Record<string, number>;
+  finalBoxOwnerUid: string | null;
+}
+
+const DAB_PRESETS: Record<string, { rows: number; cols: number }> = {
+  quick: { rows: 3, cols: 3 },
+  standard: { rows: 4, cols: 4 },
+  expert: { rows: 5, cols: 5 },
+};
+
+function dabGetDims(settings: Record<string, unknown>): {
+  rows: number;
+  cols: number;
+  boardKey: string;
+} {
+  const preset = (settings.boardSize as string) ?? "standard";
+  const dims = DAB_PRESETS[preset] ?? DAB_PRESETS.standard;
+  return { ...dims, boardKey: `${dims.rows}x${dims.cols}` };
+}
+
+function dabHIdx(r: number, c: number, cols: number): number {
+  return r * cols + c;
+}
+
+function dabVIdx(r: number, c: number, cols: number): number {
+  return r * (cols + 1) + c;
+}
+
+function dabBoxIdx(r: number, c: number, cols: number): number {
+  return r * cols + c;
+}
+
+function dabIsBoxComplete(
+  bRow: number,
+  bCol: number,
+  hEdges: boolean[],
+  vEdges: boolean[],
+  cols: number,
+): boolean {
+  return (
+    hEdges[dabHIdx(bRow, bCol, cols)] &&
+    hEdges[dabHIdx(bRow + 1, bCol, cols)] &&
+    vEdges[dabVIdx(bRow, bCol, cols)] &&
+    vEdges[dabVIdx(bRow, bCol + 1, cols)]
+  );
+}
+
+function dabFindCompletedBoxes(
+  edgeType: "h" | "v",
+  row: number,
+  col: number,
+  hEdges: boolean[],
+  vEdges: boolean[],
+  rows: number,
+  cols: number,
+): number[] {
+  const completed: number[] = [];
+  if (edgeType === "h") {
+    if (row > 0 && dabIsBoxComplete(row - 1, col, hEdges, vEdges, cols)) {
+      completed.push(dabBoxIdx(row - 1, col, cols));
+    }
+    if (row < rows && dabIsBoxComplete(row, col, hEdges, vEdges, cols)) {
+      completed.push(dabBoxIdx(row, col, cols));
+    }
+  } else {
+    if (col > 0 && dabIsBoxComplete(row, col - 1, hEdges, vEdges, cols)) {
+      completed.push(dabBoxIdx(row, col - 1, cols));
+    }
+    if (col < cols && dabIsBoxComplete(row, col, hEdges, vEdges, cols)) {
+      completed.push(dabBoxIdx(row, col, cols));
+    }
+  }
+  return completed;
+}
+
+registerAdapter({
+  gameId: "dots_and_boxes",
+  runtimeType: "turnBased",
+  maxPlayers: 2,
+  minPlayers: 2,
+
+  defaultSettings: { boardSize: "standard" },
+
+  createInitialPublicState(players, settings) {
+    const { rows, cols, boardKey } = dabGetDims(settings);
+    const hCount = (rows + 1) * cols;
+    const vCount = rows * (cols + 1);
+    const edgeCount = hCount + vCount;
+
+    const scoresByUid: Record<string, number> = {};
+    const extraTurnsEarnedByUid: Record<string, number> = {};
+    const largestSingleTurnCaptureByUid: Record<string, number> = {};
+    const largestChainCapturedByUid: Record<string, number> = {};
+    const currentChainByUid: Record<string, number> = {};
+    for (const p of players) {
+      scoresByUid[p.uid] = 0;
+      extraTurnsEarnedByUid[p.uid] = 0;
+      largestSingleTurnCaptureByUid[p.uid] = 0;
+      largestChainCapturedByUid[p.uid] = 0;
+      currentChainByUid[p.uid] = 0;
+    }
+
+    const state: DotsAndBoxesState = {
+      rows,
+      cols,
+      boardKey,
+      horizontalEdges: new Array(hCount).fill(false),
+      verticalEdges: new Array(vCount).fill(false),
+      boxOwners: new Array(rows * cols).fill(null),
+      scoresByUid,
+      boxesClaimed: 0,
+      remainingEdges: edgeCount,
+      moveNumber: 0,
+      lastMove: null,
+      turnRetained: false,
+      lastCapturedBoxes: [],
+      extraTurnsEarnedByUid,
+      largestSingleTurnCaptureByUid,
+      largestChainCapturedByUid,
+      currentChainByUid,
+      finalBoxOwnerUid: null,
+    };
+    return state as unknown as Record<string, unknown>;
+  },
+
+  validateMove(publicState, _privateStateByPlayer, movePayload, ctx) {
+    const state = publicState as unknown as DotsAndBoxesState;
+    const edgeType = movePayload.edgeType as string;
+    const row = movePayload.row as number;
+    const col = movePayload.col as number;
+
+    if (edgeType !== "h" && edgeType !== "v") {
+      return { ok: false, error: "Invalid edge type." };
+    }
+    if (typeof row !== "number" || typeof col !== "number") {
+      return { ok: false, error: "Invalid coordinates." };
+    }
+
+    const { rows, cols } = state;
+
+    if (edgeType === "h") {
+      if (row < 0 || row > rows || col < 0 || col >= cols) {
+        return { ok: false, error: "Edge out of bounds." };
+      }
+      if (state.horizontalEdges[dabHIdx(row, col, cols)]) {
+        return { ok: false, error: "Edge already taken." };
+      }
+    } else {
+      if (row < 0 || row >= rows || col < 0 || col > cols) {
+        return { ok: false, error: "Edge out of bounds." };
+      }
+      if (state.verticalEdges[dabVIdx(row, col, cols)]) {
+        return { ok: false, error: "Edge already taken." };
+      }
+    }
+
+    const newHEdges = [...state.horizontalEdges];
+    const newVEdges = [...state.verticalEdges];
+    const newBoxOwners = [...state.boxOwners];
+
+    if (edgeType === "h") {
+      newHEdges[dabHIdx(row, col, cols)] = true;
+    } else {
+      newVEdges[dabVIdx(row, col, cols)] = true;
+    }
+
+    const completedBoxIndices = dabFindCompletedBoxes(
+      edgeType as "h" | "v",
+      row,
+      col,
+      newHEdges,
+      newVEdges,
+      rows,
+      cols,
+    );
+
+    for (const bi of completedBoxIndices) {
+      newBoxOwners[bi] = ctx.uid;
+    }
+
+    const boxesScored = completedBoxIndices.length;
+    const newScores = { ...state.scoresByUid };
+    newScores[ctx.uid] = (newScores[ctx.uid] ?? 0) + boxesScored;
+
+    const newBoxesClaimed = state.boxesClaimed + boxesScored;
+    const newRemainingEdges = state.remainingEdges - 1;
+    const turnRetained = boxesScored > 0;
+
+    const newExtraTurns = { ...state.extraTurnsEarnedByUid };
+    const newLargestSingle = { ...state.largestSingleTurnCaptureByUid };
+    const newLargestChain = { ...state.largestChainCapturedByUid };
+    const newCurrentChain = { ...state.currentChainByUid };
+
+    if (boxesScored > 0) {
+      newExtraTurns[ctx.uid] = (newExtraTurns[ctx.uid] ?? 0) + 1;
+      if (boxesScored > (newLargestSingle[ctx.uid] ?? 0)) {
+        newLargestSingle[ctx.uid] = boxesScored;
+      }
+      newCurrentChain[ctx.uid] = (newCurrentChain[ctx.uid] ?? 0) + boxesScored;
+      if (newCurrentChain[ctx.uid] > (newLargestChain[ctx.uid] ?? 0)) {
+        newLargestChain[ctx.uid] = newCurrentChain[ctx.uid];
+      }
+    } else {
+      newCurrentChain[ctx.uid] = 0;
+    }
+
+    const newFinalBoxOwner =
+      newRemainingEdges === 0 && boxesScored > 0
+        ? ctx.uid
+        : newRemainingEdges === 0
+          ? state.finalBoxOwnerUid
+          : boxesScored > 0
+            ? ctx.uid
+            : state.finalBoxOwnerUid;
+
+    const newState: DotsAndBoxesState = {
+      rows,
+      cols,
+      boardKey: state.boardKey,
+      horizontalEdges: newHEdges,
+      verticalEdges: newVEdges,
+      boxOwners: newBoxOwners,
+      scoresByUid: newScores,
+      boxesClaimed: newBoxesClaimed,
+      remainingEdges: newRemainingEdges,
+      moveNumber: state.moveNumber + 1,
+      lastMove: { edgeType: edgeType as "h" | "v", row, col },
+      turnRetained,
+      lastCapturedBoxes: completedBoxIndices,
+      extraTurnsEarnedByUid: newExtraTurns,
+      largestSingleTurnCaptureByUid: newLargestSingle,
+      largestChainCapturedByUid: newLargestChain,
+      currentChainByUid: newCurrentChain,
+      finalBoxOwnerUid: newFinalBoxOwner,
+    };
+
+    if (newRemainingEdges === 0) {
+      const p0 = ctx.turnOrder[0];
+      const p1 = ctx.turnOrder[1];
+      const s0 = newScores[p0] ?? 0;
+      const s1 = newScores[p1] ?? 0;
+
+      if (s0 === s1) {
+        return {
+          ok: true,
+          nextPublicState: newState as unknown as Record<string, unknown>,
+          turnAdvance: false,
+          terminal: { type: "draw" },
+        };
+      }
+
+      const winnerId = s0 > s1 ? p0 : p1;
+      return {
+        ok: true,
+        nextPublicState: newState as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        terminal: { type: "win", winnerIds: [winnerId] },
+      };
+    }
+
+    return {
+      ok: true,
+      nextPublicState: newState as unknown as Record<string, unknown>,
+      turnAdvance: !turnRetained,
+    };
+  },
+
+  computeOutcome(publicState, players) {
+    const state = publicState as unknown as DotsAndBoxesState;
+    const entries = players
+      .map((p) => ({
+        uid: p.uid,
+        score: state.scoresByUid[p.uid] ?? 0,
+        slotIndex: p.slotIndex,
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const isTie = entries.length > 1 && entries[0].score === entries[1].score;
+
+    if (isTie) {
+      return {
+        winnerIds: [],
+        finalScoreboard: entries.map((e) => ({
+          uid: e.uid,
+          score: e.score,
+          placement: 1,
+          stats: {
+            boxesClaimed: e.score,
+            boardKey: state.boardKey,
+            winMargin: 0,
+          },
+        })),
+      };
+    }
+
+    const winnerId = entries[0].uid;
+    const winMargin = entries[0].score - (entries[1]?.score ?? 0);
+
+    return {
+      winnerIds: [winnerId],
+      finalScoreboard: entries.map((e, i) => ({
+        uid: e.uid,
+        score: e.score,
+        placement: i + 1,
+        stats: {
+          boxesClaimed: e.score,
+          boardKey: state.boardKey,
+          winMargin: e.uid === winnerId ? winMargin : -winMargin,
+        },
+      })),
+    };
+  },
+
+  extractPerformanceMetrics(publicState, players) {
+    const state = publicState as unknown as DotsAndBoxesState;
+    const { rows, cols } = state;
+    const tb = rows * cols;
+    const te = (rows + 1) * cols + rows * (cols + 1);
+    const scores = state.scoresByUid;
+    const uids = players.map((p) => p.uid);
+    const p0 = uids[0];
+    const p1 = uids[1];
+    const s0 = scores[p0] ?? 0;
+    const s1 = scores[p1] ?? 0;
+    const winMargin = Math.abs(s0 - s1);
+
+    const opponentBoxesByUid: Record<string, number> = {};
+    if (p0 && p1) {
+      opponentBoxesByUid[p0] = s1;
+      opponentBoxesByUid[p1] = s0;
+    }
+
+    const shutoutByUid: Record<string, boolean> = {};
+    for (const uid of uids) {
+      const oppScore = opponentBoxesByUid[uid] ?? 0;
+      shutoutByUid[uid] = oppScore === 0 && (scores[uid] ?? 0) > 0;
+    }
+
+    return {
+      boardKey: state.boardKey,
+      boardRows: rows,
+      boardCols: cols,
+      totalBoxes: tb,
+      totalEdges: te,
+      totalMoves: state.moveNumber,
+      scoresByUid: scores,
+      winMargin,
+      opponentBoxesByUid,
+      finalBoxOwnerUid: state.finalBoxOwnerUid,
+      largestSingleTurnCaptureByUid: state.largestSingleTurnCaptureByUid,
+      largestChainCapturedByUid: state.largestChainCapturedByUid,
+      extraTurnsEarnedByUid: state.extraTurnsEarnedByUid,
+      shutoutByUid,
+    };
+  },
+
+  validateSettings(patch) {
+    const boardSize = patch.boardSize;
+    if (
+      typeof boardSize === "string" &&
+      Object.prototype.hasOwnProperty.call(DAB_PRESETS, boardSize)
+    ) {
+      return { boardSize };
+    }
+    return { boardSize: "standard" };
+  },
+});
+
+// =============================================================================
+// ── Hex Adapter ──────────────────────────────────────────────────────────────
+// =============================================================================
+
+type HexCell = null | "red" | "blue";
+type HexPhase = "opening" | "swap_pending" | "main" | "resolved";
+
+interface HexPublicState {
+  boardSize: 9;
+  cells: HexCell[];
+  phase: HexPhase;
+  colorByUid: Record<string, "red" | "blue">;
+  edgeGoalByColor: { red: "top_bottom"; blue: "left_right" };
+  openingMoveIndex: number | null;
+  swapDecision: "pending" | "kept" | "swapped" | null;
+  moveCount: number;
+  lastMove: { uid: string; color: "red" | "blue"; index: number } | null;
+  winnerUid: string | null;
+  winningPath: number[] | null;
+}
+
+type HexMovePayload =
+  | { type: "place"; index: number }
+  | { type: "swap_decision"; choice: "keep" | "swap" };
+
+const HEX_SIZE = 9;
+const HEX_TOTAL = HEX_SIZE * HEX_SIZE;
+
+function hexRow(i: number): number {
+  return Math.floor(i / HEX_SIZE);
+}
+function hexCol(i: number): number {
+  return i % HEX_SIZE;
+}
+function hexIdx(r: number, c: number): number {
+  return r * HEX_SIZE + c;
+}
+
+const HEX_NEIGHBOR_OFFSETS: Array<[number, number]> = [
+  [-1, 0],
+  [-1, 1],
+  [0, -1],
+  [0, 1],
+  [1, -1],
+  [1, 0],
+];
+
+function hexNeighbors(index: number): number[] {
+  const r = hexRow(index);
+  const c = hexCol(index);
+  const out: number[] = [];
+  for (const [dr, dc] of HEX_NEIGHBOR_OFFSETS) {
+    const nr = r + dr;
+    const nc = c + dc;
+    if (nr >= 0 && nr < HEX_SIZE && nc >= 0 && nc < HEX_SIZE) {
+      out.push(hexIdx(nr, nc));
+    }
+  }
+  return out;
+}
+
+function hexCheckWin(cells: HexCell[], color: "red" | "blue"): number[] | null {
+  const startCells: number[] = [];
+  const isEnd = (i: number): boolean =>
+    color === "red" ? hexRow(i) === HEX_SIZE - 1 : hexCol(i) === HEX_SIZE - 1;
+
+  for (let i = 0; i < HEX_SIZE; i++) {
+    const idx = color === "red" ? hexIdx(0, i) : hexIdx(i, 0);
+    if (cells[idx] === color) startCells.push(idx);
+  }
+  if (startCells.length === 0) return null;
+
+  const visited = new Set<number>();
+  const parent = new Map<number, number>();
+  const queue: number[] = [];
+  for (const s of startCells) {
+    visited.add(s);
+    parent.set(s, -1);
+    queue.push(s);
+  }
+
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (isEnd(cur)) {
+      const path: number[] = [];
+      let n: number | undefined = cur;
+      while (n !== undefined && n !== -1) {
+        path.push(n);
+        n = parent.get(n);
+      }
+      return path.reverse();
+    }
+    for (const nb of hexNeighbors(cur)) {
+      if (!visited.has(nb) && cells[nb] === color) {
+        visited.add(nb);
+        parent.set(nb, cur);
+        queue.push(nb);
+      }
+    }
+  }
+  return null;
+}
+
+registerAdapter({
+  gameId: "hex",
+  runtimeType: "turnBased",
+  maxPlayers: 2,
+  minPlayers: 2,
+  defaultSettings: {},
+
+  createInitialPublicState(players, _settings) {
+    const sorted = [...players].sort((a, b) => a.slotIndex - b.slotIndex);
+    const colorByUid: Record<string, "red" | "blue"> = {};
+    colorByUid[sorted[0].uid] = "red";
+    colorByUid[sorted[1].uid] = "blue";
+
+    const state: HexPublicState = {
+      boardSize: 9,
+      cells: Array(HEX_TOTAL).fill(null),
+      phase: "opening",
+      colorByUid,
+      edgeGoalByColor: { red: "top_bottom", blue: "left_right" },
+      openingMoveIndex: null,
+      swapDecision: null,
+      moveCount: 0,
+      lastMove: null,
+      winnerUid: null,
+      winningPath: null,
+    };
+    return state as unknown as Record<string, unknown>;
+  },
+
+  validateMove(publicState, _privateState, movePayload, ctx) {
+    const state = publicState as unknown as HexPublicState;
+    const move = movePayload as unknown as HexMovePayload;
+
+    const expectedUid =
+      ctx.turnOrder[ctx.currentTurnIndex % ctx.turnOrder.length];
+    if (ctx.uid !== expectedUid) return { ok: false, error: "Not your turn." };
+    if (state.phase === "resolved")
+      return { ok: false, error: "Game resolved." };
+
+    // ── Swap decision ──
+    if (move.type === "swap_decision") {
+      if (state.phase !== "swap_pending")
+        return { ok: false, error: "Swap not available." };
+      if (move.choice !== "keep" && move.choice !== "swap")
+        return { ok: false, error: "Invalid swap choice." };
+      const playerColor = state.colorByUid[ctx.uid] ?? null;
+      if (playerColor !== "blue")
+        return { ok: false, error: "Only second player can swap." };
+
+      const ns: HexPublicState = { ...state, cells: [...state.cells] };
+      if (move.choice === "keep") {
+        ns.swapDecision = "kept";
+        ns.phase = "main";
+        return {
+          ok: true,
+          nextPublicState: ns as unknown as Record<string, unknown>,
+          turnAdvance: false,
+        };
+      } else {
+        const newColors: Record<string, "red" | "blue"> = {};
+        for (const [uid, c] of Object.entries(state.colorByUid)) {
+          newColors[uid] = c === "red" ? "blue" : "red";
+        }
+        ns.colorByUid = newColors;
+        ns.swapDecision = "swapped";
+        ns.phase = "main";
+        if (ns.openingMoveIndex !== null) {
+          const old = state.cells[ns.openingMoveIndex];
+          ns.cells[ns.openingMoveIndex] = old === "red" ? "blue" : "red";
+        }
+        if (ns.lastMove) {
+          ns.lastMove = {
+            ...ns.lastMove,
+            color: newColors[ns.lastMove.uid] ?? "red",
+          };
+        }
+        return {
+          ok: true,
+          nextPublicState: ns as unknown as Record<string, unknown>,
+          turnAdvance: true,
+        };
+      }
+    }
+
+    // ── Placement ──
+    if (move.type !== "place")
+      return { ok: false, error: "Invalid move type." };
+    if (state.phase !== "opening" && state.phase !== "main") {
+      return {
+        ok: false,
+        error:
+          state.phase === "swap_pending"
+            ? "Waiting for swap decision."
+            : "Cannot place now.",
+      };
+    }
+
+    const { index } = move;
+    if (typeof index !== "number" || !Number.isInteger(index))
+      return { ok: false, error: "Invalid cell index." };
+    if (index < 0 || index >= HEX_TOTAL)
+      return { ok: false, error: "Cell out of bounds." };
+    if (state.cells[index] !== null)
+      return { ok: false, error: "Cell occupied." };
+
+    const color = state.colorByUid[ctx.uid] ?? null;
+    if (!color) return { ok: false, error: "No assigned color." };
+
+    const newCells = [...state.cells];
+    newCells[index] = color;
+
+    const ns: HexPublicState = {
+      ...state,
+      cells: newCells,
+      moveCount: state.moveCount + 1,
+      lastMove: { uid: ctx.uid, color, index },
+    };
+
+    if (state.phase === "opening") {
+      ns.openingMoveIndex = index;
+      ns.phase = "swap_pending";
+      ns.swapDecision = "pending";
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: true,
+      };
+    }
+
+    const winPath = hexCheckWin(newCells, color);
+    if (winPath) {
+      ns.winnerUid = ctx.uid;
+      ns.winningPath = winPath;
+      ns.phase = "resolved";
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        terminal: { type: "win", winnerIds: [ctx.uid] },
+      };
+    }
+
+    return {
+      ok: true,
+      nextPublicState: ns as unknown as Record<string, unknown>,
+      turnAdvance: true,
+    };
+  },
+
+  computeOutcome(publicState, players) {
+    const state = publicState as unknown as HexPublicState;
+    if (state.winnerUid) {
+      const winnerId = state.winnerUid;
+      const loserId = players.find((p) => p.uid !== winnerId)?.uid ?? "";
+      return {
+        winnerIds: [winnerId],
+        finalScoreboard: [
+          {
+            uid: winnerId,
+            score: 1,
+            placement: 1,
+            stats: {
+              color: state.colorByUid[winnerId] ?? "red",
+              totalMoves: state.moveCount,
+              swapDecision: state.swapDecision,
+            },
+          },
+          {
+            uid: loserId,
+            score: 0,
+            placement: 2,
+            stats: {
+              color: state.colorByUid[loserId] ?? "blue",
+              totalMoves: state.moveCount,
+              swapDecision: state.swapDecision,
+            },
+          },
+        ],
+      };
+    }
+    return {
+      winnerIds: [],
+      finalScoreboard: players.map((p) => ({
+        uid: p.uid,
+        score: 0,
+        placement: 1,
+        stats: {
+          color: state.colorByUid[p.uid] ?? null,
+          totalMoves: state.moveCount,
+          swapDecision: state.swapDecision,
+        },
+      })),
+    };
+  },
+
+  extractPerformanceMetrics(publicState, _players) {
+    const state = publicState as unknown as HexPublicState;
+    return {
+      boardSize: state.boardSize,
+      swapUsed: state.swapDecision === "swapped",
+      swapDeclinedByWinner:
+        state.swapDecision === "kept" && state.winnerUid !== null,
+      totalMoves: state.moveCount,
+      winningPathLength: state.winningPath?.length ?? 0,
+      winnerColor: state.winnerUid
+        ? (state.colorByUid[state.winnerUid] ?? null)
+        : null,
+    };
+  },
+});

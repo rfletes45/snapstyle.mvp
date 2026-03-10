@@ -98,7 +98,9 @@ export {
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
-  admin.initializeApp();
+  admin.initializeApp({
+    databaseURL: "https://gamerapp-37e70-default-rtdb.firebaseio.com",
+  });
 }
 
 const db = admin.firestore();

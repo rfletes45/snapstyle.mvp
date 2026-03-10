@@ -58,10 +58,12 @@ const helpers_1 = require("./helpers");
 // =============================================================================
 exports.claimAchievementSectionBadgeV4 = functions.https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
-    const { sectionId } = data;
-    if (!sectionId || typeof sectionId !== "string") {
+    const { sectionId: rawSectionId } = data;
+    if (!rawSectionId || typeof rawSectionId !== "string") {
         throw new functions.https.HttpsError("invalid-argument", "sectionId is required.");
     }
+    // Resolve legacy section IDs (e.g. "speedster" → "tic_tac_toe")
+    const sectionId = (0, achievements_1.resolveSection)(rawSectionId);
     // Validate section exists
     const sectionDef = (0, achievements_1.getSectionDef)(sectionId);
     if (!sectionDef) {

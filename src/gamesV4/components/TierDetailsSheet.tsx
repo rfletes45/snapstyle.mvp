@@ -1,8 +1,12 @@
 /**
- * Games V4 — Tier Details Bottom Sheet
+ * Games V4 — Tier Details Bottom Sheet (Redesigned)
  *
- * Modal overlay showing reward details for a selected tier level.
- * Allows claiming unlocked rewards and provides equip shortcut for cosmetics.
+ * Premium modal overlay for reward details with polished:
+ * - Reward badge + level header
+ * - Status indicator with color coding
+ * - Reward breakdown (tokens + cosmetic)
+ * - Claim CTA with gradient feel
+ * - Locked / claimed completion states
  *
  * @module gamesV4/components/TierDetailsSheet
  */
@@ -11,6 +15,7 @@ import type { LevelReward } from "@/data/levelRewards";
 import type { LevelRewardDocV4 } from "@/gamesV4/services/gameServiceV4";
 import { useColors } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { memo, useCallback } from "react";
 import {
   ActivityIndicator,
@@ -61,26 +66,28 @@ function TierDetailsSheetBase({
     await onClaim(tier.level);
   }, [onClaim, tier.level]);
 
-  const statusLabel =
-    state === "claimed"
-      ? "Claimed"
-      : state === "unlocked"
-        ? "Ready to Claim"
-        : "Locked";
-
-  const statusColor =
-    state === "claimed"
-      ? "#34C759"
-      : state === "unlocked"
-        ? "#007AFF"
-        : colors.textSecondary;
-
-  const statusIcon: keyof typeof MaterialCommunityIcons.glyphMap =
-    state === "claimed"
-      ? "check-circle"
-      : state === "unlocked"
-        ? "gift-open"
-        : "lock";
+  // Status display config
+  const statusConfig = {
+    claimed: {
+      label: "Claimed",
+      color: "#34C759",
+      icon: "check-circle" as const,
+      bg: "#34C75912",
+    },
+    unlocked: {
+      label: "Ready to Claim",
+      color: "#007AFF",
+      icon: "gift-open" as const,
+      bg: "#007AFF12",
+    },
+    locked: {
+      label: "Locked",
+      color: colors.textMuted,
+      icon: "lock" as const,
+      bg: colors.surfaceVariant,
+    },
+  };
+  const status = statusConfig[state];
 
   return (
     <Modal
@@ -104,18 +111,26 @@ function TierDetailsSheetBase({
             />
           </View>
 
-          {/* Header */}
+          {/* ── Header: Badge + Level + Status ───────────────────────── */}
           <View style={styles.sheetHeader}>
             <View
               style={[
                 styles.tierBadge,
                 {
                   backgroundColor: tier.isMilestone
-                    ? "#FFD70020"
+                    ? "#FFD70015"
                     : colors.surfaceVariant,
                   borderColor: tier.isMilestone ? "#FFD700" : "transparent",
-                  borderWidth: tier.isMilestone ? 2 : 0,
+                  borderWidth: tier.isMilestone ? 2.5 : 0,
                 },
+                tier.isMilestone &&
+                  state !== "locked" && {
+                    shadowColor: "#FFD700",
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 0 },
+                    elevation: 4,
+                  },
               ]}
             >
               <MaterialCommunityIcons
@@ -123,28 +138,43 @@ function TierDetailsSheetBase({
                   (tier.icon as keyof typeof MaterialCommunityIcons.glyphMap) ??
                   "star-four-points"
                 }
-                size={tier.isMilestone ? 32 : 24}
-                color={tier.isMilestone ? "#FFD700" : colors.primary}
+                size={tier.isMilestone ? 32 : 26}
+                color={
+                  tier.isMilestone
+                    ? "#FFD700"
+                    : state === "locked"
+                      ? colors.textMuted
+                      : colors.primary
+                }
               />
             </View>
             <View style={styles.headerText}>
               <Text style={[styles.tierTitle, { color: colors.text }]}>
                 Level {tier.level}
                 {tier.isMilestone ? " ★" : ""}
-                {isCurrent ? " (Current)" : ""}
               </Text>
-              <View style={styles.statusRow}>
+              {isCurrent && (
+                <Text style={[styles.currentLabel, { color: colors.primary }]}>
+                  Current Level
+                </Text>
+              )}
+              {/* Status pill */}
+              <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
                 <MaterialCommunityIcons
-                  name={statusIcon}
-                  size={14}
-                  color={statusColor}
+                  name={status.icon}
+                  size={13}
+                  color={status.color}
                 />
-                <Text style={[styles.statusText, { color: statusColor }]}>
-                  {statusLabel}
+                <Text style={[styles.statusText, { color: status.color }]}>
+                  {status.label}
                 </Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeButton}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <MaterialCommunityIcons
                 name="close"
                 size={22}
@@ -153,11 +183,11 @@ function TierDetailsSheetBase({
             </TouchableOpacity>
           </View>
 
-          {/* Rewards breakdown */}
+          {/* ── Rewards Breakdown ─────────────────────────────────────── */}
           <View
             style={[
               styles.rewardsSection,
-              { backgroundColor: colors.surfaceVariant + "80" },
+              { backgroundColor: colors.surfaceVariant + "60" },
             ]}
           >
             <Text
@@ -169,14 +199,14 @@ function TierDetailsSheetBase({
               REWARDS
             </Text>
 
-            {/* Token reward (always present) */}
+            {/* Token reward */}
             <View style={styles.rewardLine}>
               <View
-                style={[styles.rewardIcon, { backgroundColor: "#F5A62320" }]}
+                style={[styles.rewardIcon, { backgroundColor: "#F5A62318" }]}
               >
                 <MaterialCommunityIcons
                   name="star-four-points"
-                  size={18}
+                  size={20}
                   color="#F5A623"
                 />
               </View>
@@ -190,17 +220,24 @@ function TierDetailsSheetBase({
                   +{tier.amount}
                 </Text>
               </View>
+              {state === "claimed" && (
+                <MaterialCommunityIcons
+                  name="check-circle"
+                  size={18}
+                  color="#34C759"
+                />
+              )}
             </View>
 
             {/* Cosmetic reward (milestone only) */}
             {tier.isMilestone && tier.cosmeticId && (
               <View style={styles.rewardLine}>
                 <View
-                  style={[styles.rewardIcon, { backgroundColor: "#9B59B620" }]}
+                  style={[styles.rewardIcon, { backgroundColor: "#9B59B618" }]}
                 >
                   <MaterialCommunityIcons
                     name="image-area"
-                    size={18}
+                    size={20}
                     color="#9B59B6"
                   />
                 </View>
@@ -212,65 +249,82 @@ function TierDetailsSheetBase({
                     Exclusive Cosmetic
                   </Text>
                 </View>
+                {state === "claimed" && (
+                  <MaterialCommunityIcons
+                    name="check-circle"
+                    size={18}
+                    color="#34C759"
+                  />
+                )}
               </View>
             )}
           </View>
 
-          {/* Description */}
+          {/* ── Description ──────────────────────────────────────────── */}
           <Text style={[styles.description, { color: colors.textSecondary }]}>
             {tier.description}
           </Text>
 
-          {/* Action buttons */}
+          {/* ── Action Area ──────────────────────────────────────────── */}
           <View style={styles.actions}>
             {state === "unlocked" && (
               <TouchableOpacity
-                style={[
-                  styles.claimButton,
-                  isClaiming && styles.claimButtonDisabled,
-                ]}
                 onPress={handleClaim}
                 disabled={isClaiming}
-                activeOpacity={0.7}
+                activeOpacity={0.8}
+                style={[
+                  styles.claimButtonOuter,
+                  isClaiming && { opacity: 0.6 },
+                ]}
               >
-                {isClaiming ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <>
-                    <MaterialCommunityIcons
-                      name="gift"
-                      size={18}
-                      color="#FFF"
-                    />
-                    <Text style={styles.claimButtonText}>Claim Reward</Text>
-                  </>
-                )}
+                <LinearGradient
+                  colors={["#007AFF", "#0056D6"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.claimButton}
+                >
+                  {isClaiming ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons
+                        name="gift"
+                        size={20}
+                        color="#FFF"
+                      />
+                      <Text style={styles.claimButtonText}>Claim Reward</Text>
+                    </>
+                  )}
+                </LinearGradient>
               </TouchableOpacity>
             )}
 
             {state === "claimed" && (
-              <View style={styles.claimedRow}>
+              <View
+                style={[styles.claimedBanner, { backgroundColor: "#34C75912" }]}
+              >
                 <MaterialCommunityIcons
                   name="check-circle"
-                  size={20}
+                  size={22}
                   color="#34C759"
                 />
-                <Text style={[styles.claimedText, { color: "#34C759" }]}>
-                  Reward Claimed!
-                </Text>
+                <Text style={styles.claimedText}>Reward Claimed!</Text>
               </View>
             )}
 
             {state === "locked" && (
-              <View style={styles.lockedRow}>
+              <View
+                style={[
+                  styles.lockedBanner,
+                  { backgroundColor: colors.surfaceVariant },
+                ]}
+              >
                 <MaterialCommunityIcons
                   name="lock"
                   size={20}
-                  color={colors.textSecondary}
+                  color={colors.textMuted}
                 />
-                <Text
-                  style={[styles.lockedText, { color: colors.textSecondary }]}
-                >
+                <Text style={[styles.lockedText, { color: colors.textMuted }]}>
                   Reach Level {tier.level} to unlock
                 </Text>
               </View>
@@ -295,31 +349,33 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    maxHeight: SCREEN_HEIGHT * 0.55,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 36,
+    maxHeight: SCREEN_HEIGHT * 0.58,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 40,
   },
   dragHandle: {
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   dragBar: {
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
   },
+
+  // ── Header ─────────────────────────────────────────────────────────
   sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    gap: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 18,
+    gap: 14,
   },
   tierBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -327,43 +383,55 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tierTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "800",
   },
-  statusRow: {
+  currentLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  statusPill: {
     flexDirection: "row",
     alignItems: "center",
+    alignSelf: "flex-start",
     gap: 4,
-    marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
   },
   statusText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
   },
   closeButton: {
     padding: 8,
+    alignSelf: "flex-start",
   },
+
+  // ── Rewards Section ────────────────────────────────────────────────
   rewardsSection: {
-    marginHorizontal: 20,
-    padding: 14,
-    borderRadius: 12,
-    gap: 10,
+    marginHorizontal: 24,
+    padding: 16,
+    borderRadius: 14,
+    gap: 12,
   },
   rewardsSectionTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.8,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
     marginBottom: 2,
   },
   rewardLine: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
   },
   rewardIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -372,58 +440,73 @@ const styles = StyleSheet.create({
   },
   rewardName: {
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   rewardAmount: {
     fontSize: 13,
+    fontWeight: "600",
+    marginTop: 1,
   },
   cosmeticTag: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    marginTop: 1,
   },
+
+  // ── Description ────────────────────────────────────────────────────
   description: {
     fontSize: 13,
-    lineHeight: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    lineHeight: 19,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
   },
+
+  // ── Actions ────────────────────────────────────────────────────────
   actions: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+  },
+  claimButtonOuter: {
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#007AFF",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   claimButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#007AFF",
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: 16,
+    borderRadius: 16,
     gap: 8,
-  },
-  claimButtonDisabled: {
-    opacity: 0.6,
   },
   claimButtonText: {
     color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "800",
   },
-  claimedRow: {
+  claimedBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
   claimedText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
+    color: "#34C759",
   },
-  lockedRow: {
+  lockedBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
   lockedText: {
     fontSize: 14,

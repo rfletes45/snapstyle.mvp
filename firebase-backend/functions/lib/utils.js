@@ -43,7 +43,9 @@ exports.isDmChatMuted = isDmChatMuted;
 exports.isGroupChatMuted = isGroupChatMuted;
 const admin = __importStar(require("firebase-admin"));
 if (!admin.apps.length) {
-    admin.initializeApp();
+    admin.initializeApp({
+        databaseURL: "https://gamerapp-37e70-default-rtdb.firebaseio.com",
+    });
 }
 const db = admin.firestore();
 /**

@@ -96,34 +96,23 @@ import ViewShot, { captureRef } from "react-native-view-shot";
 import { createLogger } from "@/utils/log";
 
 // ---------------------------------------------------------------------------
-// Dynamic camera imports – gated by USE_VISION_CAMERA feature flag
+// Dynamic camera imports – runtime fallback strategy
+// ---------------------------------------------------------------------------
+// Strategy:
+//   1. If USE_VISION_CAMERA is true, try loading VisionCamera + LiveFilterCamera.
+//   2. If that fails (Expo Go, missing native module), fall back to expo-camera.
+//   3. CameraFilterOverlay (tint overlay) is ONLY used in the expo-camera
+//      fallback path.  When LiveFilterCamera is active, the Skia frame
+//      processor provides real per-pixel GPU filtering — no overlay needed.
 // ---------------------------------------------------------------------------
 
-// LiveFilterCamera (VisionCamera + Skia frame processor)
 let LiveFilterCamera: any = null;
-if (USE_VISION_CAMERA) {
-  try {
-    LiveFilterCamera =
-      require("@/components/camera/LiveFilterCamera").LiveFilterCamera;
-  } catch {
-    // LiveFilterCamera unavailable
-  }
-}
-
-// expo-camera CameraView – used when VisionCamera is disabled or unavailable
 let CameraView: any = null;
-if (!USE_VISION_CAMERA) {
-  try {
-    CameraView = require("expo-camera").CameraView;
-  } catch {
-    // expo-camera unavailable
-  }
-}
-
-// VisionCamera raw Camera class — loaded for AR face-effect mode
 let VisionCamera: any = null;
 let useCameraDevice: any = null;
 let visionCameraAvailable = false;
+
+// Attempt VisionCamera + LiveFilterCamera (preferred path)
 if (USE_VISION_CAMERA) {
   try {
     const vc = require("react-native-vision-camera");
@@ -131,9 +120,28 @@ if (USE_VISION_CAMERA) {
     useCameraDevice = vc.useCameraDevice;
     visionCameraAvailable = true;
   } catch {
-    // VisionCamera unavailable (Expo Go)
+    // VisionCamera native module unavailable (e.g. Expo Go)
+  }
+
+  if (visionCameraAvailable) {
+    try {
+      LiveFilterCamera =
+        require("@/components/camera/LiveFilterCamera").LiveFilterCamera;
+    } catch {
+      // LiveFilterCamera component failed to load
+    }
   }
 }
+
+// Fallback: load expo-camera if VisionCamera/LiveFilterCamera is unavailable
+if (!LiveFilterCamera) {
+  try {
+    CameraView = require("expo-camera").CameraView;
+  } catch {
+    // expo-camera also unavailable
+  }
+}
+
 const useFallbackCameraDevice = () => null;
 
 const logger = createLogger("screens/camera/CameraScreen");
@@ -420,8 +428,7 @@ const CameraScreen: React.FC = () => {
     useRecording(cameraRef);
 
   // -- AR Face Detection (VisionCamera + MLKit) -------------------------------
-  const useVisionCameraDeviceHook =
-    useCameraDevice ?? useFallbackCameraDevice;
+  const useVisionCameraDeviceHook = useCameraDevice ?? useFallbackCameraDevice;
   const visionDevice = useVisionCameraDeviceHook(
     settings.facing === "front" ? "front" : "back",
   );
@@ -1623,7 +1630,11 @@ const CameraScreen: React.FC = () => {
                 mirrored={settings.facing === "front"}
               />
 
-              {/* Live Filter Overlay (translucent tint) — also works in AR mode */}
+              {/* Live Filter Overlay (tint approximation) — used in AR mode
+                  because the face-detection callback occupies the native frame
+                  processor slot, preventing the Skia filter frame processor
+                  from running simultaneously.  This is a known limitation;
+                  the overlay is fine for AR mode where face effects dominate. */}
               <CameraFilterOverlay filter={activeFilter} />
 
               {/* Grid Overlay */}
@@ -2164,11 +2175,13 @@ const CameraScreen: React.FC = () => {
 
       {/* --- CAMERA: Face Effect Picker (replaces filter carousel) -------- */}
       {!isEditorMode && !recordingState.isRecording && showFaceEffects && (
-        <FaceEffectPicker
-          selectedEffect={selectedFaceEffect ?? null}
-          onSelectEffect={handleSelectFaceEffect}
-          expanded={true}
-        />
+        <View style={styles.faceEffectPickerContainer}>
+          <FaceEffectPicker
+            selectedEffect={selectedFaceEffect ?? null}
+            onSelectEffect={handleSelectFaceEffect}
+            expanded={true}
+          />
+        </View>
       )}
 
       {/* --- CAMERA: Recording Timer Indicator ----------------------------- */}
@@ -2615,6 +2628,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 90,
+    zIndex: 15,
+  },
+  faceEffectPickerContainer: {
+    position: "absolute",
+    bottom: 110,
+    left: 0,
+    right: 0,
     zIndex: 15,
   },
   filterCarouselContent: { paddingHorizontal: 10, alignItems: "center" },

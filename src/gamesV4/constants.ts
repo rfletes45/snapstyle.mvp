@@ -249,9 +249,9 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     displayName: "Dots & Boxes",
     runtimeType: "turnBased",
     minPlayers: 2,
-    maxPlayers: 4,
+    maxPlayers: 2,
     supportsSpectate: true,
-    icon: "dots-grid",
+    icon: "dots-square",
   },
   crazy_eights: {
     gameId: "crazy_eights",
@@ -336,6 +336,15 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     supportsSpectate: false,
     icon: "cards-playing-spade-multiple",
   },
+  hex: {
+    gameId: "hex",
+    displayName: "Hex",
+    runtimeType: "turnBased",
+    minPlayers: 2,
+    maxPlayers: 2,
+    supportsSpectate: true,
+    icon: "hexagon-outline",
+  },
 };
 
 // =============================================================================
@@ -358,6 +367,9 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
   "crazy_eights",
   "minesweeper",
   "solitaire_klondike",
+  "reversi",
+  "dots_and_boxes",
+  "hex",
   // "minigolf_duels", // disabled — not working, deferred until ready
 ]);
 
@@ -505,6 +517,11 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
     formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : "Draw"),
     sortDirection: "desc",
   },
+  reversi: {
+    title: "MATCH RESULT",
+    formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : "Draw"),
+    sortDirection: "desc",
+  },
   play_2048: {
     title: "FINAL SCORE",
     formatScore: (s) => s.toLocaleString(),
@@ -567,6 +584,15 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
     formatScore: (s) => s.toLocaleString(),
     sortDirection: "desc",
   },
+  dots_and_boxes: {
+    title: "BOXES CLAIMED",
+    sortDirection: "desc",
+  },
+  hex: {
+    title: "MATCH RESULT",
+    formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : `${s}`),
+    sortDirection: "desc",
+  },
 };
 
 // =============================================================================
@@ -598,6 +624,12 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
   connect_four: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
+  },
+  reversi: {
     label: "Wins",
     metric: "wins",
     sortDirection: "desc",
@@ -672,6 +704,18 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     metric: "bestScore",
     sortDirection: "desc",
     formatValue: (v) => v.toLocaleString(),
+  },
+  dots_and_boxes: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
+  },
+  hex: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
 };
 
@@ -762,5 +806,26 @@ export const GAME_DESCRIPTIONS: Partial<Record<GameId, GameDescription>> = {
     howToPlay:
       "Build four foundation piles by suit from Ace to King. On the tableau, stack cards in descending rank with alternating colors (red on black, black on red). Move entire valid runs between columns. Only Kings can fill empty tableau slots. Tap the stock to deal 3 cards to the waste pile — play the top waste card to tableau or foundation. When the stock is empty, tap to recycle the waste back into the stock.",
     tips: "Prioritize revealing hidden tableau cards — the more face-up cards you have, the more options you create. Avoid unnecessary foundation backtracking as it costs points. Use empty columns strategically for Kings that unlock buried cards. Think before recycling the waste — each recycle costs 20 points.",
+  },
+  reversi: {
+    shortDescription:
+      "A clean, strategic duel where every move can flip the board in your favor. Outmaneuver your opponent and dominate the 8×8 grid.",
+    howToPlay:
+      "Take turns placing a disc to bracket one or more opposing discs in a straight line — horizontally, vertically, or diagonally. Bracketed discs flip to your color. If you have no legal move, you must pass. When neither player can move, the player with more discs wins. Equal discs means a draw.",
+    tips: "Corners are extremely valuable — once captured they can never be flipped. Edges are powerful anchors too. Don't chase raw piece count early; mobility and position matter more. Avoid giving away corners carelessly by playing squares diagonally adjacent to them.",
+  },
+  dots_and_boxes: {
+    shortDescription:
+      "Claim more boxes than your opponent by drawing the final side of each square. Every completed box gives you a point and another move, so one smart turn can swing the whole board.",
+    howToPlay:
+      "Take turns drawing one edge between adjacent dots on the grid. If your edge completes one or more boxes (all four sides filled), you claim those boxes and immediately take another turn. If no box is completed, the turn passes to your opponent. The game ends when every edge has been drawn. The player who claimed more boxes wins. Ties are possible.",
+    tips: "Avoid drawing the third side of a box — you'll gift the completion to your opponent. Think in chains: sacrificing a small pair of boxes early can give you control of bigger chains later. The 5×5 Expert board rewards deep chain management the most.",
+  },
+  hex: {
+    shortDescription:
+      "A deep connection game where every stone matters. Build an unbroken path across the board before your opponent does.",
+    howToPlay:
+      "Two players take turns placing stones on a hexagonal grid. Red tries to connect the top and bottom edges. Blue tries to connect the left and right edges. Stones never move or get removed. After the first move, the second player may use the swap rule to take over that opening if it looks too strong.",
+    tips: "Learn bridges first. Respect edge templates. Block early, but remember that good offense is also defense. Watch for ladder escapes and use the swap rule wisely.",
   },
 };

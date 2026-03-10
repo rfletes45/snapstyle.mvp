@@ -35,6 +35,13 @@ export interface AchievementSectionDef {
     /** Badge ID granted when all achievements in section are complete. */
     sectionBadgeId: string;
 }
+/**
+ * Legacy section ID → new section ID mapping.
+ * Used to resolve claims/data that still reference old section groupings.
+ */
+export declare const LEGACY_SECTION_MAP: Record<string, string>;
+/** Resolve a possibly-legacy sectionId to the current sectionId. */
+export declare function resolveSection(sectionId: string): string;
 export declare const ACHIEVEMENT_SECTIONS: AchievementSectionDef[];
 /**
  * Evaluate all V4 achievements for each participant after a game resolves.

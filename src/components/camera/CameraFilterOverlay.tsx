@@ -1,17 +1,27 @@
 /**
- * CAMERA FILTER OVERLAY (Skia-Powered)
+ * CAMERA FILTER OVERLAY — FALLBACK ONLY
  *
- * Renders a colour-grading layer on top of the live camera preview using
- * @shopify/react-native-skia's Canvas + Fill + BlendColor.
+ * ⚠️  This component is a FALLBACK for environments where VisionCamera + Skia
+ *    frame processors are unavailable (e.g. Expo Go, web).
  *
- * KEY DESIGN: The overlay colour is now **derived from the actual Skia
- * ColorMatrix** used in the editor (SkiaFilteredImage). We apply the matrix
- * to reference sample pixels and compute the resulting tint, so the live
- * preview always reflects the same colour transform the editor will apply.
+ * When `USE_VISION_CAMERA` is true and VisionCamera loads successfully,
+ * the main camera path uses `LiveFilterCamera` which applies the real
+ * per-pixel ColorMatrix filter to every camera frame on the GPU.
+ * This overlay is NOT used in that path.
  *
- * This is still an approximation (a flat colour overlay ≠ per-pixel matrix
- * transform) but it is now *mathematically grounded* in the same pipeline
- * rather than being a parallel hand-tuned heuristic.
+ * This overlay is an *approximation* — it renders a single flat tint colour
+ * derived from the filter's ColorMatrix, which is visually close but not
+ * pixel-accurate.  It is only used when:
+ *   - Expo Go development (VisionCamera unavailable)
+ *   - AR face-effect mode (face detection occupies the frame processor slot)
+ *   - Web platform (Skia frame processors not supported)
+ *
+ * HOW IT WORKS:
+ * The overlay colour is derived from the actual Skia ColorMatrix used in the
+ * editor (SkiaFilteredImage). We apply the matrix to reference sample pixels
+ * and compute the resulting tint, so the live preview always reflects the same
+ * colour transform the editor will apply — just as a flat overlay rather than
+ * per-pixel.
  *
  * Falls back to a plain View on Skia import failure (e.g. web).
  */

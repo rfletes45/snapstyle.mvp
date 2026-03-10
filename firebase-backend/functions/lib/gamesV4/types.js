@@ -64,6 +64,8 @@ exports.LEADERBOARD_METRICS = {
     minigolf_duels: "bestScore",
     minesweeper: "bestScore",
     solitaire_klondike: "bestScore",
+    reversi: "wins",
+    dots_and_boxes: "wins",
     // Default for unspecified games: "bestScore"
 };
 function getLeaderboardMetric(gameId) {

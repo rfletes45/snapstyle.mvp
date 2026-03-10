@@ -93,7 +93,9 @@ exports.deleteMessageForAllV2 = messaging_1.deleteMessageForAllV2Function;
 exports.toggleReactionV2 = messaging_1.toggleReactionV2Function;
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
-    admin.initializeApp();
+    admin.initializeApp({
+        databaseURL: "https://gamerapp-37e70-default-rtdb.firebaseio.com",
+    });
 }
 const db = admin.firestore();
 const storage = admin.storage();

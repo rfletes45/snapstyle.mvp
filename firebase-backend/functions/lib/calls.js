@@ -118,20 +118,40 @@ function buildCallNotification(call, callId, recipient) {
         uuid: callId, // Use callId as UUID for CallKeep
     };
     if (recipient.platform === "ios") {
-        // iOS: Send VoIP push for CallKit
+        // iOS: Send high-priority alert notification via FCM.
+        // IMPORTANT: FCM cannot send true PushKit/VoIP pushes. The previous
+        // implementation used "apns-push-type": "voip" which FCM silently
+        // drops or fails to deliver via APNs. Instead, we send a time-sensitive
+        // alert notification that wakes the app and displays a call UI.
+        //
+        // For true CallKit/PushKit VoIP pushes, you would need:
+        // 1. react-native-voip-push-notification in the app
+        // 2. A PushKit token stored separately from FCM token
+        // 3. Direct APNs integration (e.g., via node-apn) with the .voip topic
+        //
+        // This alert approach works reliably for foreground + background delivery.
         return {
             token: recipient.fcmToken,
             data,
             apns: {
                 headers: {
-                    "apns-push-type": "voip",
+                    "apns-push-type": "alert",
                     "apns-priority": "10",
-                    "apns-topic": "com.vibeapp.mobile.voip",
+                    "apns-topic": "com.vibeapp.mobile",
+                    "apns-expiration": String(Math.floor(Date.now() / 1000) + 30),
                 },
                 payload: {
                     aps: {
+                        alert: {
+                            title: isVideo ? "📹 Incoming Video Call" : "📞 Incoming Call",
+                            body: `${callerName} is calling...`,
+                        },
+                        sound: "ringtone.caf",
                         "content-available": 1,
+                        "interruption-level": "time-sensitive",
+                        category: "INCOMING_CALL",
                     },
+                    // Include call data at the root so the app can read it
                     ...data,
                 },
             },
@@ -171,7 +191,13 @@ exports.onCallUpdated = functions.firestore
     const after = change.after.data();
     const { callId } = context.params;
     // Check for status transition to terminal state
-    const terminalStates = ["ended", "declined", "missed", "failed"];
+    const terminalStates = [
+        "ended",
+        "declined",
+        "missed",
+        "failed",
+        "cancelled",
+    ];
     const wasTerminal = terminalStates.includes(before.status);
     const isTerminal = terminalStates.includes(after.status);
     // If call just transitioned to terminal state
@@ -772,9 +798,7 @@ const onGroupCallHostAction = functions.https.onCall(async (data, context) => {
                 .filter((p) => p.joinedAt !== null && p.leftAt === null && p.odId !== userId)
                 .map((p) => p.odId);
             await sendGroupCallNotification(callId, activeParticipantIds, {
-                type: action === "lock_call"
-                    ? "group_call_locked"
-                    : "group_call_unlocked",
+                type: action === "lock_call" ? "group_call_locked" : "group_call_unlocked",
                 message: action === "lock_call"
                     ? "Host has locked the call"
                     : "Host has unlocked the call",

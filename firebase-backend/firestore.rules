@@ -1942,6 +1942,16 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // DELETION JOBS (server-only audit trail)
+    // ============================================================
+    // Written and read exclusively by the deleteAccount Cloud Function.
+    // Users can read their own deletion job status for UX feedback.
+    match /DeletionJobs/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ============================================================
     // CATCH-ALL: Deny everything else
     // ============================================================
 
