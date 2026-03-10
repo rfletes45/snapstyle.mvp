@@ -33,9 +33,11 @@ import ConnectFourScreenV4 from "./ConnectFourScreenV4";
 import CrazyEightsScreenV4 from "./CrazyEightsScreenV4";
 import DotsAndBoxesScreenV4 from "./DotsAndBoxesScreenV4";
 import HexScreenV4 from "./HexScreenV4";
+import KnockoutScreenV4 from "./KnockoutScreenV4";
 import MinesweeperScreenV4 from "./MinesweeperScreenV4";
 import MinigolfScreenV4 from "./MinigolfScreenV4";
 import Play2048ScreenV4 from "./Play2048ScreenV4";
+import PongScreenV4 from "./PongScreenV4";
 import ReversiScreenV4 from "./ReversiScreenV4";
 import SketchPartyScreenV4 from "./SketchPartyScreenV4";
 import SolitaireKlondikeScreenV4 from "./SolitaireKlondikeScreenV4";
@@ -44,7 +46,7 @@ import TicTacToeScreenV4 from "./TicTacToeScreenV4";
 type Nav = NativeStackNavigationProp<MainStackParamList>;
 
 /**
- * Map of gameId → pilot screen component.
+ * Map of gameId → registered screen component.
  * Extend this map as new adapters are added.
  */
 const GAME_SCREEN_MAP: Partial<Record<GameId, React.ComponentType<object>>> = {
@@ -52,8 +54,10 @@ const GAME_SCREEN_MAP: Partial<Record<GameId, React.ComponentType<object>>> = {
   dots_and_boxes: DotsAndBoxesScreenV4,
   connect_four: ConnectFourScreenV4,
   play_2048: Play2048ScreenV4,
+  pong_game: PongScreenV4,
   chess: ChessScreenV4,
   hex: HexScreenV4,
+  knockout_game: KnockoutScreenV4,
   sketch_party_game: SketchPartyScreenV4,
   battleship: BattleshipScreenV4,
   brick_breaker: BrickBreakerScreenV4,

@@ -35,9 +35,9 @@ import { useGamePBV4 } from "@/gamesV4/hooks/useGameStatsV4";
 import { useLeaderboardV4 } from "@/gamesV4/hooks/useLeaderboardV4";
 import {
   createGameInvite,
-  createSoloSession,
   fetchFriendsLeaderboard,
   fetchGameHistoryByGame,
+  resumeOrCreateSoloSession,
   type LeaderboardEntryV4,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameId } from "@/gamesV4/types/common";
@@ -177,7 +177,7 @@ export default function GameDetailScreenV4() {
     if (launching) return;
     setLaunching(true);
     try {
-      const { sessionId } = await createSoloSession({ gameId });
+      const { sessionId } = await resumeOrCreateSoloSession({ gameId });
       navigation.navigate("GamePlayV4", { sessionId, gameId });
     } catch (err: unknown) {
       const msg = mapSoloLaunchError(err);

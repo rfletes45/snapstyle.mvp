@@ -2,7 +2,7 @@
  * Games V4 — Constants & Type Contract Tests
  *
  * Validates the integrity of V4 constants and type contracts:
- * - GAME_METADATA covers all 20 game IDs
+ * - GAME_METADATA covers all current game IDs
  * - XP_CONFIG values are sane
  * - COLLECTIONS paths are non-empty strings
  * - Game categories are well-formed

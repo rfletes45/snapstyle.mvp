@@ -29,6 +29,10 @@ export interface SettingsFieldDef {
   step?: number;
   /** For "select" type: allowed values. */
   options?: Array<{ label: string; value: unknown }>;
+  /** Optional helper text shown below the label in the lobby panel. */
+  helperText?: string;
+  /** Optional group header — displayed once above the first field in the group. */
+  group?: string;
 }
 
 // =============================================================================

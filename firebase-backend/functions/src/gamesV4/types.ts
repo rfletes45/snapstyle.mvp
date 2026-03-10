@@ -33,6 +33,7 @@ export type GameId =
   | "sketch_party_game"
   | "starforge_game"
   | "crossword_puzzle"
+  | "knockout_game"
   | "minigolf_duels"
   | "dot_match";
 
@@ -210,6 +211,29 @@ export interface GameSessionV4 {
 
   /** Timestamp of the last server-side save (epoch ms). */
   lastServerSaveAt?: TimestampLike | null;
+
+  // ── Realtime-specific fields ───────────────────────────────────────────────────
+
+  /** Colyseus room name (e.g., "sketch_party"). Set when lobby → active. */
+  realtimeRoomName?: string;
+
+  /** Colyseus room ID for the live match instance. */
+  realtimeRoomId?: string;
+
+  /** Match start policy (e.g., "full_roster", "host_start"). */
+  realtimeMatchStartPolicy?: string;
+
+  /** Disconnect policy (e.g., "continue_without_player", "pause_match"). */
+  realtimeDisconnectPolicy?: string;
+
+  /** Reconnect grace period in seconds. */
+  realtimeReconnectGraceSec?: number;
+
+  /** Whether the realtime room is currently live (heartbeat). */
+  realtimeRoomAlive?: boolean;
+
+  /** Timestamp of last heartbeat from the Colyseus room. */
+  realtimeLastHeartbeat?: TimestampLike;
 }
 
 export interface MoveDoc {
@@ -365,6 +389,8 @@ export const LEADERBOARD_METRICS: Partial<Record<GameId, LeaderboardMetric>> = {
   reversi: "wins",
   dots_and_boxes: "wins",
   hex: "wins",
+  pong_game: "wins",
+  knockout_game: "wins",
   // Default for unspecified games: "bestScore"
 };
 

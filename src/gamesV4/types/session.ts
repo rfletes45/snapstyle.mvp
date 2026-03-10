@@ -198,6 +198,62 @@ export interface GameSessionV4 {
    */
   soloMode?: SoloMode;
 
+  // ── Realtime-specific fields ──────────────────────────────────────────
+
+  /**
+   * Colyseus room name used by this session.
+   * Only populated for realtime games. Set when lobby transitions to active.
+   */
+  realtimeRoomName?: string;
+
+  /**
+   * Colyseus room ID for this live match.
+   * Written by the Colyseus server after room creation.
+   * Used for debugging and reconnection routing.
+   */
+  realtimeRoomId?: string;
+
+  /**
+   * Match start policy for realtime games.
+   * Controls when the match begins (e.g., "all players ready", "host starts").
+   */
+  realtimeMatchStartPolicy?:
+    | "full_roster"
+    | "min_players"
+    | "host_start"
+    | "countdown_on_min"
+    | "immediate";
+
+  /**
+   * Disconnect policy for realtime games.
+   * Defines behavior when a player disconnects mid-match.
+   */
+  realtimeDisconnectPolicy?:
+    | "pause_match"
+    | "continue_without_player"
+    | "ai_takeover"
+    | "forfeit_player"
+    | "forfeit_team"
+    | "spectate_on_disconnect"
+    | "immediate_resolve";
+
+  /**
+   * Reconnect grace period in seconds for realtime games.
+   * Players can reconnect within this window without penalty.
+   */
+  realtimeReconnectGraceSec?: number;
+
+  /**
+   * Whether the realtime room is currently live (heartbeat active).
+   * Updated periodically by the RuntimeMirror.
+   */
+  realtimeRoomAlive?: boolean;
+
+  /**
+   * Timestamp of last heartbeat from the Colyseus room.
+   */
+  realtimeLastHeartbeat?: TimestampLike;
+
   /**
    * Timestamp of the last server-side simulation tick (epoch ms).
    * Used to compute deterministic offline progression on resume.

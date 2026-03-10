@@ -52,7 +52,9 @@ const GAME_DISPLAY_NAMES: Record<GameId, string> = {
   crossword_puzzle: "Crossword",
   minigolf_duels: "Mini Golf",
   dot_match: "Dot Match",
+  knockout_game: "Knockout",
   solitaire_klondike: "Solitaire",
+  hex: "Hex",
 };
 
 function gameName(gameId: GameId): string {

@@ -17,6 +17,11 @@
 
 import { Client, Room } from "colyseus";
 import {
+  getFirebaseDb,
+  isDevBypass,
+  verifyFirebaseToken,
+} from "../bridge/firebaseBridge";
+import {
   computeDrawerGainPerGuesser,
   computeGuesserPoints,
   computeTimeBonus,
@@ -64,6 +69,19 @@ interface RoomSettings {
   hints: number;
   customWordsEnabled: boolean;
   customWordsList: string;
+}
+
+interface SessionPlayerSnapshot {
+  uid: string;
+  displayName?: string;
+}
+
+interface JoinAuthData {
+  uid: string;
+  displayName: string;
+  participantUids: string[];
+  players: SessionPlayerSnapshot[];
+  settings: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -137,37 +155,22 @@ export class SketchPartyRoom extends Room {
   private hintsUsed = 0;
   private guessTimestamps = new Map<string, number>(); // uid → last guess time (rate limit)
   private reactionTimestamps = new Map<string, number>(); // uid → last reaction time (rate limit)
+  private expectedParticipantUids = new Set<string>();
+  private rosterDisplayNames = new Map<string, string>();
+  private chooseDeadlineAt = 0;
 
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   onCreate(options: Record<string, unknown>) {
     this.sessionId = (options.sessionId as string) ?? "";
-    this.maxClients = 8;
-
-    // Apply settings from session if provided
-    if (options.settings && typeof options.settings === "object") {
-      const s = options.settings as Record<string, unknown>;
-      if (typeof s.maxPlayers === "number")
-        this.settings.maxPlayers = Math.max(2, Math.min(8, s.maxPlayers));
-      if (typeof s.rounds === "number")
-        this.settings.rounds = Math.max(1, Math.min(10, s.rounds));
-      if (typeof s.drawTimeSec === "number")
-        this.settings.drawTimeSec = Math.max(30, Math.min(180, s.drawTimeSec));
-      if (typeof s.turnChooseTimeSec === "number")
-        this.settings.turnChooseTimeSec = Math.max(
-          5,
-          Math.min(15, s.turnChooseTimeSec),
-        );
-      if (typeof s.wordChoices === "number")
-        this.settings.wordChoices = Math.max(1, Math.min(5, s.wordChoices));
-      if (typeof s.hints === "number")
-        this.settings.hints = Math.max(0, Math.min(3, s.hints));
-      if (typeof s.customWordsEnabled === "boolean")
-        this.settings.customWordsEnabled = s.customWordsEnabled;
-      if (typeof s.customWordsList === "string")
-        this.settings.customWordsList = s.customWordsList.slice(0, 2000);
-    }
     this.maxClients = this.settings.maxPlayers;
+
+    // Client-provided settings are only a provisional bootstrap.
+    // The first authenticated join replaces them with session-authoritative
+    // settings loaded from Firestore.
+    if (options.settings && typeof options.settings === "object") {
+      this.applySettings(options.settings as Record<string, unknown>);
+    }
 
     // Initialize game state (broadcast via messages, NOT Schema state)
     this.gs = {
@@ -210,19 +213,128 @@ export class SketchPartyRoom extends Room {
     this.onMessage("reaction", this.handleReaction.bind(this));
   }
 
-  onJoin(client: Client, options: Record<string, unknown>) {
+  async onAuth(client: Client, options: Record<string, unknown>) {
     const uid = options.uid as string;
-    const displayName = (options.displayName as string) ?? "Player";
+    const token = options.token as string;
+    const requestedSessionId = (options.sessionId as string) ?? this.sessionId;
+
+    if (!requestedSessionId || requestedSessionId !== this.sessionId) {
+      throw new Error("Session mismatch.");
+    }
+    if (!uid || typeof uid !== "string") {
+      throw new Error("Missing uid.");
+    }
+
+    // ── Dev bypass: skip Firebase Auth + Firestore when credentials unavailable ──
+    if (isDevBypass()) {
+      const displayName =
+        typeof options.displayName === "string"
+          ? options.displayName
+          : "Player";
+      return {
+        uid,
+        displayName,
+        participantUids: [uid],
+        players: [{ uid, displayName }],
+        settings: {},
+      } satisfies JoinAuthData;
+    }
+
+    if (!token || typeof token !== "string") {
+      throw new Error("Missing auth token.");
+    }
+
+    const decoded = await verifyFirebaseToken(token);
+    if (decoded.uid !== uid) {
+      throw new Error("Authenticated user mismatch.");
+    }
+
+    const db = getFirebaseDb();
+    const sessionSnap = await db
+      .collection("GameSessionsV4")
+      .doc(this.sessionId)
+      .get();
+    if (!sessionSnap.exists) {
+      throw new Error("Game session not found.");
+    }
+
+    const sessionData = sessionSnap.data() as Record<string, unknown>;
+    if (sessionData.gameId !== "sketch_party_game") {
+      throw new Error("Session is not a Sketch Party match.");
+    }
+    if (sessionData.runtimeType !== "realtime") {
+      throw new Error("Session is not realtime.");
+    }
+    if (sessionData.status !== "active") {
+      throw new Error("Session is not active.");
+    }
+
+    const participantUids = Array.isArray(sessionData.participantUids)
+      ? sessionData.participantUids.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [];
+    if (!participantUids.includes(uid)) {
+      throw new Error("You are not a participant in this match.");
+    }
+
+    const players = Array.isArray(sessionData.players)
+      ? sessionData.players
+          .filter(
+            (value): value is Record<string, unknown> =>
+              !!value && typeof value === "object",
+          )
+          .map((player) => ({
+            uid: typeof player.uid === "string" ? player.uid : "",
+            displayName:
+              typeof player.displayName === "string"
+                ? player.displayName
+                : undefined,
+          }))
+          .filter((player) => player.uid.length > 0)
+      : [];
+
+    const rosterName =
+      players.find((player) => player.uid === uid)?.displayName ||
+      (typeof options.displayName === "string" ? options.displayName : "") ||
+      decoded.name ||
+      "Player";
+
+    return {
+      uid,
+      displayName: rosterName,
+      participantUids,
+      players,
+      settings:
+        sessionData.settings && typeof sessionData.settings === "object"
+          ? (sessionData.settings as Record<string, unknown>)
+          : {},
+    } satisfies JoinAuthData;
+  }
+
+  onJoin(
+    client: Client,
+    options: Record<string, unknown>,
+    auth?: JoinAuthData,
+  ) {
+    const uid = auth?.uid ?? (options.uid as string);
+    const displayName =
+      auth?.displayName ?? (options.displayName as string) ?? "Player";
+    this.hydrateSessionConfig(auth);
 
     // Reconnect check
     const existing = this.players.get(uid);
     if (existing) {
       existing.sessionId = client.sessionId;
       existing.connected = true;
+      existing.displayName = displayName;
       this.syncPlayersState();
+      this.broadcastState();
 
-      // Send board snapshot for reconnect
+      this.sendStateToClient(client, uid);
+      client.send("settings_applied", { ...this.settings });
       client.send("board_snapshot", { strokes: this.strokes });
+      this.sendPendingWordChoices(client, uid);
       return;
     }
 
@@ -251,11 +363,12 @@ export class SketchPartyRoom extends Room {
     this.syncPlayersState();
 
     // Send current state to the joining client immediately
-    client.send("state_sync", this.getPublicState());
+    this.sendStateToClient(client, uid);
     // Send effective settings so client can display them
     client.send("settings_applied", { ...this.settings });
     // Send board snapshot for reconnect / late join
     client.send("board_snapshot", { strokes: this.strokes });
+    this.sendPendingWordChoices(client, uid);
 
     console.log(
       `[SketchParty] ${displayName} (${uid}) joined room ${this.roomId}. Players: ${this.players.size}`,
@@ -263,8 +376,8 @@ export class SketchPartyRoom extends Room {
     this.broadcastChat(null, `${displayName} joined the game`, true, false);
     this.broadcastState();
 
-    // Start game when we have enough players and phase is waiting
-    if (this.gs.phase === "waiting" && this.players.size >= 2) {
+    // Start only when the authenticated session roster is connected.
+    if (this.canStartMatch()) {
       this.startMatch();
     }
   }
@@ -281,6 +394,7 @@ export class SketchPartyRoom extends Room {
         }
 
         this.syncPlayersState();
+        this.broadcastState();
         this.broadcastChat(
           null,
           `${info.displayName} disconnected`,
@@ -344,7 +458,8 @@ export class SketchPartyRoom extends Room {
 
     // Enter choosing phase
     this.gs.phase = "choosing";
-    const words = pickRandomWords(this.settings.wordChoices, this.usedWords);
+    const words = this.pickWordChoices();
+    this.chooseDeadlineAt = Date.now() + this.settings.turnChooseTimeSec * 1000;
 
     // Send word choices only to drawer
     const drawerClient = this.getClientByUid(drawerId);
@@ -379,6 +494,7 @@ export class SketchPartyRoom extends Room {
       clearTimeout(this.chooseTimer);
       this.chooseTimer = null;
     }
+    this.chooseDeadlineAt = 0;
 
     // Schedule hints
     this.scheduleHints();
@@ -727,9 +843,10 @@ export class SketchPartyRoom extends Room {
   // ── State broadcasting ────────────────────────────────────────────
 
   /**
-   * Build a sanitized public state snapshot (no secretWord for non-drawers).
+   * Build a sanitized public state snapshot for a specific viewer.
    */
-  private getPublicState(): Record<string, unknown> {
+  private getPublicState(viewerUid?: string): Record<string, unknown> {
+    const isDrawer = !!viewerUid && viewerUid === this.gs.drawerId;
     return {
       phase: this.gs.phase,
       currentRound: this.gs.currentRound,
@@ -739,12 +856,17 @@ export class SketchPartyRoom extends Room {
       turnOrder: this.gs.turnOrder,
       maskedWord: this.gs.maskedWord,
       wordLength: this.gs.wordLength,
+      secretWord: isDrawer ? this.secretWord : "",
       scores: { ...this.gs.scores },
       correctGuessers: [...this.gs.correctGuessers],
       timeRemainingSec: this.gs.timeRemainingSec,
       drawTimeSec: this.gs.drawTimeSec,
       hintsUsed: this.gs.hintsUsed,
       maxHints: this.gs.maxHints,
+      wordChoices:
+        isDrawer && this.gs.phase === "choosing"
+          ? [...this.gs.wordChoices]
+          : [],
       players: this.gs.players,
       effectiveSettings: this.gs.effectiveSettings,
     };
@@ -754,11 +876,124 @@ export class SketchPartyRoom extends Room {
    * Broadcast the public state to all connected clients.
    */
   private broadcastState(): void {
-    const pub = this.getPublicState();
-    this.broadcast("state_sync", pub);
+    for (const client of this.clients) {
+      const uid = this.getUidByClient(client) ?? undefined;
+      client.send("state_sync", this.getPublicState(uid));
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────
+
+  private applySettings(raw: Record<string, unknown>): void {
+    if (typeof raw.maxPlayers === "number") {
+      this.settings.maxPlayers = Math.max(2, Math.min(8, raw.maxPlayers));
+    }
+    if (typeof raw.rounds === "number") {
+      this.settings.rounds = Math.max(1, Math.min(10, raw.rounds));
+    }
+    if (typeof raw.drawTimeSec === "number") {
+      this.settings.drawTimeSec = Math.max(30, Math.min(180, raw.drawTimeSec));
+    }
+    if (typeof raw.turnChooseTimeSec === "number") {
+      this.settings.turnChooseTimeSec = Math.max(
+        5,
+        Math.min(15, raw.turnChooseTimeSec),
+      );
+    }
+    if (typeof raw.wordChoices === "number") {
+      this.settings.wordChoices = Math.max(1, Math.min(5, raw.wordChoices));
+    }
+    if (typeof raw.hints === "number") {
+      this.settings.hints = Math.max(0, Math.min(3, raw.hints));
+    }
+    if (typeof raw.customWordsEnabled === "boolean") {
+      this.settings.customWordsEnabled = raw.customWordsEnabled;
+    }
+    if (typeof raw.customWordsList === "string") {
+      this.settings.customWordsList = raw.customWordsList.slice(0, 2000);
+    }
+
+    this.maxClients = this.settings.maxPlayers;
+    this.gs.totalRounds = this.settings.rounds;
+    this.gs.drawTimeSec = this.settings.drawTimeSec;
+    this.gs.maxHints = this.settings.hints;
+    this.gs.effectiveSettings = { ...this.settings };
+  }
+
+  private hydrateSessionConfig(auth?: JoinAuthData): void {
+    if (!auth) return;
+
+    if (this.expectedParticipantUids.size === 0) {
+      this.expectedParticipantUids = new Set(auth.participantUids);
+      this.rosterDisplayNames = new Map(
+        auth.players.map((player) => [
+          player.uid,
+          player.displayName ?? player.uid,
+        ]),
+      );
+      this.applySettings(auth.settings ?? {});
+    } else if (isDevBypass()) {
+      // Dev bypass: accumulate participants from each join
+      for (const uid of auth.participantUids) {
+        this.expectedParticipantUids.add(uid);
+      }
+      for (const p of auth.players) {
+        if (!this.rosterDisplayNames.has(p.uid)) {
+          this.rosterDisplayNames.set(p.uid, p.displayName ?? p.uid);
+        }
+      }
+    }
+  }
+
+  private canStartMatch(): boolean {
+    if (this.gs.phase !== "waiting") return false;
+
+    const expectedCount = this.expectedParticipantUids.size;
+    if (expectedCount >= 2) {
+      const connectedCount = Array.from(this.expectedParticipantUids).filter(
+        (uid) => this.players.get(uid)?.connected,
+      ).length;
+      return connectedCount >= expectedCount;
+    }
+
+    return this.players.size >= 2;
+  }
+
+  private sendStateToClient(client: Client, uid?: string): void {
+    client.send("state_sync", this.getPublicState(uid));
+  }
+
+  private sendPendingWordChoices(client: Client, uid: string): void {
+    if (
+      uid !== this.gs.drawerId ||
+      this.gs.phase !== "choosing" ||
+      this.gs.wordChoices.length === 0
+    ) {
+      return;
+    }
+
+    const timeRemaining = Math.max(
+      1,
+      Math.ceil((this.chooseDeadlineAt - Date.now()) / 1000),
+    );
+    client.send("word_choices", {
+      words: [...this.gs.wordChoices],
+      timeRemaining,
+    });
+  }
+
+  private pickWordChoices(): string[] {
+    const customPool = getCustomWordPool(this.settings.customWordsList);
+    if (this.settings.customWordsEnabled && customPool.length > 0) {
+      return pickWordsFromPool(
+        customPool,
+        this.settings.wordChoices,
+        this.usedWords,
+      );
+    }
+
+    return pickRandomWords(this.settings.wordChoices, this.usedWords);
+  }
 
   private getUidByClient(client: Client): string | null {
     for (const [uid, info] of this.players) {
@@ -776,7 +1011,7 @@ export class SketchPartyRoom extends Room {
   private syncPlayersState() {
     this.gs.players = Array.from(this.players.values()).map((p) => ({
       uid: p.uid,
-      displayName: p.displayName,
+      displayName: this.rosterDisplayNames.get(p.uid) ?? p.displayName,
       connected: p.connected,
     }));
   }
@@ -806,9 +1041,32 @@ export class SketchPartyRoom extends Room {
       clearTimeout(this.chooseTimer);
       this.chooseTimer = null;
     }
+    this.chooseDeadlineAt = 0;
     for (const t of this.hintTimers) {
       clearTimeout(t);
     }
     this.hintTimers = [];
   }
+}
+
+function getCustomWordPool(rawList: string): string[] {
+  const deduped = new Set<string>();
+  for (const entry of rawList.split(/[\n,]/)) {
+    const word = entry.trim().replace(/\s+/g, " ");
+    if (word.length >= 2) {
+      deduped.add(word);
+    }
+  }
+  return Array.from(deduped);
+}
+
+function pickWordsFromPool(
+  pool: string[],
+  count: number,
+  usedWords: Set<string>,
+): string[] {
+  const available = pool.filter((word) => !usedWords.has(word));
+  const source = available.length > 0 ? available : pool;
+  const shuffled = [...source].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, Math.max(1, Math.min(count, shuffled.length)));
 }

@@ -319,22 +319,20 @@ const hexAdapter: GameAdapterV4 = {
         newState.swapDecision = "swapped";
         newState.phase = "main";
 
-        // Update lastMove to reflect the new color ownership of the opening stone
+        // The swap means p2 takes ownership of the opening stone.
+        // Colors have been flipped: p1 is now blue, p2 is now red.
+        // The opening stone was placed as "red" (p1's old color).
+        // After swap, p2 (now red) owns it — so the stone STAYS "red".
+        // No cell color change needed — the stone color already matches
+        // p2's new color assignment.
+
+        // Update lastMove to reflect p2 as the effective owner
         if (newState.lastMove) {
-          const openingPlacerNewColor =
-            newColorByUid[newState.lastMove.uid] ?? "red";
-          // The stone on the board now belongs to the swapper's new color
-          // Actually: the stone stays where it is but now belongs to the player
-          // who originally placed it (who is now "blue" after swap)
-          // The opening stone color in cells needs to flip
-          if (newState.openingMoveIndex !== null) {
-            const oldColor = state.cells[newState.openingMoveIndex];
-            newState.cells[newState.openingMoveIndex] =
-              oldColor === "red" ? "blue" : "red";
-          }
+          // The stone's color on the board is still the original color,
+          // which now maps to p2 (the swapper). No cell flip needed.
           newState.lastMove = {
             ...newState.lastMove,
-            color: openingPlacerNewColor,
+            color: state.colorByUid[newState.lastMove.uid] ?? "red",
           };
         }
 

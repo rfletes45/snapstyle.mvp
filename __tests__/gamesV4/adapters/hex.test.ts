@@ -262,8 +262,12 @@ describe("Hex Adapter", () => {
       // Colors are flipped
       expect(next.colorByUid.p1).toBe("blue");
       expect(next.colorByUid.p2).toBe("red");
-      // Opening stone flips from red to blue
-      expect(next.cells[40]).toBe("blue");
+      // Opening stone stays "red" — p2 (now red) owns it via the swap.
+      // The stone's color on the board already matches p2's new assignment.
+      expect(next.cells[40]).toBe("red");
+      // lastMove.color reflects original placer's OLD color (red), which is
+      // the stone's color on the board
+      expect(next.lastMove?.color).toBe("red");
     });
 
     it("rejects swap when not swap_pending phase", () => {

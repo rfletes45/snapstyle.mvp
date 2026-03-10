@@ -570,7 +570,7 @@ export function subscribeToMyActiveInvites(
 // =============================================================================
 
 /**
- * Subscribe to the current user's active or suspended solo sessions.
+ * Subscribe to the current user's active solo sessions.
  * Returns a map of `gameId → sessionId` for games with a resumable session.
  * Used by the Games Hub to show "Resume" vs "Play Now" labels.
  */
@@ -584,21 +584,71 @@ export function subscribeToActiveSoloSessions(
     collection(db, COLLECTIONS.GAME_SESSIONS),
     where("participantUids", "array-contains", uid),
     where("runtimeType", "==", "solo"),
-    where("status", "in", ["active", "suspended"]),
+    where("status", "==", "active"),
     limit(20),
   );
   return onSnapshot(
     q,
     (snap) => {
       const map: Record<string, string> = {};
+      const freshnessByGameId: Record<string, number> = {};
       for (const d of snap.docs) {
         const data = d.data() as GameSessionV4;
-        map[data.gameId] = data.sessionId;
+        const freshness = getSessionFreshness(data);
+        if (
+          freshnessByGameId[data.gameId] === undefined ||
+          freshness > freshnessByGameId[data.gameId]
+        ) {
+          freshnessByGameId[data.gameId] = freshness;
+          map[data.gameId] = data.sessionId;
+        }
       }
       onData(map);
     },
     onError,
   );
+}
+
+function getSessionFreshness(session: GameSessionV4): number {
+  const candidates = [
+    session.soloSuspendedAt,
+    session.lastServerSaveAt,
+    session.lastSimulatedAt,
+    session.runStartedAt,
+    session.startedAt,
+    session.createdAt,
+  ];
+  for (const value of candidates) {
+    const millis = coerceTimestampLike(value);
+    if (millis !== null) return millis;
+  }
+  return 0;
+}
+
+function coerceTimestampLike(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "toMillis" in (value as Record<string, unknown>) &&
+    typeof (value as { toMillis: unknown }).toMillis === "function"
+  ) {
+    const millis = (value as { toMillis: () => number }).toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "seconds" in (value as Record<string, unknown>)
+  ) {
+    const seconds = (value as { seconds?: unknown }).seconds;
+    if (typeof seconds === "number" && Number.isFinite(seconds)) {
+      return seconds * 1000;
+    }
+  }
+  return null;
 }
 
 // =============================================================================

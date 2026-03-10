@@ -161,6 +161,36 @@ function isWildCard(card: Card): boolean {
   return card.type === "wild" || card.type === "wild_draw_four";
 }
 
+/** Solid pastel-red screen background (Catppuccin Mocha-friendly). */
+const CRAZY8_BG = "#D4626E";
+
+/**
+ * Format the lastMove log entry into a human-readable string.
+ */
+function formatMicroLog(
+  lastMove: { actor: string; action: string; detail?: string },
+  playerNames?: Record<string, string>,
+): string {
+  const who = playerNames?.[lastMove.actor] ?? "Player";
+  const detail = lastMove.detail;
+  switch (lastMove.action) {
+    case "PLAY_CARD":
+      return detail ? `${who} played ${detail}` : `${who} played a card`;
+    case "DRAW_CARD":
+      return `${who} drew a card`;
+    case "PASS":
+      return `${who} passed`;
+    case "CALL_CRAZY":
+      return `${who} called CRAZY!`;
+    case "CHALLENGE_WILD4":
+      return `${who} challenged Wild +4`;
+    case "ACCEPT_WILD4":
+      return `${who} accepted Wild +4`;
+    default:
+      return detail ? `${lastMove.action} — ${detail}` : lastMove.action;
+  }
+}
+
 // =============================================================================
 // Display name resolution hook
 // =============================================================================
@@ -273,12 +303,28 @@ const CardView = React.memo(function CardView({
           width: w,
           height: h,
           backgroundColor: bg,
-          borderColor: selected ? "#FFF" : "rgba(0,0,0,0.25)",
-          borderWidth: selected ? 2.5 : 1.5,
-          transform: selected ? [{ translateY: -10 }] : [],
+          borderColor: selected ? "#FFF" : "rgba(0,0,0,0.18)",
+          borderWidth: selected ? 2.5 : 1,
+          transform: selected ? [{ translateY: -12 }, { scale: 1.06 }] : [],
+          shadowColor: selected ? "#FFF" : "#000",
+          shadowOpacity: selected ? 0.45 : 0.22,
+          shadowRadius: selected ? 8 : 2.5,
+          shadowOffset: { width: 0, height: selected ? 4 : 1 },
+          elevation: selected ? 8 : 3,
         },
       ]}
     >
+      {/* Inner stroke — premium card feel */}
+      <View
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          borderRadius: CARD_RADIUS - 1,
+          borderWidth: 0.5,
+          borderColor: "rgba(255,255,255,0.15)",
+          margin: 1,
+        }}
+        pointerEvents="none"
+      />
       <CardWatermark isWildBlack={wildBlack} />
       {/* Top-left */}
       <Text
@@ -379,12 +425,30 @@ const CardBack = React.memo(function CardBack({
         },
       ]}
     >
-      {/* Diagonal watermark */}
+      {/* Inner border — premium double stroke */}
+      <View
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          borderRadius: 4,
+          borderWidth: 0.5,
+          borderColor: "rgba(255,255,255,0.08)",
+          margin: 2,
+        }}
+        pointerEvents="none"
+      />
+      {/* Diagonal watermark stripes */}
       <View style={cbStyles.wmContainer} pointerEvents="none">
         <View style={cbStyles.wm} />
+        <View
+          style={[cbStyles.wm, { opacity: 0.5, marginTop: -height * 0.15 }]}
+        />
       </View>
       {/* Center monogram */}
-      <Text style={cbStyles.monogram}>C8</Text>
+      <Text
+        style={[cbStyles.monogram, { fontSize: Math.max(8, width * 0.28) }]}
+      >
+        C8
+      </Text>
     </View>
   );
 });
@@ -392,16 +456,16 @@ const CardBack = React.memo(function CardBack({
 const cbStyles = StyleSheet.create({
   back: {
     borderRadius: 5,
-    backgroundColor: "#1C2333",
-    borderWidth: 1.2,
-    borderColor: "#3A4660",
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#2D3748",
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 1.5,
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
     elevation: 2,
   },
   wmContainer: {
@@ -413,16 +477,15 @@ const cbStyles = StyleSheet.create({
   },
   wm: {
     width: CARD_BACK_W * 1.6,
-    height: CARD_BACK_H * 0.45,
+    height: CARD_BACK_H * 0.35,
     borderRadius: CARD_BACK_W * 0.8,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.05)",
     transform: [{ rotate: "-35deg" }],
   },
   monogram: {
-    color: "rgba(255,255,255,0.22)",
-    fontSize: 11,
+    color: "rgba(255,255,255,0.18)",
     fontWeight: "900",
-    letterSpacing: 1,
+    letterSpacing: 2,
   },
 });
 
@@ -702,6 +765,7 @@ interface CenterAreaProps {
   drawDisabled: boolean;
   onDiscardPress?: () => void;
   discardDisabled?: boolean;
+  playerNames?: Record<string, string>;
 }
 
 function CenterArea({
@@ -711,8 +775,37 @@ function CenterArea({
   drawDisabled,
   onDiscardPress,
   discardDisabled = true,
+  playerNames,
 }: CenterAreaProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Card arrival flash — triggers when a new card is played
+  const arrivalAnim = useRef(new Animated.Value(1)).current;
+  const prevMoveCount = useRef(state.moveCount);
+  useEffect(() => {
+    if (state.moveCount !== prevMoveCount.current) {
+      prevMoveCount.current = state.moveCount;
+      arrivalAnim.setValue(1.15);
+      Animated.spring(arrivalAnim, {
+        toValue: 1,
+        friction: 5,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [state.moveCount, arrivalAnim]);
+
+  // Direction icon flip
+  const dirAnim = useRef(
+    new Animated.Value(state.direction === 1 ? 0 : 1),
+  ).current;
+  useEffect(() => {
+    Animated.timing(dirAnim, {
+      toValue: state.direction === 1 ? 0 : 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [state.direction, dirAnim]);
 
   useEffect(() => {
     if (state.pendingDraw.count > 0) {
@@ -737,17 +830,28 @@ function CenterArea({
 
   return (
     <View style={ctStyles.area}>
-      {/* Direction indicator */}
-      <View style={ctStyles.dirRow}>
+      {/* Direction indicator — animated flip on reverse */}
+      <Animated.View
+        style={[
+          ctStyles.dirRow,
+          {
+            transform: [
+              {
+                scaleX: dirAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1, -1],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
         <MaterialCommunityIcons
-          name={state.direction === 1 ? "rotate-right" : "rotate-left"}
+          name="rotate-right"
           size={16}
-          color={isDark ? "#666" : "#BBB"}
+          color={isDark ? "#888" : "#AAA"}
         />
-        <Text style={[ctStyles.dirText, { color: isDark ? "#666" : "#BBB" }]}>
-          {state.direction === 1 ? "Clockwise" : "Counter-clockwise"}
-        </Text>
-      </View>
+      </Animated.View>
 
       <View style={ctStyles.pilesRow}>
         {/* Discard pile — tap to confirm play when a card is selected */}
@@ -762,7 +866,11 @@ function CenterArea({
           >
             Discard
           </Text>
-          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <Animated.View
+            style={{
+              transform: [{ scale: Animated.multiply(pulseAnim, arrivalAnim) }],
+            }}
+          >
             <CardView
               card={state.topDiscard}
               disabled
@@ -774,13 +882,17 @@ function CenterArea({
               <View
                 style={{
                   position: "absolute",
-                  top: -4,
-                  left: -4,
-                  right: -4,
-                  bottom: -4,
-                  borderRadius: 12,
-                  borderWidth: 2,
+                  top: -5,
+                  left: -5,
+                  right: -5,
+                  bottom: -5,
+                  borderRadius: CARD_RADIUS + 4,
+                  borderWidth: 2.5,
                   borderColor: "#34C759",
+                  shadowColor: "#34C759",
+                  shadowOpacity: 0.6,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 0 },
                 }}
               />
             )}
@@ -814,12 +926,16 @@ function CenterArea({
         </TouchableOpacity>
       </View>
 
-      {/* Micro log */}
+      {/* Micro log — human-readable action ribbon */}
       {state.lastMove && (
         <View
           style={[
             ctStyles.microLog,
-            { backgroundColor: isDark ? "#1A1A2E" : "#FFF8E1" },
+            {
+              backgroundColor: isDark
+                ? "rgba(26,26,46,0.9)"
+                : "rgba(255,248,225,0.95)",
+            },
           ]}
         >
           <Text
@@ -829,8 +945,7 @@ function CenterArea({
             ]}
             numberOfLines={1}
           >
-            {state.lastMove.action}
-            {state.lastMove.detail ? ` — ${state.lastMove.detail}` : ""}
+            {formatMicroLog(state.lastMove, playerNames)}
           </Text>
         </View>
       )}
@@ -1651,12 +1766,7 @@ function CrazyEightsUI({
 
   if (!state) {
     return (
-      <View
-        style={[
-          ms.container,
-          { backgroundColor: isDark ? "#0A0A1A" : theme.colors.background },
-        ]}
-      >
+      <View style={[ms.container, { backgroundColor: CRAZY8_BG }]}>
         <Text
           style={{ color: primaryColor, textAlign: "center", marginTop: 60 }}
         >
@@ -1668,12 +1778,7 @@ function CrazyEightsUI({
 
   if (isSpectator) {
     return (
-      <View
-        style={[
-          ms.container,
-          { backgroundColor: isDark ? "#0A0A1A" : theme.colors.background },
-        ]}
-      >
+      <View style={[ms.container, { backgroundColor: CRAZY8_BG }]}>
         <SpectatorViewContent
           state={state}
           isDark={isDark}
@@ -1698,12 +1803,7 @@ function CrazyEightsUI({
       : (playerNames[state.currentTurnUid] ?? "Player");
 
   return (
-    <View
-      style={[
-        ms.container,
-        { backgroundColor: isDark ? "#0A0A1A" : theme.colors.background },
-      ]}
-    >
+    <View style={[ms.container, { backgroundColor: CRAZY8_BG }]}>
       {/* ========== TABLE AREA (fills space above bottom dock) ========== */}
       <View style={[ms.tableArea, { paddingBottom: bottomDockH }]}>
         {/* Opponents */}
@@ -1733,6 +1833,7 @@ function CrazyEightsUI({
           drawDisabled={!canDraw}
           onDiscardPress={handleDiscardTap}
           discardDisabled={!selectedCardId || !actualIsMyTurn || isSubmitting}
+          playerNames={playerNames}
         />
 
         {/* Inline action buttons (Catch, Pass) above the dock */}
@@ -1776,8 +1877,8 @@ function CrazyEightsUI({
           ms.bottomDock,
           {
             paddingBottom: insets.bottom,
-            backgroundColor: isDark ? "#0D0D1F" : "#F7F7FA",
-            borderTopColor: isDark ? "#1A1A3E" : "#E0E0E0",
+            backgroundColor: isDark ? "#2A1015" : "#F5E0E3",
+            borderTopColor: isDark ? "#4A2028" : "#D8B0B5",
           },
         ]}
       >

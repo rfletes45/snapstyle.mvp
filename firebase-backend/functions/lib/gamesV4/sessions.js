@@ -346,8 +346,18 @@ exports.resignSessionV4 = functions.https.onCall(async (data, context) => {
 /**
  * Resolve a realtime session from the Colyseus persistence bridge.
  * This is NOT a callable — it's exported for use by the Colyseus bridge.
+ *
+ * @param sessionId - The session to resolve
+ * @param resolutionType - How the session ended
+ * @param winnerIds - UIDs of the winner(s)
+ * @param scoreboard - Pre-built scoreboard entries
+ * @param enrichment - Additional metadata from the generalized realtime framework (optional)
  */
-async function resolveRealtimeSessionV4(sessionId, resolutionType, winnerIds, scoreboard) {
+async function resolveRealtimeSessionV4(sessionId, resolutionType, winnerIds, scoreboard, enrichment) {
+    if (enrichment?.requestId) {
+        console.log(`[gamesV4] Resolving realtime session ${sessionId} (requestId=${enrichment.requestId}, ` +
+            `reason=${enrichment.reason ?? resolutionType}, durationMs=${enrichment.durationMs ?? "unknown"})`);
+    }
     // If a pre-built scoreboard is provided, enrich with profilePictureUrl from
     // the session's player slots so the result doc carries avatar data.
     let enrichedScoreboard = scoreboard?.map((e) => ({

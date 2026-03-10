@@ -1,7 +1,8 @@
 # Games V4 Runbook — Ops / Debug / Test Guide
 
 > Companion to [GAMES_V4_SYSTEM.md](GAMES_V4_SYSTEM.md).
-> Last updated: 2026-03-03
+> Last updated: 2026-03-10
+> Status note: this runbook is operational guidance only. Current architecture, counts, and runtime classification live in [GAMES_V4_SYSTEM.md](GAMES_V4_SYSTEM.md).
 
 ---
 
@@ -43,7 +44,7 @@ Solo games bypass the invite/lobby/pin system entirely (see SYSTEM doc §6.7).
 
 | #   | Action                               | Expected                                                       | Firestore check                                                                         |
 | --- | ------------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 1   | Alice opens Games Hub → taps 2048    | Client calls `createSoloSession({ gameId: "play_2048" })`      | `GameSessionsV4/{id}` created, `status: "active"`, `inviteId: ""`, `conversationId: ""` |
+| 1   | Alice opens Games Hub → taps 2048    | Client calls `resumeOrCreateSoloSession({ gameId: "play_2048" })`      | `GameSessionsV4/{id}` created, `status: "active"`, `inviteId: ""`, `conversationId: ""` |
 | 2   | (auto-navigates to Play2048ScreenV4) | Board appears with 2 tiles. **No invite, no lobby, no pin**    | No `GameInvitesV4` doc. No `pinnedGameInviteIds` change                                 |
 | 3   | Swipe in all 4 directions            | Tiles slide + merge. Score updates. `GamePresence` doc written | `Users/{uid}/GamePresence/{sessionId}` exists with `activeAt`                           |
 | 4   | Play until game over (or resign)     | Auto-navigates to GameOverScreenV4 with score + XP             | `GameResultsV4/{id}` exists, session `status: "resolved"`, `rewardsProcessed: true`     |
@@ -161,7 +162,7 @@ The `scripts/` directory contains utility scripts. **None are V4-game-specific**
 | User game presence      | Firestore > `Users/{uid}` > `GamePresence` subcollection   |
 | Cloud Function logs     | Functions > Logs (filter by `[gamesV4]` or `[watchdogV4]`) |
 | Watchdog schedule       | Cloud Scheduler > `watchdogGamesV4`                        |
-| Deployed functions list | Functions > Dashboard (should show 13 V4 functions)        |
+| Deployed functions list | Functions > Dashboard (should show 16 user callables, 2 admin callables, 3 triggers, 1 scheduled job, plus internal helper exports in code)        |
 
 ---
 
@@ -888,13 +889,12 @@ All writes except Phase 1 are **outside** the transaction, so they don't contend
    npx firebase deploy --only functions
 
 4. Verify in Firebase Console:
-   - Functions tab shows all 13 V4 functions:
-     Callables (10): createGameInviteV4, joinInviteLobbyV4, leaveInviteLobbyV4,
-       cancelGameInviteV4, startGameFromInviteV4, updateLobbySettingsV4,
-       createSoloSessionV4, submitTurnMoveV4, resignSessionV4,
-       resolveRealtimeSessionV4
-     Triggers (2): onGameInviteV4Deleted, onSessionV4StatusChanged
+   - Functions tab shows the current V4 surface:
+     User callables (16): createGameInviteV4, cancelGameInviteV4, joinInviteLobbyV4, leaveInviteLobbyV4, startGameFromInviteV4, updateLobbySettingsV4, createSoloSessionV4, resumeOrCreateSoloSessionV4, restartSoloSessionV4, suspendSoloSessionV4, archiveSoloSessionV4, submitTurnMoveV4, resignSessionV4, claimLevelRewardV4, claimAchievementV4, claimAchievementSectionBadgeV4
+     Admin callables (2): adminClearGameV4, adminClearConversationGamesV4
+     Triggers (3): onGameInviteV4Deleted, onSessionV4StatusChanged, onRealtimeResolutionRequest
      Scheduled (1): watchdogGamesV4
+     Internal code exports: resolveRealtimeSessionV4, resolveSessionV4Internal
    - Firestore Rules tab shows V4 collection rules (12 match blocks)
    - Cloud Scheduler shows watchdogGamesV4 running every 30 min
 
@@ -918,7 +918,7 @@ Cloud Functions support traffic splitting. If V4 functions cause issues:
 
 ```powershell
 # Delete only V4 callable + trigger + scheduled functions (preserves all existing functions)
-npx firebase functions:delete createGameInviteV4 joinInviteLobbyV4 leaveInviteLobbyV4 cancelGameInviteV4 startGameFromInviteV4 updateLobbySettingsV4 createSoloSessionV4 submitTurnMoveV4 resignSessionV4 resolveRealtimeSessionV4 onGameInviteV4Deleted onSessionV4StatusChanged watchdogGamesV4
+npx firebase functions:delete createGameInviteV4 cancelGameInviteV4 joinInviteLobbyV4 leaveInviteLobbyV4 startGameFromInviteV4 updateLobbySettingsV4 createSoloSessionV4 resumeOrCreateSoloSessionV4 restartSoloSessionV4 suspendSoloSessionV4 archiveSoloSessionV4 submitTurnMoveV4 resignSessionV4 claimLevelRewardV4 claimAchievementV4 claimAchievementSectionBadgeV4 adminClearGameV4 adminClearConversationGamesV4 onGameInviteV4Deleted onSessionV4StatusChanged onRealtimeResolutionRequest watchdogGamesV4
 ```
 
 Client-side: Games tab will show "Game service is not available" errors (handled gracefully). The tab and pinned bar degrade to empty/error states — no crash.
@@ -927,12 +927,12 @@ Client-side: Games tab will show "Game service is not available" errors (handled
 
 | Limitation               | Impact                             | Tracking             |
 | ------------------------ | ---------------------------------- | -------------------- |
-| 3 of 20 games playable   | 17 games show "Coming Soon"        | Gap G2 in SYSTEM doc |
-| No Colyseus for realtime | Realtime games not playable        | Gap G1               |
+| 13 of 23 catalog games enabled | Remaining catalog entries still show `Coming Soon` | See current inventory in SYSTEM doc |
+| Realtime framework still bespoke | Only `sketch_party_game` is live; no generic Colyseus abstraction exists | See SYSTEM doc Sketch Party section |
 | No emulator setup        | All dev testing hits production    | §2 above             |
 | No performance bonus XP  | Up to 10 bonus XP unused           | Gap G5               |
-| Settings UI not wired    | Lobby doesn't show game settings   | Gap G9               |
-| Private state not read   | Adapter can't validate hidden info | Gap G10              |
+| Metadata duplication remains | Client and backend game metadata can still drift if both are not updated | See SYSTEM doc known inconsistencies |
+| Hidden-info client optimism is partial | Server reads private state correctly, but local shell validation remains intentionally incomplete | See SYSTEM doc hidden-information notes |
 | Game-started notif       | No push when lobby → active        | Gap G11              |
 
 ---
@@ -1075,3 +1075,4 @@ The field selection is driven by `LEADERBOARD_DESCRIPTORS[gameId].metric` in `sr
 | TTT leaderboard shows 0 or 1           | Old data from before the fix (score was binary)                 | Old entries will self-correct as users play more games within the week. Historical weeks are frozen.                |
 | Friends shows 0, Global shows correct  | PB doc has `totalWins: 0` but leaderboard entry has accumulated | User has not won any games yet. `totalWins` only increments on wins.                                                |
 | All players show same score on friends | All PB docs have `pbValue` = 1 (old binary metric)              | After the fix, friends LB reads `totalWins` for wins-based games, which should be correct. Force-reload the screen. |
+

@@ -14,13 +14,13 @@ import {
 import type { GameId } from "@/gamesV4/types/common";
 import { useEffect, useState } from "react";
 
-/** Compute ISO week key: "2026-W09" */
+/** Compute the same week key format used by the backend: "2026-W09". */
 function currentWeekKey(): string {
   const now = new Date();
-  const jan4 = new Date(now.getFullYear(), 0, 4);
-  const daysSinceJan4 =
-    Math.floor((now.getTime() - jan4.getTime()) / 86400000) + jan4.getDay() - 1;
-  const weekNum = Math.ceil(daysSinceJan4 / 7);
+  const jan1 = new Date(now.getFullYear(), 0, 1);
+  const dayOfYear =
+    Math.floor((now.getTime() - jan1.getTime()) / 86400000) + 1;
+  const weekNum = Math.ceil(dayOfYear / 7);
   return `${now.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 

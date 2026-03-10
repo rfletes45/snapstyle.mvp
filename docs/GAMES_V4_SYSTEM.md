@@ -1,42 +1,65 @@
-# Games V4 System - Implementation Audit and Developer Guide
+# Games V4 System - Architecture, Lifecycle, and Operations Reference
 
-> Source of truth: the checked-out workspace on 2026-03-09.
-> This document describes the system that is actually implemented today, including current inconsistencies.
+> Source of truth: the checked-out workspace on 2026-03-10.
+> This document describes the system that is implemented today, including active exceptions, duplicated metadata, dormant infrastructure, and realtime special cases.
 > Companion: [GAME_INTEGRATION_GUIDE_V4.md](GAME_INTEGRATION_GUIDE_V4.md).
 
 ---
 
 ## Table of Contents
 
-1. [Current Snapshot](#1-current-snapshot)
-2. [Game Inventory](#2-game-inventory)
-3. [Architecture Families](#3-architecture-families)
-4. [Key Files by Layer](#4-key-files-by-layer)
-5. [Core Flows](#5-core-flows)
-6. [Runtime Comparison](#6-runtime-comparison)
-7. [Data Model and Authority Boundaries](#7-data-model-and-authority-boundaries)
-8. [Leaderboards, Achievements, XP, and Wallet](#8-leaderboards-achievements-xp-and-wallet)
-9. [Sketch Party / Colyseus Reference Architecture](#9-sketch-party--colyseus-reference-architecture)
-10. [Known Inconsistencies and Sharp Edges](#10-known-inconsistencies-and-sharp-edges)
-11. [Testing Surface](#11-testing-surface)
-12. [Guidance for Future Changes](#12-guidance-for-future-changes)
+1. [Scope and Snapshot](#1-scope-and-snapshot)
+2. [Terminology and Invariants](#2-terminology-and-invariants)
+3. [Game Inventory and Classification](#3-game-inventory-and-classification)
+4. [Architecture Families](#4-architecture-families)
+5. [Client Layer Map](#5-client-layer-map)
+6. [Backend Layer Map](#6-backend-layer-map)
+7. [Data Model and Storage Contracts](#7-data-model-and-storage-contracts)
+8. [Lifecycle Flows](#8-lifecycle-flows)
+9. [Authority and Ownership Rules](#9-authority-and-ownership-rules)
+10. [Progression, Rewards, and Stats](#10-progression-rewards-and-stats)
+11. [Navigation, Entry Points, and Post-Game Surfaces](#11-navigation-entry-points-and-post-game-surfaces)
+12. [Sketch Party / Colyseus Case Study](#12-sketch-party--colyseus-case-study)
+13. [Known Inconsistencies and Sharp Edges](#13-known-inconsistencies-and-sharp-edges)
+14. [Testing and Operations Surface](#14-testing-and-operations-surface)
+15. [Preservation Rules for Future Contributors](#15-preservation-rules-for-future-contributors)
 
 ---
 
-## 1. Current Snapshot
+## 1. Scope and Snapshot
 
-The current V4 game system is not one architecture. It is three related patterns living under one product surface.
+The current V4 game system is not one uniform framework. It is three related runtime families sharing a common product shell:
 
-- 22 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
-- 12 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
-- 13 client adapters are registered in `src/gamesV4/adapters/index.ts`.
-- 13 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts`.
-- 13 screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
+- Firebase-driven solo games
+- Firebase-driven turn-based games
+- Hybrid Firebase + Colyseus realtime games, currently only `sketch_party_game`
+
+Current snapshot in this workspace:
+
+- 23 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
+- 13 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
+- 14 client adapters are registered in `src/gamesV4/adapters/index.ts`.
+- 14 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts`.
+- 14 gameplay screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
 - 16 user callables, 2 admin callables, 3 Firestore triggers, and 1 scheduled watchdog job are exported from `firebase-backend/functions/src/gamesV4/index.ts`.
 - 1 standalone realtime server package exists at `colyseus-server/`, and it currently hosts exactly 1 room: `sketch_party`.
-- 14 achievement sections exist today: 13 game sections plus the shared `milestones` section.
+- 14 achievement sections exist in the client mirror: 13 game sections plus the shared `milestones` section.
 
-### Exported V4 Cloud Functions surface
+What this document is for:
+
+- explain the real structure of the current system
+- map shared infrastructure to the actual files that own it
+- document which behaviors are standardized and which are not
+- show how lifecycle, result, reward, and notification flows connect
+- call out the parts of the architecture future contributors must preserve
+
+What this document is not:
+
+- an idealized architecture spec
+- a product roadmap
+- a promise that every catalog game is implemented
+
+### 1.1 Exported V4 Cloud Functions surface
 
 User callables:
 
@@ -74,276 +97,891 @@ Internal exports used by other modules:
 - `resolveRealtimeSessionV4`
 - `resolveSessionV4Internal`
 
----
+### 1.2 High-level system shape
 
-## 2. Game Inventory
+```text
+Catalog / Hub / Chat entry points
+  -> metadata + routing + picker surfaces
+  -> invite or solo session creation
+  -> lobby or direct gameplay
+  -> active session state
+  -> terminal resolution
+  -> result / PB / XP / achievements / leaderboards / wallet claims
 
-This section is intentionally split by implementation state. `GAME_METADATA` contains all 22 catalog entries, but most catalog entries are placeholders only.
+Firebase-backed games:
+  Firestore session docs are live authority during play.
 
-### 2.1 Enabled and wired in the current workspace
-
-| GameId | Runtime in client metadata | Architecture | Status | Notes |
-| --- | --- | --- | --- | --- |
-| `play_2048` | `solo` | Firebase-driven solo | Enabled, fully wired | Standard solo lifecycle. Canonical score-based solo implementation. |
-| `brick_breaker` | `solo` | Firebase-driven solo | Enabled, fully wired | Uses pause registration in `GameScreenShell`; move payload limits in `submitTurnMoveV4` are sized for replay-like arrays. |
-| `minesweeper` | `solo` | Firebase-driven solo | Enabled, fully wired | Uses encoded score values for clear tier plus time. |
-| `solitaire_klondike` | `solo` | Firebase-driven solo | Enabled, fully wired | Standard solo lifecycle, no persistent solo hooks enabled. |
-| `tic_tac_toe` | `turnBased` | Firebase turn-based | Enabled, fully wired | Smallest reference game. |
-| `connect_four` | `turnBased` | Firebase turn-based | Enabled, fully wired | Larger board but same general turn pipeline as Tic Tac Toe. |
-| `chess` | `turnBased` | Firebase turn-based | Enabled, fully wired | Has dedicated engine logic and its own extra test coverage. |
-| `reversi` | `turnBased` | Firebase turn-based | Enabled in current workspace | Uses standard turn-based pipeline. |
-| `dots_and_boxes` | `turnBased` | Firebase turn-based | Enabled in current workspace | Uses standard turn-based pipeline; invite metadata disagrees on `maxPlayers`. |
-| `crazy_eights` | `turnBased` | Firebase turn-based with private state | Enabled, fully wired | Hidden-info card game. Client shell cannot fully validate moves locally because it does not have private state. |
-| `battleship` | `turnBased` | Firebase turn-based with private state | Enabled, but metadata mismatch exists | Client and adapters treat it as turn-based with spectators; backend invite metadata treats it as realtime and non-spectated. |
-| `sketch_party_game` | `realtime` | Hybrid Firebase + Colyseus | Enabled, but realtime bridge issues exist | Live authority sits in Colyseus, not Firestore. Resolution is supposed to re-enter the V4 pipeline via a Firestore bridge. |
-
-### 2.2 Implemented in code but intentionally disabled
-
-| GameId | Runtime in client metadata | Architecture | Status | Notes |
-| --- | --- | --- | --- | --- |
-| `minigolf_duels` | `turnBased` | Firebase turn-based | Adapter-backed but disabled | Client adapter, backend adapter, screen, achievements, and leaderboard config exist. It is commented out in `IMPLEMENTED_GAME_IDS` with `disabled - not working, deferred until ready`. |
-
-### 2.3 Catalog placeholders only
-
-| GameId | Runtime in client metadata | Architecture status | Notes |
-| --- | --- | --- | --- |
-| `bounce_blitz` | `solo` | Catalog placeholder | Metadata only. No adapter or screen. |
-| `word_master` | `solo` | Catalog placeholder | Metadata only. No adapter or screen. |
-| `lights_out` | `solo` | Catalog placeholder | Metadata only. No adapter or screen. |
-| `checkers` | `turnBased` | Catalog placeholder | Metadata only. No adapter or screen. |
-| `gomoku` | `turnBased` | Catalog placeholder | Metadata only. No adapter or screen. |
-| `pong_game` | `realtime` | Catalog placeholder | Metadata only. No room or screen. |
-| `starforge_game` | `realtime` | Catalog placeholder | Metadata only. No room or screen. |
-| `crossword_puzzle` | `realtime` | Catalog placeholder | Metadata only. No room or screen. |
-| `dot_match` | `realtime` | Catalog placeholder | Metadata only. No room or screen. |
-
-### 2.4 Important classification notes
-
-- `sketch_party_game` is the only true Colyseus-backed realtime game in the tree.
-- `battleship` and `minigolf_duels` appear under the "Realtime games" comment block in `src/gamesV4/constants.ts`, but both actually declare `runtimeType: "turnBased"` in client metadata and adapters.
-- `battleship` and `crazy_eights` are the two current hidden-information games using `PrivateState/{uid}` documents.
-- A persistent-solo framework exists in shared types, constants, `GameScreenShell`, and backend `solo.ts`, but no current adapter opts into `supportsOfflineProgression`. That framework should be treated as dormant infrastructure, not a production gameplay pattern.
+Sketch Party:
+  Firebase owns lifecycle and rewards.
+  Colyseus owns live gameplay and reconnect state.
+  Firestore only re-enters at final resolution.
+```
 
 ---
-## 3. Architecture Families
 
-### 3.1 Firebase-driven solo
+## 2. Terminology and Invariants
 
-Used by `play_2048`, `brick_breaker`, `minesweeper`, and `solitaire_klondike`.
+### 2.1 Core terms
+
+| Term          | Meaning                                                             | Where defined                                             |
+| ------------- | ------------------------------------------------------------------- | --------------------------------------------------------- |
+| `GameId`      | Canonical append-only game key                                      | `src/gamesV4/types/common.ts`                             |
+| `runtimeType` | `solo`, `turnBased`, or `realtime`                                  | `src/gamesV4/types/common.ts`, `src/gamesV4/constants.ts` |
+| Invite        | Chat-facing pre-game object                                         | `GameInvitesV4/{inviteId}`                                |
+| Session       | Canonical lifecycle doc for an actual match or run                  | `GameSessionsV4/{sessionId}`                              |
+| Public state  | Shared game state visible to all allowed readers                    | `GameSessionsV4/{sessionId}/PublicState/state`            |
+| Private state | Per-player hidden state                                             | `GameSessionsV4/{sessionId}/PrivateState/{uid}`           |
+| Move doc      | Append-only move ledger entry                                       | `GameSessionsV4/{sessionId}/Moves/{moveId}`               |
+| Result        | Terminal result payload                                             | `GameResultsV4/{sessionId}`                               |
+| PB            | Personal best plus play and win counters                            | `Users/{uid}/GamePB/{gameId}`                             |
+| Achievement   | Earned or claimed achievement doc                                   | `Users/{uid}/Achievements/{type}`                         |
+| Section badge | Claimed completion badge for a section                              | `Users/{uid}/AchievementSections/{sectionId}`             |
+| Presence      | Lightweight foreground presence marker for notification suppression | `Users/{uid}/GamePresence/{sessionId}`                    |
+
+### 2.2 Invariants that must remain true
+
+These are the assumptions the current code depends on.
+
+1. `GameId` values are append-only. Renaming or deleting an existing ID will break documents, routing, PBs, achievements, leaderboards, and history.
+2. `resolveSessionV4Internal()` is the only supported reward and stats chokepoint. Any new terminal path must end there or re-enter through `resolveRealtimeSessionV4()`.
+3. Firebase-driven gameplay uses server-authoritative adapters. The client can be optimistic, but the backend transaction decides legality.
+4. Hidden-information games must not trust client-only validation. The client shell deliberately lacks private state.
+5. Realtime gameplay must authenticate room joins against Firebase state. Sketch Party now does this explicitly in the room.
+6. `GAME_METADATA`, `IMPLEMENTED_GAME_IDS`, adapter metadata, dispatcher mappings, backend invite metadata, leaderboard descriptors, and achievement sections must stay aligned.
+7. Turn notifications apply only to turn-based games.
+8. Solo exit means suspend, not resolve, unless the user explicitly resigns, archives, or restarts.
+
+### 2.3 What is standardized versus game-specific
+
+Standardized across the current system:
+
+- top-level catalog and routing surfaces
+- invite documents and pinned-chat behavior
+- lobby callables and session creation entry points
+- Firestore session and result collections
+- the shared result pipeline for XP, PB, leaderboards, and achievements
+- achievements claim flow and level reward claim flow
+- hub, detail, lobby, gameplay shell, game-over, leaderboard, and stats screens
+
+Game-specific or partially standardized:
+
+- adapter state shape and move semantics
+- lobby settings schema and validation
+- scoreboard semantics and score formatting
+- PB interpretation and leaderboard metric (`wins` vs `bestScore`)
+- game-specific performance metrics
+- realtime room protocol and reconnect rules
+
+---
+
+## 3. Game Inventory and Classification
+
+`GAME_METADATA` contains all 23 catalog entries. That does not mean all 23 are playable.
+
+### 3.1 Enabled and wired in the current workspace
+
+| GameId               | Runtime in metadata | Architecture                        | Integration state             | Notes                                                                             |
+| -------------------- | ------------------- | ----------------------------------- | ----------------------------- | --------------------------------------------------------------------------------- |
+| `play_2048`          | `solo`              | Firebase solo                       | Enabled, complete             | Canonical score-based solo implementation.                                        |
+| `brick_breaker`      | `solo`              | Firebase solo                       | Enabled, complete             | Uses shell pause registration and replay-like move payloads.                      |
+| `minesweeper`        | `solo`              | Firebase solo                       | Enabled, complete             | Score encoding is game-specific.                                                  |
+| `solitaire_klondike` | `solo`              | Firebase solo                       | Enabled, complete             | Uses standard solo lifecycle; persistent mode not enabled.                        |
+| `tic_tac_toe`        | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Smallest reference game.                                                          |
+| `connect_four`       | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Same pipeline as Tic Tac Toe with larger board state.                             |
+| `chess`              | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Has custom engine logic and broader tests.                                        |
+| `reversi`            | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard Firebase turn pipeline.                                                  |
+| `dots_and_boxes`     | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Backend invite metadata drift was fixed; current runtime expects 2 players.       |
+| `crazy_eights`       | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Hidden-info card game; client optimism is intentionally limited.                  |
+| `battleship`         | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Backend invite metadata drift was fixed; validation remains server-authoritative. |
+| `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                        |
+| `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                          |
+
+### 3.2 Implemented but intentionally disabled
+
+| GameId           | Runtime in metadata | Architecture        | Integration state     | Notes                                                                                                                 |
+| ---------------- | ------------------- | ------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `minigolf_duels` | `turnBased`         | Firebase turn-based | Implemented, disabled | Adapter, screen, achievements, and leaderboard config exist, but the game is commented out in `IMPLEMENTED_GAME_IDS`. |
+
+### 3.3 Catalog placeholders only
+
+| GameId             | Runtime in metadata | Current state |
+| ------------------ | ------------------- | ------------- |
+| `bounce_blitz`     | `solo`              | Metadata only |
+| `word_master`      | `solo`              | Metadata only |
+| `lights_out`       | `solo`              | Metadata only |
+| `checkers`         | `turnBased`         | Metadata only |
+| `gomoku`           | `turnBased`         | Metadata only |
+| `pong_game`        | `realtime`          | Metadata only |
+| `starforge_game`   | `realtime`          | Metadata only |
+| `crossword_puzzle` | `realtime`          | Metadata only |
+| `dot_match`        | `realtime`          | Metadata only |
+
+### 3.4 Important classification notes
+
+- `sketch_party_game` is the only true Colyseus-backed realtime game in the repository.
+- `battleship`, `crazy_eights`, and only those two current enabled games use `PrivateState/{uid}` for hidden information.
+- `minigolf_duels` is implemented far enough to appear in multiple registries, which means audit work must distinguish implemented from enabled.
+- A persistent-solo framework exists in metadata, shared types, the shell, and backend solo callables, but no currently enabled game opts into `supportsOfflineProgression` or `soloMode: "persistent"`.
+
+---
+
+## 4. Architecture Families
+
+### 4.1 Firebase-driven solo
+
+Used by:
+
+- `play_2048`
+- `brick_breaker`
+- `minesweeper`
+- `solitaire_klondike`
 
 Characteristics:
 
-- Session authority is Firestore plus Cloud Functions.
-- There is no invite document and no lobby.
-- UI launches from the Games Hub via `resumeOrCreateSoloSessionV4`.
-- `GameScreenShell` handles suspend-on-exit and menu actions.
-- Moves still go through `submitTurnMoveV4`; solo just keeps the same player as the acting participant.
-- Restart and resign flow through backend callables and then through the shared resolution pipeline.
+- no invite doc
+- no lobby screen
+- `resumeOrCreateSoloSessionV4` is the normal launch path from hub and detail
+- `GameScreenShell` owns suspend-on-exit behavior
+- moves still use `submitTurnMoveV4`
+- the result pipeline is identical to multiplayer once the run resolves
 
-### 3.2 Firebase turn-based
+Important nuance:
 
-Used by `tic_tac_toe`, `connect_four`, `chess`, `reversi`, `dots_and_boxes`, `crazy_eights`, `battleship`, and disabled `minigolf_duels`.
+- `GameOverScreenV4` rematch still uses `createSoloSessionV4`, not `resumeOrCreateSoloSessionV4`, so rematch intentionally starts fresh.
+
+### 4.2 Firebase turn-based
+
+Used by:
+
+- `tic_tac_toe`
+- `connect_four`
+- `chess`
+- `reversi`
+- `dots_and_boxes`
+- `crazy_eights`
+- `battleship`
+- `hex`
+- disabled `minigolf_duels`
 
 Characteristics:
 
-- Firestore session documents are the live state machine.
-- Invite and lobby are generic and shared.
-- Client adapters and backend adapters are expected to stay deterministic and aligned.
-- Hidden-information games store per-player state in `PrivateState/{uid}` and rely on server-side validation for authoritative move legality.
-- `GameScreenShell` provides optimistic state for public-state games, but that optimism is intentionally incomplete for hidden-information games.
+- Firestore session docs are the live state machine
+- invite and lobby pipeline is shared
+- moves are submitted through `submitTurnMoveV4`
+- server adapter validation is authoritative
+- results, XP, leaderboards, PBs, achievements, and notifications all come from shared backend code
 
-### 3.3 Hybrid realtime
+### 4.3 Hybrid realtime
 
-Used only by `sketch_party_game` today.
+Used by:
+
+- `sketch_party_game`
 
 Characteristics:
 
-- Firebase still owns invite creation, lobby, session creation, rewards, PBs, leaderboards, achievements, notifications, and final results.
-- Colyseus owns live game authority, socket presence, round timers, scoring, drawing relay, guess checking, and reconnect behavior.
-- Firestore `PublicState/state` is created when the session starts but is not kept in sync during the live match.
-- The end of the match is supposed to flow back into the shared V4 resolution pipeline through a Firestore bridge document.
+- Firebase still owns invite creation, lobby, session creation, PBs, achievements, XP, level rewards, wallet claim flows, notifications, and final results
+- Colyseus owns live state, room presence, timers, scoring, drawing, chat guesses, and reconnect snapshots
+- Firestore public state is bootstrap-only once the room is live
+- the room hands the match back to Firebase by writing a realtime-resolution request document under the session
 
-### 3.4 Persistent solo framework (present but unused)
-
-Implemented in shared abstractions but not active for any current game.
+### 4.4 Persistent solo framework (present but dormant)
 
 Relevant files:
 
+- `src/gamesV4/constants.ts`
 - `src/gamesV4/types/adapter.ts`
 - `src/gamesV4/types/session.ts`
-- `src/gamesV4/constants.ts`
 - `src/gamesV4/components/GameScreenShell.tsx`
 - `firebase-backend/functions/src/gamesV4/solo.ts`
 
-Current reality:
+What exists today:
 
-- The code supports `soloMode`, offline progression, archive-only finalization, and long-lived session policies.
-- No adapter in the current workspace actually sets `supportsOfflineProgression`.
-- Backend `solo.ts` explicitly comments that no current game uses persistent mode.
+- `soloMode`
+- `supportsOfflineProgression`
+- `applyOfflineProgression()` adapter hook
+- `archiveSoloSessionV4`
+- `runStartedAt`, `lastSimulatedAt`, `lastServerSaveAt`
 
----
+What does not exist today:
 
-## 4. Key Files by Layer
+- any enabled production game using those hooks
+- a persistent-solo reference implementation to copy
 
-### 4.1 Client
-
-| Responsibility | Main files |
-| --- | --- |
-| Game catalog and metadata | `src/gamesV4/constants.ts` |
-| Core types | `src/gamesV4/types/` |
-| Adapter registry and runner | `src/gamesV4/adapters/registry.ts`, `src/gamesV4/adapters/gameRunner.ts`, `src/gamesV4/adapters/index.ts` |
-| Firebase service wrappers | `src/gamesV4/services/gameServiceV4.ts` |
-| Realtime client service | `src/gamesV4/services/sketchPartyClient.ts` |
-| Session shell | `src/gamesV4/components/GameScreenShell.tsx` |
-| Lobby and game subscriptions | `src/gamesV4/hooks/` |
-| Chat-linked entry points | `src/screens/chat/ChatScreen.tsx`, `src/screens/groups/GroupChatScreen.tsx`, `src/gamesV4/components/PinnedInviteBar.tsx`, `src/gamesV4/components/GamePickerModal.tsx` |
-| Route registration | `src/navigation/RootNavigator.tsx` |
-| Game dispatcher | `src/gamesV4/screens/GamePlayDispatcherV4.tsx` |
-| Hub, detail, over, stats, achievements | `src/gamesV4/screens/` |
-
-### 4.2 Firebase backend
-
-| Responsibility | Main files |
-| --- | --- |
-| Export surface | `firebase-backend/functions/src/gamesV4/index.ts` |
-| Server adapters and serialization | `firebase-backend/functions/src/gamesV4/adapters.ts` |
-| Invite creation | `firebase-backend/functions/src/gamesV4/invites.ts` |
-| Lobby join/leave/start/settings | `firebase-backend/functions/src/gamesV4/lobby.ts` |
-| Turn submission and resign | `firebase-backend/functions/src/gamesV4/sessions.ts` |
-| Solo lifecycle | `firebase-backend/functions/src/gamesV4/solo.ts` |
-| Resolution pipeline | `firebase-backend/functions/src/gamesV4/resolve.ts` |
-| Achievements | `firebase-backend/functions/src/gamesV4/achievements.ts` |
-| Notifications | `firebase-backend/functions/src/gamesV4/notifications.ts` |
-| Level rewards | `firebase-backend/functions/src/gamesV4/levelRewardsV4.ts` |
-| Achievement claiming | `firebase-backend/functions/src/gamesV4/claimAchievement.ts`, `firebase-backend/functions/src/gamesV4/claimSectionBadge.ts` |
-| Triggers and watchdog | `firebase-backend/functions/src/gamesV4/triggers.ts`, `firebase-backend/functions/src/gamesV4/watchdog.ts` |
-
-### 4.3 Colyseus server
-
-| Responsibility | Main files |
-| --- | --- |
-| Server bootstrap | `colyseus-server/src/index.ts` |
-| Sketch Party room authority | `colyseus-server/src/rooms/SketchPartyRoom.ts` |
-| Sketch Party scoring helpers | `colyseus-server/src/data/scoring.ts` |
-| Sketch Party word bank and hint helpers | `colyseus-server/src/data/wordBank.ts` |
-| Firebase resolution bridge | `colyseus-server/src/bridge/firebaseBridge.ts` |
+Treat this as dormant infrastructure, not a fully exercised production pattern.
 
 ---
 
-## 5. Core Flows
+## 5. Client Layer Map
 
-### 5.1 Multiplayer Firebase flow
+### 5.1 Catalog and metadata
 
-1. Chat user taps the game button in `ChatScreen` or `GroupChatScreen`.
-2. `GamePickerModal` lists games from `GAME_METADATA`, dimming any `gameId` not in `IMPLEMENTED_GAME_IDS`.
-3. Client calls `createGameInviteV4` through `createGameInvite()`.
-4. Backend writes `GameInvitesV4/{inviteId}` and pins the invite id into `Chats/{id}.pinnedGameInviteIds` or `Groups/{id}.pinnedGameInviteIds`.
-5. `PinnedInviteBar` subscribes to pinned ids and per-invite documents, then routes taps to `GameLobbyV4`, `GamePlayV4`, or `GameOverV4` based on invite status.
-6. Lobby uses `joinInviteLobbyV4`, `leaveInviteLobbyV4`, `updateLobbySettingsV4`, and `startGameFromInviteV4`.
-7. `startGameFromInviteV4` creates `GameSessionsV4/{sessionId}`, `PublicState/state`, any initial `PrivateState/{uid}` docs, and flips the invite to `active`.
-8. `GamePlayDispatcherV4` routes `gameId` to the screen, and the screen is wrapped by `withGameV4Shell(...)`.
-9. For Firebase-driven games, gameplay goes through `submitTurnMoveV4` and optionally `resignSessionV4`.
-10. Any terminal path calls `resolveSessionV4Internal`, which writes `GameResultsV4`, leaderboards, PBs, XP, achievements, rewards, and notifications.
-11. `GameScreenShell` waits 1.5 seconds after terminal state and then replaces the screen with `GameOverV4`.
+Primary file:
 
-### 5.2 Solo flow
+- `src/gamesV4/constants.ts`
 
-The solo launch path is not uniform across all entry points.
+Owns:
 
-Current behavior:
+- `GAME_METADATA`
+- `IMPLEMENTED_GAME_IDS`
+- `GAME_DESCRIPTIONS`
+- `SCOREBOARD_DESCRIPTORS`
+- `LEADERBOARD_DESCRIPTORS`
+- collection path helpers
+- lifecycle-policy helpers such as `getGameLifecyclePolicy()` and `isPersistentSoloGame()`
 
-- `GamesHubScreenV4` uses `resumeOrCreateSoloSessionV4`.
-- `GameDetailScreenV4` still uses `createSoloSessionV4` directly, so it always starts a fresh run.
-- `GameOverScreenV4` rematch for solo also uses `createSoloSessionV4`.
+Why it matters:
 
-During active play:
+- the hub, picker, detail screen, game-over screen, and leaderboard UI all derive basic behavior from this file
+- it is not the only source of metadata in the system; backend `invites.ts` still carries its own `GAME_META` map
 
-- `GameScreenShell` writes `Users/{uid}/GamePresence/{sessionId}` for notification suppression.
-- Back on solo screens calls `suspendSoloSessionV4` and navigates away without resolving the session.
-- Restart uses `restartSoloSessionV4`.
-- Resign uses `resignSessionV4`.
-- Archive exists in the API surface for persistent solo but is not used by current adapters.
+### 5.2 Types and contracts
 
-### 5.3 Realtime Sketch Party flow
+Primary files:
 
-1. Invite and lobby use the same Firebase pipeline as other multiplayer games.
-2. `startGameFromInviteV4` creates a Firebase session with `runtimeType` copied from the invite and seeds a minimal initial public state via the `sketchParty` adapter.
-3. `SketchPartyScreenV4` mounts inside `GameScreenShell` but immediately opens a Colyseus socket via `joinSketchPartyRoom(sessionId, uid, displayName, token, settings)`.
-4. Live state comes from Colyseus `state_sync`, `board_snapshot`, `chat`, `reaction_event`, `word_choices`, `turn_scores`, and `word_reveal` messages.
-5. The screen does not use `submitTurnMoveV4` for live gameplay.
-6. At match end, `SketchPartyRoom` computes the scoreboard and calls the Firebase bridge, which is supposed to trigger backend resolution.
-7. Shared V4 resolution should then write the normal `GameResultsV4`, XP, PBs, achievements, leaderboard entries, and notifications.
+- `src/gamesV4/types/common.ts`
+- `src/gamesV4/types/adapter.ts`
+- `src/gamesV4/types/session.ts`
+- `src/gamesV4/types/result.ts`
+- `src/gamesV4/types/invite.ts`
+- `src/gamesV4/types/notification.ts`
 
-Important realtime caveat:
+Important client contracts:
 
-- Firestore session/public-state documents are not the live source of truth once the room starts. During a Sketch Party match, the actual round state exists only in Colyseus memory and client-local React state.
+- `GameAdapterV4`
+- `GameSessionV4`
+- `GameResultV4`
+- `MoveValidationResult`
+- `SettingsFieldDef`
+
+The docs must follow these types, not older conceptual interfaces.
+
+### 5.3 Adapter registry and runner
+
+Primary files:
+
+- `src/gamesV4/adapters/registry.ts`
+- `src/gamesV4/adapters/gameRunner.ts`
+- `src/gamesV4/adapters/index.ts`
+
+Responsibilities:
+
+- register adapters by `gameId`
+- create initial public and private state on the client side
+- run optimistic move validation against public state
+- expose adapter-driven summaries and outcomes where used by the shell or screens
+
+Important nuance:
+
+- the client runner is a convenience layer, not authority
+- hidden-info games cannot be fully validated locally because the shell passes an empty private-state map
+
+### 5.4 Shared gameplay shell
+
+Primary file:
+
+- `src/gamesV4/components/GameScreenShell.tsx`
+
+This component is one of the most important pieces in the system. It does more than layout.
+
+Responsibilities:
+
+- subscribe to session and public state through `useGameSessionV4()`
+- write and clean up `Users/{uid}/GamePresence/{sessionId}`
+- provide runtime-specific chrome, exit actions, and destructive confirmations
+- maintain optimistic public-state overlays for Firebase-driven games
+- suppress known transient permission errors during resolution via the hook
+- auto-navigate to `GameOverV4` after terminal state detection
+- expose `registerSoloPause()` so solo games with timers or loops can freeze before suspend
+
+Behavior future contributors often miss:
+
+- back behavior is runtime-specific, not uniform
+- solo exit suspends, multiplayer does not
+- optimistic local move application is only for public state, not private state
+- terminal navigation is delayed so the final move can be seen briefly
+
+### 5.5 Service layer
+
+Primary file:
+
+- `src/gamesV4/services/gameServiceV4.ts`
+
+Responsibilities:
+
+- wrap all callable invocations
+- subscribe to session, public state, private state, results, invites, PBs, achievements, and level rewards
+- implement friends-leaderboard reads through PB docs
+- expose active-solo-session discovery for hub resume affordances
+
+Important behavior in the service layer:
+
+- nested array deserialization is client-side because Firestore rejects native nested arrays from the backend
+- some solo callables still have fallback behavior if a function is not deployed, so this layer contains compatibility behavior as well as normal runtime code
+- `subscribeToActiveSoloSessions()` currently selects the freshest active solo session per game by comparing `soloSuspendedAt`, `lastServerSaveAt`, `lastSimulatedAt`, `runStartedAt`, `startedAt`, and `createdAt`
+
+### 5.6 Hooks that matter most
+
+| Hook                                 | File                                     | What it actually owns                                                                            |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `useGameSessionV4()`                 | `src/gamesV4/hooks/useGameSessionV4.ts`  | active session, public state, result subscription, move and resign actions                       |
+| `useGameLobbyV4()`                   | `src/gamesV4/hooks/useGameLobbyV4.ts`    | invite subscription, auto-subscribe to session once invite becomes active, lobby action wrappers |
+| `usePinnedInvites()`                 | `src/gamesV4/hooks/usePinnedInvites.ts`  | conversation pin subscription plus per-invite subscriptions                                      |
+| `useLeaderboardV4()`                 | `src/gamesV4/hooks/useLeaderboardV4.ts`  | current week key and live leaderboard subscription                                               |
+| `useAchievementsV4()`                | `src/gamesV4/hooks/useAchievementsV4.ts` | live achievements subscription                                                                   |
+| `useGamePBV4()` / `useGameStatsV4()` | `src/gamesV4/hooks/useGameStatsV4.ts`    | PB and stats reads for detail and stats screens                                                  |
+| `useWallet()`                        | `src/hooks/useWallet.ts`                 | wallet balance and optional transaction feed                                                     |
+| `usePendingRewards()`                | `src/hooks/usePendingRewards.ts`         | aggregated count and value of unclaimed achievements and level rewards                           |
+
+### 5.7 Screen stack and primary product surfaces
+
+Primary game-system screens:
+
+- `src/gamesV4/screens/GamesHubScreenV4.tsx`
+- `src/gamesV4/screens/GameDetailScreenV4.tsx`
+- `src/gamesV4/screens/GameLobbyScreenV4.tsx`
+- `src/gamesV4/screens/GamePlayDispatcherV4.tsx`
+- `src/gamesV4/screens/GameOverScreenV4.tsx`
+- `src/gamesV4/screens/GameLeaderboardScreenV4.tsx`
+- `src/gamesV4/screens/GameStatsScreenV4.tsx`
+- `src/gamesV4/screens/AchievementsHubScreen.tsx`
+- `src/gamesV4/screens/AchievementSectionScreen.tsx`
+- `src/gamesV4/screens/LevelRewardsScreen.tsx`
+
+Important entry components outside `src/gamesV4/screens/`:
+
+- `src/gamesV4/components/GamePickerModal.tsx`
+- `src/gamesV4/components/PinnedInviteBar.tsx`
+- `src/gamesV4/components/ConversationPickerModal.tsx`
+- `src/screens/chat/ChatScreen.tsx`
+- `src/screens/groups/GroupChatScreen.tsx`
+- `src/navigation/RootNavigator.tsx`
 
 ---
-## 6. Runtime Comparison
 
-| Dimension | Solo | Turn-based | Realtime (`sketch_party_game`) |
-| --- | --- | --- | --- |
-| Live authority | Firestore + Cloud Functions | Firestore + Cloud Functions | Colyseus room memory |
-| Transport | Firestore snapshots + callables | Firestore snapshots + callables | Colyseus socket messages, plus Firebase for lifecycle and resolution |
-| Live state source in UI | `useGameSessionV4().publicState` | `useGameSessionV4().publicState` | Colyseus `roomState`; Firebase public state is bootstrap-only |
-| Primary action path | `submitTurnMoveV4` | `submitTurnMoveV4` | Custom room messages |
-| Invite/lobby | No invite, no lobby | Shared V4 invite and lobby | Shared V4 invite and lobby |
-| Resume behavior | Hub uses resume-or-create, detail page does not | Re-open via invite chip or deep link | Rejoin room by `sessionId`; reconnect behavior is room-defined |
-| Exit behavior in `GameScreenShell` | Suspend on back, restart/resign in menu | Back leaves non-destructively, resign is explicit | Destructive leave confirmation |
-| Spectators | No | Generic support exists; individual games opt in | Not supported in current room |
-| Notifications | No turn notifications, shared result/achievement notifications | Shared turn, result, and achievement notifications | Shared result and achievement notifications; turn notifications do not apply |
-| Hidden-info support | N/A in current solo set | Yes, via `PrivateState/{uid}` for Battleship and Crazy Eights | Not implemented |
+## 6. Backend Layer Map
+
+### 6.1 Backend adapters and serialization
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/adapters.ts`
+
+Responsibilities:
+
+- register server adapters
+- run authoritative move validation and outcome computation
+- serialize and deserialize nested arrays for Firestore
+- create initial public and private state on session creation
+
+Important nuance:
+
+- server adapters must stay logically aligned with client adapters, but only the server is authoritative
+- nested-array serialization is a backend concern because Firestore rejects 2D arrays directly
+
+### 6.2 Invite creation
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/invites.ts`
+
+Responsibilities:
+
+- validate auth and conversation membership
+- enforce invite creation cooldowns
+- validate the requested game against backend metadata
+- create `GameInvitesV4/{inviteId}`
+- pin the invite to the DM or group document
+- notify conversation members
+
+Important caveat:
+
+- this file still contains a duplicated `GAME_META` map. It is aligned today, but it is still a second metadata registry that can drift.
+
+### 6.3 Lobby management
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/lobby.ts`
+
+Responsibilities:
+
+- `joinInviteLobbyV4`
+- `leaveInviteLobbyV4`
+- `cancelGameInviteV4`
+- `updateLobbySettingsV4`
+- `startGameFromInviteV4`
+
+Key behavior worth documenting:
+
+- join verifies conversation membership before the transaction
+- host-only start creates the session and initial state atomically
+- lobby settings are adapter-validated when `validateSettings()` exists
+- host cannot leave the lobby; host must cancel
+- spectators are generic at the lobby level, but actual gameplay support still depends on game metadata and adapter design
+
+### 6.4 Session actions
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/sessions.ts`
+
+Responsibilities:
+
+- `submitTurnMoveV4`
+- `resignSessionV4`
+- `resolveRealtimeSessionV4` bridge entry for Colyseus-triggered resolution
+
+Important details:
+
+- `submitTurnMoveV4` sanitizes large move payloads with higher limits than default because some solo games send replay-like arrays
+- the session transaction reads both public state and all player private-state docs before validating a move
+- turn advancement can come from adapter-provided `nextTurnPlayerId`, not only round-robin logic
+- invite summaries are updated in the same transaction for Firebase games
+
+### 6.5 Solo lifecycle
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/solo.ts`
+
+Responsibilities:
+
+- `createSoloSessionV4`
+- `resumeOrCreateSoloSessionV4`
+- `restartSoloSessionV4`
+- `suspendSoloSessionV4`
+- `archiveSoloSessionV4`
+
+Important current reality:
+
+- standard solo is live and exercised
+- persistent solo is implemented as dormant infrastructure
+- resume logic intentionally scans recent active sessions and filters in memory by `gameId` and `runtimeType` to avoid needing a larger composite index
+- persistent offline-progression logic exists, but no enabled game uses it
+
+### 6.6 Resolution pipeline
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/resolve.ts`
+
+This file is the core of the ecosystem.
+
+`resolveSessionV4Internal()` currently performs:
+
+1. atomic session status transition to `resolved`
+2. invite transition to `resolved` plus delete timestamps
+3. scoreboard and metrics computation
+4. result doc write
+5. XP application and level reward unlocks
+6. leaderboard updates
+7. PB updates
+8. invite unpin
+9. `rewardsProcessed` finalization
+10. achievement and resolved notifications
+
+Important design implications:
+
+- if a game ends and does not arrive here, PBs, leaderboards, XP, achievements, and wallet-claim surfaces will diverge
+- even realtime games must re-enter here through `resolveRealtimeSessionV4()`
+
+### 6.7 Notifications
+
+Primary file:
+
+- `firebase-backend/functions/src/gamesV4/notifications.ts`
+
+Responsibilities:
+
+- invite-created pushes
+- lobby-join pushes to the host
+- turn notifications for turn-based games only
+- resolved-game pushes
+- achievement in-app notifications
+- in-app notification document writes to `Users/{uid}/InAppNotificationsV4/{id}`
+
+Important gating behavior:
+
+- mute state is respected for pushes
+- self-notifications are filtered
+- turn pushes are skipped when `GamePresence` is fresh
+- achievement notifications are in-app only, not push
+
+### 6.8 Triggers and watchdog
+
+Primary files:
+
+- `firebase-backend/functions/src/gamesV4/triggers.ts`
+- `firebase-backend/functions/src/gamesV4/watchdog.ts`
+
+Trigger responsibilities:
+
+- defensive invite unpin on hard delete
+- defensive invite-status sync on session status change
+- realtime resolution bridge from Firestore document to shared resolve pipeline
+
+Watchdog responsibilities:
+
+- expire stale lobbies
+- delete resolved invites past TTL
+- retry reward processing when `rewardsProcessed` is still false
+- auto-resolve stale turn-based sessions after inactivity
+
+Important caveat:
+
+- watchdog auto-resolution intentionally skips solo and realtime sessions
 
 ---
 
-## 7. Data Model and Authority Boundaries
+## 7. Data Model and Storage Contracts
 
-### 7.1 Collections that matter to the game system
+### 7.1 Collections that matter most
 
-| Path | Writer | Purpose |
-| --- | --- | --- |
-| `GameInvitesV4/{inviteId}` | Cloud Functions | Chat-facing invite and lobby state |
-| `GameSessionsV4/{sessionId}` | Cloud Functions | Canonical session lifecycle doc |
-| `GameSessionsV4/{sessionId}/PublicState/state` | Cloud Functions | Public gameplay state for Firebase-driven games |
-| `GameSessionsV4/{sessionId}/PrivateState/{uid}` | Cloud Functions | Private player state for hidden-information games |
-| `GameSessionsV4/{sessionId}/Moves/{moveId}` | Client create + Cloud Functions update | Move ledger for Firebase-driven games |
-| `GameResultsV4/{sessionId}` | `resolveSessionV4Internal` | Final result payload |
-| `LeaderboardsV4/{gameId}/Weeks/{weekKey}/Entries/{uid}` | `resolveSessionV4Internal` | Weekly leaderboard entries |
-| `Users/{uid}/GamePB/{gameId}` | `resolveSessionV4Internal` | Personal bests and lifetime counters |
-| `Users/{uid}/Achievements/{type}` | `resolveSessionV4Internal` and claim callables | Achievement earn and claim state |
-| `Users/{uid}/AchievementSections/{sectionId}` | `claimAchievementSectionBadgeV4` | Section badge claim state |
-| `Users/{uid}/LevelRewardsV4/{level}` | XP pipeline and claim callables | Unclaimed and claimed level rewards |
-| `Users/{uid}/InAppNotificationsV4/{id}` | Backend notification writers | Game turn and achievement notifications |
-| `Users/{uid}/GamePresence/{sessionId}` | Client shell | Presence gating for notifications |
-| `Wallets/{uid}` | Claim callables | Token balance |
-| `Transactions/{txId}` | Claim callables and economy backend | Wallet audit ledger |
+| Path                                                    | Primary writer                            | Purpose                                                                |
+| ------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| `GameInvitesV4/{inviteId}`                              | Cloud Functions                           | chat-facing invite and lobby state                                     |
+| `GameSessionsV4/{sessionId}`                            | Cloud Functions                           | canonical lifecycle doc                                                |
+| `GameSessionsV4/{sessionId}/PublicState/state`          | Cloud Functions                           | live public state for Firebase games, bootstrap state for Sketch Party |
+| `GameSessionsV4/{sessionId}/PrivateState/{uid}`         | Cloud Functions                           | hidden state for Battleship and Crazy Eights                           |
+| `GameSessionsV4/{sessionId}/Moves/{moveId}`             | client create + Cloud Functions update    | move ledger                                                            |
+| `GameResultsV4/{sessionId}`                             | resolution pipeline                       | terminal payload used by game-over, history, PB, and reward surfaces   |
+| `LeaderboardsV4/{gameId}/Weeks/{weekKey}/Entries/{uid}` | resolution pipeline                       | weekly leaderboard entry                                               |
+| `Users/{uid}/GamePB/{gameId}`                           | resolution pipeline                       | PB plus `totalPlays` and `totalWins`                                   |
+| `Users/{uid}/Achievements/{type}`                       | resolution pipeline + claim callable      | achievement earn and claim state                                       |
+| `Users/{uid}/AchievementSections/{sectionId}`           | section-badge claim callable              | section completion badge claim state                                   |
+| `Users/{uid}/LevelRewardsV4/{level}`                    | XP pipeline + claim callable              | unlocked and claimed level rewards                                     |
+| `Users/{uid}/GamePresence/{sessionId}`                  | client shell                              | in-game foreground presence                                            |
+| `Users/{uid}/InAppNotificationsV4/{id}`                 | backend notification writers              | foreground banners and inbox-style notification data                   |
+| `Wallets/{uid}`                                         | claim callables and economy backend       | token balance                                                          |
+| `Transactions/{txId}`                                   | claim callables and other economy writers | wallet audit ledger                                                    |
 
-### 7.2 Authority boundaries that are easy to misunderstand
+### 7.2 Session document fields that drive behavior
 
-- For Firebase-driven games, `GameSessionsV4` plus `PublicState` plus `PrivateState` are the live authoritative state.
-- For Sketch Party, `GameSessionsV4/PublicState/state` is only a bootstrap artifact. Live round state is not mirrored back into Firestore.
-- `GameScreenShell` does local optimistic validation against public state only. It intentionally does not have access to private player state.
-- `resolveSessionV4Internal` is the single reward and stats chokepoint for all completed games, including the intended realtime path.
+Fields that matter most in `GameSessionV4`:
 
-### 7.3 Hidden-information pattern
+- `runtimeType`
+- `status`
+- `players`
+- `participantUids`
+- `spectatorUids`
+- `turnOrder`
+- `currentTurnIndex`
+- `currentTurnPlayerId`
+- `scoreboardSummary`
+- `settings`
+- `rewardsProcessed`
+- `resolution`
+- `soloSuspendedAt`
+- persistent-solo fields such as `soloMode`, `lastSimulatedAt`, `runStartedAt`, and `lastServerSaveAt`
 
-Current hidden-information games:
+Two common mistakes:
+
+- assuming `players` alone is enough for queries or rules; the backend also maintains `participantUids`
+- assuming `currentTurnPlayerId` is meaningful for realtime games; for realtime it is usually `null`
+
+### 7.3 Public versus private state
+
+Firebase-driven public state:
+
+- used for rendering boards or solo state in the shell
+- stored under `PublicState/state`
+- deserialized on the client because nested arrays are encoded by the backend
+
+Private state:
+
+- only exists when an adapter returns `createInitialPrivateState()` or later updates it
+- read by the server transaction in `submitTurnMoveV4`
+- not fed into client optimism by the shell
+
+### 7.4 Result document shape and downstream uses
+
+`GameResultsV4/{sessionId}` is the doc that powers:
+
+- `GameOverScreenV4`
+- game history in `GameDetailScreenV4`
+- recent history in `GameStatsScreenV4`
+- some achievement logic via stored metrics
+- push and in-app resolved notifications
+
+Fields that most downstream consumers care about:
+
+- `resolutionType`
+- `winnerIds`
+- `scoreboard`
+- `xpAwards`
+- `achievementUnlocks`
+- `leaderboardUpdates`
+- `durationMs`
+- `totalMoves`
+- `performanceMetrics`
+
+### 7.5 Data that is intentionally denormalized
+
+Examples:
+
+- `participantUids` and `spectatorUids` in the session doc
+- `displayName`, `profilePictureUrl`, and `avatarConfig` snapshots inside result scoreboard entries
+- invite `participantSummaries` and `spectatorSummaries`
+
+Why it exists:
+
+- Firestore rules cannot iterate lists of maps well
+- UI surfaces need stable snapshots even if a profile changes later
+- invite bars and lobbies need names without N extra profile reads
+
+### 7.6 Firestore state in realtime games
+
+This is one of the easiest places to make a wrong assumption.
+
+For Sketch Party:
+
+- `GameSessionsV4/{sessionId}` is still authoritative for membership, lifecycle, and final resolution eligibility
+- `PublicState/state` is not live-authoritative during the match
+- live phase, timer, word-choice, stroke, and chat state lives in Colyseus room memory only
+
+Any future feature that reads only Firestore during a realtime match will see stale state.
+
+---
+
+## 8. Lifecycle Flows
+
+### 8.1 Multiplayer Firebase flow
+
+```text
+ChatScreen or GroupChatScreen
+  -> GamePickerModal
+  -> createGameInviteV4
+  -> GameInvitesV4/{inviteId}
+  -> pin invite id into Chats/Groups doc
+  -> PinnedInviteBar and GamesHub show active invite
+  -> GameLobbyV4
+  -> joinInviteLobbyV4 / updateLobbySettingsV4 / startGameFromInviteV4
+  -> GameSessionsV4/{sessionId} + PublicState/state (+ PrivateState/* if needed)
+  -> GamePlayV4 -> game screen inside GameScreenShell
+  -> submitTurnMoveV4 / resignSessionV4
+  -> resolveSessionV4Internal
+  -> GameResultsV4/{sessionId}
+  -> GameOverV4
+```
+
+Important screen behavior within that flow:
+
+- `PinnedInviteBar` routes by invite status: lobby, gameplay, or game over
+- `GameLobbyScreenV4` auto-replaces itself with `GamePlayV4` when the session becomes active
+- `GameScreenShell` auto-replaces gameplay with `GameOverV4` after terminal detection
+
+### 8.2 Solo flow
+
+```text
+GamesHubScreenV4 or GameDetailScreenV4
+  -> resumeOrCreateSoloSessionV4
+  -> GameSessionsV4/{sessionId} with no invite
+  -> GamePlayV4 inside GameScreenShell
+  -> submitTurnMoveV4
+  -> suspendSoloSessionV4 on back
+  -> restartSoloSessionV4 or resignSessionV4 from menu
+  -> resolveSessionV4Internal when terminal
+  -> GameResultsV4/{sessionId}
+  -> GameOverV4
+```
+
+Current entry-point behavior:
+
+- hub launch is resume-aware
+- detail launch is now also resume-aware
+- solo rematch from game over is intentionally fresh, not resume-aware
+
+### 8.3 Game Detail flow
+
+Current multiplayer detail behavior is more capable than older docs implied.
+
+`GameDetailScreenV4` can:
+
+- show the standard six detail sections
+- open `ConversationPickerModal`
+- call `createGameInvite()` directly from the detail screen
+- route the user back into the selected DM or group after the invite is created
+
+So the current system supports both:
+
+- chat-first invite creation via the gamepad button
+- detail-first invite creation via the conversation picker
+
+### 8.4 Lobby flow
+
+```text
+Invite doc exists
+  -> lobby screen subscribes to invite
+  -> join as player or spectator
+  -> host may edit validated lobby settings
+  -> host starts game
+  -> session created and invite marked active
+  -> lobby auto-navigates into gameplay
+```
+
+Important lobby details:
+
+- host cancel and admin clear are available from the overflow menu
+- cancelled or hard-deleted invites force the lobby to navigate back
+- read-only settings still render for non-host players and spectators when supported by the panel
+
+### 8.5 Result and reward write flow
+
+```text
+Terminal condition detected
+  -> resolveSessionV4Internal
+     -> mark session resolved
+     -> mark invite resolved and set TTL fields
+     -> compute scoreboard and metrics
+     -> write GameResultsV4
+     -> apply XP and unlock level rewards
+     -> write achievements earned_unclaimed docs
+     -> update weekly leaderboard entry
+     -> update PB totals and pbValue if needed
+     -> unpin invite
+     -> mark rewardsProcessed
+     -> write achievement in-app notifications
+     -> send resolved notifications
+```
+
+This shared flow is why a broken resolve path affects almost every downstream system at once.
+
+### 8.6 Realtime Sketch Party flow
+
+```text
+Firebase invite and lobby flow
+  -> startGameFromInviteV4 creates realtime session doc
+  -> SketchPartyScreenV4 joins Colyseus room using Firebase token
+  -> room verifies token and Firebase session membership
+  -> room waits for full expected participant roster
+  -> choosing -> drawing -> turn_end loop
+  -> room computes final scoreboard
+  -> room writes GameSessionsV4/{sessionId}/internal/realtimeResolution
+  -> onRealtimeResolutionRequest trigger
+  -> resolveRealtimeSessionV4
+  -> resolveSessionV4Internal
+  -> normal GameResultsV4 / XP / PB / achievements / leaderboards
+```
+
+### 8.7 Reconnect and resume flows
+
+Solo resume:
+
+- `resumeOrCreateSoloSessionV4` finds an existing active solo session for that `gameId`
+- clears `soloSuspendedAt`
+- returns `resumed: true`
+
+Firebase multiplayer re-entry:
+
+- user can re-enter from a pinned invite, hub active invite card, or deep link
+- live state comes back from Firestore listeners
+
+Sketch Party reconnect:
+
+- user rejoins the room by `sessionId`
+- room identifies reconnect by `uid`
+- client receives personalized `state_sync`, `settings_applied`, `board_snapshot`, and pending `word_choices` if applicable
+
+---
+
+## 9. Authority and Ownership Rules
+
+### 9.1 Who owns what in Firebase games
+
+Client owns:
+
+- local rendering
+- optimistic public-state overlay
+- move intent submission
+- presence doc lifecycle
+
+Backend owns:
+
+- move legality
+- authoritative public and private state updates
+- turn advancement
+- session resolution
+- XP, PB, leaderboard, and achievement writes
+- invite summary state
+
+### 9.2 Who owns what in Sketch Party
+
+Client owns:
+
+- local canvas interaction and message sending
+- room event handling and UI state rendering
+
+Colyseus room owns:
+
+- live phase state
+- timers
+- drawing stroke history and replay buffer
+- guess validation
+- round scoring
+- disconnect consequences
+- reconnect snapshots
+- final realtime scoreboard payload
+
+Firebase backend still owns:
+
+- who is allowed to be in the session at all
+- rewards, PBs, achievements, leaderboards, and final result persistence
+
+### 9.3 Hidden-information authority model
+
+Current hidden-info games:
 
 - `battleship`
 - `crazy_eights`
 
-Implications:
+Design implication:
 
-- The client shell passes `{}` as `privateStateByPlayer` during optimistic local validation.
-- Those games still submit the move even when local validation cannot fully prove legality.
-- The server transaction reads `PrivateState/{uid}` and performs the authoritative validation.
-- This is a deliberate architecture compromise, not a bug in those adapters.
+- `GameScreenShell` passes `{}` for `privateStateByPlayer` during optimistic validation
+- those games cannot rely on client-only validation for correctness
+- the server transaction reads real private state and decides legality
+
+This is intentional. It is not a bug in the shell.
+
+### 9.4 Session ownership rules
+
+- session host is captured in `hostId`
+- only the host can start a lobby-backed session
+- only participants can submit moves or resign
+- spectators can watch only when the invite and adapter allow it
+- lobby membership comes from invite docs; active gameplay membership comes from session docs
+- in Sketch Party, room membership is additionally checked against Firebase `participantUids`
 
 ---
 
-## 8. Leaderboards, Achievements, XP, and Wallet
+## 10. Progression, Rewards, and Stats
 
-### 8.1 Leaderboard metrics currently configured in the backend
+### 10.1 Main score semantics
+
+The system does not use one universal meaning for `score`.
+
+| Game type             | What `scoreboard[].score` means                                         |
+| --------------------- | ----------------------------------------------------------------------- |
+| win/loss board games  | usually `1` for winner and `0` for loser, or adapter-defined equivalent |
+| best-score solo games | actual numeric score                                                    |
+| Sketch Party          | cumulative realtime points from drawing and guessing                    |
+| some solo games       | game-specific encoded or derived numeric values                         |
+
+Implication:
+
+- leaderboard configuration and scoreboard formatting must be treated separately
+- PB docs do not always mean high score; for wins-based games they primarily store counters
+
+### 10.2 Leaderboards
+
+Client descriptor source:
+
+- `src/gamesV4/constants.ts`
+
+Backend metric source:
+
+- `firebase-backend/functions/src/gamesV4/types.ts`
+
+Current metrics:
 
 Wins-based:
 
@@ -358,55 +996,218 @@ Wins-based:
 Best-score-based:
 
 - `play_2048`
-- `sketch_party_game`
 - `brick_breaker`
-- `minigolf_duels`
 - `minesweeper`
 - `solitaire_klondike`
+- `sketch_party_game`
+- `minigolf_duels`
 
-Files:
+How writes happen:
 
-- `src/gamesV4/constants.ts`
-- `firebase-backend/functions/src/gamesV4/types.ts`
+- during resolution only
+- current week key is computed backend-side with `currentWeekKey()`
+- wins-based games increment only winners
+- best-score games store running max
 
-### 8.2 Achievement sections currently present
+Friends leaderboard source:
 
-| Section | Count of definitions in client mirror | Notes |
-| --- | --- | --- |
-| `tic_tac_toe` | 4 | Game-specific |
-| `connect_four` | 4 | Game-specific |
-| `play_2048` | 5 | Game-specific |
-| `chess` | 16 | Game-specific |
-| `sketch_party` | 13 | Section id does not equal the game id `sketch_party_game` |
-| `battleship` | 16 | Game-specific |
-| `brick_breaker` | 19 | Game-specific |
-| `crazy_eights` | 17 | Game-specific |
-| `minigolf_duels` | 13 | Definitions exist even though the game is disabled |
-| `minesweeper` | 18 | Game-specific |
-| `solitaire_klondike` | 14 | Game-specific |
-| `reversi` | 14 | Game-specific |
-| `dots_and_boxes` | 18 | Game-specific |
-| `milestones` | 9 | Cross-game |
+- not the weekly leaderboard collection
+- instead uses PB docs through `fetchFriendsLeaderboard()`
+- reads `totalWins` for wins-based games and `pbValue` for best-score games
 
-Files:
+### 10.3 Personal bests and stats cache
+
+PB docs live at:
+
+- `Users/{uid}/GamePB/{gameId}`
+
+They are used for:
+
+- detail-screen progress cards
+- friends leaderboards
+- total-play and total-win counters for achievements
+
+Stats cache lives at:
+
+- `Users/{uid}/UserStatsCache/stats`
+
+It is used for:
+
+- cross-game counters such as total games played and total games won
+- milestone achievements
+
+Important nuance:
+
+- PB updates and stats increments are done in the backend result pipeline, not at move time
+- achievements evaluate against pre-incremented counters so milestone unlocks fire on the correct match
+
+### 10.4 Achievements
+
+Client definition mirror:
 
 - `src/gamesV4/data/achievementDefinitions.ts`
+
+Backend evaluator:
+
 - `firebase-backend/functions/src/gamesV4/achievements.ts`
 
-### 8.3 XP and token model
+Current section inventory includes:
 
-- XP is applied automatically during `resolveSessionV4Internal`.
-- Achievement tokens are not auto-credited. They require `claimAchievementV4`.
-- Level rewards are not auto-credited. They require `claimLevelRewardV4`.
-- Both claim paths update `Wallets/{uid}` and write `Transactions/{txId}` entries.
-- `WalletScreen` and `usePendingRewards()` surface pending reward counts from achievement and level reward docs.
+- one section per currently supported implemented or implemented-disabled game
+- one shared `milestones` section
+- one section naming mismatch worth remembering: section ID `sketch_party` maps to game ID `sketch_party_game`
+
+Claim model:
+
+- new achievements are written with `schemaVersion >= 2` and `status: "earned_unclaimed"`
+- tokens are not auto-credited
+- `claimAchievementV4` credits wallet balance and writes a transaction record
+- legacy achievements without schema version are treated as already claimed
+
+### 10.5 XP and level rewards
+
+XP source of truth:
+
+- `resolve.ts` -> `computeXPAwards()` and `applyXPAwards()`
+
+Current behavior:
+
+- multiplayer winners get base XP plus win bonus
+- draws get draw bonus
+- solo games use a score-derived performance bonus capped by `MAX_PERFORMANCE_BONUS`
+- level reward unlocks happen automatically when level thresholds are crossed
+- claiming level rewards is manual through `claimLevelRewardV4`
+
+### 10.6 Wallet and pending rewards surfaces
+
+Relevant client hooks:
+
+- `src/hooks/useWallet.ts`
+- `src/hooks/usePendingRewards.ts`
+
+Relevant UI surfaces:
+
+- `src/screens/wallet/WalletScreen.tsx`
+- `src/gamesV4/screens/AchievementsHubScreen.tsx`
+- `src/gamesV4/screens/AchievementSectionScreen.tsx`
+- `src/gamesV4/screens/LevelRewardsScreen.tsx`
+- `src/gamesV4/screens/GameOverScreenV4.tsx`
+- `src/gamesV4/screens/GamesHubScreenV4.tsx`
+
+Why this matters to game-system work:
+
+- a game does not directly write wallet balances
+- game integration must produce correct achievements and level-reward unlock docs so the wallet and pending-reward surfaces stay accurate
 
 ---
-## 9. Sketch Party / Colyseus Reference Architecture
 
-Sketch Party is the most important architectural exception in the V4 system.
+## 11. Navigation, Entry Points, and Post-Game Surfaces
 
-### 9.1 Files that define the pattern
+### 11.1 Route registration and deep links
+
+Primary file:
+
+- `src/navigation/RootNavigator.tsx`
+
+Relevant routes:
+
+- `GameLobbyV4`
+- `GamePlayV4`
+- `GameOverV4`
+- `GameDetailV4`
+- `GameLeaderboardV4`
+- `GameStatsV4`
+- `AchievementsHub`
+- `AchievementSection`
+- `LevelRewards`
+- `Wallet`
+
+Deep links currently registered:
+
+- `game/lobby/:inviteId`
+- `game/play/:sessionId`
+- `game/over/:sessionId`
+- `game/detail/:gameId`
+- `game/leaderboard/:gameId`
+- `game/stats`
+- `wallet`
+
+### 11.2 Chat-linked entry points
+
+Multiplayer entry points today:
+
+- chat gamepad button through `GamePickerModal`
+- group chat equivalent through the same picker pattern
+- detail-screen direct invite via `ConversationPickerModal`
+- pinned invite bar in active chats
+- hub active-games cards
+
+### 11.3 Games Hub responsibilities
+
+Primary file:
+
+- `src/gamesV4/screens/GamesHubScreenV4.tsx`
+
+It currently:
+
+- shows level and rewards summary
+- links to achievements hub and stats
+- subscribes to active invites the user participates in
+- subscribes to active solo sessions to decide which solo cards should show resume affordances
+- launches solo games directly
+- routes multiplayer games to detail screens
+- exposes long-press actions for solo games, including archive for future persistent-solo usage
+
+### 11.4 Game Detail responsibilities
+
+Primary file:
+
+- `src/gamesV4/screens/GameDetailScreenV4.tsx`
+
+Current six-section layout:
+
+1. overview and how-to-play
+2. play actions
+3. your progress
+4. leaderboards
+5. achievements
+6. game history
+
+Important reality checks:
+
+- multiplayer detail no longer just tells users to go to chat; it can create invites directly
+- history and friends leaderboard are client-side aggregation surfaces, not server-generated composite views
+
+### 11.5 Game Over responsibilities
+
+Primary file:
+
+- `src/gamesV4/screens/GameOverScreenV4.tsx`
+
+It currently:
+
+- subscribes to both result and session docs
+- renders formatted scoreboard and per-player stats
+- shows XP and level-up actions
+- lists newly unlocked achievements and routes to claim surfaces
+- returns to chat or hub depending on conversation context
+- creates rematches differently for solo versus chat-linked games
+
+Rematch behavior matrix:
+
+| Context                     | Rematch behavior                                                    |
+| --------------------------- | ------------------------------------------------------------------- |
+| solo                        | create a fresh solo session                                         |
+| chat-linked multiplayer     | create a new invite in the same conversation and route back to chat |
+| persistent solo future case | button label changes to `Start New Run`                             |
+
+---
+
+## 12. Sketch Party / Colyseus Case Study
+
+Sketch Party is the most important architectural exception in the current repository.
+
+### 12.1 Files that define the realtime path
 
 Client:
 
@@ -423,42 +1224,63 @@ Realtime server:
 - `colyseus-server/src/data/wordBank.ts`
 - `colyseus-server/src/bridge/firebaseBridge.ts`
 
-Firebase side of the bridge:
+Firebase bridge target:
 
 - `firebase-backend/functions/src/gamesV4/triggers.ts`
 - `firebase-backend/functions/src/gamesV4/sessions.ts`
 
-### 9.2 What is shared with the rest of V4
+### 12.2 What is shared with normal V4 games
 
-Sketch Party still uses the normal V4 system for:
+Sketch Party still uses the shared system for:
 
-- game metadata and catalog placement
-- chat invite creation
-- lobby membership and settings patching
-- session document creation
-- game screen routing through `GamePlayDispatcherV4`
-- `GameScreenShell` for presence, result navigation, and destructive realtime exit handling
-- final result persistence, XP, PBs, achievements, leaderboards, and notifications
+- catalog metadata and dispatcher registration
+- invite creation and chat pinning
+- lobby membership and settings edits
+- session creation in `GameSessionsV4`
+- gameplay route entry through `GamePlayV4`
+- presence docs and safe exit shell behavior
+- result persistence, XP, PBs, leaderboards, achievements, and notifications
 
-### 9.3 What is custom to Sketch Party
+### 12.3 What is custom to Sketch Party
 
-Colyseus owns the live match:
+Custom live-runtime ownership sits in the room:
 
-- room join and reconnect
-- player connection tracking
-- turn order and round advancement
-- word choice and hint scheduling
+- room join and reconnect handling
+- authenticated roster enforcement
+- round order and turn progression
+- word choice distribution
+- hint scheduling
 - drawing stroke relay and replay buffer
-- guess validation and scoring
-- reactions and chat relay
+- guess validation and per-turn scoring
+- reaction and chat relay
 - disconnect handling
-- end-of-turn and end-of-match timing
+- final scoreboard generation
 
-### 9.4 Room state and lifecycle
+### 12.4 Room state model
 
-The room uses a plain JavaScript object, not Colyseus Schema state.
+The room uses a plain object state, not Colyseus Schema.
 
-Current room phases:
+Current state shape includes:
+
+- `phase`
+- `currentRound`
+- `totalRounds`
+- `currentTurnIndex`
+- `drawerId`
+- `turnOrder`
+- `maskedWord`
+- `wordLength`
+- `scores`
+- `correctGuessers`
+- `timeRemainingSec`
+- `drawTimeSec`
+- `hintsUsed`
+- `maxHints`
+- `wordChoices`
+- `players[]`
+- `effectiveSettings`
+
+Current phases:
 
 - `waiting`
 - `choosing`
@@ -466,228 +1288,304 @@ Current room phases:
 - `turn_end`
 - `match_end`
 
-Current room settings:
+### 12.5 Room message contract
 
-- `maxPlayers`
-- `rounds`
-- `drawTimeSec`
-- `turnChooseTimeSec`
-- `wordChoices`
-- `hints`
-- `customWordsEnabled`
-- `customWordsList`
+Client-to-room messages:
 
-Current message families:
+- `stroke_begin`
+- `stroke_points`
+- `stroke_end`
+- `guess`
+- `word_choice`
+- `undo`
+- `clear`
+- `reaction`
 
-- room state: `state_sync`, `board_snapshot`, `settings_applied`
-- drawing: `stroke_begin`, `stroke_points`, `stroke_end`, `undo`, `clear`
-- guessing and turn control: `guess`, `word_choice`, `word_reveal`, `turn_start`, `turn_scores`
-- social layer: `chat`, `reaction`, `reaction_event`
+Room-to-client messages:
 
-Scoring helpers live in `colyseus-server/src/data/scoring.ts`:
+- `state_sync`
+- `board_snapshot`
+- `settings_applied`
+- `turn_start`
+- `word_choices`
+- `word_reveal`
+- `turn_scores`
+- `chat`
+- `reaction_event`
+- `error`
 
-- `computeGuesserPoints(...)`
-- `computeTimeBonus(...)`
-- `computeDrawerGainPerGuesser(...)`
+Important contract detail:
 
-Word and hint helpers live in `colyseus-server/src/data/wordBank.ts`:
+- `state_sync` is personalized per recipient, not identical for every client
+- only the active drawer receives `secretWord`
+- only the active drawer receives `wordChoices` during the choosing phase
 
-- `pickRandomWords(...)`
-- `computeMaskedWord(...)`
-- `isCorrectGuess(...)`
+### 12.6 Join, auth, and roster gating
 
-### 9.5 Reconnect and disconnect behavior
+Current room join path:
 
-What is implemented:
+1. client calls `joinSketchPartyRoom(sessionId, uid, displayName, token)`
+2. room verifies the Firebase ID token
+3. room checks the token UID against the claimed UID
+4. room reads `GameSessionsV4/{sessionId}`
+5. room confirms `gameId === "sketch_party_game"`
+6. room confirms `runtimeType === "realtime"`
+7. room confirms `status === "active"`
+8. room confirms `participantUids` includes the caller
+9. room hydrates authoritative settings from the Firebase session
+10. room tracks `expectedParticipantUids` and only starts once the full authenticated roster is present
 
-- Reconnect is keyed by `uid`, not by host role or Firebase session state.
-- If an existing `uid` rejoins, the room updates the stored Colyseus `sessionId`, marks the player connected, and sends a `board_snapshot`.
-- If the drawer disconnects during the drawing phase, the room ends the turn early.
-- If all players disconnect, the room ends the match with resolution type `disconnect`.
+What this fixed relative to older behavior:
 
-What does not exist:
+- room joins are no longer trust-based
+- a socket cannot join the room simply by guessing a session ID and UID
+- matches no longer start from partial socket count alone
 
-- no host migration logic inside the room
-- no spectator path
-- no explicit role lock once the match starts
+### 12.7 Round lifecycle
 
-### 9.6 Where Sketch Party differs from Firebase games in practice
+Per-turn lifecycle:
 
-- `SketchPartyScreenV4` takes `publicState` from `GameScreenShell` but then ignores it for live gameplay once Colyseus `roomState` starts arriving.
-- Firestore `PublicState/state` does not carry live draw/guess/timer updates.
-- Invite summary updates are not driven by room events, so chat chips do not have room-authoritative realtime progress.
-- The room is expected to hand the final scoreboard back to Firebase at the end rather than writing incremental progress during play.
+```text
+waiting
+  -> startMatch()
+  -> startTurn()
+  -> choosing
+  -> drawer receives word choices
+  -> chosen word or choose timeout
+  -> drawing
+  -> hints reveal over time
+  -> guessers submit guesses
+  -> all guessers correct or timer ends
+  -> turn_end
+  -> reveal word and per-turn scores
+  -> next drawer or next round
+  -> match_end when all turns complete
+```
 
-### 9.7 Current realtime-specific issues that future Colyseus work must not copy
+Important timing state:
 
-1. Bridge path mismatch
+- `chooseDeadlineAt` tracks the choose window
+- drawing timer drives `timeRemainingSec`
+- hint schedule comes from `computeHintSchedule()` in `src/gamesV4/data/sketchPartySettings.ts`
 
-   - The Colyseus bridge writes to `gameSessions/{sessionId}/internal/realtimeResolution`.
-   - The Firebase trigger listens on `GameSessionsV4/{sessionId}/internal/realtimeResolution`.
-   - As currently written, those paths do not match.
+### 12.8 Drawing, guessing, and chat synchronization
 
-2. No room-side auth or membership verification
+Drawing:
 
-   - `joinSketchPartyRoom(...)` sends a Firebase token.
-   - `SketchPartyRoom.onJoin()` does not verify the token.
-   - The room also does not verify that the caller belongs to the Firebase session roster.
+- room stores stroke history in memory
+- reconnecting clients receive `board_snapshot`
+- active drawer sends begin/points/end messages
+- `undo` and `clear` are drawer-only actions
 
-3. Match start is based on socket count, not session roster
+Guessing:
 
-   - `SketchPartyRoom` starts the match when `players.size >= 2` and phase is `waiting`.
-   - It does not wait for the full set of Firebase session participants.
-   - For multi-player sessions larger than two, late joiners can miss turn-order initialization.
+- guesses are only accepted during `drawing`
+- correct guesses are validated in the room
+- per-turn scoring updates room scores immediately
+- when all non-drawers have guessed correctly, the turn ends early
 
-4. Settings gap
+Chat/social layer:
 
-   - `customWordsEnabled` and `customWordsList` are accepted and propagated into effective settings.
-   - The room still always pulls words from `pickRandomWords(...)` and never consumes custom words.
+- chat events and correct guesses are broadcast as `chat`
+- reactions are rebroadcast as `reaction_event`
 
-5. Client/server message drift
+### 12.9 Disconnect and reconnect behavior
 
-   - The client service exposes `sendToolSet(...)`.
-   - The room does not register a `tool_set` handler.
+Reconnect:
 
-6. Secret-word modeling drift
+- keyed by `uid`
+- room updates the stored Colyseus `sessionId`
+- player is marked connected again
+- personalized `state_sync` is resent
+- `settings_applied` is resent
+- `board_snapshot` is resent
+- pending `word_choices` are resent to the drawer during the choose phase
 
-   - Room comments and client types imply `secretWord` may be filtered per player.
-   - `getPublicState()` omits `secretWord` entirely from `state_sync`.
-   - The drawer therefore relies on word-choice UI and turn-end `word_reveal`, not room state, to know the active word.
+Disconnect:
 
-7. Documentation drift around animation
+- player connection flag flips false
+- presence change is rebroadcast through state
+- if the drawer disconnects during `drawing`, the room ends the turn early
+- if all players disconnect, the room ends the match with `disconnect`
 
-   - Older docs claimed game animations must not use `react-native-reanimated`.
-   - `SketchPartyScreenV4` currently uses `react-native-reanimated` for some UI animation work.
-   - The actual codebase is mixed; do not assume one universal animation rule.
+What still does not exist:
 
-### 9.8 What future Colyseus-backed games should copy from Sketch Party
+- no spectator support
+- no host migration
+- no grace timer or override when one expected player never connects
+
+### 12.10 Scoring and final result handoff
+
+Scoring helpers live in:
+
+- `colyseus-server/src/data/scoring.ts`
+
+Word helpers live in:
+
+- `colyseus-server/src/data/wordBank.ts`
+
+Final result handoff path:
+
+- room computes final scoreboard
+- bridge writes `GameSessionsV4/{sessionId}/internal/realtimeResolution`
+- trigger `onRealtimeResolutionRequest` calls `resolveRealtimeSessionV4()`
+- `resolveRealtimeSessionV4()` enriches the scoreboard with profile picture URLs where possible and delegates to `resolveSessionV4Internal()`
+
+This design is the key reason Sketch Party still benefits from the shared PB, XP, leaderboard, and achievement infrastructure.
+
+### 12.11 What future Colyseus games should copy
 
 Copy these patterns:
 
-- keep invite, lobby, session creation, PBs, achievements, XP, and rewards inside the shared V4 pipeline
-- use a dedicated client room service module similar to `sketchPartyClient.ts`
-- keep the room in a separate server package with a small entrypoint and explicit room registration
-- return a final scoreboard into Firebase instead of duplicating reward logic in the room server
-- build reconnect around explicit room snapshots rather than assuming the client can reconstruct state
+- keep lifecycle, rewards, PBs, achievements, and leaderboards in Firebase
+- verify Firebase tokens at room join
+- verify session membership against Firebase data
+- define explicit reconnect snapshot behavior
+- hand the final match result back into the shared resolve pipeline instead of duplicating rewards logic in the room
+- keep room settings authoritative to session state, not only client input
 
-Do not copy these gaps:
+Do not copy these assumptions:
 
-- token passed but not verified
-- no session-membership validation
-- no roster lock before match start
-- Firestore bridge path mismatch
-- settings accepted by UI but unused by the room
+- Firestore mirrors live realtime progress
+- room start can be based on socket count alone
+- one bespoke room already equals a generalized realtime framework
+- host migration can be deferred indefinitely if a new game depends on it
 
 ---
-## 10. Known Inconsistencies and Sharp Edges
 
-### 10.1 Client metadata vs backend invite metadata drift
+## 13. Known Inconsistencies and Sharp Edges
 
-The backend `GAME_META` inside `firebase-backend/functions/src/gamesV4/invites.ts` is not a mirror of client `GAME_METADATA`.
+### 13.1 Backend invite metadata is still duplicated
 
-Current mismatches:
+The alignment fixes are in place, but the duplication remains.
 
-| GameId | Client-side expectation | Backend invite metadata | Why it matters |
-| --- | --- | --- | --- |
-| `battleship` | `runtimeType: "turnBased"`, `supportsSpectate: true` | `runtimeType: "realtime"`, `supportsSpectate: false` | Invite docs and started sessions inherit the backend value, not the client value. |
-| `minigolf_duels` | `supportsSpectate: true` | `supportsSpectate: false` | Spectator capability is inconsistent across layers. |
-| `dots_and_boxes` | `maxPlayers: 2` | `maxPlayers: 4` | Lobby and invite validation can disagree with adapter assumptions. |
+Files involved:
 
-### 10.2 Solo resume behavior is inconsistent by entry point
+- `src/gamesV4/constants.ts`
+- `firebase-backend/functions/src/gamesV4/invites.ts`
 
-- Hub launch uses `resumeOrCreateSoloSessionV4`.
-- Game detail launch uses `createSoloSessionV4`.
-- Solo rematch from game over uses `createSoloSessionV4`.
+Impact:
 
-That means "Play Now" from the hub can resume, while "Play" from detail and game over always create a new run.
+- future additions can still drift if only one side is updated
+- invite creation and session start trust backend invite metadata, not client constants
 
-### 10.3 `subscribeToActiveSoloSessions()` queries a status that does not exist
+### 13.2 Week-key logic is aligned but duplicated
 
-In `src/gamesV4/services/gameServiceV4.ts`, `subscribeToActiveSoloSessions()` queries:
-
-- `status in ["active", "suspended"]`
-
-But `SessionStatus` does not include `suspended`; actual suspend state is represented by `soloSuspendedAt` while the session status remains `active`.
-
-### 10.4 Week-key calculations are not unified
-
-Current week-key helpers differ between client and backend.
-
-Files:
+Files involved:
 
 - `firebase-backend/functions/src/gamesV4/helpers.ts`
 - `src/gamesV4/hooks/useLeaderboardV4.ts`
 
-This can create leaderboard week mismatches near week boundaries.
+Impact:
 
-### 10.5 Hidden-information optimistic validation is intentionally incomplete
+- if one changes without the other, client reads and backend writes diverge again
 
-`GameScreenShell` documents this directly: it passes `{}` for `privateStateByPlayer` during optimistic local validation.
+### 13.3 Hidden-info optimism remains intentionally incomplete
+
+File involved:
+
+- `src/gamesV4/components/GameScreenShell.tsx`
+
+Reality:
+
+- hidden-info games do not get full local move validation
+- this is a deliberate compromise to preserve secrecy and keep authority on the backend
+
+### 13.4 Realtime live state is still invisible to Firestore-only readers
+
+Files involved:
+
+- `src/gamesV4/screens/SketchPartyScreenV4.tsx`
+- `colyseus-server/src/rooms/SketchPartyRoom.ts`
 
 Impact:
 
-- public-state games feel instant locally
-- hidden-information games still submit moves even when local validation cannot prove them
-- server transaction remains authoritative
+- pinned invite summaries are not room-authoritative during live play
+- any future realtime feature that expects live Firestore sync will be wrong unless new synchronization is added
 
-### 10.6 Realtime sessions do not feed live progress back into Firestore
+### 13.5 Full-roster gating can stall start indefinitely
 
-This is not just a documentation omission. It affects system behavior.
+The room now starts more safely, but it still lacks:
 
-- active invite summary for realtime games is not room-authoritative
-- Firestore public state is stale during the match
-- any future feature reading only Firestore will not see live Sketch Party state
+- join grace timeout
+- host override
+- automatic pruning or migration behavior when one rostered player never joins
 
-### 10.7 Animation guidance in old docs no longer matches the codebase
+This is safer than partial starts but still an operational sharp edge.
 
-- `TicTacToeScreenV4` and `ConnectFourScreenV4` use core `Animated`.
-- `SketchPartyScreenV4` uses `react-native-reanimated`.
-- New documentation should describe the current mixed state, not a blanket prohibition that is already violated by shipped code.
+### 13.6 `usePinnedInvites()` still tears down all per-invite subscriptions on pin-list changes
+
+File involved:
+
+- `src/gamesV4/hooks/usePinnedInvites.ts`
+
+The hook itself labels this as an accepted cosmetic risk. It can cause brief flicker when pins change.
+
+### 13.7 The codebase no longer supports a blanket animation rule
+
+Reality today:
+
+- some game screens use core `Animated`
+- `SketchPartyScreenV4` uses `react-native-reanimated` for parts of its UI
+
+Future docs should not claim a universal prohibition unless the code is changed to enforce one.
 
 ---
 
-## 11. Testing Surface
+## 14. Testing and Operations Surface
 
-### 11.1 Current V4 test inventory
+### 14.1 Current test inventory to care about first
 
-Adapter and game tests:
+Adapters and game logic:
 
-- `__tests__/gamesV4/adapters/brickBreaker.test.ts`
-- `__tests__/gamesV4/adapters/chess.test.ts`
-- `__tests__/gamesV4/adapters/connectFour.test.ts`
-- `__tests__/gamesV4/adapters/crazyEights.test.ts`
-- `__tests__/gamesV4/adapters/dotsAndBoxes.test.ts`
-- `__tests__/gamesV4/adapters/minesweeper.test.ts`
-- `__tests__/gamesV4/adapters/miniGolf.test.ts`
-- `__tests__/gamesV4/adapters/play2048.test.ts`
-- `__tests__/gamesV4/adapters/registry.test.ts`
-- `__tests__/gamesV4/adapters/sketchParty.test.ts`
-- `__tests__/gamesV4/adapters/sketchPartySettings.test.ts`
-- `__tests__/gamesV4/adapters/solitaireKlondike.test.ts`
-- `__tests__/gamesV4/adapters/ticTacToe.test.ts`
+- `__tests__/gamesV4/adapters/*.test.ts`
+- includes `brickBreaker`, `chess`, `connectFour`, `crazyEights`, `dotsAndBoxes`, `minesweeper`, `miniGolf`, `play2048`, `sketchParty`, `sketchPartySettings`, `solitaireKlondike`, `ticTacToe`
 
-Flow, shell, and integration coverage:
+Shell, navigation, and flows:
 
 - `__tests__/gamesV4/gameScreenShellExit.test.ts`
 - `__tests__/gamesV4/lobbyBugRegression.test.ts`
 - `__tests__/gamesV4/lobbySettings.test.ts`
-- `__tests__/gamesV4/moderation.test.ts`
 - `__tests__/gamesV4/presenceNavigation.test.ts`
 - `__tests__/gamesV4/soloSuspendResume.test.ts`
-- `__tests__/gamesV4/screens/play2048Engine.test.ts`
-- `__tests__/gamesV4/screens/play2048Integration.test.ts`
-- `__tests__/gamesV4/chess/chessEngine.test.ts`
-- `__tests__/gamesV4/chess/chessUIBugFixes.test.ts`
 
-Backend and shared logic:
+Resolution and backend logic:
 
-- `__tests__/gamesV4/constants/constants.test.ts`
 - `__tests__/gamesV4/resolve/achievementEvaluator.test.ts`
 - `__tests__/gamesV4/resolve/resolvePipeline.test.ts`
 - `__tests__/gamesV4/resolve/walletRewardSync.test.ts`
 - `__tests__/gamesV4/validation/validation.test.ts`
 
-### 11.2 Useful commands
+### 14.2 Gaps in current automated coverage
+
+Most important current test gap:
+
+- there is no socket-level Colyseus integration test suite for Sketch Party room behavior
+
+That means realtime confidence still depends on:
+
+- room reasoning
+- adapter/settings tests
+- manual runtime validation
+
+### 14.3 Operational surfaces worth knowing
+
+Primary operations files:
+
+- `firebase-backend/functions/src/gamesV4/watchdog.ts`
+- `firebase-backend/functions/src/gamesV4/triggers.ts`
+- `docs/GAMES_V4_RUNBOOK.md`
+
+When something looks wrong in production, the first checks are usually:
+
+- invite status and pin state
+- session status and `rewardsProcessed`
+- result existence
+- PB and leaderboard writes
+- fresh `GamePresence` docs suppressing a turn notification
+- realtime-resolution bridge doc for Sketch Party
+
+### 14.4 Useful commands
 
 ```powershell
 npx jest --testPathPattern=gamesV4
@@ -696,23 +1594,21 @@ npx jest --testPathPattern=gamesV4/resolve
 npx tsc --noEmit
 cd firebase-backend/functions
 npm run build
+cd ..\..
+cd colyseus-server
+npm run build
 ```
-
-Realtime note:
-
-- There is no dedicated Colyseus integration test suite in `colyseus-server/` for end-to-end room behavior.
-- Sketch Party room correctness is currently covered mostly through adapter/settings tests and manual reasoning, not full socket-level integration tests.
 
 ---
 
-## 12. Guidance for Future Changes
+## 15. Preservation Rules for Future Contributors
 
-When auditing or extending the current system, assume these rules:
-
-1. Code beats docs.
-2. `GAME_METADATA`, `IMPLEMENTED_GAME_IDS`, backend invite metadata, adapter metadata, dispatcher mapping, and achievement sections must stay aligned.
-3. Realtime games are not just another adapter. They need an explicit split between Firebase lifecycle and room authority.
-4. If a game has private state, design around server authority first and client optimism second.
-5. If you add another Colyseus game, fix auth, roster validation, and the Firebase bridge path before copying Sketch Party wholesale.
-6. If you touch leaderboards, unify week-key calculation across client and backend first.
-7. If you expose a settings field in the lobby, verify that the actual game runtime consumes it.
+1. Code beats docs, but duplicated metadata means you must update more than one file when adding a game.
+2. Do not bypass `resolveSessionV4Internal()` for terminal flows.
+3. Do not assume Firestore is live-authoritative for realtime gameplay.
+4. Do not design hidden-info games around full client optimism.
+5. Do not add lobby settings unless the actual runtime consumes them.
+6. If you add another Colyseus game, treat auth, membership checks, reconnect snapshots, and result handoff as required architecture, not optional polish.
+7. If you touch week keys, change both the backend helper and the client hook together or extract them to one shared implementation.
+8. If you change result score semantics for a game, also re-check its scoreboard descriptor, leaderboard descriptor, PB interpretation, and achievement evaluators.
+9. If you make docs cleaner than the code, call out the inconsistency explicitly instead of papering over it.

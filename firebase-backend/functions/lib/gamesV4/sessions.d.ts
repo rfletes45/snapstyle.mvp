@@ -15,6 +15,12 @@ export declare const resignSessionV4: functions.HttpsFunction & functions.Runnab
 /**
  * Resolve a realtime session from the Colyseus persistence bridge.
  * This is NOT a callable — it's exported for use by the Colyseus bridge.
+ *
+ * @param sessionId - The session to resolve
+ * @param resolutionType - How the session ended
+ * @param winnerIds - UIDs of the winner(s)
+ * @param scoreboard - Pre-built scoreboard entries
+ * @param enrichment - Additional metadata from the generalized realtime framework (optional)
  */
 export declare function resolveRealtimeSessionV4(sessionId: string, resolutionType: "win" | "draw" | "disconnect" | "timeout" | "error", winnerIds: string[], scoreboard?: Array<{
     uid: string;
@@ -22,4 +28,10 @@ export declare function resolveRealtimeSessionV4(sessionId: string, resolutionTy
     score: number;
     placement: number;
     stats: Record<string, unknown>;
-}>): Promise<void>;
+}>, enrichment?: {
+    reason?: string;
+    durationMs?: number;
+    gameId?: string;
+    playerMetrics?: Record<string, Record<string, unknown>>;
+    requestId?: string;
+}): Promise<void>;

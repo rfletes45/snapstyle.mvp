@@ -6,7 +6,7 @@
  *
  * @module gamesV4/types
  */
-export type GameId = "bounce_blitz" | "play_2048" | "brick_breaker" | "word_master" | "minesweeper" | "lights_out" | "solitaire_klondike" | "tic_tac_toe" | "chess" | "checkers" | "connect_four" | "gomoku" | "reversi" | "dots_and_boxes" | "crazy_eights" | "pong_game" | "battleship" | "sketch_party_game" | "starforge_game" | "crossword_puzzle" | "minigolf_duels" | "dot_match";
+export type GameId = "bounce_blitz" | "play_2048" | "brick_breaker" | "word_master" | "minesweeper" | "lights_out" | "solitaire_klondike" | "tic_tac_toe" | "chess" | "checkers" | "connect_four" | "gomoku" | "reversi" | "dots_and_boxes" | "crazy_eights" | "hex" | "pong_game" | "battleship" | "sketch_party_game" | "starforge_game" | "crossword_puzzle" | "knockout_game" | "minigolf_duels" | "dot_match";
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";
 /**
  * Solo sub-mode that controls session lifecycle policy.
@@ -127,6 +127,20 @@ export interface GameSessionV4 {
     runStartedAt?: TimestampLike | null;
     /** Timestamp of the last server-side save (epoch ms). */
     lastServerSaveAt?: TimestampLike | null;
+    /** Colyseus room name (e.g., "sketch_party"). Set when lobby → active. */
+    realtimeRoomName?: string;
+    /** Colyseus room ID for the live match instance. */
+    realtimeRoomId?: string;
+    /** Match start policy (e.g., "full_roster", "host_start"). */
+    realtimeMatchStartPolicy?: string;
+    /** Disconnect policy (e.g., "continue_without_player", "pause_match"). */
+    realtimeDisconnectPolicy?: string;
+    /** Reconnect grace period in seconds. */
+    realtimeReconnectGraceSec?: number;
+    /** Whether the realtime room is currently live (heartbeat). */
+    realtimeRoomAlive?: boolean;
+    /** Timestamp of last heartbeat from the Colyseus room. */
+    realtimeLastHeartbeat?: TimestampLike;
 }
 export interface MoveDoc {
     uid: string;

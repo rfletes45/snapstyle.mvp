@@ -26,30 +26,19 @@
 
 import type { GameShellProps } from "@/gamesV4/components/GameScreenShell";
 import { withGameV4Shell } from "@/gamesV4/components/GameScreenShell";
+import type { SketchPartyRealtimeState } from "@/gamesV4/realtime/games/sketchPartyDef";
+import { SKETCH_PARTY_CLIENT_DEF } from "@/gamesV4/realtime/games/sketchPartyDef";
+import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
 import type {
   ChatEntry,
   ReactionEvent,
   ReactionKind,
-  SketchPartyRoomState,
   StrokeData,
-} from "@/gamesV4/services/sketchPartyClient";
-import {
-  joinSketchPartyRoom,
-  leaveRoom,
-  sendClearCanvas,
-  sendGuess,
-  sendReaction,
-  sendStrokeBegin,
-  sendStrokeEnd,
-  sendStrokePoints,
-  sendUndo,
-  sendWordChoice,
 } from "@/gamesV4/services/sketchPartyClient";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import type { Room } from "colyseus.js";
 import React, {
   memo,
   useCallback,
@@ -399,7 +388,7 @@ function MatchSettingsSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  settings: SketchPartyRoomState["effectiveSettings"] | null;
+  settings: SketchPartyRealtimeState["effectiveSettings"] | null;
   isDark: boolean;
   primaryColor: string;
   textColor: string;
@@ -963,14 +952,36 @@ function SketchPartyUI({
   const primaryColor = theme.colors.primary;
   const textColor = theme.colors.text;
   const bgColor = isDark ? "#000" : theme.colors.background;
-  const roomRef = useRef<Room | null>(null);
+  // ── Auth token for Colyseus connection ────────────────────────────
+  const [authToken, setAuthToken] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    currentFirebaseUser?.getIdToken().then((t) => {
+      if (!cancelled) setAuthToken(t ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentFirebaseUser]);
 
-  // ── Room state (from Colyseus) ────────────────────────────────────
-  const [roomState, setRoomState] = useState<SketchPartyRoomState | null>(null);
+  // ── Realtime room (generalized framework) ─────────────────────────
+  const {
+    room,
+    connectionStatus,
+    gameState: roomState,
+    send,
+    error: connectionError,
+  } = useRealtimeRoom(SKETCH_PARTY_CLIENT_DEF, {
+    sessionId,
+    uid: myUid,
+    displayName: currentFirebaseUser?.displayName ?? "Player",
+    token: authToken,
+    autoConnect: !!authToken,
+  });
+
+  // ── Local game state (not from Colyseus state_sync) ───────────────
   const [strokes, setStrokes] = useState<StrokeData[]>([]);
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [wordChoices, setWordChoices] = useState<string[]>([]);
   const [chooseTimeRemaining, setChooseTimeRemaining] = useState(10);
 
@@ -1051,203 +1062,142 @@ function SketchPartyUI({
   );
   const turnRecapDrawerName = useRef("");
 
-  // ── Colyseus connection ───────────────────────────────────────────
+  // ── Game-specific message handlers (re-registered on reconnect) ───
   useEffect(() => {
-    let mounted = true;
-    let room: Room | null = null;
+    if (!room) return;
 
-    async function connect() {
-      try {
-        const token = (await currentFirebaseUser?.getIdToken()) ?? "";
-        room = await joinSketchPartyRoom(
-          sessionId,
-          myUid,
-          currentFirebaseUser?.displayName ?? "Player",
-          token,
-          settings ?? undefined,
-        );
-        if (!mounted) {
-          room.leave();
-          return;
-        }
-        roomRef.current = room;
-        setConnected(true);
-        console.log(`[SketchParty] Connected to room ${room.roomId}`);
+    // ── Settings applied (debug/display) ──
+    room.onMessage("settings_applied", (s: Record<string, unknown>) => {
+      console.log("[SketchParty] Server settings:", s);
+    });
 
-        // ── State sync ──
-        room.onMessage("state_sync", (state: SketchPartyRoomState) => {
-          if (mounted) setRoomState(state);
-        });
-
-        // ── Settings applied (debug/display) ──
-        room.onMessage("settings_applied", (s: Record<string, unknown>) => {
-          console.log("[SketchParty] Server settings:", s);
-        });
-
-        // ── Stroke relay ──
-        room.onMessage(
-          "stroke_begin",
-          (msg: {
-            strokeId: string;
-            tool: string;
-            color: string;
-            width: number;
-            x: number;
-            y: number;
-          }) => {
-            if (!mounted) return;
-            setStrokes((prev) => [
-              ...prev,
-              {
-                strokeId: msg.strokeId,
-                tool: msg.tool as "pen" | "eraser",
-                color: msg.color,
-                width: msg.width,
-                points: [{ x: msg.x, y: msg.y }],
-              },
-            ]);
+    // ── Stroke relay ──
+    room.onMessage(
+      "stroke_begin",
+      (msg: {
+        strokeId: string;
+        tool: string;
+        color: string;
+        width: number;
+        x: number;
+        y: number;
+      }) => {
+        setStrokes((prev) => [
+          ...prev,
+          {
+            strokeId: msg.strokeId,
+            tool: msg.tool as "pen" | "eraser",
+            color: msg.color,
+            width: msg.width,
+            points: [{ x: msg.x, y: msg.y }],
           },
+        ]);
+      },
+    );
+
+    room.onMessage(
+      "stroke_points",
+      (msg: { strokeId: string; points: Array<{ x: number; y: number }> }) => {
+        setStrokes((prev) =>
+          prev.map((s) =>
+            s.strokeId === msg.strokeId
+              ? { ...s, points: [...s.points, ...msg.points] }
+              : s,
+          ),
         );
+      },
+    );
 
-        room.onMessage(
-          "stroke_points",
-          (msg: {
-            strokeId: string;
-            points: Array<{ x: number; y: number }>;
-          }) => {
-            if (!mounted) return;
-            setStrokes((prev) =>
-              prev.map((s) =>
-                s.strokeId === msg.strokeId
-                  ? { ...s, points: [...s.points, ...msg.points] }
-                  : s,
-              ),
-            );
-          },
-        );
+    room.onMessage("stroke_end", () => {
+      /* stroke already assembled */
+    });
 
-        room.onMessage("stroke_end", () => {
-          /* stroke already assembled */
-        });
+    // ── Chat ──
+    room.onMessage("chat", (msg: ChatEntry) => {
+      setChatEntries((prev) => [...prev.slice(-49), msg]);
 
-        // ── Chat ──
-        room.onMessage("chat", (msg: ChatEntry) => {
-          if (!mounted) return;
-          setChatEntries((prev) => [...prev.slice(-49), msg]);
-
-          // Detect personal correct guess → toast + haptic
-          if (msg.isCorrect && msg.uid === myUid) {
-            setCorrectGuessToastVisible(true);
-            setCorrectGuessPoints(50); // approximate
-            haptics.success();
-            setTimeout(() => {
-              if (mounted) setCorrectGuessToastVisible(false);
-            }, 2200);
-          }
-        });
-
-        // ── Reactions ──
-        room.onMessage("reaction_event", (msg: ReactionEvent) => {
-          if (!mounted) return;
-          const id = `${msg.uid}_${msg.ts}`;
-          setReactionBubbles((prev) => [...prev.slice(-4), { ...msg, id }]);
-          haptics.light();
-          // Auto-remove after 2.5s
-          setTimeout(() => {
-            if (mounted) {
-              setReactionBubbles((prev) => prev.filter((r) => r.id !== id));
-            }
-          }, 2500);
-        });
-
-        // ── Canvas / undo ──
-        room.onMessage("clear_canvas", () => {
-          if (mounted) setStrokes([]);
-        });
-
-        room.onMessage("undo_stroke", (msg: { strokeId: string }) => {
-          if (!mounted) return;
-          setStrokes((prev) => prev.filter((s) => s.strokeId !== msg.strokeId));
-        });
-
-        room.onMessage("board_snapshot", (msg: { strokes: StrokeData[] }) => {
-          if (mounted) setStrokes(msg.strokes ?? []);
-        });
-
-        // ── Word choices (drawer only) ──
-        room.onMessage(
-          "word_choices",
-          (msg: { words: string[]; timeRemaining: number }) => {
-            if (!mounted) return;
-            setWordChoices(msg.words);
-            setChooseTimeRemaining(msg.timeRemaining);
-            haptics.light();
-          },
-        );
-
-        room.onMessage("word_reveal", (msg: { word: string }) => {
-          if (!mounted) return;
-          turnRecapWord.current = msg.word;
-        });
-
-        // ── Turn start ──
-        room.onMessage("turn_start", () => {
-          if (!mounted) return;
-          setStrokes([]);
-          haptics.light();
-          setChatEntries((prev) => [
-            ...prev,
-            {
-              uid: "system",
-              displayName: "System",
-              text: "New turn started!",
-              isCorrect: false,
-              isSystem: true,
-              timestamp: Date.now(),
-            },
-          ]);
-        });
-
-        // ── Turn scores ──
-        room.onMessage(
-          "turn_scores",
-          (_msg: { scores: Record<string, number> }) => {
-            /* scores already in state_sync */
-          },
-        );
-
-        room.onError((code: number, message?: string) => {
-          console.warn(`[SketchParty] Room error ${code}: ${message}`);
-        });
-
-        room.onLeave(() => {
-          if (mounted) setConnected(false);
-        });
-      } catch (err) {
-        console.warn("[SketchParty] Failed to join room:", err);
-        if (mounted) {
-          setConnectionError(
-            err instanceof Error
-              ? err.message
-              : "Could not connect to game server",
-          );
-        }
+      // Detect personal correct guess → toast + haptic
+      if (msg.isCorrect && msg.uid === myUid) {
+        setCorrectGuessToastVisible(true);
+        setCorrectGuessPoints(50); // approximate
+        haptics.success();
+        setTimeout(() => {
+          setCorrectGuessToastVisible(false);
+        }, 2200);
       }
-    }
+    });
 
-    connect();
+    // ── Reactions ──
+    room.onMessage("reaction_event", (msg: ReactionEvent) => {
+      const id = `${msg.uid}_${msg.ts}`;
+      setReactionBubbles((prev) => [...prev.slice(-4), { ...msg, id }]);
+      haptics.light();
+      setTimeout(() => {
+        setReactionBubbles((prev) => prev.filter((r) => r.id !== id));
+      }, 2500);
+    });
 
+    // ── Canvas / undo ──
+    room.onMessage("clear_canvas", () => {
+      setStrokes([]);
+    });
+
+    room.onMessage("undo_stroke", (msg: { strokeId: string }) => {
+      setStrokes((prev) => prev.filter((s) => s.strokeId !== msg.strokeId));
+    });
+
+    room.onMessage("board_snapshot", (msg: { strokes: StrokeData[] }) => {
+      setStrokes(msg.strokes ?? []);
+    });
+
+    // ── Word choices (drawer only) ──
+    room.onMessage(
+      "word_choices",
+      (msg: { words: string[]; timeRemaining: number }) => {
+        setWordChoices(msg.words);
+        setChooseTimeRemaining(msg.timeRemaining);
+        haptics.light();
+      },
+    );
+
+    room.onMessage("word_reveal", (msg: { word: string }) => {
+      turnRecapWord.current = msg.word;
+    });
+
+    // ── Turn start ──
+    room.onMessage("turn_start", () => {
+      setStrokes([]);
+      haptics.light();
+      setChatEntries((prev) => [
+        ...prev,
+        {
+          uid: "system",
+          displayName: "System",
+          text: "New turn started!",
+          isCorrect: false,
+          isSystem: true,
+          timestamp: Date.now(),
+        },
+      ]);
+    });
+
+    // ── Turn scores ──
+    room.onMessage(
+      "turn_scores",
+      (_msg: { scores: Record<string, number> }) => {
+        /* scores already in state_sync */
+      },
+    );
+  }, [room, myUid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Batch timer cleanup ───────────────────────────────────────────
+  useEffect(() => {
     return () => {
-      mounted = false;
-      if (roomRef.current) {
-        leaveRoom(roomRef.current);
-        roomRef.current = null;
-      }
       if (batchTimerRef.current) {
         clearInterval(batchTimerRef.current);
       }
     };
-  }, [sessionId, myUid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Track recap data on phase changes ─────────────────────────────
   useEffect(() => {
@@ -1264,16 +1214,15 @@ function SketchPartyUI({
 
   // ── Stroke batching ───────────────────────────────────────────────
   const flushBatch = useCallback(() => {
-    const room = roomRef.current;
     const stroke = currentStrokeRef.current;
     const buffer = batchBufferRef.current;
-    if (!room || !stroke || buffer.length === 0) return;
+    if (!stroke || buffer.length === 0) return;
 
-    sendStrokePoints(room, {
+    send("stroke_points", {
       strokeId: stroke.strokeId,
       points: buffer.splice(0),
     });
-  }, []);
+  }, [send]);
 
   // ── Drawing gesture ───────────────────────────────────────────────
   const panGesture = useMemo(
@@ -1283,8 +1232,6 @@ function SketchPartyUI({
         .enabled(isDrawer && isDrawing)
         .minDistance(0)
         .onBegin((e) => {
-          const room = roomRef.current;
-          if (!room) return;
           const strokeId = `s_${myUid}_${++strokeIdCounterRef.current}`;
           const x = toNormalized(e.x, CANVAS_SIZE);
           const y = toNormalized(e.y, CANVAS_SIZE);
@@ -1298,7 +1245,7 @@ function SketchPartyUI({
           };
           batchBufferRef.current = [];
 
-          sendStrokeBegin(room, {
+          send("stroke_begin", {
             strokeId,
             tool: selectedTool,
             color: selectedColor,
@@ -1341,9 +1288,8 @@ function SketchPartyUI({
           );
         })
         .onEnd(() => {
-          const room = roomRef.current;
           const stroke = currentStrokeRef.current;
-          if (!room || !stroke) return;
+          if (!stroke) return;
 
           flushBatch();
           if (batchTimerRef.current) {
@@ -1351,7 +1297,7 @@ function SketchPartyUI({
             batchTimerRef.current = null;
           }
 
-          sendStrokeEnd(room, { strokeId: stroke.strokeId });
+          send("stroke_end", { strokeId: stroke.strokeId });
           currentStrokeRef.current = null;
         }),
     [
@@ -1362,57 +1308,62 @@ function SketchPartyUI({
       selectedWidth,
       myUid,
       flushBatch,
+      send,
     ],
   );
 
   // ── Actions ───────────────────────────────────────────────────────
-  const handleGuessSubmit = useCallback((text: string) => {
-    const room = roomRef.current;
-    if (!room) return;
+  const handleGuessSubmit = useCallback(
+    (text: string) => {
+      // Client-side rate limit
+      const now = Date.now();
+      if (now - lastGuessTimeRef.current < GUESS_RATE_LIMIT_MS) return;
+      lastGuessTimeRef.current = now;
 
-    // Client-side rate limit
-    const now = Date.now();
-    if (now - lastGuessTimeRef.current < GUESS_RATE_LIMIT_MS) return;
-    lastGuessTimeRef.current = now;
+      send("guess", { text });
+    },
+    [send],
+  );
 
-    sendGuess(room, text);
-  }, []);
-
-  const handleWordChoice = useCallback((index: number) => {
-    const room = roomRef.current;
-    if (!room) return;
-    sendWordChoice(room, index);
-    setWordChoices([]);
-  }, []);
+  const handleWordChoice = useCallback(
+    (index: number) => {
+      send("word_choice", { wordIndex: index });
+      setWordChoices([]);
+    },
+    [send],
+  );
 
   const handleUndo = useCallback(() => {
-    const room = roomRef.current;
-    if (!room) return;
-    sendUndo(room);
-  }, []);
+    send("undo", {});
+  }, [send]);
 
   const handleClear = useCallback(() => {
-    const room = roomRef.current;
-    if (!room) return;
-    sendClearCanvas(room);
-  }, []);
+    send("clear", {});
+  }, [send]);
 
-  const handleReaction = useCallback((kind: ReactionKind) => {
-    const room = roomRef.current;
-    if (!room) return;
-    sendReaction(room, kind);
-    haptics.light();
-  }, []);
+  const handleReaction = useCallback(
+    (kind: ReactionKind) => {
+      send("reaction", { kind });
+      haptics.light();
+    },
+    [send],
+  );
 
   // ── Render: Connecting ────────────────────────────────────────────
-  if (!connected || !roomState) {
+  if (
+    connectionStatus === "connecting" ||
+    connectionStatus === "idle" ||
+    connectionStatus === "reconnecting"
+  ) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
         <View style={styles.connectingContainer}>
           <Text style={[styles.statusText, { color: primaryColor }]}>
             {connectionError
               ? `Connection failed: ${connectionError}`
-              : "Connecting to game server..."}
+              : connectionStatus === "reconnecting"
+                ? "Reconnecting..."
+                : "Connecting to game server..."}
           </Text>
         </View>
       </SafeAreaView>

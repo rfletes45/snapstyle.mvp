@@ -88,12 +88,16 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
     label: "Stack +2",
     type: "boolean",
     default: false,
+    helperText: "Allow stacking +2 on another +2",
+    group: "Stacking Rules",
   },
   {
     key: "stackDraw4",
     label: "Stack +4",
     type: "boolean",
     default: false,
+    helperText: "Allow stacking Wild +4 on another Wild +4",
+    group: "Stacking Rules",
   },
   {
     key: "stackingMode",
@@ -104,12 +108,16 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
       { label: "Same Type Only", value: "same_only" },
       { label: "Mix +2 and +4", value: "draws_mix" },
     ],
+    helperText: "Whether +2 and +4 can stack on each other",
+    group: "Stacking Rules",
   },
   {
     key: "forcePlay",
     label: "Force Play After Draw",
     type: "boolean",
     default: true,
+    helperText: "Must play a drawn card if it's playable",
+    group: "Draw & Play",
   },
   {
     key: "drawMode",
@@ -120,18 +128,25 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
       { label: "Draw One, Then Pass", value: "draw_one_then_pass" },
       { label: "Draw Until Playable", value: "draw_until_playable" },
     ],
+    helperText: "How many cards to draw when you can't play",
+    group: "Draw & Play",
   },
   {
     key: "sevenZeroRule",
     label: "7-0 Rule",
     type: "boolean",
     default: false,
+    helperText: "7 swaps hands; 0 rotates all hands",
+    group: "Special Rules",
   },
   {
     key: "wildDraw4Challenge",
     label: "Challenge Wild +4",
     type: "boolean",
     default: false,
+    helperText:
+      "Allow challenging if the player could have played another card",
+    group: "Special Rules",
   },
   {
     key: "turnTimer",
@@ -144,6 +159,7 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
       { label: "30 seconds", value: "30s" },
       { label: "45 seconds", value: "45s" },
     ],
+    group: "Match Settings",
   },
   {
     key: "roundModel",
@@ -154,6 +170,8 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
       { label: "Single Hand", value: "single_hand" },
       { label: "Match (Points)", value: "match_points" },
     ],
+    helperText: "Single hand or race to a point target",
+    group: "Match Settings",
   },
   {
     key: "targetPoints",
@@ -163,6 +181,7 @@ const SETTINGS_SCHEMA: SettingsFieldDef[] = [
     min: 100,
     max: 1000,
     step: 50,
+    group: "Match Settings",
   },
 ];
 

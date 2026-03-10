@@ -126,7 +126,7 @@ const GAME_META = {
     dots_and_boxes: {
         runtimeType: "turnBased",
         minPlayers: 2,
-        maxPlayers: 4,
+        maxPlayers: 2,
         supportsSpectate: true,
     },
     pong_game: {
@@ -136,10 +136,10 @@ const GAME_META = {
         supportsSpectate: false,
     },
     battleship: {
-        runtimeType: "realtime",
+        runtimeType: "turnBased",
         minPlayers: 2,
         maxPlayers: 2,
-        supportsSpectate: false,
+        supportsSpectate: true,
     },
     sketch_party_game: {
         runtimeType: "realtime",
@@ -163,7 +163,7 @@ const GAME_META = {
         runtimeType: "turnBased",
         minPlayers: 2,
         maxPlayers: 3,
-        supportsSpectate: false,
+        supportsSpectate: true,
     },
     dot_match: {
         runtimeType: "realtime",
@@ -171,10 +171,22 @@ const GAME_META = {
         maxPlayers: 2,
         supportsSpectate: false,
     },
+    knockout_game: {
+        runtimeType: "realtime",
+        minPlayers: 2,
+        maxPlayers: 8,
+        supportsSpectate: true,
+    },
     crazy_eights: {
         runtimeType: "turnBased",
         minPlayers: 2,
         maxPlayers: 6,
+        supportsSpectate: true,
+    },
+    hex: {
+        runtimeType: "turnBased",
+        minPlayers: 2,
+        maxPlayers: 2,
         supportsSpectate: true,
     },
     solitaire_klondike: {

@@ -263,7 +263,7 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     icon: "cards-playing-outline",
   },
 
-  // Realtime games
+  // Realtime and additional multiplayer catalog entries
   pong_game: {
     gameId: "pong_game",
     displayName: "Pong",
@@ -327,6 +327,15 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     supportsSpectate: false,
     icon: "dots-horizontal-circle",
   },
+  knockout_game: {
+    gameId: "knockout_game",
+    displayName: "Knockout",
+    runtimeType: "realtime",
+    minPlayers: 2,
+    maxPlayers: 8,
+    supportsSpectate: true,
+    icon: "penguin",
+  },
   solitaire_klondike: {
     gameId: "solitaire_klondike",
     displayName: "Solitaire",
@@ -370,6 +379,8 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
   "reversi",
   "dots_and_boxes",
   "hex",
+  "pong_game",
+  "knockout_game",
   // "minigolf_duels", // disabled — not working, deferred until ready
 ]);
 
@@ -593,6 +604,16 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
     formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : `${s}`),
     sortDirection: "desc",
   },
+  pong_game: {
+    title: "MATCH RESULT",
+    formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : "Draw"),
+    sortDirection: "desc",
+  },
+  knockout_game: {
+    title: "MATCH RESULT",
+    formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : `#${s}`),
+    sortDirection: "desc",
+  },
 };
 
 // =============================================================================
@@ -717,6 +738,18 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     sortDirection: "desc",
     formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
+  pong_game: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
+  },
+  knockout_game: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
+  },
 };
 
 // =============================================================================
@@ -827,5 +860,19 @@ export const GAME_DESCRIPTIONS: Partial<Record<GameId, GameDescription>> = {
     howToPlay:
       "Two players take turns placing stones on a hexagonal grid. Red tries to connect the top and bottom edges. Blue tries to connect the left and right edges. Stones never move or get removed. After the first move, the second player may use the swap rule to take over that opening if it looks too strong.",
     tips: "Learn bridges first. Respect edge templates. Block early, but remember that good offense is also defense. Watch for ladder escapes and use the swap rule wisely.",
+  },
+  pong_game: {
+    shortDescription:
+      "The original arcade duel — reimagined for mobile. Take control of your paddle, outplay your opponent, and score your way to victory in this fast-paced 1v1 showdown.",
+    howToPlay:
+      "Each player controls a paddle on one side of the arena. Drag your finger to move your paddle up and down. The ball bounces off walls and paddles. Score a point when the ball passes your opponent's paddle. First to reach the target score wins! The ball speeds up during long rallies, so stay sharp.",
+    tips: "Hit the ball with the edge of your paddle for steeper angles. Moving your paddle as you hit creates subtle spin. Don't chase — anticipate where the ball will go. Rally speed ramps up, so end points quickly when you have the advantage.",
+  },
+  knockout_game: {
+    shortDescription:
+      "A slippery social showdown where every penguin launches at once. Predict, collide, and survive the shrinking ice floe.",
+    howToPlay:
+      "Choose your move during planning, then everyone launches at the same time. Knock rivals off the ice, avoid the edge, and outlast the shrinking arena. Last penguin standing wins!",
+    tips: "Watch where others aim before locking in. Use the arena edge to your advantage — ricochet off opponents toward the center. Save bold moves for when the ice is small. Sometimes the best move is to stay put.",
   },
 };

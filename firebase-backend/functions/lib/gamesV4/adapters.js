@@ -1658,6 +1658,99 @@ registerAdapter({
         };
     },
 });
+// ═══════════════════════════════════════════════════════════════════════════════
+// Pong (realtime 1v1 paddle game)
+// ═══════════════════════════════════════════════════════════════════════════════
+registerAdapter({
+    gameId: "pong_game",
+    runtimeType: "realtime",
+    maxPlayers: 2,
+    minPlayers: 2,
+    defaultSettings: {
+        scoreToWin: 7,
+        winByTwo: false,
+        ballSpeedPreset: "normal",
+        paddleSizePreset: "normal",
+        arenaTheme: "classic",
+    },
+    createInitialPublicState(players) {
+        const uids = players.map((p) => p.uid);
+        const scores = {};
+        for (const p of players)
+            scores[p.uid] = 0;
+        return {
+            phase: "waiting",
+            leftPlayerId: uids[0] ?? "",
+            rightPlayerId: uids[1] ?? "",
+            scores,
+        };
+    },
+    computeOutcome(publicState, players) {
+        const scores = publicState.scores;
+        if (!scores) {
+            return {
+                winnerIds: [],
+                finalScoreboard: players.map((p, i) => ({
+                    uid: p.uid,
+                    score: 0,
+                    placement: i + 1,
+                    stats: {},
+                })),
+            };
+        }
+        const sorted = players
+            .map((p) => ({ uid: p.uid, score: scores[p.uid] ?? 0 }))
+            .sort((a, b) => b.score - a.score);
+        const topScore = sorted[0]?.score ?? 0;
+        const winnerIds = topScore > 0
+            ? sorted.filter((s) => s.score === topScore).map((s) => s.uid)
+            : [];
+        return {
+            winnerIds,
+            finalScoreboard: sorted.map((s, i) => ({
+                uid: s.uid,
+                score: winnerIds.includes(s.uid) ? 1 : 0,
+                placement: i + 1,
+                stats: { matchScore: s.score },
+            })),
+        };
+    },
+    extractPerformanceMetrics(publicState, players) {
+        const scores = publicState.scores;
+        return {
+            scoresSnapshot: scores ?? {},
+            playerCount: players.length,
+        };
+    },
+    validateSettings(patch) {
+        const result = {};
+        if (patch.scoreToWin !== undefined) {
+            result.scoreToWin = [5, 7, 11].includes(patch.scoreToWin)
+                ? patch.scoreToWin
+                : 7;
+        }
+        if (patch.winByTwo !== undefined) {
+            result.winByTwo =
+                typeof patch.winByTwo === "boolean" ? patch.winByTwo : false;
+        }
+        if (patch.ballSpeedPreset !== undefined) {
+            result.ballSpeedPreset = ["normal", "fast"].includes(patch.ballSpeedPreset)
+                ? patch.ballSpeedPreset
+                : "normal";
+        }
+        if (patch.paddleSizePreset !== undefined) {
+            result.paddleSizePreset = ["normal", "large"].includes(patch.paddleSizePreset)
+                ? patch.paddleSizePreset
+                : "normal";
+        }
+        if (patch.arenaTheme !== undefined) {
+            result.arenaTheme = ["classic", "neon", "catppuccin"].includes(patch.arenaTheme)
+                ? patch.arenaTheme
+                : "classic";
+        }
+        return result;
+    },
+});
 const BS_FLEET_CLASSIC_5 = [
     { shipId: "carrier", name: "Carrier", size: 5 },
     { shipId: "battleship", name: "Battleship", size: 4 },
@@ -6580,6 +6673,348 @@ registerAdapter({
             return { boardSize };
         }
         return { boardSize: "standard" };
+    },
+});
+const HEX_SIZE = 9;
+const HEX_TOTAL = HEX_SIZE * HEX_SIZE;
+function hexRow(i) {
+    return Math.floor(i / HEX_SIZE);
+}
+function hexCol(i) {
+    return i % HEX_SIZE;
+}
+function hexIdx(r, c) {
+    return r * HEX_SIZE + c;
+}
+const HEX_NEIGHBOR_OFFSETS = [
+    [-1, 0],
+    [-1, 1],
+    [0, -1],
+    [0, 1],
+    [1, -1],
+    [1, 0],
+];
+function hexNeighbors(index) {
+    const r = hexRow(index);
+    const c = hexCol(index);
+    const out = [];
+    for (const [dr, dc] of HEX_NEIGHBOR_OFFSETS) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr >= 0 && nr < HEX_SIZE && nc >= 0 && nc < HEX_SIZE) {
+            out.push(hexIdx(nr, nc));
+        }
+    }
+    return out;
+}
+function hexCheckWin(cells, color) {
+    const startCells = [];
+    const isEnd = (i) => color === "red" ? hexRow(i) === HEX_SIZE - 1 : hexCol(i) === HEX_SIZE - 1;
+    for (let i = 0; i < HEX_SIZE; i++) {
+        const idx = color === "red" ? hexIdx(0, i) : hexIdx(i, 0);
+        if (cells[idx] === color)
+            startCells.push(idx);
+    }
+    if (startCells.length === 0)
+        return null;
+    const visited = new Set();
+    const parent = new Map();
+    const queue = [];
+    for (const s of startCells) {
+        visited.add(s);
+        parent.set(s, -1);
+        queue.push(s);
+    }
+    while (queue.length > 0) {
+        const cur = queue.shift();
+        if (isEnd(cur)) {
+            const path = [];
+            let n = cur;
+            while (n !== undefined && n !== -1) {
+                path.push(n);
+                n = parent.get(n);
+            }
+            return path.reverse();
+        }
+        for (const nb of hexNeighbors(cur)) {
+            if (!visited.has(nb) && cells[nb] === color) {
+                visited.add(nb);
+                parent.set(nb, cur);
+                queue.push(nb);
+            }
+        }
+    }
+    return null;
+}
+registerAdapter({
+    gameId: "hex",
+    runtimeType: "turnBased",
+    maxPlayers: 2,
+    minPlayers: 2,
+    defaultSettings: {},
+    createInitialPublicState(players, _settings) {
+        const sorted = [...players].sort((a, b) => a.slotIndex - b.slotIndex);
+        const colorByUid = {};
+        colorByUid[sorted[0].uid] = "red";
+        colorByUid[sorted[1].uid] = "blue";
+        const state = {
+            boardSize: 9,
+            cells: Array(HEX_TOTAL).fill(null),
+            phase: "opening",
+            colorByUid,
+            edgeGoalByColor: { red: "top_bottom", blue: "left_right" },
+            openingMoveIndex: null,
+            swapDecision: null,
+            moveCount: 0,
+            lastMove: null,
+            winnerUid: null,
+            winningPath: null,
+        };
+        return state;
+    },
+    validateMove(publicState, _privateState, movePayload, ctx) {
+        const state = publicState;
+        const move = movePayload;
+        const expectedUid = ctx.turnOrder[ctx.currentTurnIndex % ctx.turnOrder.length];
+        if (ctx.uid !== expectedUid)
+            return { ok: false, error: "Not your turn." };
+        if (state.phase === "resolved")
+            return { ok: false, error: "Game resolved." };
+        // ── Swap decision ──
+        if (move.type === "swap_decision") {
+            if (state.phase !== "swap_pending")
+                return { ok: false, error: "Swap not available." };
+            if (move.choice !== "keep" && move.choice !== "swap")
+                return { ok: false, error: "Invalid swap choice." };
+            const playerColor = state.colorByUid[ctx.uid] ?? null;
+            if (playerColor !== "blue")
+                return { ok: false, error: "Only second player can swap." };
+            const ns = { ...state, cells: [...state.cells] };
+            if (move.choice === "keep") {
+                ns.swapDecision = "kept";
+                ns.phase = "main";
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    turnAdvance: false,
+                };
+            }
+            else {
+                const newColors = {};
+                for (const [uid, c] of Object.entries(state.colorByUid)) {
+                    newColors[uid] = c === "red" ? "blue" : "red";
+                }
+                ns.colorByUid = newColors;
+                ns.swapDecision = "swapped";
+                ns.phase = "main";
+                // After swap, the opening stone stays its original color on the board.
+                // The color assignments have flipped, so the stone's color now maps to
+                // the swapper (p2). No cell flip needed.
+                if (ns.lastMove) {
+                    ns.lastMove = {
+                        ...ns.lastMove,
+                        color: state.colorByUid[ns.lastMove.uid] ?? "red",
+                    };
+                }
+                return {
+                    ok: true,
+                    nextPublicState: ns,
+                    turnAdvance: true,
+                };
+            }
+        }
+        // ── Placement ──
+        if (move.type !== "place")
+            return { ok: false, error: "Invalid move type." };
+        if (state.phase !== "opening" && state.phase !== "main") {
+            return {
+                ok: false,
+                error: state.phase === "swap_pending"
+                    ? "Waiting for swap decision."
+                    : "Cannot place now.",
+            };
+        }
+        const { index } = move;
+        if (typeof index !== "number" || !Number.isInteger(index))
+            return { ok: false, error: "Invalid cell index." };
+        if (index < 0 || index >= HEX_TOTAL)
+            return { ok: false, error: "Cell out of bounds." };
+        if (state.cells[index] !== null)
+            return { ok: false, error: "Cell occupied." };
+        const color = state.colorByUid[ctx.uid] ?? null;
+        if (!color)
+            return { ok: false, error: "No assigned color." };
+        const newCells = [...state.cells];
+        newCells[index] = color;
+        const ns = {
+            ...state,
+            cells: newCells,
+            moveCount: state.moveCount + 1,
+            lastMove: { uid: ctx.uid, color, index },
+        };
+        if (state.phase === "opening") {
+            ns.openingMoveIndex = index;
+            ns.phase = "swap_pending";
+            ns.swapDecision = "pending";
+            return {
+                ok: true,
+                nextPublicState: ns,
+                turnAdvance: true,
+            };
+        }
+        const winPath = hexCheckWin(newCells, color);
+        if (winPath) {
+            ns.winnerUid = ctx.uid;
+            ns.winningPath = winPath;
+            ns.phase = "resolved";
+            return {
+                ok: true,
+                nextPublicState: ns,
+                turnAdvance: false,
+                terminal: { type: "win", winnerIds: [ctx.uid] },
+            };
+        }
+        return {
+            ok: true,
+            nextPublicState: ns,
+            turnAdvance: true,
+        };
+    },
+    computeOutcome(publicState, players) {
+        const state = publicState;
+        if (state.winnerUid) {
+            const winnerId = state.winnerUid;
+            const loserId = players.find((p) => p.uid !== winnerId)?.uid ?? "";
+            return {
+                winnerIds: [winnerId],
+                finalScoreboard: [
+                    {
+                        uid: winnerId,
+                        score: 1,
+                        placement: 1,
+                        stats: {
+                            color: state.colorByUid[winnerId] ?? "red",
+                            totalMoves: state.moveCount,
+                            swapDecision: state.swapDecision,
+                        },
+                    },
+                    {
+                        uid: loserId,
+                        score: 0,
+                        placement: 2,
+                        stats: {
+                            color: state.colorByUid[loserId] ?? "blue",
+                            totalMoves: state.moveCount,
+                            swapDecision: state.swapDecision,
+                        },
+                    },
+                ],
+            };
+        }
+        return {
+            winnerIds: [],
+            finalScoreboard: players.map((p) => ({
+                uid: p.uid,
+                score: 0,
+                placement: 1,
+                stats: {
+                    color: state.colorByUid[p.uid] ?? null,
+                    totalMoves: state.moveCount,
+                    swapDecision: state.swapDecision,
+                },
+            })),
+        };
+    },
+    extractPerformanceMetrics(publicState, _players) {
+        const state = publicState;
+        return {
+            boardSize: state.boardSize,
+            swapUsed: state.swapDecision === "swapped",
+            swapDeclinedByWinner: state.swapDecision === "kept" && state.winnerUid !== null,
+            totalMoves: state.moveCount,
+            winningPathLength: state.winningPath?.length ?? 0,
+            winnerColor: state.winnerUid
+                ? (state.colorByUid[state.winnerUid] ?? null)
+                : null,
+        };
+    },
+});
+// =============================================================================
+// Knockout (Realtime)
+// =============================================================================
+registerAdapter({
+    gameId: "knockout_game",
+    runtimeType: "realtime",
+    maxPlayers: 8,
+    minPlayers: 2,
+    defaultSettings: {
+        planningTimerSec: 10,
+        shrinkSpeed: "normal",
+        maxPlayers: 8,
+    },
+    createInitialPublicState(players) {
+        const scores = {};
+        for (const p of players)
+            scores[p.uid] = 0;
+        return {
+            phase: "waiting",
+            playerUids: players.map((p) => p.uid),
+            scores,
+        };
+    },
+    computeOutcome(publicState, players) {
+        const scores = publicState.scores;
+        if (!scores) {
+            return {
+                winnerIds: [],
+                finalScoreboard: players.map((p, i) => ({
+                    uid: p.uid,
+                    score: 0,
+                    placement: i + 1,
+                    stats: {},
+                })),
+            };
+        }
+        const sorted = players
+            .map((p) => ({ uid: p.uid, score: scores[p.uid] ?? 0 }))
+            .sort((a, b) => b.score - a.score);
+        const topScore = sorted[0]?.score ?? 0;
+        const winnerIds = topScore > 0
+            ? sorted.filter((s) => s.score === topScore).map((s) => s.uid)
+            : [];
+        return {
+            winnerIds,
+            finalScoreboard: sorted.map((s, i) => ({
+                uid: s.uid,
+                score: s.score,
+                placement: i + 1,
+                stats: {},
+            })),
+        };
+    },
+    extractPerformanceMetrics(publicState, _players) {
+        return {
+            scores: publicState.scores ?? {},
+        };
+    },
+    validateSettings(patch) {
+        const result = {};
+        if (patch.planningTimerSec !== undefined) {
+            result.planningTimerSec = [6, 8, 10, 12].includes(patch.planningTimerSec)
+                ? patch.planningTimerSec
+                : 10;
+        }
+        if (patch.shrinkSpeed !== undefined) {
+            result.shrinkSpeed = ["normal", "fast"].includes(patch.shrinkSpeed)
+                ? patch.shrinkSpeed
+                : "normal";
+        }
+        if (patch.maxPlayers !== undefined) {
+            const n = patch.maxPlayers;
+            result.maxPlayers =
+                typeof n === "number" && n >= 2 && n <= 8 ? Math.floor(n) : 8;
+        }
+        return result;
     },
 });
 //# sourceMappingURL=adapters.js.map

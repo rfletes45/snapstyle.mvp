@@ -78,7 +78,9 @@ const GAME_DISPLAY_NAMES = {
     crossword_puzzle: "Crossword",
     minigolf_duels: "Mini Golf",
     dot_match: "Dot Match",
+    knockout_game: "Knockout",
     solitaire_klondike: "Solitaire",
+    hex: "Hex",
 };
 function gameName(gameId) {
     return GAME_DISPLAY_NAMES[gameId] || gameId;

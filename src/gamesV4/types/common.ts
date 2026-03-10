@@ -42,7 +42,8 @@ export type GameId =
   | "starforge_game"
   | "crossword_puzzle"
   | "minigolf_duels"
-  | "dot_match";
+  | "dot_match"
+  | "knockout_game";
 
 /** Runtime classification for a game. */
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";

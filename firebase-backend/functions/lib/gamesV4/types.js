@@ -66,6 +66,9 @@ exports.LEADERBOARD_METRICS = {
     solitaire_klondike: "bestScore",
     reversi: "wins",
     dots_and_boxes: "wins",
+    hex: "wins",
+    pong_game: "wins",
+    knockout_game: "wins",
     // Default for unspecified games: "bestScore"
 };
 function getLeaderboardMetric(gameId) {

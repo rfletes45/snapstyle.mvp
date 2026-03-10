@@ -110,8 +110,8 @@ const BOARD = {
   cellStrokeLight: "rgba(0,0,0,0.08)",
   cellPressDark: "rgba(255,255,255,0.14)",
   cellPressLight: "rgba(0,0,0,0.08)",
-  lastGlow: "#FFD54F",
-  winGlow: "#FFD700",
+  lastGlow: "rgba(255,255,255,0.45)",
+  winGlow: "rgba(255,255,255,0.55)",
 } as const;
 
 /** Win / loss colors matching system pattern */
@@ -125,38 +125,51 @@ const T = {
 } as const;
 
 // =============================================================================
-// Responsive Layout — pointy-top hexagon geometry
+// Responsive Layout — flat-top hexagon geometry (portrait-oriented rhombus)
 // =============================================================================
 
 const SCREEN_W = Dimensions.get("window").width;
 
+/**
+ * Portrait-oriented hex layout: flat-top hexagons arranged so the board
+ * rhombus extends taller vertically, fitting naturally on mobile screens.
+ *
+ * Each logical column shifts downward by half a hex height, creating the
+ * characteristic hex parallelogram but oriented vertically.
+ *
+ * Red (top↔bottom) connects the top-left edge to the bottom-right edge.
+ * Blue (left↔right) connects the top-right edge to the bottom-left edge.
+ */
 function computeLayout() {
-  const edgePad = 24;
-  const railW = 4;
-  const maxBoardW = SCREEN_W - edgePad * 2 - railW * 2 - 12;
-  const effectiveCols = BOARD_SIZE + (BOARD_SIZE - 1) * 0.5;
   const sqr3 = Math.sqrt(3);
-  const r = Math.min(Math.floor(maxBoardW / (effectiveCols * sqr3)), 18);
+  const edgePad = 20;
+  const maxW = SCREEN_W - edgePad * 2 - 16;
+  // Flat-top hex: width = 2*r, height = sqrt(3)*r
+  // Board width = cols * 1.5*r + 0.5*r = (1.5*cols + 0.5)*r
+  // We need this to fit in maxW
+  const effectiveW = 1.5 * BOARD_SIZE + 0.5;
+  const r = Math.min(Math.floor(maxW / effectiveW), 18);
   const radius = Math.max(r, 12);
-  const hexW = sqr3 * radius;
-  const hexH = 2 * radius;
-  const horizSpacing = hexW;
-  const vertSpacing = hexH * 0.75;
-  const boardW =
-    (BOARD_SIZE - 1) * horizSpacing +
-    (BOARD_SIZE - 1) * horizSpacing * 0.5 +
-    hexW;
-  const boardH = (BOARD_SIZE - 1) * vertSpacing + hexH;
+  const hexW = 2 * radius; // flat-top width
+  const hexH = sqr3 * radius; // flat-top height
+  const horizSpacing = hexW * 0.75; // horizontal distance between col centers
+  const vertSpacing = hexH; // vertical distance between row centers
+  // Board overall dimensions
+  const boardW = (BOARD_SIZE - 1) * horizSpacing + hexW;
+  const boardH =
+    (BOARD_SIZE - 1) * vertSpacing +
+    (BOARD_SIZE - 1) * vertSpacing * 0.5 +
+    hexH;
   return { radius, hexW, hexH, horizSpacing, vertSpacing, boardW, boardH };
 }
 
 const L = computeLayout();
 
-/** Pointy-top hexagon vertices relative to center (0,0) */
+/** Flat-top hexagon vertices relative to center (0,0) */
 function hexPoints(r: number): string {
   const pts: string[] = [];
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i - 30);
+    const angle = (Math.PI / 180) * (60 * i);
     pts.push(
       `${(r * Math.cos(angle)).toFixed(2)},${(r * Math.sin(angle)).toFixed(2)}`,
     );
@@ -166,13 +179,17 @@ function hexPoints(r: number): string {
 
 const HEX_POINTS = hexPoints(L.radius);
 
-/** Cell center in board-relative coordinates */
+/**
+ * Cell center in board-relative coordinates.
+ * Rows run top-to-bottom; columns run left-to-right.
+ * Each column offsets downward by half a hex height (portrait shift).
+ */
 function cellCenter(index: number): { cx: number; cy: number } {
   const row = Math.floor(index / BOARD_SIZE);
   const col = index % BOARD_SIZE;
   return {
-    cx: col * L.horizSpacing + row * L.horizSpacing * 0.5 + L.hexW / 2,
-    cy: row * L.vertSpacing + L.hexH / 2,
+    cx: col * L.horizSpacing + L.hexW / 2,
+    cy: row * L.vertSpacing + col * L.vertSpacing * 0.5 + L.hexH / 2,
   };
 }
 
@@ -367,7 +384,7 @@ const HexCellView = React.memo(function HexCellView({
                 right: -2,
                 bottom: -2,
                 borderRadius: stoneR + 2,
-                borderWidth: 2,
+                borderWidth: 1.5,
                 borderColor: BOARD.lastGlow,
               }}
             />
@@ -376,12 +393,12 @@ const HexCellView = React.memo(function HexCellView({
             <Animated.View
               style={{
                 position: "absolute",
-                top: -4,
-                left: -4,
-                right: -4,
-                bottom: -4,
-                borderRadius: stoneR + 4,
-                borderWidth: 2.5,
+                top: -3,
+                left: -3,
+                right: -3,
+                bottom: -3,
+                borderRadius: stoneR + 3,
+                borderWidth: 2,
                 borderColor: BOARD.winGlow,
                 opacity: glowAnim,
               }}
@@ -403,19 +420,21 @@ const EdgeRails = React.memo(function EdgeRails({
   isDark: boolean;
 }) {
   const railW = 3;
-  const railOff = L.radius + 2;
+  const railOff = L.radius * 0.7 + 2;
   const alpha = isDark ? 0.6 : 0.5;
 
   const rails = useMemo(() => {
+    // Red: top edge (row 0, all cols) and bottom edge (row 8, all cols)
     const top: { cx: number; cy: number }[] = [];
     const bot: { cx: number; cy: number }[] = [];
+    // Blue: left edge (col 0, all rows) and right edge (col 8, all rows)
     const left: { cx: number; cy: number }[] = [];
     const right: { cx: number; cy: number }[] = [];
     for (let i = 0; i < BOARD_SIZE; i++) {
-      top.push(cellCenter(i));
-      bot.push(cellCenter((BOARD_SIZE - 1) * BOARD_SIZE + i));
-      left.push(cellCenter(i * BOARD_SIZE));
-      right.push(cellCenter(i * BOARD_SIZE + BOARD_SIZE - 1));
+      top.push(cellCenter(i)); // row 0, col i
+      bot.push(cellCenter((BOARD_SIZE - 1) * BOARD_SIZE + i)); // row 8, col i
+      left.push(cellCenter(i * BOARD_SIZE)); // row i, col 0
+      right.push(cellCenter(i * BOARD_SIZE + BOARD_SIZE - 1)); // row i, col 8
     }
     return { top, bot, left, right };
   }, []);
@@ -444,33 +463,37 @@ const EdgeRails = React.memo(function EdgeRails({
     />
   );
 
-  const len = L.radius;
+  const segLen = L.radius * 0.8;
 
   return (
     <>
+      {/* Red: top row rails (above cells) */}
       {rails.top.map((p, i) =>
-        bar(`rt${i}`, p.cx - len / 2, p.cy - railOff, len, railW, P.red),
+        bar(`rt${i}`, p.cx - segLen / 2, p.cy - railOff, segLen, railW, P.red),
       )}
+      {/* Red: bottom row rails (below cells) */}
       {rails.bot.map((p, i) =>
         bar(
           `rb${i}`,
-          p.cx - len / 2,
+          p.cx - segLen / 2,
           p.cy + railOff - railW,
-          len,
+          segLen,
           railW,
           P.red,
         ),
       )}
+      {/* Blue: left column rails (left of cells) */}
       {rails.left.map((p, i) =>
-        bar(`bl${i}`, p.cx - railOff, p.cy - len / 2, railW, len, P.blue),
+        bar(`bl${i}`, p.cx - railOff, p.cy - segLen / 2, railW, segLen, P.blue),
       )}
+      {/* Blue: right column rails (right of cells) */}
       {rails.right.map((p, i) =>
         bar(
           `br${i}`,
           p.cx + railOff - railW,
-          p.cy - len / 2,
+          p.cy - segLen / 2,
           railW,
-          len,
+          segLen,
           P.blue,
         ),
       )}
@@ -1111,7 +1134,7 @@ function HexGameUI(props: GameShellProps) {
           >
             <View
               style={{
-                width: L.boardW + L.radius * 2 + 8,
+                width: L.boardW + L.radius + 8,
                 height: L.boardH + L.radius * 0.5 + 8,
                 position: "relative",
               }}

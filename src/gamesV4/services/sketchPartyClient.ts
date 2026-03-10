@@ -1,10 +1,16 @@
 /**
- * Sketch Party — Colyseus Client Service
+ * Sketch Party — Colyseus Client Service (LEGACY)
  *
- * Connects to the Colyseus realtime server for Sketch Party games.
- * Provides typed hooks for room state, messages, and actions.
+ * Type exports (ChatEntry, StrokeData, ReactionKind, etc.) are still
+ * used by SketchPartyScreenV4 and other consumers.
+ *
+ * Connection & send functions are DEPRECATED — use the generalized
+ * realtime framework instead:
+ *   import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
+ *   import { SKETCH_PARTY_CLIENT_DEF } from "@/gamesV4/realtime/games/sketchPartyDef";
  *
  * @module gamesV4/services/sketchPartyClient
+ * @deprecated Connection/send functions replaced by useRealtimeRoom hook.
  */
 
 import { Client, Room } from "colyseus.js";
@@ -109,7 +115,7 @@ export interface ReactionEvent {
 }
 
 // =============================================================================
-// Room state shape (mirrors Colyseus schema; used for typed access)
+// Room state shape (message payload contract used by typed access)
 // =============================================================================
 
 export interface SketchPartyRoomState {
@@ -187,20 +193,13 @@ function getClient(): Client {
 
 /**
  * Join or create a Sketch Party room tied to a V4 session.
- *
- * @param sessionId V4 session ID (used as room ID for deterministic lookup)
- * @param uid       Player's UID
- * @param displayName Player's display name
- * @param token     Firebase ID token for server-side auth verification
- * @param settings  Lobby settings from session.settings (applied on room create)
- * @returns The Colyseus Room instance
+ * @deprecated Use useRealtimeRoom(SKETCH_PARTY_CLIENT_DEF, opts) instead.
  */
 export async function joinSketchPartyRoom(
   sessionId: string,
   uid: string,
   displayName: string,
   token: string,
-  settings?: Record<string, unknown>,
 ): Promise<Room> {
   const client = getClient();
   console.log(
@@ -213,7 +212,6 @@ export async function joinSketchPartyRoom(
     uid,
     displayName,
     token,
-    settings,
   });
   console.log(
     `[SketchParty] Joined room ${room.roomId} (session ${room.sessionId})`,
@@ -223,6 +221,7 @@ export async function joinSketchPartyRoom(
 
 /**
  * Leave the current room gracefully.
+ * @deprecated Room lifecycle is managed by useRealtimeRoom hook.
  */
 export async function leaveRoom(room: Room): Promise<void> {
   try {
@@ -266,13 +265,4 @@ export function sendReaction(room: Room, kind: ReactionKind): void {
 
 export function sendClearCanvas(room: Room): void {
   room.send("clear", {});
-}
-
-export function sendToolSet(
-  room: Room,
-  tool: "pen" | "eraser",
-  color: string,
-  width: number,
-): void {
-  room.send("tool_set", { tool, color, width });
 }

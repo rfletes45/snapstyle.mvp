@@ -2108,6 +2108,124 @@ registerAdapter({
   },
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Pong (realtime 1v1 paddle game)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+registerAdapter({
+  gameId: "pong_game",
+  runtimeType: "realtime",
+  maxPlayers: 2,
+  minPlayers: 2,
+
+  defaultSettings: {
+    scoreToWin: 7,
+    winByTwo: false,
+    ballSpeedPreset: "normal",
+    paddleSizePreset: "normal",
+    arenaTheme: "classic",
+  },
+
+  createInitialPublicState(
+    players: Array<{ uid: string; slotIndex: number }>,
+  ): Record<string, unknown> {
+    const uids = players.map((p) => p.uid);
+    const scores: Record<string, number> = {};
+    for (const p of players) scores[p.uid] = 0;
+    return {
+      phase: "waiting",
+      leftPlayerId: uids[0] ?? "",
+      rightPlayerId: uids[1] ?? "",
+      scores,
+    };
+  },
+
+  computeOutcome(
+    publicState: Record<string, unknown>,
+    players: Array<{ uid: string; slotIndex: number }>,
+  ): GameOutcome {
+    const scores = (publicState as Record<string, unknown>).scores as
+      | Record<string, number>
+      | undefined;
+    if (!scores) {
+      return {
+        winnerIds: [],
+        finalScoreboard: players.map((p, i) => ({
+          uid: p.uid,
+          score: 0,
+          placement: i + 1,
+          stats: {},
+        })),
+      };
+    }
+    const sorted = players
+      .map((p) => ({ uid: p.uid, score: scores[p.uid] ?? 0 }))
+      .sort((a, b) => b.score - a.score);
+    const topScore = sorted[0]?.score ?? 0;
+    const winnerIds =
+      topScore > 0
+        ? sorted.filter((s) => s.score === topScore).map((s) => s.uid)
+        : [];
+    return {
+      winnerIds,
+      finalScoreboard: sorted.map((s, i) => ({
+        uid: s.uid,
+        score: winnerIds.includes(s.uid) ? 1 : 0,
+        placement: i + 1,
+        stats: { matchScore: s.score },
+      })),
+    };
+  },
+
+  extractPerformanceMetrics(
+    publicState: Record<string, unknown>,
+    players: Array<{ uid: string }>,
+  ): Record<string, unknown> {
+    const scores = (publicState as Record<string, unknown>).scores as
+      | Record<string, number>
+      | undefined;
+    return {
+      scoresSnapshot: scores ?? {},
+      playerCount: players.length,
+    };
+  },
+
+  validateSettings(patch: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    if (patch.scoreToWin !== undefined) {
+      result.scoreToWin = [5, 7, 11].includes(patch.scoreToWin as number)
+        ? patch.scoreToWin
+        : 7;
+    }
+    if (patch.winByTwo !== undefined) {
+      result.winByTwo =
+        typeof patch.winByTwo === "boolean" ? patch.winByTwo : false;
+    }
+    if (patch.ballSpeedPreset !== undefined) {
+      result.ballSpeedPreset = ["normal", "fast"].includes(
+        patch.ballSpeedPreset as string,
+      )
+        ? patch.ballSpeedPreset
+        : "normal";
+    }
+    if (patch.paddleSizePreset !== undefined) {
+      result.paddleSizePreset = ["normal", "large"].includes(
+        patch.paddleSizePreset as string,
+      )
+        ? patch.paddleSizePreset
+        : "normal";
+    }
+    if (patch.arenaTheme !== undefined) {
+      result.arenaTheme = ["classic", "neon", "catppuccin"].includes(
+        patch.arenaTheme as string,
+      )
+        ? patch.arenaTheme
+        : "classic";
+    }
+    return result;
+  },
+});
+
 // =============================================================================
 // Battleship Adapter
 // =============================================================================
@@ -8329,14 +8447,13 @@ registerAdapter({
         ns.colorByUid = newColors;
         ns.swapDecision = "swapped";
         ns.phase = "main";
-        if (ns.openingMoveIndex !== null) {
-          const old = state.cells[ns.openingMoveIndex];
-          ns.cells[ns.openingMoveIndex] = old === "red" ? "blue" : "red";
-        }
+        // After swap, the opening stone stays its original color on the board.
+        // The color assignments have flipped, so the stone's color now maps to
+        // the swapper (p2). No cell flip needed.
         if (ns.lastMove) {
           ns.lastMove = {
             ...ns.lastMove,
-            color: newColors[ns.lastMove.uid] ?? "red",
+            color: state.colorByUid[ns.lastMove.uid] ?? "red",
           };
         }
         return {
@@ -8471,5 +8588,104 @@ registerAdapter({
         ? (state.colorByUid[state.winnerUid] ?? null)
         : null,
     };
+  },
+});
+
+// =============================================================================
+// Knockout (Realtime)
+// =============================================================================
+
+registerAdapter({
+  gameId: "knockout_game",
+  runtimeType: "realtime",
+  maxPlayers: 8,
+  minPlayers: 2,
+
+  defaultSettings: {
+    planningTimerSec: 10,
+    shrinkSpeed: "normal",
+    maxPlayers: 8,
+  },
+
+  createInitialPublicState(
+    players: Array<{ uid: string; slotIndex: number }>,
+  ): Record<string, unknown> {
+    const scores: Record<string, number> = {};
+    for (const p of players) scores[p.uid] = 0;
+    return {
+      phase: "waiting",
+      playerUids: players.map((p) => p.uid),
+      scores,
+    };
+  },
+
+  computeOutcome(
+    publicState: Record<string, unknown>,
+    players: Array<{ uid: string; slotIndex: number }>,
+  ): GameOutcome {
+    const scores = (publicState as Record<string, unknown>).scores as
+      | Record<string, number>
+      | undefined;
+    if (!scores) {
+      return {
+        winnerIds: [],
+        finalScoreboard: players.map((p, i) => ({
+          uid: p.uid,
+          score: 0,
+          placement: i + 1,
+          stats: {},
+        })),
+      };
+    }
+    const sorted = players
+      .map((p) => ({ uid: p.uid, score: scores[p.uid] ?? 0 }))
+      .sort((a, b) => b.score - a.score);
+    const topScore = sorted[0]?.score ?? 0;
+    const winnerIds =
+      topScore > 0
+        ? sorted.filter((s) => s.score === topScore).map((s) => s.uid)
+        : [];
+    return {
+      winnerIds,
+      finalScoreboard: sorted.map((s, i) => ({
+        uid: s.uid,
+        score: s.score,
+        placement: i + 1,
+        stats: {},
+      })),
+    };
+  },
+
+  extractPerformanceMetrics(
+    publicState: Record<string, unknown>,
+    _players: Array<{ uid: string }>,
+  ): Record<string, unknown> {
+    return {
+      scores: (publicState as Record<string, unknown>).scores ?? {},
+    };
+  },
+
+  validateSettings(patch: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    if (patch.planningTimerSec !== undefined) {
+      result.planningTimerSec = [6, 8, 10, 12].includes(
+        patch.planningTimerSec as number,
+      )
+        ? patch.planningTimerSec
+        : 10;
+    }
+    if (patch.shrinkSpeed !== undefined) {
+      result.shrinkSpeed = ["normal", "fast"].includes(
+        patch.shrinkSpeed as string,
+      )
+        ? patch.shrinkSpeed
+        : "normal";
+    }
+    if (patch.maxPlayers !== undefined) {
+      const n = patch.maxPlayers as number;
+      result.maxPlayers =
+        typeof n === "number" && n >= 2 && n <= 8 ? Math.floor(n) : 8;
+    }
+    return result;
   },
 });

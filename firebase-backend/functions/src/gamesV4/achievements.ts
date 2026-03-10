@@ -227,6 +227,20 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     icon: "⬡",
     sectionBadgeId: "section_hex",
   },
+  {
+    sectionId: "pong_game",
+    name: "Pong",
+    description: "Volley your way to table tennis mastery",
+    icon: "🏓",
+    sectionBadgeId: "section_pong_game",
+  },
+  {
+    sectionId: "knockout_game",
+    name: "Knockout",
+    description: "Bump and survive on the shrinking ice",
+    icon: "🐧",
+    sectionBadgeId: "section_knockout_game",
+  },
   // General game milestones
   {
     sectionId: "milestones",
@@ -2688,6 +2702,264 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
     tokenReward: 100,
     evaluate: (ctx) =>
       ctx.gameId === "hex" && (ctx.pbStats?.totalWins ?? 0) >= 100,
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Section: Pong
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    type: "pong_first_play",
+    name: "First Volley",
+    description: "Play your first Pong game",
+    sectionId: "pong_game",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) <= 1;
+    },
+  },
+  {
+    type: "pong_first_win",
+    name: "Match Point",
+    description: "Win your first Pong game",
+    badgeId: "pong_first_win",
+    sectionId: "pong_game",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      return (
+        ctx.winnerIds.includes(ctx.uid) && (ctx.pbStats?.totalWins ?? 0) <= 1
+      );
+    },
+  },
+  {
+    type: "pong_play_10",
+    name: "Table Regular",
+    description: "Play 10 Pong games",
+    sectionId: "pong_game",
+    difficulty: "medium",
+    tokenReward: 15,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) >= 10;
+    },
+  },
+  {
+    type: "pong_shutout",
+    name: "Shutout Artist",
+    description: "Win a Pong match without conceding a single point",
+    sectionId: "pong_game",
+    difficulty: "hard",
+    tokenReward: 35,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return pm?.shutout === true;
+    },
+  },
+  {
+    type: "pong_long_rally",
+    name: "Rally Master",
+    description: "Achieve a rally of 20+ hits in a single point",
+    sectionId: "pong_game",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return (
+        typeof pm?.longestRallyHits === "number" && pm.longestRallyHits >= 20
+      );
+    },
+  },
+  {
+    type: "pong_quick_reflexes",
+    name: "Lightning Reflexes",
+    description: "Score a point within 3 seconds of serve",
+    sectionId: "pong_game",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return (
+        typeof pm?.fastestPointMs === "number" && pm.fastestPointMs <= 3000
+      );
+    },
+  },
+  {
+    type: "pong_hot_streak",
+    name: "Hot Streak",
+    description: "Win 5 Pong matches",
+    sectionId: "pong_game",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 5;
+    },
+  },
+  {
+    type: "pong_arena_legend",
+    name: "Arena Legend",
+    description: "Win 25 Pong matches",
+    sectionId: "pong_game",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 25;
+    },
+  },
+  {
+    type: "pong_comeback",
+    name: "Comeback Kid",
+    description: "Win a match after trailing by 3 or more points",
+    sectionId: "pong_game",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return pm?.comebackWin === true;
+    },
+  },
+  {
+    type: "pong_unbroken_focus",
+    name: "Unbroken Focus",
+    description: "Win 50 Pong matches",
+    sectionId: "pong_game",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "pong_game") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 50;
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Section: Knockout
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    type: "knockout_first_play",
+    name: "On Thin Ice",
+    description: "Play your first Knockout game",
+    sectionId: "knockout_game",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) <= 1;
+    },
+  },
+  {
+    type: "knockout_first_win",
+    name: "Last Penguin Standing",
+    description: "Win your first Knockout game",
+    badgeId: "knockout_first_win",
+    sectionId: "knockout_game",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      return (
+        ctx.winnerIds.includes(ctx.uid) && (ctx.pbStats?.totalWins ?? 0) <= 1
+      );
+    },
+  },
+  {
+    type: "knockout_play_10",
+    name: "Ice Regular",
+    description: "Play 10 Knockout games",
+    sectionId: "knockout_game",
+    difficulty: "medium",
+    tokenReward: 15,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) >= 10;
+    },
+  },
+  {
+    type: "knockout_win_5",
+    name: "Icebreaker",
+    description: "Win 5 Knockout games",
+    sectionId: "knockout_game",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 5;
+    },
+  },
+  {
+    type: "knockout_clean_win",
+    name: "Flawless Victory",
+    description: "Win a Knockout match without being eliminated in any round",
+    sectionId: "knockout_game",
+    difficulty: "hard",
+    tokenReward: 35,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return pm?.cleanWin === true;
+    },
+  },
+  {
+    type: "knockout_cold_blooded",
+    name: "Cold Blooded",
+    description: "Knock out 3 or more opponents in a single match",
+    sectionId: "knockout_game",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return typeof pm?.coldBlooded === "boolean" && pm.coldBlooded === true;
+    },
+  },
+  {
+    type: "knockout_shrink_survivor",
+    name: "Shrink Survivor",
+    description: "Survive 3 or more arena shrink stages",
+    sectionId: "knockout_game",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      const pm = ctx.performanceMetrics as Record<string, unknown>;
+      return (
+        typeof pm?.shrinkStagesSurvived === "number" &&
+        pm.shrinkStagesSurvived >= 3
+      );
+    },
+  },
+  {
+    type: "knockout_win_25",
+    name: "King of the Ice",
+    description: "Win 25 Knockout games",
+    sectionId: "knockout_game",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 25;
+    },
+  },
+  {
+    type: "knockout_win_50",
+    name: "Emperor Penguin",
+    description: "Win 50 Knockout games",
+    sectionId: "knockout_game",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "knockout_game") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 50;
+    },
   },
 ];
 

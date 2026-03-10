@@ -133,6 +133,8 @@ export const onRealtimeResolutionRequest = functions.firestore
       return;
     }
 
+    // ── Extract fields (supports both legacy and new framework payloads) ──
+    const requestId = (data.requestId as string) ?? "legacy";
     const resolutionType = data.resolutionType as
       | "win"
       | "draw"
@@ -150,9 +152,49 @@ export const onRealtimeResolutionRequest = functions.firestore
         }>
       | undefined;
 
+    // New framework enrichment fields (optional, used for postmortem data)
+    const reason = (data.reason as string) ?? resolutionType;
+    const durationMs = (data.durationMs as number) ?? 0;
+    const gameId = data.gameId as string | undefined;
+    const playerMetrics = data.playerMetrics as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+
     console.log(
-      `[triggerV4] Realtime resolution request for session ${sessionId}: ${resolutionType}, winners=${JSON.stringify(winnerIds)}`,
+      `[triggerV4] Realtime resolution request for session ${sessionId}: ` +
+        `requestId=${requestId}, resolutionType=${resolutionType}, ` +
+        `reason=${reason}, winners=${JSON.stringify(winnerIds)}, ` +
+        `durationMs=${durationMs}${gameId ? `, gameId=${gameId}` : ""}`,
     );
+
+    // ── Idempotency guard: check session status before resolving ──
+    try {
+      const db = getDb();
+      const sessionSnap = await db
+        .collection(COLLECTIONS.GAME_SESSIONS)
+        .doc(sessionId)
+        .get();
+
+      if (sessionSnap.exists) {
+        const session = sessionSnap.data() as GameSessionV4;
+        if (
+          session.status === "resolved" ||
+          session.status === "abandoned" ||
+          session.status === "expired"
+        ) {
+          console.log(
+            `[triggerV4] Session ${sessionId} already ${session.status}. ` +
+              `Skipping resolution (requestId=${requestId}).`,
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[triggerV4] Failed to check session status for ${sessionId}. Proceeding with resolution:`,
+        err,
+      );
+    }
 
     try {
       await resolveRealtimeSessionV4(
@@ -160,13 +202,14 @@ export const onRealtimeResolutionRequest = functions.firestore
         resolutionType,
         winnerIds,
         scoreboard,
+        { reason, durationMs, gameId, playerMetrics, requestId },
       );
       console.log(
-        `[triggerV4] Realtime session ${sessionId} resolved successfully.`,
+        `[triggerV4] Realtime session ${sessionId} resolved successfully (requestId=${requestId}).`,
       );
     } catch (err) {
       console.error(
-        `[triggerV4] Failed to resolve realtime session ${sessionId}:`,
+        `[triggerV4] Failed to resolve realtime session ${sessionId} (requestId=${requestId}):`,
         err,
       );
     }

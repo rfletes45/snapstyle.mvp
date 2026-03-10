@@ -35,7 +35,7 @@ export type {
   RunMoveResult,
 } from "./gameRunner";
 
-// Pilot adapters — import triggers auto-registration
+// Registered adapters — import triggers auto-registration
 import "./battleship";
 import "./brickBreaker";
 import "./chess";
@@ -43,9 +43,11 @@ import "./connectFour";
 import "./crazyEights";
 import "./dotsAndBoxes";
 import "./hex";
+import "./knockout";
 import "./minesweeper";
 import "./minigolf";
 import "./play2048";
+import "./pong";
 import "./reversi";
 import "./sketchParty";
 import "./solitaireKlondike";

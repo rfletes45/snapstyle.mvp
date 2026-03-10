@@ -140,17 +140,33 @@ export default function LobbySettingsPanel({
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
-          {schema.map((field) => (
-            <SettingsField
-              key={field.key}
-              field={field}
-              value={values[field.key]}
-              onChange={(v) => handleChange(field.key, v)}
-              isDark={isDark}
-              primaryColor={theme.colors.primary}
-              disabled={readOnly}
-            />
-          ))}
+          {schema.map((field, idx) => {
+            // Show group header if field has a group and it's the first in that group
+            const prevGroup = idx > 0 ? schema[idx - 1].group : undefined;
+            const showGroupHeader = !!field.group && field.group !== prevGroup;
+            return (
+              <React.Fragment key={field.key}>
+                {showGroupHeader && (
+                  <Text
+                    style={[
+                      styles.groupHeader,
+                      { color: theme.colors.primary },
+                    ]}
+                  >
+                    {field.group}
+                  </Text>
+                )}
+                <SettingsField
+                  field={field}
+                  value={values[field.key]}
+                  onChange={(v) => handleChange(field.key, v)}
+                  isDark={isDark}
+                  primaryColor={theme.colors.primary}
+                  disabled={readOnly}
+                />
+              </React.Fragment>
+            );
+          })}
         </ScrollView>
       )}
     </View>
@@ -182,11 +198,20 @@ function SettingsField({
     case "boolean":
       return (
         <View style={styles.fieldRow}>
-          <Text
-            style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
-          >
-            {field.label}
-          </Text>
+          <View style={styles.fieldLabelCol}>
+            <Text
+              style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
+            >
+              {field.label}
+            </Text>
+            {field.helperText && (
+              <Text
+                style={[styles.helperText, { color: isDark ? "#777" : "#999" }]}
+              >
+                {field.helperText}
+              </Text>
+            )}
+          </View>
           <Switch
             value={value as boolean}
             onValueChange={onChange}
@@ -200,11 +225,20 @@ function SettingsField({
     case "number":
       return (
         <View style={styles.fieldRow}>
-          <Text
-            style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
-          >
-            {field.label}
-          </Text>
+          <View style={styles.fieldLabelCol}>
+            <Text
+              style={[styles.fieldLabel, { color: isDark ? "#CCC" : "#333" }]}
+            >
+              {field.label}
+            </Text>
+            {field.helperText && (
+              <Text
+                style={[styles.helperText, { color: isDark ? "#777" : "#999" }]}
+              >
+                {field.helperText}
+              </Text>
+            )}
+          </View>
           <View style={[styles.stepperRow, disabled && { opacity: 0.5 }]}>
             <TouchableOpacity
               style={[
@@ -258,6 +292,13 @@ function SettingsField({
           >
             {field.label}
           </Text>
+          {field.helperText && (
+            <Text
+              style={[styles.helperText, { color: isDark ? "#777" : "#999" }]}
+            >
+              {field.helperText}
+            </Text>
+          )}
           <View style={[styles.selectRow, disabled && { opacity: 0.5 }]}>
             {(field.options ?? []).map((opt) => {
               const isSelected =
@@ -326,26 +367,41 @@ const styles = StyleSheet.create({
   fieldsContainer: {
     paddingHorizontal: 14,
     paddingBottom: 12,
-    maxHeight: 300,
+    maxHeight: 340,
+  },
+  groupHeader: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginTop: 12,
+    marginBottom: 4,
   },
   fieldRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(128,128,128,0.2)",
+    borderBottomColor: "rgba(128,128,128,0.15)",
   },
   fieldColumn: {
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(128,128,128,0.2)",
+    borderBottomColor: "rgba(128,128,128,0.15)",
+  },
+  fieldLabelCol: {
+    flex: 1,
+    marginRight: 8,
   },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "500",
-    flex: 1,
-    marginRight: 8,
+  },
+  helperText: {
+    fontSize: 10,
+    marginTop: 2,
+    lineHeight: 13,
   },
   stepperRow: {
     flexDirection: "row",
