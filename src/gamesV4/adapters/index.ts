@@ -41,6 +41,7 @@ import "./brickBreaker";
 import "./chess";
 import "./connectFour";
 import "./crazyEights";
+import "./deadDrop";
 import "./dotsAndBoxes";
 import "./hex";
 import "./knockout";

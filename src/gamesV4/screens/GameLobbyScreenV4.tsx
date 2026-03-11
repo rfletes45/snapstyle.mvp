@@ -22,7 +22,9 @@ import {
   adminClearGame,
   updateLobbySettings,
 } from "@/gamesV4/services/gameServiceV4";
+import { markGameNotificationsRead } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
+import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -55,6 +57,7 @@ type Nav = NativeStackNavigationProp<MainStackParamList>;
 export default function GameLobbyScreenV4() {
   const { theme } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
+  const { setCurrentGameInviteId } = useInAppNotifications();
   const navigation = useNavigation<Nav>();
   const route = useRoute<{
     key: string;
@@ -128,6 +131,18 @@ export default function GameLobbyScreenV4() {
     }
     return map;
   }, [invite?.spectatorSummaries]);
+
+  useEffect(() => {
+    setCurrentGameInviteId(inviteId);
+    return () => setCurrentGameInviteId(null);
+  }, [inviteId, setCurrentGameInviteId]);
+
+  useEffect(() => {
+    if (!uid) return;
+    markGameNotificationsRead(uid, { inviteId }).catch((error) => {
+      console.warn("[gamesV4] Failed to mark lobby notifications read:", error);
+    });
+  }, [uid, inviteId]);
 
   // Auto-navigate to game screen when session becomes active
   useEffect(() => {
@@ -569,7 +584,7 @@ export default function GameLobbyScreenV4() {
             readOnly={!isHost}
             externalValues={
               !isHost
-                ? (((invite as Record<string, unknown>).lobbySettings as Record<
+                ? (((invite as unknown as Record<string, unknown>).lobbySettings as Record<
                     string,
                     unknown
                   >) ?? undefined)

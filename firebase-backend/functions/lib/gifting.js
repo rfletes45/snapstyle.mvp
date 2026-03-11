@@ -48,11 +48,42 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getGiftHistory = exports.expireGifts = exports.openGift = exports.sendGift = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
+const notificationCenter_1 = require("./notificationCenter");
 // =============================================================================
 // Constants
 // =============================================================================
 const GIFT_EXPIRY_DAYS = 30;
 const MAX_MESSAGE_LENGTH = 200;
+function buildGiftHistoryRecord(params) {
+    const { uid, type, giftId, itemId, itemName, itemImagePath, counterpartyUid, counterpartyName, message, purchasedAt, priceTokens, giftStatus, openedAt, } = params;
+    return {
+        type,
+        userId: uid,
+        itemId,
+        itemName,
+        itemImagePath: itemImagePath ?? null,
+        quantity: 1,
+        priceTokens: priceTokens ?? null,
+        paymentMethod: "gift",
+        purchasedAt,
+        giftInfo: type === "gift_sent"
+            ? {
+                recipientId: counterpartyUid,
+                recipientName: counterpartyName,
+                message,
+            }
+            : {
+                senderId: counterpartyUid,
+                senderName: counterpartyName,
+                message,
+            },
+        metadata: {
+            giftId,
+            giftStatus,
+            openedAt: openedAt ?? null,
+        },
+    };
+}
 // =============================================================================
 // Send Gift Function
 // =============================================================================
@@ -125,6 +156,7 @@ exports.sendGift = functions.https.onCall(async (data, context) => {
         const itemImagePath = productData?.imagePath || "🎁";
         // 4. Create gift record
         const now = Date.now();
+        const nowTs = admin.firestore.Timestamp.now();
         const expiresAt = now + GIFT_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
         const giftData = {
             senderUid,
@@ -145,29 +177,75 @@ exports.sendGift = functions.https.onCall(async (data, context) => {
         };
         const giftRef = await db.collection("Gifts").add(giftData);
         console.log(`[gifting] Gift created: ${giftRef.id} from ${senderUid} to ${recipientUid}`);
-        // 5. Send push notification to recipient
+        const priceTokens = typeof productData?.priceTokens === "number"
+            ? productData.priceTokens
+            : undefined;
+        await Promise.all([
+            db
+                .collection("Users")
+                .doc(senderUid)
+                .collection("PurchaseHistory")
+                .doc(giftRef.id)
+                .set(buildGiftHistoryRecord({
+                uid: senderUid,
+                type: "gift_sent",
+                giftId: giftRef.id,
+                itemId,
+                itemName,
+                itemImagePath,
+                counterpartyUid: recipientUid,
+                counterpartyName: recipientName,
+                message: giftData.message,
+                purchasedAt: nowTs,
+                priceTokens,
+                giftStatus: "pending",
+            }), { merge: true }),
+            db
+                .collection("Users")
+                .doc(recipientUid)
+                .collection("PurchaseHistory")
+                .doc(giftRef.id)
+                .set(buildGiftHistoryRecord({
+                uid: recipientUid,
+                type: "gift_received",
+                giftId: giftRef.id,
+                itemId,
+                itemName,
+                itemImagePath,
+                counterpartyUid: senderUid,
+                counterpartyName: senderName,
+                message: giftData.message,
+                purchasedAt: nowTs,
+                giftStatus: "pending",
+            }), { merge: true }),
+        ]);
+        // 5. Notify recipient through the shared notification center
         try {
-            const recipientTokens = recipientData?.fcmTokens || [];
-            if (recipientTokens.length > 0) {
-                await admin.messaging().sendEachForMulticast({
-                    tokens: recipientTokens,
-                    notification: {
-                        title: "🎁 You received a gift!",
-                        body: `${senderName} sent you ${itemName}`,
-                    },
-                    data: {
-                        type: "gift_received",
-                        giftId: giftRef.id,
-                        senderUid,
-                        senderName,
-                    },
-                });
-                console.log(`[gifting] Push notification sent to ${recipientUid}`);
-            }
+            await (0, notificationCenter_1.notifyUser)({
+                recipientUid,
+                type: "gift_received",
+                category: "commerce",
+                dedupeKey: `gift_received:${giftRef.id}:${recipientUid}`,
+                collapseKey: `gift:${giftRef.id}`,
+                title: "Gift received",
+                body: `${senderName} sent you ${itemName}`,
+                actorUid: senderUid,
+                actorName: senderName,
+                giftId: giftRef.id,
+                route: {
+                    screen: "PurchaseHistory",
+                },
+                data: {
+                    giftId: giftRef.id,
+                    senderUid,
+                    senderName,
+                    itemId,
+                    itemName,
+                },
+            });
         }
         catch (pushError) {
-            // Don't fail the gift if push fails
-            console.error("[gifting] Push notification failed:", pushError);
+            console.error("[gifting] Gift notification failed:", pushError);
         }
         return {
             success: true,
@@ -299,32 +377,62 @@ exports.openGift = functions.https.onCall(async (data, context) => {
             }
         }
         // 5. Update gift status
+        const openedAt = admin.firestore.Timestamp.now();
         await giftRef.update({
             status: "opened",
             openedAt: Date.now(),
         });
+        await Promise.all([
+            db
+                .collection("Users")
+                .doc(uid)
+                .collection("PurchaseHistory")
+                .doc(giftId)
+                .set({
+                metadata: {
+                    giftId,
+                    giftStatus: "opened",
+                    openedAt,
+                },
+            }, { merge: true }),
+            db
+                .collection("Users")
+                .doc(gift.senderUid)
+                .collection("PurchaseHistory")
+                .doc(giftId)
+                .set({
+                metadata: {
+                    giftId,
+                    giftStatus: "opened",
+                    openedAt,
+                },
+            }, { merge: true }),
+        ]);
         console.log(`[gifting] Gift ${giftId} opened. Items: ${itemsReceived.length}, Tokens: ${tokensReceived}`);
         // Notify sender that gift was opened
         try {
-            const senderDoc = await db
-                .collection("Users")
-                .doc(gift.senderUid)
-                .get();
-            const senderTokens = senderDoc.data()?.fcmTokens || [];
-            if (senderTokens.length > 0) {
-                await admin.messaging().sendEachForMulticast({
-                    tokens: senderTokens,
-                    notification: {
-                        title: "🎁 Gift opened!",
-                        body: `${gift.recipientName} opened your gift`,
-                    },
-                    data: {
-                        type: "gift_opened",
-                        giftId,
-                        recipientUid: uid,
-                    },
-                });
-            }
+            await (0, notificationCenter_1.notifyUser)({
+                recipientUid: gift.senderUid,
+                type: "gift_opened",
+                category: "commerce",
+                dedupeKey: `gift_opened:${giftId}:${gift.senderUid}`,
+                collapseKey: `gift:${giftId}`,
+                title: "Gift opened",
+                body: `${gift.recipientName} opened your gift`,
+                actorUid: uid,
+                actorName: gift.recipientName,
+                giftId,
+                route: {
+                    screen: "PurchaseHistory",
+                },
+                data: {
+                    giftId,
+                    recipientUid: uid,
+                    recipientName: gift.recipientName,
+                    itemId: gift.itemId,
+                    itemName: gift.itemName,
+                },
+            });
         }
         catch (pushError) {
             console.error("[gifting] Failed to notify sender:", pushError);

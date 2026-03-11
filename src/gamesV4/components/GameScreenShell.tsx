@@ -41,6 +41,7 @@ import {
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameId, GameRuntimeType } from "@/gamesV4/types/common";
 import { getFirestoreInstance } from "@/services/firebase";
+import { markGameNotificationsRead } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -142,7 +143,8 @@ export function withGameV4Shell<P extends GameShellProps>(
   function GameScreenShell(props: Omit<P, keyof GameShellProps>) {
     const { theme } = useAppTheme();
     const { currentFirebaseUser } = useAuth();
-    const { setActiveGameRuntimeType } = useInAppNotifications();
+    const { setActiveGameRuntimeType, setCurrentGameSessionId } =
+      useInAppNotifications();
     const insets = useSafeAreaInsets();
     const navigation = useNavigation<Nav>();
     const route = useRoute<{
@@ -412,6 +414,18 @@ export function withGameV4Shell<P extends GameShellProps>(
       setActiveGameRuntimeType(runtimeType);
       return () => setActiveGameRuntimeType(null);
     }, [runtimeType, setActiveGameRuntimeType]);
+
+    useEffect(() => {
+      setCurrentGameSessionId(sessionId);
+      return () => setCurrentGameSessionId(null);
+    }, [sessionId, setCurrentGameSessionId]);
+
+    useEffect(() => {
+      if (!uid || !sessionId) return;
+      markGameNotificationsRead(uid, { sessionId }).catch((error) => {
+        console.warn("[gamesV4] Failed to mark session notifications read:", error);
+      });
+    }, [uid, sessionId]);
 
     // Exit behavior invariants:
     //   turnBased  → back arrow (left) + resign button (right) in header

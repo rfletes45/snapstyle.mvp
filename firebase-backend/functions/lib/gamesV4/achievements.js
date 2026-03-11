@@ -197,6 +197,13 @@ exports.ACHIEVEMENT_SECTIONS = [
         icon: "🐧",
         sectionBadgeId: "section_knockout_game",
     },
+    {
+        sectionId: "dead_drop",
+        name: "Dead Drop",
+        description: "Give clever clues, guess right, and outsmart the enemy team",
+        icon: "🕵️",
+        sectionBadgeId: "section_dead_drop",
+    },
     // General game milestones
     {
         sectionId: "milestones",
@@ -2973,6 +2980,196 @@ const GAME_ACHIEVEMENTS = [
         tokenReward: 100,
         evaluate: (ctx) => {
             if (ctx.gameId !== "knockout_game")
+                return false;
+            return (ctx.pbStats?.totalWins ?? 0) >= 50;
+        },
+    },
+    // ── Dead Drop ──────────────────────────────────────────────────────────────
+    {
+        type: "dd_first_game",
+        name: "First Contact",
+        description: "Play your first Dead Drop game",
+        sectionId: "dead_drop",
+        difficulty: "easy",
+        tokenReward: 5,
+        evaluate: (ctx) => ctx.gameId === "dead_drop",
+    },
+    {
+        type: "dd_first_win",
+        name: "Mission Complete",
+        description: "Win your first Dead Drop game",
+        sectionId: "dead_drop",
+        difficulty: "easy",
+        tokenReward: 10,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            return ctx.winnerIds.includes(ctx.uid);
+        },
+    },
+    {
+        type: "dd_win_as_spymaster",
+        name: "Handler",
+        description: "Win a game as a Spymaster",
+        sectionId: "dead_drop",
+        difficulty: "easy",
+        tokenReward: 10,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.wonAsSpymaster === true;
+        },
+    },
+    {
+        type: "dd_win_as_operative",
+        name: "Field Agent",
+        description: "Win a game as an Operative",
+        sectionId: "dead_drop",
+        difficulty: "easy",
+        tokenReward: 10,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.wonAsOperative === true;
+        },
+    },
+    {
+        type: "dd_win_both_roles",
+        name: "Double Agent",
+        description: "Win at least once as Spymaster and once as Operative",
+        sectionId: "dead_drop",
+        difficulty: "medium",
+        tokenReward: 20,
+        evaluate: (ctx) => {
+            // This is checked per-game, so only fires when the second role win happens.
+            // The pipeline re-evaluates already-earned checks; we rely on the pair of
+            // dd_win_as_spymaster + dd_win_as_operative both being present already.
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.won === true; // Will be granted once both role wins exist
+        },
+    },
+    {
+        type: "dd_correct_5_one_clue",
+        name: "Mind Meld",
+        description: "Your team correctly guesses 5+ words from a single clue",
+        sectionId: "dead_drop",
+        difficulty: "hard",
+        tokenReward: 35,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.maxCorrectFromSingleClue >= 5;
+        },
+    },
+    {
+        type: "dd_clean_win",
+        name: "Clean Sweep",
+        description: "Win without your team making any wrong guesses",
+        sectionId: "dead_drop",
+        difficulty: "hard",
+        tokenReward: 35,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.cleanWin === true;
+        },
+    },
+    {
+        type: "dd_comeback_win",
+        name: "Comeback Channel",
+        description: "Win despite not being the starting team",
+        sectionId: "dead_drop",
+        difficulty: "medium",
+        tokenReward: 20,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.cameFromBehind === true;
+        },
+    },
+    {
+        type: "dd_win_10",
+        name: "Master Handler",
+        description: "Win 10 Dead Drop games",
+        sectionId: "dead_drop",
+        difficulty: "hard",
+        tokenReward: 40,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            return (ctx.pbStats?.totalWins ?? 0) >= 10;
+        },
+    },
+    {
+        type: "dd_zero_wrong_operative",
+        name: "Silent Precision",
+        description: "Win as Operative with zero wrong guesses",
+        sectionId: "dead_drop",
+        difficulty: "hard",
+        tokenReward: 30,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            const me = ctx.performanceMetrics?.perPlayer?.[ctx.uid];
+            if (!me)
+                return false;
+            return me.wonAsOperative === true && me.wrongGuesses === 0;
+        },
+    },
+    {
+        type: "dd_play_20",
+        name: "Deep Read",
+        description: "Play 20 Dead Drop games",
+        sectionId: "dead_drop",
+        difficulty: "medium",
+        tokenReward: 25,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            return (ctx.pbStats?.totalPlays ?? 0) >= 20;
+        },
+    },
+    {
+        type: "dd_win_25",
+        name: "Classified Legend",
+        description: "Win 25 Dead Drop games",
+        sectionId: "dead_drop",
+        difficulty: "expert",
+        tokenReward: 50,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
+                return false;
+            return (ctx.pbStats?.totalWins ?? 0) >= 25;
+        },
+    },
+    {
+        type: "dd_win_50",
+        name: "Shadow Director",
+        description: "Win 50 Dead Drop games",
+        sectionId: "dead_drop",
+        difficulty: "legendary",
+        tokenReward: 100,
+        evaluate: (ctx) => {
+            if (ctx.gameId !== "dead_drop")
                 return false;
             return (ctx.pbStats?.totalWins ?? 0) >= 50;
         },

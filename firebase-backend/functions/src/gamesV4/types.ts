@@ -35,7 +35,8 @@ export type GameId =
   | "crossword_puzzle"
   | "knockout_game"
   | "minigolf_duels"
-  | "dot_match";
+  | "dot_match"
+  | "dead_drop";
 
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";
 
@@ -391,6 +392,7 @@ export const LEADERBOARD_METRICS: Partial<Record<GameId, LeaderboardMetric>> = {
   hex: "wins",
   pong_game: "wins",
   knockout_game: "wins",
+  dead_drop: "wins",
   // Default for unspecified games: "bestScore"
 };
 

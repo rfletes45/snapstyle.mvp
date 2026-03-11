@@ -1,113 +1,69 @@
-/**
- * InAppNotificationsContext
- *
- * Provides real-time in-app notifications for:
- * - Incoming messages (when not already in that chat)
- * - Friend requests (when not on Connections screen)
- *
- * Features:
- * - Debounce/dedupe to prevent spam
- * - Queue management with max visible limit
- * - Auto-dismiss with configurable duration
- * - Navigation on tap
- * - User preference toggle (persisted via localStorage on web)
- */
-
-import type { GameRuntimeType } from "@/gamesV4/types/common";
-import {
-  isInGamesArea,
-  shouldSuppressAchievementBanner,
-} from "@/gamesV4/utils/isInGamesArea";
-import { getFirestoreInstance } from "@/services/firebase";
-import { getUserProfileByUid } from "@/services/friends";
 import { normalizeNotificationPayload } from "@/services/notifications/normalizeNotification";
-import { createLogger } from "@/utils/log";
 import {
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  Unsubscribe,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+  clearNotificationSession,
+  getNotificationDeviceId,
+  setBadgeCount,
+  syncNotificationSession,
+} from "@/services/notifications";
+import {
+  UserNotificationRecord,
+  markUserNotificationPresented,
+  markUserNotificationRead,
+  subscribeToUnreadBadgeCount,
+  subscribeToUserNotifications,
+} from "@/services/userNotifications";
+import {
+  subscribeToInboxSettings,
+  updateInboxSettings,
+} from "@/services/inboxSettings";
+import { createLogger } from "@/utils/log";
+import type { GameRuntimeType } from "@/gamesV4/types/common";
 import React, {
   createContext,
   ReactNode,
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, AppStateStatus, Platform } from "react-native";
 import { useAuth } from "./AuthContext";
 
 const log = createLogger("InAppNotifications");
 
-// =============================================================================
-// Storage Helper (cross-platform)
-// =============================================================================
-
-const STORAGE_KEY = "in_app_notifications_enabled";
-
-/**
- * Simple storage abstraction for cross-platform compatibility
- */
-const storage = {
-  async getItem(key: string): Promise<string | null> {
-    try {
-      if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-        return localStorage.getItem(key);
-      }
-      // On native, default to enabled (no persistence without AsyncStorage)
-      return null;
-    } catch {
-      return null;
-    }
-  },
-  async setItem(key: string, value: string): Promise<void> {
-    try {
-      if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-        localStorage.setItem(key, value);
-      }
-      // On native, preference won't persist without AsyncStorage
-    } catch {
-      // Ignore storage errors
-    }
-  },
-};
-
-// =============================================================================
-// Types
-// =============================================================================
+const MAX_VISIBLE_NOTIFICATIONS = 2;
+const AUTO_DISMISS_MS = 5000;
+const DEBOUNCE_WINDOW_MS = 3000;
+const INITIAL_STALE_NOTIFICATION_MS = 15_000;
+const SESSION_HEARTBEAT_MS = 25_000;
 
 export type NotificationType =
-  | "message"
+  | "dm_message"
+  | "group_message"
+  | "message_request"
   | "friend_request"
+  | "friend_request_accepted"
+  | "game_invite"
+  | "game_lobby_ready"
   | "game_turn"
-  | "achievement_unlocked";
+  | "game_resolved"
+  | "achievement_unlocked"
+  | "gift_received"
+  | "gift_opened";
 
 export interface InAppNotification {
-  /** Unique ID for this notification */
   id: string;
-  /** Type of notification */
+  notificationId?: string;
+  dedupeKey: string;
   type: NotificationType;
-  /** Display title */
   title: string;
-  /** Display subtitle/body */
   body: string;
-  /** Entity ID (chatId for messages, requestId for friend requests, sessionId for game_turn, collapseKey for achievements) */
   entityId: string;
-  /** Sender/requester user ID */
   fromUserId: string;
-  /** Sender/requester display name */
   fromDisplayName?: string;
-  /** Timestamp when notification was created */
   timestamp: number;
-  /** Navigation target */
   navigateTo?: {
     screen: string;
     params?: Record<string, unknown>;
@@ -115,300 +71,251 @@ export interface InAppNotification {
 }
 
 interface InAppNotificationsContextType {
-  /** Current visible notifications */
   notifications: InAppNotification[];
-  /** Whether in-app notifications are enabled */
   enabled: boolean;
-  /** Toggle notifications on/off */
   setEnabled: (enabled: boolean) => void;
-  /** Manually push a notification (for testing or custom use) */
-  pushNotification: (
-    notification: Omit<InAppNotification, "id" | "timestamp">,
-  ) => void;
-  /** Dismiss a specific notification */
   dismiss: (id: string) => void;
-  /** Clear all notifications */
   clearAll: () => void;
-  /** Set the current screen for context-aware suppression */
+  markNotificationRead: (notificationId?: string) => void;
   setCurrentScreen: (screen: string | null) => void;
-  /** Set the current chat ID being viewed (to suppress its notifications) */
-  setCurrentChatId: (chatId: string | null) => void;
-  /** Set the active game runtime type for type-aware notification gating */
+  setCurrentChatId: (
+    chatId: string | null,
+    scope?: "dm" | "group" | null,
+  ) => void;
+  setCurrentGameSessionId: (sessionId: string | null) => void;
+  setCurrentGameInviteId: (inviteId: string | null) => void;
   setActiveGameRuntimeType: (type: GameRuntimeType | null) => void;
-  /** The last viewed chat ID (set when leaving a chat). Consume to clear. */
   lastViewedChatId: string | null;
-  /** Get and clear the last viewed chat ID (used by inbox to optimistically mark read) */
   consumeLastViewedChatId: () => string | null;
-  /** Register a callback to be called when a message notification is pressed (for optimistic read marking) */
   registerNotificationPressHandler: (
     handler: (chatId: string) => void,
   ) => () => void;
-  /** Called when a message notification is pressed - triggers registered handlers */
   onMessageNotificationPressed: (chatId: string) => void;
 }
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-const MAX_VISIBLE_NOTIFICATIONS = 2;
-const AUTO_DISMISS_MS = 5000;
-const DEBOUNCE_WINDOW_MS = 3000;
-
-function getConversationTimestampKey(
-  scope: "dm" | "group",
-  conversationId: string,
-): string {
-  return `${scope}:${conversationId}`;
-}
-
-// =============================================================================
-// Context
-// =============================================================================
 
 const InAppNotificationsContext =
   createContext<InAppNotificationsContextType | null>(null);
 
-// =============================================================================
-// Provider
-// =============================================================================
-
 interface ProviderProps {
   children: ReactNode;
-  /** Navigation ref for tap actions */
   navigationRef?: React.RefObject<any>;
+}
+
+function buildToast(
+  notification: UserNotificationRecord,
+): InAppNotification | null {
+  const normalized = normalizeNotificationPayload({
+    notificationId: notification.id,
+    dedupeKey: notification.dedupeKey,
+    route: notification.route,
+    type: notification.type,
+    actorUid: notification.actorUid,
+    actorName: notification.actorName,
+    conversationId: notification.conversationId,
+    conversationScope: notification.conversationScope,
+    requestId: notification.requestId,
+    sessionId: notification.sessionId,
+    inviteId: notification.inviteId,
+    gameId: notification.gameId,
+    sectionId: notification.sectionId,
+    giftId: notification.giftId,
+    ...notification.data,
+  });
+
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    id: `toast_${notification.id}`,
+    notificationId: notification.id,
+    dedupeKey: normalized.dedupeKey,
+    type: normalized.type,
+    title: notification.title,
+    body: notification.body,
+    entityId:
+      notification.conversationId ||
+      notification.sessionId ||
+      notification.inviteId ||
+      notification.giftId ||
+      notification.sectionId ||
+      notification.id,
+    fromUserId: notification.actorUid || "",
+    fromDisplayName: notification.actorName || undefined,
+    timestamp: notification.createdAtMs || Date.now(),
+    navigateTo: normalized.route,
+  };
 }
 
 export function InAppNotificationsProvider({
   children,
-  navigationRef,
 }: ProviderProps) {
   const { currentFirebaseUser } = useAuth();
   const uid = currentFirebaseUser?.uid;
 
-  // State
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const [enabled, setEnabledState] = useState(true);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   const [currentChatId, setCurrentChatIdState] = useState<string | null>(null);
+  const [currentConversationScope, setCurrentConversationScope] = useState<
+    "dm" | "group" | null
+  >(null);
+  const [currentGameSessionId, setCurrentGameSessionIdState] = useState<
+    string | null
+  >(null);
+  const [currentGameInviteId, setCurrentGameInviteIdState] = useState<
+    string | null
+  >(null);
   const [activeGameRuntimeType, setActiveGameRuntimeType] =
     useState<GameRuntimeType | null>(null);
   const [lastViewedChatId, setLastViewedChatId] = useState<string | null>(null);
+  const [appState, setAppState] = useState<AppStateStatus>(
+    AppState.currentState,
+  );
 
-  // Refs for debouncing and tracking
   const recentNotificationKeys = useRef<Map<string, number>>(new Map());
-  const unsubscribeRefs = useRef<Unsubscribe[]>([]);
   const dismissTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
-  const lastMessageTimestamps = useRef<Map<string, number>>(new Map());
-  // Handlers registered by inbox for notification press events
   const notificationPressHandlers = useRef<Set<(chatId: string) => void>>(
     new Set(),
   );
+  const seenNotificationIds = useRef<Set<string>>(new Set());
+  const hasHydratedFeed = useRef(false);
+  const syncSequence = useRef(0);
 
-  // =============================================================================
-  // Persistence
-  // =============================================================================
-
-  // Load preference from storage
   useEffect(() => {
-    storage.getItem(STORAGE_KEY).then((value: string | null) => {
-      if (value !== null) {
-        setEnabledState(value === "true");
-      }
+    getNotificationDeviceId()
+      .then(setDeviceId)
+      .catch((error) => log.warn("Failed to resolve notification device id", error));
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      setAppState(nextState);
     });
+    return () => subscription.remove();
   }, []);
 
-  const setEnabled = useCallback((value: boolean) => {
-    setEnabledState(value);
-    storage.setItem(STORAGE_KEY, value ? "true" : "false");
-    log.debug(`In-app notifications ${value ? "enabled" : "disabled"}`);
-  }, []);
+  useEffect(() => {
+    if (!uid) {
+      setEnabledState(true);
+      return;
+    }
 
-  // =============================================================================
-  // Debounce / Dedupe
-  // =============================================================================
+    const unsubscribe = subscribeToInboxSettings(uid, (settings) => {
+      setEnabledState(
+        settings.notificationsEnabled !== false &&
+          settings.inAppNotificationsEnabled !== false,
+      );
+    });
 
-  const shouldShowNotification = useCallback(
-    (type: NotificationType, entityId: string): boolean => {
-      const key = `${type}:${entityId}`;
-      const now = Date.now();
-      const lastShown = recentNotificationKeys.current.get(key);
+    return unsubscribe;
+  }, [uid]);
 
-      if (lastShown && now - lastShown < DEBOUNCE_WINDOW_MS) {
-        log.debug(`Debounced notification: ${key}`);
-        return false;
-      }
-
-      // Update timestamp
-      recentNotificationKeys.current.set(key, now);
-
-      // Cleanup old entries periodically
-      if (recentNotificationKeys.current.size > 50) {
-        const cutoff = now - DEBOUNCE_WINDOW_MS * 2;
-        for (const [k, v] of recentNotificationKeys.current) {
-          if (v < cutoff) {
-            recentNotificationKeys.current.delete(k);
-          }
-        }
-      }
-
-      return true;
+  const setEnabled = useCallback(
+    (value: boolean) => {
+      setEnabledState(value);
+      if (!uid) return;
+      updateInboxSettings(uid, {
+        inAppNotificationsEnabled: value,
+      }).catch((error) => {
+        log.error("Failed to persist in-app notification preference", error);
+      });
     },
-    [],
+    [uid],
   );
 
-  // =============================================================================
-  // Notification Management
-  // =============================================================================
+  const shouldShowNotification = useCallback((dedupeKey: string): boolean => {
+    const now = Date.now();
+    const lastShown = recentNotificationKeys.current.get(dedupeKey);
+    if (lastShown && now - lastShown < DEBOUNCE_WINDOW_MS) {
+      return false;
+    }
 
-  const generateId = useCallback(() => {
-    return `notif_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    recentNotificationKeys.current.set(dedupeKey, now);
+    if (recentNotificationKeys.current.size > 100) {
+      const staleBefore = now - DEBOUNCE_WINDOW_MS * 3;
+      for (const [key, timestamp] of recentNotificationKeys.current) {
+        if (timestamp < staleBefore) {
+          recentNotificationKeys.current.delete(key);
+        }
+      }
+    }
+
+    return true;
   }, []);
 
   const scheduleAutoDismiss = useCallback((id: string) => {
     const timer = setTimeout(() => {
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setNotifications((prev) => prev.filter((notification) => notification.id !== id));
       dismissTimers.current.delete(id);
     }, AUTO_DISMISS_MS);
 
     dismissTimers.current.set(id, timer);
   }, []);
 
-  const pushNotification = useCallback(
-    (notification: Omit<InAppNotification, "id" | "timestamp">) => {
-      if (!enabled) {
-        log.debug("Notifications disabled, skipping");
-        return;
-      }
+  const enqueueToast = useCallback(
+    (toast: InAppNotification) => {
+      if (!enabled) return;
+      if (!shouldShowNotification(toast.dedupeKey)) return;
 
-      // Check debounce
-      if (!shouldShowNotification(notification.type, notification.entityId)) {
-        return;
-      }
-
-      // Context-aware suppression
-      if (
-        notification.type === "message" &&
-        notification.entityId === currentChatId
-      ) {
-        log.debug("User is viewing this chat, suppressing notification");
-        return;
-      }
-
-      // Suppress message notifications when on the inbox screen
-      if (notification.type === "message" && currentScreen === "ChatList") {
-        log.debug("User is on inbox screen, suppressing message notification");
-        return;
-      }
-
-      if (
-        notification.type === "friend_request" &&
-        currentScreen === "Connections"
-      ) {
-        log.debug("User is on Connections screen, suppressing notification");
-        return;
-      }
-
-      // Games area suppression: type-aware gating for game notifications.
-      // game_turn: always suppressed in Games area (user is already engaged).
-      // achievement_unlocked: allowed during solo/turn-based gameplay,
-      // suppressed during realtime gameplay and on non-gameplay screens.
-      if (notification.type === "game_turn" && isInGamesArea(currentScreen)) {
-        log.debug(
-          `User is in Games area (${currentScreen}), suppressing game_turn notification`,
-        );
-        return;
-      }
-      if (
-        notification.type === "achievement_unlocked" &&
-        shouldSuppressAchievementBanner(currentScreen, activeGameRuntimeType)
-      ) {
-        log.debug(
-          `Suppressing achievement banner (screen=${currentScreen}, runtime=${activeGameRuntimeType})`,
-        );
-        return;
-      }
-
-      const id = generateId();
-      const newNotification: InAppNotification = {
-        ...notification,
-        id,
-        timestamp: Date.now(),
-      };
-
-      log.debug(
-        `Pushing notification: ${notification.type} - ${notification.title}`,
-      );
-
-      setNotifications((prev) => {
-        // Keep max visible, newest first
-        const updated = [newNotification, ...prev].slice(
-          0,
-          MAX_VISIBLE_NOTIFICATIONS,
-        );
-        return updated;
-      });
-
-      // Schedule auto-dismiss
-      scheduleAutoDismiss(id);
+      setNotifications((prev) => [toast, ...prev].slice(0, MAX_VISIBLE_NOTIFICATIONS));
+      scheduleAutoDismiss(toast.id);
     },
-    [
-      enabled,
-      currentChatId,
-      currentScreen,
-      activeGameRuntimeType,
-      shouldShowNotification,
-      generateId,
-      scheduleAutoDismiss,
-    ],
+    [enabled, scheduleAutoDismiss, shouldShowNotification],
   );
 
   const dismiss = useCallback((id: string) => {
-    // Clear timer if exists
     const timer = dismissTimers.current.get(id);
     if (timer) {
       clearTimeout(timer);
       dismissTimers.current.delete(id);
     }
-
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setNotifications((prev) => prev.filter((notification) => notification.id !== id));
   }, []);
 
   const clearAll = useCallback(() => {
-    // Clear all timers
     for (const timer of dismissTimers.current.values()) {
       clearTimeout(timer);
     }
     dismissTimers.current.clear();
-
     setNotifications([]);
   }, []);
 
-  // Wrapper for setCurrentChatId that also tracks last viewed chat
-  const setCurrentChatId = useCallback((chatId: string | null) => {
-    setCurrentChatIdState((prevChatId) => {
-      // When leaving a chat (setting to null), remember which chat was viewed
-      if (chatId === null && prevChatId !== null) {
-        setLastViewedChatId(prevChatId);
-      }
-      return chatId;
-    });
-  }, []);
+  const markNotificationRead = useCallback(
+    (notificationId?: string) => {
+      if (!uid || !notificationId) return;
+      markUserNotificationRead(uid, notificationId).catch((error) => {
+        log.warn("Failed to mark notification read", error);
+      });
+    },
+    [uid],
+  );
 
-  // Consume and clear the last viewed chat ID (for optimistic read marking)
+  const setCurrentChatId = useCallback(
+    (chatId: string | null, scope: "dm" | "group" | null = null) => {
+      setCurrentChatIdState((previousChatId) => {
+        if (chatId === null && previousChatId !== null && currentConversationScope === "dm") {
+          setLastViewedChatId(previousChatId);
+        }
+        return chatId;
+      });
+      setCurrentConversationScope(chatId ? scope : null);
+    },
+    [currentConversationScope],
+  );
+
   const consumeLastViewedChatId = useCallback(() => {
     const chatId = lastViewedChatId;
     setLastViewedChatId(null);
     return chatId;
   }, [lastViewedChatId]);
 
-  // Register a handler to be called when a message notification is pressed
   const registerNotificationPressHandler = useCallback(
     (handler: (chatId: string) => void) => {
       notificationPressHandlers.current.add(handler);
-      // Return unsubscribe function
       return () => {
         notificationPressHandlers.current.delete(handler);
       };
@@ -416,487 +323,188 @@ export function InAppNotificationsProvider({
     [],
   );
 
-  // Called when a message notification is pressed - triggers all registered handlers
   const onMessageNotificationPressed = useCallback((chatId: string) => {
     notificationPressHandlers.current.forEach((handler) => {
       try {
         handler(chatId);
-      } catch (e) {
-        log.error("Error in notification press handler", e);
+      } catch (error) {
+        log.error("Notification press handler failed", error);
       }
     });
   }, []);
 
-  // =============================================================================
-  // Firestore Listeners
-  // =============================================================================
+  const syncSession = useCallback(async () => {
+    if (!uid || !deviceId) return;
 
-  // Subscribe to incoming friend requests
-  useEffect(() => {
-    if (!uid || !enabled) return;
-
-    const db = getFirestoreInstance();
-    const requestsRef = collection(db, "FriendRequests");
-    const q = query(
-      requestsRef,
-      where("to", "==", uid),
-      where("status", "==", "pending"),
-    );
-
-    log.debug("Setting up friend request listener");
-
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        // Process only newly added documents
-        for (const change of snapshot.docChanges()) {
-          if (change.type === "added") {
-            const data = change.doc.data();
-            const requestId = change.doc.id;
-            const fromUid = data.from;
-            const createdAt = data.createdAt || Date.now();
-
-            // Skip old requests (only show recent ones)
-            if (Date.now() - createdAt > 30000) {
-              log.debug(`Skipping old friend request: ${requestId}`);
-              continue;
-            }
-
-            try {
-              // Fetch sender's profile
-              const profile = await getUserProfileByUid(fromUid);
-              const displayName =
-                profile?.displayName || profile?.username || "Someone";
-
-              pushNotification({
-                type: "friend_request",
-                title: "New Connection Request",
-                body: `${displayName} wants to connect with you`,
-                entityId: requestId,
-                fromUserId: fromUid,
-                fromDisplayName: displayName,
-                navigateTo: {
-                  screen: "Connections",
-                  params: { tab: "requests" },
-                },
-              });
-            } catch (err) {
-              log.error("Failed to fetch profile for notification", err);
-            }
-          }
-        }
-      },
-      (error) => {
-        log.error("Friend request listener error", error);
-      },
-    );
-
-    unsubscribeRefs.current.push(unsubscribe);
-
-    return () => {
-      unsubscribe();
-      unsubscribeRefs.current = unsubscribeRefs.current.filter(
-        (u) => u !== unsubscribe,
-      );
-    };
-  }, [uid, enabled, pushNotification]);
-
-  // Subscribe to group list for new messages
-  useEffect(() => {
-    if (!uid || !enabled) return;
-
-    const db = getFirestoreInstance();
-    const groupsRef = collection(db, "Groups");
-    const q = query(
-      groupsRef,
-      where("memberIds", "array-contains", uid),
-      orderBy("lastMessageAt", "desc"),
-      limit(20), // Only track recent groups
-    );
-
-    log.debug("Setting up group listener for message notifications");
-
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        for (const change of snapshot.docChanges()) {
-          if (change.type === "modified") {
-            const data = change.doc.data();
-            const groupId = change.doc.id;
-            const lastMessageAt = data.lastMessageAt?.toMillis?.() || 0;
-            const lastMessageText = data.lastMessageText || "";
-            const lastMessageSenderId = data.lastMessageSenderId || "";
-            const groupName = data.name || "Group";
-            const lastMentionUids = data.lastMentionUids as
-              | string[]
-              | undefined;
-            const timestampKey = getConversationTimestampKey("group", groupId);
-
-            // Check if this is actually a new message
-            const previousTimestamp =
-              lastMessageTimestamps.current.get(timestampKey) || 0;
-            if (lastMessageAt <= previousTimestamp) {
-              continue;
-            }
-
-            // Update tracking
-            lastMessageTimestamps.current.set(timestampKey, lastMessageAt);
-
-            // Skip if message is old (more than 30 seconds)
-            if (Date.now() - lastMessageAt > 30000) {
-              log.debug(`Skipping old message in group: ${groupId}`);
-              continue;
-            }
-
-            // Note: currentChatId suppression is handled by pushNotification()
-            // to avoid stale closure issues with snapshot callbacks.
-
-            // Skip our own messages
-            if (lastMessageSenderId === uid) {
-              log.debug(`Skipping own message in group: ${groupId}`);
-              continue;
-            }
-
-            try {
-              // Truncate message preview
-              const preview =
-                lastMessageText.length > 40
-                  ? lastMessageText.slice(0, 40) + "..."
-                  : lastMessageText || "New message";
-
-              // Check if the current user was mentioned
-              const wasMentioned = lastMentionUids?.includes(uid!) || false;
-
-              pushNotification({
-                type: "message",
-                title: wasMentioned
-                  ? `${groupName} — mentioned you`
-                  : groupName,
-                body: preview,
-                entityId: groupId,
-                fromUserId: lastMessageSenderId,
-                navigateTo: {
-                  screen: "GroupChat",
-                  params: { groupId, groupName },
-                },
-              });
-            } catch (err) {
-              log.error("Failed to create group message notification", err);
-            }
-          }
-        }
-      },
-      (error) => {
-        log.error("Group listener error", error);
-      },
-    );
-
-    unsubscribeRefs.current.push(unsubscribe);
-
-    return () => {
-      unsubscribe();
-      unsubscribeRefs.current = unsubscribeRefs.current.filter(
-        (u) => u !== unsubscribe,
-      );
-    };
-  }, [uid, enabled, pushNotification]);
-
-  // Subscribe to chat list for new messages
-  useEffect(() => {
-    if (!uid || !enabled) return;
-
-    const db = getFirestoreInstance();
-    const chatsRef = collection(db, "Chats");
-    const q = query(
-      chatsRef,
-      where("members", "array-contains", uid),
-      orderBy("lastMessageAt", "desc"),
-      limit(20), // Only track recent chats
-    );
-
-    log.debug("Setting up chat listener for message notifications");
-
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        for (const change of snapshot.docChanges()) {
-          if (change.type === "modified") {
-            const data = change.doc.data();
-            const chatId = change.doc.id;
-            const lastMessageAt = data.lastMessageAt?.toMillis?.() || 0;
-            const lastMessageText = data.lastMessageText || "";
-            const lastMessageSenderId = data.lastMessageSenderId || "";
-            const members = data.members as string[];
-            const timestampKey = getConversationTimestampKey("dm", chatId);
-
-            // Find the other user
-            const otherUid = members.find((m) => m !== uid);
-            if (!otherUid) continue;
-
-            // Skip our own messages
-            if (lastMessageSenderId === uid) {
-              log.debug(`Skipping own message in chat: ${chatId}`);
-              continue;
-            }
-
-            // Check if this is actually a new message
-            const previousTimestamp =
-              lastMessageTimestamps.current.get(timestampKey) || 0;
-            if (lastMessageAt <= previousTimestamp) {
-              continue;
-            }
-
-            // Update tracking
-            lastMessageTimestamps.current.set(timestampKey, lastMessageAt);
-
-            // Skip if message is old (more than 30 seconds)
-            if (Date.now() - lastMessageAt > 30000) {
-              log.debug(`Skipping old message in chat: ${chatId}`);
-              continue;
-            }
-
-            // Note: currentChatId suppression is handled by pushNotification()
-            // to avoid stale closure issues with snapshot callbacks.
-
-            try {
-              // Fetch sender's profile
-              const profile = await getUserProfileByUid(otherUid);
-              const displayName =
-                profile?.displayName || profile?.username || "Someone";
-
-              // Truncate message preview
-              const preview =
-                lastMessageText.length > 40
-                  ? lastMessageText.slice(0, 40) + "..."
-                  : lastMessageText || "New message";
-
-              pushNotification({
-                type: "message",
-                title: displayName,
-                body: preview,
-                entityId: chatId,
-                fromUserId: otherUid,
-                fromDisplayName: displayName,
-                navigateTo: {
-                  screen: "ChatDetail",
-                  params: { friendUid: otherUid },
-                },
-              });
-            } catch (err) {
-              log.error(
-                "Failed to fetch profile for message notification",
-                err,
-              );
-            }
-          }
-        }
-      },
-      (error) => {
-        log.error("Chat listener error", error);
-      },
-    );
-
-    unsubscribeRefs.current.push(unsubscribe);
-
-    return () => {
-      unsubscribe();
-      unsubscribeRefs.current = unsubscribeRefs.current.filter(
-        (u) => u !== unsubscribe,
-      );
-    };
-  }, [uid, enabled, pushNotification]);
-
-  // =============================================================================
-  // Game In-App Notifications Listener (InAppNotificationsV4)
-  // =============================================================================
-
-  useEffect(() => {
-    if (!uid || !enabled) return;
-
-    const db = getFirestoreInstance();
-    const notifRef = collection(db, "Users", uid, "InAppNotificationsV4");
-    const q = query(
-      notifRef,
-      where("deliveredAt", "==", null),
-      orderBy("createdAt", "desc"),
-      limit(5),
-    );
-
-    log.debug("Setting up InAppNotificationsV4 listener");
-
-    const unsubscribe = onSnapshot(
-      q,
-      async (snapshot) => {
-        for (const change of snapshot.docChanges()) {
-          if (change.type === "added") {
-            const data = change.doc.data();
-            const notifDocId = change.doc.id;
-            const type = data.type as "game_turn" | "achievement_unlocked";
-            const payload = data.payload ?? {};
-            const createdAt = data.createdAt?.toMillis?.() ?? 0;
-
-            // Skip old notifications (more than 30 seconds)
-            if (createdAt > 0 && Date.now() - createdAt > 30000) {
-              log.debug(`Skipping old game notification: ${notifDocId}`);
-              // Mark as delivered so it won't pop later
-              try {
-                const docRef = doc(
-                  db,
-                  "Users",
-                  uid,
-                  "InAppNotificationsV4",
-                  notifDocId,
-                );
-                await updateDoc(docRef, {
-                  deliveredAt: new Date(),
-                });
-              } catch {
-                // ignore
-              }
-              continue;
-            }
-
-            // Type-aware Games area suppression:
-            // game_turn: always suppress in Games area
-            // achievement_unlocked: suppress only during realtime gameplay or non-gameplay screens
-            const shouldSuppress =
-              type === "game_turn"
-                ? isInGamesArea(currentScreen)
-                : type === "achievement_unlocked"
-                  ? shouldSuppressAchievementBanner(
-                      currentScreen,
-                      activeGameRuntimeType,
-                    )
-                  : false;
-
-            if (shouldSuppress) {
-              log.debug(
-                `Suppressing ${type} in Games area (screen=${currentScreen}, runtime=${activeGameRuntimeType}): ${notifDocId}`,
-              );
-              try {
-                const docRef = doc(
-                  db,
-                  "Users",
-                  uid,
-                  "InAppNotificationsV4",
-                  notifDocId,
-                );
-                await updateDoc(docRef, {
-                  deliveredAt: new Date(),
-                });
-              } catch {
-                // ignore
-              }
-              continue;
-            }
-
-            // Mark as delivered
-            try {
-              const docRef = doc(
-                db,
-                "Users",
-                uid,
-                "InAppNotificationsV4",
-                notifDocId,
-              );
-              await updateDoc(docRef, {
-                deliveredAt: new Date(),
-              });
-            } catch (err) {
-              log.error("Failed to mark notification as delivered", err);
-            }
-
-            // Build and push the notification
-            const normalized = normalizeNotificationPayload({
-              type,
-              ...payload,
-            });
-            if (!normalized) {
-              continue;
-            }
-
-            if (normalized.type === "game_turn") {
-              const gameName = payload.gameName ?? payload.gameId ?? "Game";
-              const opponentName = payload.opponentName;
-              const subtitle = opponentName
-                ? `${gameName} • vs ${opponentName}`
-                : gameName;
-
-              pushNotification({
-                type: "game_turn",
-                title: "Your turn",
-                body: `${subtitle} — Tap to play`,
-                entityId: payload.sessionId ?? notifDocId,
-                fromUserId: "",
-                navigateTo: normalized.route,
-              });
-            } else if (normalized.type === "achievement_unlocked") {
-              const achievementIds: string[] = payload.achievementIds ?? [];
-              const titles: string[] = payload.achievementTitles ?? [];
-              const count = achievementIds.length;
-              const subtitle =
-                count === 1
-                  ? (titles[0] ?? "New achievement")
-                  : `${count} achievements unlocked`;
-
-              pushNotification({
-                type: "achievement_unlocked",
-                title: "Achievement unlocked! 🏆",
-                body: subtitle,
-                entityId: data.collapseKey ?? notifDocId,
-                fromUserId: "",
-                navigateTo: normalized.route,
-              });
-            }
-          }
-        }
-      },
-      (error) => {
-        log.error("InAppNotificationsV4 listener error", error);
-      },
-    );
-
-    unsubscribeRefs.current.push(unsubscribe);
-
-    return () => {
-      unsubscribe();
-      unsubscribeRefs.current = unsubscribeRefs.current.filter(
-        (u) => u !== unsubscribe,
-      );
-    };
-  }, [uid, enabled, currentScreen, activeGameRuntimeType, pushNotification]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      for (const unsub of unsubscribeRefs.current) {
-        unsub();
+    const nextSequence = ++syncSequence.current;
+    try {
+      await syncNotificationSession(uid, {
+        appState,
+        currentScreen,
+        currentChatId,
+        currentConversationScope,
+        currentGameSessionId,
+        currentGameInviteId,
+        currentGameRuntimeType: activeGameRuntimeType,
+        inAppEnabled: enabled,
+        pushEnabled: true,
+      });
+    } catch (error) {
+      if (nextSequence === syncSequence.current) {
+        log.warn("Failed to sync notification session", error);
       }
+    }
+  }, [
+    uid,
+    deviceId,
+    appState,
+    currentScreen,
+    currentChatId,
+    currentConversationScope,
+    currentGameSessionId,
+    currentGameInviteId,
+    activeGameRuntimeType,
+    enabled,
+  ]);
+
+  useEffect(() => {
+    syncSession().catch(() => {});
+  }, [syncSession]);
+
+  useEffect(() => {
+    if (!uid || appState !== "active") return;
+
+    const interval = setInterval(() => {
+      syncSession().catch(() => {});
+    }, SESSION_HEARTBEAT_MS);
+
+    return () => clearInterval(interval);
+  }, [uid, appState, syncSession]);
+
+  useEffect(() => {
+    if (!uid) {
+      clearAll();
+      if (Platform.OS !== "web") {
+        setBadgeCount(0).catch(() => {});
+      }
+      return;
+    }
+
+    return () => {
+      clearNotificationSession(uid).catch((error) => {
+        log.warn("Failed to clear notification session", error);
+      });
+    };
+  }, [uid, clearAll]);
+
+  useEffect(() => {
+    if (!uid || !deviceId) return;
+
+    seenNotificationIds.current.clear();
+    hasHydratedFeed.current = false;
+
+    const unsubscribe = subscribeToUserNotifications(uid, (items) => {
+      const now = Date.now();
+      const firstSnapshot = !hasHydratedFeed.current;
+
+      for (const item of items) {
+        if (seenNotificationIds.current.has(item.id)) {
+          continue;
+        }
+        seenNotificationIds.current.add(item.id);
+
+        if (item.channel !== "in_app") {
+          continue;
+        }
+        if (item.targetDeviceId && item.targetDeviceId !== deviceId) {
+          continue;
+        }
+        if (item.presentedAtMs || item.archivedAtMs) {
+          continue;
+        }
+
+        const shouldSilence =
+          !enabled ||
+          appState !== "active" ||
+          (firstSnapshot &&
+            item.createdAtMs > 0 &&
+            now - item.createdAtMs > INITIAL_STALE_NOTIFICATION_MS);
+
+        if (shouldSilence) {
+          markUserNotificationPresented(uid, item.id).catch((error) => {
+            log.warn("Failed to mark stale notification presented", error);
+          });
+          continue;
+        }
+
+        const toast = buildToast(item);
+        markUserNotificationPresented(uid, item.id).catch((error) => {
+          log.warn("Failed to mark notification presented", error);
+        });
+        if (toast) {
+          enqueueToast(toast);
+        }
+      }
+
+      hasHydratedFeed.current = true;
+    });
+
+    return unsubscribe;
+  }, [uid, deviceId, enabled, appState, enqueueToast]);
+
+  useEffect(() => {
+    if (!uid) return;
+
+    const unsubscribe = subscribeToUnreadBadgeCount(uid, (count) => {
+      setBadgeCount(count).catch((error) => {
+        log.warn("Failed to sync app badge count", error);
+      });
+    });
+
+    return unsubscribe;
+  }, [uid]);
+
+  useEffect(() => {
+    return () => {
       for (const timer of dismissTimers.current.values()) {
         clearTimeout(timer);
       }
+      dismissTimers.current.clear();
     };
   }, []);
 
-  // =============================================================================
-  // Context Value
-  // =============================================================================
-
-  const value: InAppNotificationsContextType = {
-    notifications,
-    enabled,
-    setEnabled,
-    pushNotification,
-    dismiss,
-    clearAll,
-    setCurrentScreen,
-    setCurrentChatId,
-    setActiveGameRuntimeType,
-    lastViewedChatId,
-    consumeLastViewedChatId,
-    registerNotificationPressHandler,
-    onMessageNotificationPressed,
-  };
+  const value = useMemo<InAppNotificationsContextType>(
+    () => ({
+      notifications,
+      enabled,
+      setEnabled,
+      dismiss,
+      clearAll,
+      markNotificationRead,
+      setCurrentScreen,
+      setCurrentChatId,
+      setCurrentGameSessionId: setCurrentGameSessionIdState,
+      setCurrentGameInviteId: setCurrentGameInviteIdState,
+      setActiveGameRuntimeType,
+      lastViewedChatId,
+      consumeLastViewedChatId,
+      registerNotificationPressHandler,
+      onMessageNotificationPressed,
+    }),
+    [
+      notifications,
+      enabled,
+      setEnabled,
+      dismiss,
+      clearAll,
+      markNotificationRead,
+      lastViewedChatId,
+      consumeLastViewedChatId,
+      setCurrentChatId,
+      registerNotificationPressHandler,
+      onMessageNotificationPressed,
+    ],
+  );
 
   return (
     <InAppNotificationsContext.Provider value={value}>
@@ -904,10 +512,6 @@ export function InAppNotificationsProvider({
     </InAppNotificationsContext.Provider>
   );
 }
-
-// =============================================================================
-// Hook
-// =============================================================================
 
 export function useInAppNotifications(): InAppNotificationsContextType {
   const context = useContext(InAppNotificationsContext);

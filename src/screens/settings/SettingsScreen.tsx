@@ -15,14 +15,17 @@ import {
   reauthenticateUser,
 } from "@/services/accountDeletion";
 import { logout } from "@/services/auth";
+import {
+  subscribeToInboxSettings,
+  updateInboxSettings,
+} from "@/services/inboxSettings";
 import { equipTheme, updateDisplayName } from "@/services/profileService";
 import { useAuth } from "@/store/AuthContext";
-import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { useUser } from "@/store/UserContext";
+import type { InboxSettings } from "@/types/messaging";
 import { isValidDisplayName } from "@/utils/validators";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -48,7 +51,6 @@ import {
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("screens/settings/SettingsScreen");
-const NOTIFICATION_SETTINGS_KEY = "@vibe/notification_settings";
 
 // =============================================================================
 // Types
@@ -56,13 +58,6 @@ const NOTIFICATION_SETTINGS_KEY = "@vibe/notification_settings";
 
 interface SettingsScreenProps {
   navigation: any;
-}
-
-interface NotificationSettings {
-  messages: boolean;
-  friendRequests: boolean;
-  stories: boolean;
-  streaks: boolean;
 }
 
 // =============================================================================
@@ -75,32 +70,8 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { profile, refreshProfile } = useUser();
   const { showSuccess, showError, showInfo } = useSnackbar();
   const { setTheme, isDark, useSystemTheme, setUseSystemTheme } = useAppTheme();
-  const {
-    enabled: inAppNotificationsEnabled,
-    setEnabled: setInAppNotificationsEnabled,
-  } = useInAppNotifications();
-
-  // Notification toggles (persisted to AsyncStorage)
-  const [notifications, setNotifications] = useState<NotificationSettings>({
-    messages: true,
-    friendRequests: true,
-    stories: true,
-    streaks: true,
-  });
-
-  // Load saved notification settings on mount
-  useEffect(() => {
-    AsyncStorage.getItem(NOTIFICATION_SETTINGS_KEY).then((stored) => {
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as NotificationSettings;
-          setNotifications(parsed);
-        } catch (e) {
-          logger.error("Failed to parse notification settings:", e);
-        }
-      }
-    });
-  }, []);
+  const [notificationSettings, setNotificationSettings] =
+    useState<InboxSettings | null>(null);
 
   // Edit display name state
   const [showEditName, setShowEditName] = useState(false);
@@ -124,25 +95,37 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   // Handlers
   // =============================================================================
 
-  const toggleNotification = useCallback(
-    (key: keyof NotificationSettings) => {
-      Haptics.selectionAsync();
-      setNotifications((prev) => {
-        const updated = { ...prev, [key]: !prev[key] };
-        // Persist to AsyncStorage
-        AsyncStorage.setItem(
-          NOTIFICATION_SETTINGS_KEY,
-          JSON.stringify(updated),
-        ).catch((e) => logger.warn("Failed to save notification settings:", e));
-        // Use the updated value (not stale closure) for the toast
-        const label = key.charAt(0).toUpperCase() + key.slice(1);
-        showSuccess(
-          `${label} notifications ${updated[key] ? "enabled" : "disabled"}`,
+  useEffect(() => {
+    if (!currentFirebaseUser?.uid) return;
+    return subscribeToInboxSettings(
+      currentFirebaseUser.uid,
+      setNotificationSettings,
+    );
+  }, [currentFirebaseUser?.uid]);
+
+  const toggleNotificationSetting = useCallback(
+    async (key: keyof InboxSettings, label: string, value: boolean) => {
+      if (!currentFirebaseUser?.uid) return;
+
+      Haptics.selectionAsync().catch(() => {});
+      setNotificationSettings((prev) =>
+        prev ? { ...prev, [key]: value } : prev,
+      );
+
+      try {
+        await updateInboxSettings(currentFirebaseUser.uid, {
+          [key]: value,
+        });
+        showSuccess(`${label} ${value ? "enabled" : "disabled"}`);
+      } catch (error) {
+        logger.error(`Failed to update ${String(key)}:`, error);
+        setNotificationSettings((prev) =>
+          prev ? { ...prev, [key]: !value } : prev,
         );
-        return updated;
-      });
+        showError(`Couldn't update ${label.toLowerCase()}`);
+      }
     },
-    [showSuccess],
+    [currentFirebaseUser?.uid, showError, showSuccess],
   );
 
   const handleSaveDisplayName = useCallback(async () => {
@@ -452,23 +435,44 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
             { color: theme.colors.onSurfaceVariant },
           ]}
         >
-          These settings control in-app notification preferences. Push
-          notification settings are managed in your device settings.
+          These controls back the server-side notification rules. Foreground
+          banners use the in-app channel, while background and offline delivery
+          uses push.
         </Text>
 
         <List.Item
+          title="All Notifications"
+          description="Master switch for alerts and notification feed writes"
+          left={(props) => <List.Icon {...props} icon="bell-ring" />}
+          right={() => (
+            <Switch
+              value={notificationSettings?.notificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "notificationsEnabled",
+                  "Notifications",
+                  value,
+                )
+              }
+              color={theme.colors.primary}
+            />
+          )}
+        />
+
+        <List.Item
           title="In-App Banners"
-          description="Show banners for new messages & requests"
+          description="Foreground banners while you're actively using the app"
           left={(props) => <List.Icon {...props} icon="bell-badge" />}
           right={() => (
             <Switch
-              value={inAppNotificationsEnabled}
-              onValueChange={(value) => {
-                setInAppNotificationsEnabled(value);
-                showSuccess(
-                  `In-app notifications ${value ? "enabled" : "disabled"}`,
-                );
-              }}
+              value={notificationSettings?.inAppNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "inAppNotificationsEnabled",
+                  "In-app banners",
+                  value,
+                )
+              }
               color={theme.colors.primary}
             />
           )}
@@ -476,25 +480,96 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
         <List.Item
           title="Messages"
-          description="Get notified for new messages"
+          description="Direct messages, group messages, and message requests"
           left={(props) => <List.Icon {...props} icon="message" />}
           right={() => (
             <Switch
-              value={notifications.messages}
-              onValueChange={() => toggleNotification("messages")}
+              value={notificationSettings?.messageNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "messageNotificationsEnabled",
+                  "Message notifications",
+                  value,
+                )
+              }
               color={theme.colors.primary}
             />
           )}
         />
 
         <List.Item
-          title="Connection Requests"
-          description="Get notified for connection requests"
+          title="Social"
+          description="Friend requests and accepted requests"
           left={(props) => <List.Icon {...props} icon="account-plus" />}
           right={() => (
             <Switch
-              value={notifications.friendRequests}
-              onValueChange={() => toggleNotification("friendRequests")}
+              value={notificationSettings?.socialNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "socialNotificationsEnabled",
+                  "Social notifications",
+                  value,
+                )
+              }
+              color={theme.colors.primary}
+            />
+          )}
+        />
+
+        <List.Item
+          title="Games"
+          description="Invites, lobby ready events, turns, and results"
+          left={(props) => <List.Icon {...props} icon="gamepad-variant" />}
+          right={() => (
+            <Switch
+              value={notificationSettings?.gameNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "gameNotificationsEnabled",
+                  "Game notifications",
+                  value,
+                )
+              }
+              color={theme.colors.primary}
+            />
+          )}
+        />
+
+        <List.Item
+          title="Achievements"
+          description="Achievement unlocks and progression milestones"
+          left={(props) => <List.Icon {...props} icon="trophy-outline" />}
+          right={() => (
+            <Switch
+              value={
+                notificationSettings?.achievementNotificationsEnabled !== false
+              }
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "achievementNotificationsEnabled",
+                  "Achievement notifications",
+                  value,
+                )
+              }
+              color={theme.colors.primary}
+            />
+          )}
+        />
+
+        <List.Item
+          title="Gifts"
+          description="Gift received and gift opened events"
+          left={(props) => <List.Icon {...props} icon="gift-outline" />}
+          right={() => (
+            <Switch
+              value={notificationSettings?.giftNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "giftNotificationsEnabled",
+                  "Gift notifications",
+                  value,
+                )
+              }
               color={theme.colors.primary}
             />
           )}
@@ -502,12 +577,18 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
 
         <List.Item
           title="Moments"
-          description="Get notified when connections post moments"
+          description="Story and moments alerts when enabled by the backend"
           left={(props) => <List.Icon {...props} icon="image-multiple" />}
           right={() => (
             <Switch
-              value={notifications.stories}
-              onValueChange={() => toggleNotification("stories")}
+              value={notificationSettings?.storyNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "storyNotificationsEnabled",
+                  "Moments notifications",
+                  value,
+                )
+              }
               color={theme.colors.primary}
             />
           )}
@@ -519,8 +600,33 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           left={(props) => <List.Icon {...props} icon="fire" />}
           right={() => (
             <Switch
-              value={notifications.streaks}
-              onValueChange={() => toggleNotification("streaks")}
+              value={notificationSettings?.streakNotificationsEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "streakNotificationsEnabled",
+                  "Ritual reminders",
+                  value,
+                )
+              }
+              color={theme.colors.primary}
+            />
+          )}
+        />
+
+        <List.Item
+          title="App Badge"
+          description="Show unread notification count on the app icon"
+          left={(props) => <List.Icon {...props} icon="numeric" />}
+          right={() => (
+            <Switch
+              value={notificationSettings?.badgeCountEnabled !== false}
+              onValueChange={(value) =>
+                toggleNotificationSetting(
+                  "badgeCountEnabled",
+                  "Badge count",
+                  value,
+                )
+              }
               color={theme.colors.primary}
             />
           )}

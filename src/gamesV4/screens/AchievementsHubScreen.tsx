@@ -26,11 +26,12 @@ import {
   subscribeToAchievementSections,
   type AchievementEntryV4,
 } from "@/gamesV4/services/gameServiceV4";
+import { markAchievementNotificationsRead } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -107,6 +108,15 @@ export default function AchievementsHubScreen() {
     const unsub = subscribeToAchievementSections(uid, setClaimedSections);
     return unsub;
   }, [uid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!uid) return;
+      markAchievementNotificationsRead(uid).catch((error) => {
+        console.warn("[gamesV4] Failed to mark achievement notifications read:", error);
+      });
+    }, [uid]),
+  );
 
   const earnedSet = useMemo(() => new Set(earned.map((e) => e.type)), [earned]);
   const earnedMap = useMemo(() => {

@@ -11,7 +11,11 @@ export type AuthStackParamList = {
 };
 
 export type InboxStackParamList = {
-  ChatList: undefined;
+  ChatList:
+    | {
+        initialFilter?: "all" | "unread" | "groups" | "dms" | "requests";
+      }
+    | undefined;
   ScheduledMessages: undefined;
   GroupInvites: undefined;
   InboxSettings: undefined;
@@ -73,7 +77,11 @@ export type MainStackParamList = {
   GroupCall: OptionalRouteParams;
   CallHistory: undefined;
   CallSettings: undefined;
-  Connections: undefined;
+  Connections:
+    | {
+        tab?: "all" | "requests";
+      }
+    | undefined;
   UserProfile: { userId: string };
   SetStatus: undefined;
   MutualFriendsList:

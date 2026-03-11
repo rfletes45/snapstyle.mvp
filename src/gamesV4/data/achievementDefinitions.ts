@@ -196,6 +196,14 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     sectionBadgeId: "section_knockout_game",
     runtimeCategory: "realtime",
   },
+  {
+    sectionId: "dead_drop",
+    name: "Dead Drop",
+    description: "Give clever clues, guess right, and outsmart the enemy team",
+    icon: "🕵️",
+    sectionBadgeId: "section_dead_drop",
+    runtimeCategory: "turn_based",
+  },
   // General game milestones
   {
     sectionId: "milestones",
@@ -1886,6 +1894,112 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     difficulty: "legendary",
     tokenReward: 100,
   },
+
+  // ── Dead Drop ──────────────────────────────────────────────────────────────
+  {
+    type: "dd_first_game",
+    name: "First Contact",
+    description: "Play your first Dead Drop game",
+    sectionId: "dead_drop",
+    difficulty: "easy",
+    tokenReward: 5,
+  },
+  {
+    type: "dd_first_win",
+    name: "Mission Complete",
+    description: "Win your first Dead Drop game",
+    sectionId: "dead_drop",
+    difficulty: "easy",
+    tokenReward: 10,
+  },
+  {
+    type: "dd_win_as_spymaster",
+    name: "Handler",
+    description: "Win a game as a Spymaster",
+    sectionId: "dead_drop",
+    difficulty: "easy",
+    tokenReward: 10,
+  },
+  {
+    type: "dd_win_as_operative",
+    name: "Field Agent",
+    description: "Win a game as an Operative",
+    sectionId: "dead_drop",
+    difficulty: "easy",
+    tokenReward: 10,
+  },
+  {
+    type: "dd_win_both_roles",
+    name: "Double Agent",
+    description: "Win at least once as Spymaster and once as Operative",
+    sectionId: "dead_drop",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "dd_correct_5_one_clue",
+    name: "Mind Meld",
+    description: "Your team correctly guesses 5+ words from a single clue",
+    sectionId: "dead_drop",
+    difficulty: "hard",
+    tokenReward: 35,
+  },
+  {
+    type: "dd_clean_win",
+    name: "Clean Sweep",
+    description: "Win without your team making any wrong guesses",
+    sectionId: "dead_drop",
+    difficulty: "hard",
+    tokenReward: 35,
+  },
+  {
+    type: "dd_comeback_win",
+    name: "Comeback Channel",
+    description: "Win despite not being the starting team",
+    sectionId: "dead_drop",
+    difficulty: "medium",
+    tokenReward: 20,
+  },
+  {
+    type: "dd_win_10",
+    name: "Master Handler",
+    description: "Win 10 Dead Drop games",
+    sectionId: "dead_drop",
+    difficulty: "hard",
+    tokenReward: 40,
+  },
+  {
+    type: "dd_zero_wrong_operative",
+    name: "Silent Precision",
+    description: "Win as Operative with zero wrong guesses",
+    sectionId: "dead_drop",
+    difficulty: "hard",
+    tokenReward: 30,
+  },
+  {
+    type: "dd_play_20",
+    name: "Deep Read",
+    description: "Play 20 Dead Drop games",
+    sectionId: "dead_drop",
+    difficulty: "medium",
+    tokenReward: 25,
+  },
+  {
+    type: "dd_win_25",
+    name: "Classified Legend",
+    description: "Win 25 Dead Drop games",
+    sectionId: "dead_drop",
+    difficulty: "expert",
+    tokenReward: 50,
+  },
+  {
+    type: "dd_win_50",
+    name: "Shadow Director",
+    description: "Win 50 Dead Drop games",
+    sectionId: "dead_drop",
+    difficulty: "legendary",
+    tokenReward: 100,
+  },
 ];
 
 // =============================================================================
@@ -1925,6 +2039,7 @@ export function isGameSection(sectionId: string): boolean {
     "dots_and_boxes",
     "hex",
     "knockout_game",
+    "dead_drop",
   ].includes(sectionId);
 }
 

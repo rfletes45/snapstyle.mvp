@@ -69,6 +69,7 @@ exports.LEADERBOARD_METRICS = {
     hex: "wins",
     pong_game: "wins",
     knockout_game: "wins",
+    dead_drop: "wins",
     // Default for unspecified games: "bestScore"
 };
 function getLeaderboardMetric(gameId) {

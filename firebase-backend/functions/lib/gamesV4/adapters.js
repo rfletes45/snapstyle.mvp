@@ -7017,4 +7017,1355 @@ registerAdapter({
         return result;
     },
 });
+const DD_CLASSIC_WORDS = [
+    "AGENT",
+    "AFRICA",
+    "AIR",
+    "ALIEN",
+    "ALPS",
+    "AMAZON",
+    "ANGEL",
+    "ANTENNA",
+    "APPLE",
+    "ARM",
+    "BACK",
+    "BAND",
+    "BANK",
+    "BARK",
+    "BAT",
+    "BATTERY",
+    "BEACH",
+    "BEAR",
+    "BEAT",
+    "BED",
+    "BELL",
+    "BELT",
+    "BERLIN",
+    "BERRY",
+    "BOARD",
+    "BOLT",
+    "BOMB",
+    "BOND",
+    "BOOM",
+    "BOW",
+    "BOX",
+    "BRIDGE",
+    "BRUSH",
+    "BUFFALO",
+    "BUG",
+    "BUTTON",
+    "CABINET",
+    "CAMP",
+    "CANADA",
+    "CAP",
+    "CAPITAL",
+    "CARD",
+    "CASTLE",
+    "CAT",
+    "CELL",
+    "CENTER",
+    "CHAIR",
+    "CHANGE",
+    "CHARGE",
+    "CHECK",
+    "CHEST",
+    "CHINA",
+    "CHOCOLATE",
+    "CIRCLE",
+    "CLIFF",
+    "CLOAK",
+    "CLOCK",
+    "CLOUD",
+    "CLUB",
+    "CODE",
+    "COLD",
+    "COMIC",
+    "COMPOUND",
+    "CONCERT",
+    "CONDUCTOR",
+    "CONTRACT",
+    "COOK",
+    "COPPER",
+    "COTTON",
+    "COURT",
+    "COVER",
+    "CRANE",
+    "CRASH",
+    "CRICKET",
+    "CROSS",
+    "CROWN",
+    "CYCLE",
+    "DAM",
+    "DANCE",
+    "DATE",
+    "DAY",
+    "DEATH",
+    "DECK",
+    "DEGREE",
+    "DIAMOND",
+    "DINOSAUR",
+    "DISEASE",
+    "DOCTOR",
+    "DOG",
+    "DRAFT",
+    "DRAGON",
+    "DRESS",
+    "DRILL",
+    "DROP",
+    "DRUM",
+    "DUCK",
+    "DWARF",
+    "EAGLE",
+    "EGYPT",
+    "ENGINE",
+    "ENGLAND",
+    "EUROPE",
+    "EYE",
+    "FACE",
+    "FAIR",
+    "FALL",
+    "FAN",
+    "FENCE",
+    "FIELD",
+    "FIGHTER",
+    "FIGURE",
+    "FILE",
+    "FILM",
+    "FIRE",
+    "FISH",
+    "FLY",
+    "FOOT",
+    "FORCE",
+    "FOREST",
+    "FORK",
+    "FOX",
+    "FRAME",
+    "FROST",
+    "GAME",
+    "GAS",
+    "GENIUS",
+    "GHOST",
+    "GIANT",
+    "GLASS",
+    "GLOVE",
+    "GOLD",
+    "GRACE",
+    "GRASS",
+    "GREECE",
+    "GREEN",
+    "GROUND",
+    "HAM",
+    "HAND",
+    "HAWK",
+    "HEAD",
+    "HEART",
+    "HELICOPTER",
+    "HIDE",
+    "HIT",
+    "HOLE",
+    "HOOD",
+    "HOOK",
+    "HORN",
+    "HORSE",
+    "HOSPITAL",
+    "HOTEL",
+    "ICE",
+    "INDIA",
+    "IRON",
+    "IVORY",
+    "JACK",
+    "JAM",
+    "JET",
+    "JUPITER",
+    "KANGAROO",
+    "KETCHUP",
+    "KEY",
+    "KID",
+    "KING",
+    "KITE",
+    "KNIGHT",
+    "LAB",
+    "LACE",
+    "LAND",
+    "LASER",
+    "LAUNCH",
+    "LEAD",
+    "LEMON",
+    "LENS",
+    "LIFE",
+    "LIGHT",
+    "LIMOUSINE",
+    "LINE",
+    "LINK",
+    "LION",
+    "LOCK",
+    "LOG",
+    "LONDON",
+    "LUCK",
+    "MAIL",
+    "MAMMOTH",
+    "MAPLE",
+    "MARCH",
+    "MASS",
+    "MATCH",
+    "MERCURY",
+    "MEXICO",
+    "MICROSCOPE",
+    "MILL",
+    "MINE",
+    "MINT",
+    "MISSILE",
+    "MODEL",
+    "MOLE",
+    "MOON",
+    "MOSCOW",
+    "MOUNT",
+    "MOUSE",
+    "MOUTH",
+    "MUG",
+    "NAIL",
+    "NEEDLE",
+    "NET",
+    "NEW YORK",
+    "NIGHT",
+    "NOTE",
+    "NOVEL",
+    "NURSE",
+    "NUT",
+    "OCTOPUS",
+    "OIL",
+    "OLIVE",
+    "OLYMPUS",
+    "OPERA",
+    "ORANGE",
+    "ORGAN",
+    "PALM",
+    "PAN",
+    "PANTS",
+    "PAPER",
+    "PARACHUTE",
+    "PARK",
+    "PART",
+    "PASS",
+    "PASTE",
+    "PENGUIN",
+    "PHOENIX",
+    "PIANO",
+    "PIE",
+    "PILOT",
+    "PIN",
+    "PIPE",
+    "PIRATE",
+    "PISTOL",
+    "PIT",
+    "PITCH",
+    "PLANE",
+    "PLASTIC",
+    "PLATE",
+    "PLAY",
+    "PLOT",
+    "POINT",
+    "POISON",
+    "POLE",
+    "POOL",
+    "PORT",
+    "POST",
+    "POUND",
+    "PRESS",
+    "PRINCE",
+    "PROGRAM",
+    "PUPIL",
+    "PYRAMID",
+    "QUEEN",
+    "RABBIT",
+    "RACKET",
+    "RAY",
+    "REVOLUTION",
+    "RING",
+    "ROBIN",
+    "ROBOT",
+    "ROCK",
+    "ROME",
+    "ROOT",
+    "ROSE",
+    "ROULETTE",
+    "ROUND",
+    "ROW",
+    "RULER",
+    "RUSSIA",
+    "SAIL",
+    "SATURN",
+    "SCALE",
+    "SCHOOL",
+    "SCIENTIST",
+    "SCREEN",
+    "SEAL",
+    "SERVER",
+    "SHADOW",
+    "SHARK",
+    "SHELL",
+    "SHIP",
+    "SHOE",
+    "SHOP",
+    "SHOT",
+    "SHOULDER",
+    "SINK",
+    "SKYSCRAPER",
+    "SLIP",
+    "SLUG",
+    "SMUGGLER",
+    "SNOW",
+    "SNOWMAN",
+    "SOCK",
+    "SOLDIER",
+    "SOUL",
+    "SOUND",
+    "SPACE",
+    "SPIKE",
+    "SPINE",
+    "SPOT",
+    "SPRING",
+    "SPY",
+    "SQUARE",
+    "STADIUM",
+    "STAFF",
+    "STAR",
+    "STATE",
+    "STICK",
+    "STOCK",
+    "STORM",
+    "STRAW",
+    "STREAM",
+    "STRIKE",
+    "STRING",
+    "SUB",
+    "SUIT",
+    "SUPERHERO",
+    "SWING",
+    "SWITCH",
+    "TABLE",
+    "TABLET",
+    "TAG",
+    "TAIL",
+    "TAP",
+    "TEACHER",
+    "TEMPLE",
+    "THEATER",
+    "THIEF",
+    "THUMB",
+    "TICK",
+    "TIE",
+    "TIME",
+    "TOKYO",
+    "TOOTH",
+    "TOWER",
+    "TRACK",
+    "TRAIN",
+    "TRAP",
+    "TRAVEL",
+    "TREE",
+    "TRIANGLE",
+    "TRIP",
+    "TRUNK",
+    "TUBE",
+    "TURKEY",
+    "UNDERTAKER",
+    "UNICORN",
+    "VAN",
+    "VET",
+    "WAKE",
+    "WALL",
+    "WAR",
+    "WASHER",
+    "WASHINGTON",
+    "WATCH",
+    "WATER",
+    "WAVE",
+    "WEB",
+    "WELL",
+    "WHALE",
+    "WHIP",
+    "WIND",
+    "WITCH",
+    "WORM",
+    "YARD",
+];
+const DD_EASY_WORDS = [
+    "APPLE",
+    "BABY",
+    "BALL",
+    "BANANA",
+    "BASKET",
+    "BEACH",
+    "BEAR",
+    "BIRD",
+    "BOAT",
+    "BOOK",
+    "BOX",
+    "BREAD",
+    "BRIDGE",
+    "BUNNY",
+    "BUTTER",
+    "CAKE",
+    "CAMERA",
+    "CAR",
+    "CAT",
+    "CHAIR",
+    "CHEESE",
+    "CHICKEN",
+    "CLOCK",
+    "CLOUD",
+    "CLOWN",
+    "COOKIE",
+    "CORN",
+    "COW",
+    "CROWN",
+    "CUP",
+    "DANCE",
+    "DEER",
+    "DESK",
+    "DINOSAUR",
+    "DOG",
+    "DOLL",
+    "DOLPHIN",
+    "DOOR",
+    "DRAGON",
+    "DRESS",
+    "DRUM",
+    "DUCK",
+    "EAGLE",
+    "EGG",
+    "ELEPHANT",
+    "EYE",
+    "FAIRY",
+    "FARM",
+    "FEATHER",
+    "FENCE",
+    "FINGER",
+    "FIRE",
+    "FISH",
+    "FLAG",
+    "FLOWER",
+    "FLY",
+    "FOREST",
+    "FOX",
+    "FROG",
+    "GARDEN",
+    "GIFT",
+    "GIRAFFE",
+    "GLASS",
+    "GLOVE",
+    "GOAT",
+    "GOLD",
+    "GRAPE",
+    "GRASS",
+    "GUITAR",
+    "HAMMER",
+    "HAND",
+    "HAT",
+    "HEART",
+    "HERO",
+    "HILL",
+    "HONEY",
+    "HORSE",
+    "HOUSE",
+    "ICE",
+    "ISLAND",
+    "JAM",
+    "JET",
+    "JUICE",
+    "JUNGLE",
+    "KEY",
+    "KING",
+    "KITE",
+    "KITTEN",
+    "LAKE",
+    "LAMP",
+    "LEAF",
+    "LEMON",
+    "LETTER",
+    "LIGHT",
+    "LION",
+    "MAP",
+    "MILK",
+    "MIRROR",
+    "MONKEY",
+    "MOON",
+    "MOUNTAIN",
+    "MOUSE",
+    "MUSIC",
+    "NEEDLE",
+    "NEST",
+    "NIGHT",
+    "NOSE",
+    "OCEAN",
+    "ORANGE",
+    "OWL",
+    "PAINT",
+    "PANDA",
+    "PAPER",
+    "PARK",
+    "PARROT",
+    "PENGUIN",
+    "PHONE",
+    "PIANO",
+    "PIE",
+    "PILLOW",
+    "PIRATE",
+    "PIZZA",
+    "PLANE",
+    "PLANT",
+    "POPCORN",
+    "PUPPY",
+    "PUZZLE",
+    "QUEEN",
+    "RABBIT",
+    "RAIN",
+    "RAINBOW",
+    "RING",
+    "RIVER",
+    "ROBOT",
+    "ROCKET",
+    "ROOF",
+    "ROPE",
+    "ROSE",
+    "SAND",
+    "SCHOOL",
+    "SHARK",
+    "SHEEP",
+    "SHELL",
+    "SHIP",
+    "SHOE",
+    "SNAKE",
+    "SNOW",
+    "SOCCER",
+    "SPIDER",
+    "SPOON",
+    "SQUIRREL",
+    "STAR",
+    "STONE",
+    "SUN",
+    "SWORD",
+    "TABLE",
+    "TIGER",
+    "TOOTH",
+    "TOWER",
+    "TRAIN",
+    "TREE",
+    "TRUCK",
+    "TURTLE",
+    "UMBRELLA",
+    "UNICORN",
+    "VOLCANO",
+    "WAGON",
+    "WATER",
+    "WHALE",
+    "WHEEL",
+    "WINDOW",
+    "WINTER",
+    "WITCH",
+    "WOLF",
+    "ZEBRA",
+    "ZOO",
+];
+const DD_HARD_WORDS = [
+    "ABSTRACT",
+    "ALGORITHM",
+    "ALIBI",
+    "ALMANAC",
+    "AMBUSH",
+    "AMNESIA",
+    "ANOMALY",
+    "ANTIDOTE",
+    "APPARATUS",
+    "ARCHIVE",
+    "ARSENAL",
+    "ASYLUM",
+    "BALLAST",
+    "BARRICADE",
+    "BASELINE",
+    "BEACON",
+    "BLUEPRINT",
+    "BOUNTY",
+    "BREACH",
+    "BRIEFCASE",
+    "BROKER",
+    "BUREAU",
+    "CALCULUS",
+    "CALIBER",
+    "CAMOUFLAGE",
+    "CANOPY",
+    "CAPSULE",
+    "CARBINE",
+    "CASCADE",
+    "CATALYST",
+    "CHANNEL",
+    "CHARTER",
+    "CIPHER",
+    "CIRCUIT",
+    "CLEARANCE",
+    "COALITION",
+    "COERCION",
+    "COMMAND",
+    "CONSENSUS",
+    "CONSPIRACY",
+    "CONTINGENCY",
+    "CONVOY",
+    "CORRIDOR",
+    "COUNTERFEIT",
+    "COVENANT",
+    "CROSSFIRE",
+    "CRUISER",
+    "CRYPT",
+    "CURATOR",
+    "DEBRIS",
+    "DECOY",
+    "DEFECTOR",
+    "DELEGATE",
+    "DEPOT",
+    "DETONATOR",
+    "DICTION",
+    "DILEMMA",
+    "DIPLOMAT",
+    "DIRECTIVE",
+    "DISPATCH",
+    "DOCTRINE",
+    "DOSSIER",
+    "ECLIPSE",
+    "EMBARGO",
+    "EMISSION",
+    "EMISSARY",
+    "ENCRYPTION",
+    "ENVOY",
+    "EPOCH",
+    "ESPIONAGE",
+    "EVIDENCE",
+    "EXFILTRATE",
+    "EXTRACTION",
+    "FACADE",
+    "FALLOUT",
+    "FIREWALL",
+    "FLAGSHIP",
+    "FLANK",
+    "FLASHPOINT",
+    "FORECAST",
+    "FORGERY",
+    "FORTRESS",
+    "FREQUENCY",
+    "FRONTIER",
+    "FUGITIVE",
+    "GAMBIT",
+    "GARRISON",
+    "GENESIS",
+    "GLACIER",
+    "GUARDIAN",
+    "GUERRILLA",
+    "HANDLER",
+    "HARBINGER",
+    "HARPOON",
+    "HAZARD",
+    "HELIX",
+    "HEMISPHERE",
+    "HORIZON",
+    "HYDRA",
+    "HYPOTHESIS",
+    "IMPASSE",
+    "INCOGNITO",
+    "INFORMANT",
+    "INSURGENT",
+    "INTERCEPT",
+    "INTRIGUE",
+    "INVENTORY",
+    "JUNCTION",
+    "KEYSTONE",
+    "LABYRINTH",
+    "LEVERAGE",
+    "LIAISON",
+    "MANDATE",
+    "MANIFESTO",
+    "MERCENARY",
+    "MERIDIAN",
+    "MIRAGE",
+    "MONOLITH",
+    "MORATORIUM",
+    "MUZZLE",
+    "NARRATIVE",
+    "NAUTICAL",
+    "NEMESIS",
+    "NETWORK",
+    "NEXUS",
+    "NOMAD",
+    "OBITUARY",
+    "ODYSSEY",
+    "OFFSHORE",
+    "OPERATIVE",
+    "ORACLE",
+    "OUTPOST",
+    "PARADIGM",
+    "PARAMILITARY",
+    "PARTISAN",
+    "PASSPORT",
+    "PATRIOT",
+    "PAYLOAD",
+    "PERIMETER",
+    "PHANTOM",
+    "PINNACLE",
+    "PLATOON",
+    "PRECINCT",
+    "PROTOCOL",
+    "PROVOST",
+    "QUARANTINE",
+    "RADAR",
+    "RANSOM",
+    "REACTOR",
+    "RECON",
+    "REDLINE",
+    "REFUGE",
+    "REGIMENT",
+    "RENDITION",
+    "REPUBLIC",
+    "RESISTANCE",
+    "SABOTAGE",
+    "SAFEHOUSE",
+    "SANCTION",
+    "SATELLITE",
+    "SCAFFOLD",
+    "SENTINEL",
+    "SIEGE",
+    "SILHOUETTE",
+    "SOVEREIGNTY",
+    "SPECTRE",
+    "STRATAGEM",
+    "SUBTERFUGE",
+    "SUMMIT",
+    "SURVEILLANCE",
+    "SYNDICATE",
+    "TACTICAL",
+    "TELEGRAPH",
+    "TERRAFORM",
+    "THRESHOLD",
+    "TORPEDO",
+    "TRIBUNAL",
+    "TUNDRA",
+    "ULTIMATUM",
+    "VANGUARD",
+    "VECTOR",
+    "VENDETTA",
+    "VICEROY",
+    "VOLTAGE",
+    "VORTEX",
+    "WARRANT",
+    "ZENITH",
+];
+const DD_PACKS = {
+    classic: DD_CLASSIC_WORDS,
+    easy: DD_EASY_WORDS,
+    hard: DD_HARD_WORDS,
+};
+function ddSelectWords(pack, count) {
+    const source = DD_PACKS[pack] ?? DD_CLASSIC_WORDS;
+    const arr = [...source];
+    for (let i = 0; i < count; i++) {
+        const j = i + Math.floor(Math.random() * (arr.length - i));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, count);
+}
+// ── Board Generation ──────────────────────────────────────────────────────────
+let _ddBoardCache = null;
+function ddGenerateBoard(pack, startingTeam) {
+    const words = ddSelectWords(pack, 25);
+    const alignments = [];
+    for (let i = 0; i < 9; i++)
+        alignments.push(startingTeam);
+    for (let i = 0; i < 8; i++)
+        alignments.push(startingTeam === "red" ? "blue" : "red");
+    for (let i = 0; i < 7; i++)
+        alignments.push("neutral");
+    alignments.push("assassin");
+    for (let i = alignments.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [alignments[i], alignments[j]] = [alignments[j], alignments[i]];
+    }
+    const cards = words.map((word, idx) => ({
+        id: idx,
+        word: word.toUpperCase(),
+        revealed: false,
+        revealedAs: null,
+        revealedByTeam: null,
+        revealedTurn: null,
+        revealedFromClueId: null,
+    }));
+    const keyMap = {};
+    for (let i = 0; i < 25; i++)
+        keyMap[i] = alignments[i];
+    return {
+        cards,
+        keyMap,
+        startingTeam,
+        redTotal: startingTeam === "red" ? 9 : 8,
+        blueTotal: startingTeam === "blue" ? 9 : 8,
+    };
+}
+function ddAssignTeams(players) {
+    const sorted = [...players].sort((a, b) => a.slotIndex - b.slotIndex);
+    return [
+        { uid: sorted[0].uid, team: "red", role: "spymaster" },
+        { uid: sorted[1].uid, team: "red", role: "operative" },
+        { uid: sorted[2].uid, team: "blue", role: "spymaster" },
+        { uid: sorted[3].uid, team: "blue", role: "operative" },
+    ];
+}
+// ── Clue Validation ───────────────────────────────────────────────────────────
+function ddNormalize(s) {
+    return s
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/['']/g, "'")
+        .replace(/[^\w']/g, "");
+}
+function ddRoughStem(word) {
+    let s = ddNormalize(word);
+    if (s.endsWith("ies") && s.length > 4)
+        s = s.slice(0, -3) + "y";
+    else if (s.endsWith("ves") && s.length > 4)
+        s = s.slice(0, -3) + "f";
+    else if (s.endsWith("ness") && s.length > 5)
+        s = s.slice(0, -4);
+    else if (s.endsWith("ment") && s.length > 5)
+        s = s.slice(0, -4);
+    else if (s.endsWith("ing") && s.length > 4)
+        s = s.slice(0, -3);
+    else if (s.endsWith("tion") && s.length > 5)
+        s = s.slice(0, -4);
+    else if (s.endsWith("ed") && s.length > 3)
+        s = s.slice(0, -2);
+    else if (s.endsWith("es") && s.length > 3)
+        s = s.slice(0, -2);
+    else if (s.endsWith("er") && s.length > 3)
+        s = s.slice(0, -2);
+    else if (s.endsWith("ly") && s.length > 3)
+        s = s.slice(0, -2);
+    else if (s.endsWith("s") && s.length > 2)
+        s = s.slice(0, -1);
+    return s;
+}
+const DD_META_PATTERNS = /^(top|bottom|left|right|middle|center|corner|edge|row|column|col|first|second|third|fourth|fifth|[1-5]|adjacent|diagonal|above|below|next|this|that|here|there)$/;
+function ddValidateClue(word, count, cards, mode, advancedClues) {
+    const trimmed = word.trim();
+    if (!trimmed)
+        return { valid: false, error: "Clue cannot be empty." };
+    if (/\s/.test(trimmed) && !trimmed.match(/^\S+-\S+$/))
+        return { valid: false, error: "Clue must be a single word." };
+    if (/^\d+$/.test(trimmed))
+        return { valid: false, error: "Clue cannot be a number." };
+    if (advancedClues === "off" && count < 1)
+        return {
+            valid: false,
+            error: "Count must be at least 1 in standard mode.",
+        };
+    if (advancedClues === "zero" && count < 0)
+        return { valid: false, error: "Unlimited clues are not enabled." };
+    if (count > 25)
+        return { valid: false, error: "Count cannot exceed 25." };
+    const clueNorm = ddNormalize(trimmed);
+    const clueStem = ddRoughStem(trimmed);
+    for (const card of cards) {
+        if (card.revealed)
+            continue;
+        const cardNorm = ddNormalize(card.word);
+        const cardStem = ddRoughStem(card.word);
+        if (clueNorm === cardNorm)
+            return { valid: false, error: `Clue matches board word "${card.word}".` };
+        if (mode !== "relaxed") {
+            if (clueStem === cardStem)
+                return {
+                    valid: false,
+                    error: `Clue appears to be a form of "${card.word}".`,
+                };
+            if (clueNorm.length >= 4 &&
+                cardNorm.length >= 4 &&
+                (clueNorm.includes(cardNorm) || cardNorm.includes(clueNorm))) {
+                return {
+                    valid: false,
+                    error: `Clue is too similar to board word "${card.word}".`,
+                };
+            }
+        }
+    }
+    if (mode !== "relaxed" && DD_META_PATTERNS.test(clueNorm)) {
+        return { valid: false, error: "Positional or meta clues are not allowed." };
+    }
+    if (mode === "tournament" && clueNorm.length < 2) {
+        return {
+            valid: false,
+            error: "Tournament mode requires clues of at least 2 characters.",
+        };
+    }
+    return { valid: true };
+}
+// ── Guess Resolution ──────────────────────────────────────────────────────────
+function ddResolveGuess(cardId, guessingTeam, keyMap, redRemaining, blueRemaining) {
+    const alignment = keyMap[cardId];
+    if (alignment === guessingTeam) {
+        const newRem = guessingTeam === "red" ? redRemaining - 1 : blueRemaining - 1;
+        if (newRem === 0)
+            return {
+                alignment,
+                outcome: "correct",
+                turnEnds: true,
+                gameEnds: true,
+                endReason: "all_agents_found",
+                winnerTeam: guessingTeam,
+            };
+        return { alignment, outcome: "correct", turnEnds: false, gameEnds: false };
+    }
+    if (alignment === "assassin") {
+        return {
+            alignment,
+            outcome: "assassin",
+            turnEnds: true,
+            gameEnds: true,
+            endReason: "assassin",
+            winnerTeam: guessingTeam === "red" ? "blue" : "red",
+        };
+    }
+    if (alignment === "neutral")
+        return { alignment, outcome: "neutral", turnEnds: true, gameEnds: false };
+    const enemy = guessingTeam === "red" ? "blue" : "red";
+    const enemyRem = enemy === "red" ? redRemaining : blueRemaining;
+    if (enemyRem - 1 === 0)
+        return {
+            alignment,
+            outcome: "enemy",
+            turnEnds: true,
+            gameEnds: true,
+            endReason: "all_agents_found",
+            winnerTeam: enemy,
+        };
+    return { alignment, outcome: "enemy", turnEnds: true, gameEnds: false };
+}
+function ddComputeMaxGuesses(count, bonus) {
+    if (count === -1)
+        return 25;
+    if (count === 0)
+        return bonus ? 1 : 0;
+    return count + (bonus ? 1 : 0);
+}
+function ddOpposite(team) {
+    return team === "red" ? "blue" : "red";
+}
+function ddGetSpymaster(teams, team) {
+    return teams.find((t) => t.team === team && t.role === "spymaster");
+}
+function ddGetOperative(teams, team) {
+    return teams.find((t) => t.team === team && t.role === "operative");
+}
+// ── Adapter Registration ──────────────────────────────────────────────────────
+registerAdapter({
+    gameId: "dead_drop",
+    runtimeType: "turnBased",
+    maxPlayers: 4,
+    minPlayers: 4,
+    defaultSettings: {
+        clueLegality: "standard",
+        advancedClues: "off",
+        turnTimer: "off",
+        allowSpectators: true,
+        rematchSeats: "keep",
+        wordPack: "classic",
+    },
+    createInitialPublicState(players, settings) {
+        const s = settings;
+        const teams = ddAssignTeams(players);
+        const startingTeam = Math.random() < 0.5 ? "red" : "blue";
+        const board = ddGenerateBoard(s.wordPack ?? "classic", startingTeam);
+        _ddBoardCache = { keyMap: board.keyMap, teams };
+        const sm = ddGetSpymaster(teams, startingTeam);
+        const state = {
+            boardSize: 5,
+            cards: board.cards,
+            startingTeam,
+            phase: "clue_input",
+            turnTeam: startingTeam,
+            currentTurnPlayerId: sm.uid,
+            currentTurnRole: "spymaster",
+            turnNumber: 1,
+            redRemaining: board.redTotal,
+            blueRemaining: board.blueTotal,
+            currentClue: null,
+            clueHistory: [],
+            guessHistory: [],
+            guessesUsedThisTurn: 0,
+            maxGuessesThisTurn: 0,
+            bonusGuessAllowed: true,
+            winnerTeam: null,
+            endReason: null,
+            teams,
+            turnDeadlineAt: null,
+            moveCount: 0,
+            nextClueId: 1,
+            settings: s,
+        };
+        return state;
+    },
+    createInitialPrivateState(players, _settings) {
+        if (!_ddBoardCache)
+            throw new Error("Dead Drop: private state called without public state.");
+        const { keyMap, teams } = _ddBoardCache;
+        _ddBoardCache = null;
+        const result = {};
+        for (const p of players) {
+            const a = teams.find((t) => t.uid === p.uid);
+            if (!a)
+                continue;
+            if (a.role === "spymaster") {
+                result[p.uid] = {
+                    role: "spymaster",
+                    team: a.team,
+                    keyMap,
+                    keyVersion: 1,
+                };
+            }
+            else {
+                result[p.uid] = { role: "operative", team: a.team };
+            }
+        }
+        return result;
+    },
+    validateMove(publicState, privateStateByPlayer, movePayload, ctx) {
+        const state = publicState;
+        const action = movePayload.action;
+        const { uid } = ctx;
+        if (state.phase === "game_over")
+            return { ok: false, error: "Game is already over." };
+        if (uid !== state.currentTurnPlayerId)
+            return { ok: false, error: "It's not your turn." };
+        const assignment = state.teams.find((t) => t.uid === uid);
+        if (!assignment)
+            return { ok: false, error: "Not a player in this game." };
+        if (action === "submit_clue") {
+            if (state.phase !== "clue_input")
+                return { ok: false, error: "Not the clue phase." };
+            if (assignment.role !== "spymaster")
+                return { ok: false, error: "Only the Spymaster can give clues." };
+            if (assignment.team !== state.turnTeam)
+                return { ok: false, error: "Not your team's turn." };
+            const word = movePayload.word;
+            const count = movePayload.count;
+            if (typeof word !== "string" || typeof count !== "number")
+                return { ok: false, error: "Invalid clue format." };
+            const v = ddValidateClue(word, count, state.cards, state.settings.clueLegality, state.settings.advancedClues);
+            if (!v.valid)
+                return { ok: false, error: v.error };
+            const clueEntry = {
+                clueId: state.nextClueId,
+                team: state.turnTeam,
+                spymasterUid: uid,
+                word: word.trim().toUpperCase(),
+                count,
+                turnNumber: state.turnNumber,
+                timestamp: Date.now(),
+            };
+            const op = ddGetOperative(state.teams, state.turnTeam);
+            const maxG = ddComputeMaxGuesses(count, state.bonusGuessAllowed);
+            const next = {
+                ...state,
+                phase: "guessing",
+                currentClue: clueEntry,
+                clueHistory: [...state.clueHistory, clueEntry],
+                currentTurnPlayerId: op.uid,
+                currentTurnRole: "operative",
+                guessesUsedThisTurn: 0,
+                maxGuessesThisTurn: maxG,
+                moveCount: state.moveCount + 1,
+                nextClueId: state.nextClueId + 1,
+            };
+            return {
+                ok: true,
+                nextPublicState: next,
+                nextTurnPlayerId: op.uid,
+            };
+        }
+        if (action === "guess_word") {
+            if (state.phase !== "guessing")
+                return { ok: false, error: "Not the guessing phase." };
+            if (assignment.role !== "operative")
+                return { ok: false, error: "Only the Operative can guess." };
+            if (assignment.team !== state.turnTeam)
+                return { ok: false, error: "Not your team's turn." };
+            const cardId = movePayload.cardId;
+            if (typeof cardId !== "number")
+                return { ok: false, error: "Invalid card ID." };
+            const card = state.cards.find((c) => c.id === cardId);
+            if (!card)
+                return { ok: false, error: "Invalid card ID." };
+            if (card.revealed)
+                return { ok: false, error: "Already revealed." };
+            if (state.maxGuessesThisTurn > 0 &&
+                state.guessesUsedThisTurn >= state.maxGuessesThisTurn) {
+                return { ok: false, error: "No guesses remaining." };
+            }
+            // Get key map from spymaster private state (server has it)
+            const teamSm = ddGetSpymaster(state.teams, state.turnTeam);
+            const smPriv = teamSm
+                ? privateStateByPlayer[teamSm.uid]
+                : undefined;
+            if (!smPriv?.keyMap)
+                return { ok: false, error: "Server error: missing key map." };
+            const gr = ddResolveGuess(cardId, state.turnTeam, smPriv.keyMap, state.redRemaining, state.blueRemaining);
+            const newCards = state.cards.map((c) => c.id === cardId
+                ? {
+                    ...c,
+                    revealed: true,
+                    revealedAs: gr.alignment,
+                    revealedByTeam: state.turnTeam,
+                    revealedTurn: state.turnNumber,
+                    revealedFromClueId: state.currentClue?.clueId ?? null,
+                }
+                : c);
+            const ge = {
+                cardId,
+                word: card.word,
+                guessedBy: uid,
+                result: gr.outcome,
+                team: state.turnTeam,
+                turnNumber: state.turnNumber,
+                clueId: state.currentClue?.clueId ?? 0,
+                timestamp: Date.now(),
+            };
+            const newRedRem = gr.alignment === "red" ? state.redRemaining - 1 : state.redRemaining;
+            const newBlueRem = gr.alignment === "blue" ? state.blueRemaining - 1 : state.blueRemaining;
+            const guessesUsed = state.guessesUsedThisTurn + 1;
+            if (gr.gameEnds) {
+                const next = {
+                    ...state,
+                    cards: newCards,
+                    phase: "game_over",
+                    redRemaining: newRedRem,
+                    blueRemaining: newBlueRem,
+                    guessHistory: [...state.guessHistory, ge],
+                    guessesUsedThisTurn: guessesUsed,
+                    winnerTeam: gr.winnerTeam,
+                    endReason: gr.endReason,
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: next,
+                    terminal: {
+                        type: "win",
+                        winnerIds: state.teams
+                            .filter((t) => t.team === gr.winnerTeam)
+                            .map((t) => t.uid),
+                        reason: gr.endReason,
+                    },
+                };
+            }
+            if (gr.turnEnds) {
+                const nextTeam = ddOpposite(state.turnTeam);
+                const nextSm = ddGetSpymaster(state.teams, nextTeam);
+                const next = {
+                    ...state,
+                    cards: newCards,
+                    phase: "clue_input",
+                    turnTeam: nextTeam,
+                    currentTurnPlayerId: nextSm.uid,
+                    currentTurnRole: "spymaster",
+                    turnNumber: state.turnNumber + 1,
+                    redRemaining: newRedRem,
+                    blueRemaining: newBlueRem,
+                    currentClue: null,
+                    guessHistory: [...state.guessHistory, ge],
+                    guessesUsedThisTurn: 0,
+                    maxGuessesThisTurn: 0,
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: next,
+                    nextTurnPlayerId: nextSm.uid,
+                    turnAdvance: true,
+                };
+            }
+            // Correct guess, check if out of guesses
+            const outOfGuesses = state.maxGuessesThisTurn > 0 && guessesUsed >= state.maxGuessesThisTurn;
+            if (outOfGuesses) {
+                const nextTeam = ddOpposite(state.turnTeam);
+                const nextSm = ddGetSpymaster(state.teams, nextTeam);
+                const next = {
+                    ...state,
+                    cards: newCards,
+                    phase: "clue_input",
+                    turnTeam: nextTeam,
+                    currentTurnPlayerId: nextSm.uid,
+                    currentTurnRole: "spymaster",
+                    turnNumber: state.turnNumber + 1,
+                    redRemaining: newRedRem,
+                    blueRemaining: newBlueRem,
+                    currentClue: null,
+                    guessHistory: [...state.guessHistory, ge],
+                    guessesUsedThisTurn: 0,
+                    maxGuessesThisTurn: 0,
+                    moveCount: state.moveCount + 1,
+                };
+                return {
+                    ok: true,
+                    nextPublicState: next,
+                    nextTurnPlayerId: nextSm.uid,
+                    turnAdvance: true,
+                };
+            }
+            // Continue guessing
+            const next = {
+                ...state,
+                cards: newCards,
+                redRemaining: newRedRem,
+                blueRemaining: newBlueRem,
+                guessHistory: [...state.guessHistory, ge],
+                guessesUsedThisTurn: guessesUsed,
+                moveCount: state.moveCount + 1,
+            };
+            return {
+                ok: true,
+                nextPublicState: next,
+            };
+        }
+        if (action === "stop_guessing") {
+            if (state.phase !== "guessing")
+                return { ok: false, error: "Not the guessing phase." };
+            if (assignment.role !== "operative")
+                return { ok: false, error: "Only the Operative can stop." };
+            if (assignment.team !== state.turnTeam)
+                return { ok: false, error: "Not your team's turn." };
+            const nextTeam = ddOpposite(state.turnTeam);
+            const nextSm = ddGetSpymaster(state.teams, nextTeam);
+            const next = {
+                ...state,
+                phase: "clue_input",
+                turnTeam: nextTeam,
+                currentTurnPlayerId: nextSm.uid,
+                currentTurnRole: "spymaster",
+                turnNumber: state.turnNumber + 1,
+                currentClue: null,
+                guessesUsedThisTurn: 0,
+                maxGuessesThisTurn: 0,
+                moveCount: state.moveCount + 1,
+            };
+            return {
+                ok: true,
+                nextPublicState: next,
+                nextTurnPlayerId: nextSm.uid,
+                turnAdvance: true,
+            };
+        }
+        return { ok: false, error: "Unknown action." };
+    },
+    computeOutcome(publicState, players) {
+        const state = publicState;
+        const winnerUids = state.winnerTeam
+            ? state.teams.filter((t) => t.team === state.winnerTeam).map((t) => t.uid)
+            : [];
+        return {
+            winnerIds: winnerUids,
+            finalScoreboard: players.map((p) => {
+                const a = state.teams.find((t) => t.uid === p.uid);
+                const isWinner = winnerUids.includes(p.uid);
+                return {
+                    uid: p.uid,
+                    score: isWinner ? 1 : 0,
+                    placement: isWinner ? 1 : 2,
+                    stats: {
+                        team: a?.team ?? "unknown",
+                        role: a?.role ?? "unknown",
+                        endReason: state.endReason,
+                    },
+                };
+            }),
+        };
+    },
+    extractPerformanceMetrics(publicState, players) {
+        const state = publicState;
+        const perPlayer = {};
+        for (const p of players) {
+            const a = state.teams.find((t) => t.uid === p.uid);
+            if (!a)
+                continue;
+            const isWinner = state.winnerTeam === a.team;
+            const myClues = state.clueHistory.filter((c) => c.spymasterUid === p.uid);
+            const myGuesses = state.guessHistory.filter((g) => g.guessedBy === p.uid);
+            const correctGuesses = myGuesses.filter((g) => g.result === "correct").length;
+            const teamGuesses = state.guessHistory.filter((g) => g.team === a.team);
+            const teamClean = teamGuesses.every((g) => g.result === "correct");
+            let maxCorrectFromSingleClue = 0;
+            for (const clue of myClues) {
+                const ct = state.guessHistory.filter((g) => g.clueId === clue.clueId &&
+                    g.team === a.team &&
+                    g.result === "correct").length;
+                maxCorrectFromSingleClue = Math.max(maxCorrectFromSingleClue, ct);
+            }
+            // For operatives, also check from their own guesses per clue
+            if (a.role === "operative") {
+                const clueIds = new Set(myGuesses.map((g) => g.clueId));
+                for (const cid of clueIds) {
+                    const ct = myGuesses.filter((g) => g.clueId === cid && g.result === "correct").length;
+                    maxCorrectFromSingleClue = Math.max(maxCorrectFromSingleClue, ct);
+                }
+            }
+            perPlayer[p.uid] = {
+                team: a.team,
+                role: a.role,
+                won: isWinner,
+                wonAsSpymaster: isWinner && a.role === "spymaster",
+                wonAsOperative: isWinner && a.role === "operative",
+                cluesGiven: myClues.length,
+                guessesMade: myGuesses.length,
+                correctGuesses,
+                wrongGuesses: myGuesses.filter((g) => g.result !== "correct").length,
+                enemyWordsRevealed: myGuesses.filter((g) => g.result === "enemy")
+                    .length,
+                neutralWordsRevealed: myGuesses.filter((g) => g.result === "neutral")
+                    .length,
+                triggeredAssassin: myGuesses.some((g) => g.result === "assassin"),
+                maxCorrectFromSingleClue,
+                cleanWin: isWinner && teamClean,
+                cameFromBehind: isWinner && state.startingTeam !== a.team,
+                turnsElapsed: state.turnNumber,
+                startingTeam: state.startingTeam,
+            };
+        }
+        return {
+            endReason: state.endReason,
+            winnerTeam: state.winnerTeam,
+            turnsElapsed: state.turnNumber,
+            startingTeam: state.startingTeam,
+            totalClues: state.clueHistory.length,
+            totalGuesses: state.guessHistory.length,
+            perPlayer,
+        };
+    },
+    validateSettings(patch) {
+        const result = {};
+        if (patch.clueLegality &&
+            ["relaxed", "standard", "tournament"].includes(patch.clueLegality))
+            result.clueLegality = patch.clueLegality;
+        if (patch.advancedClues &&
+            ["off", "zero", "zero_unlimited"].includes(patch.advancedClues))
+            result.advancedClues = patch.advancedClues;
+        if (patch.wordPack &&
+            ["classic", "easy", "hard"].includes(patch.wordPack))
+            result.wordPack = patch.wordPack;
+        if (patch.turnTimer &&
+            ["off", "1h", "6h", "24h", "48h"].includes(patch.turnTimer))
+            result.turnTimer = patch.turnTimer;
+        if (patch.rematchSeats &&
+            ["keep", "shuffle"].includes(patch.rematchSeats))
+            result.rematchSeats = patch.rematchSeats;
+        if (typeof patch.allowSpectators === "boolean")
+            result.allowSpectators = patch.allowSpectators;
+        return result;
+    },
+});
 //# sourceMappingURL=adapters.js.map

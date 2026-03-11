@@ -6,7 +6,7 @@
  *
  * @module gamesV4/types
  */
-export type GameId = "bounce_blitz" | "play_2048" | "brick_breaker" | "word_master" | "minesweeper" | "lights_out" | "solitaire_klondike" | "tic_tac_toe" | "chess" | "checkers" | "connect_four" | "gomoku" | "reversi" | "dots_and_boxes" | "crazy_eights" | "hex" | "pong_game" | "battleship" | "sketch_party_game" | "starforge_game" | "crossword_puzzle" | "knockout_game" | "minigolf_duels" | "dot_match";
+export type GameId = "bounce_blitz" | "play_2048" | "brick_breaker" | "word_master" | "minesweeper" | "lights_out" | "solitaire_klondike" | "tic_tac_toe" | "chess" | "checkers" | "connect_four" | "gomoku" | "reversi" | "dots_and_boxes" | "crazy_eights" | "hex" | "pong_game" | "battleship" | "sketch_party_game" | "starforge_game" | "crossword_puzzle" | "knockout_game" | "minigolf_duels" | "dot_match" | "dead_drop";
 export type GameRuntimeType = "solo" | "turnBased" | "realtime";
 /**
  * Solo sub-mode that controls session lifecycle policy.

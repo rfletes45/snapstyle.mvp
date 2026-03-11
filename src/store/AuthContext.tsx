@@ -3,13 +3,16 @@ import { navigate as globalNavigate } from "@/services/navigationRef";
 import {
   addNotificationReceivedListener,
   addNotificationResponseListener,
+  getLastNotificationResponse,
   registerForPushNotifications,
+  removePushToken,
   savePushToken,
 } from "@/services/notifications";
 import {
   normalizeNotificationPayload,
   shouldHandleNotificationByDedupeKey,
 } from "@/services/notifications/normalizeNotification";
+import { markUserNotificationRead } from "@/services/userNotifications";
 import {
   cleanupPresence,
   initializePresence,
@@ -58,6 +61,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Set up notification listeners
   useEffect(() => {
+    const handleNotificationResponse = async (
+      response: Notifications.NotificationResponse | null,
+    ) => {
+      if (!response) return;
+
+      logger.info(
+        "📱 Notification tapped:",
+        response.notification.request.content,
+      );
+
+      const data = response.notification.request.content.data;
+      const normalized = normalizeNotificationPayload(data);
+      if (!normalized) return;
+
+      if (
+        !shouldHandleNotificationByDedupeKey(
+          recentTapKeysRef.current,
+          normalized.dedupeKey,
+        )
+      ) {
+        return;
+      }
+
+      if (currentFirebaseUser?.uid && normalized.notificationId) {
+        markUserNotificationRead(currentFirebaseUser.uid, normalized.notificationId).catch(
+          (error) => {
+            logger.warn("[AuthContext] Failed to mark notification read:", error);
+          },
+        );
+      }
+
+      globalNavigate(
+        normalized.route.screen as any,
+        normalized.route.params as any,
+      );
+    };
+
     // Listener for notifications received while app is foregrounded
     notificationListenerRef.current = addNotificationReceivedListener(
       (notification) => {
@@ -67,30 +107,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listener for notification taps
     responseListenerRef.current = addNotificationResponseListener(
-      (response) => {
-        logger.info(
-          "📱 Notification tapped:",
-          response.notification.request.content,
-        );
-        const data = response.notification.request.content.data;
-        const normalized = normalizeNotificationPayload(data);
-        if (!normalized) return;
-
-        if (
-          !shouldHandleNotificationByDedupeKey(
-            recentTapKeysRef.current,
-            normalized.dedupeKey,
-          )
-        ) {
-          return;
-        }
-
-        globalNavigate(
-          normalized.route.screen as any,
-          normalized.route.params as any,
-        );
-      },
+      (response) => void handleNotificationResponse(response),
     );
+
+    getLastNotificationResponse()
+      .then((response) => handleNotificationResponse(response))
+      .catch((error) => {
+        logger.warn("[AuthContext] Failed to read last notification response:", error);
+      });
 
     return () => {
       if (notificationListenerRef.current) {
@@ -100,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         responseListenerRef.current.remove();
       }
     };
-  }, []);
+  }, [currentFirebaseUser]);
 
   // Register for push notifications when user logs in
   useEffect(() => {
@@ -113,6 +137,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const token = await registerForPushNotifications();
           if (token) {
             await savePushToken(currentFirebaseUser.uid, token);
+          } else {
+            await removePushToken(currentFirebaseUser.uid);
           }
           previousUserIdRef.current = currentFirebaseUser.uid;
         } catch (error) {
@@ -154,6 +180,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await savePushToken(currentFirebaseUser.uid, token);
             lastTokenRefreshRef.current = Date.now();
             logger.info("[AuthContext] Push token refreshed");
+          } else {
+            await removePushToken(currentFirebaseUser.uid);
           }
         } catch (err) {
           logger.warn("[AuthContext] Push token refresh failed:", err);

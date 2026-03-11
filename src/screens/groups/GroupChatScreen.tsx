@@ -119,6 +119,7 @@ import {
   getScheduledMessagesForChat,
   scheduleMessage,
 } from "@/services/scheduledMessages";
+import { markConversationNotificationsRead } from "@/services/userNotifications";
 
 // Animal feature
 import { AnimalBubble } from "@/components/chat/AnimalBubble";
@@ -215,7 +216,7 @@ export default function GroupChatScreen({ route, navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       if (groupId) {
-        setCurrentChatId(groupId);
+        setCurrentChatId(groupId, "group");
       }
       return () => setCurrentChatId(null);
     }, [groupId, setCurrentChatId]),
@@ -498,6 +499,13 @@ export default function GroupChatScreen({ route, navigation }: Props) {
       );
     }
   }, [groupId, uid, messages.length]);
+
+  useEffect(() => {
+    if (!uid || !groupId) return;
+    markConversationNotificationsRead(uid, groupId).catch((error) => {
+      logger.warn("Failed to mark group notifications read:", error);
+    });
+  }, [uid, groupId]);
 
   // NOTE: Tab bar visibility is now handled at the navigator level
   // in RootNavigator.tsx using getFocusedRouteNameFromRoute.

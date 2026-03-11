@@ -30,6 +30,8 @@ import {
   PurchaseStats,
   searchPurchases,
 } from "@/services/purchaseHistory";
+import { markNotificationsReadByTypes } from "@/services/userNotifications";
+import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import { DocumentSnapshot } from "firebase/firestore";
@@ -46,6 +48,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { createLogger } from "@/utils/log";
@@ -92,6 +95,8 @@ const PAGE_SIZE = 20;
 export default function PurchaseHistoryScreen({ navigation }: any) {
   // Theme
   const { colors } = useAppTheme();
+  const { currentFirebaseUser } = useAuth();
+  const uid = currentFirebaseUser?.uid;
 
   // State
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
@@ -164,6 +169,17 @@ export default function PurchaseHistoryScreen({ navigation }: any) {
     loadPurchases(true);
     loadStats();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!uid) return;
+      markNotificationsReadByTypes(uid, ["gift_received", "gift_opened"]).catch(
+        (error) => {
+          logger.warn("Failed to mark gift notifications read:", error);
+        },
+      );
+    }, [uid]),
+  );
 
   // Reload when filter changes
   useEffect(() => {

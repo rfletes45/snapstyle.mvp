@@ -1355,6 +1355,36 @@ export interface InboxConversation {
  * Stored at: `Users/{uid}/settings/inbox`
  */
 export interface InboxSettings {
+  /** Global master switch for notification generation */
+  notificationsEnabled?: boolean;
+
+  /** Foreground in-app banners/toasts */
+  inAppNotificationsEnabled?: boolean;
+
+  /** Message + message request notifications */
+  messageNotificationsEnabled?: boolean;
+
+  /** Social notifications such as friend requests */
+  socialNotificationsEnabled?: boolean;
+
+  /** Game invites, ready states, turns, and results */
+  gameNotificationsEnabled?: boolean;
+
+  /** Achievement and progression notifications */
+  achievementNotificationsEnabled?: boolean;
+
+  /** Gift / commerce notifications */
+  giftNotificationsEnabled?: boolean;
+
+  /** Moments / story notifications */
+  storyNotificationsEnabled?: boolean;
+
+  /** Streak / ritual reminders */
+  streakNotificationsEnabled?: boolean;
+
+  /** Whether unread notification count should update the app badge */
+  badgeCountEnabled?: boolean;
+
   /** Default notification level for new conversations */
   defaultNotifyLevel: "all" | "mentions" | "none";
 
@@ -1406,6 +1436,16 @@ export interface InboxSettings {
  * Default inbox settings for new users
  */
 export const DEFAULT_INBOX_SETTINGS: InboxSettings = {
+  notificationsEnabled: true,
+  inAppNotificationsEnabled: true,
+  messageNotificationsEnabled: true,
+  socialNotificationsEnabled: true,
+  gameNotificationsEnabled: true,
+  achievementNotificationsEnabled: true,
+  giftNotificationsEnabled: true,
+  storyNotificationsEnabled: true,
+  streakNotificationsEnabled: true,
+  badgeCountEnabled: true,
   defaultNotifyLevel: "all",
   showReadReceipts: true,
   showTypingIndicators: true,

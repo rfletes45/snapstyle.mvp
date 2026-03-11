@@ -325,6 +325,26 @@ service cloud.firestore {
              request.resource.data.confirmBeforeDelete is bool) &&
             (!request.resource.data.keys().hasAll(['swipeActionsEnabled']) ||
              request.resource.data.swipeActionsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['notificationsEnabled']) ||
+             request.resource.data.notificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['inAppNotificationsEnabled']) ||
+             request.resource.data.inAppNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['messageNotificationsEnabled']) ||
+             request.resource.data.messageNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['socialNotificationsEnabled']) ||
+             request.resource.data.socialNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['gameNotificationsEnabled']) ||
+             request.resource.data.gameNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['achievementNotificationsEnabled']) ||
+             request.resource.data.achievementNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['giftNotificationsEnabled']) ||
+             request.resource.data.giftNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['storyNotificationsEnabled']) ||
+             request.resource.data.storyNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['streakNotificationsEnabled']) ||
+             request.resource.data.streakNotificationsEnabled is bool) &&
+            (!request.resource.data.keys().hasAll(['badgeCountEnabled']) ||
+             request.resource.data.badgeCountEnabled is bool) &&
             // ---- Settings V3 fields (Segment 1) ----
             // dmAcceptance enum
             (!request.resource.data.keys().hasAll(['dmAcceptance']) ||
@@ -381,6 +401,100 @@ service cloud.firestore {
         // All purchase writes must be server-side
         // This ensures integrity with payment processing
         allow create, update, delete: if false;
+      }
+
+      // --------------------------------------------------------
+      // Notifications feed (server-authored)
+      // Users/{uid}/Notifications/{notificationId}
+      // --------------------------------------------------------
+      match /Notifications/{notificationId} {
+        allow read: if isAuth() && isOwner(uid);
+
+        allow create: if false;
+
+        allow update: if isAuth() && isOwner(uid) &&
+          request.resource.data.recipientUid == resource.data.recipientUid &&
+          request.resource.data.type == resource.data.type &&
+          request.resource.data.category == resource.data.category &&
+          request.resource.data.dedupeKey == resource.data.dedupeKey &&
+          request.resource.data.collapseKey == resource.data.collapseKey &&
+          request.resource.data.title == resource.data.title &&
+          request.resource.data.body == resource.data.body &&
+          request.resource.data.actorUid == resource.data.actorUid &&
+          request.resource.data.actorName == resource.data.actorName &&
+          request.resource.data.conversationId == resource.data.conversationId &&
+          request.resource.data.conversationScope == resource.data.conversationScope &&
+          request.resource.data.requestId == resource.data.requestId &&
+          request.resource.data.sessionId == resource.data.sessionId &&
+          request.resource.data.inviteId == resource.data.inviteId &&
+          request.resource.data.gameId == resource.data.gameId &&
+          request.resource.data.sectionId == resource.data.sectionId &&
+          request.resource.data.giftId == resource.data.giftId &&
+          request.resource.data.route == resource.data.route &&
+          request.resource.data.data == resource.data.data &&
+          request.resource.data.channel == resource.data.channel &&
+          request.resource.data.deliveryReason == resource.data.deliveryReason &&
+          request.resource.data.targetDeviceId == resource.data.targetDeviceId &&
+          request.resource.data.pushTargetDeviceIds == resource.data.pushTargetDeviceIds &&
+          request.resource.data.badgeEligible == resource.data.badgeEligible &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.pushSentAt == resource.data.pushSentAt &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['readAt', 'presentedAt', 'archivedAt', 'updatedAt']);
+
+        allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // Notification device registry
+      // Users/{uid}/NotificationDevices/{deviceId}
+      // --------------------------------------------------------
+      match /NotificationDevices/{deviceId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update: if isAuth() && isOwner(uid) &&
+          request.resource.data.deviceId == deviceId &&
+          (!request.resource.data.keys().hasAll(['expoPushToken']) ||
+            request.resource.data.expoPushToken == null ||
+            request.resource.data.expoPushToken is string) &&
+          (!request.resource.data.keys().hasAll(['platform']) ||
+            request.resource.data.platform in ['ios', 'android', 'web']) &&
+          (!request.resource.data.keys().hasAll(['pushEnabled']) ||
+            request.resource.data.pushEnabled is bool);
+        allow delete: if isAuth() && isOwner(uid);
+      }
+
+      // --------------------------------------------------------
+      // Per-device notification session / presence
+      // Users/{uid}/NotificationSessions/{deviceId}
+      // --------------------------------------------------------
+      match /NotificationSessions/{deviceId} {
+        allow read: if isAuth() && isOwner(uid);
+        allow create, update: if isAuth() && isOwner(uid) &&
+          request.resource.data.deviceId == deviceId &&
+          request.resource.data.appState in ['active', 'inactive', 'background', 'unknown'] &&
+          (!request.resource.data.keys().hasAll(['currentScreen']) ||
+            request.resource.data.currentScreen == null ||
+            request.resource.data.currentScreen is string) &&
+          (!request.resource.data.keys().hasAll(['currentChatId']) ||
+            request.resource.data.currentChatId == null ||
+            request.resource.data.currentChatId is string) &&
+          (!request.resource.data.keys().hasAll(['currentConversationScope']) ||
+            request.resource.data.currentConversationScope == null ||
+            request.resource.data.currentConversationScope in ['dm', 'group']) &&
+          (!request.resource.data.keys().hasAll(['currentGameSessionId']) ||
+            request.resource.data.currentGameSessionId == null ||
+            request.resource.data.currentGameSessionId is string) &&
+          (!request.resource.data.keys().hasAll(['currentGameInviteId']) ||
+            request.resource.data.currentGameInviteId == null ||
+            request.resource.data.currentGameInviteId is string) &&
+          (!request.resource.data.keys().hasAll(['currentGameRuntimeType']) ||
+            request.resource.data.currentGameRuntimeType == null ||
+            request.resource.data.currentGameRuntimeType in ['turnBased', 'solo', 'realtime']) &&
+          (!request.resource.data.keys().hasAll(['inAppEnabled']) ||
+            request.resource.data.inAppEnabled is bool) &&
+          (!request.resource.data.keys().hasAll(['pushEnabled']) ||
+            request.resource.data.pushEnabled is bool);
+        allow delete: if isAuth() && isOwner(uid);
       }
 
       // --------------------------------------------------------

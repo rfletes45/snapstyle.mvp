@@ -4,17 +4,18 @@ import {
 } from "../../src/services/notifications/normalizeNotification";
 
 describe("normalizeNotificationPayload", () => {
-  it("normalizes legacy DM message payload", () => {
+  it("normalizes canonical DM message payload", () => {
     const normalized = normalizeNotificationPayload({
-      type: "message",
-      senderId: "user-b",
-      chatId: "chat-1",
+      type: "dm_message",
+      actorUid: "user-b",
+      conversationId: "chat-1",
+      dedupeKey: "dm_message:chat-1:user-b",
     });
 
     expect(normalized).toEqual(
       expect.objectContaining({
-        type: "message",
-        dedupeKey: "message:chat-1",
+        type: "dm_message",
+        dedupeKey: "dm_message:chat-1:user-b",
         route: expect.objectContaining({
           screen: "ChatDetail",
           params: expect.objectContaining({ friendUid: "user-b" }),
@@ -39,7 +40,7 @@ describe("normalizeNotificationPayload", () => {
     expect(normalized?.route.screen).toBe("GroupChat");
   });
 
-  it("normalizes game and achievement payloads from v4 channels", () => {
+  it("normalizes game and achievement payloads from the shared center", () => {
     const game = normalizeNotificationPayload({
       type: "game_turn",
       sessionId: "sess-1",
@@ -53,7 +54,7 @@ describe("normalizeNotificationPayload", () => {
     expect(game?.route.screen).toBe("GamePlayV4");
     expect(game?.dedupeKey).toBe("game_turn:sess-1");
     expect(achievement?.route.screen).toBe("AchievementSection");
-    expect(achievement?.dedupeKey).toBe("achievement:champion");
+    expect(achievement?.dedupeKey).toBe("achievement_unlocked:champion");
   });
 
   it("returns null for unknown or malformed payloads", () => {
@@ -61,29 +62,67 @@ describe("normalizeNotificationPayload", () => {
     expect(normalizeNotificationPayload({})).toBeNull();
     expect(normalizeNotificationPayload({ type: "unknown" })).toBeNull();
     expect(
-      normalizeNotificationPayload({ type: "message", chatId: "chat-1" }),
+      normalizeNotificationPayload({ type: "dm_message", chatId: "chat-1" }),
     ).toBeNull();
   });
 
-  it("produces stable dedupe keys across payload variants of same event", () => {
+  it("produces stable dedupe keys across payload variants of the same DM event", () => {
     const legacy = normalizeNotificationPayload({
       type: "message",
       senderId: "user-b",
       chatId: "chat-1",
     });
     const variant = normalizeNotificationPayload({
-      type: "message",
-      friendUid: "user-b",
-      chatId: "chat-1",
+      type: "dm_message",
+      actorUid: "user-b",
+      conversationId: "chat-1",
     });
 
-    expect(legacy?.dedupeKey).toBe("message:chat-1");
-    expect(variant?.dedupeKey).toBe("message:chat-1");
+    expect(legacy?.dedupeKey).toBe("dm_message:chat-1");
+    expect(variant?.dedupeKey).toBe("dm_message:chat-1");
+  });
+
+  it("uses explicit nested routes from the payload when present", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "message_request",
+      dedupeKey: "message_request:chat-9",
+      route: {
+        screen: "MainTabs",
+        params: {
+          screen: "Inbox",
+          params: {
+            screen: "ChatList",
+            params: { initialFilter: "requests" },
+          },
+        },
+      },
+    });
+
+    expect(normalized?.route).toEqual({
+      screen: "MainTabs",
+      params: {
+        screen: "Inbox",
+        params: {
+          screen: "ChatList",
+          params: { initialFilter: "requests" },
+        },
+      },
+    });
+  });
+
+  it("routes gift notifications to purchase history", () => {
+    const normalized = normalizeNotificationPayload({
+      type: "gift_received",
+      giftId: "gift-1",
+    });
+
+    expect(normalized?.route.screen).toBe("PurchaseHistory");
+    expect(normalized?.dedupeKey).toBe("gift_received:gift-1");
   });
 
   it("dedupes repeated events within the window", () => {
     const dedupeMap = new Map<string, number>();
-    const key = "message:chat-1";
+    const key = "dm_message:chat-1";
 
     expect(
       shouldHandleNotificationByDedupeKey(

@@ -29,9 +29,13 @@ import type { GroupInvite } from "@/types/models";
 import { usePrefetchProfileImages } from "@/utils/imagePrefetch";
 import { log } from "@/utils/log";
 import {
+  markNotificationsReadByTypes,
+} from "@/services/userNotifications";
+import {
   useFocusEffect,
   useIsFocused,
   useNavigation,
+  useRoute,
 } from "@react-navigation/native";
 import React, { useCallback, useMemo, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
@@ -77,6 +81,7 @@ export default function ChatListScreen() {
   const { colors } = useAppTheme();
   const { currentFirebaseUser } = useAuth();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const uid = currentFirebaseUser?.uid ?? "";
   const isFocused = useIsFocused();
 
@@ -101,6 +106,16 @@ export default function ChatListScreen() {
     refresh,
     markConversationReadOptimistic,
   } = useInboxData(uid);
+
+  React.useEffect(() => {
+    const requestedFilter = route.params?.initialFilter;
+    if (requestedFilter) {
+      if (requestedFilter !== filter) {
+        setFilter(requestedFilter);
+      }
+      navigation.setParams({ initialFilter: undefined });
+    }
+  }, [route.params?.initialFilter, filter, navigation, setFilter]);
 
   // Warm image cache for conversation avatars
   usePrefetchProfileImages(
@@ -180,6 +195,17 @@ export default function ChatListScreen() {
       setCurrentScreen("ChatList");
       return () => setCurrentScreen(null);
     }, [setCurrentScreen]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!uid || filter !== "requests") return;
+      markNotificationsReadByTypes(uid, ["message_request"]).catch((error) => {
+        log.warn("[Inbox] Failed to mark message request notifications read", {
+          data: { error },
+        });
+      });
+    }, [uid, filter]),
   );
 
   // =============================================================================

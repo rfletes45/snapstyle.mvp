@@ -35,6 +35,7 @@ export type GameId =
   | "dots_and_boxes"
   | "crazy_eights"
   | "hex"
+  | "dead_drop"
   // Realtime
   | "pong_game"
   | "battleship"

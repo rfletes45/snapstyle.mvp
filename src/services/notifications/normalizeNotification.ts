@@ -1,24 +1,26 @@
 export type CanonicalNotificationType =
-  | "message"
+  | "dm_message"
   | "group_message"
+  | "message_request"
   | "friend_request"
+  | "friend_request_accepted"
+  | "game_invite"
+  | "game_lobby_ready"
   | "game_turn"
-  | "achievement_unlocked";
+  | "game_resolved"
+  | "achievement_unlocked"
+  | "gift_received"
+  | "gift_opened";
 
 export interface CanonicalNotificationRoute {
-  screen:
-    | "ChatDetail"
-    | "GroupChat"
-    | "Connections"
-    | "GamePlayV4"
-    | "AchievementSection"
-    | "AchievementsHub";
+  screen: string;
   params?: Record<string, unknown>;
 }
 
 export interface CanonicalNotification {
   type: CanonicalNotificationType;
   dedupeKey: string;
+  notificationId?: string;
   route: CanonicalNotificationRoute;
 }
 
@@ -33,89 +35,228 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function asRoute(value: unknown): CanonicalNotificationRoute | undefined {
+  const route = asRecord(value);
+  if (!route) return undefined;
+  const screen = asString(route.screen);
+  if (!screen) return undefined;
+  return {
+    screen,
+    params: asRecord(route.params) ?? undefined,
+  };
+}
+
+function buildDedupeKey(
+  payload: Record<string, unknown>,
+  fallback: string,
+): string {
+  return asString(payload.dedupeKey) ?? fallback;
+}
+
 export function normalizeNotificationPayload(
   rawPayload: unknown,
 ): CanonicalNotification | null {
   const payload = asRecord(rawPayload);
   if (!payload) return null;
 
-  const type = asString(payload.type);
-  if (!type) return null;
+  const routeFromPayload = asRoute(payload.route);
+  const notificationId = asString(payload.notificationId);
+  const rawType = asString(payload.type);
+  if (!rawType) return null;
 
-  if (type === "message") {
-    const senderId = asString(payload.senderId) || asString(payload.friendUid);
+  if (rawType === "message" || rawType === "dm_message") {
+    const senderId =
+      asString(payload.actorUid) ||
+      asString(payload.senderId) ||
+      asString(payload.friendUid);
+    const chatId = asString(payload.conversationId) || asString(payload.chatId);
     if (!senderId) return null;
-    const chatId = asString(payload.chatId);
+
     return {
-      type: "message",
-      dedupeKey: `message:${chatId ?? senderId}`,
-      route: {
-        screen: "ChatDetail",
-        params: {
-          friendUid: senderId,
-          initialData: chatId ? { chatId } : undefined,
-        },
-      },
+      type: "dm_message",
+      notificationId,
+      dedupeKey: buildDedupeKey(
+        payload,
+        `dm_message:${chatId ?? senderId}`,
+      ),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "ChatDetail",
+          params: {
+            friendUid: senderId,
+            initialData: chatId ? { chatId } : undefined,
+          },
+        } satisfies CanonicalNotificationRoute),
     };
   }
 
-  if (type === "group_message") {
-    const groupId = asString(payload.groupId);
+  if (rawType === "group_message") {
+    const groupId =
+      asString(payload.conversationId) || asString(payload.groupId);
     if (!groupId) return null;
-    const groupName = asString(payload.groupName);
+
     return {
       type: "group_message",
-      dedupeKey: `group_message:${groupId}`,
-      route: {
-        screen: "GroupChat",
-        params: {
-          groupId,
-          groupName,
-        },
-      },
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, `group_message:${groupId}`),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "GroupChat",
+          params: {
+            groupId,
+            groupName: asString(payload.groupName),
+          },
+        } satisfies CanonicalNotificationRoute),
     };
   }
 
-  if (type === "friend_request") {
+  if (rawType === "message_request") {
+    const chatId = asString(payload.conversationId) || asString(payload.chatId);
+    return {
+      type: "message_request",
+      notificationId,
+      dedupeKey: buildDedupeKey(
+        payload,
+        `message_request:${chatId ?? "inbox"}`,
+      ),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "MainTabs",
+          params: {
+            screen: "Inbox",
+            params: {
+              screen: "ChatList",
+              params: {
+                initialFilter: "requests",
+              },
+            },
+          },
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (rawType === "friend_request") {
     return {
       type: "friend_request",
-      dedupeKey: "friend_request",
-      route: {
-        screen: "Connections",
-      },
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, "friend_request"),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "Connections",
+          params: {
+            tab: "requests",
+          },
+        } satisfies CanonicalNotificationRoute),
     };
   }
 
-  if (type === "game_turn") {
+  if (rawType === "friend_request_accepted") {
+    return {
+      type: "friend_request_accepted",
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, "friend_request_accepted"),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "Connections",
+          params: {
+            tab: "all",
+          },
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (rawType === "game_invite" || rawType === "game_lobby_ready") {
+    const inviteId = asString(payload.inviteId);
+    if (!inviteId) return null;
+
+    return {
+      type: rawType,
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, `${rawType}:${inviteId}`),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "GameLobbyV4",
+          params: { inviteId },
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (rawType === "game_turn") {
     const sessionId = asString(payload.sessionId);
-    const gameId = asString(payload.gameId);
     if (!sessionId) return null;
+
     return {
       type: "game_turn",
-      dedupeKey: `game_turn:${sessionId}`,
-      route: {
-        screen: "GamePlayV4",
-        params: {
-          sessionId,
-          gameId,
-        },
-      },
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, `game_turn:${sessionId}`),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "GamePlayV4",
+          params: {
+            sessionId,
+            gameId: asString(payload.gameId),
+          },
+        } satisfies CanonicalNotificationRoute),
     };
   }
 
-  if (type === "achievement_unlocked") {
+  if (rawType === "game_resolved") {
+    const sessionId = asString(payload.sessionId);
+    if (!sessionId) return null;
+
+    return {
+      type: "game_resolved",
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, `game_resolved:${sessionId}`),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "GameOverV4",
+          params: { sessionId },
+        } satisfies CanonicalNotificationRoute),
+    };
+  }
+
+  if (rawType === "achievement_unlocked") {
     const sectionId = asString(payload.sectionId);
     return {
       type: "achievement_unlocked",
-      dedupeKey: `achievement:${sectionId ?? "hub"}`,
-      route: sectionId
-        ? {
-            screen: "AchievementSection",
-            params: { sectionId },
-          }
-        : {
-            screen: "AchievementsHub",
-          },
+      notificationId,
+      dedupeKey: buildDedupeKey(
+        payload,
+        `achievement_unlocked:${sectionId ?? "hub"}`,
+      ),
+      route:
+        routeFromPayload ??
+        (sectionId
+          ? {
+              screen: "AchievementSection",
+              params: { sectionId },
+            }
+          : {
+              screen: "AchievementsHub",
+            }),
+    };
+  }
+
+  if (rawType === "gift_received" || rawType === "gift_opened") {
+    const giftId = asString(payload.giftId);
+    return {
+      type: rawType,
+      notificationId,
+      dedupeKey: buildDedupeKey(payload, `${rawType}:${giftId ?? "history"}`),
+      route:
+        routeFromPayload ??
+        ({
+          screen: "PurchaseHistory",
+        } satisfies CanonicalNotificationRoute),
     };
   }
 

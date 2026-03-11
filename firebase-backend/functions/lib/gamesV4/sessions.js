@@ -275,7 +275,7 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
             // "Your turn!" after every move is wrong).
             try {
                 const profile = await (0, helpers_1.getUserProfile)(uid);
-                await (0, notifications_1.notifyTurn)(result.session, result.nextTurnPlayerId, profile?.displayName ?? "Opponent");
+                await (0, notifications_1.notifyTurn)(result.session, result.nextTurnPlayerId, profile?.displayName ?? "Opponent", result.session.integrity.version + 1);
             }
             catch (err) {
                 console.error("[gamesV4] Failed to send turn notification:", err);

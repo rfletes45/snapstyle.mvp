@@ -65,7 +65,11 @@ import {
   sendFriendRequestWithRateLimit,
   updateExpiredBans,
 } from "./moderation";
-import { onNewGroupMessageV2, onNewMessage } from "./notifications";
+import {
+  onMessageRequestCreatedNotification,
+  onNewGroupMessageV2,
+  onNewMessage,
+} from "./notifications";
 import {
   cleanupExpiredPushTokens,
   cleanupExpiredSnaps,
@@ -77,7 +81,11 @@ import {
   onScheduledMessageCreated,
   processScheduledMessages,
 } from "./scheduledMessages";
-import { onNewFriendRequest, onStoryViewed } from "./social";
+import {
+  onFriendRequestAccepted,
+  onNewFriendRequest,
+  onStoryViewed,
+} from "./social";
 
 // Remaining legacy exports not covered by extracted modules.
 import { onDeleteMessage, seedShopCatalog } from "./legacy";
@@ -195,7 +203,9 @@ export {
   onDeleteMessage,
   onDMMessageInbox,
   onFriendAddedTaskProgress,
+  onFriendRequestAccepted,
   onGroupMessageInbox,
+  onMessageRequestCreatedNotification,
   onMessageSentTaskProgress,
   onNewFriendRequest,
   onNewGroupMessageV2,

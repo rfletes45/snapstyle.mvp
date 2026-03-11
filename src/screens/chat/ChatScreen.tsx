@@ -88,6 +88,7 @@ import { getOrCreateChat } from "@/services/chat";
 import { getUserProfileByUid } from "@/services/friends";
 import { retryMessage } from "@/services/messaging";
 import { submitReport } from "@/services/reporting";
+import { markConversationNotificationsRead } from "@/services/userNotifications";
 import {
   getScheduledMessagesForChat,
   scheduleMessage,
@@ -504,7 +505,7 @@ export default function ChatScreen({
           // OPTIMIZATION: If we have both chatId and friendProfile from initialData,
           // only fetch fresh data in background (non-blocking)
           if (chatId && friendProfile) {
-            setCurrentChatId(chatId);
+            setCurrentChatId(chatId, "dm");
 
             // Background refresh - don't block
             getUserProfileByUid(friendUid)
@@ -524,7 +525,7 @@ export default function ChatScreen({
           const [resolvedChatId, profile] = await Promise.all(promises);
 
           setChatId(resolvedChatId);
-          setCurrentChatId(resolvedChatId);
+          setCurrentChatId(resolvedChatId, "dm");
           setFriendProfile(profile);
         } catch (error: any) {
           logger.error("❌ [ChatScreen] Init error:", error);
@@ -546,6 +547,13 @@ export default function ChatScreen({
     getScheduledMessagesForChat(uid, chatId)
       .then(setScheduledMessages)
       .catch((e) => logger.error("Failed to load scheduled messages:", e));
+  }, [uid, chatId]);
+
+  useEffect(() => {
+    if (!uid || !chatId) return;
+    markConversationNotificationsRead(uid, chatId).catch((error) => {
+      logger.warn("Failed to mark DM notifications read:", error);
+    });
   }, [uid, chatId]);
 
   // Derive header subtitle from presence / typing

@@ -340,6 +340,7 @@ export const submitTurnMoveV4 = functions.https.onCall(
             result.session,
             result.nextTurnPlayerId,
             profile?.displayName ?? "Opponent",
+            result.session.integrity.version + 1,
           );
         } catch (err) {
           console.error("[gamesV4] Failed to send turn notification:", err);

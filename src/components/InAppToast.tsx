@@ -138,14 +138,25 @@ function ToastItem({
     type: NotificationType,
   ): keyof typeof MaterialCommunityIcons.glyphMap => {
     switch (type) {
-      case "message":
+      case "dm_message":
+      case "group_message":
+      case "message_request":
         return "message-text";
       case "friend_request":
         return "account-plus";
+      case "friend_request_accepted":
+        return "account-check";
+      case "game_invite":
+      case "game_lobby_ready":
+        return "gamepad-variant-outline";
       case "game_turn":
+      case "game_resolved":
         return "gamepad-variant";
       case "achievement_unlocked":
         return "trophy";
+      case "gift_received":
+      case "gift_opened":
+        return "gift";
       default:
         return "bell";
     }
@@ -153,14 +164,23 @@ function ToastItem({
 
   const getIconColor = (type: NotificationType): string => {
     switch (type) {
-      case "message":
+      case "dm_message":
+      case "group_message":
+      case "message_request":
         return colors.primary;
       case "friend_request":
+      case "friend_request_accepted":
         return colors.secondary;
+      case "game_invite":
+      case "game_lobby_ready":
+      case "game_resolved":
       case "game_turn":
         return colors.warning ?? colors.primary;
       case "achievement_unlocked":
         return colors.success ?? colors.secondary;
+      case "gift_received":
+      case "gift_opened":
+        return colors.info;
       default:
         return colors.info;
     }
@@ -239,19 +259,21 @@ interface InAppToastProps {
 
 export default function InAppToast({ onNavigate }: InAppToastProps) {
   const insets = useSafeAreaInsets();
-  const { notifications, dismiss, onMessageNotificationPressed } =
-    useInAppNotifications();
+  const {
+    notifications,
+    dismiss,
+    markNotificationRead,
+    onMessageNotificationPressed,
+  } = useInAppNotifications();
 
   const handlePress = (notification: InAppNotification) => {
-    // For message notifications, trigger the press handler so inbox can mark as read
-    if (notification.type === "message" && notification.entityId) {
+    if (notification.type === "dm_message" && notification.entityId) {
       onMessageNotificationPressed(notification.entityId);
     }
 
-    // Dismiss the notification
+    markNotificationRead(notification.notificationId);
     dismiss(notification.id);
 
-    // Navigate if callback provided
     if (onNavigate && notification.navigateTo) {
       onNavigate(
         notification.navigateTo.screen,

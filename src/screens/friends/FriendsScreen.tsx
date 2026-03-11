@@ -15,6 +15,7 @@ import {
   removeFriend,
   sendFriendRequest,
 } from "@/services/friends";
+import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { submitReport } from "@/services/reporting";
 import { searchUsers, type UserSearchResult } from "@/services/users";
 import { useAuth } from "@/store/AuthContext";
@@ -27,7 +28,7 @@ import {
   ReportReason,
 } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useRoute } from "@react-navigation/native";
 import {
   collection,
   getDocs,
@@ -336,6 +337,7 @@ export default function FriendsScreen({ navigation }: any) {
   const { currentFirebaseUser } = useAuth();
   useUser();
   const { setCurrentScreen } = useInAppNotifications();
+  const route = useRoute<any>();
   const uid = currentFirebaseUser?.uid;
   const theme = useTheme();
   const { colors } = theme;
@@ -364,8 +366,38 @@ export default function FriendsScreen({ navigation }: any) {
   const [addFriendSearching, setAddFriendSearching] = useState(false);
   const [addFriendSending, setAddFriendSending] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<ConnectionsTab>("all");
+  const [activeTab, setActiveTab] = useState<ConnectionsTab>(
+    route.params?.tab === "requests" ? "requests" : "all",
+  );
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (route.params?.tab === "requests") {
+      if (activeTab !== "requests") {
+        setActiveTab("requests");
+      }
+      navigation.setParams({ tab: undefined });
+    } else if (route.params?.tab === "all") {
+      if (activeTab !== "all") {
+        setActiveTab("all");
+      }
+      navigation.setParams({ tab: undefined });
+    }
+  }, [route.params?.tab, activeTab, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!uid) return;
+      const types =
+        activeTab === "requests"
+          ? (["friend_request", "friend_request_accepted"] as const)
+          : (["friend_request_accepted"] as const);
+
+      markNotificationsReadByTypes(uid, [...types]).catch((error) => {
+        logger.warn("Failed to mark social notifications read", error);
+      });
+    }, [uid, activeTab]),
+  );
 
   // Block/Report state
   const [menuVisible, setMenuVisible] = useState<string | null>(null);

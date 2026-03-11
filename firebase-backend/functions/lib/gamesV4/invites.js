@@ -195,6 +195,12 @@ const GAME_META = {
         maxPlayers: 1,
         supportsSpectate: false,
     },
+    dead_drop: {
+        runtimeType: "turnBased",
+        minPlayers: 4,
+        maxPlayers: 4,
+        supportsSpectate: true,
+    },
 };
 function validateInput(data) {
     const d = data;

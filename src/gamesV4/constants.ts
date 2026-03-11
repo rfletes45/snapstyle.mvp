@@ -354,6 +354,15 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     supportsSpectate: true,
     icon: "hexagon-outline",
   },
+  dead_drop: {
+    gameId: "dead_drop",
+    displayName: "Dead Drop",
+    runtimeType: "turnBased",
+    minPlayers: 4,
+    maxPlayers: 4,
+    supportsSpectate: true,
+    icon: "shield-key-outline",
+  },
 };
 
 // =============================================================================
@@ -381,6 +390,7 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
   "hex",
   "pong_game",
   "knockout_game",
+  "dead_drop",
   // "minigolf_duels", // disabled — not working, deferred until ready
 ]);
 
@@ -614,6 +624,11 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
     formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : `#${s}`),
     sortDirection: "desc",
   },
+  dead_drop: {
+    title: "MISSION RESULT",
+    formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : "Draw"),
+    sortDirection: "desc",
+  },
 };
 
 // =============================================================================
@@ -750,6 +765,12 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     sortDirection: "desc",
     formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
+  dead_drop: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
+  },
 };
 
 // =============================================================================
@@ -874,5 +895,12 @@ export const GAME_DESCRIPTIONS: Partial<Record<GameId, GameDescription>> = {
     howToPlay:
       "Choose your move during planning, then everyone launches at the same time. Knock rivals off the ice, avoid the edge, and outlast the shrinking arena. Last penguin standing wins!",
     tips: "Watch where others aim before locking in. Use the arena edge to your advantage — ricochet off opponents toward the center. Save bold moves for when the ice is small. Sometimes the best move is to stay put.",
+  },
+  dead_drop: {
+    shortDescription:
+      "A covert team word-association game for 4 agents. Two teams, one secret key, and 25 code words on the grid. Your Spymaster gives cryptic one-word clues — your Operative decodes them. Reveal all your team's agents before the enemy does, but watch out for the Assassin.",
+    howToPlay:
+      "Four players split into two teams: Red and Blue. Each team has a Spymaster and an Operative. 25 code words are laid out in a 5×5 grid. Spymasters can see the secret key showing which words belong to which team, which are neutral bystanders, and which is the deadly Assassin. On your team's turn, the Spymaster gives a one-word clue and a number indicating how many words relate to the clue. The Operative then taps words to guess. Correct guesses reveal your agent and let you keep guessing. Hit a neutral bystander or enemy agent and your turn ends. Hit the Assassin and your team loses instantly. First team to uncover all their agents wins!",
+    tips: "As Spymaster: look for creative links between multiple words and avoid clues that could lead to the Assassin. As Operative: trust your Spymaster's intent, consider previous clues, and don't be afraid to stop guessing when unsure. The bonus guess lets you catch up on earlier missed connections.",
   },
 };
