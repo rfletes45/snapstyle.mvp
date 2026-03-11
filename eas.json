@@ -24,7 +24,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "COLYSEUS_URL": "wss://colyseus.yourdomain.com"
+        "COLYSEUS_URL": "wss://snapstylemvp-production.up.railway.app"
       }
     },
     "production": {
@@ -33,7 +33,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "COLYSEUS_URL": "wss://colyseus.yourdomain.com"
+        "COLYSEUS_URL": "wss://snapstylemvp-production.up.railway.app"
       }
     }
   },
