@@ -14,7 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.vibeapp.mobile",
-    buildNumber: "10",
+    buildNumber: "12",
     infoPlist: {
       // Camera & Microphone permissions
       NSCameraUsageDescription: "Vibe needs camera access for video calls",
