@@ -36,29 +36,113 @@ import { DEFAULT_RECONNECT_CONFIG } from "./types";
 const COLYSEUS_PORT = 2567;
 
 /**
+ * True if this is a release / production build (TestFlight, App Store, etc.).
+ * In release builds there is no Expo dev server, so hostUri and debuggerHost
+ * are both undefined.
+ */
+function isReleaseBuild(): boolean {
+  return (
+    !Constants.expoConfig?.hostUri &&
+    !(Constants as Record<string, unknown>).debuggerHost
+  );
+}
+
+/**
+ * Returns true if a hostname is a private / loopback IP that is unreachable
+ * from external devices (localhost, 127.x, 10.x, 192.168.x, 172.16-31.x).
+ */
+function isLocalNetworkHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.startsWith("127.") ||
+    hostname.startsWith("10.") ||
+    hostname.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+  );
+}
+
+/**
  * Derive the Colyseus server URL.
+ *
  * Priority:
- * 1. Explicit `colyseusUrl` in app.config extra
- * 2. Auto-detect from Expo dev-server host (LAN IP)
- * 3. Fallback to localhost
+ * 1. Explicit `colyseusUrl` in app.config extra (set via COLYSEUS_URL env)
+ * 2. Auto-detect from Expo dev-server host (LAN IP) — dev client only
+ * 3. Fallback to localhost — dev only
+ *
+ * In release / TestFlight builds, if no explicit colyseusUrl is configured,
+ * this will log a loud warning instead of silently falling back to localhost
+ * (which can never work on a real device).
  */
 export function getColyseusUrl(): string {
   const extra = Constants.expoConfig?.extra;
+
+  // 1. Explicit URL from config / environment variable
   if (extra?.colyseusUrl && typeof extra.colyseusUrl === "string") {
-    return extra.colyseusUrl;
+    const url = extra.colyseusUrl.replace(/\/$/, ""); // strip trailing slash
+    console.log(`[Colyseus:config] Using explicit colyseusUrl: ${url}`);
+    return url;
   }
 
+  // 2. Dev-server host detection (only works in Expo dev client)
   const devHost =
     Constants.expoConfig?.hostUri ??
     ((Constants as Record<string, unknown>).debuggerHost as string | undefined);
   if (devHost) {
     const hostname = devHost.split(":")[0];
     if (hostname) {
-      return `http://${hostname}:${COLYSEUS_PORT}`;
+      const url = `http://${hostname}:${COLYSEUS_PORT}`;
+      console.log(`[Colyseus:config] Using dev-server derived URL: ${url}`);
+      return url;
     }
   }
 
-  return `http://localhost:${COLYSEUS_PORT}`;
+  // 3. Release build without explicit URL — this is the TestFlight failure case
+  if (isReleaseBuild()) {
+    console.error(
+      "[Colyseus:config] *** PRODUCTION BUILD HAS NO COLYSEUS_URL CONFIGURED ***\n" +
+        "Realtime games (Sketch Party, Pong, Knockout) will fail to connect.\n" +
+        "Set COLYSEUS_URL in your EAS build secrets or eas.json env block\n" +
+        'to point to your publicly-deployed Colyseus server (e.g. "wss://colyseus.yourdomain.com").\n' +
+        "Falling back to http://localhost:2567 which WILL NOT WORK on a real device.",
+    );
+  }
+
+  const fallback = `http://localhost:${COLYSEUS_PORT}`;
+  console.log(`[Colyseus:config] Using fallback URL: ${fallback}`);
+  return fallback;
+}
+
+/**
+ * Validate the resolved Colyseus URL and log diagnostics.
+ * Called once at client creation time.
+ */
+function validateColyseusUrl(url: string): void {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname;
+    const protocol = parsed.protocol;
+
+    // Warn if release build is trying to use a local network address
+    if (isReleaseBuild() && isLocalNetworkHost(hostname)) {
+      console.error(
+        `[Colyseus:config] WARNING: Release build is configured to connect to ` +
+          `local network host "${hostname}". This will NOT work on TestFlight / ` +
+          `production devices on external networks. Set COLYSEUS_URL to a ` +
+          `publicly reachable host (e.g. wss://colyseus.yourdomain.com).`,
+      );
+    }
+
+    // Warn if using insecure ws:// / http:// in release (iOS ATS may block)
+    if (isReleaseBuild() && (protocol === "http:" || protocol === "ws:")) {
+      console.warn(
+        `[Colyseus:config] WARNING: Release build is using insecure protocol ` +
+          `"${protocol}" — iOS App Transport Security may block this connection. ` +
+          `Use wss:// (or https://) for production Colyseus endpoints.`,
+      );
+    }
+  } catch {
+    console.error(`[Colyseus:config] Failed to parse Colyseus URL: "${url}"`);
+  }
 }
 
 // =============================================================================
@@ -69,7 +153,9 @@ let sharedClient: Client | null = null;
 
 function getClient(): Client {
   if (!sharedClient) {
-    sharedClient = new Client(getColyseusUrl());
+    const url = getColyseusUrl();
+    validateColyseusUrl(url);
+    sharedClient = new Client(url);
   }
   return sharedClient;
 }
@@ -150,8 +236,15 @@ export class RealtimeRoomClient<TState = Record<string, unknown>> {
     const client = getClient();
 
     const tag = `[RealtimeClient:${this.definition.displayName}]`;
+    const serverUrl = getColyseusUrl();
     console.log(
-      `${tag} Connecting to ${getColyseusUrl()} for session ${options.sessionId}`,
+      `${tag} Join attempt:\n` +
+        `  server:    ${serverUrl}\n` +
+        `  room:      ${roomName}\n` +
+        `  sessionId: ${options.sessionId}\n` +
+        `  uid:       ${options.uid}\n` +
+        `  hasToken:  ${!!options.token}\n` +
+        `  release:   ${isReleaseBuild()}`,
     );
 
     try {
@@ -175,16 +268,24 @@ export class RealtimeRoomClient<TState = Record<string, unknown>> {
       this.startPing();
 
       console.log(
-        `${tag} Joined room ${room.roomId} (session ${room.sessionId})`,
+        `${tag} ✓ Joined room ${room.roomId} (session ${room.sessionId})`,
       );
       this.emitLifecycle({ type: "connected" });
 
       return room;
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `${tag} ✗ Join FAILED:\n` +
+          `  server:    ${serverUrl}\n` +
+          `  room:      ${roomName}\n` +
+          `  sessionId: ${options.sessionId}\n` +
+          `  error:     ${errMsg}`,
+      );
       this.setStatus("error");
       this.emitLifecycle({
         type: "error",
-        reason: err instanceof Error ? err.message : String(err),
+        reason: errMsg,
       });
       throw err;
     }

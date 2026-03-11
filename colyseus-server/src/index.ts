@@ -31,12 +31,21 @@ import { SketchPartyRoom } from "./rooms/SketchPartyRoom";
 
 const app = express();
 
+// CORS — allow cross-origin requests from mobile clients
+app.use((_req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
+});
+
 // Health check — includes all registered realtime games
 app.get("/health", (_req, res) => {
   const games = getAllRealtimeGames();
   res.json({
     status: "ok",
     framework: "v2",
+    devBypass: process.env.COLYSEUS_DEV_BYPASS ?? "auto",
     rooms: games.map((g) => ({
       gameId: g.gameId,
       roomName: g.roomName,
@@ -62,13 +71,22 @@ gameServer
   .define("sketch_party_legacy", SketchPartyRoom)
   .filterBy(["sessionId"]);
 
-const PORT = Number(process.env.PORT) || 2567;
+const PORT = Number(process.env.PORT) || 8080;
+const HOST = process.env.HOST || "0.0.0.0";
 
 async function start() {
   try {
-    await gameServer.listen(PORT);
-    console.log(`[Colyseus] Server listening on http://localhost:${PORT}`);
-    console.log(`[Colyseus] Health check: http://localhost:${PORT}/health`);
+    await gameServer.listen(PORT, HOST);
+    console.log(`[Colyseus] Server listening on http://${HOST}:${PORT}`);
+    console.log(`[Colyseus] Health check: http://${HOST}:${PORT}/health`);
+    if (HOST === "0.0.0.0") {
+      console.log(
+        `[Colyseus] Accepting connections from all network interfaces.`,
+      );
+      console.log(
+        `[Colyseus] For production, place behind a reverse proxy (nginx/Caddy/ALB) with TLS for wss:// support.`,
+      );
+    }
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "EADDRINUSE") {
@@ -79,9 +97,9 @@ async function start() {
       httpServer.close();
       await new Promise((r) => setTimeout(r, 3000));
       try {
-        await gameServer.listen(PORT);
+        await gameServer.listen(PORT, HOST);
         console.log(
-          `[Colyseus] Server listening on http://localhost:${PORT} (retry succeeded)`,
+          `[Colyseus] Server listening on http://${HOST}:${PORT} (retry succeeded)`,
         );
       } catch (retryErr) {
         console.error(

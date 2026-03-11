@@ -134,10 +134,11 @@ Use these as reference anchors:
 
 - simplest Firebase turn-based: `tic_tac_toe`
 - bigger public-state turn-based: `connect_four`
-- hidden-info turn-based: `battleship`, `crazy_eights`
+- hidden-info turn-based: `battleship`, `crazy_eights`, `dead_drop`
 - score-based solo: `play_2048`
 - loop/timer solo using pause integration: `brick_breaker`
-- hybrid realtime: `sketch_party_game`
+- hybrid realtime (drawing/guessing): `sketch_party_game`
+- hybrid realtime (physics): `pong_game`, `knockout_game`
 
 ---
 
@@ -159,6 +160,9 @@ Use these as reference anchors:
 | `crazy_eights`       | `turnBased` + private state | hidden-information card pattern                               |
 | `battleship`         | `turnBased` + private state | hidden-information board pattern                              |
 | `hex`                | `turnBased`                 | deterministic board game wired through the same shared system |
+| `pong_game`          | `realtime`                  | 1v1 paddle game, hybrid Firebase + Colyseus with physics      |
+| `knockout_game`      | `realtime`                  | physics-based multiplayer combat, 2–8 players with spectate   |
+| `dead_drop`          | `turnBased` + private state | hidden-info deduction game, 4-player with team assignments    |
 | `sketch_party_game`  | `realtime`                  | current realtime hybrid pattern                               |
 
 ### 3.2 Implemented but disabled
@@ -179,7 +183,6 @@ These have metadata only and should not be used as proof of an implemented patte
 - `lights_out`
 - `checkers`
 - `gomoku`
-- `pong_game`
 - `starforge_game`
 - `crossword_puzzle`
 - `dot_match`
@@ -416,6 +419,7 @@ Current references:
 
 - `battleship`
 - `crazy_eights`
+- `dead_drop`
 
 ### 5.12 Solo-specific lifecycle decisions you must make explicitly
 

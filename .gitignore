@@ -53,3 +53,6 @@ src/services/firebaseConfig.local.ts
 # service account keys
 **/serviceAccountKey.json
 **/service-account.json
+
+# Firebase service account keys
+*-firebase-adminsdk-*.json

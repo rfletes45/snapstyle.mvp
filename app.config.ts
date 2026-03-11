@@ -140,6 +140,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     eas: {
       projectId: "a57e6af7-ac18-4751-90ee-3b9cda7ea645",
     },
+    /**
+     * Colyseus realtime game server URL.
+     *
+     * Resolution priority:
+     * 1. COLYSEUS_URL env var (set via eas.json or CI)
+     * 2. This value (for production builds)
+     * 3. Auto-detect from Expo dev server host (dev client only)
+     * 4. Fallback to localhost (dev only — never used in release)
+     *
+     * For production / TestFlight, set COLYSEUS_URL in your EAS build
+     * secrets or eas.json env block to point to your deployed server:
+     *   e.g. "wss://colyseus.yourdomain.com"
+     */
+    colyseusUrl: process.env.COLYSEUS_URL ?? undefined,
   },
   owner: "rfletes",
 });

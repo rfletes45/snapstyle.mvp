@@ -32,18 +32,18 @@ The current V4 game system is not one uniform framework. It is three related run
 
 - Firebase-driven solo games
 - Firebase-driven turn-based games
-- Hybrid Firebase + Colyseus realtime games, currently only `sketch_party_game`
+- Hybrid Firebase + Colyseus realtime games: `sketch_party_game`, `pong_game`, and `knockout_game`
 
 Current snapshot in this workspace:
 
-- 23 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
-- 13 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
-- 14 client adapters are registered in `src/gamesV4/adapters/index.ts`.
-- 14 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts`.
-- 14 gameplay screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
+- 25 canonical `GameId` values exist in `src/gamesV4/types/common.ts`.
+- 16 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
+- 17 client adapters are registered in `src/gamesV4/adapters/index.ts`.
+- 17 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts`.
+- 17 gameplay screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
 - 16 user callables, 2 admin callables, 3 Firestore triggers, and 1 scheduled watchdog job are exported from `firebase-backend/functions/src/gamesV4/index.ts`.
-- 1 standalone realtime server package exists at `colyseus-server/`, and it currently hosts exactly 1 room: `sketch_party`.
-- 14 achievement sections exist in the client mirror: 13 game sections plus the shared `milestones` section.
+- 1 standalone realtime server package exists at `colyseus-server/`, and it currently hosts 3 rooms: `sketch_party`, `pong_game`, and `knockout_game`.
+- 18 achievement sections exist in the client mirror: 17 game sections plus the shared `milestones` section.
 
 What this document is for:
 
@@ -195,6 +195,9 @@ Game-specific or partially standardized:
 | `battleship`         | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Backend invite metadata drift was fixed; validation remains server-authoritative. |
 | `hex`                | `turnBased`         | Firebase turn-based                 | Enabled, complete             | Standard deterministic board-game pattern.                                        |
 | `sketch_party_game`  | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, custom realtime path | Live gameplay authority sits in Colyseus, not Firestore.                          |
+| `pong_game`          | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | 1v1 paddle game. Colyseus room with server-authoritative physics and client-side extrapolation. |
+| `knockout_game`      | `realtime`          | Hybrid Firebase + Colyseus          | Enabled, complete             | Physics-based multiplayer combat, 2–8 players with spectate support.             |
+| `dead_drop`          | `turnBased`         | Firebase turn-based + private state | Enabled, complete             | Deduction game, 4-player only with hidden team assignments and spymaster key map. |
 
 ### 3.2 Implemented but intentionally disabled
 
@@ -211,15 +214,14 @@ Game-specific or partially standardized:
 | `lights_out`       | `solo`              | Metadata only |
 | `checkers`         | `turnBased`         | Metadata only |
 | `gomoku`           | `turnBased`         | Metadata only |
-| `pong_game`        | `realtime`          | Metadata only |
 | `starforge_game`   | `realtime`          | Metadata only |
 | `crossword_puzzle` | `realtime`          | Metadata only |
 | `dot_match`        | `realtime`          | Metadata only |
 
 ### 3.4 Important classification notes
 
-- `sketch_party_game` is the only true Colyseus-backed realtime game in the repository.
-- `battleship`, `crazy_eights`, and only those two current enabled games use `PrivateState/{uid}` for hidden information.
+- `sketch_party_game`, `pong_game`, and `knockout_game` are the three Colyseus-backed realtime games in the repository.
+- `battleship`, `crazy_eights`, and `dead_drop` are the three current enabled games that use `PrivateState/{uid}` for hidden information.
 - `minigolf_duels` is implemented far enough to appear in multiple registries, which means audit work must distinguish implemented from enabled.
 - A persistent-solo framework exists in metadata, shared types, the shell, and backend solo callables, but no currently enabled game opts into `supportsOfflineProgression` or `soloMode: "persistent"`.
 
@@ -261,6 +263,7 @@ Used by:
 - `crazy_eights`
 - `battleship`
 - `hex`
+- `dead_drop`
 - disabled `minigolf_duels`
 
 Characteristics:
@@ -276,11 +279,13 @@ Characteristics:
 Used by:
 
 - `sketch_party_game`
+- `pong_game`
+- `knockout_game`
 
 Characteristics:
 
 - Firebase still owns invite creation, lobby, session creation, PBs, achievements, XP, level rewards, wallet claim flows, notifications, and final results
-- Colyseus owns live state, room presence, timers, scoring, drawing, chat guesses, and reconnect snapshots
+- Colyseus owns live state, room presence, timers, scoring, physics, and reconnect snapshots
 - Firestore public state is bootstrap-only once the room is live
 - the room hands the match back to Firebase by writing a realtime-resolution request document under the session
 
@@ -642,7 +647,7 @@ Important caveat:
 | `GameInvitesV4/{inviteId}`                              | Cloud Functions                           | chat-facing invite and lobby state                                     |
 | `GameSessionsV4/{sessionId}`                            | Cloud Functions                           | canonical lifecycle doc                                                |
 | `GameSessionsV4/{sessionId}/PublicState/state`          | Cloud Functions                           | live public state for Firebase games, bootstrap state for Sketch Party |
-| `GameSessionsV4/{sessionId}/PrivateState/{uid}`         | Cloud Functions                           | hidden state for Battleship and Crazy Eights                           |
+| `GameSessionsV4/{sessionId}/PrivateState/{uid}`         | Cloud Functions                           | hidden state for Battleship, Crazy Eights, and Dead Drop               |
 | `GameSessionsV4/{sessionId}/Moves/{moveId}`             | client create + Cloud Functions update    | move ledger                                                            |
 | `GameResultsV4/{sessionId}`                             | resolution pipeline                       | terminal payload used by game-over, history, PB, and reward surfaces   |
 | `LeaderboardsV4/{gameId}/Weeks/{weekKey}/Entries/{uid}` | resolution pipeline                       | weekly leaderboard entry                                               |
@@ -933,6 +938,7 @@ Current hidden-info games:
 
 - `battleship`
 - `crazy_eights`
+- `dead_drop`
 
 Design implication:
 
@@ -992,6 +998,10 @@ Wins-based:
 - `crazy_eights`
 - `reversi`
 - `dots_and_boxes`
+- `hex`
+- `pong_game`
+- `knockout_game`
+- `dead_drop`
 
 Best-score-based:
 
@@ -1205,7 +1215,7 @@ Rematch behavior matrix:
 
 ## 12. Sketch Party / Colyseus Case Study
 
-Sketch Party is the most important architectural exception in the current repository.
+Sketch Party is the longest-standing and most architecturally illustrative Colyseus game in the current repository. Pong and Knockout also use the hybrid realtime pattern, but Sketch Party remains the most detailed reference for understanding the full lifecycle.
 
 ### 12.1 Files that define the realtime path
 

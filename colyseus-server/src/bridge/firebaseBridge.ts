@@ -102,11 +102,38 @@ function ensureInit() {
     return;
   }
 
+  // ── Credential resolution ─────────────────────────────────────────
+  // Priority:
+  // 1. FIREBASE_SERVICE_ACCOUNT_BASE64 env var (base64-encoded JSON key)
+  //    — preferred for Railway / containerised deployments
+  // 2. GOOGLE_APPLICATION_CREDENTIALS file path (standard ADC)
+  // 3. gcloud ADC well-known file
   let credential: admin.credential.Credential | undefined;
-  try {
-    credential = admin.credential.applicationDefault();
-  } catch {
-    credential = undefined;
+
+  const b64Key = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+  if (b64Key) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(b64Key, "base64").toString("utf-8"),
+      );
+      credential = admin.credential.cert(decoded);
+      console.log(
+        "[FirebaseBridge] Using service account from FIREBASE_SERVICE_ACCOUNT_BASE64",
+      );
+    } catch (err) {
+      console.error(
+        "[FirebaseBridge] Failed to parse FIREBASE_SERVICE_ACCOUNT_BASE64:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if (!credential) {
+    try {
+      credential = admin.credential.applicationDefault();
+    } catch {
+      credential = undefined;
+    }
   }
 
   admin.initializeApp({

@@ -53,11 +53,20 @@ export async function verifyJoin(
 ): Promise<SessionGuardResult> {
   const { uid, token, sessionId, displayName, allowSpectators } = options;
 
+  const tag = `[SessionGuard:${expectedGameId}]`;
+  console.log(
+    `${tag} Verifying join: uid=${uid}, sessionId=${sessionId}, hasToken=${!!token}`,
+  );
+
   // ── Basic parameter validation ──────────────────────────────────────
   if (!uid || typeof uid !== "string") {
+    console.error(`${tag} REJECTED — missing uid`);
     throw new Error("Missing uid.");
   }
   if (!sessionId || sessionId !== expectedSessionId) {
+    console.error(
+      `${tag} REJECTED — session mismatch: expected=${expectedSessionId}, got=${sessionId}`,
+    );
     throw new Error("Session mismatch.");
   }
 
@@ -83,14 +92,28 @@ export async function verifyJoin(
   }
 
   if (!token || typeof token !== "string") {
+    console.error(`${tag} REJECTED — missing auth token for uid=${uid}`);
     throw new Error("Missing auth token.");
   }
 
   // ── Firebase token verification ─────────────────────────────────────
-  const decoded = await verifyFirebaseToken(token);
+  let decoded;
+  try {
+    decoded = await verifyFirebaseToken(token);
+  } catch (tokenErr) {
+    console.error(
+      `${tag} REJECTED — Firebase token verification failed for uid=${uid}:`,
+      tokenErr instanceof Error ? tokenErr.message : tokenErr,
+    );
+    throw new Error("Firebase token verification failed.");
+  }
   if (decoded.uid !== uid) {
+    console.error(
+      `${tag} REJECTED — uid mismatch: token.uid=${decoded.uid}, claimed=${uid}`,
+    );
     throw new Error("Authenticated user mismatch.");
   }
+  console.log(`${tag} Token verified for uid=${uid}`);
 
   // ── Firestore session verification ──────────────────────────────────
   const db = getFirebaseDb();
@@ -100,6 +123,9 @@ export async function verifyJoin(
     .get();
 
   if (!sessionSnap.exists) {
+    console.error(
+      `${tag} REJECTED — session doc not found: ${expectedSessionId}`,
+    );
     throw new Error("Game session not found.");
   }
 
@@ -107,6 +133,9 @@ export async function verifyJoin(
 
   // Verify game ID
   if (sessionData.gameId !== expectedGameId) {
+    console.error(
+      `${tag} REJECTED — game mismatch: expected=${expectedGameId}, got=${sessionData.gameId}`,
+    );
     throw new Error(
       `Session game mismatch: expected ${expectedGameId}, got ${sessionData.gameId}.`,
     );
@@ -114,11 +143,17 @@ export async function verifyJoin(
 
   // Verify runtime type
   if (sessionData.runtimeType !== "realtime") {
+    console.error(
+      `${tag} REJECTED — not realtime: runtimeType=${sessionData.runtimeType}`,
+    );
     throw new Error("Session is not a realtime game.");
   }
 
   // Verify session is active
   if (sessionData.status !== "active") {
+    console.error(
+      `${tag} REJECTED — session not active: status=${sessionData.status}`,
+    );
     throw new Error(`Session is not active (current: ${sessionData.status}).`);
   }
 
@@ -139,8 +174,14 @@ export async function verifyJoin(
   const isSpectator = spectatorUids.includes(uid);
 
   if (!isParticipant && !(allowSpectators && isSpectator)) {
+    console.error(
+      `${tag} REJECTED — uid=${uid} not in participants=${JSON.stringify(participantUids)} or spectators=${JSON.stringify(spectatorUids)}`,
+    );
     throw new Error("You are not a participant in this match.");
   }
+  console.log(
+    `${tag} ✓ Join verified: uid=${uid}, role=${isParticipant ? "participant" : "spectator"}`,
+  );
 
   // ── Extract player info ─────────────────────────────────────────────
   const players = Array.isArray(sessionData.players)

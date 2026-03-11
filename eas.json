@@ -22,12 +22,18 @@
       "distribution": "internal",
       "ios": {
         "buildConfiguration": "Release"
+      },
+      "env": {
+        "COLYSEUS_URL": "wss://colyseus.yourdomain.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
         "buildConfiguration": "Release"
+      },
+      "env": {
+        "COLYSEUS_URL": "wss://colyseus.yourdomain.com"
       }
     }
   },
