@@ -19,6 +19,7 @@ import {
   getUserProfile,
 } from "./helpers";
 import { notifyInviteCreated } from "./notifications";
+import { startServerTrace } from "./perfTrace";
 import type {
   GameId,
   GameInviteV4,
@@ -195,6 +196,12 @@ const GAME_META: Record<GameId, GameMeta> = {
     maxPlayers: 4,
     supportsSpectate: true,
   },
+  metro_magnate: {
+    runtimeType: "turnBased",
+    minPlayers: 2,
+    maxPlayers: 6,
+    supportsSpectate: true,
+  },
 };
 
 // =============================================================================
@@ -282,22 +289,25 @@ function validateInput(data: unknown): CreateInviteInput {
 export const createGameInviteV4 = functions.https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
+    const trace = startServerTrace("createInviteV4", uid);
 
-    // Rate-limit: 1 invite per 3 seconds
     const db = getDb();
-    await enforceCooldown(db, uid, "createInviteV4", COOLDOWNS.CREATE_INVITE);
-
     const input = validateInput(data);
 
-    // Verify membership
-    await assertConversationMember(
-      uid,
-      input.conversationId,
-      input.conversationScope,
-    );
+    // PERF: Run cooldown, conversation membership, and profile fetch in
+    // parallel. These are fully independent reads — no serial dependency.
+    trace.mark("pre_reads_start");
+    const [, , profile] = await Promise.all([
+      enforceCooldown(db, uid, "createInviteV4", COOLDOWNS.CREATE_INVITE),
+      assertConversationMember(
+        uid,
+        input.conversationId,
+        input.conversationScope,
+      ),
+      getUserProfile(uid),
+    ]);
+    trace.mark("pre_reads_done");
 
-    // Fetch creator profile
-    const profile = await getUserProfile(uid);
     const displayName = profile?.displayName ?? "Unknown";
 
     // Generate IDs
@@ -351,6 +361,7 @@ export const createGameInviteV4 = functions.https.onCall(
       input.conversationScope === "dm" ? "Chats" : "Groups";
     const convRef = db.collection(convCollection).doc(input.conversationId);
 
+    trace.mark("tx_start");
     await db.runTransaction(async (tx) => {
       const convSnap = await tx.get(convRef);
       const current: string[] =
@@ -367,22 +378,21 @@ export const createGameInviteV4 = functions.https.onCall(
       tx.set(inviteRef, invite);
       tx.update(convRef, { [PINNED_INVITE_IDS_FIELD]: updated });
     });
+    trace.mark("tx_committed");
 
-    // Fan-out notifications to conversation members
-    try {
-      const memberIds = await getConversationMemberIds(
-        input.conversationId,
-        input.conversationScope,
+    // PERF: Fan-out notifications fire-and-forget — don't block the response.
+    // Notifications are non-critical for the invite creation success path.
+    getConversationMemberIds(input.conversationId, input.conversationScope)
+      .then((memberIds) => notifyInviteCreated(invite, displayName, memberIds))
+      .catch((err) =>
+        console.error("[gamesV4] Failed to send invite notifications:", err),
       );
-      await notifyInviteCreated(invite, displayName, memberIds);
-    } catch (err) {
-      console.error("[gamesV4] Failed to send invite notifications:", err);
-    }
 
     console.log(
       `[gamesV4] Invite ${inviteId} created by ${uid} for ${input.gameId} ` +
         `in ${input.conversationScope}:${input.conversationId}`,
     );
+    trace.end();
 
     return { inviteId };
   },

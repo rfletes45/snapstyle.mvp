@@ -20,6 +20,7 @@ import {
   subscribeToSession,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameResultV4, GameSessionV4 } from "@/gamesV4/types";
+import { startTrace } from "@/gamesV4/utils/perfTrace";
 import { useAuth } from "@/store/AuthContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -168,7 +169,7 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
 
   // DEBUG: Log every time session or isMyTurn changes
   useEffect(() => {
-    if (session) {
+    if (__DEV__ && session) {
       console.log(
         `[gamesV4][DEBUG] useGameSessionV4: uid=${uid}, isMyTurn=${isMyTurn}, session.currentTurnPlayerId=${session.currentTurnPlayerId}, session.currentTurnIndex=${session.currentTurnIndex}, session.turnOrder=${JSON.stringify(session.turnOrder)}, session.status=${session.status}`,
       );
@@ -187,8 +188,10 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
       terminal?: boolean,
       winnerIds?: string[],
     ) => {
+      const trace = startTrace("move_submit");
       setActionLoading(true);
       setActionError(null);
+      trace.mark("callable_sent");
       try {
         await submitTurnMove({
           sessionId,
@@ -196,7 +199,11 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
           isTerminal: terminal,
           winnerIds,
         });
+        trace.mark("callable_returned");
+        trace.end();
       } catch (err) {
+        trace.mark("error");
+        trace.end();
         setActionError(
           err instanceof Error ? err.message : "Failed to submit move.",
         );

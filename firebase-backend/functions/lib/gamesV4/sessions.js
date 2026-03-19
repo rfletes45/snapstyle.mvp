@@ -51,6 +51,7 @@ const functions = __importStar(require("firebase-functions"));
 const adapters_1 = require("./adapters");
 const helpers_1 = require("./helpers");
 const notifications_1 = require("./notifications");
+const perfTrace_1 = require("./perfTrace");
 const resolve_1 = require("./resolve");
 const types_1 = require("./types");
 const validation_1 = require("./validation");
@@ -78,8 +79,10 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
         };
         const safeMovePayload = (0, validation_1.sanitisePayload)(movePayload, GAME_MOVE_LIMITS);
         const db = (0, helpers_1.getDb)();
+        const trace = (0, perfTrace_1.startServerTrace)("submitTurnMoveV4");
         // Rate-limit: 500ms between moves
         await (0, validation_1.enforceCooldown)(db, uid, "submitMoveV4", validation_1.COOLDOWNS.SUBMIT_MOVE);
+        trace.mark("cooldown_done");
         const sessionRef = db
             .collection(types_1.COLLECTIONS.GAME_SESSIONS)
             .doc(sessionId);
@@ -89,6 +92,7 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
             .doc("state");
         const privateStateCol = sessionRef.collection(types_1.COLLECTIONS.PRIVATE_STATE);
         // ─── Transaction: validate + write move + advance turn ───────────
+        trace.mark("tx_start");
         const result = await db.runTransaction(async (tx) => {
             const sessionSnap = await tx.get(sessionRef);
             if (!sessionSnap.exists) {
@@ -126,11 +130,14 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
                     : {};
                 // Read per-player private state docs so adapters can resolve
                 // shots against ship layouts, etc.
+                // PERF: Batch all private state reads in parallel within the
+                // transaction to avoid sequential round-trips.
                 const privateStateByPlayer = {};
-                for (const pUid of session.participantUids) {
-                    const privSnap = await tx.get(privateStateCol.doc(pUid));
-                    if (privSnap.exists) {
-                        privateStateByPlayer[pUid] = privSnap.data();
+                const privSnapPromises = session.participantUids.map((pUid) => tx.get(privateStateCol.doc(pUid)).then((snap) => ({ pUid, snap })));
+                const privSnapResults = await Promise.all(privSnapPromises);
+                for (const { pUid, snap } of privSnapResults) {
+                    if (snap.exists) {
+                        privateStateByPlayer[pUid] = snap.data();
                     }
                 }
                 const moveResult = (0, adapters_1.runMove)({
@@ -237,18 +244,10 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
                 });
                 sessionUpdate.scoreboardSummary = updatedSummary;
             }
-            // Update invite summary (skip for solo sessions with no invite)
-            if (session.inviteId) {
-                const inviteRef = db
-                    .collection(types_1.COLLECTIONS.GAME_INVITES)
-                    .doc(session.inviteId);
-                tx.update(inviteRef, {
-                    "summary.lastMoveAt": now,
-                    "summary.lastActorId": uid,
-                    "summary.turnPlayerId": effectiveTerminal ? null : nextTurnPlayerId,
-                    updatedAt: now,
-                });
-            }
+            // PERF: Invite summary update moved out of the transaction to
+            // narrow the critical transaction scope. The invite summary is a
+            // cosmetic display field (shows "last move by X" in the pinned chip),
+            // not an authority field. Safe to update outside the transaction.
             tx.update(sessionRef, sessionUpdate);
             return {
                 moveId: moveRef.id,
@@ -256,33 +255,52 @@ exports.submitTurnMoveV4 = functions.https.onCall(async (data, context) => {
                 session,
                 effectiveTerminal,
                 effectiveWinnerIds,
+                inviteId: session.inviteId,
             };
         });
-        // ─── Post-transaction: terminal check ─────────────────────────────
+        trace.mark("tx_committed");
+        // ─── Post-transaction: fire-and-forget tail work ─────────────────
+        // PERF: Invite summary update — cosmetic, outside transaction.
+        if (result.inviteId) {
+            db.collection(types_1.COLLECTIONS.GAME_INVITES)
+                .doc(result.inviteId)
+                .update({
+                "summary.lastMoveAt": admin.firestore.Timestamp.now(),
+                "summary.lastActorId": uid,
+                "summary.turnPlayerId": result.effectiveTerminal
+                    ? null
+                    : result.nextTurnPlayerId,
+                updatedAt: admin.firestore.Timestamp.now(),
+            })
+                .catch((err) => console.warn("[gamesV4] Failed to update invite summary:", err));
+        }
+        // PERF: Resolution and notifications are NOT awaited. The move
+        // response returns immediately so the client gets sub-second
+        // feedback. Resolution writes the result doc async; the client
+        // detects terminal state via its session listener.
         if (result.effectiveTerminal) {
-            await (0, resolve_1.resolveSessionV4Internal)({
+            // Fire resolution async — don't block the move response.
+            // The session status is already being set to resolved inside
+            // resolveSessionV4Internal's own transaction, and the client
+            // detects terminal via its session snapshot listener.
+            (0, resolve_1.resolveSessionV4Internal)({
                 sessionId,
                 resolutionType: result.effectiveWinnerIds.length > 0 ? "win" : "draw",
                 winnerIds: result.effectiveWinnerIds,
                 resolverUid: uid,
-            });
+            }).catch((err) => console.error(`[gamesV4] Async resolution failed for session ${sessionId}:`, err));
         }
         else if (result.nextTurnPlayerId &&
             result.session.runtimeType === "turnBased") {
-            // Notify next turn player — only for turn-based games.
-            // Solo and realtime sessions must NOT send turn notifications
-            // (the same player is always the "turn player" and seeing
-            // "Your turn!" after every move is wrong).
-            try {
-                const profile = await (0, helpers_1.getUserProfile)(uid);
-                await (0, notifications_1.notifyTurn)(result.session, result.nextTurnPlayerId, profile?.displayName ?? "Opponent", result.session.integrity.version + 1);
-            }
-            catch (err) {
-                console.error("[gamesV4] Failed to send turn notification:", err);
-            }
+            // Notify next turn player async — don't block the move response.
+            (0, helpers_1.getUserProfile)(uid)
+                .then((profile) => (0, notifications_1.notifyTurn)(result.session, result.nextTurnPlayerId, profile?.displayName ?? "Opponent", result.session.integrity.version + 1))
+                .catch((err) => console.error("[gamesV4] Failed to send turn notification:", err));
         }
         console.log(`[gamesV4] Move ${result.moveId} submitted by ${uid} in session ${sessionId}` +
             (result.effectiveTerminal ? " (TERMINAL)" : ""));
+        trace.mark("end");
+        trace.end();
         return {
             moveId: result.moveId,
             committed: true,

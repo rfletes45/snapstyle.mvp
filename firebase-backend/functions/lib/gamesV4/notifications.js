@@ -39,6 +39,7 @@ const GAME_DISPLAY_NAMES = {
     solitaire_klondike: "Solitaire",
     hex: "Hex",
     dead_drop: "Dead Drop",
+    metro_magnate: "Metro Magnate",
 };
 function gameName(gameId) {
     return GAME_DISPLAY_NAMES[gameId] || gameId;

@@ -83,7 +83,7 @@ export interface ReconnectConfig {
 export const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
   enabled: true,
   maxAttempts: 5,
-  baseDelayMs: 1000,
+  baseDelayMs: 500,
   maxDelayMs: 15000,
 };
 

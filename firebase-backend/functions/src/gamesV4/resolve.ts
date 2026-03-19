@@ -302,39 +302,36 @@ export async function resolveSessionV4Internal(
     .doc(input.sessionId)
     .set(result);
 
-  // ─── Phase 5: Apply XP to user profiles ────────────────────────────
-  await applyXPAwards(db, xpAwards);
-
-  // ─── Phase 6: Update leaderboards ──────────────────────────────────
-  const lbUpdates = await updateLeaderboards(
-    db,
-    session.gameId,
-    weekKey,
-    scoreboard,
-  );
+  // ─── Phases 5-7: Apply rewards in parallel ─────────────────────────
+  // PERF: XP, leaderboard, and PB writes are independent of each other.
+  // Running them in parallel saves ~300-800ms compared to sequential.
+  const [, lbUpdates] = await Promise.all([
+    applyXPAwards(db, xpAwards), // Phase 5
+    updateLeaderboards(db, session.gameId, weekKey, scoreboard), // Phase 6
+    updatePersonalBests(db, session.gameId, scoreboard, input.sessionId), // Phase 7
+  ]);
   result.leaderboardUpdates = lbUpdates;
 
-  // ─── Phase 7: Update personal bests ────────────────────────────────
-  await updatePersonalBests(db, session.gameId, scoreboard, input.sessionId);
-
-  // ─── Phase 8: Unpin invite from conversation (skip for solo) ───────
+  // ─── Phases 8-9: Unpin invite + mark rewards in parallel ─────────
+  // PERF: These writes are independent; run together.
+  const tailWrites: Promise<unknown>[] = [
+    sessionRef.update({ rewardsProcessed: true }),
+  ];
   if (session.inviteId) {
-    try {
-      await unpinInviteFromConversation(
+    tailWrites.push(
+      unpinInviteFromConversation(
         session.conversationId,
         session.conversationScope,
         session.inviteId,
-      );
-    } catch (err) {
-      console.error(
-        `[resolveV4] Failed to unpin invite ${session.inviteId}:`,
-        err,
-      );
-    }
+      ).catch((err) =>
+        console.error(
+          `[resolveV4] Failed to unpin invite ${session.inviteId}:`,
+          err,
+        ),
+      ),
+    );
   }
-
-  // ─── Phase 9: Mark rewards processed ───────────────────────────────
-  await sessionRef.update({ rewardsProcessed: true });
+  await Promise.all(tailWrites);
 
   // ─── Phase 9.5: Send achievement unlock notifications ──────────────
   if (achievementUnlocks.length > 0) {

@@ -236,16 +236,18 @@ export class RealtimeRoomClient<TState = Record<string, unknown>> {
     const client = getClient();
 
     const tag = `[RealtimeClient:${this.definition.displayName}]`;
-    const serverUrl = getColyseusUrl();
-    console.log(
-      `${tag} Join attempt:\n` +
-        `  server:    ${serverUrl}\n` +
-        `  room:      ${roomName}\n` +
-        `  sessionId: ${options.sessionId}\n` +
-        `  uid:       ${options.uid}\n` +
-        `  hasToken:  ${!!options.token}\n` +
-        `  release:   ${isReleaseBuild()}`,
-    );
+    if (__DEV__) {
+      const serverUrl = getColyseusUrl();
+      console.log(
+        `${tag} Join attempt:\n` +
+          `  server:    ${serverUrl}\n` +
+          `  room:      ${roomName}\n` +
+          `  sessionId: ${options.sessionId}\n` +
+          `  uid:       ${options.uid}\n` +
+          `  hasToken:  ${!!options.token}\n` +
+          `  release:   ${isReleaseBuild()}`,
+      );
+    }
 
     try {
       const room = await client.joinOrCreate(roomName, {
@@ -267,21 +269,17 @@ export class RealtimeRoomClient<TState = Record<string, unknown>> {
       this.wireRoomListeners(room);
       this.startPing();
 
-      console.log(
-        `${tag} ✓ Joined room ${room.roomId} (session ${room.sessionId})`,
-      );
+      if (__DEV__) {
+        console.log(
+          `${tag} ✓ Joined room ${room.roomId} (session ${room.sessionId})`,
+        );
+      }
       this.emitLifecycle({ type: "connected" });
 
       return room;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `${tag} ✗ Join FAILED:\n` +
-          `  server:    ${serverUrl}\n` +
-          `  room:      ${roomName}\n` +
-          `  sessionId: ${options.sessionId}\n` +
-          `  error:     ${errMsg}`,
-      );
+      console.error(`${tag} ✗ Join FAILED: ${errMsg}`);
       this.setStatus("error");
       this.emitLifecycle({
         type: "error",
@@ -573,10 +571,13 @@ export class RealtimeRoomClient<TState = Record<string, unknown>> {
       return;
     }
 
-    const delay = Math.min(
+    const base = Math.min(
       this.reconnectConfig.baseDelayMs * Math.pow(2, this.reconnectAttempt),
       this.reconnectConfig.maxDelayMs,
     );
+    // Add ±25% jitter to prevent thundering-herd reconnect storms
+    const jitter = base * (0.75 + Math.random() * 0.5);
+    const delay = Math.round(jitter);
 
     console.log(
       `[RealtimeClient:${this.definition.displayName}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt + 1}/${this.reconnectConfig.maxAttempts})`,

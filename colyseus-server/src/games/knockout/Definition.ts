@@ -146,7 +146,9 @@ export const KNOCKOUT_DEFINITION: RealtimeGameDefinition = {
    */
   stateBroadcastHz: 15,
   maxMatchDurationMs: 10 * 60 * 1000, // 10 minute safety cap
-  postMatchDisposalDelayMs: 10_000,
+  // PERF: Reduced from 10_000. Clients call leave() on match_end,
+  // so the room only needs a brief grace period for slow connections.
+  postMatchDisposalDelayMs: 5_000,
   abandonmentGraceMs: 20_000,
 
   // Capabilities

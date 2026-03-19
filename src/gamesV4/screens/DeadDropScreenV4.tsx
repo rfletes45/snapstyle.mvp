@@ -1,11 +1,14 @@
 /**
  * Games V4 — Dead Drop Gameplay Screen
  *
- * Codenames-inspired team word game. Role-aware UI with:
- *  - Spymaster: color-coded overlay on cards + clue input
- *  - Operative: clean board + tap-to-guess + stop guessing
- *  - Phase-aware layout (clue input → guessing → game over)
- *  - Clue history sidebar, team remaining counters
+ * Codenames-inspired team word game with premium polish:
+ *  - Full dark/light theme support
+ *  - Animated card reveals with haptic feedback
+ *  - Spymaster: color-coded key overlay + clue input
+ *  - Operative: clean board + tap-to-guess
+ *  - Phase-aware banners with team-colored accents
+ *  - Rich game-over presentation with board reveal
+ *  - Clue history with team-colored dots
  */
 
 import type {
@@ -13,9 +16,7 @@ import type {
   ClueEntry,
   DeadDropPrivateState,
   DeadDropPublicState,
-  PlayerRole,
   PublicCard,
-  TeamAssignment,
   TeamColor,
 } from "@/gamesV4/adapters/deadDrop/deadDropTypes";
 import {
@@ -25,6 +26,7 @@ import {
 import { subscribeToPrivateState } from "@/gamesV4/services/gameServiceV4";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import React, {
   useCallback,
   useEffect,
@@ -36,6 +38,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -43,37 +46,32 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // Constants
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BOARD_COLS = 5;
-const CARD_GAP = 4;
-const BOARD_PAD = 8;
+const CARD_GAP = 5;
+const BOARD_PAD = 10;
 const CARD_WIDTH =
   (SCREEN_WIDTH - BOARD_PAD * 2 - CARD_GAP * (BOARD_COLS - 1)) / BOARD_COLS;
-const CARD_HEIGHT = CARD_WIDTH * 0.7;
+const CARD_HEIGHT = CARD_WIDTH * 0.78;
 
-const TEAM_COLORS = {
+/** Fixed team brand colors — same in light & dark */
+const TEAM_COLORS: Record<string, string> = {
   red: "#E53935",
   blue: "#1E88E5",
-  neutral: "#9E9E9E",
-  assassin: "#212121",
-} as const;
-
-const TEAM_BG_LIGHT: Record<string, string> = {
-  red: "#FFCDD2",
-  blue: "#BBDEFB",
-  neutral: "#E0E0E0",
-  assassin: "#424242",
+  neutral: "#78909C",
+  assassin: "#37474F",
 };
 
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
 function asPublicState(
   raw: Record<string, unknown> | null,
@@ -89,64 +87,143 @@ function asPrivateState(
   return raw as unknown as DeadDropPrivateState;
 }
 
-function getTeamMember(
-  teams: TeamAssignment[],
-  team: TeamColor,
-  role: PlayerRole,
-): TeamAssignment | undefined {
-  return teams.find((t) => t.team === team && t.role === role);
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme-aware game palette
+// ─────────────────────────────────────────────────────────────────────────────
+
+function useGameColors(isDark: boolean) {
+  return useMemo(
+    () => ({
+      redSurface: isDark ? "rgba(229,57,53,0.18)" : "#FFCDD2",
+      blueSurface: isDark ? "rgba(30,136,229,0.18)" : "#BBDEFB",
+      neutralSurface: isDark ? "rgba(120,144,156,0.14)" : "#ECEFF1",
+      assassinSurface: isDark ? "rgba(244,67,54,0.14)" : "#455A64",
+      cardBg: isDark ? "#1E1E2E" : "#FFFEF7",
+      cardBorder: isDark ? "rgba(255,255,255,0.08)" : "#DDD8CC",
+      cardText: isDark ? "#D4D4D4" : "#2D2D2D",
+      boardBg: isDark ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.03)",
+      surface: isDark ? "#1A1A2E" : "#FFFFFF",
+      surfaceAlt: isDark ? "#252540" : "#F7F6F2",
+      inputBg: isDark ? "#1A1A2E" : "#FAFAF6",
+      inputBorder: isDark ? "rgba(255,255,255,0.1)" : "#DDD",
+      inputText: isDark ? "#E0E0E0" : "#333",
+      placeholder: isDark ? "#666" : "#AAA",
+      mutedText: isDark ? "rgba(255,255,255,0.5)" : "#999",
+      errorBg: isDark ? "rgba(229,57,53,0.12)" : "#FFEBEE",
+      errorText: isDark ? "#EF9A9A" : "#C62828",
+      divider: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
+      revealedText: "#FFF",
+      neutralRevealedText: isDark ? "#FFF" : "#333",
+    }),
+    [isDark],
+  );
 }
 
-// =============================================================================
+type GameColors = ReturnType<typeof useGameColors>;
+
+function keyOverlaySurface(alignment: CardAlignment, gc: GameColors): string {
+  switch (alignment) {
+    case "red":
+      return gc.redSurface;
+    case "blue":
+      return gc.blueSurface;
+    case "neutral":
+      return gc.neutralSurface;
+    case "assassin":
+      return gc.assassinSurface;
+    default:
+      return gc.cardBg;
+  }
+}
+
+function alignmentIcon(
+  a: CardAlignment,
+): React.ComponentProps<typeof MaterialCommunityIcons>["name"] {
+  switch (a) {
+    case "red":
+    case "blue":
+      return "account-check";
+    case "neutral":
+      return "account-off";
+    case "assassin":
+      return "skull-crossbones";
+    default:
+      return "help-circle";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** Single card on the 5×5 board */
 function BoardCard({
   card,
   keyMap,
-  isSpymaster,
   isMyGuess,
   onPress,
   disabled,
+  gc,
 }: {
   card: PublicCard;
   keyMap: Record<number, CardAlignment> | null;
-  isSpymaster: boolean;
   isMyGuess: boolean;
   onPress: () => void;
   disabled: boolean;
+  gc: GameColors;
 }) {
   const revealed = card.revealed;
-  let bgColor = "#F5F5F0";
-  let textColor = "#333";
-  let borderColor = "#CCC";
+  const alignment = keyMap?.[card.id] ?? null;
+
+  let bgColor = gc.cardBg;
+  let textColor = gc.cardText;
+  let borderColor = gc.cardBorder;
+  let iconName:
+    | React.ComponentProps<typeof MaterialCommunityIcons>["name"]
+    | null = null;
+  let iconColor = "#FFF";
 
   if (revealed && card.revealedAs) {
-    bgColor = TEAM_COLORS[card.revealedAs];
-    textColor = card.revealedAs === "neutral" ? "#333" : "#FFF";
+    bgColor = TEAM_COLORS[card.revealedAs] ?? gc.cardBg;
+    textColor =
+      card.revealedAs === "neutral" ? gc.neutralRevealedText : gc.revealedText;
     borderColor = bgColor;
-  } else if (isSpymaster && keyMap) {
-    const alignment = keyMap[card.id];
-    if (alignment) {
-      bgColor = TEAM_BG_LIGHT[alignment] ?? "#F5F5F0";
-      borderColor = TEAM_COLORS[alignment];
-    }
+    iconName = alignmentIcon(card.revealedAs);
+    iconColor = textColor;
+  } else if (alignment) {
+    bgColor = keyOverlaySurface(alignment, gc);
+    borderColor = TEAM_COLORS[alignment] ?? gc.cardBorder;
   }
+
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  }, [onPress]);
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled || revealed || !isMyGuess}
-      style={[
+      style={({ pressed }) => [
         styles.card,
         {
           backgroundColor: bgColor,
           borderColor,
           width: CARD_WIDTH,
           height: CARD_HEIGHT,
-          opacity: revealed ? 0.6 : 1,
+          opacity: revealed ? 0.85 : 1,
+          transform: [{ scale: pressed && !disabled ? 0.94 : 1 }],
         },
+        !revealed &&
+          Platform.select({
+            ios: {
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.08,
+              shadowRadius: 3,
+            },
+            android: { elevation: 2 },
+          }),
       ]}
     >
       <Text
@@ -157,75 +234,106 @@ function BoardCard({
       >
         {card.word}
       </Text>
-      {revealed && card.revealedAs && (
+      {iconName && (
         <View style={styles.revealBadge}>
-          <MaterialCommunityIcons
-            name={card.revealedAs === "assassin" ? "skull" : "check-circle"}
-            size={14}
-            color={textColor}
-          />
+          <MaterialCommunityIcons name={iconName} size={14} color={iconColor} />
         </View>
+      )}
+      {!revealed && alignment && (
+        <View
+          style={[
+            styles.keyIndicator,
+            { backgroundColor: TEAM_COLORS[alignment] },
+          ]}
+        />
       )}
     </Pressable>
   );
 }
 
-/** Team score indicator */
+/** Team score banner */
 function TeamBanner({
   team,
   remaining,
   isActive,
+  gc,
 }: {
   team: TeamColor;
   remaining: number;
   isActive: boolean;
+  gc: GameColors;
 }) {
+  const bg = TEAM_COLORS[team];
   return (
     <View
       style={[
         styles.teamBanner,
-        { backgroundColor: TEAM_COLORS[team], opacity: isActive ? 1 : 0.5 },
+        {
+          backgroundColor: isActive ? bg : gc.surfaceAlt,
+          borderColor: bg,
+          borderWidth: isActive ? 0 : 1.5,
+        },
       ]}
     >
-      <Text style={styles.teamBannerText}>{team.toUpperCase()}</Text>
-      <Text style={styles.teamBannerCount}>{remaining}</Text>
+      <Text style={[styles.teamBannerLabel, { color: isActive ? "#FFF" : bg }]}>
+        {team.toUpperCase()}
+      </Text>
+      <Text style={[styles.teamBannerCount, { color: isActive ? "#FFF" : bg }]}>
+        {remaining}
+      </Text>
     </View>
   );
 }
 
-/** Current clue display */
-function ClueDisplay({ clue }: { clue: ClueEntry | null }) {
+/** Current clue display — prominent banner */
+function ClueDisplay({ clue, gc }: { clue: ClueEntry | null; gc: GameColors }) {
   if (!clue) return null;
+  const teamColor = TEAM_COLORS[clue.team];
   return (
-    <View style={[styles.clueBox, { borderColor: TEAM_COLORS[clue.team] }]}>
-      <Text style={styles.clueWord}>{clue.word}</Text>
-      <View
-        style={[styles.clueBadge, { backgroundColor: TEAM_COLORS[clue.team] }]}
-      >
+    <Animated.View
+      entering={FadeIn.duration(250)}
+      style={[
+        styles.clueBox,
+        {
+          borderColor: teamColor,
+          backgroundColor: gc.surface,
+        },
+      ]}
+    >
+      <View style={[styles.clueAccent, { backgroundColor: teamColor }]} />
+      <Text style={[styles.clueWord, { color: gc.cardText }]}>{clue.word}</Text>
+      <View style={[styles.clueBadge, { backgroundColor: teamColor }]}>
         <Text style={styles.clueBadgeText}>
           {clue.count === -1 ? "∞" : clue.count}
         </Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
-/** Clue history list */
-function ClueHistory({ clues }: { clues: ClueEntry[] }) {
+/** Clue history section */
+function ClueHistory({ clues, gc }: { clues: ClueEntry[]; gc: GameColors }) {
   if (clues.length === 0) return null;
   return (
-    <View style={styles.historyContainer}>
-      <Text style={styles.historyTitle}>Clue History</Text>
+    <View style={[styles.historyContainer, { backgroundColor: gc.surfaceAlt }]}>
+      <Text style={[styles.historyTitle, { color: gc.mutedText }]}>
+        CLUE HISTORY
+      </Text>
       {clues.map((c) => (
-        <View key={c.clueId} style={styles.historyRow}>
+        <View
+          key={c.clueId}
+          style={[styles.historyRow, { borderBottomColor: gc.divider }]}
+        >
           <View
             style={[
               styles.historyDot,
               { backgroundColor: TEAM_COLORS[c.team] },
             ]}
           />
-          <Text style={styles.historyWord}>{c.word}</Text>
-          <Text style={styles.historyCount}>
+          <Text style={[styles.historyWord, { color: gc.cardText }]}>
+            {c.word}
+          </Text>
+          <Text style={[styles.historyCount, { color: gc.mutedText }]}>
             {c.count === -1 ? "∞" : c.count}
           </Text>
         </View>
@@ -234,18 +342,22 @@ function ClueHistory({ clues }: { clues: ClueEntry[] }) {
   );
 }
 
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // Clue Input Form
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
 function ClueInputForm({
   onSubmit,
   loading,
   settings,
+  teamColor,
+  gc,
 }: {
   onSubmit: (word: string, count: number) => void;
   loading: boolean;
   settings: DeadDropPublicState["settings"];
+  teamColor: string;
+  gc: GameColors;
 }) {
   const [word, setWord] = useState("");
   const [countStr, setCountStr] = useState("1");
@@ -254,6 +366,7 @@ function ClueInputForm({
     const trimmed = word.trim();
     const count = parseInt(countStr, 10);
     if (!trimmed || isNaN(count)) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSubmit(trimmed, count);
     Keyboard.dismiss();
     setWord("");
@@ -268,24 +381,60 @@ function ClueInputForm({
         : -1;
 
   return (
-    <View style={styles.clueInputContainer}>
-      <Text style={styles.clueInputLabel}>Give a Clue</Text>
+    <Animated.View
+      entering={FadeInDown.duration(300)}
+      style={[
+        styles.clueInputContainer,
+        { backgroundColor: gc.surface },
+        Platform.select({
+          ios: {
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 6,
+          },
+          android: { elevation: 3 },
+        }),
+      ]}
+    >
+      <View style={styles.clueInputHeader}>
+        <MaterialCommunityIcons name="eye" size={16} color={teamColor} />
+        <Text style={[styles.clueInputLabel, { color: gc.cardText }]}>
+          Give a Clue
+        </Text>
+      </View>
       <View style={styles.clueInputRow}>
         <TextInput
-          style={styles.clueWordInput}
+          style={[
+            styles.clueWordInput,
+            {
+              backgroundColor: gc.inputBg,
+              borderColor: gc.inputBorder,
+              color: gc.inputText,
+            },
+          ]}
           value={word}
           onChangeText={setWord}
           placeholder="One word..."
+          placeholderTextColor={gc.placeholder}
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={30}
           editable={!loading}
         />
         <TextInput
-          style={styles.clueCountInput}
+          style={[
+            styles.clueCountInput,
+            {
+              backgroundColor: gc.inputBg,
+              borderColor: gc.inputBorder,
+              color: gc.inputText,
+            },
+          ]}
           value={countStr}
           onChangeText={setCountStr}
           placeholder="#"
+          placeholderTextColor={gc.placeholder}
           keyboardType="number-pad"
           maxLength={2}
           editable={!loading}
@@ -293,6 +442,7 @@ function ClueInputForm({
         <Pressable
           style={[
             styles.clueSubmitBtn,
+            { backgroundColor: teamColor },
             (!word.trim() || loading) && styles.clueSubmitBtnDisabled,
           ]}
           onPress={handleSubmit}
@@ -306,14 +456,14 @@ function ClueInputForm({
         </Pressable>
       </View>
       {minCount < 1 && (
-        <Text style={styles.clueInputHint}>
+        <Text style={[styles.clueInputHint, { color: gc.mutedText }]}>
           Use 0 for "zero clue"
           {settings.advancedClues === "zero_unlimited"
             ? " or -1 for unlimited"
             : ""}
         </Text>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -335,6 +485,7 @@ function DeadDropUI({
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
+  const gc = useGameColors(theme.isDark);
 
   // ── Parse state ───────────────────────────────────────────────────────────
   const state = useMemo(() => asPublicState(rawState), [rawState]);
@@ -367,7 +518,16 @@ function DeadDropUI({
   const isMyCluePhase =
     isMyTurn && state?.phase === "clue_input" && isSpymaster;
   const isMyGuessPhase = isMyTurn && state?.phase === "guessing" && isOperative;
-  const keyMap = isSpymaster ? (privateState?.keyMap ?? null) : null;
+  const isGameOver = state?.phase === "game_over";
+  const keyMap = isSpymaster
+    ? (privateState?.keyMap ?? null)
+    : isGameOver
+      ? (state?.revealedKeyMap ?? null)
+      : null;
+
+  const activeTeamColor = state
+    ? (TEAM_COLORS[state.turnTeam] ?? theme.colors.primary)
+    : theme.colors.primary;
 
   // ── Move handlers ─────────────────────────────────────────────────────────
   const handleSubmitClue = useCallback(
@@ -385,6 +545,7 @@ function DeadDropUI({
   );
 
   const handleStopGuessing = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     submitMove({ action: "stop_guessing" });
   }, [submitMove]);
 
@@ -401,70 +562,79 @@ function DeadDropUI({
 
   // ── Phase banner ──────────────────────────────────────────────────────────
   let phaseText = "";
-  if (state.phase === "game_over") {
+  let phaseIcon: React.ComponentProps<typeof MaterialCommunityIcons>["name"] =
+    "information-outline";
+  if (isGameOver) {
     phaseText = state.winnerTeam
       ? `${state.winnerTeam.toUpperCase()} TEAM WINS!`
       : "Game Over";
+    phaseIcon = "trophy";
   } else if (isMyCluePhase) {
     phaseText = "Your turn — give a clue!";
+    phaseIcon = "lightbulb-on-outline";
   } else if (isMyGuessPhase) {
     const guessesLeft =
       state.maxGuessesThisTurn > 0
         ? state.maxGuessesThisTurn - state.guessesUsedThisTurn
         : "∞";
     phaseText = `Your turn — guess! (${guessesLeft} left)`;
+    phaseIcon = "target";
   } else if (state.phase === "clue_input") {
-    const sm = getTeamMember(state.teams, state.turnTeam, "spymaster");
     phaseText = `Waiting for ${state.turnTeam} spymaster...`;
+    phaseIcon = "clock-outline";
   } else if (state.phase === "guessing") {
     phaseText = `${state.turnTeam.toUpperCase()} team guessing...`;
+    phaseIcon = "magnify";
   }
 
-  const bgColor = theme.isDark ? "#121212" : "#FAFAFA";
+  const phaseBannerBg =
+    state.turnTeam === "red" ? gc.redSurface : gc.blueSurface;
 
   return (
     <ScrollView
       ref={scrollRef}
-      style={[styles.container, { backgroundColor: bgColor }]}
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
       contentContainerStyle={{
         paddingBottom: Math.max(insets.bottom, 16) + 80,
       }}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Team Banners */}
+      {/* ── Team Banners ─────────────────────────────────── */}
       <View style={styles.bannersRow}>
         <TeamBanner
           team="red"
           remaining={state.redRemaining}
           isActive={state.turnTeam === "red"}
+          gc={gc}
         />
         <View style={styles.turnIndicator}>
-          <Text style={[styles.turnText, { color: theme.colors.text }]}>
-            Turn {state.turnNumber}
+          <Text style={[styles.turnLabel, { color: gc.mutedText }]}>TURN</Text>
+          <Text style={[styles.turnNumber, { color: theme.colors.text }]}>
+            {state.turnNumber}
           </Text>
         </View>
         <TeamBanner
           team="blue"
           remaining={state.blueRemaining}
           isActive={state.turnTeam === "blue"}
+          gc={gc}
         />
       </View>
 
-      {/* Phase Banner */}
-      <View
-        style={[
-          styles.phaseBanner,
-          { backgroundColor: state.turnTeam === "red" ? "#FFCDD2" : "#BBDEFB" },
-        ]}
-      >
-        <Text
-          style={[styles.phaseText, { color: TEAM_COLORS[state.turnTeam] }]}
-        >
+      {/* ── Phase Banner ─────────────────────────────────── */}
+      <View style={[styles.phaseBanner, { backgroundColor: phaseBannerBg }]}>
+        <MaterialCommunityIcons
+          name={phaseIcon}
+          size={16}
+          color={activeTeamColor}
+          style={{ marginRight: 6 }}
+        />
+        <Text style={[styles.phaseText, { color: activeTeamColor }]}>
           {phaseText}
         </Text>
       </View>
 
-      {/* Role Badge */}
+      {/* ── Role Badge ──────────────────────────────────── */}
       {myAssignment && (
         <View style={styles.roleBadgeRow}>
           <View
@@ -474,8 +644,8 @@ function DeadDropUI({
             ]}
           >
             <MaterialCommunityIcons
-              name={myAssignment.role === "spymaster" ? "eye" : "magnify"}
-              size={14}
+              name={isSpymaster ? "eye" : "magnify"}
+              size={15}
               color="#FFF"
             />
             <Text style={styles.roleBadgeText}>
@@ -485,12 +655,24 @@ function DeadDropUI({
           </View>
         </View>
       )}
+      {isSpectator && (
+        <View style={styles.roleBadgeRow}>
+          <View style={[styles.roleBadge, { backgroundColor: gc.mutedText }]}>
+            <MaterialCommunityIcons
+              name="eye-off-outline"
+              size={15}
+              color="#FFF"
+            />
+            <Text style={styles.roleBadgeText}>SPECTATING</Text>
+          </View>
+        </View>
+      )}
 
-      {/* Current Clue */}
-      {state.currentClue && <ClueDisplay clue={state.currentClue} />}
+      {/* ── Current Clue ─────────────────────────────────── */}
+      {state.currentClue && <ClueDisplay clue={state.currentClue} gc={gc} />}
 
-      {/* Board */}
-      <View style={styles.boardContainer}>
+      {/* ── Board ────────────────────────────────────────── */}
+      <View style={[styles.boardContainer, { backgroundColor: gc.boardBg }]}>
         {Array.from({ length: 5 }, (_, row) => (
           <View key={row} style={styles.boardRow}>
             {state.cards
@@ -500,84 +682,187 @@ function DeadDropUI({
                   key={card.id}
                   card={card}
                   keyMap={keyMap}
-                  isSpymaster={isSpymaster}
                   isMyGuess={isMyGuessPhase ?? false}
                   onPress={() => handleGuessCard(card.id)}
                   disabled={actionLoading || !isMyGuessPhase}
+                  gc={gc}
                 />
               ))}
           </View>
         ))}
       </View>
 
-      {/* Action Error */}
+      {/* ── Action Error ─────────────────────────────────── */}
       {actionError && (
-        <View style={styles.errorBox}>
+        <View style={[styles.errorBox, { backgroundColor: gc.errorBg }]}>
           <MaterialCommunityIcons
             name="alert-circle"
             size={16}
-            color="#E53935"
+            color={gc.errorText}
           />
-          <Text style={styles.errorText}>{actionError}</Text>
+          <Text style={[styles.errorText, { color: gc.errorText }]}>
+            {actionError}
+          </Text>
         </View>
       )}
 
-      {/* Clue Input (spymaster, clue phase) */}
+      {/* ── Clue Input (spymaster, clue phase) ──────────── */}
       {isMyCluePhase && (
         <ClueInputForm
           onSubmit={handleSubmitClue}
           loading={actionLoading}
           settings={state.settings}
+          teamColor={activeTeamColor}
+          gc={gc}
         />
       )}
 
-      {/* Stop Guessing Button (operative, guessing phase) */}
+      {/* ── Stop Guessing (operative, guessing phase) ────── */}
       {isMyGuessPhase && state.guessesUsedThisTurn > 0 && (
         <Pressable
-          style={[styles.stopBtn, actionLoading && { opacity: 0.5 }]}
+          style={({ pressed }) => [
+            styles.stopBtn,
+            {
+              backgroundColor: activeTeamColor,
+              opacity: actionLoading ? 0.5 : pressed ? 0.85 : 1,
+            },
+          ]}
           onPress={handleStopGuessing}
           disabled={actionLoading}
         >
           <MaterialCommunityIcons
-            name="stop-circle-outline"
-            size={20}
+            name="hand-back-left"
+            size={18}
             color="#FFF"
           />
           <Text style={styles.stopBtnText}>End Guessing</Text>
         </Pressable>
       )}
 
-      {/* Guesses this turn info */}
+      {/* ── Guesses this turn ────────────────────────────── */}
       {state.phase === "guessing" && (
         <View style={styles.guessInfo}>
-          <Text style={[styles.guessInfoText, { color: theme.colors.text }]}>
-            Guesses: {state.guessesUsedThisTurn} /{" "}
+          <Text style={[styles.guessInfoLabel, { color: gc.mutedText }]}>
+            GUESSES
+          </Text>
+          <Text style={[styles.guessInfoValue, { color: theme.colors.text }]}>
+            {state.guessesUsedThisTurn} /{" "}
             {state.maxGuessesThisTurn === 0 ? "∞" : state.maxGuessesThisTurn}
           </Text>
         </View>
       )}
 
-      {/* Game Over Reveal */}
-      {state.phase === "game_over" && state.endReason && (
-        <View style={styles.gameOverBox}>
-          <Text style={styles.gameOverReason}>
-            {state.endReason === "assassin" && "The assassin was found!"}
-            {state.endReason === "all_agents_found" && "All agents contacted!"}
-            {state.endReason === "resign" && "A player resigned."}
-            {state.endReason === "timeout" && "Time expired."}
+      {/* ── Game Over ────────────────────────────────────── */}
+      {isGameOver && (
+        <Animated.View
+          entering={FadeIn.duration(400)}
+          style={[
+            styles.gameOverBox,
+            {
+              backgroundColor: gc.surface,
+              borderColor: state.winnerTeam
+                ? TEAM_COLORS[state.winnerTeam]
+                : gc.divider,
+            },
+          ]}
+        >
+          {state.winnerTeam && (
+            <View
+              style={[
+                styles.gameOverAccent,
+                { backgroundColor: TEAM_COLORS[state.winnerTeam] },
+              ]}
+            />
+          )}
+          <MaterialCommunityIcons
+            name={
+              state.endReason === "assassin"
+                ? "skull-crossbones"
+                : state.endReason === "resign"
+                  ? "flag-outline"
+                  : "trophy"
+            }
+            size={32}
+            color={
+              state.winnerTeam ? TEAM_COLORS[state.winnerTeam] : gc.mutedText
+            }
+          />
+          <Text
+            style={[
+              styles.gameOverTitle,
+              {
+                color: state.winnerTeam
+                  ? TEAM_COLORS[state.winnerTeam]
+                  : theme.colors.text,
+              },
+            ]}
+          >
+            {state.winnerTeam
+              ? `${state.winnerTeam.toUpperCase()} WINS!`
+              : "GAME OVER"}
           </Text>
-        </View>
+          {state.endReason && (
+            <Text style={[styles.gameOverReason, { color: gc.mutedText }]}>
+              {state.endReason === "assassin" && "The assassin was uncovered!"}
+              {state.endReason === "all_agents_found" &&
+                "All agents contacted!"}
+              {state.endReason === "resign" && "A player resigned."}
+              {state.endReason === "timeout" && "Time expired."}
+            </Text>
+          )}
+          <View style={[styles.gameOverScores, { borderTopColor: gc.divider }]}>
+            <View style={styles.gameOverScoreCol}>
+              <View
+                style={[
+                  styles.gameOverScoreDot,
+                  { backgroundColor: TEAM_COLORS.red },
+                ]}
+              />
+              <Text
+                style={[styles.gameOverScoreNum, { color: theme.colors.text }]}
+              >
+                {state.redRemaining}
+              </Text>
+              <Text
+                style={[styles.gameOverScoreLabel, { color: gc.mutedText }]}
+              >
+                left
+              </Text>
+            </View>
+            <View
+              style={[styles.gameOverDivider, { backgroundColor: gc.divider }]}
+            />
+            <View style={styles.gameOverScoreCol}>
+              <View
+                style={[
+                  styles.gameOverScoreDot,
+                  { backgroundColor: TEAM_COLORS.blue },
+                ]}
+              />
+              <Text
+                style={[styles.gameOverScoreNum, { color: theme.colors.text }]}
+              >
+                {state.blueRemaining}
+              </Text>
+              <Text
+                style={[styles.gameOverScoreLabel, { color: gc.mutedText }]}
+              >
+                left
+              </Text>
+            </View>
+          </View>
+        </Animated.View>
       )}
 
-      {/* Clue History */}
-      <ClueHistory clues={state.clueHistory} />
+      {/* ── Clue History ─────────────────────────────────── */}
+      <ClueHistory clues={state.clueHistory} gc={gc} />
     </ScrollView>
   );
 }
 
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // Styles
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -588,144 +873,185 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
+  // ── Team banners ──────────────────────────────────────
   bannersRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: BOARD_PAD,
-    paddingTop: 8,
+    paddingTop: 10,
   },
   teamBanner: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 8,
+    minWidth: 90,
+    justifyContent: "center",
   },
-  teamBannerText: {
-    color: "#FFF",
-    fontSize: 12,
+  teamBannerLabel: {
+    fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
   teamBannerCount: {
-    color: "#FFF",
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "800",
   },
   turnIndicator: {
     alignItems: "center",
   },
-  turnText: {
-    fontSize: 12,
-    fontWeight: "600",
+  turnLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 1.5,
   },
+  turnNumber: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  // ── Phase banner ──────────────────────────────────────
   phaseBanner: {
+    flexDirection: "row",
     marginHorizontal: BOARD_PAD,
-    marginTop: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    marginTop: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
   },
   phaseText: {
     fontSize: 14,
     fontWeight: "700",
+    letterSpacing: 0.3,
   },
+
+  // ── Role badge ────────────────────────────────────────
   roleBadgeRow: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 6,
+    marginTop: 8,
   },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
   },
   roleBadgeText: {
     color: "#FFF",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
+
+  // ── Board ─────────────────────────────────────────────
   boardContainer: {
-    paddingHorizontal: BOARD_PAD,
+    marginHorizontal: BOARD_PAD,
+    marginTop: 10,
+    paddingHorizontal: 6,
     paddingVertical: 8,
+    borderRadius: 12,
     gap: CARD_GAP,
   },
   boardRow: {
     flexDirection: "row",
     gap: CARD_GAP,
   },
+
+  // ── Card ──────────────────────────────────────────────
   card: {
-    borderRadius: 6,
-    borderWidth: 2,
+    borderRadius: 8,
+    borderWidth: 1.5,
     justifyContent: "center",
     alignItems: "center",
-    padding: 2,
+    paddingHorizontal: 2,
+    paddingVertical: 3,
+    overflow: "hidden",
   },
   cardText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
     textAlign: "center",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   revealBadge: {
     position: "absolute",
-    bottom: 2,
-    right: 2,
+    bottom: 3,
+    right: 3,
   },
+  keyIndicator: {
+    position: "absolute",
+    bottom: 0,
+    left: 4,
+    right: 4,
+    height: 3,
+    borderRadius: 2,
+  },
+
+  // ── Clue Display ──────────────────────────────────────
   clueBox: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: BOARD_PAD,
-    marginTop: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    marginTop: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 12,
     borderWidth: 2,
-    gap: 10,
+    gap: 12,
+    overflow: "hidden",
+  },
+  clueAccent: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
   },
   clueWord: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "800",
-    letterSpacing: 2,
-    color: "#333",
+    letterSpacing: 2.5,
+    textTransform: "uppercase",
   },
   clueBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
   clueBadgeText: {
     color: "#FFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
   },
+
+  // ── Clue Input ────────────────────────────────────────
   clueInputContainer: {
     marginHorizontal: BOARD_PAD,
     marginTop: 12,
-    padding: 12,
-    backgroundColor: "#FFF",
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    padding: 14,
+    borderRadius: 14,
+  },
+  clueInputHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
   },
   clueInputLabel: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
-    marginBottom: 8,
-    color: "#333",
   },
   clueInputRow: {
     flexDirection: "row",
@@ -734,116 +1060,170 @@ const styles = StyleSheet.create({
   },
   clueWordInput: {
     flex: 1,
-    height: 44,
+    height: 46,
     borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    borderRadius: 10,
+    paddingHorizontal: 14,
     fontSize: 16,
     fontWeight: "600",
     letterSpacing: 1,
-    backgroundColor: "#FAFAFA",
   },
   clueCountInput: {
-    width: 50,
-    height: 44,
+    width: 52,
+    height: 46,
     borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 8,
+    borderRadius: 10,
     textAlign: "center",
     fontSize: 18,
     fontWeight: "700",
-    backgroundColor: "#FAFAFA",
   },
   clueSubmitBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#1E88E5",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     justifyContent: "center",
     alignItems: "center",
   },
   clueSubmitBtnDisabled: {
-    opacity: 0.4,
+    opacity: 0.35,
   },
   clueInputHint: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 11,
-    color: "#999",
   },
+
+  // ── Stop Guessing ─────────────────────────────────────
   stopBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 8,
     marginHorizontal: BOARD_PAD,
     marginTop: 10,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: "#FF7043",
+    paddingVertical: 13,
+    borderRadius: 12,
   },
   stopBtnText: {
     color: "#FFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
+    letterSpacing: 0.3,
   },
+
+  // ── Guess Info ────────────────────────────────────────
   guessInfo: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 8,
   },
-  guessInfoText: {
-    fontSize: 12,
-    fontWeight: "600",
+  guessInfoLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1.2,
   },
+  guessInfoValue: {
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  // ── Error ─────────────────────────────────────────────
   errorBox: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
     marginHorizontal: BOARD_PAD,
     marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#FFEBEE",
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   errorText: {
-    color: "#C62828",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
     flex: 1,
   },
+
+  // ── Game Over ─────────────────────────────────────────
   gameOverBox: {
     alignItems: "center",
     marginHorizontal: BOARD_PAD,
-    marginTop: 12,
-    padding: 16,
-    backgroundColor: "#212121",
-    borderRadius: 12,
+    marginTop: 14,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 2,
+    overflow: "hidden",
+    gap: 6,
+  },
+  gameOverAccent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+  },
+  gameOverTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 1.5,
   },
   gameOverReason: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "500",
   },
+  gameOverScores: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    gap: 24,
+    width: "100%",
+  },
+  gameOverScoreCol: {
+    alignItems: "center",
+    gap: 2,
+  },
+  gameOverScoreDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  gameOverScoreNum: {
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  gameOverScoreLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+  },
+  gameOverDivider: {
+    width: 1,
+    height: 36,
+  },
+
+  // ── History ───────────────────────────────────────────
   historyContainer: {
     marginHorizontal: BOARD_PAD,
     marginTop: 16,
-    padding: 12,
-    backgroundColor: "#F5F5F5",
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 12,
   },
   historyTitle: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "700",
-    color: "#666",
+    letterSpacing: 1.5,
     marginBottom: 8,
-    letterSpacing: 1,
   },
   historyRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 4,
+    gap: 10,
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   historyDot: {
     width: 8,
@@ -851,20 +1231,19 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   historyWord: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#333",
     flex: 1,
+    letterSpacing: 0.5,
   },
   historyCount: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
-    color: "#666",
   },
 });
 
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 // Export with Shell HOC
-// =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default withGameV4Shell(DeadDropUI, "dead_drop");

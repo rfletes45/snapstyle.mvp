@@ -35,6 +35,7 @@ import DeadDropScreenV4 from "./DeadDropScreenV4";
 import DotsAndBoxesScreenV4 from "./DotsAndBoxesScreenV4";
 import HexScreenV4 from "./HexScreenV4";
 import KnockoutScreenV4 from "./KnockoutScreenV4";
+import MetroMagnateScreenV4 from "./MetroMagnateScreenV4";
 import MinesweeperScreenV4 from "./MinesweeperScreenV4";
 import MinigolfScreenV4 from "./MinigolfScreenV4";
 import Play2048ScreenV4 from "./Play2048ScreenV4";
@@ -64,6 +65,7 @@ const GAME_SCREEN_MAP: Partial<Record<GameId, React.ComponentType<object>>> = {
   brick_breaker: BrickBreakerScreenV4,
   dead_drop: DeadDropScreenV4,
   crazy_eights: CrazyEightsScreenV4,
+  metro_magnate: MetroMagnateScreenV4,
   minigolf_duels: MinigolfScreenV4,
   minesweeper: MinesweeperScreenV4,
   reversi: ReversiScreenV4,

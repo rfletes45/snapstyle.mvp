@@ -40,6 +40,7 @@ import {
   suspendSoloSession,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameId, GameRuntimeType } from "@/gamesV4/types/common";
+import { startTrace } from "@/gamesV4/utils/perfTrace";
 import { getFirestoreInstance } from "@/services/firebase";
 import { markGameNotificationsRead } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
@@ -243,8 +244,11 @@ export function withGameV4Shell<P extends GameShellProps>(
     // clamp isMyTurn to false until they reconcile.  This prevents the UI
     // from allowing a move based on stale session data while the state
     // snapshot is still in-flight.
-    const pubTurnUid = (publicState as Record<string, unknown> | null)
-      ?.currentTurnUid as string | undefined;
+    const pubTurnUid = ((publicState as Record<string, unknown> | null)
+      ?.currentTurnUid ??
+      (publicState as Record<string, unknown> | null)?.currentTurnPlayerId) as
+      | string
+      | undefined;
     const sessionTurnUid = session?.currentTurnPlayerId as string | undefined;
     const isSynced =
       !pubTurnUid || !sessionTurnUid || pubTurnUid === sessionTurnUid;
@@ -254,8 +258,9 @@ export function withGameV4Shell<P extends GameShellProps>(
         ? isMyTurn
         : false;
 
-    // DEBUG: Log turn state on every render
+    // DEBUG: Log turn state on every render (dev only to reduce production overhead)
     useEffect(() => {
+      if (!__DEV__) return;
       const pubPhase = (publicState as Record<string, unknown> | null)?.phase;
       const pubMoveCount = (publicState as Record<string, unknown> | null)
         ?.moveCount;
@@ -301,6 +306,7 @@ export function withGameV4Shell<P extends GameShellProps>(
     // ── Local + server move submission (with optimistic updates) ─────
     const submitMove = useCallback(
       async (movePayload: Record<string, unknown>): Promise<boolean> => {
+        const trace = startTrace("move_optimistic");
         const stateForValidation = effectivePublicState;
 
         // Optimistic local validation.
@@ -331,9 +337,11 @@ export function withGameV4Shell<P extends GameShellProps>(
           } else {
             localValidationPassed = true;
 
-            console.log(
-              `[gamesV4][DEBUG] submitMove local validated OK: action=${(movePayload as Record<string, unknown>).action}, turnAdvance=${localResult.turnAdvance}, nextTurnPlayerId=${localResult.nextTurnPlayerId}, nextPhase=${(localResult.nextPublicState as Record<string, unknown> | undefined)?.phase}, nextMoveCount=${(localResult.nextPublicState as Record<string, unknown> | undefined)?.moveCount}`,
-            );
+            if (__DEV__) {
+              console.log(
+                `[gamesV4][DEBUG] submitMove local validated OK: action=${(movePayload as Record<string, unknown>).action}, turnAdvance=${localResult.turnAdvance}, nextTurnPlayerId=${localResult.nextTurnPlayerId}, nextPhase=${(localResult.nextPublicState as Record<string, unknown> | undefined)?.phase}, nextMoveCount=${(localResult.nextPublicState as Record<string, unknown> | undefined)?.moveCount}`,
+              );
+            }
 
             // Apply optimistic state immediately so the UI updates without
             // waiting for the server round-trip.
@@ -383,6 +391,7 @@ export function withGameV4Shell<P extends GameShellProps>(
 
         // Submit to server in the background — don't await to avoid
         // blocking the UI. Errors revert the optimistic state.
+        trace.mark("server_submit_fired");
         hookSubmitMove(movePayload).catch((err) => {
           console.warn(
             "[gamesV4] Server rejected move, reverting optimistic state:",
@@ -390,6 +399,8 @@ export function withGameV4Shell<P extends GameShellProps>(
           );
           clearOptimistic();
         });
+        trace.mark("local_done");
+        trace.end();
         return true;
       },
       [
@@ -423,7 +434,10 @@ export function withGameV4Shell<P extends GameShellProps>(
     useEffect(() => {
       if (!uid || !sessionId) return;
       markGameNotificationsRead(uid, { sessionId }).catch((error) => {
-        console.warn("[gamesV4] Failed to mark session notifications read:", error);
+        console.warn(
+          "[gamesV4] Failed to mark session notifications read:",
+          error,
+        );
       });
     }, [uid, sessionId]);
 
@@ -624,10 +638,12 @@ export function withGameV4Shell<P extends GameShellProps>(
     useEffect(() => {
       if (isTerminal && !hasNavigatedToResult.current && !isPersistent) {
         hasNavigatedToResult.current = true;
-        // Small delay to let the terminal state render briefly
+        // PERF: Reduced delay from 1500ms to 600ms. The terminal state
+        // renders a brief "game ending" visual, then navigates quickly.
+        // Result doc is loaded async by GameOverScreenV4.
         const timer = setTimeout(() => {
           navigation.replace("GameOverV4", { sessionId });
-        }, 1500);
+        }, 600);
         return () => clearTimeout(timer);
       }
     }, [isTerminal, sessionId, navigation]);

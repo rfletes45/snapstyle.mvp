@@ -13,6 +13,11 @@ import type { GameShellProps } from "@/gamesV4/components/GameScreenShell";
 import { withGameV4Shell } from "@/gamesV4/components/GameScreenShell";
 import type { PongRealtimeState } from "@/gamesV4/realtime/games/pongDef";
 import { PONG_CLIENT_DEF } from "@/gamesV4/realtime/games/pongDef";
+import {
+  createFrameLoop,
+  InterpolationBuffer,
+  ScalarInterpolator,
+} from "@/gamesV4/realtime/interpolation";
 import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -139,7 +144,7 @@ const PADDLE_Y_TOP_CENTER = 0.03; // server x=0.97 for right paddle
 
 const DASH_W = 14;
 const DASH_GAP = 10;
-const SEND_HZ = 30;
+const SEND_HZ = 60;
 const SEND_INTERVAL = 1000 / SEND_HZ;
 
 /** Derive all dimension-dependent layout values from the window size. */
@@ -500,94 +505,92 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
 
   // ── Client-side paddle prediction ───────────────────────────────────────
   // localPaddleY stores the server-Y coordinate from the player's touch.
-  const [localPaddleY, setLocalPaddleY] = useState<number | null>(null);
+  const localPaddleYRef = useRef<number | null>(null);
 
-  // ── Ball interpolation (60fps from 20Hz server updates) ─────────────────
-  // ballAnimX/Y are SCREEN coordinates driven by RAF extrapolation.
+  // ── Interpolation buffers (shared infrastructure) ───────────────────────
+  // Ball uses full 2D interpolation buffer for smooth 60fps from 20Hz server.
+  const ballInterpRef = useRef(
+    new InterpolationBuffer({
+      renderDelayMs: 55, // ~1 server tick behind for smooth lerp window
+      maxExtrapolateMs: 120,
+      correctionAlpha: 0.45, // slightly snappy to keep ball feeling responsive
+    }),
+  );
+  // Opponent paddle uses scalar interpolator (1D Y axis).
+  const oppPaddleInterpRef = useRef(new ScalarInterpolator(0.4));
+
+  // Animated values for ball and paddles (driven by RAF, not React state)
   const ballAnimX = useRef(new Animated.Value(arenaW / 2)).current;
   const ballAnimY = useRef(new Animated.Value(arenaH / 2)).current;
-  const ballAuth = useRef({ x: 0.5, y: 0.5, vx: 0, vy: 0, ts: 0 });
-  const rafRef = useRef<number | null>(null);
-  // Cache flipView & arena dims for RAF (avoid stale closure)
+  const oppPaddleAnimX = useRef(new Animated.Value(arenaW / 2)).current;
+  const myPaddleAnimX = useRef(new Animated.Value(arenaW / 2)).current;
+
+  // Cache layout values for RAF (avoid stale closures)
   const flipRef = useRef(flipView);
   flipRef.current = flipView;
   const arenaWRef = useRef(arenaW);
   arenaWRef.current = arenaW;
   const arenaHRef = useRef(arenaH);
   arenaHRef.current = arenaH;
+  const mySideRef = useRef(mySide);
+  mySideRef.current = mySide;
+  const pongPhaseRef = useRef(pongPhase);
+  pongPhaseRef.current = pongPhase;
 
-  // Update authoritative ball state when server state arrives
+  // Push server state into interpolation buffers
   useEffect(() => {
-    const bx = ball.x;
-    const by = ball.y;
-    const bvx = ball.vx;
-    const bvy = ball.vy;
-    const fv = flipRef.current;
-    const aW = arenaWRef.current;
-    const aH = arenaHRef.current;
-
-    if ((bvx === 0 && bvy === 0) || pongPhase !== "live") {
-      ballAuth.current = { x: bx, y: by, vx: bvx, vy: bvy, ts: Date.now() };
-      ballAnimX.setValue(fv ? (1 - by) * aW : by * aW);
-      ballAnimY.setValue(fv ? bx * aH : (1 - bx) * aH);
-      return;
+    const bi = ballInterpRef.current;
+    if (pongPhase !== "live") {
+      // During non-live phases, snap ball to server pos (no extrapolation)
+      bi.reset(ball.x, ball.y);
+      const fv = flipRef.current;
+      const aW = arenaWRef.current;
+      const aH = arenaHRef.current;
+      ballAnimX.setValue(fv ? (1 - ball.y) * aW : ball.y * aW);
+      ballAnimY.setValue(fv ? ball.x * aH : (1 - ball.x) * aH);
+    } else {
+      bi.push({ x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy });
     }
-
-    const prev = ballAuth.current;
-    const elapsed = (Date.now() - prev.ts) / 1000;
-    const extX = prev.x + prev.vx * elapsed;
-    const extY = prev.y + prev.vy * elapsed;
-    const dx = Math.abs(bx - extX);
-    const dy = Math.abs(by - extY);
-
-    if (dx > 0.15 || dy > 0.15) {
-      ballAnimX.setValue(fv ? (1 - by) * aW : by * aW);
-      ballAnimY.setValue(fv ? bx * aH : (1 - bx) * aH);
-    }
-
-    ballAuth.current = { x: bx, y: by, vx: bvx, vy: bvy, ts: Date.now() };
   }, [ball.x, ball.y, ball.vx, ball.vy, pongPhase, ballAnimX, ballAnimY]);
 
-  // RAF loop for smooth 60fps ball rendering
-  useEffect(() => {
-    let running = true;
-    const tick = () => {
-      if (!running) return;
-      const auth = ballAuth.current;
-      if (auth.vx !== 0 || auth.vy !== 0) {
-        const t = Math.min((Date.now() - auth.ts) / 1000, 0.15);
-        let ex = Math.max(0, Math.min(1, auth.x + auth.vx * t));
-        let ey = Math.max(0.012, Math.min(0.988, auth.y + auth.vy * t));
-        const fv = flipRef.current;
-        const aW = arenaWRef.current;
-        const aH = arenaHRef.current;
-        ballAnimX.setValue(fv ? (1 - ey) * aW : ey * aW);
-        ballAnimY.setValue(fv ? ex * aH : (1 - ex) * aH);
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      running = false;
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [ballAnimX, ballAnimY]);
-
-  // ── Paddle animation values ─────────────────────────────────────────────
-  // These represent screen X positions of paddle centers.
-  const oppPaddleAnimX = useRef(new Animated.Value(arenaW / 2)).current;
-  const myPaddleAnimX = useRef(new Animated.Value(arenaW / 2)).current;
-
+  // Push opponent paddle into interpolator
   useEffect(() => {
     const oppSide = mySide === "left" ? "right" : "left";
     const oppY = paddles[oppSide]?.y ?? 0.5;
-    Animated.timing(oppPaddleAnimX, {
-      toValue: mapSY(oppY),
-      duration: 50,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }).start();
-  }, [paddles, mySide, oppPaddleAnimX, mapSY]);
+    const oppVy = paddles[oppSide]?.vy ?? 0;
+    oppPaddleInterpRef.current.push(oppY, oppVy);
+  }, [paddles, mySide]);
+
+  // Master RAF loop — drives ball, opponent paddle, and local paddle at 60fps
+  useEffect(() => {
+    const loop = createFrameLoop(() => {
+      const fv = flipRef.current;
+      const aW = arenaWRef.current;
+      const aH = arenaHRef.current;
+
+      // Ball interpolation
+      if (pongPhaseRef.current === "live") {
+        const b = ballInterpRef.current.sample();
+        ballAnimX.setValue(fv ? (1 - b.y) * aW : b.y * aW);
+        ballAnimY.setValue(fv ? b.x * aH : (1 - b.x) * aH);
+      }
+
+      // Opponent paddle interpolation
+      const oppY = oppPaddleInterpRef.current.sample();
+      const oppScreenX = fv ? (1 - oppY) * aW : oppY * aW;
+      oppPaddleAnimX.setValue(oppScreenX);
+
+      // Local paddle — immediate from touch (no interpolation needed)
+      const localY = localPaddleYRef.current;
+      if (localY !== null) {
+        const myScreenX = fv ? (1 - localY) * aW : localY * aW;
+        myPaddleAnimX.setValue(myScreenX);
+      }
+    });
+
+    loop.start();
+    return () => loop.stop();
+  }, [ballAnimX, ballAnimY, oppPaddleAnimX, myPaddleAnimX]);
 
   // ── Animation refs ──────────────────────────────────────────────────────
   const overlayAnim = useRef(new Animated.Value(1)).current;
@@ -713,8 +716,8 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
       const { locationX } = evt.nativeEvent;
       const serverY = touchXToServerY(locationX);
 
-      // Instant local visual feedback
-      setLocalPaddleY(serverY);
+      // Instant local visual feedback via ref (no React re-render)
+      localPaddleYRef.current = serverY;
 
       // Throttled server send
       const now = Date.now();
@@ -722,7 +725,7 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
       sendThrottle.current = now;
       if (
         lastSentY.current !== null &&
-        Math.abs(serverY - lastSentY.current) < 0.005
+        Math.abs(serverY - lastSentY.current) < 0.003
       )
         return;
       lastSentY.current = serverY;
@@ -732,7 +735,7 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
   );
 
   const handleTouchEnd = useCallback(() => {
-    setLocalPaddleY(null);
+    localPaddleYRef.current = null;
     lastSentY.current = null;
     send("input_stop", {});
   }, [send]);
@@ -804,14 +807,15 @@ function PongUI({ myUid, sessionId, players: shellPlayers }: GameShellProps) {
   // ── Compute positions for vertical layout ────────────────────────────────
   const pWpx = paddleWidthPx(effectiveSettings?.paddleSizePreset, arenaW);
 
-  // My paddle screen X from server Y (or local prediction)
-  const myServerY = localPaddleY ?? paddles[mySide ?? "left"]?.y ?? 0.5;
-  const myPaddleScreenX = mapSY(myServerY);
-
-  // Update paddle animated value in an effect to avoid setState-during-render
+  // My paddle screen X: driven by RAF loop from localPaddleYRef / server state.
+  // Sync from server when not touching (fallback).
   useEffect(() => {
-    myPaddleAnimX.setValue(myPaddleScreenX);
-  }, [myPaddleAnimX, myPaddleScreenX]);
+    if (localPaddleYRef.current === null) {
+      const myY = paddles[mySide ?? "left"]?.y ?? 0.5;
+      const myScreenX = flipView ? (1 - myY) * arenaW : myY * arenaW;
+      myPaddleAnimX.setValue(myScreenX);
+    }
+  }, [paddles, mySide, flipView, arenaW, myPaddleAnimX]);
 
   // Bottom paddle = my paddle, top paddle = opponent
   const bottomPaddleAnimX = myPaddleAnimX;

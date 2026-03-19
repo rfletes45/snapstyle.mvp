@@ -22,6 +22,10 @@ import type {
   KnockoutRoundSummary,
 } from "@/gamesV4/realtime/games/knockoutGameDef";
 import { KNOCKOUT_CLIENT_DEF } from "@/gamesV4/realtime/games/knockoutGameDef";
+import {
+  createFrameLoop,
+  InterpolationBuffer,
+} from "@/gamesV4/realtime/interpolation";
 import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -1086,13 +1090,27 @@ function KnockoutUI({ myUid, sessionId }: GameShellProps) {
     [arenaSize, half],
   );
 
-  // ── Body interpolation ─────────────────────────────────────────
+  // ── Body interpolation (InterpolationBuffer for 60fps from 15Hz server) ──
   const bodyRefs = useRef<
     Map<string, { x: Animated.Value; y: Animated.Value }>
   >(new Map());
+  const bodyInterpRef = useRef<Map<string, InterpolationBuffer>>(new Map());
 
+  // Cache layout values for RAF (avoid stale closures)
+  const arenaSizeRef = useRef(arenaSize);
+  arenaSizeRef.current = arenaSize;
+  const halfRef = useRef(half);
+  halfRef.current = half;
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
+  // Push server body state into interpolation buffers
   useEffect(() => {
+    const isSimPhase =
+      phase === "simulation" || phase === "settle" || phase === "resolve_elims";
+
     for (const body of bodies) {
+      // Ensure Animated.Value refs exist
       let r = bodyRefs.current.get(body.uid);
       if (!r) {
         r = {
@@ -1100,22 +1118,54 @@ function KnockoutUI({ myUid, sessionId }: GameShellProps) {
           y: new Animated.Value(toScreenY(body.y)),
         };
         bodyRefs.current.set(body.uid, r);
+      }
+
+      // Ensure InterpolationBuffer exists
+      let buf = bodyInterpRef.current.get(body.uid);
+      if (!buf) {
+        buf = new InterpolationBuffer({
+          renderDelayMs: 70, // ~1 server tick at 15Hz (66ms)
+          maxExtrapolateMs: 150,
+          correctionAlpha: 0.4,
+        });
+        bodyInterpRef.current.set(body.uid, buf);
+      }
+
+      if (isSimPhase) {
+        // During simulation, push snapshots for smooth interpolation
+        buf.push({ x: body.x, y: body.y, vx: body.vx, vy: body.vy });
       } else {
-        Animated.timing(r.x, {
-          toValue: toScreenX(body.x),
-          duration: 60,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }).start();
-        Animated.timing(r.y, {
-          toValue: toScreenY(body.y),
-          duration: 60,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }).start();
+        // During calm phases, snap directly (no interpolation needed)
+        buf.reset(body.x, body.y);
+        r.x.setValue(toScreenX(body.x));
+        r.y.setValue(toScreenY(body.y));
       }
     }
-  }, [bodies, toScreenX, toScreenY]);
+  }, [bodies, phase, toScreenX, toScreenY]);
+
+  // RAF loop — drives body Animated.Values at 60fps during simulation
+  useEffect(() => {
+    const loop = createFrameLoop(() => {
+      const p = phaseRef.current;
+      const isSim =
+        p === "simulation" || p === "settle" || p === "resolve_elims";
+      if (!isSim) return;
+
+      const sz = arenaSizeRef.current;
+      const h = halfRef.current;
+
+      bodyInterpRef.current.forEach((buf, uid) => {
+        const r = bodyRefs.current.get(uid);
+        if (!r) return;
+        const sample = buf.sample();
+        r.x.setValue((sample.x - SRV.ARENA_CENTER) * sz + h);
+        r.y.setValue((sample.y - SRV.ARENA_CENTER) * sz + h);
+      });
+    });
+
+    loop.start();
+    return () => loop.stop();
+  }, []);
 
   // ── Touch handlers ──────────────────────────────────────────────
   const canAim = phase === "planning" && amAlive && !isLocked;

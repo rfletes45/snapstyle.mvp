@@ -23,6 +23,7 @@ import {
   unpinInviteFromConversation,
 } from "./helpers";
 import { notifyPlayerJoinedLobby } from "./notifications";
+import { startServerTrace } from "./perfTrace";
 import type {
   GameInviteV4,
   GameSessionV4,
@@ -44,6 +45,7 @@ import { COOLDOWNS, enforceCooldown, sanitisePayload } from "./validation";
 export const joinInviteLobbyV4 = functions.https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
+    const trace = startServerTrace("joinLobbyV4", uid);
     const { inviteId, asSpectator } = data as {
       inviteId: string;
       asSpectator?: boolean;
@@ -57,30 +59,32 @@ export const joinInviteLobbyV4 = functions.https.onCall(
     }
 
     const db = getDb();
+    const inviteRef = db.collection(COLLECTIONS.GAME_INVITES).doc(inviteId);
 
-    // Rate-limit: 1 join per 2 seconds
-    await enforceCooldown(db, uid, "joinLobbyV4", COOLDOWNS.JOIN_LOBBY);
+    // PERF: Run cooldown, invite pre-read, and profile fetch in parallel.
+    // These are independent — no need to wait for each one serially.
+    trace.mark("pre_reads_start");
+    const [, invitePreSnap, joinerProfile] = await Promise.all([
+      enforceCooldown(db, uid, "joinLobbyV4", COOLDOWNS.JOIN_LOBBY),
+      inviteRef.get(),
+      getUserProfile(uid),
+    ]);
+    trace.mark("pre_reads_done");
 
-    // Verify conversation membership BEFORE the transaction (R1 fix)
-    const invitePreSnap = await db
-      .collection(COLLECTIONS.GAME_INVITES)
-      .doc(inviteId)
-      .get();
     if (!invitePreSnap.exists) {
       throw new functions.https.HttpsError("not-found", "Invite not found.");
     }
     const invitePre = invitePreSnap.data() as GameInviteV4;
+
+    // Conversation membership check depends on invite data
     await assertConversationMember(
       uid,
       invitePre.conversationId,
       invitePre.conversationScope,
     );
+    trace.mark("membership_checked");
 
-    const inviteRef = db.collection(COLLECTIONS.GAME_INVITES).doc(inviteId);
-
-    // Pre-fetch joiner profile outside transaction for lobby display
-    const joinerProfile = await getUserProfile(uid);
-
+    trace.mark("tx_start");
     const result = await db.runTransaction(async (tx) => {
       const snap = await tx.get(inviteRef);
       if (!snap.exists) {
@@ -175,21 +179,20 @@ export const joinInviteLobbyV4 = functions.https.onCall(
         return { alreadyJoined: false, role: "player" };
       }
     });
+    trace.mark("tx_committed");
 
-    // Notify host if a new player joined
+    // PERF: Fire notification async — don't block the join response.
     if (!result.alreadyJoined && result.role === "player") {
-      try {
-        const profile = joinerProfile;
-        await notifyPlayerJoinedLobby(
-          invitePre,
-          profile?.displayName ?? "Someone",
-        );
-      } catch (err) {
-        console.error("[gamesV4] Failed to notify lobby join:", err);
-      }
+      notifyPlayerJoinedLobby(
+        invitePre,
+        joinerProfile?.displayName ?? "Someone",
+      ).catch((err) =>
+        console.error("[gamesV4] Failed to notify lobby join:", err),
+      );
     }
 
     console.log(`[gamesV4] ${uid} joined invite ${inviteId} as ${result.role}`);
+    trace.end();
 
     return { success: true, role: result.role };
   },
@@ -303,12 +306,7 @@ export const updateLobbySettingsV4 = functions.https.onCall(
 export const startGameFromInviteV4 = functions.https.onCall(
   async (data, context) => {
     const uid = assertAuth(context);
-
-    // Rate-limit: 1 start per 2 seconds
-    const db0 = getDb();
-    await enforceCooldown(db0, uid, "startGameV4", COOLDOWNS.START_GAME);
-
-    console.log(`[gamesV4] startGameFromInviteV4 called by host ${uid}`);
+    const trace = startServerTrace("startGameV4", uid);
 
     const raw = data as Record<string, unknown>;
     const { inviteId } = raw as {
@@ -331,9 +329,14 @@ export const startGameFromInviteV4 = functions.https.onCall(
     const inviteRef = db.collection(COLLECTIONS.GAME_INVITES).doc(inviteId);
 
     // ─── Pre-read: fetch invite + profiles before transaction ──────
+    // PERF: Run cooldown + invite read in parallel
+    trace.mark("pre_reads_start");
+    const [, invitePreSnap] = await Promise.all([
+      enforceCooldown(db, uid, "startGameV4", COOLDOWNS.START_GAME),
+      inviteRef.get(),
+    ]);
+    trace.mark("pre_reads_done");
 
-    // Read the invite once outside the transaction for profile pre-fetch.
-    const invitePreSnap = await inviteRef.get();
     if (!invitePreSnap.exists) {
       throw new functions.https.HttpsError("not-found", "Invite not found.");
     }
@@ -373,6 +376,7 @@ export const startGameFromInviteV4 = functions.https.onCall(
 
     try {
       // ─── Transaction: validate + create session + update invite ──────
+      trace.mark("tx_start");
       const sessionId = await db.runTransaction(async (tx) => {
         const inviteSnap = await tx.get(inviteRef);
         if (!inviteSnap.exists) {
@@ -484,8 +488,6 @@ export const startGameFromInviteV4 = functions.https.onCall(
           spectatorUids: [...invite.spectatorIds],
         };
 
-        tx.set(sessionRef, session);
-
         // Create initial public state subcollection doc (adapter-driven)
         const publicStateRef = sessionRef
           .collection(COLLECTIONS.PUBLIC_STATE)
@@ -503,6 +505,22 @@ export const startGameFromInviteV4 = functions.https.onCall(
           );
           initialPublicState = initResult.publicState;
 
+          // If the adapter specifies a first-turn player (e.g. team-based
+          // games like Dead Drop where the active spymaster is determined
+          // by adapter logic, not by round-robin turnOrder), prefer it over
+          // the generic shuffled firstPlayer.
+          const adapterFirstPlayer = initialPublicState.currentTurnPlayerId as
+            | string
+            | undefined;
+          if (adapterFirstPlayer && adapterFirstPlayer !== firstPlayer) {
+            console.log(
+              `[gamesV4] Adapter overrides firstPlayer: ${firstPlayer} → ${adapterFirstPlayer} (game: ${invite.gameId})`,
+            );
+            session.currentTurnPlayerId = adapterFirstPlayer;
+            const patchIdx = session.turnOrder.indexOf(adapterFirstPlayer);
+            if (patchIdx !== -1) session.currentTurnIndex = patchIdx;
+          }
+
           // Write per-player private state docs if produced
           for (const [pUid, privState] of Object.entries(
             initResult.privateStateByPlayer,
@@ -513,6 +531,9 @@ export const startGameFromInviteV4 = functions.https.onCall(
             tx.set(privRef, privState);
           }
         }
+
+        // Write session AFTER adapter init so currentTurnPlayerId is correct
+        tx.set(sessionRef, session);
 
         tx.set(publicStateRef, {
           ...initialPublicState,
@@ -530,15 +551,19 @@ export const startGameFromInviteV4 = functions.https.onCall(
           updatedAt: now,
           "summary.phase": "active",
           "summary.turnPlayerId":
-            invite.runtimeType === "turnBased" ? firstPlayer : null,
+            invite.runtimeType === "turnBased"
+              ? session.currentTurnPlayerId
+              : null,
         });
 
         return sId;
       });
+      trace.mark("tx_committed");
 
       console.log(
         `[gamesV4] Game started: session ${sessionId} from invite ${inviteId} by host ${uid} (trace: ${startTraceId})`,
       );
+      trace.end();
 
       return { sessionId };
     } catch (err) {

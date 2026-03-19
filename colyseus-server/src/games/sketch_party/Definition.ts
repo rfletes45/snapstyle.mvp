@@ -183,7 +183,9 @@ export const SKETCH_PARTY_DEFINITION: RealtimeGameDefinition = {
   countdownSec: 0,
   tickRate: null,
   maxMatchDurationMs: null, // No hard match time limit (turn timer handles it)
-  postMatchDisposalDelayMs: 10_000,
+  // PERF: Reduced from 10_000. Clients call leave() on match_end,
+  // so the room only needs a brief grace period for slow connections.
+  postMatchDisposalDelayMs: 5_000,
   abandonmentGraceMs: 15_000,
 
   allowResign: false,

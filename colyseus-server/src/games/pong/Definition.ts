@@ -144,7 +144,9 @@ export const PONG_DEFINITION: RealtimeGameDefinition = {
   tickRate: 60,
   stateBroadcastHz: 20, // 20 full state_syncs/sec — enough for smooth client interpolation
   maxMatchDurationMs: 15 * 60 * 1000, // 15 minutes safety cap
-  postMatchDisposalDelayMs: 10_000,
+  // PERF: Reduced from 10_000. Clients call leave() on match_end,
+  // so the room only needs a brief grace period for slow connections.
+  postMatchDisposalDelayMs: 5_000,
   abandonmentGraceMs: 15_000,
 
   // Capabilities

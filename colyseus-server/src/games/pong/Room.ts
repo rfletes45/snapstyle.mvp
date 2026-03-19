@@ -48,9 +48,8 @@ const RALLY_SPEED_RAMP = 0.012;
 /** Maximum speed multiplier from rallying */
 const MAX_RALLY_MULTIPLIER = 1.6;
 
-const PADDLE_MAX_SPEED = 1.2; // units/sec
-const PADDLE_ACCEL = 8.0; // units/sec²
-const PADDLE_DECEL = 12.0; // units/sec²
+const PADDLE_MAX_SPEED = 1.8; // units/sec — tighter tracking
+const PADDLE_TRACKING_RATE = 25.0; // how fast paddle chases target (units/sec²)
 
 /** Durations (ms) */
 const SERVE_DELAY_MS = 1200;
@@ -565,24 +564,29 @@ export class PongRoom extends BaseRealtimeRoom {
       if (!p) continue;
 
       if (p.targetY !== null) {
-        // Move toward target
+        // Proportional tracking: move directly toward target at high rate.
+        // This removes the sluggish acceleration ramp and gives a tight,
+        // responsive feel under server authority.
         const diff = p.targetY - p.y;
-        const dir = Math.sign(diff);
 
-        if (Math.abs(diff) < 0.005) {
-          // Close enough — snap
+        if (Math.abs(diff) < 0.003) {
+          // Close enough — snap and zero velocity
           p.y = p.targetY;
           p.vy = 0;
         } else {
-          // Accelerate toward target
-          p.vy += dir * PADDLE_ACCEL * dt;
-          // Clamp speed
-          if (Math.abs(p.vy) > PADDLE_MAX_SPEED) {
-            p.vy = Math.sign(p.vy) * PADDLE_MAX_SPEED;
-          }
-          // Don't overshoot
+          // Velocity proportional to distance (critically damped spring feel)
+          const desiredVy = diff * PADDLE_TRACKING_RATE;
+          // Clamp to max speed
+          p.vy =
+            Math.abs(desiredVy) > PADDLE_MAX_SPEED
+              ? Math.sign(desiredVy) * PADDLE_MAX_SPEED
+              : desiredVy;
           const newY = p.y + p.vy * dt;
-          if ((dir > 0 && newY > p.targetY) || (dir < 0 && newY < p.targetY)) {
+          // Don't overshoot
+          if (
+            (diff > 0 && newY > p.targetY) ||
+            (diff < 0 && newY < p.targetY)
+          ) {
             p.y = p.targetY;
             p.vy = 0;
           } else {
@@ -590,15 +594,11 @@ export class PongRoom extends BaseRealtimeRoom {
           }
         }
       } else {
-        // Decelerate
+        // No target — coast to stop quickly
         if (Math.abs(p.vy) > 0.001) {
-          const decel = Math.sign(p.vy) * PADDLE_DECEL * dt;
-          if (Math.abs(decel) > Math.abs(p.vy)) {
-            p.vy = 0;
-          } else {
-            p.vy -= decel;
-          }
+          p.vy *= Math.max(0, 1 - 20.0 * dt); // fast exponential decay
           p.y += p.vy * dt;
+          if (Math.abs(p.vy) < 0.001) p.vy = 0;
         }
       }
 

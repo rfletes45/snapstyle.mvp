@@ -70,6 +70,7 @@ exports.LEADERBOARD_METRICS = {
     pong_game: "wins",
     knockout_game: "wins",
     dead_drop: "wins",
+    metro_magnate: "wins",
     // Default for unspecified games: "bestScore"
 };
 function getLeaderboardMetric(gameId) {

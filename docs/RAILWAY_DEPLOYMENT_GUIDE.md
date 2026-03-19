@@ -85,7 +85,7 @@ base64 -w0 < gamerapp-37e70-firebase-key.json
 **Windows PowerShell:**
 
 ```powershell
-[Convert]::ToBase64String([System.IO.File]::ReadAllBytes("gamerapp-37e70-firebase-key.json"))
+[Convert]::ToBase64String([System.IO.File]::ReadAllBytes("gamerapp-37e70-firebase-adminsdk-fbsvc-7c752df883.json"))
 ```
 
 Copy the output — you'll paste it as `FIREBASE_SERVICE_ACCOUNT_BASE64` in Railway.

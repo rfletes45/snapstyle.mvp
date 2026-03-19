@@ -206,24 +206,31 @@ export async function enforceCooldown(
     .collection("RateLimits")
     .doc(action);
 
-  // Atomic check-and-set via transaction to prevent double-submit (R4 fix)
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const now = Date.now();
+  // PERF: Non-transactional read + fire-and-forget write. The previous
+  // transaction-based approach added a full Firestore tx round-trip
+  // (~200-500ms) on every single callable. Since the main operation already
+  // has its own idempotency guard (e.g. participantIds.includes(uid)),
+  // a best-effort cooldown is sufficient to prevent rapid re-taps.
+  const snap = await ref.get();
+  const now = Date.now();
 
-    if (snap.exists) {
-      const lastMs = snap.data()?.lastAtMs ?? 0;
-      if (now - lastMs < cooldownMs) {
-        const retryAfterSec = Math.ceil((cooldownMs - (now - lastMs)) / 1000);
-        throw new functions.https.HttpsError(
-          "resource-exhausted",
-          `Too many requests. Try again in ${retryAfterSec}s.`,
-        );
-      }
+  if (snap.exists) {
+    const lastMs = snap.data()?.lastAtMs ?? 0;
+    if (now - lastMs < cooldownMs) {
+      const retryAfterSec = Math.ceil((cooldownMs - (now - lastMs)) / 1000);
+      throw new functions.https.HttpsError(
+        "resource-exhausted",
+        `Too many requests. Try again in ${retryAfterSec}s.`,
+      );
     }
+  }
 
-    tx.set(ref, { lastAtMs: Date.now() }, { merge: true });
-  });
+  // Stamp the cooldown non-blocking — don't hold up the response.
+  ref
+    .set({ lastAtMs: now }, { merge: true })
+    .catch((err) =>
+      console.warn(`[gamesV4] Cooldown stamp write failed for ${action}:`, err),
+    );
 }
 
 /** Pre-defined cooldowns for V4 actions (milliseconds). */

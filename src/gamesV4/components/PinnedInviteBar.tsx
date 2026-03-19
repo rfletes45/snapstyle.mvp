@@ -160,9 +160,17 @@ export function PinnedInviteBar({
           text: "Cancel Invite",
           style: "destructive",
           onPress: () => {
-            cancelGameInvite({ inviteId: invite.inviteId }).catch((err) =>
-              Alert.alert("Error", err?.message ?? "Failed to cancel invite."),
-            );
+            cancelGameInvite({ inviteId: invite.inviteId }).catch((err) => {
+              const msg = err?.message ?? "";
+              if (msg.includes("active") || msg.includes("resolved")) {
+                Alert.alert(
+                  "Can't Cancel",
+                  "This game has already started and can't be cancelled.",
+                );
+              } else {
+                Alert.alert("Error", msg || "Failed to cancel invite.");
+              }
+            });
           },
         });
       }

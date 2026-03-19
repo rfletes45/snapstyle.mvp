@@ -75,6 +75,8 @@ export default function GameLobbyScreenV4() {
     navReady,
     actionLoading,
     actionError,
+    isOptimisticallyJoined,
+    optimisticRole,
     joinAsPlayer,
     joinAsSpectator,
     leaveLobby,
@@ -90,9 +92,17 @@ export default function GameLobbyScreenV4() {
   const hadInvite = useRef(false);
   if (invite) hadInvite.current = true;
   const meta = invite ? GAME_METADATA[invite.gameId] : null;
-  const isParticipant = !!(uid && invite?.participantIds.includes(uid));
-  const isSpectator = !!(uid && invite?.spectatorIds.includes(uid));
-  const canJoin = !isParticipant && !isSpectator;
+  const isParticipant = !!(
+    uid &&
+    (invite?.participantIds.includes(uid) ||
+      (isOptimisticallyJoined && optimisticRole === "player"))
+  );
+  const isSpectator = !!(
+    uid &&
+    (invite?.spectatorIds.includes(uid) ||
+      (isOptimisticallyJoined && optimisticRole === "spectator"))
+  );
+  const canJoin = !isParticipant && !isSpectator && !isOptimisticallyJoined;
   const isGameImplemented = !!(
     invite && IMPLEMENTED_GAME_IDS.has(invite.gameId)
   );
@@ -132,6 +142,20 @@ export default function GameLobbyScreenV4() {
     return map;
   }, [invite?.spectatorSummaries]);
 
+  // Player list with optimistic entry appended when joining
+  const displayPlayerIds = useMemo(() => {
+    const ids = invite?.participantIds ?? [];
+    if (
+      uid &&
+      isOptimisticallyJoined &&
+      optimisticRole === "player" &&
+      !ids.includes(uid)
+    ) {
+      return [...ids, uid];
+    }
+    return ids;
+  }, [invite?.participantIds, uid, isOptimisticallyJoined, optimisticRole]);
+
   useEffect(() => {
     setCurrentGameInviteId(inviteId);
     return () => setCurrentGameInviteId(null);
@@ -147,6 +171,7 @@ export default function GameLobbyScreenV4() {
   // Auto-navigate to game screen when session becomes active
   useEffect(() => {
     if (navReady && session && invite) {
+      hasAutoNavigated.current = true;
       navigation.replace("GamePlayV4", {
         sessionId: session.sessionId,
         gameId: invite.gameId,
@@ -156,12 +181,36 @@ export default function GameLobbyScreenV4() {
 
   // Navigate to result if resolved (with session → game over screen)
   useEffect(() => {
+    if (hasAutoNavigated.current) return;
     if (invite?.status === "resolved" && invite.sessionId) {
+      hasAutoNavigated.current = true;
       navigation.replace("GameOverV4", {
         sessionId: invite.sessionId,
       });
     }
   }, [invite?.status, invite?.sessionId, navigation]);
+
+  // ── Game started without us detection ──────────────────────────────
+  // If the invite transitions to "active" but we're NOT a participant
+  // (race condition: host started before our join completed), show a
+  // message and navigate back so the user isn't stuck.
+  useEffect(() => {
+    if (hasAutoNavigated.current) return;
+    if (!invite || !uid) return;
+    if (
+      invite.status === "active" &&
+      !invite.participantIds.includes(uid) &&
+      !invite.spectatorIds.includes(uid) &&
+      !isOptimisticallyJoined
+    ) {
+      hasAutoNavigated.current = true;
+      Alert.alert(
+        "Game Already Started",
+        "The host started the game before you could join. Try asking for a new invite.",
+        [{ text: "OK", onPress: () => navigation.goBack() }],
+      );
+    }
+  }, [invite, uid, navigation, isOptimisticallyJoined]);
 
   // ── Cancelled/deleted invite detection ─────────────────────────────
   // If the invite disappears (hard-deleted) or becomes resolved without
@@ -285,6 +334,7 @@ export default function GameLobbyScreenV4() {
 
   const colors = theme.colors;
 
+  // Loading: invite not yet loaded
   if (!invite) {
     return (
       <SafeAreaView
@@ -302,6 +352,30 @@ export default function GameLobbyScreenV4() {
             ]}
           >
             Loading lobby...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Transitioning: game started and we're a participant, waiting for session to load
+  if (isStarted && (isParticipant || isSpectator) && !navReady) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.container,
+          { backgroundColor: theme.isDark ? "#000" : colors.background },
+        ]}
+      >
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text
+            style={[
+              styles.loadingText,
+              { color: theme.isDark ? "#AAA" : "#666" },
+            ]}
+          >
+            Joining game...
           </Text>
         </View>
       </SafeAreaView>
@@ -388,13 +462,22 @@ export default function GameLobbyScreenV4() {
         PLAYERS
       </Text>
       <FlatList
-        data={invite.participantIds}
+        data={displayPlayerIds}
         keyExtractor={(item) => item}
         renderItem={({ item: playerId }) => {
+          const isOptimisticEntry =
+            isOptimisticallyJoined &&
+            playerId === uid &&
+            !invite.participantIds.includes(playerId);
           const summary = participantMap.get(playerId);
-          const displayName =
-            playerId === uid ? "You" : (summary?.displayName ?? "Player");
-          const pfpUrl = summary?.profilePictureUrl;
+          const displayName = isOptimisticEntry
+            ? "You (joining...)"
+            : playerId === uid
+              ? "You"
+              : (summary?.displayName ?? "Player");
+          const pfpUrl = isOptimisticEntry
+            ? null
+            : (summary?.profilePictureUrl ?? null);
 
           return (
             <View
@@ -403,12 +486,13 @@ export default function GameLobbyScreenV4() {
                 {
                   backgroundColor: theme.isDark ? "#1C1C1E" : "#FFF",
                   borderBottomColor: theme.isDark ? "#333" : "#E0E0E0",
+                  opacity: isOptimisticEntry ? 0.6 : 1,
                 },
               ]}
             >
               <UserAvatar
                 profilePictureUrl={pfpUrl}
-                displayName={summary?.displayName}
+                displayName={isOptimisticEntry ? "You" : summary?.displayName}
                 uid={playerId}
                 size={32}
               />
@@ -584,10 +668,8 @@ export default function GameLobbyScreenV4() {
             readOnly={!isHost}
             externalValues={
               !isHost
-                ? (((invite as unknown as Record<string, unknown>).lobbySettings as Record<
-                    string,
-                    unknown
-                  >) ?? undefined)
+                ? (((invite as unknown as Record<string, unknown>)
+                    .lobbySettings as Record<string, unknown>) ?? undefined)
                 : undefined
             }
           />

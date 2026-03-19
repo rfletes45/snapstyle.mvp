@@ -129,6 +129,11 @@ let _boardCache: {
 function assignTeams(
   players: Array<{ uid: string; slotIndex: number }>,
 ): TeamAssignment[] {
+  if (players.length < 4) {
+    throw new Error(
+      `Dead Drop requires exactly 4 players, got ${players.length}.`,
+    );
+  }
   // Slot 0: Red Spymaster, Slot 1: Red Operative
   // Slot 2: Blue Spymaster, Slot 3: Blue Operative
   const sorted = [...players].sort((a, b) => a.slotIndex - b.slotIndex);
@@ -203,6 +208,7 @@ const deadDropAdapter: GameAdapterV4 = {
       moveCount: 0,
       nextClueId: 1,
       settings: s,
+      revealedKeyMap: null,
     };
 
     return state as unknown as Record<string, unknown>;
@@ -652,6 +658,7 @@ function handleGuessWord(
       winnerTeam: guessResult.winnerTeam!,
       endReason: guessResult.endReason!,
       moveCount: state.moveCount + 1,
+      revealedKeyMap: spymasterPriv?.keyMap ?? null,
     };
     return {
       ok: true,

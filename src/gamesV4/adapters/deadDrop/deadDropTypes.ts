@@ -143,6 +143,8 @@ export interface DeadDropPublicState {
   nextClueId: number;
   /** Settings snapshot for UI rendering. */
   settings: DeadDropSettings;
+  /** Full key map revealed at game over so all players can see the board. */
+  revealedKeyMap: Record<number, CardAlignment> | null;
 }
 
 // =============================================================================

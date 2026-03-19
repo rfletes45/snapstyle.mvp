@@ -48,6 +48,7 @@ const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const helpers_1 = require("./helpers");
 const notifications_1 = require("./notifications");
+const perfTrace_1 = require("./perfTrace");
 const types_1 = require("./types");
 const validation_1 = require("./validation");
 const GAME_META = {
@@ -201,6 +202,12 @@ const GAME_META = {
         maxPlayers: 4,
         supportsSpectate: true,
     },
+    metro_magnate: {
+        runtimeType: "turnBased",
+        minPlayers: 2,
+        maxPlayers: 6,
+        supportsSpectate: true,
+    },
 };
 function validateInput(data) {
     const d = data;
@@ -243,14 +250,18 @@ function validateInput(data) {
 // =============================================================================
 exports.createGameInviteV4 = functions.https.onCall(async (data, context) => {
     const uid = (0, helpers_1.assertAuth)(context);
-    // Rate-limit: 1 invite per 3 seconds
+    const trace = (0, perfTrace_1.startServerTrace)("createInviteV4", uid);
     const db = (0, helpers_1.getDb)();
-    await (0, validation_1.enforceCooldown)(db, uid, "createInviteV4", validation_1.COOLDOWNS.CREATE_INVITE);
     const input = validateInput(data);
-    // Verify membership
-    await (0, helpers_1.assertConversationMember)(uid, input.conversationId, input.conversationScope);
-    // Fetch creator profile
-    const profile = await (0, helpers_1.getUserProfile)(uid);
+    // PERF: Run cooldown, conversation membership, and profile fetch in
+    // parallel. These are fully independent reads — no serial dependency.
+    trace.mark("pre_reads_start");
+    const [, , profile] = await Promise.all([
+        (0, validation_1.enforceCooldown)(db, uid, "createInviteV4", validation_1.COOLDOWNS.CREATE_INVITE),
+        (0, helpers_1.assertConversationMember)(uid, input.conversationId, input.conversationScope),
+        (0, helpers_1.getUserProfile)(uid),
+    ]);
+    trace.mark("pre_reads_done");
     const displayName = profile?.displayName ?? "Unknown";
     // Generate IDs
     const inviteRef = db.collection(types_1.COLLECTIONS.GAME_INVITES).doc();
@@ -298,6 +309,7 @@ exports.createGameInviteV4 = functions.https.onCall(async (data, context) => {
     // Write invite doc AND pin to conversation atomically (R3 fix)
     const convCollection = input.conversationScope === "dm" ? "Chats" : "Groups";
     const convRef = db.collection(convCollection).doc(input.conversationId);
+    trace.mark("tx_start");
     await db.runTransaction(async (tx) => {
         const convSnap = await tx.get(convRef);
         const current = convSnap.data()?.[types_1.PINNED_INVITE_IDS_FIELD] || [];
@@ -311,16 +323,15 @@ exports.createGameInviteV4 = functions.https.onCall(async (data, context) => {
         tx.set(inviteRef, invite);
         tx.update(convRef, { [types_1.PINNED_INVITE_IDS_FIELD]: updated });
     });
-    // Fan-out notifications to conversation members
-    try {
-        const memberIds = await (0, helpers_1.getConversationMemberIds)(input.conversationId, input.conversationScope);
-        await (0, notifications_1.notifyInviteCreated)(invite, displayName, memberIds);
-    }
-    catch (err) {
-        console.error("[gamesV4] Failed to send invite notifications:", err);
-    }
+    trace.mark("tx_committed");
+    // PERF: Fan-out notifications fire-and-forget — don't block the response.
+    // Notifications are non-critical for the invite creation success path.
+    (0, helpers_1.getConversationMemberIds)(input.conversationId, input.conversationScope)
+        .then((memberIds) => (0, notifications_1.notifyInviteCreated)(invite, displayName, memberIds))
+        .catch((err) => console.error("[gamesV4] Failed to send invite notifications:", err));
     console.log(`[gamesV4] Invite ${inviteId} created by ${uid} for ${input.gameId} ` +
         `in ${input.conversationScope}:${input.conversationId}`);
+    trace.end();
     return { inviteId };
 });
 //# sourceMappingURL=invites.js.map

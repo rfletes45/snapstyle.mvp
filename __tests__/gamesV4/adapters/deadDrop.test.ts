@@ -150,6 +150,7 @@ describe("Dead Drop — Initial State", () => {
     expect(pub.winnerTeam).toBeNull();
     expect(pub.moveCount).toBe(0);
     expect(pub.redRemaining + pub.blueRemaining).toBe(17);
+    expect(pub.revealedKeyMap).toBeNull();
   });
 
   test("current turn points to starting team spymaster", () => {
@@ -558,5 +559,278 @@ describe("Dead Drop Adapter — Compute Outcome", () => {
       (e: { uid: string }) => e.uid === "p2",
     )!;
     expect(p2Entry.placement).toBe(2);
+  });
+});
+
+// =============================================================================
+// Defensive Guards
+// =============================================================================
+
+describe("Dead Drop — Defensive Guards", () => {
+  test("resolveGuess returns neutral for undefined keyMap entry", () => {
+    const keyMap: Record<number, CardAlignment> = { 0: "red" };
+    const r = resolveGuess(99, "red", keyMap, 3, 2);
+    expect(r.outcome).toBe("neutral");
+    expect(r.alignment).toBe("neutral");
+    expect(r.turnEnds).toBe(true);
+    expect(r.gameEnds).toBe(false);
+  });
+
+  test("assignTeams throws for fewer than 4 players", () => {
+    const twoPlayers = [
+      { uid: "p0", slotIndex: 0 },
+      { uid: "p1", slotIndex: 1 },
+    ];
+    expect(() =>
+      deadDropAdapter.createInitialPublicState(
+        twoPlayers,
+        makeSettings() as unknown as Record<string, unknown>,
+      ),
+    ).toThrow("requires exactly 4 players");
+  });
+});
+
+// =============================================================================
+// Game Over: revealedKeyMap + board reveal
+// =============================================================================
+
+describe("Dead Drop — Game Over Board Reveal", () => {
+  test("game-ending guess populates revealedKeyMap", () => {
+    const { pub, priv } = createTestGame();
+    const state = pub;
+    const privMap = priv as unknown as Record<string, Record<string, unknown>>;
+    const sm = state.teams.find(
+      (t) => t.team === state.turnTeam && t.role === "spymaster",
+    )!;
+    const op = state.teams.find(
+      (t) => t.team === state.turnTeam && t.role === "operative",
+    )!;
+
+    // Submit clue
+    const clueResult = deadDropAdapter.validateMove!(
+      state as unknown as Record<string, unknown>,
+      privMap,
+      { action: "submit_clue", word: "FORTRESS", count: 9 },
+      makeCtx(sm.uid, [sm.uid], 0),
+    );
+    expect(clueResult.ok).toBe(true);
+    let currentState = (
+      clueResult as { ok: true; nextPublicState: Record<string, unknown> }
+    ).nextPublicState as unknown as DeadDropPublicState;
+
+    // Get the spymaster's key map to find our team's cards
+    const smPriv = privMap[sm.uid] as unknown as DeadDropPrivateState;
+    const teamCards = currentState.cards.filter(
+      (c) => smPriv.keyMap[c.id] === state.turnTeam && !c.revealed,
+    );
+
+    // Guess all team cards to trigger game end
+    for (let i = 0; i < teamCards.length; i++) {
+      const guessResult = deadDropAdapter.validateMove!(
+        currentState as unknown as Record<string, unknown>,
+        privMap,
+        { action: "guess_word", cardId: teamCards[i].id },
+        makeCtx(op.uid, [op.uid], 0),
+      );
+      expect(guessResult.ok).toBe(true);
+      if (guessResult.ok && guessResult.nextPublicState) {
+        currentState =
+          guessResult.nextPublicState as unknown as DeadDropPublicState;
+      }
+    }
+
+    expect(currentState.phase).toBe("game_over");
+    expect(currentState.revealedKeyMap).toBeDefined();
+    expect(currentState.revealedKeyMap).not.toBeNull();
+    expect(Object.keys(currentState.revealedKeyMap!)).toHaveLength(25);
+  });
+});
+
+// =============================================================================
+// Multi-Guess Exhaustion
+// =============================================================================
+
+describe("Dead Drop — Guess Exhaustion", () => {
+  test("turn auto-ends when all guesses used", () => {
+    const { pub, priv } = createTestGame();
+    const state = pub;
+    const privMap = priv as unknown as Record<string, Record<string, unknown>>;
+    const sm = state.teams.find(
+      (t) => t.team === state.turnTeam && t.role === "spymaster",
+    )!;
+    const op = state.teams.find(
+      (t) => t.team === state.turnTeam && t.role === "operative",
+    )!;
+    const smPriv = privMap[sm.uid] as unknown as DeadDropPrivateState;
+
+    // Submit clue with count=1 (maxGuesses = 2 with bonus)
+    const clueResult = deadDropAdapter.validateMove!(
+      state as unknown as Record<string, unknown>,
+      privMap,
+      { action: "submit_clue", word: "FORTRESS", count: 1 },
+      makeCtx(sm.uid, [sm.uid], 0),
+    );
+    expect(clueResult.ok).toBe(true);
+    let currentState = (
+      clueResult as { ok: true; nextPublicState: Record<string, unknown> }
+    ).nextPublicState as unknown as DeadDropPublicState;
+
+    expect(currentState.maxGuessesThisTurn).toBe(2); // 1 + 1 bonus
+
+    // Find 2 correct team cards
+    const teamCards = currentState.cards.filter(
+      (c) => smPriv.keyMap[c.id] === state.turnTeam && !c.revealed,
+    );
+
+    // Guess first (should continue)
+    const g1 = deadDropAdapter.validateMove!(
+      currentState as unknown as Record<string, unknown>,
+      privMap,
+      { action: "guess_word", cardId: teamCards[0].id },
+      makeCtx(op.uid, [op.uid], 0),
+    );
+    expect(g1.ok).toBe(true);
+    if (g1.ok && g1.nextPublicState) {
+      currentState = g1.nextPublicState as unknown as DeadDropPublicState;
+    }
+    // After 1 correct guess, phase should still be guessing
+    expect(currentState.phase).toBe("guessing");
+
+    // Guess second (should auto-end turn since maxGuesses=2 reached)
+    const g2 = deadDropAdapter.validateMove!(
+      currentState as unknown as Record<string, unknown>,
+      privMap,
+      { action: "guess_word", cardId: teamCards[1].id },
+      makeCtx(op.uid, [op.uid], 0),
+    );
+    expect(g2.ok).toBe(true);
+    if (g2.ok && g2.nextPublicState) {
+      currentState = g2.nextPublicState as unknown as DeadDropPublicState;
+    }
+    // Turn should have auto-ended — either switched teams or game still going
+    // (could be game_over if those were the last cards)
+    if (currentState.phase !== "game_over") {
+      expect(currentState.phase).toBe("clue_input");
+      expect(currentState.turnTeam).not.toBe(state.turnTeam);
+    }
+  });
+});
+
+// =============================================================================
+// Performance Metrics Extraction
+// =============================================================================
+
+describe("Dead Drop — Performance Metrics", () => {
+  test("extractPerformanceMetrics returns per-player data", () => {
+    const pub: Partial<DeadDropPublicState> = {
+      startingTeam: "red",
+      turnNumber: 5,
+      winnerTeam: "red",
+      endReason: "all_agents_found",
+      clueHistory: [
+        {
+          clueId: 1,
+          team: "red",
+          spymasterUid: "p0",
+          word: "TEST",
+          count: 2,
+          turnNumber: 1,
+          timestamp: 0,
+        },
+      ],
+      guessHistory: [
+        {
+          cardId: 0,
+          word: "WORD",
+          guessedBy: "p1",
+          result: "correct",
+          team: "red",
+          turnNumber: 1,
+          clueId: 1,
+          timestamp: 0,
+        },
+      ],
+      teams: [
+        { uid: "p0", team: "red", role: "spymaster" },
+        { uid: "p1", team: "red", role: "operative" },
+        { uid: "p2", team: "blue", role: "spymaster" },
+        { uid: "p3", team: "blue", role: "operative" },
+      ],
+    };
+
+    const result = deadDropAdapter.extractPerformanceMetrics!(
+      pub as unknown as Record<string, unknown>,
+      PLAYERS_4,
+    );
+
+    expect(result.endReason).toBe("all_agents_found");
+    expect(result.winnerTeam).toBe("red");
+    expect(result.turnsElapsed).toBe(5);
+    const perPlayer = result.perPlayer as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(perPlayer["p0"].won).toBe(true);
+    expect(perPlayer["p0"].wonAsSpymaster).toBe(true);
+    expect(perPlayer["p0"].cluesGiven).toBe(1);
+    expect(perPlayer["p1"].won).toBe(true);
+    expect(perPlayer["p1"].wonAsOperative).toBe(true);
+    expect(perPlayer["p1"].correctGuesses).toBe(1);
+    expect(perPlayer["p2"].won).toBe(false);
+    expect(perPlayer["p3"].won).toBe(false);
+  });
+});
+
+// =============================================================================
+// Settings Validation
+// =============================================================================
+
+describe("Dead Drop — Settings Validation", () => {
+  test("validates known settings", () => {
+    const result = deadDropAdapter.validateSettings!({
+      clueLegality: "tournament",
+      wordPack: "hard",
+      turnTimer: "24h",
+      rematchSeats: "shuffle",
+      allowSpectators: false,
+    });
+    expect(result.clueLegality).toBe("tournament");
+    expect(result.wordPack).toBe("hard");
+    expect(result.turnTimer).toBe("24h");
+    expect(result.rematchSeats).toBe("shuffle");
+    expect(result.allowSpectators).toBe(false);
+  });
+
+  test("rejects invalid setting values", () => {
+    const result = deadDropAdapter.validateSettings!({
+      clueLegality: "invalid",
+      wordPack: "xxx",
+      turnTimer: "5min",
+    });
+    expect(result.clueLegality).toBeUndefined();
+    expect(result.wordPack).toBeUndefined();
+    expect(result.turnTimer).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// Spectator View
+// =============================================================================
+
+describe("Dead Drop — Spectator View", () => {
+  test("spectator view returns public state without key info", () => {
+    const { pub } = createTestGame();
+    const spectatorView = deadDropAdapter.getSpectatorView!(
+      pub as unknown as Record<string, unknown>,
+    ) as unknown as DeadDropPublicState;
+    // Spectator view should be the public state (no keyMap in public)
+    expect(spectatorView.cards).toHaveLength(25);
+    for (const card of spectatorView.cards) {
+      if (!card.revealed) {
+        expect(card.revealedAs).toBeNull();
+      }
+    }
+    // Confirm no revealedKeyMap leak before game over
+    expect(spectatorView.revealedKeyMap).toBeNull();
   });
 });

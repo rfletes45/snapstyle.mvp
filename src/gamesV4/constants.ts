@@ -363,6 +363,15 @@ export const GAME_METADATA: Record<GameId, GameMetadata> = {
     supportsSpectate: true,
     icon: "shield-key-outline",
   },
+  metro_magnate: {
+    gameId: "metro_magnate",
+    displayName: "Metro Magnate",
+    runtimeType: "turnBased",
+    minPlayers: 2,
+    maxPlayers: 6,
+    supportsSpectate: true,
+    icon: "city-variant-outline",
+  },
 };
 
 // =============================================================================
@@ -391,6 +400,7 @@ export const IMPLEMENTED_GAME_IDS = new Set<GameId>([
   "pong_game",
   "knockout_game",
   "dead_drop",
+  "metro_magnate",
   // "minigolf_duels", // disabled — not working, deferred until ready
 ]);
 
@@ -629,6 +639,11 @@ export const SCOREBOARD_DESCRIPTORS: Partial<
     formatScore: (s) => (s === 1 ? "Win" : s === 0 ? "Loss" : "Draw"),
     sortDirection: "desc",
   },
+  metro_magnate: {
+    title: "FINAL STANDING",
+    formatScore: (s) => (s === 1 ? "Win" : `#${s}`),
+    sortDirection: "desc",
+  },
 };
 
 // =============================================================================
@@ -771,6 +786,12 @@ export const LEADERBOARD_DESCRIPTORS: Partial<
     sortDirection: "desc",
     formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
   },
+  metro_magnate: {
+    label: "Wins",
+    metric: "wins",
+    sortDirection: "desc",
+    formatValue: (v) => `${v} win${v !== 1 ? "s" : ""}`,
+  },
 };
 
 // =============================================================================
@@ -902,5 +923,12 @@ export const GAME_DESCRIPTIONS: Partial<Record<GameId, GameDescription>> = {
     howToPlay:
       "Four players split into two teams: Red and Blue. Each team has a Spymaster and an Operative. 25 code words are laid out in a 5×5 grid. Spymasters can see the secret key showing which words belong to which team, which are neutral bystanders, and which is the deadly Assassin. On your team's turn, the Spymaster gives a one-word clue and a number indicating how many words relate to the clue. The Operative then taps words to guess. Correct guesses reveal your agent and let you keep guessing. Hit a neutral bystander or enemy agent and your turn ends. Hit the Assassin and your team loses instantly. First team to uncover all their agents wins!",
     tips: "As Spymaster: look for creative links between multiple words and avoid clues that could lead to the Assassin. As Operative: trust your Spymaster's intent, consider previous clues, and don't be afraid to stop guessing when unsure. The bonus guess lets you catch up on earlier missed connections.",
+  },
+  metro_magnate: {
+    shortDescription:
+      "A strategic city-building board game for 2–6 players. Acquire districts, build improvements, collect rent, and become the wealthiest magnate in the metro.",
+    howToPlay:
+      "Roll two dice and move around the 36-space board. Land on an unowned district, transit line, or service node to buy it — or let it go to auction. Collect rent when opponents land on your properties. Build improvements on districts you fully control (all 3 in a sector) to increase rent. Pass Central Terminal to collect your salary. Avoid Inspection Hold, manage your cash, and trade with rivals. The last player standing — or the wealthiest when time expires — wins!",
+    tips: "Controlling a full sector unlocks improvements and doubles base rent. Transit lines scale with quantity — four lines means serious income. Don't overextend on improvements if you can't cover rent elsewhere. Use auctions to snag bargains, and trade strategically to complete sectors before your opponents do.",
   },
 };

@@ -41,6 +41,46 @@ export interface JoinOptions {
 // =============================================================================
 
 /**
+ * Per-session Firestore cache. When multiple players join the same room
+ * within a short window (typical for match start), the second–Nth players
+ * reuse the cached session doc instead of doing a redundant Firestore read.
+ * Cache entries expire after 30 s — long enough for a full roster join,
+ * short enough that a status change won't be stale.
+ */
+const sessionCache = new Map<
+  string,
+  { data: Record<string, unknown>; expiresAt: number }
+>();
+const SESSION_CACHE_TTL_MS = 30_000;
+
+function getCachedSession(sessionId: string): Record<string, unknown> | null {
+  const entry = sessionCache.get(sessionId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    sessionCache.delete(sessionId);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedSession(
+  sessionId: string,
+  data: Record<string, unknown>,
+): void {
+  sessionCache.set(sessionId, {
+    data,
+    expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+  });
+  // Evict old entries if cache grows unbounded (unlikely in practice)
+  if (sessionCache.size > 200) {
+    const now = Date.now();
+    for (const [key, val] of sessionCache) {
+      if (now > val.expiresAt) sessionCache.delete(key);
+    }
+  }
+}
+
+/**
  * Verify a player's Firebase auth token and session membership.
  * Throws descriptive errors on failure.
  *
@@ -115,21 +155,27 @@ export async function verifyJoin(
   }
   console.log(`${tag} Token verified for uid=${uid}`);
 
-  // ── Firestore session verification ──────────────────────────────────
-  const db = getFirebaseDb();
-  const sessionSnap = await db
-    .collection("GameSessionsV4")
-    .doc(expectedSessionId)
-    .get();
+  // ── Firestore session verification (with short-lived cache) ──────
+  // PERF: When all players join within seconds, avoid N identical reads
+  // for the same session doc. Cache is TTL-bounded and read-only.
+  let sessionData = getCachedSession(expectedSessionId);
+  if (!sessionData) {
+    const db = getFirebaseDb();
+    const sessionSnap = await db
+      .collection("GameSessionsV4")
+      .doc(expectedSessionId)
+      .get();
 
-  if (!sessionSnap.exists) {
-    console.error(
-      `${tag} REJECTED — session doc not found: ${expectedSessionId}`,
-    );
-    throw new Error("Game session not found.");
+    if (!sessionSnap.exists) {
+      console.error(
+        `${tag} REJECTED — session doc not found: ${expectedSessionId}`,
+      );
+      throw new Error("Game session not found.");
+    }
+
+    sessionData = sessionSnap.data() as Record<string, unknown>;
+    setCachedSession(expectedSessionId, sessionData);
   }
-
-  const sessionData = sessionSnap.data() as Record<string, unknown>;
 
   // Verify game ID
   if (sessionData.gameId !== expectedGameId) {

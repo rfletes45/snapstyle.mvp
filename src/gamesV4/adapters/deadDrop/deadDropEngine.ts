@@ -300,6 +300,16 @@ export function resolveGuess(
 ): GuessResult {
   const alignment = keyMap[cardId];
 
+  if (alignment === undefined) {
+    // Defensive: cardId not in keyMap — treat as neutral to avoid silent misclassification
+    return {
+      alignment: "neutral",
+      outcome: "neutral",
+      turnEnds: true,
+      gameEnds: false,
+    };
+  }
+
   if (alignment === guessingTeam) {
     // Correct — reveal team's agent
     const newRemaining =
@@ -392,9 +402,12 @@ export function nextTurnState(
 } {
   const nextTeam = oppositeTeam(currentTeam);
   const sm = getSpymaster(teams, nextTeam);
+  if (!sm) {
+    throw new Error(`Dead Drop: no spymaster found for team "${nextTeam}".`);
+  }
   return {
     turnTeam: nextTeam,
-    currentTurnPlayerId: sm!.uid,
+    currentTurnPlayerId: sm.uid,
     currentTurnRole: "spymaster",
     phase: "clue_input",
   };

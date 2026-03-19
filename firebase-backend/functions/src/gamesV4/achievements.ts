@@ -102,6 +102,8 @@ interface EvaluationContext {
   pbStats: { totalPlays: number; totalWins: number } | null;
   /** Global stats from Users/{uid}/UserStatsCache/stats. */
   globalStats: { gamesPlayed: number; gamesWon: number } | null;
+  /** Set of achievement types already earned by this player. */
+  earnedAchievements: Set<string>;
 }
 
 // =============================================================================
@@ -247,6 +249,13 @@ export const ACHIEVEMENT_SECTIONS: AchievementSectionDef[] = [
     description: "Give clever clues, guess right, and outsmart the enemy team",
     icon: "🕵️",
     sectionBadgeId: "section_dead_drop",
+  },
+  {
+    sectionId: "metro_magnate",
+    name: "Metro Magnate",
+    description: "Build your property empire and bankrupt the competition",
+    icon: "🏙️",
+    sectionBadgeId: "section_metro_magnate",
   },
   // General game milestones
   {
@@ -3037,9 +3046,6 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
     difficulty: "medium",
     tokenReward: 20,
     evaluate: (ctx) => {
-      // This is checked per-game, so only fires when the second role win happens.
-      // The pipeline re-evaluates already-earned checks; we rely on the pair of
-      // dd_win_as_spymaster + dd_win_as_operative both being present already.
       if (ctx.gameId !== "dead_drop") return false;
       const me = (
         ctx.performanceMetrics?.perPlayer as Record<
@@ -3047,8 +3053,16 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
           Record<string, unknown>
         >
       )?.[ctx.uid];
-      if (!me) return false;
-      return me.won === true; // Will be granted once both role wins exist
+      if (!me || !me.won) return false;
+      // Check if the other role's win achievement is already earned
+      // (this current game provides one role win, the other must exist)
+      const hasSpymasterWin =
+        ctx.earnedAchievements.has("dd_win_as_spymaster") ||
+        me.wonAsSpymaster === true;
+      const hasOperativeWin =
+        ctx.earnedAchievements.has("dd_win_as_operative") ||
+        me.wonAsOperative === true;
+      return hasSpymasterWin && hasOperativeWin;
     },
   },
   {
@@ -3175,6 +3189,236 @@ const GAME_ACHIEVEMENTS: AchievementDef[] = [
       return (ctx.pbStats?.totalWins ?? 0) >= 50;
     },
   },
+  // ── Metro Magnate ────────────────────────────────────────────────────────
+  {
+    type: "mm_first_game",
+    name: "Ground Breaking",
+    description: "Play your first Metro Magnate game",
+    sectionId: "metro_magnate",
+    difficulty: "easy",
+    tokenReward: 5,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) >= 1;
+    },
+  },
+  {
+    type: "mm_first_win",
+    name: "Top of the Market",
+    description: "Win your first Metro Magnate game",
+    sectionId: "metro_magnate",
+    difficulty: "easy",
+    tokenReward: 10,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 1;
+    },
+  },
+  {
+    type: "mm_own_full_sector",
+    name: "Sector Monopoly",
+    description: "Own all 3 districts in a sector in a single game",
+    sectionId: "metro_magnate",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.sectorsCompleted as number) ?? 0) >= 1;
+    },
+  },
+  {
+    type: "mm_build_tower",
+    name: "Skyline Builder",
+    description: "Build a Tower (max improvement) in a single game",
+    sectionId: "metro_magnate",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.towersBuilt as number) ?? 0) >= 1;
+    },
+  },
+  {
+    type: "mm_transit_tycoon",
+    name: "Transit Tycoon",
+    description: "Own all 4 Transit Lines in a single game",
+    sectionId: "metro_magnate",
+    difficulty: "hard",
+    tokenReward: 35,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.transitLinesOwned as number) ?? 0) >= 4;
+    },
+  },
+  {
+    type: "mm_utility_king",
+    name: "Utility King",
+    description: "Own both Service Nodes in a single game",
+    sectionId: "metro_magnate",
+    difficulty: "medium",
+    tokenReward: 20,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.serviceNodesOwned as number) ?? 0) >= 2;
+    },
+  },
+  {
+    type: "mm_high_roller",
+    name: "High Roller",
+    description: "Reach a net worth of 5000 or more in a single game",
+    sectionId: "metro_magnate",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.netWorth as number) ?? 0) >= 5000;
+    },
+  },
+  {
+    type: "mm_monopolist",
+    name: "Monopolist",
+    description: "Complete 2 or more sectors in a single game",
+    sectionId: "metro_magnate",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.sectorsCompleted as number) ?? 0) >= 2;
+    },
+  },
+  {
+    type: "mm_express_win",
+    name: "Express Victory",
+    description: "Win a game in Express mode",
+    sectionId: "metro_magnate",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      return ctx.performanceMetrics?.mode === "express";
+    },
+  },
+  {
+    type: "mm_clean_books",
+    name: "Clean Books",
+    description: "Win without any mortgaged properties",
+    sectionId: "metro_magnate",
+    difficulty: "hard",
+    tokenReward: 30,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      if (!ctx.winnerIds.includes(ctx.uid)) return false;
+      const pp = (
+        ctx.performanceMetrics?.perPlayer as
+          | Record<string, Record<string, unknown>>
+          | undefined
+      )?.[ctx.uid];
+      return ((pp?.mortgagedCount as number) ?? 0) === 0;
+    },
+  },
+  {
+    type: "mm_win_5",
+    name: "District Mogul",
+    description: "Win 5 Metro Magnate games",
+    sectionId: "metro_magnate",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 5;
+    },
+  },
+  {
+    type: "mm_win_10",
+    name: "Transit Baron",
+    description: "Win 10 Metro Magnate games",
+    sectionId: "metro_magnate",
+    difficulty: "hard",
+    tokenReward: 40,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 10;
+    },
+  },
+  {
+    type: "mm_play_20",
+    name: "City Planner",
+    description: "Play 20 Metro Magnate games",
+    sectionId: "metro_magnate",
+    difficulty: "medium",
+    tokenReward: 25,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) >= 20;
+    },
+  },
+  {
+    type: "mm_win_25",
+    name: "Metro Tycoon",
+    description: "Win 25 Metro Magnate games",
+    sectionId: "metro_magnate",
+    difficulty: "expert",
+    tokenReward: 50,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 25;
+    },
+  },
+  {
+    type: "mm_play_50",
+    name: "Urban Veteran",
+    description: "Play 50 Metro Magnate games",
+    sectionId: "metro_magnate",
+    difficulty: "hard",
+    tokenReward: 40,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalPlays ?? 0) >= 50;
+    },
+  },
+  {
+    type: "mm_win_50",
+    name: "Grand Magnate",
+    description: "Win 50 Metro Magnate games",
+    sectionId: "metro_magnate",
+    difficulty: "legendary",
+    tokenReward: 100,
+    evaluate: (ctx) => {
+      if (ctx.gameId !== "metro_magnate") return false;
+      return (ctx.pbStats?.totalWins ?? 0) >= 50;
+    },
+  },
 ];
 
 // =============================================================================
@@ -3289,6 +3533,7 @@ export async function evaluateAchievementsV4(
       performanceMetrics: result.performanceMetrics,
       pbStats,
       globalStats,
+      earnedAchievements: earnedSet,
     };
 
     // Evaluate each achievement definition

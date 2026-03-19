@@ -7,7 +7,12 @@
  */
 
 import { notifyUser } from "../notificationCenter";
-import type { GameId, GameInviteV4, GameResultV4, GameSessionV4 } from "./types";
+import type {
+  GameId,
+  GameInviteV4,
+  GameResultV4,
+  GameSessionV4,
+} from "./types";
 
 const GAME_DISPLAY_NAMES: Record<GameId, string> = {
   bounce_blitz: "Bounce Blitz",
@@ -35,6 +40,7 @@ const GAME_DISPLAY_NAMES: Record<GameId, string> = {
   solitaire_klondike: "Solitaire",
   hex: "Hex",
   dead_drop: "Dead Drop",
+  metro_magnate: "Metro Magnate",
 };
 
 function gameName(gameId: GameId): string {

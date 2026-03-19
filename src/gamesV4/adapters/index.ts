@@ -45,6 +45,7 @@ import "./deadDrop";
 import "./dotsAndBoxes";
 import "./hex";
 import "./knockout";
+import "./metroMagnate";
 import "./minesweeper";
 import "./minigolf";
 import "./play2048";

@@ -9449,6 +9449,11 @@ const DD_PACKS: Record<DDWordPack, string[]> = {
 
 function ddSelectWords(pack: DDWordPack, count: number): string[] {
   const source = DD_PACKS[pack] ?? DD_CLASSIC_WORDS;
+  if (count > source.length) {
+    throw new Error(
+      `Dead Drop: requested ${count} words but pack "${pack}" only has ${source.length}.`,
+    );
+  }
   const arr = [...source];
   for (let i = 0; i < count; i++) {
     const j = i + Math.floor(Math.random() * (arr.length - i));
@@ -9542,6 +9547,7 @@ interface DDPublicState {
   moveCount: number;
   nextClueId: number;
   settings: DDSettings;
+  revealedKeyMap: Record<number, DDCardAlignment> | null;
 }
 
 interface DDPrivateState {
@@ -9597,6 +9603,11 @@ function ddGenerateBoard(pack: DDWordPack, startingTeam: DDTeamColor) {
 function ddAssignTeams(
   players: Array<{ uid: string; slotIndex: number }>,
 ): DDTeamAssignment[] {
+  if (players.length < 4) {
+    throw new Error(
+      `Dead Drop requires exactly 4 players, got ${players.length}.`,
+    );
+  }
   const sorted = [...players].sort((a, b) => a.slotIndex - b.slotIndex);
   return [
     { uid: sorted[0].uid, team: "red", role: "spymaster" },
@@ -9626,6 +9637,13 @@ function ddRoughStem(word: string): string {
   else if (s.endsWith("ment") && s.length > 5) s = s.slice(0, -4);
   else if (s.endsWith("ing") && s.length > 4) s = s.slice(0, -3);
   else if (s.endsWith("tion") && s.length > 5) s = s.slice(0, -4);
+  else if (s.endsWith("sion") && s.length > 5) s = s.slice(0, -4);
+  else if (s.endsWith("able") && s.length > 5) s = s.slice(0, -4);
+  else if (s.endsWith("ible") && s.length > 5) s = s.slice(0, -4);
+  else if (s.endsWith("ful") && s.length > 4) s = s.slice(0, -3);
+  else if (s.endsWith("less") && s.length > 5) s = s.slice(0, -4);
+  else if (s.endsWith("ous") && s.length > 4) s = s.slice(0, -3);
+  else if (s.endsWith("ive") && s.length > 4) s = s.slice(0, -3);
   else if (s.endsWith("ed") && s.length > 3) s = s.slice(0, -2);
   else if (s.endsWith("es") && s.length > 3) s = s.slice(0, -2);
   else if (s.endsWith("er") && s.length > 3) s = s.slice(0, -2);
@@ -9718,6 +9736,14 @@ function ddResolveGuess(
   winnerTeam?: DDTeamColor;
 } {
   const alignment = keyMap[cardId];
+  if (alignment === undefined) {
+    return {
+      alignment: "neutral",
+      outcome: "neutral",
+      turnEnds: true,
+      gameEnds: false,
+    };
+  }
   if (alignment === guessingTeam) {
     const newRem =
       guessingTeam === "red" ? redRemaining - 1 : blueRemaining - 1;
@@ -9827,6 +9853,7 @@ registerAdapter({
       moveCount: 0,
       nextClueId: 1,
       settings: s,
+      revealedKeyMap: null,
     };
     return state as unknown as Record<string, unknown>;
   },
@@ -10012,6 +10039,7 @@ registerAdapter({
           winnerTeam: gr.winnerTeam!,
           endReason: gr.endReason!,
           moveCount: state.moveCount + 1,
+          revealedKeyMap: smPriv.keyMap,
         };
         return {
           ok: true,
@@ -10259,6 +10287,2212 @@ registerAdapter({
       result.rematchSeats = patch.rematchSeats;
     if (typeof patch.allowSpectators === "boolean")
       result.allowSpectators = patch.allowSpectators;
+    return result;
+  },
+});
+
+// =============================================================================
+// Metro Magnate — Take 2 (deterministic engine)
+// =============================================================================
+
+// ── Board constants (compact inline) ──────────────────────────────────────────
+const MM_BOARD_SIZE = 36;
+const MM_TERMINAL = 0;
+const MM_INSPECTION = 10;
+const MM_FINE = 50;
+const MM_EXPRESS_CAP = 30;
+const MM_MAX_DEPTH = 4;
+
+type MMSpace = {
+  index: number;
+  type: string;
+  sectorId?: string;
+  transitGroup?: number;
+  serviceGroup?: number;
+};
+const MM_SPACES: MMSpace[] = [
+  { index: 0, type: "central_terminal" },
+  { index: 1, type: "district", sectorId: "arts_quarter" },
+  { index: 2, type: "city_brief" },
+  { index: 3, type: "district", sectorId: "arts_quarter" },
+  { index: 4, type: "civic_fee" },
+  { index: 5, type: "transit_line", transitGroup: 0 },
+  { index: 6, type: "district", sectorId: "arts_quarter" },
+  { index: 7, type: "market_shift" },
+  { index: 8, type: "district", sectorId: "harbor_ward" },
+  { index: 9, type: "district", sectorId: "harbor_ward" },
+  { index: 10, type: "inspection_hold" },
+  { index: 11, type: "district", sectorId: "harbor_ward" },
+  { index: 12, type: "service_node", serviceGroup: 0 },
+  { index: 13, type: "district", sectorId: "market_row" },
+  { index: 14, type: "city_brief" },
+  { index: 15, type: "district", sectorId: "market_row" },
+  { index: 16, type: "transit_line", transitGroup: 1 },
+  { index: 17, type: "district", sectorId: "market_row" },
+  { index: 18, type: "plaza" },
+  { index: 19, type: "district", sectorId: "foundry_belt" },
+  { index: 20, type: "market_shift" },
+  { index: 21, type: "district", sectorId: "foundry_belt" },
+  { index: 22, type: "civic_fee" },
+  { index: 23, type: "district", sectorId: "foundry_belt" },
+  { index: 24, type: "transit_line", transitGroup: 2 },
+  { index: 25, type: "district", sectorId: "tech_heights" },
+  { index: 26, type: "district", sectorId: "tech_heights" },
+  { index: 27, type: "service_node", serviceGroup: 1 },
+  { index: 28, type: "district", sectorId: "tech_heights" },
+  { index: 29, type: "market_shift" },
+  { index: 30, type: "city_brief" },
+  { index: 31, type: "district", sectorId: "civic_square" },
+  { index: 32, type: "district", sectorId: "civic_square" },
+  { index: 33, type: "detour_to_inspection" },
+  { index: 34, type: "district", sectorId: "civic_square" },
+  { index: 35, type: "transit_line", transitGroup: 3 },
+];
+
+const MM_SECTORS: Record<string, number[]> = {
+  arts_quarter: [1, 3, 6],
+  harbor_ward: [8, 9, 11],
+  market_row: [13, 15, 17],
+  foundry_belt: [19, 21, 23],
+  tech_heights: [25, 26, 28],
+  civic_square: [31, 32, 34],
+};
+
+// district cards: [spaceIndex, leaseCost, rentLadder[6], improvementCost, mortgageValue]
+const MM_DIST: Record<
+  number,
+  { c: number; r: number[]; ic: number; mv: number }
+> = {
+  1: { c: 60, r: [2, 10, 30, 90, 160, 250], ic: 50, mv: 30 },
+  3: { c: 60, r: [4, 20, 60, 180, 320, 450], ic: 50, mv: 30 },
+  6: { c: 80, r: [6, 30, 90, 270, 400, 550], ic: 50, mv: 40 },
+  8: { c: 100, r: [6, 30, 90, 270, 400, 550], ic: 50, mv: 50 },
+  9: { c: 100, r: [6, 30, 90, 270, 400, 550], ic: 50, mv: 50 },
+  11: { c: 120, r: [8, 40, 100, 300, 450, 600], ic: 50, mv: 60 },
+  13: { c: 140, r: [10, 50, 150, 450, 625, 750], ic: 100, mv: 70 },
+  15: { c: 140, r: [10, 50, 150, 450, 625, 750], ic: 100, mv: 70 },
+  17: { c: 160, r: [12, 60, 180, 500, 700, 900], ic: 100, mv: 80 },
+  19: { c: 180, r: [14, 70, 200, 550, 750, 950], ic: 100, mv: 90 },
+  21: { c: 180, r: [14, 70, 200, 550, 750, 950], ic: 100, mv: 90 },
+  23: { c: 200, r: [16, 80, 220, 600, 800, 1000], ic: 100, mv: 100 },
+  25: { c: 220, r: [18, 90, 250, 700, 875, 1050], ic: 150, mv: 110 },
+  26: { c: 220, r: [18, 90, 250, 700, 875, 1050], ic: 150, mv: 110 },
+  28: { c: 240, r: [20, 100, 300, 750, 925, 1100], ic: 150, mv: 120 },
+  31: { c: 280, r: [22, 110, 330, 800, 975, 1150], ic: 200, mv: 140 },
+  32: { c: 300, r: [26, 130, 390, 900, 1100, 1275], ic: 200, mv: 150 },
+  34: { c: 350, r: [35, 175, 500, 1100, 1300, 1500], ic: 200, mv: 175 },
+};
+
+const MM_TRANSIT_INDICES = [5, 16, 24, 35];
+const MM_TRANSIT_RENT = [25, 50, 100, 200];
+const MM_TRANSIT_COST = 200;
+const MM_TRANSIT_MV = 100;
+
+const MM_SERVICE_INDICES = [12, 27];
+const MM_SERVICE_MULT = [4, 10];
+const MM_SERVICE_COST = 150;
+const MM_SERVICE_MV = 75;
+
+const MM_CIVIC_FEES: Record<number, number> = { 4: 200, 22: 100 };
+
+// Card decks — only effects needed for engine
+type MMCardEffect =
+  | { t: "gain"; a: number }
+  | { t: "lose"; a: number }
+  | { t: "move_to"; s: number }
+  | { t: "move_rel"; s: number }
+  | { t: "collect_ea"; a: number }
+  | { t: "pay_ea"; a: number }
+  | { t: "repair"; pi: number; pt: number }
+  | { t: "go_insp" }
+  | { t: "get_pass" };
+
+const MM_MS_DECK: MMCardEffect[] = [
+  { t: "gain", a: 200 },
+  { t: "gain", a: 50 },
+  { t: "gain", a: 20 },
+  { t: "gain", a: 150 },
+  { t: "gain", a: 45 },
+  { t: "gain", a: 25 },
+  { t: "collect_ea", a: 50 },
+  { t: "lose", a: 50 },
+  { t: "repair", pi: 40, pt: 115 },
+  { t: "lose", a: 100 },
+  { t: "move_to", s: 0 },
+  { t: "move_to", s: 13 },
+  { t: "move_to", s: 25 },
+  { t: "move_to", s: 5 },
+  { t: "move_rel", s: -3 },
+  { t: "go_insp" },
+];
+const MM_CB_DECK: MMCardEffect[] = [
+  { t: "gain", a: 100 },
+  { t: "gain", a: 25 },
+  { t: "gain", a: 150 },
+  { t: "gain", a: 10 },
+  { t: "gain", a: 20 },
+  { t: "get_pass" },
+  { t: "repair", pi: 50, pt: 150 },
+  { t: "lose", a: 100 },
+  { t: "lose", a: 150 },
+  { t: "pay_ea", a: 50 },
+  { t: "move_to", s: 0 },
+  { t: "move_to", s: 18 },
+  { t: "move_to", s: 1 },
+  { t: "go_insp" },
+  { t: "move_to", s: 8 },
+  { t: "lose", a: 200 },
+];
+
+// ── Compact engine helpers ────────────────────────────────────────────────────
+type MMState = Record<string, unknown>;
+type MMPlayer = {
+  uid: string;
+  position: number;
+  cash: number;
+  ownedProperties: number[];
+  improvements: number[];
+  mortgagedProperties: number[];
+  inspectionPasses: number;
+  isBankrupt: boolean;
+  bankruptTurn: number;
+  netWorth: number;
+  timesPassedTerminal: number;
+};
+type MMHold = { uid: string; turnsRemaining: number };
+type MMOwn = { spaceIndex: number; ownerUid: string };
+type MMImp = { spaceIndex: number; level: number };
+type MMMort = { spaceIndex: number; mortgaged: boolean };
+
+function mmMulberry(seed: number): number {
+  let t = (seed + 0x6d2b79f5) | 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function mmDice(seed: number): [number, number] {
+  return [
+    Math.floor(mmMulberry(seed * 2 + 1) * 6) + 1,
+    Math.floor(mmMulberry(seed * 2 + 2) * 6) + 1,
+  ];
+}
+
+function mmS(raw: MMState): {
+  players: MMPlayer[];
+  eliminationOrder: string[];
+  turnOrder: string[];
+  currentTurnIndex: number;
+  currentTurnUid: string;
+  phase: string;
+  lastDice: [number, number] | null;
+  doublesCount: number;
+  turnNumber: number;
+  moveCount: number;
+  activeAuction: Record<string, unknown> | null;
+  activeTrade: Record<string, unknown> | null;
+  debtContext: {
+    amount: number;
+    creditorUid: string | null;
+    canReroll: boolean;
+    debtType?: string;
+  } | null;
+  propertyOwnership: MMOwn[];
+  propertyImprovements: MMImp[];
+  propertyMortgages: MMMort[];
+  inspectionHoldTurns: MMHold[];
+  marketShiftDeckIndex: number;
+  cityBriefDeckIndex: number;
+  marketShiftOrder: number[];
+  cityBriefOrder: number[];
+  plazaPot: number;
+  storefrontSupply: number;
+  towerSupply: number;
+  winnerUid: string | null;
+  endReason: string | null;
+  settings: Record<string, unknown>;
+} {
+  return raw as unknown as ReturnType<typeof mmS>;
+}
+
+function mmOwner(ownerships: MMOwn[], idx: number): string | null {
+  const e = ownerships.find((o) => o.spaceIndex === idx);
+  return e ? e.ownerUid : null;
+}
+function mmMortgaged(mortgages: MMMort[], idx: number): boolean {
+  const e = mortgages.find((m) => m.spaceIndex === idx);
+  return e ? e.mortgaged : false;
+}
+function mmImpLevel(imps: MMImp[], idx: number): number {
+  const e = imps.find((i) => i.spaceIndex === idx);
+  return e ? e.level : 0;
+}
+function mmSetImpLevel(
+  s: ReturnType<typeof mmS>,
+  idx: number,
+  level: number,
+): ReturnType<typeof mmS> {
+  const existing = s.propertyImprovements.find((i) => i.spaceIndex === idx);
+  if (existing) {
+    return {
+      ...s,
+      propertyImprovements: s.propertyImprovements.map((i) =>
+        i.spaceIndex === idx ? { ...i, level } : i,
+      ),
+    };
+  }
+  return {
+    ...s,
+    propertyImprovements: [
+      ...s.propertyImprovements,
+      { spaceIndex: idx, level },
+    ],
+  };
+}
+function mmOwnsSector(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+  sectorId: string,
+): boolean {
+  const indices = MM_SECTORS[sectorId];
+  if (!indices) return false;
+  return indices.every((i) => mmOwner(s.propertyOwnership, i) === uid);
+}
+function mmSectorHasMortgage(
+  s: ReturnType<typeof mmS>,
+  sectorId: string,
+): boolean {
+  const indices = MM_SECTORS[sectorId];
+  if (!indices) return false;
+  return indices.some((i) => mmMortgaged(s.propertyMortgages, i));
+}
+function mmMinImpInSector(s: ReturnType<typeof mmS>, sectorId: string): number {
+  const indices = MM_SECTORS[sectorId];
+  if (!indices || indices.length === 0) return 0;
+  return Math.min(...indices.map((i) => mmImpLevel(s.propertyImprovements, i)));
+}
+function mmMaxImpInSector(s: ReturnType<typeof mmS>, sectorId: string): number {
+  const indices = MM_SECTORS[sectorId];
+  if (!indices || indices.length === 0) return 0;
+  return Math.max(...indices.map((i) => mmImpLevel(s.propertyImprovements, i)));
+}
+function mmCountStorefronts(s: ReturnType<typeof mmS>): number {
+  let count = 0;
+  for (const imp of s.propertyImprovements) {
+    const lv = imp.level;
+    if (lv >= 5) continue; // tower replaces storefronts
+    count += lv;
+  }
+  return count;
+}
+function mmCountTowers(s: ReturnType<typeof mmS>): number {
+  let count = 0;
+  for (const imp of s.propertyImprovements) {
+    if (imp.level >= 5) count++;
+  }
+  return count;
+}
+function mmDistSectorId(idx: number): string | null {
+  for (const [sid, indices] of Object.entries(MM_SECTORS)) {
+    if (indices.includes(idx)) return sid;
+  }
+  return null;
+}
+
+function mmRent(s: ReturnType<typeof mmS>, idx: number, dice: number): number {
+  const owner = mmOwner(s.propertyOwnership, idx);
+  if (!owner || mmMortgaged(s.propertyMortgages, idx)) return 0;
+  const sp = MM_SPACES[idx];
+  if (sp.type === "district") {
+    const d = MM_DIST[idx];
+    if (!d) return 0;
+    const lv = mmImpLevel(s.propertyImprovements, idx);
+    let r = d.r[lv];
+    if (lv === 0 && sp.sectorId) {
+      const sec = MM_SECTORS[sp.sectorId];
+      if (
+        sec &&
+        sec.every((i) => mmOwner(s.propertyOwnership, i) === owner) &&
+        !mmSectorHasMortgage(s, sp.sectorId)
+      )
+        r *= 2;
+    }
+    return r;
+  }
+  if (sp.type === "transit_line") {
+    const ct = MM_TRANSIT_INDICES.filter(
+      (i) => mmOwner(s.propertyOwnership, i) === owner,
+    ).length;
+    return ct > 0 ? MM_TRANSIT_RENT[ct - 1] : 0;
+  }
+  if (sp.type === "service_node") {
+    const ct = MM_SERVICE_INDICES.filter(
+      (i) => mmOwner(s.propertyOwnership, i) === owner,
+    ).length;
+    return ct > 0 ? MM_SERVICE_MULT[ct - 1] * dice : 0;
+  }
+  return 0;
+}
+
+function mmUpdatePlayer(
+  players: MMPlayer[],
+  uid: string,
+  fn: (p: MMPlayer) => MMPlayer,
+): MMPlayer[] {
+  return players.map((p) => (p.uid === uid ? fn(p) : p));
+}
+
+function mmBankrupt(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+  creditor: string | null,
+): ReturnType<typeof mmS> {
+  const bankrupt = s.players.find((p) => p.uid === uid)!;
+  const ownedSet = new Set(bankrupt.ownedProperties);
+  let ns = {
+    ...s,
+    players: mmUpdatePlayer(s.players, uid, (p) => ({
+      ...p,
+      isBankrupt: true,
+      bankruptTurn: s.turnNumber,
+      cash: 0,
+      ownedProperties: [],
+      improvements: [],
+      mortgagedProperties: [],
+      inspectionPasses: 0,
+      netWorth: 0,
+    })),
+    eliminationOrder: [
+      ...(((s as Record<string, unknown>).eliminationOrder as string[]) ?? []),
+      uid,
+    ],
+  };
+  if (creditor) {
+    ns = {
+      ...ns,
+      players: mmUpdatePlayer(ns.players, creditor, (p) => ({
+        ...p,
+        ownedProperties: [...p.ownedProperties, ...bankrupt.ownedProperties],
+        inspectionPasses: p.inspectionPasses + bankrupt.inspectionPasses,
+      })),
+    };
+    ns = {
+      ...ns,
+      propertyOwnership: ns.propertyOwnership.map((o) =>
+        o.ownerUid === uid ? { ...o, ownerUid: creditor } : o,
+      ),
+    };
+    // Mortgage transfer fees
+    let fees = 0;
+    for (const idx of bankrupt.mortgagedProperties) {
+      const d = MM_DIST[idx];
+      const mv = d
+        ? d.mv
+        : MM_TRANSIT_INDICES.includes(idx)
+          ? MM_TRANSIT_MV
+          : MM_SERVICE_INDICES.includes(idx)
+            ? MM_SERVICE_MV
+            : 0;
+      fees += Math.round(mv * 0.1);
+    }
+    if (fees > 0) {
+      ns = {
+        ...ns,
+        players: mmUpdatePlayer(ns.players, creditor, (p) => ({
+          ...p,
+          cash: p.cash - fees,
+        })),
+      };
+    }
+  } else {
+    ns = {
+      ...ns,
+      propertyOwnership: ns.propertyOwnership.filter((o) => o.ownerUid !== uid),
+      propertyImprovements: ns.propertyImprovements.filter(
+        (i) => !ownedSet.has(i.spaceIndex),
+      ),
+      propertyMortgages: ns.propertyMortgages.filter(
+        (m) => !ownedSet.has(m.spaceIndex),
+      ),
+    };
+  }
+  ns = {
+    ...ns,
+    inspectionHoldTurns: ns.inspectionHoldTurns.filter((h) => h.uid !== uid),
+    debtContext: null,
+  } as ReturnType<typeof mmS>;
+  return ns;
+}
+
+function mmSendInsp(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+): ReturnType<typeof mmS> {
+  const turns =
+    (s.settings as { inspectionSeverity?: string }).inspectionSeverity ===
+    "lenient"
+      ? 1
+      : 3;
+  return {
+    ...s,
+    players: mmUpdatePlayer(s.players, uid, (p) => ({
+      ...p,
+      position: MM_INSPECTION,
+    })),
+    inspectionHoldTurns: [
+      ...s.inspectionHoldTurns.filter((h) => h.uid !== uid),
+      { uid, turnsRemaining: turns },
+    ],
+    doublesCount: 0,
+  };
+}
+
+function mmPayRent(
+  s: ReturnType<typeof mmS>,
+  payer: string,
+  owner: string,
+  amt: number,
+  canReroll: boolean,
+): ReturnType<typeof mmS> {
+  const p = s.players.find((pl) => pl.uid === payer)!;
+  if (p.cash >= amt) {
+    return {
+      ...s,
+      players: mmUpdatePlayer(
+        mmUpdatePlayer(s.players, payer, (pl) => ({
+          ...pl,
+          cash: pl.cash - amt,
+        })),
+        owner,
+        (pl) => ({ ...pl, cash: pl.cash + amt }),
+      ),
+    };
+  }
+  // Can't afford — enter debt resolution
+  return {
+    ...s,
+    phase: "debt_resolution",
+    debtContext: { amount: amt, creditorUid: owner, canReroll },
+    moveCount: s.moveCount + 1,
+  } as ReturnType<typeof mmS>;
+}
+
+function mmNextActive(s: ReturnType<typeof mmS>, from: number): number {
+  const n = s.turnOrder.length;
+  for (let i = 1; i <= n; i++) {
+    const idx = (from + i) % n;
+    const pl = s.players.find((p) => p.uid === s.turnOrder[idx]);
+    if (pl && !pl.isBankrupt) return idx;
+  }
+  return from;
+}
+
+function mmTerminal(
+  s: ReturnType<typeof mmS>,
+): { type: "win" | "draw"; winnerIds?: string[]; reason?: string } | undefined {
+  const active = s.players.filter((p) => !p.isBankrupt);
+  if (active.length <= 1)
+    return {
+      type: "win",
+      winnerIds: active.length === 1 ? [active[0].uid] : [],
+      reason: "last_standing",
+    };
+  if (
+    (s.settings as { mode?: string }).mode === "express" &&
+    s.turnNumber >= MM_EXPRESS_CAP
+  ) {
+    const sorted = [...active].sort((a, b) => b.netWorth - a.netWorth);
+    return {
+      type: "win",
+      winnerIds: [sorted[0].uid],
+      reason: "express_turn_cap",
+    };
+  }
+  return undefined;
+}
+
+function mmRecalcNW(s: ReturnType<typeof mmS>): ReturnType<typeof mmS> {
+  return {
+    ...s,
+    players: s.players.map((p) => {
+      if (p.isBankrupt) return p;
+      let w = p.cash;
+      for (const idx of p.ownedProperties) {
+        const isMortgaged = mmMortgaged(s.propertyMortgages, idx);
+        if (MM_DIST[idx]) {
+          // Skip mortgage value for mortgaged props (cash already has it)
+          if (!isMortgaged) w += MM_DIST[idx].mv;
+          const lv = mmImpLevel(s.propertyImprovements, idx);
+          if (lv >= 5) w += 5 * MM_DIST[idx].ic;
+          else w += lv * MM_DIST[idx].ic;
+        } else if (MM_TRANSIT_INDICES.includes(idx)) {
+          if (!isMortgaged) w += MM_TRANSIT_MV;
+        } else if (MM_SERVICE_INDICES.includes(idx)) {
+          if (!isMortgaged) w += MM_SERVICE_MV;
+        }
+      }
+      return { ...p, netWorth: w };
+    }),
+  };
+}
+
+function mmMoveByDice(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+  total: number,
+): ReturnType<typeof mmS> {
+  const p = s.players.find((pl) => pl.uid === uid)!;
+  const newPos = (p.position + total) % MM_BOARD_SIZE;
+  const passed = p.position + total >= MM_BOARD_SIZE && newPos !== MM_TERMINAL;
+  const landed = newPos === MM_TERMINAL;
+  let bonus = 0;
+  if (passed || landed) {
+    bonus = (s.settings as { passSalary?: number }).passSalary ?? 200;
+    if (
+      landed &&
+      (s.settings as { terminalExactBonus?: boolean }).terminalExactBonus
+    )
+      bonus *= 2;
+  }
+  return {
+    ...s,
+    players: mmUpdatePlayer(s.players, uid, (pl) => ({
+      ...pl,
+      position: newPos,
+      cash: pl.cash + bonus,
+      timesPassedTerminal: pl.timesPassedTerminal + (passed || landed ? 1 : 0),
+    })),
+  };
+}
+
+function mmApplyCard(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+  e: MMCardEffect,
+  canReroll: boolean,
+): ReturnType<typeof mmS> {
+  switch (e.t) {
+    case "gain":
+      return {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash + e.a,
+        })),
+      };
+    case "lose": {
+      const pl = s.players.find((p) => p.uid === uid)!;
+      if (pl.cash >= e.a) {
+        return {
+          ...s,
+          players: mmUpdatePlayer(s.players, uid, (p) => ({
+            ...p,
+            cash: p.cash - e.a,
+          })),
+        };
+      }
+      return {
+        ...s,
+        phase: "debt_resolution",
+        debtContext: { amount: e.a, creditorUid: null, canReroll },
+        moveCount: s.moveCount + 1,
+      } as ReturnType<typeof mmS>;
+    }
+    case "collect_ea": {
+      const others = s.players.filter((p) => p.uid !== uid && !p.isBankrupt);
+      let ns = s;
+      let total = 0;
+      for (const o of others) {
+        const pay = Math.min(
+          ns.players.find((p) => p.uid === o.uid)!.cash,
+          e.a,
+        );
+        ns = {
+          ...ns,
+          players: mmUpdatePlayer(ns.players, o.uid, (p) => ({
+            ...p,
+            cash: p.cash - pay,
+          })),
+        };
+        total += pay;
+      }
+      return {
+        ...ns,
+        players: mmUpdatePlayer(ns.players, uid, (p) => ({
+          ...p,
+          cash: p.cash + total,
+        })),
+      };
+    }
+    case "pay_ea": {
+      const others = s.players.filter((p) => p.uid !== uid && !p.isBankrupt);
+      const totalOwed = others.length * e.a;
+      const pl = s.players.find((p) => p.uid === uid)!;
+      if (pl.cash < totalOwed) {
+        return {
+          ...s,
+          phase: "debt_resolution",
+          debtContext: { amount: totalOwed, creditorUid: null, canReroll },
+          moveCount: s.moveCount + 1,
+        } as ReturnType<typeof mmS>;
+      }
+      let ns = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash - totalOwed,
+        })),
+      };
+      for (const o of others) {
+        ns = {
+          ...ns,
+          players: mmUpdatePlayer(ns.players, o.uid, (p) => ({
+            ...p,
+            cash: p.cash + e.a,
+          })),
+        };
+      }
+      return ns;
+    }
+    case "repair": {
+      const pl = s.players.find((p) => p.uid === uid)!;
+      let cost = 0;
+      for (const idx of pl.ownedProperties) {
+        const lv = mmImpLevel(s.propertyImprovements, idx);
+        if (lv >= 5) cost += e.pt;
+        else if (lv > 0) cost += lv * e.pi;
+      }
+      if (pl.cash < cost) {
+        return {
+          ...s,
+          phase: "debt_resolution",
+          debtContext: { amount: cost, creditorUid: null, canReroll },
+          moveCount: s.moveCount + 1,
+        } as ReturnType<typeof mmS>;
+      }
+      return {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash - cost,
+        })),
+      };
+    }
+    case "move_to": {
+      const p = s.players.find((pl) => pl.uid === uid)!;
+      let collect = false;
+      if (e.s === MM_TERMINAL) collect = true;
+      else if (e.s < p.position) collect = true;
+      const bonus = collect
+        ? ((s.settings as { passSalary?: number }).passSalary ?? 200)
+        : 0;
+      return {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (pl) => ({
+          ...pl,
+          position: e.s,
+          cash: pl.cash + bonus,
+          timesPassedTerminal: pl.timesPassedTerminal + (collect ? 1 : 0),
+        })),
+      };
+    }
+    case "move_rel": {
+      const p = s.players.find((pl) => pl.uid === uid)!;
+      return {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (pl) => ({
+          ...pl,
+          position:
+            (((p.position + e.s) % MM_BOARD_SIZE) + MM_BOARD_SIZE) %
+            MM_BOARD_SIZE,
+        })),
+      };
+    }
+    case "go_insp":
+      return mmSendInsp(s, uid);
+    case "get_pass":
+      return {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          inspectionPasses: p.inspectionPasses + 1,
+        })),
+      };
+    default:
+      return s;
+  }
+}
+
+type MMResult = MoveValidationResult;
+
+function mmPostLand(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+  canReroll: boolean,
+): MMResult {
+  let ns = mmRecalcNW(s);
+  const term = mmTerminal(ns);
+  if (term) {
+    ns = {
+      ...ns,
+      phase: "game_over",
+      winnerUid: term.winnerIds?.[0] ?? null,
+      endReason: term.reason ?? null,
+    };
+    return {
+      ok: true,
+      nextPublicState: ns as unknown as Record<string, unknown>,
+      turnAdvance: false,
+      terminal: term,
+    };
+  }
+  if (canReroll && ns.doublesCount > 0)
+    return {
+      ok: true,
+      nextPublicState: { ...ns, phase: "pre_roll" } as unknown as Record<
+        string,
+        unknown
+      >,
+      turnAdvance: false,
+    };
+  return {
+    ok: true,
+    nextPublicState: { ...ns, phase: "post_roll" } as unknown as Record<
+      string,
+      unknown
+    >,
+    turnAdvance: false,
+  };
+}
+
+// ── Auction helpers ──────────────────────────────────────────────────────────
+function mmAdvanceAuction(s: ReturnType<typeof mmS>): MMResult {
+  const a = s.activeAuction as any;
+  if (a.type === "english") {
+    const remaining = (a.bidderOrder as string[]).filter(
+      (b: string) => !(a.passedPlayers as string[]).includes(b),
+    );
+    if (remaining.length <= 1) return mmResolveAuction(s);
+    let nextIdx = a.currentBidderIndex as number;
+    do {
+      nextIdx = (nextIdx + 1) % a.bidderOrder.length;
+    } while ((a.passedPlayers as string[]).includes(a.bidderOrder[nextIdx]));
+    const nextBidder = a.bidderOrder[nextIdx];
+    const ns = {
+      ...s,
+      activeAuction: { ...a, currentBidderIndex: nextIdx },
+      currentTurnUid: nextBidder,
+    };
+    return {
+      ok: true,
+      nextPublicState: ns as unknown as Record<string, unknown>,
+      turnAdvance: false,
+      nextTurnPlayerId: nextBidder,
+    };
+  }
+  // Sealed: check if all bidders submitted
+  if ((a.sealedBids as any[]).length >= (a.bidderOrder as string[]).length) {
+    return mmResolveAuction(s);
+  }
+  const nextIdx = (a.currentBidderIndex as number) + 1;
+  const nextBidder = a.bidderOrder[nextIdx];
+  const ns = {
+    ...s,
+    activeAuction: { ...a, currentBidderIndex: nextIdx },
+    currentTurnUid: nextBidder,
+  };
+  return {
+    ok: true,
+    nextPublicState: ns as unknown as Record<string, unknown>,
+    turnAdvance: false,
+    nextTurnPlayerId: nextBidder,
+  };
+}
+
+function mmResolveAuction(s: ReturnType<typeof mmS>): MMResult {
+  const a = s.activeAuction as any;
+  let winnerUid: string | null = null;
+  let winningBid = 0;
+  if (a.type === "english") {
+    winnerUid = a.currentBidder;
+    winningBid = a.currentBid;
+  } else {
+    for (const bid of a.sealedBids as { uid: string; amount: number }[]) {
+      if (bid.amount > winningBid) {
+        winningBid = bid.amount;
+        winnerUid = bid.uid;
+      }
+    }
+  }
+  const originatorUid = a.originatorUid as string;
+  let ns = {
+    ...s,
+    activeAuction: null,
+    currentTurnUid: originatorUid,
+    moveCount: s.moveCount + 1,
+  };
+  if (winnerUid && winningBid > 0) {
+    const propIdx = a.propertyIndex as number;
+    ns = {
+      ...ns,
+      activeAuction: null,
+      players: mmUpdatePlayer(ns.players, winnerUid, (p) => ({
+        ...p,
+        cash: p.cash - winningBid,
+        ownedProperties: [...p.ownedProperties, propIdx],
+      })),
+      propertyOwnership: [
+        ...ns.propertyOwnership,
+        { spaceIndex: propIdx, ownerUid: winnerUid },
+      ],
+    };
+  }
+  ns = { ...mmRecalcNW(ns), activeAuction: null };
+  const term = mmTerminal(ns);
+  if (term) {
+    ns = {
+      ...ns,
+      phase: "game_over",
+      winnerUid: term.winnerIds?.[0] ?? null,
+      endReason: term.reason ?? null,
+    };
+    return {
+      ok: true,
+      nextPublicState: ns as unknown as Record<string, unknown>,
+      turnAdvance: false,
+      terminal: term,
+      nextTurnPlayerId: originatorUid,
+    };
+  }
+  const isD = ns.lastDice ? ns.lastDice[0] === ns.lastDice[1] : false;
+  const canReroll = isD && ns.doublesCount > 0;
+  ns = { ...ns, phase: canReroll ? "pre_roll" : "post_roll" };
+  return {
+    ok: true,
+    nextPublicState: ns as unknown as Record<string, unknown>,
+    turnAdvance: false,
+    nextTurnPlayerId: originatorUid,
+  };
+}
+
+function mmHandleLand(
+  s: ReturnType<typeof mmS>,
+  uid: string,
+  dice: number,
+  isDbls: boolean,
+  depth: number,
+): MMResult {
+  if (depth > MM_MAX_DEPTH) return mmPostLand(s, uid, isDbls);
+  const p = s.players.find((pl) => pl.uid === uid)!;
+  const sp = MM_SPACES[p.position];
+  const canReroll = isDbls && s.doublesCount > 0;
+  switch (sp.type) {
+    case "central_terminal":
+      return mmPostLand(s, uid, isDbls);
+    case "district":
+    case "transit_line":
+    case "service_node": {
+      const ow = mmOwner(s.propertyOwnership, sp.index);
+      if (!ow)
+        return {
+          ok: true,
+          nextPublicState: {
+            ...s,
+            phase: "buying_decision",
+          } as unknown as Record<string, unknown>,
+          turnAdvance: false,
+        };
+      if (ow === uid || mmMortgaged(s.propertyMortgages, sp.index))
+        return mmPostLand(s, uid, isDbls);
+      const rent = mmRent(s, sp.index, dice);
+      let ns = mmPayRent(s, uid, ow, rent, canReroll);
+      // Check debt resolution
+      if ((ns as any).debtContext) {
+        return {
+          ok: true,
+          nextPublicState: ns as unknown as Record<string, unknown>,
+          turnAdvance: false,
+        };
+      }
+      if (ns.players.find((pl) => pl.uid === uid)!.isBankrupt) {
+        const term = mmTerminal(ns);
+        if (term) {
+          ns = {
+            ...ns,
+            phase: "game_over",
+            winnerUid: term.winnerIds?.[0] ?? null,
+            endReason: term.reason ?? null,
+          };
+          return {
+            ok: true,
+            nextPublicState: ns as unknown as Record<string, unknown>,
+            turnAdvance: false,
+            terminal: term,
+          };
+        }
+        return mmPostLand(ns, uid, false);
+      }
+      return mmPostLand(ns, uid, isDbls);
+    }
+    case "market_shift":
+    case "city_brief": {
+      const isMkt = sp.type === "market_shift";
+      const deck = isMkt ? MM_MS_DECK : MM_CB_DECK;
+      const orderKey = isMkt ? "marketShiftOrder" : "cityBriefOrder";
+      const idxKey = isMkt ? "marketShiftDeckIndex" : "cityBriefDeckIndex";
+      const order = (s as Record<string, unknown>)[orderKey] as number[];
+      let dIdx = (s as Record<string, unknown>)[idxKey] as number;
+      if (dIdx >= order.length) dIdx = 0;
+      const cardId = order[dIdx];
+      let ns = { ...s, [idxKey]: dIdx + 1 } as ReturnType<typeof mmS>;
+      const effect = deck[cardId];
+      ns = mmApplyCard(ns, uid, effect, canReroll);
+      // Check debt resolution
+      if ((ns as any).debtContext) {
+        return {
+          ok: true,
+          nextPublicState: ns as unknown as Record<string, unknown>,
+          turnAdvance: false,
+        };
+      }
+      if (ns.players.find((pl) => pl.uid === uid)!.isBankrupt) {
+        const term = mmTerminal(ns);
+        if (term) {
+          ns = {
+            ...ns,
+            phase: "game_over",
+            winnerUid: term.winnerIds?.[0] ?? null,
+            endReason: term.reason ?? null,
+          };
+          return {
+            ok: true,
+            nextPublicState: ns as unknown as Record<string, unknown>,
+            turnAdvance: false,
+            terminal: term,
+          };
+        }
+        return mmPostLand(ns, uid, false);
+      }
+      if (effect.t === "move_to" || effect.t === "move_rel")
+        return mmHandleLand(ns, uid, dice, isDbls, depth + 1);
+      if (effect.t === "go_insp") return mmPostLand(ns, uid, false);
+      return mmPostLand(ns, uid, isDbls);
+    }
+    case "civic_fee": {
+      const fee = MM_CIVIC_FEES[sp.index] ?? 200;
+      const pl = s.players.find((x) => x.uid === uid)!;
+      if (pl.cash < fee) {
+        const ns = {
+          ...s,
+          phase: "debt_resolution",
+          debtContext: {
+            amount: fee,
+            creditorUid: null,
+            canReroll,
+            debtType: "civic_fee",
+          },
+          moveCount: s.moveCount + 1,
+        } as ReturnType<typeof mmS>;
+        return {
+          ok: true,
+          nextPublicState: ns as unknown as Record<string, unknown>,
+          turnAdvance: false,
+        };
+      }
+      const ns = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (pl) => ({
+          ...pl,
+          cash: pl.cash - fee,
+        })),
+        plazaPot: s.plazaPot + fee,
+      };
+      return mmPostLand(ns, uid, isDbls);
+    }
+    case "plaza": {
+      if (
+        (s.settings as { plazaBonus?: boolean }).plazaBonus &&
+        s.plazaPot > 0
+      ) {
+        let ns = {
+          ...s,
+          players: mmUpdatePlayer(s.players, uid, (pl) => ({
+            ...pl,
+            cash: pl.cash + s.plazaPot,
+          })),
+          plazaPot: 0,
+        };
+        return mmPostLand(ns, uid, isDbls);
+      }
+      return mmPostLand(s, uid, isDbls);
+    }
+    case "inspection_hold":
+      return mmPostLand(s, uid, isDbls);
+    case "detour_to_inspection":
+      return mmPostLand(mmSendInsp(s, uid), uid, false);
+    default:
+      return mmPostLand(s, uid, isDbls);
+  }
+}
+
+function mmValidateMove(
+  publicState: Record<string, unknown>,
+  _priv: Record<string, Record<string, unknown>>,
+  movePayload: Record<string, unknown>,
+  ctx: {
+    uid: string;
+    turnOrder: string[];
+    currentTurnIndex: number;
+    settings: Record<string, unknown>;
+  },
+): MoveValidationResult {
+  const s = mmS(publicState);
+  const uid = ctx.uid;
+  const action = (movePayload as { action: string }).action;
+
+  if (s.currentTurnUid !== uid)
+    return { ok: false, error: "It is not your turn." };
+  if (s.phase === "game_over")
+    return { ok: false, error: "Game is already over." };
+
+  switch (action) {
+    case "roll_dice": {
+      if (s.phase !== "pre_roll")
+        return { ok: false, error: "Cannot roll dice in current phase." };
+      const dice = mmDice(s.moveCount);
+      const total = dice[0] + dice[1];
+      const isDbls = dice[0] === dice[1];
+      let ns = {
+        ...s,
+        lastDice: dice,
+        moveCount: s.moveCount + 1,
+        doublesCount: isDbls ? s.doublesCount + 1 : 0,
+      };
+      if (ns.doublesCount >= 3) {
+        ns = { ...mmSendInsp(ns, uid), lastDice: dice };
+        return mmPostLand(ns, uid, false);
+      }
+      ns = { ...mmMoveByDice(ns, uid, total), lastDice: dice };
+      return mmHandleLand(ns, uid, total, isDbls, 0);
+    }
+    case "buy_property": {
+      if (s.phase !== "buying_decision")
+        return { ok: false, error: "Not in buying decision phase." };
+      const p = s.players.find((pl) => pl.uid === uid)!;
+      const sp = MM_SPACES[p.position];
+      let cost = 0;
+      if (sp.type === "district") cost = MM_DIST[sp.index]?.c ?? 0;
+      else if (sp.type === "transit_line") cost = MM_TRANSIT_COST;
+      else if (sp.type === "service_node") cost = MM_SERVICE_COST;
+      if (p.cash < cost)
+        return {
+          ok: false,
+          error: "Not enough cash to purchase this property.",
+        };
+      let ns = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (pl) => ({
+          ...pl,
+          cash: pl.cash - cost,
+          ownedProperties: [...pl.ownedProperties, sp.index],
+        })),
+        propertyOwnership: [
+          ...s.propertyOwnership,
+          { spaceIndex: sp.index, ownerUid: uid },
+        ],
+        moveCount: s.moveCount + 1,
+      };
+      const isDbls = ns.lastDice ? ns.lastDice[0] === ns.lastDice[1] : false;
+      return mmPostLand(ns, uid, isDbls && ns.doublesCount > 0);
+    }
+    case "decline_property": {
+      if (s.phase !== "buying_decision")
+        return { ok: false, error: "Not in buying decision phase." };
+      const p = s.players.find((pl) => pl.uid === uid)!;
+      const spaceIndex = p.position;
+
+      // Build bidder order: all non-bankrupt players starting after the decliner
+      const decIdx = s.turnOrder.indexOf(uid);
+      const bidderOrder: string[] = [];
+      for (let i = 1; i <= s.turnOrder.length; i++) {
+        const idx = (decIdx + i) % s.turnOrder.length;
+        const pUid = s.turnOrder[idx];
+        const bp = s.players.find((x) => x.uid === pUid)!;
+        if (!bp.isBankrupt) bidderOrder.push(pUid);
+      }
+
+      // No eligible bidders → skip auction
+      if (bidderOrder.length === 0) {
+        const ns = { ...s, moveCount: s.moveCount + 1 };
+        const isD = ns.lastDice ? ns.lastDice[0] === ns.lastDice[1] : false;
+        return mmPostLand(ns, uid, isD && ns.doublesCount > 0);
+      }
+
+      const firstBidder = bidderOrder[0];
+      const auction = {
+        propertyIndex: spaceIndex,
+        type: ((s.settings as Record<string, unknown>).auctionType ??
+          "english") as string,
+        currentBid: 0,
+        currentBidder: null,
+        sealedBids: [] as { uid: string; amount: number }[],
+        passedPlayers: [] as string[],
+        bidderOrder,
+        currentBidderIndex: 0,
+        originatorUid: uid,
+        resolved: false,
+      };
+
+      const ns = {
+        ...s,
+        activeAuction: auction,
+        currentTurnUid: firstBidder,
+        phase: "auction",
+        moveCount: s.moveCount + 1,
+      };
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        nextTurnPlayerId: firstBidder,
+      };
+    }
+    case "pay_inspection_fine": {
+      if (s.phase !== "inspection")
+        return { ok: false, error: "Not in inspection phase." };
+      const p = s.players.find((pl) => pl.uid === uid)!;
+      if (p.cash < MM_FINE)
+        return {
+          ok: false,
+          error: "Not enough cash to pay the inspection fine.",
+        };
+      const ns = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (pl) => ({
+          ...pl,
+          cash: pl.cash - MM_FINE,
+        })),
+        inspectionHoldTurns: s.inspectionHoldTurns.filter((h) => h.uid !== uid),
+        phase: "pre_roll",
+        moveCount: s.moveCount + 1,
+      };
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    case "use_inspection_pass": {
+      if (s.phase !== "inspection")
+        return { ok: false, error: "Not in inspection phase." };
+      const p = s.players.find((pl) => pl.uid === uid)!;
+      if (p.inspectionPasses <= 0)
+        return { ok: false, error: "No inspection passes available." };
+      const ns = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (pl) => ({
+          ...pl,
+          inspectionPasses: pl.inspectionPasses - 1,
+        })),
+        inspectionHoldTurns: s.inspectionHoldTurns.filter((h) => h.uid !== uid),
+        phase: "pre_roll",
+        moveCount: s.moveCount + 1,
+      };
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    case "wait_in_inspection": {
+      if (s.phase !== "inspection")
+        return { ok: false, error: "Not in inspection phase." };
+      const hold = s.inspectionHoldTurns.find((h) => h.uid === uid);
+      if (!hold) return { ok: false, error: "Not in inspection hold." };
+      const dice = mmDice(s.moveCount);
+      const total = dice[0] + dice[1];
+      const isDbls = dice[0] === dice[1];
+      let ns = {
+        ...s,
+        lastDice: dice,
+        moveCount: s.moveCount + 1,
+      } as ReturnType<typeof mmS>;
+      if (isDbls) {
+        ns = {
+          ...ns,
+          lastDice: dice,
+          inspectionHoldTurns: ns.inspectionHoldTurns.filter(
+            (h) => h.uid !== uid,
+          ),
+          doublesCount: 0,
+        };
+        ns = mmMoveByDice(ns, uid, total);
+        return mmHandleLand(ns, uid, total, false, 0);
+      }
+      const newTurns = hold.turnsRemaining - 1;
+      if (newTurns <= 0) {
+        ns = {
+          ...ns,
+          lastDice: dice,
+          inspectionHoldTurns: ns.inspectionHoldTurns.filter(
+            (h) => h.uid !== uid,
+          ),
+        };
+        const pl = ns.players.find((pl) => pl.uid === uid)!;
+        if (pl.cash < MM_FINE) {
+          // Can't afford fine — enter debt resolution so player can sell/mortgage
+          ns = {
+            ...ns,
+            phase: "debt_resolution",
+            debtContext: {
+              amount: MM_FINE,
+              creditorUid: null,
+              canReroll: false,
+              debtType: "inspection_fine",
+            },
+            moveCount: ns.moveCount + 1,
+          } as ReturnType<typeof mmS>;
+          return {
+            ok: true,
+            nextPublicState: ns as unknown as Record<string, unknown>,
+            turnAdvance: false,
+          };
+        }
+        // Can afford — pay fine and move
+        ns = {
+          ...ns,
+          players: mmUpdatePlayer(ns.players, uid, (p) => ({
+            ...p,
+            cash: p.cash - MM_FINE,
+          })),
+        };
+        ns = mmMoveByDice(ns, uid, total);
+        return mmHandleLand(ns, uid, total, false, 0);
+      }
+      ns = {
+        ...ns,
+        inspectionHoldTurns: ns.inspectionHoldTurns.map((h) =>
+          h.uid === uid ? { ...h, turnsRemaining: newTurns } : h,
+        ),
+        phase: "post_roll",
+      };
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    case "end_turn": {
+      if (s.phase !== "post_roll")
+        return { ok: false, error: "Cannot end turn in current phase." };
+      const nextIdx = mmNextActive(s, s.currentTurnIndex);
+      const nextUid = s.turnOrder[nextIdx];
+      const inInsp = s.inspectionHoldTurns.some((h) => h.uid === nextUid);
+      let ns = mmRecalcNW({
+        ...s,
+        currentTurnIndex: nextIdx,
+        currentTurnUid: nextUid,
+        turnNumber: s.turnNumber + 1,
+        moveCount: s.moveCount + 1,
+        doublesCount: 0,
+        lastDice: null,
+        phase: inInsp ? "inspection" : "pre_roll",
+      });
+      const term = mmTerminal(ns);
+      if (term) {
+        ns = {
+          ...ns,
+          phase: "game_over",
+          winnerUid: term.winnerIds?.[0] ?? null,
+          endReason: term.reason ?? null,
+        };
+        return {
+          ok: true,
+          nextPublicState: ns as unknown as Record<string, unknown>,
+          turnAdvance: false,
+          nextTurnPlayerId: nextUid,
+          terminal: term,
+        };
+      }
+      return {
+        ok: true,
+        nextPublicState: ns as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        nextTurnPlayerId: nextUid,
+      };
+    }
+    // ── Auction actions ──────────────────────────────────────────────────
+    case "auction_bid": {
+      if (s.phase !== "auction" || !s.activeAuction)
+        return { ok: false, error: "No active auction." };
+      const a = s.activeAuction as any;
+      if (a.bidderOrder[a.currentBidderIndex] !== uid)
+        return { ok: false, error: "Not your turn to bid." };
+      const amount = (movePayload as any).amount as number;
+      const pl = s.players.find((p) => p.uid === uid)!;
+      if (!amount || amount <= 0 || amount > pl.cash)
+        return { ok: false, error: "Invalid bid amount." };
+      if (a.type === "english") {
+        if (amount <= a.currentBid)
+          return { ok: false, error: "Bid must exceed current highest bid." };
+        const newA = { ...a, currentBid: amount, currentBidder: uid };
+        return mmAdvanceAuction({
+          ...s,
+          activeAuction: newA,
+          moveCount: s.moveCount + 1,
+        } as ReturnType<typeof mmS>);
+      }
+      // Sealed
+      const newA = { ...a, sealedBids: [...a.sealedBids, { uid, amount }] };
+      return mmAdvanceAuction({
+        ...s,
+        activeAuction: newA,
+        moveCount: s.moveCount + 1,
+      } as ReturnType<typeof mmS>);
+    }
+    case "auction_pass": {
+      if (s.phase !== "auction" || !s.activeAuction)
+        return { ok: false, error: "No active auction." };
+      const a = s.activeAuction as any;
+      if (a.bidderOrder[a.currentBidderIndex] !== uid)
+        return { ok: false, error: "Not your turn to bid." };
+      if (a.type === "english") {
+        const newA = { ...a, passedPlayers: [...a.passedPlayers, uid] };
+        return mmAdvanceAuction({
+          ...s,
+          activeAuction: newA,
+          moveCount: s.moveCount + 1,
+        } as ReturnType<typeof mmS>);
+      }
+      // Sealed pass = bid of 0
+      const newA = { ...a, sealedBids: [...a.sealedBids, { uid, amount: 0 }] };
+      return mmAdvanceAuction({
+        ...s,
+        activeAuction: newA,
+        moveCount: s.moveCount + 1,
+      } as ReturnType<typeof mmS>);
+    }
+    // ── Improvement actions ──────────────────────────────────────────────
+    case "build_improvement": {
+      if (s.phase !== "pre_roll" && s.phase !== "post_roll")
+        return {
+          ok: false,
+          error: "Cannot build improvements in current phase.",
+        };
+      const propIdx = (movePayload as any).propertyIndex as number;
+      const sectorId = mmDistSectorId(propIdx);
+      if (!sectorId || !MM_DIST[propIdx])
+        return { ok: false, error: "Not a district property." };
+      if (mmOwner(s.propertyOwnership, propIdx) !== uid)
+        return { ok: false, error: "You do not own this property." };
+      if (!mmOwnsSector(s, uid, sectorId))
+        return {
+          ok: false,
+          error: "You must own all districts in this sector to build.",
+        };
+      if (mmSectorHasMortgage(s, sectorId))
+        return {
+          ok: false,
+          error: "Cannot build while any district in the sector is mortgaged.",
+        };
+      const curLv = mmImpLevel(s.propertyImprovements, propIdx);
+      if (curLv >= 5)
+        return { ok: false, error: "Maximum improvement level reached." };
+      const minLv = mmMinImpInSector(s, sectorId);
+      if (curLv > minLv)
+        return {
+          ok: false,
+          error:
+            "Must build evenly — choose the district with the lowest level.",
+        };
+      const bCost = MM_DIST[propIdx].ic;
+      const bPl = s.players.find((p) => p.uid === uid)!;
+      if (bPl.cash < bCost)
+        return { ok: false, error: "Not enough cash to build." };
+      if ((s.settings as any).improvementSupply === "limited") {
+        if (curLv === 4) {
+          if (mmCountTowers(s) >= ((s as any).towerSupply ?? 12))
+            return { ok: false, error: "No towers available in supply." };
+        } else {
+          if (mmCountStorefronts(s) >= ((s as any).storefrontSupply ?? 32))
+            return { ok: false, error: "No storefronts available in supply." };
+        }
+      }
+      let bNs = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash - bCost,
+        })),
+        moveCount: s.moveCount + 1,
+      };
+      bNs = mmSetImpLevel(bNs, propIdx, curLv + 1);
+      bNs = mmRecalcNW(bNs);
+      return {
+        ok: true,
+        nextPublicState: bNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    case "sell_improvement": {
+      if (
+        s.phase !== "pre_roll" &&
+        s.phase !== "post_roll" &&
+        s.phase !== "debt_resolution"
+      )
+        return {
+          ok: false,
+          error: "Cannot sell improvements in current phase.",
+        };
+      const propIdx = (movePayload as any).propertyIndex as number;
+      const sectorId = mmDistSectorId(propIdx);
+      if (!sectorId || !MM_DIST[propIdx])
+        return { ok: false, error: "Not a district property." };
+      if (mmOwner(s.propertyOwnership, propIdx) !== uid)
+        return { ok: false, error: "You do not own this property." };
+      const curLv = mmImpLevel(s.propertyImprovements, propIdx);
+      if (curLv <= 0) return { ok: false, error: "No improvements to sell." };
+      const maxLv = mmMaxImpInSector(s, sectorId);
+      if (curLv < maxLv)
+        return {
+          ok: false,
+          error:
+            "Must sell evenly — choose the district with the highest level.",
+        };
+      if (curLv === 5 && (s.settings as any).improvementSupply === "limited") {
+        if (mmCountStorefronts(s) + 4 > ((s as any).storefrontSupply ?? 32))
+          return {
+            ok: false,
+            error: "Not enough storefronts in supply to downgrade tower.",
+          };
+      }
+      const salePrice = Math.floor(MM_DIST[propIdx].ic / 2);
+      let sNs = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash + salePrice,
+        })),
+        moveCount: s.moveCount + 1,
+      };
+      sNs = mmSetImpLevel(sNs, propIdx, curLv - 1);
+      sNs = mmRecalcNW(sNs);
+      return {
+        ok: true,
+        nextPublicState: sNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    // ── Mortgage actions ─────────────────────────────────────────────────
+    case "mortgage_property": {
+      if (
+        s.phase !== "pre_roll" &&
+        s.phase !== "post_roll" &&
+        s.phase !== "debt_resolution"
+      )
+        return { ok: false, error: "Cannot mortgage in current phase." };
+      const propIdx = (movePayload as any).propertyIndex as number;
+      if (mmOwner(s.propertyOwnership, propIdx) !== uid)
+        return { ok: false, error: "You do not own this property." };
+      if (mmMortgaged(s.propertyMortgages, propIdx))
+        return { ok: false, error: "Property is already mortgaged." };
+      // Districts: must sell all improvements in sector first
+      const mSectorId = mmDistSectorId(propIdx);
+      if (mSectorId) {
+        const indices = MM_SECTORS[mSectorId];
+        for (const idx of indices) {
+          if (mmImpLevel(s.propertyImprovements, idx) > 0)
+            return {
+              ok: false,
+              error:
+                "Must sell all improvements in the sector before mortgaging.",
+            };
+        }
+      }
+      const mv =
+        MM_DIST[propIdx]?.mv ??
+        (MM_TRANSIT_INDICES.includes(propIdx)
+          ? MM_TRANSIT_MV
+          : MM_SERVICE_INDICES.includes(propIdx)
+            ? MM_SERVICE_MV
+            : 0);
+      if (mv <= 0)
+        return { ok: false, error: "Property has no mortgage value." };
+      let mNs = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash + mv,
+          mortgagedProperties: [...p.mortgagedProperties, propIdx],
+        })),
+        moveCount: s.moveCount + 1,
+      };
+      const existMort = mNs.propertyMortgages.find(
+        (m) => m.spaceIndex === propIdx,
+      );
+      if (existMort) {
+        mNs = {
+          ...mNs,
+          propertyMortgages: mNs.propertyMortgages.map((m) =>
+            m.spaceIndex === propIdx ? { ...m, mortgaged: true } : m,
+          ),
+        };
+      } else {
+        mNs = {
+          ...mNs,
+          propertyMortgages: [
+            ...mNs.propertyMortgages,
+            { spaceIndex: propIdx, mortgaged: true },
+          ],
+        };
+      }
+      mNs = mmRecalcNW(mNs);
+      return {
+        ok: true,
+        nextPublicState: mNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    case "unmortgage_property": {
+      if (s.phase !== "pre_roll" && s.phase !== "post_roll")
+        return { ok: false, error: "Cannot unmortgage in current phase." };
+      const propIdx = (movePayload as any).propertyIndex as number;
+      if (mmOwner(s.propertyOwnership, propIdx) !== uid)
+        return { ok: false, error: "You do not own this property." };
+      if (!mmMortgaged(s.propertyMortgages, propIdx))
+        return { ok: false, error: "Property is not mortgaged." };
+      const umv =
+        MM_DIST[propIdx]?.mv ??
+        (MM_TRANSIT_INDICES.includes(propIdx)
+          ? MM_TRANSIT_MV
+          : MM_SERVICE_INDICES.includes(propIdx)
+            ? MM_SERVICE_MV
+            : 0);
+      const fee = Math.round(umv * 0.1);
+      const totalCost = umv + fee;
+      const uPl = s.players.find((p) => p.uid === uid)!;
+      if (uPl.cash < totalCost)
+        return { ok: false, error: "Not enough cash to unmortgage." };
+      let uNs = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash - totalCost,
+          mortgagedProperties: p.mortgagedProperties.filter(
+            (i) => i !== propIdx,
+          ),
+        })),
+        propertyMortgages: s.propertyMortgages.map((m) =>
+          m.spaceIndex === propIdx ? { ...m, mortgaged: false } : m,
+        ),
+        moveCount: s.moveCount + 1,
+      };
+      uNs = mmRecalcNW(uNs);
+      return {
+        ok: true,
+        nextPublicState: uNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+      };
+    }
+    // ── Trade actions ────────────────────────────────────────────────────
+    case "propose_trade": {
+      if (s.phase !== "pre_roll" && s.phase !== "post_roll")
+        return { ok: false, error: "Cannot trade in current phase." };
+      if (!(s.settings as any).tradeWindow)
+        return { ok: false, error: "Trading is disabled." };
+      if (s.activeTrade)
+        return { ok: false, error: "A trade is already pending." };
+      if (s.activeAuction)
+        return { ok: false, error: "Cannot trade during an auction." };
+      const offer = (movePayload as any).offer as {
+        toUid: string;
+        offeredProperties: number[];
+        requestedProperties: number[];
+        offeredCash: number;
+        requestedCash: number;
+        offeredInspectionPasses: number;
+        requestedInspectionPasses: number;
+      };
+      const tgt = s.players.find((p) => p.uid === offer.toUid);
+      if (!tgt || tgt.isBankrupt)
+        return { ok: false, error: "Invalid trade target." };
+      if (offer.toUid === uid)
+        return { ok: false, error: "Cannot trade with yourself." };
+      for (const pi of offer.offeredProperties) {
+        if (mmOwner(s.propertyOwnership, pi) !== uid)
+          return {
+            ok: false,
+            error: "You don't own one of the offered properties.",
+          };
+        if (mmImpLevel(s.propertyImprovements, pi) > 0)
+          return {
+            ok: false,
+            error: "Must sell improvements before trading a property.",
+          };
+      }
+      for (const pi of offer.requestedProperties) {
+        if (mmOwner(s.propertyOwnership, pi) !== offer.toUid)
+          return {
+            ok: false,
+            error: "Target doesn't own one of the requested properties.",
+          };
+        if (mmImpLevel(s.propertyImprovements, pi) > 0)
+          return {
+            ok: false,
+            error: "Target must sell improvements before trading a property.",
+          };
+      }
+      const proposer = s.players.find((p) => p.uid === uid)!;
+      if (offer.offeredCash > proposer.cash)
+        return { ok: false, error: "You don't have enough cash." };
+      if (offer.requestedCash > tgt.cash)
+        return { ok: false, error: "Target doesn't have enough cash." };
+      if (offer.offeredInspectionPasses > proposer.inspectionPasses)
+        return { ok: false, error: "You don't have enough inspection passes." };
+      if (offer.requestedInspectionPasses > tgt.inspectionPasses)
+        return {
+          ok: false,
+          error: "Target doesn't have enough inspection passes.",
+        };
+      const trade = {
+        ...offer,
+        fromUid: uid,
+        status: "pending",
+        returnPhase: s.phase,
+      };
+      const tNs = {
+        ...s,
+        activeTrade: trade,
+        currentTurnUid: offer.toUid,
+        phase: "trading",
+        moveCount: s.moveCount + 1,
+      };
+      return {
+        ok: true,
+        nextPublicState: tNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        nextTurnPlayerId: offer.toUid,
+      };
+    }
+    case "accept_trade": {
+      if (!s.activeTrade || (s.activeTrade as any).status !== "pending")
+        return { ok: false, error: "No pending trade." };
+      const tr = s.activeTrade as any;
+      if (uid !== tr.toUid)
+        return { ok: false, error: "Only the trade target can accept." };
+      let aNs = { ...s } as ReturnType<typeof mmS>;
+      // Transfer offered properties (proposer → target)
+      for (const pi of tr.offeredProperties as number[]) {
+        aNs = {
+          ...aNs,
+          players: mmUpdatePlayer(
+            mmUpdatePlayer(aNs.players, tr.fromUid, (p) => ({
+              ...p,
+              ownedProperties: p.ownedProperties.filter((i) => i !== pi),
+            })),
+            tr.toUid,
+            (p) => ({ ...p, ownedProperties: [...p.ownedProperties, pi] }),
+          ),
+          propertyOwnership: aNs.propertyOwnership.map((o) =>
+            o.spaceIndex === pi ? { ...o, ownerUid: tr.toUid } : o,
+          ),
+        };
+        if (mmMortgaged(aNs.propertyMortgages, pi)) {
+          aNs = {
+            ...aNs,
+            players: mmUpdatePlayer(
+              mmUpdatePlayer(aNs.players, tr.fromUid, (p) => ({
+                ...p,
+                mortgagedProperties: p.mortgagedProperties.filter(
+                  (i) => i !== pi,
+                ),
+              })),
+              tr.toUid,
+              (p) => ({
+                ...p,
+                mortgagedProperties: [...p.mortgagedProperties, pi],
+              }),
+            ),
+          };
+        }
+      }
+      // Transfer requested properties (target → proposer)
+      for (const pi of tr.requestedProperties as number[]) {
+        aNs = {
+          ...aNs,
+          players: mmUpdatePlayer(
+            mmUpdatePlayer(aNs.players, tr.toUid, (p) => ({
+              ...p,
+              ownedProperties: p.ownedProperties.filter((i) => i !== pi),
+            })),
+            tr.fromUid,
+            (p) => ({ ...p, ownedProperties: [...p.ownedProperties, pi] }),
+          ),
+          propertyOwnership: aNs.propertyOwnership.map((o) =>
+            o.spaceIndex === pi ? { ...o, ownerUid: tr.fromUid } : o,
+          ),
+        };
+        if (mmMortgaged(aNs.propertyMortgages, pi)) {
+          aNs = {
+            ...aNs,
+            players: mmUpdatePlayer(
+              mmUpdatePlayer(aNs.players, tr.toUid, (p) => ({
+                ...p,
+                mortgagedProperties: p.mortgagedProperties.filter(
+                  (i) => i !== pi,
+                ),
+              })),
+              tr.fromUid,
+              (p) => ({
+                ...p,
+                mortgagedProperties: [...p.mortgagedProperties, pi],
+              }),
+            ),
+          };
+        }
+      }
+      // Transfer cash
+      if (tr.offeredCash > 0) {
+        aNs = {
+          ...aNs,
+          players: mmUpdatePlayer(
+            mmUpdatePlayer(aNs.players, tr.fromUid, (p) => ({
+              ...p,
+              cash: p.cash - tr.offeredCash,
+            })),
+            tr.toUid,
+            (p) => ({ ...p, cash: p.cash + tr.offeredCash }),
+          ),
+        };
+      }
+      if (tr.requestedCash > 0) {
+        aNs = {
+          ...aNs,
+          players: mmUpdatePlayer(
+            mmUpdatePlayer(aNs.players, tr.toUid, (p) => ({
+              ...p,
+              cash: p.cash - tr.requestedCash,
+            })),
+            tr.fromUid,
+            (p) => ({ ...p, cash: p.cash + tr.requestedCash }),
+          ),
+        };
+      }
+      // Transfer inspection passes
+      if (tr.offeredInspectionPasses > 0) {
+        aNs = {
+          ...aNs,
+          players: mmUpdatePlayer(
+            mmUpdatePlayer(aNs.players, tr.fromUid, (p) => ({
+              ...p,
+              inspectionPasses: p.inspectionPasses - tr.offeredInspectionPasses,
+            })),
+            tr.toUid,
+            (p) => ({
+              ...p,
+              inspectionPasses: p.inspectionPasses + tr.offeredInspectionPasses,
+            }),
+          ),
+        };
+      }
+      if (tr.requestedInspectionPasses > 0) {
+        aNs = {
+          ...aNs,
+          players: mmUpdatePlayer(
+            mmUpdatePlayer(aNs.players, tr.toUid, (p) => ({
+              ...p,
+              inspectionPasses:
+                p.inspectionPasses - tr.requestedInspectionPasses,
+            })),
+            tr.fromUid,
+            (p) => ({
+              ...p,
+              inspectionPasses:
+                p.inspectionPasses + tr.requestedInspectionPasses,
+            }),
+          ),
+        };
+      }
+      aNs = {
+        ...aNs,
+        activeTrade: null,
+        currentTurnUid: tr.fromUid,
+        phase: tr.returnPhase,
+        moveCount: aNs.moveCount + 1,
+      };
+      aNs = mmRecalcNW(aNs);
+      return {
+        ok: true,
+        nextPublicState: aNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        nextTurnPlayerId: tr.fromUid,
+      };
+    }
+    case "reject_trade": {
+      if (!s.activeTrade || (s.activeTrade as any).status !== "pending")
+        return { ok: false, error: "No pending trade." };
+      const tr = s.activeTrade as any;
+      if (uid !== tr.toUid)
+        return { ok: false, error: "Only the trade target can reject." };
+      const rNs = {
+        ...s,
+        activeTrade: null,
+        currentTurnUid: tr.fromUid,
+        phase: tr.returnPhase,
+        moveCount: s.moveCount + 1,
+      };
+      return {
+        ok: true,
+        nextPublicState: rNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        nextTurnPlayerId: tr.fromUid,
+      };
+    }
+    // ── Debt / Bankruptcy actions ────────────────────────────────────────
+    case "pay_debt": {
+      if (s.phase !== "debt_resolution" || !(s as any).debtContext)
+        return { ok: false, error: "No active debt to pay." };
+      const dc = (s as any).debtContext as {
+        amount: number;
+        creditorUid: string | null;
+        canReroll: boolean;
+        debtType?: string;
+      };
+      const pl = s.players.find((p) => p.uid === uid)!;
+      if (pl.cash < dc.amount)
+        return {
+          ok: false,
+          error: `Need $${dc.amount} but only have $${pl.cash}. Sell improvements, mortgage properties, or declare bankruptcy.`,
+        };
+      let dNs = {
+        ...s,
+        players: mmUpdatePlayer(s.players, uid, (p) => ({
+          ...p,
+          cash: p.cash - dc.amount,
+        })),
+        moveCount: s.moveCount + 1,
+      };
+      if (dc.creditorUid) {
+        dNs = {
+          ...dNs,
+          players: mmUpdatePlayer(dNs.players, dc.creditorUid, (p) => ({
+            ...p,
+            cash: p.cash + dc.amount,
+          })),
+        };
+      }
+      // Civic fee debt → route payment to plaza pot
+      if (dc.debtType === "civic_fee") {
+        dNs = { ...dNs, plazaPot: dNs.plazaPot + dc.amount };
+      }
+      (dNs as any).debtContext = null;
+      dNs = mmRecalcNW(dNs);
+      if (dc.canReroll && dNs.doublesCount > 0) {
+        return {
+          ok: true,
+          nextPublicState: { ...dNs, phase: "pre_roll" } as unknown as Record<
+            string,
+            unknown
+          >,
+          turnAdvance: false,
+        };
+      }
+      return {
+        ok: true,
+        nextPublicState: { ...dNs, phase: "post_roll" } as unknown as Record<
+          string,
+          unknown
+        >,
+        turnAdvance: false,
+      };
+    }
+    case "declare_bankruptcy": {
+      if (s.phase !== "debt_resolution" || !(s as any).debtContext)
+        return { ok: false, error: "No active debt." };
+      const dc = (s as any).debtContext as { creditorUid: string | null };
+      let bNs = mmBankrupt(s, uid, dc.creditorUid);
+      bNs = mmRecalcNW(bNs);
+      const term = mmTerminal(bNs);
+      if (term) {
+        bNs = {
+          ...bNs,
+          phase: "game_over",
+          winnerUid: term.winnerIds?.[0] ?? null,
+          endReason: term.reason ?? null,
+        };
+        return {
+          ok: true,
+          nextPublicState: bNs as unknown as Record<string, unknown>,
+          turnAdvance: false,
+          terminal: term,
+        };
+      }
+      const nextIdx = mmNextActive(bNs, s.currentTurnIndex);
+      const nextUid = s.turnOrder[nextIdx];
+      const inInsp = bNs.inspectionHoldTurns.some(
+        (h: any) => h.uid === nextUid,
+      );
+      bNs = {
+        ...bNs,
+        currentTurnIndex: nextIdx,
+        currentTurnUid: nextUid,
+        turnNumber: bNs.turnNumber + 1,
+        phase: inInsp ? "inspection" : "pre_roll",
+      };
+      return {
+        ok: true,
+        nextPublicState: bNs as unknown as Record<string, unknown>,
+        turnAdvance: false,
+        nextTurnPlayerId: nextUid,
+      };
+    }
+    default:
+      return { ok: false, error: `Action "${action}" is not available yet.` };
+  }
+}
+
+registerAdapter({
+  gameId: "metro_magnate",
+  runtimeType: "turnBased",
+  minPlayers: 2,
+  maxPlayers: 6,
+
+  defaultSettings: {
+    mode: "classic",
+    startingCapital: 1500,
+    passSalary: 200,
+    auctionType: "english",
+    turnTimer: "60s",
+    inspectionSeverity: "standard",
+    improvementSupply: "unlimited",
+    plazaBonus: true,
+    terminalExactBonus: false,
+    tradeWindow: true,
+  },
+
+  createInitialPublicState: (players, settings) => {
+    const sorted = [...players].sort((a, b) => a.slotIndex - b.slotIndex);
+    const turnOrder = sorted.map((p) => p.uid);
+    const s = settings as Record<string, unknown>;
+    const capital = (
+      typeof s.startingCapital === "number" ? s.startingCapital : 1500
+    ) as number;
+    const playerStates = sorted.map((p) => ({
+      uid: p.uid,
+      position: 0,
+      cash: capital,
+      ownedProperties: [] as number[],
+      improvements: [] as number[],
+      mortgagedProperties: [] as number[],
+      inspectionPasses: 0,
+      isBankrupt: false,
+      bankruptTurn: -1,
+      netWorth: capital,
+      timesPassedTerminal: 0,
+    }));
+    const emptyOrder = Array.from({ length: 16 }, (_, i) => i);
+    return {
+      boardId: "standard_36",
+      players: playerStates,
+      turnOrder,
+      currentTurnIndex: 0,
+      currentTurnUid: turnOrder[0],
+      phase: "pre_roll",
+      lastDice: null,
+      doublesCount: 0,
+      turnNumber: 1,
+      moveCount: 0,
+      activeAuction: null,
+      activeTrade: null,
+      propertyOwnership: [],
+      propertyImprovements: [],
+      propertyMortgages: [],
+      inspectionHoldTurns: [],
+      marketShiftDeckIndex: 0,
+      cityBriefDeckIndex: 0,
+      marketShiftOrder: emptyOrder,
+      cityBriefOrder: emptyOrder,
+      plazaPot: 0,
+      winnerUid: null,
+      endReason: null,
+      debtContext: null,
+      eliminationOrder: [] as string[],
+      storefrontSupply: s.improvementSupply === "limited" ? 32 : 9999,
+      towerSupply: s.improvementSupply === "limited" ? 12 : 9999,
+      settings: s,
+    } as unknown as Record<string, unknown>;
+  },
+
+  validateMove: mmValidateMove,
+
+  computeOutcome: (state, players) => {
+    const s = state as Record<string, unknown>;
+    const winner = s.winnerUid as string | null;
+    const pStates = (s.players ?? []) as MMPlayer[];
+    const totalPlayers = players.length;
+    const eliminated = (s.eliminationOrder ?? []) as string[];
+
+    // Build placement map: winner=1
+    const placementMap = new Map<string, number>();
+    if (winner) placementMap.set(winner, 1);
+    // eliminationOrder is earliest-eliminated first → worst placement first
+    for (let i = 0; i < eliminated.length; i++) {
+      placementMap.set(eliminated[i], totalPlayers - i);
+    }
+
+    // For non-eliminated, non-winner players (express mode), sort by netWorth
+    const unranked = players
+      .map((p: { uid: string }) => p.uid)
+      .filter((uid: string) => !placementMap.has(uid));
+    if (unranked.length > 0) {
+      const sorted = [...unranked].sort((a: string, b: string) => {
+        const pa = pStates.find((p: MMPlayer) => p.uid === a);
+        const pb = pStates.find((p: MMPlayer) => p.uid === b);
+        return (pb?.netWorth ?? 0) - (pa?.netWorth ?? 0);
+      });
+      const startPlacement = 1 + eliminated.length + 1;
+      for (let i = 0; i < sorted.length; i++) {
+        placementMap.set(sorted[i], startPlacement + i);
+      }
+    }
+
+    return {
+      winnerIds: winner ? [winner] : [],
+      finalScoreboard: players.map((p) => {
+        const ps = pStates.find((pl: MMPlayer) => pl.uid === p.uid);
+        const isWinner = p.uid === winner;
+        return {
+          uid: p.uid,
+          score: isWinner ? 1 : 0,
+          placement: placementMap.get(p.uid) ?? totalPlayers,
+          stats: {
+            netWorth: ps?.netWorth ?? 0,
+            propertiesOwned: ps?.ownedProperties.length ?? 0,
+          },
+        };
+      }),
+    };
+  },
+
+  extractPerformanceMetrics: (state, players) => {
+    const s = state as Record<string, unknown>;
+    const pStates = (s.players ?? []) as MMPlayer[];
+    const imps = (s.propertyImprovements ?? []) as MMImp[];
+    const elimOrder = (s.eliminationOrder ?? []) as string[];
+    const settings = (s.settings ?? {}) as Record<string, unknown>;
+    const transitIndices = [5, 16, 24, 35];
+    const serviceIndices = [12, 27];
+    const sectorDistricts: number[][] = [
+      [1, 3, 6],
+      [8, 9, 11],
+      [13, 15, 17],
+      [19, 21, 23],
+      [25, 26, 28],
+      [31, 32, 34],
+    ];
+
+    const perPlayer: Record<string, Record<string, unknown>> = {};
+    for (const p of players) {
+      const ps = pStates.find((pl: MMPlayer) => pl.uid === p.uid);
+      if (!ps) continue;
+      const ownedSet = new Set(ps.ownedProperties);
+
+      let sectorsCompleted = 0;
+      for (const districts of sectorDistricts) {
+        if (districts.every((i) => ownedSet.has(i))) sectorsCompleted++;
+      }
+
+      let towersBuilt = 0;
+      let totalImprovements = 0;
+      for (const imp of imps) {
+        if (ownedSet.has(imp.spaceIndex)) {
+          if (imp.level === 5) towersBuilt++;
+          if (imp.level > 0) totalImprovements += imp.level;
+        }
+      }
+
+      perPlayer[p.uid] = {
+        netWorth: ps.netWorth,
+        cash: ps.cash,
+        propertiesOwned: ps.ownedProperties.length,
+        sectorsCompleted,
+        towersBuilt,
+        totalImprovements,
+        transitLinesOwned: transitIndices.filter((i) => ownedSet.has(i)).length,
+        serviceNodesOwned: serviceIndices.filter((i) => ownedSet.has(i)).length,
+        timesPassedTerminal: ps.timesPassedTerminal,
+        isBankrupt: ps.isBankrupt,
+        isWinner: (s.winnerUid as string | null) === p.uid,
+        mortgagedCount: ps.mortgagedProperties.length,
+      };
+    }
+
+    return {
+      totalTurns: s.turnNumber as number,
+      totalMoves: s.moveCount as number,
+      boardSize: 36,
+      playerCount: players.length,
+      eliminationOrder: elimOrder,
+      mode: settings.mode ?? "classic",
+      perPlayer,
+    };
+  },
+
+  validateSettings: (patch) => {
+    const defaults: Record<string, unknown> = {
+      mode: "classic",
+      startingCapital: 1500,
+      passSalary: 200,
+      auctionType: "english",
+      turnTimer: "60s",
+      inspectionSeverity: "standard",
+      improvementSupply: "unlimited",
+      plazaBonus: true,
+      terminalExactBonus: false,
+      tradeWindow: true,
+    };
+    const result = { ...defaults };
+    if (patch.mode && ["classic", "express"].includes(patch.mode as string))
+      result.mode = patch.mode;
+    if (typeof patch.startingCapital === "number")
+      result.startingCapital = Math.max(
+        500,
+        Math.min(5000, Math.round(patch.startingCapital as number)),
+      );
+    if (typeof patch.passSalary === "number")
+      result.passSalary = Math.max(
+        0,
+        Math.min(500, Math.round(patch.passSalary as number)),
+      );
+    if (
+      patch.auctionType &&
+      ["english", "sealed"].includes(patch.auctionType as string)
+    )
+      result.auctionType = patch.auctionType;
+    if (
+      patch.turnTimer &&
+      ["off", "30s", "60s", "90s", "unlimited"].includes(
+        patch.turnTimer as string,
+      )
+    )
+      result.turnTimer = patch.turnTimer;
+    if (
+      patch.inspectionSeverity &&
+      ["lenient", "standard", "strict"].includes(
+        patch.inspectionSeverity as string,
+      )
+    )
+      result.inspectionSeverity = patch.inspectionSeverity;
+    if (
+      patch.improvementSupply &&
+      ["unlimited", "limited"].includes(patch.improvementSupply as string)
+    )
+      result.improvementSupply = patch.improvementSupply;
+    if (typeof patch.plazaBonus === "boolean")
+      result.plazaBonus = patch.plazaBonus;
+    if (typeof patch.terminalExactBonus === "boolean")
+      result.terminalExactBonus = patch.terminalExactBonus;
+    if (typeof patch.tradeWindow === "boolean")
+      result.tradeWindow = patch.tradeWindow;
     return result;
   },
 });
