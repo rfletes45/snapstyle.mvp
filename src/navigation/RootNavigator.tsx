@@ -1,15 +1,12 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import {
-  BottomTabNavigationOptions,
-  createBottomTabNavigator,
-} from "@react-navigation/bottom-tabs";
-import {
-  getFocusedRouteNameFromRoute,
   NavigationContainer,
   NavigationContainerRef,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import React, { useCallback, useMemo } from "react";
+import { StyleSheet } from "react-native";
 
 import AppGate from "@/components/AppGate";
 import WarningModal from "@/components/WarningModal";
@@ -21,7 +18,6 @@ import type {
   AuthStackParamList,
   InboxStackParamList,
   MainStackParamList,
-  MomentsStackParamList,
   ProfileSetupStackParamList,
   ProfileTabStackParamList,
   RootStackParamList,
@@ -50,8 +46,7 @@ import UserProfileScreen from "@/screens/profile/UserProfileScreen";
 import BlockedUsersScreen from "@/screens/settings/BlockedUsersScreen";
 import PrivacySettingsScreen from "@/screens/settings/PrivacySettingsScreen";
 import SettingsScreen from "@/screens/settings/SettingsScreen";
-import MomentsUnderConstructionScreen from "@/screens/stories/MomentsUnderConstructionScreen";
-import StoryViewerScreen from "@/screens/stories/StoryViewerScreen";
+import ShopHubScreen from "@/screens/shop/ShopHubScreen";
 
 // Debug screens only loaded in development
 const DebugScreen = __DEV__
@@ -67,7 +62,6 @@ import WalletScreen from "@/screens/wallet/WalletScreen";
 import CosmeticsShopScreen from "@/screens/shop/CosmeticsShopScreen";
 import PremiumShopScreen from "@/screens/shop/PremiumShopScreen";
 import PurchaseHistoryScreen from "@/screens/shop/PurchaseHistoryScreen";
-import ShopHubScreen from "@/screens/shop/ShopHubScreen";
 
 import GroupChatCreateScreen from "@/screens/groups/GroupChatCreateScreen";
 import GroupChatInfoScreen from "@/screens/groups/GroupChatInfoScreen";
@@ -115,40 +109,11 @@ import {
 
 const AuthStack_Nav = createNativeStackNavigator<AuthStackParamList>();
 const InboxStack_Nav = createNativeStackNavigator<InboxStackParamList>();
-const MomentsStack_Nav = createNativeStackNavigator<MomentsStackParamList>();
 const ProfileStack_Nav = createNativeStackNavigator<ProfileTabStackParamList>();
 const MainStack_Nav = createNativeStackNavigator<MainStackParamList>();
 const ProfileSetupStack_Nav =
   createNativeStackNavigator<ProfileSetupStackParamList>();
 const Tab = createBottomTabNavigator<AppTabsParamList>();
-
-/**
- * Routes that should hide the bottom tab bar.
- */
-const ROUTES_WITH_HIDDEN_TAB_BAR = new Set([
-  // Moments stack routes
-  "StoryViewer",
-  "CreateStory",
-]);
-
-/**
- * Helper to get the tab bar style based on the focused route in a nested stack.
- */
-function getTabBarStyle(
-  route: Parameters<typeof getFocusedRouteNameFromRoute>[0],
-  defaultStyle: BottomTabNavigationOptions["tabBarStyle"],
-): BottomTabNavigationOptions["tabBarStyle"] {
-  const routeName = getFocusedRouteNameFromRoute(route);
-
-  if (routeName && ROUTES_WITH_HIDDEN_TAB_BAR.has(routeName)) {
-    return {
-      display: "none" as const,
-      height: 0,
-    };
-  }
-
-  return defaultStyle;
-}
 
 function AuthStack() {
   const { colors } = useAppTheme();
@@ -230,47 +195,6 @@ function InboxStack() {
         options={{ headerShown: false }}
       />
     </InboxStack_Nav.Navigator>
-  );
-}
-
-/**
- * Moments Stack (rebranded from Stories)
- */
-function MomentsStack() {
-  const { colors } = useAppTheme();
-
-  return (
-    <MomentsStack_Nav.Navigator
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: colors.headerBackground,
-        },
-        headerTintColor: colors.headerText,
-        headerTitleStyle: {
-          fontWeight: "600",
-          fontSize: 18,
-        },
-        headerShadowVisible: false,
-        contentStyle: {
-          backgroundColor: colors.background,
-        },
-        animation: "simple_push",
-      }}
-    >
-      <MomentsStack_Nav.Screen
-        name="StoriesList"
-        component={MomentsUnderConstructionScreen}
-        options={{ headerShown: false }}
-      />
-      <MomentsStack_Nav.Screen
-        name="StoryViewer"
-        component={StoryViewerScreen}
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
-      />
-    </MomentsStack_Nav.Navigator>
   );
 }
 
@@ -365,7 +289,7 @@ function ProfileStack() {
 
 /**
  * Main App Tabs
- * Shop | Inbox | Moments | Profile
+ * Profile | Messages | Shop
  */
 function AppTabs() {
   const { colors } = useAppTheme();
@@ -374,14 +298,23 @@ function AppTabs() {
   >["name"];
 
   const defaultTabBarStyle = {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
     borderTopColor: colors.border,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    elevation: 0,
+    height: 110,
+    paddingTop: 10,
+    paddingBottom: 28,
+  };
+
+  const tabBarItemStyle = {
+    paddingTop: 8,
+    paddingBottom: 4,
   };
 
   return (
     <Tab.Navigator
-      initialRouteName="Inbox"
+      initialRouteName="Messages"
       screenOptions={({ route }) => ({
         headerShown: true,
         headerStyle: {
@@ -397,26 +330,21 @@ function AppTabs() {
         tabBarInactiveTintColor: colors.tabInactive,
         tabBarHideOnKeyboard: true,
         tabBarStyle: defaultTabBarStyle,
+        tabBarItemStyle: tabBarItemStyle,
         sceneStyle: { backgroundColor: colors.background },
         lazy: true,
         tabBarIcon: ({ color, size }) => {
           let iconName: MaterialCommunityIconName = "message-outline";
 
           switch (route.name) {
-            case "Shop":
-              iconName = "store-outline";
-              break;
-            case "Inbox":
-              iconName = "message-outline";
-              break;
-            case "Games":
-              iconName = "gamepad-variant";
-              break;
-            case "Moments":
-              iconName = "image-multiple-outline";
-              break;
             case "Profile":
               iconName = "account-circle-outline";
+              break;
+            case "Messages":
+              iconName = "message-outline";
+              break;
+            case "Shop":
+              iconName = "store-outline";
               break;
           }
 
@@ -427,37 +355,21 @@ function AppTabs() {
       })}
     >
       <Tab.Screen
-        name="Shop"
-        component={ShopHubScreen}
+        name="Profile"
+        component={ProfileStack}
         options={{ headerShown: false }}
       />
       <Tab.Screen
-        name="Inbox"
+        name="Messages"
         component={InboxStack}
         options={{
           headerShown: false,
         }}
       />
       <Tab.Screen
-        name="Games"
-        component={GamesHubScreenV4}
+        name="Shop"
+        component={ShopHubScreen}
         options={{ headerShown: false }}
-      />
-      <Tab.Screen
-        name="Moments"
-        component={MomentsStack}
-        options={({ route }) => ({
-          headerShown: false,
-          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
-        })}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileStack}
-        options={({ route }) => ({
-          headerShown: false,
-          tabBarStyle: getTabBarStyle(route, defaultTabBarStyle),
-        })}
       />
     </Tab.Navigator>
   );
@@ -612,7 +524,7 @@ function MainStack() {
       )}
 
       <MainStack_Nav.Screen
-        name="Connections"
+        name="Friends"
         component={FriendsScreen}
         options={{ headerShown: false }}
       />
@@ -665,6 +577,11 @@ function MainStack() {
       <MainStack_Nav.Screen
         name="GameLobbyV4"
         component={GameLobbyScreenV4}
+        options={{ headerShown: false }}
+      />
+      <MainStack_Nav.Screen
+        name="GamesHub"
+        component={GamesHubScreenV4}
         options={{ headerShown: false }}
       />
       <MainStack_Nav.Screen
@@ -728,7 +645,7 @@ interface RootNavigatorProps {
 /**
  * RootNavigator
  * Uses AppGate for hydration-safe navigation
- * Rebranded: Vibe app with Shop, Inbox, Moments, Profile
+ * Three-tab layout: Profile, Messages, Shop
  */
 export default function RootNavigator({
   navigationRef: externalRef,
@@ -762,14 +679,6 @@ export default function RootNavigator({
           ProfileSetup: "profile-setup",
           MainTabs: {
             screens: {
-              Shop: "shop",
-              Inbox: {
-                screens: {
-                  ChatList: "inbox",
-                },
-              },
-              Games: "games",
-              Moments: "moments",
               Profile: {
                 screens: {
                   ProfileMain: "profile",
@@ -777,14 +686,21 @@ export default function RootNavigator({
                   BadgeCollection: "badges",
                 },
               },
+              Messages: {
+                screens: {
+                  ChatList: "messages",
+                },
+              },
+              Shop: "shop",
             },
           },
-          Connections: "connections",
+          Friends: "friends",
           ChatDetail: "chat/:friendUid",
           GroupChat: "group/:groupId",
           UserProfile: "user/:userId",
           ActivityFeed: "activity",
           GameLobbyV4: "game/lobby/:inviteId",
+          GamesHub: "games",
           GamePlayV4: "game/play/:sessionId",
           GameOverV4: "game/over/:sessionId",
           GameDetailV4: "game/detail/:gameId",

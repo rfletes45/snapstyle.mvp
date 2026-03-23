@@ -14,19 +14,19 @@
  * @module hooks/useInboxData
  */
 
-import { isDMVisible } from "@/services/chatMembers";
-import { getFirestoreInstance } from "@/services/firebase";
-import { isGroupVisible } from "@/services/groupMembers";
 import { CHAT_FEATURES } from "@/constants/featureFlags";
+import {
+  normalizeFanoutDMConversation,
+  normalizeFanoutGroupConversation,
+} from "@/services/chat/fanoutInboxNormalization";
 import {
   getDefaultMemberState,
   RECENTLY_READ_TTL_MS,
   sortInboxConversations,
 } from "@/services/chat/normalizeInboxRow";
-import {
-  normalizeFanoutDMConversation,
-  normalizeFanoutGroupConversation,
-} from "@/services/chat/fanoutInboxNormalization";
+import { isDMVisible } from "@/services/chatMembers";
+import { getFirestoreInstance } from "@/services/firebase";
+import { isGroupVisible } from "@/services/groupMembers";
 import { InboxConversation, MemberStatePrivate } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -137,12 +137,6 @@ export interface UseInboxDataResult {
 
   /** Set filter */
   setFilter: (filter: InboxFilter) => void;
-
-  /** Show archived conversations */
-  showArchived: boolean;
-
-  /** Toggle archived view */
-  setShowArchived: (show: boolean) => void;
 
   /** Manual refresh trigger */
   refresh: () => void;
@@ -279,7 +273,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const [groupLoading, setGroupLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [filter, setFilter] = useState<InboxFilter>("all");
-  const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Track if we've loaded cached data (to avoid double-loading)
@@ -686,8 +679,8 @@ export function useInboxData(uid: string): UseInboxDataResult {
   const conversations = useMemo(() => {
     let all = [...dmConversations, ...groupConversations];
 
-    // Filter by archive status
-    all = all.filter((c) => c.memberState.archived === showArchived);
+    // Exclude archived conversations (archive feature removed)
+    all = all.filter((c) => !c.memberState.archived);
 
     // Apply filter
     switch (filter) {
@@ -706,7 +699,7 @@ export function useInboxData(uid: string): UseInboxDataResult {
     }
 
     return sortInboxConversations(all);
-  }, [dmConversations, groupConversations, filter, showArchived]);
+  }, [dmConversations, groupConversations, filter]);
 
   // Separate pinned and regular
   const pinnedConversations = useMemo(
@@ -766,8 +759,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
       totalUnread: aggregation.totalUnread,
       filter: aggregation.filter as InboxFilter,
       setFilter: aggregation.setFilter as (filter: InboxFilter) => void,
-      showArchived: aggregation.showArchived,
-      setShowArchived: aggregation.setShowArchived,
       refresh,
       markConversationReadOptimistic,
     };
@@ -783,8 +774,6 @@ export function useInboxData(uid: string): UseInboxDataResult {
     totalUnread,
     filter,
     setFilter,
-    showArchived,
-    setShowArchived,
     refresh,
     markConversationReadOptimistic,
   };

@@ -72,7 +72,8 @@ async function getInboxSettings(uid) {
             .get();
         const data = inboxDoc.data() ?? {};
         return {
-            defaultNotifyLevel: data.defaultNotifyLevel === "mentions" || data.defaultNotifyLevel === "none"
+            defaultNotifyLevel: data.defaultNotifyLevel === "mentions" ||
+                data.defaultNotifyLevel === "none"
                 ? data.defaultNotifyLevel
                 : "all",
             notificationPreview: data.notificationPreview === "sender_only" ||
@@ -304,7 +305,8 @@ exports.onMessageRequestCreatedNotification = functions.firestore
         dedupeKey: `message_request:${recipientUid}:${chatId}`,
         collapseKey: `message_request:${recipientUid}`,
         title: "New message request",
-        body: typeof data.messagePreview === "string" && data.messagePreview.length > 0
+        body: typeof data.messagePreview === "string" &&
+            data.messagePreview.length > 0
             ? data.messagePreview
             : `${data.requesterName || "Someone"} wants to message you`,
         actorUid: typeof data.requesterId === "string" ? data.requesterId : undefined,
@@ -314,7 +316,7 @@ exports.onMessageRequestCreatedNotification = functions.firestore
         route: {
             screen: "MainTabs",
             params: {
-                screen: "Inbox",
+                screen: "Messages",
                 params: {
                     screen: "ChatList",
                     params: {

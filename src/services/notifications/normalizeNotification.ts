@@ -75,10 +75,7 @@ export function normalizeNotificationPayload(
     return {
       type: "dm_message",
       notificationId,
-      dedupeKey: buildDedupeKey(
-        payload,
-        `dm_message:${chatId ?? senderId}`,
-      ),
+      dedupeKey: buildDedupeKey(payload, `dm_message:${chatId ?? senderId}`),
       route:
         routeFromPayload ??
         ({
@@ -126,7 +123,7 @@ export function normalizeNotificationPayload(
         ({
           screen: "MainTabs",
           params: {
-            screen: "Inbox",
+            screen: "Messages",
             params: {
               screen: "ChatList",
               params: {
@@ -146,7 +143,7 @@ export function normalizeNotificationPayload(
       route:
         routeFromPayload ??
         ({
-          screen: "Connections",
+          screen: "Friends",
           params: {
             tab: "requests",
           },
@@ -162,7 +159,7 @@ export function normalizeNotificationPayload(
       route:
         routeFromPayload ??
         ({
-          screen: "Connections",
+          screen: "Friends",
           params: {
             tab: "all",
           },

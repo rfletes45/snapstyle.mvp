@@ -34,9 +34,9 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notifyUser = notifyUser;
+const crypto_1 = require("crypto");
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
-const crypto_1 = require("crypto");
 const utils_1 = require("./utils");
 const db = admin.firestore();
 const NOTIFICATION_SESSION_STALE_MS = 90_000;
@@ -117,7 +117,7 @@ function isRecipientViewingEquivalentSurface(session, request) {
         return true;
     if (request.type === "friend_request" ||
         request.type === "friend_request_accepted") {
-        return session.currentScreen === "Connections";
+        return session.currentScreen === "Friends";
     }
     if (request.type === "achievement_unlocked") {
         return (session.currentScreen === "AchievementsHub" ||
@@ -128,7 +128,8 @@ function isRecipientViewingEquivalentSurface(session, request) {
             session.currentScreen === "PurchaseHistory");
     }
     if (request.type === "message_request" &&
-        (session.currentScreen === "ChatList" || session.currentScreen === "Connections")) {
+        (session.currentScreen === "ChatList" ||
+            session.currentScreen === "Friends")) {
         return true;
     }
     return false;

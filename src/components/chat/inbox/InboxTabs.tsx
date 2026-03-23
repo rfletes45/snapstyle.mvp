@@ -1,23 +1,26 @@
 /**
- * InboxTabs Component
+ * InboxTabs Component (Redesigned — Snapchat-inspired)
  *
- * Horizontal scrollable filter tabs for inbox:
+ * Horizontal scrollable filter tabs for the Messages screen:
  * - All: All conversations
  * - Unread: Conversations with unread messages (with badge)
  * - Groups: Group conversations only
  * - DMs: Direct messages only
- * - Requests: Friend/connection requests (with badge)
+ * - Requests: Friend requests (with badge)
+ *
+ * Unified background color matching the Messages screen for visual cohesion.
+ * Clean pill-style tabs with subtle active state.
  *
  * @module components/chat/inbox/InboxTabs
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import type { InboxFilter } from "@/hooks/useInboxData";
 import { useAppTheme } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";
 import React, { memo, useCallback } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Badge, Text } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -36,7 +39,7 @@ export interface InboxTabsProps {
   onTabChange: (tab: InboxFilter) => void;
   /** Total unread count for badge */
   unreadCount: number;
-  /** Friend/connection requests count for badge */
+  /** Friend requests count for badge */
   requestsCount: number;
 }
 
@@ -50,7 +53,8 @@ export const InboxTabs = memo(function InboxTabs({
   unreadCount,
   requestsCount,
 }: InboxTabsProps) {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
+  const inactiveTabBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)";
 
   const handleTabChange = useCallback(
     (tab: InboxFilter) => {
@@ -67,7 +71,7 @@ export const InboxTabs = memo(function InboxTabs({
     {
       key: "unread",
       label: "Unread",
-      badge: unreadCount > 0 ? 1 : undefined, // Will display as "!" in badge render
+      badge: unreadCount > 0 ? 1 : undefined,
     },
     { key: "groups", label: "Groups" },
     { key: "dms", label: "DMs" },
@@ -79,7 +83,7 @@ export const InboxTabs = memo(function InboxTabs({
   ];
 
   return (
-    <View style={[styles.container, { borderBottomColor: colors.border }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -95,8 +99,9 @@ export const InboxTabs = memo(function InboxTabs({
                 styles.tab,
                 {
                   backgroundColor: isActive
-                    ? colors.primary + "20"
-                    : "transparent",
+                    ? colors.primary + "18"
+                    : inactiveTabBg,
+                  borderColor: isActive ? colors.primary + "40" : "transparent",
                 },
               ]}
               onPress={() => handleTabChange(tab.key)}
@@ -117,13 +122,13 @@ export const InboxTabs = memo(function InboxTabs({
               </Text>
               {tab.badge !== undefined && (
                 <Badge
-                  size={18}
+                  size={16}
                   style={[
                     styles.badge,
                     {
                       backgroundColor: isActive
                         ? colors.primary
-                        : colors.textSecondary,
+                        : colors.textMuted,
                     },
                   ]}
                 >
@@ -148,23 +153,26 @@ export const InboxTabs = memo(function InboxTabs({
 
 const styles = StyleSheet.create({
   container: {
-    borderBottomWidth: 1,
+    marginTop: 6,
+    // No border — unified continuous surface with the header and list
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   tab: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 6,
     borderRadius: BorderRadius.full,
+    borderWidth: 1,
     gap: Spacing.xs,
   },
   tabLabel: {
-    fontSize: 14,
+    fontSize: 13,
+    letterSpacing: 0.1,
   },
   badge: {
     marginLeft: 2,

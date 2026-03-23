@@ -108,8 +108,8 @@ Resolution summary:
 
 - one canonical notification adapter used before routing
 - dedupe-key gating for tap handling and in-app throttling
-- legacy DM/group push triggers env-gated (`CHAT_LEGACY_PUSH_ENABLED`)
 - route decisions now driven from normalized payload shape
+- Note: `CHAT_LEGACY_PUSH_ENABLED` was documented as env-gating legacy push triggers but has no implementation in the codebase
 
 Tests:
 
@@ -137,22 +137,23 @@ Tests:
 
 ## 3) Current Non-Blocking Risks
 
-## 3.1 Legacy push trigger overlap if migration flag misconfigured
+## 3.1 Legacy push trigger overlap
 
-Priority: Medium
+Priority: Low (downgraded from Medium)
 Owner: Backend notifications
 
 Risk:
 
-- if `CHAT_LEGACY_PUSH_ENABLED` is accidentally left enabled in an environment where new in-app channels are already relied on, duplicate user-perceived notifications can return.
+- `CHAT_LEGACY_PUSH_ENABLED` was documented as an env flag for gating legacy push triggers but has no implementation in the codebase. Legacy push triggers are not separately gated.
 
 Mitigation in place:
 
 - canonical payload adapter + dedupe keys reduce duplicates on client
+- notification center (`notificationCenter.ts`) handles channel selection (in_app/push/none)
 
 Remaining action:
 
-- enforce environment defaults and deployment checklist gate for this flag
+- if separate legacy push gating is needed in the future, implement the flag before documenting it
 
 ## 3.2 Full repository type-check cannot be used as chat-only gate
 
@@ -200,16 +201,7 @@ Prior gap list and current status:
 
 ## 5) Follow-up TODO Backlog
 
-## 5.1 Enforce notification migration safety in CI/CD
-
-Owner: Backend
-Priority: Medium
-
-Action:
-
-- add deploy-time validation that explicitly logs and verifies `CHAT_LEGACY_PUSH_ENABLED` intent per environment.
-
-## 5.2 Add stress test for high-volume mixed realtime + pagination updates
+## 5.1 Stress test for high-volume mixed realtime + pagination updates
 
 Owner: Client messaging
 Priority: Medium

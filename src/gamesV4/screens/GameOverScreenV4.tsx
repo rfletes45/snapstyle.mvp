@@ -178,7 +178,7 @@ export default function GameOverScreenV4() {
         CommonActions.reset({
           index: 1,
           routes: [
-            { name: "MainTabs", params: { screen: "Inbox" } },
+            { name: "MainTabs", params: { screen: "Messages" } },
             { name: "GroupChat", params: { groupId: conversationId } },
           ],
         }),
@@ -190,7 +190,7 @@ export default function GameOverScreenV4() {
         CommonActions.reset({
           index: 1,
           routes: [
-            { name: "MainTabs", params: { screen: "Inbox" } },
+            { name: "MainTabs", params: { screen: "Messages" } },
             { name: "ChatDetail", params: { friendUid } },
           ],
         }),
@@ -201,8 +201,8 @@ export default function GameOverScreenV4() {
   const handleBackToGames = useCallback(() => {
     navigation.dispatch(
       CommonActions.reset({
-        index: 0,
-        routes: [{ name: "MainTabs", params: { screen: "Games" } }],
+        index: 1,
+        routes: [{ name: "MainTabs" }, { name: "GamesHub" }],
       }),
     );
   }, [navigation]);

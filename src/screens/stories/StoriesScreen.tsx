@@ -1,6 +1,6 @@
 /**
  * Moments Screen
- * Displays connections' moments in a horizontal scrollable bar
+ * Displays friends' moments in a horizontal scrollable bar
  * Each moment shows thumbnail with view count
  * Users can tap to view fullscreen or post a new moment
  *

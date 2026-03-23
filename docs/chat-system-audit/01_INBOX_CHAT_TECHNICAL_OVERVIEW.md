@@ -117,9 +117,9 @@ The requests tab in `ChatListScreenV2` now renders this single typed stream.
 - Foreground in-app notifications:
   - `src/store/InAppNotificationsContext.tsx`
   - listeners for friend requests, chat updates, group updates, and `Users/{uid}/InAppNotificationsV4`
-- Legacy DM/group push triggers are environment-gated:
+- Legacy DM/group push triggers:
   - `firebase-backend/functions/src/notifications.ts`
-  - flag: `CHAT_LEGACY_PUSH_ENABLED`
+  - Note: `CHAT_LEGACY_PUSH_ENABLED` was documented here but has no implementation in the codebase. Legacy push triggers are not separately gated.
 
 ## 5) Message Flow
 
@@ -127,8 +127,10 @@ The requests tab in `ChatListScreenV2` now renders this single typed stream.
 
 1. UI calls `chat.sendMessage(...)` from `useChat`.
 2. Runtime path:
+
 - local-first inserts to SQLite and syncs pending writes.
 - fallback path invokes messaging service and callable.
+
 3. Cloud Function `sendMessageV2` validates auth, membership, block/rate-limit, and message request gating.
 4. Server writes message with authoritative timestamp and updates conversation preview fields.
 5. Realtime subscription merges server snapshot with optimistic state.
@@ -233,11 +235,13 @@ The following parity guarantees are now explicit and test-backed:
 ## 10) Recent Fixes (2026-03-05)
 
 1. Timestamp normalization crash fix:
+
 - path: `src/services/chat/normalizeMessage.ts`
 - issue: unbound `toMillis` call against Firestore Timestamp-like objects
 - fix: bound method call + `{seconds,nanoseconds}` fallback
 
 2. Text-node rendering guard:
+
 - paths:
   - `src/components/chat/ChatComposer.tsx`
   - `src/components/chat/SwipeableMessageWrapper.tsx`

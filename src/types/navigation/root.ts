@@ -22,11 +22,6 @@ export type InboxStackParamList = {
   InboxSearch: undefined;
 };
 
-export type MomentsStackParamList = {
-  StoriesList: undefined;
-  StoryViewer: OptionalRouteParams;
-};
-
 export type ProfileTabStackParamList = {
   ProfileMain: undefined;
   Customization:
@@ -44,11 +39,9 @@ export type ProfileTabStackParamList = {
 };
 
 export type AppTabsParamList = {
-  Shop: undefined;
-  Inbox: NavigatorScreenParams<InboxStackParamList> | undefined;
-  Games: undefined;
-  Moments: NavigatorScreenParams<MomentsStackParamList> | undefined;
   Profile: NavigatorScreenParams<ProfileTabStackParamList> | undefined;
+  Messages: NavigatorScreenParams<InboxStackParamList> | undefined;
+  Shop: undefined;
 };
 
 export type MainStackParamList = {
@@ -77,7 +70,7 @@ export type MainStackParamList = {
   GroupCall: OptionalRouteParams;
   CallHistory: undefined;
   CallSettings: undefined;
-  Connections:
+  Friends:
     | {
         tab?: "all" | "requests";
       }
@@ -110,6 +103,7 @@ export type MainStackParamList = {
   };
   LevelRewards: undefined;
   Wallet: undefined;
+  GamesHub: undefined;
 };
 
 export type ProfileSetupStackParamList = {

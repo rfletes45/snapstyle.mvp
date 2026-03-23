@@ -10,12 +10,12 @@
  * @module components/chat/inbox/EmptyState
  */
 
+import { Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
-import { Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -24,7 +24,6 @@ import { Spacing } from "@/constants/theme";
 export type EmptyStateType =
   | "noConversations"
   | "allCaughtUp"
-  | "archiveEmpty"
   | "noSearchResults"
   | "noGroups"
   | "noDMs"
@@ -64,11 +63,6 @@ const EMPTY_STATE_CONTENT: Record<EmptyStateType, EmptyStateContent> = {
     icon: "check-circle-outline",
     title: "You're all caught up!",
     description: "No unread messages. Enjoy your day!",
-  },
-  archiveEmpty: {
-    icon: "archive-outline",
-    title: "Archive is empty",
-    description: "Archived conversations will appear here.",
   },
   noSearchResults: {
     icon: "magnify",

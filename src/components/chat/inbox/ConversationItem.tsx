@@ -158,7 +158,7 @@ export const ConversationItem = memo(function ConversationItem({
     <TouchableOpacity
       style={[
         styles.container,
-        { backgroundColor: colors.surface },
+        { backgroundColor: colors.background },
         isUnread && { backgroundColor: colors.primary + "08" },
       ]}
       onPress={onPress}
@@ -178,7 +178,7 @@ export const ConversationItem = memo(function ConversationItem({
             source={{ uri: avatarUrl }}
             style={[
               styles.avatarPlaceholder,
-              { width: 52, height: 52, borderRadius: 26 },
+              { width: 48, height: 48, borderRadius: 24 },
             ]}
             debugLabel="ConversationAvatar"
           />
@@ -191,7 +191,7 @@ export const ConversationItem = memo(function ConversationItem({
           >
             <MaterialCommunityIcons
               name="account-group"
-              size={28}
+              size={26}
               color={colors.textSecondary}
             />
           </View>
@@ -200,7 +200,7 @@ export const ConversationItem = memo(function ConversationItem({
             pictureUrl={profilePictureUrl || avatarUrl}
             name={name}
             decorationId={decorationId}
-            size={48}
+            size={44}
           />
         )}
 
@@ -209,7 +209,10 @@ export const ConversationItem = memo(function ConversationItem({
           <View
             style={[
               styles.onlineIndicator,
-              { backgroundColor: colors.success, borderColor: colors.surface },
+              {
+                backgroundColor: colors.success,
+                borderColor: colors.background,
+              },
             ]}
           />
         )}
@@ -223,7 +226,7 @@ export const ConversationItem = memo(function ConversationItem({
             {isPinned && (
               <MaterialCommunityIcons
                 name="pin"
-                size={14}
+                size={13}
                 color={colors.primary}
                 style={styles.statusIcon}
               />
@@ -243,7 +246,7 @@ export const ConversationItem = memo(function ConversationItem({
             {isMuted && (
               <MaterialCommunityIcons
                 name="bell-off"
-                size={14}
+                size={13}
                 color={colors.textSecondary}
                 style={styles.statusIcon}
               />
@@ -255,6 +258,12 @@ export const ConversationItem = memo(function ConversationItem({
               {timeText}
             </Text>
           )}
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={18}
+            color={colors.textMuted}
+            style={styles.chevron}
+          />
         </View>
 
         {/* Bottom row: Preview + Badge */}
@@ -275,7 +284,7 @@ export const ConversationItem = memo(function ConversationItem({
 
           {unreadBadgeText && (
             <Badge
-              size={20}
+              size={18}
               style={[
                 styles.badge,
                 {
@@ -302,28 +311,28 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    minHeight: 72,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    minHeight: 66,
   },
   avatarContainer: {
     position: "relative",
-    marginRight: Spacing.md,
+    marginRight: 10,
   },
   avatarPlaceholder: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
   onlineIndicator: {
     position: "absolute",
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    bottom: 1,
+    right: 1,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
     borderWidth: 2,
   },
   content: {
@@ -346,7 +355,7 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   name: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "500",
     flex: 1,
   },
@@ -354,7 +363,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   time: {
-    fontSize: 13,
+    fontSize: 12,
   },
   bottomRow: {
     flexDirection: "row",
@@ -362,14 +371,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   preview: {
-    fontSize: 14,
+    fontSize: 13,
     flex: 1,
-    marginRight: Spacing.sm,
+    marginRight: Spacing.xs,
   },
   previewUnread: {
     fontWeight: "600",
   },
   badge: {
-    marginLeft: Spacing.sm,
+    marginLeft: Spacing.xs,
+  },
+  chevron: {
+    marginLeft: 2,
   },
 });

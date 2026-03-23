@@ -2,7 +2,7 @@
  * FriendsCard — Compact friends preview for profile overview.
  *
  * Shows up to N avatar circles and a friend count.
- * Taps through to the full friends list (Connections screen).
+ * Taps through to the full friends list (Friends screen).
  *
  * @module components/profile/OverviewCards/FriendsCard
  */

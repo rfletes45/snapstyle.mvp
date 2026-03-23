@@ -3,7 +3,7 @@
  *
  * Wraps a conversation item with swipe gesture support:
  * - Swipe right: Pin/Unpin action
- * - Swipe left: Mute, Archive, Delete actions
+ * - Swipe left: Mute, Delete actions
  *
  * Uses react-native-gesture-handler for smooth gestures
  * and expo-haptics for tactile feedback.
@@ -30,8 +30,6 @@ export interface SwipeableConversationProps {
   conversation: InboxConversation;
   /** Called when pin/unpin action is triggered */
   onPin: () => void;
-  /** Called when archive action is triggered */
-  onArchive: () => void;
   /** Called when delete action is triggered */
   onDelete: () => void;
   /** Called when mute action is triggered */
@@ -47,7 +45,7 @@ export interface SwipeableConversationProps {
 // =============================================================================
 
 const LEFT_ACTION_WIDTH = 80;
-const RIGHT_ACTION_WIDTH = 180;
+const RIGHT_ACTION_WIDTH = 120;
 const SINGLE_ACTION_WIDTH = 60;
 
 // =============================================================================
@@ -57,7 +55,6 @@ const SINGLE_ACTION_WIDTH = 60;
 export function SwipeableConversation({
   conversation,
   onPin,
-  onArchive,
   onDelete,
   onMute,
   enabled = true,
@@ -132,7 +129,6 @@ export function SwipeableConversation({
       });
 
       const isMuted = !!conversation.memberState.mutedUntil;
-      const isArchived = conversation.memberState.archived;
 
       return (
         <Animated.View
@@ -150,18 +146,6 @@ export function SwipeableConversation({
             />
           </RectButton>
 
-          {/* Archive */}
-          <RectButton
-            style={[styles.singleAction, { backgroundColor: colors.info }]}
-            onPress={() => handleAction(onArchive)}
-          >
-            <MaterialCommunityIcons
-              name={isArchived ? "inbox" : "archive"}
-              color="white"
-              size={24}
-            />
-          </RectButton>
-
           {/* Delete */}
           <RectButton
             style={[styles.singleAction, { backgroundColor: colors.error }]}
@@ -172,14 +156,7 @@ export function SwipeableConversation({
         </Animated.View>
       );
     },
-    [
-      colors,
-      conversation.memberState,
-      handleAction,
-      onMute,
-      onArchive,
-      onDelete,
-    ],
+    [colors, conversation.memberState, handleAction, onMute, onDelete],
   );
 
   // =========================================================================

@@ -1,26 +1,24 @@
 /**
- * ChatListScreen (Inbox) - V2
+ * ChatListScreen (Messages) - V2
  *
- * Redesigned inbox screen with:
- * - InboxHeader with avatar, search, settings
+ * Snapchat-inspired Messages screen with:
+ * - MessagesHeader with avatar, search, games, settings
  * - InboxTabs for filtering (All/Unread/Groups/DMs/Requests)
  * - Pinned conversations section
  * - Swipeable conversation items
  * - Long-press context menu
  * - Friend requests in Requests tab
  * - FAB with multiple actions
- * - Profile preview modal
  */
 
 import {
   useConversationActions,
   type MuteDuration,
 } from "@/hooks/useConversationActions";
-import { useInboxData } from "@/hooks/useInboxData";
-import {
-  useUnifiedInboxRequests,
-} from "@/hooks/useUnifiedInboxRequests";
 import type { FriendRequestWithUser } from "@/hooks/useFriendRequests";
+import { useInboxData } from "@/hooks/useInboxData";
+import { useUnifiedInboxRequests } from "@/hooks/useUnifiedInboxRequests";
+import { markNotificationsReadByTypes } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
 import { useAppTheme } from "@/store/ThemeContext";
@@ -28,9 +26,6 @@ import type { InboxConversation } from "@/types/messaging";
 import type { GroupInvite } from "@/types/models";
 import { usePrefetchProfileImages } from "@/utils/imagePrefetch";
 import { log } from "@/utils/log";
-import {
-  markNotificationsReadByTypes,
-} from "@/services/userNotifications";
 import {
   useFocusEffect,
   useIsFocused,
@@ -101,8 +96,6 @@ export default function ChatListScreen() {
     totalUnread,
     filter,
     setFilter,
-    showArchived,
-    setShowArchived,
     refresh,
     markConversationReadOptimistic,
   } = useInboxData(uid);
@@ -175,10 +168,7 @@ export default function ChatListScreen() {
   // This allows the inbox to update immediately when a notification is pressed
   React.useEffect(() => {
     const unsubscribe = registerNotificationPressHandler(
-      (
-        conversationId: string,
-        scope: "dm" | "group" | null,
-      ) => {
+      (conversationId: string, scope: "dm" | "group" | null) => {
         log.debug("[Inbox] Notification pressed - optimistic read", {
           data: { conversationId, scope },
         });
@@ -315,10 +305,6 @@ export default function ChatListScreen() {
 
   const handleSearchPress = useCallback(() => {
     navigation.navigate("InboxSearch");
-  }, [navigation]);
-
-  const handleSettingsPress = useCallback(() => {
-    navigation.navigate("InboxSettings");
   }, [navigation]);
 
   // =============================================================================
@@ -503,13 +489,6 @@ export default function ChatListScreen() {
     handleCloseContextMenu();
   }, [actions, contextMenu.conversation, handleCloseContextMenu]);
 
-  const handleContextMenuArchive = useCallback(() => {
-    if (contextMenu.conversation) {
-      actions.toggleArchive(contextMenu.conversation);
-    }
-    handleCloseContextMenu();
-  }, [actions, contextMenu.conversation, handleCloseContextMenu]);
-
   const handleContextMenuViewProfile = useCallback(() => {
     const conversation = contextMenu.conversation;
     handleCloseContextMenu();
@@ -534,8 +513,6 @@ export default function ChatListScreen() {
   // =============================================================================
 
   const emptyStateType = useMemo(() => {
-    if (showArchived) return "archiveEmpty";
-
     switch (filter) {
       case "unread":
         return "allCaughtUp";
@@ -548,7 +525,7 @@ export default function ChatListScreen() {
       default:
         return "noConversations";
     }
-  }, [filter, showArchived]);
+  }, [filter]);
 
   // =============================================================================
   // Render Functions
@@ -559,7 +536,6 @@ export default function ChatListScreen() {
       <SwipeableConversation
         conversation={item}
         onPin={() => actions.togglePin(item)}
-        onArchive={() => actions.toggleArchive(item)}
         onDelete={() => handleDeleteRequest(item)}
         onMute={() => handleMute(item)}
       >
@@ -605,12 +581,12 @@ export default function ChatListScreen() {
     () => (
       <EmptyState
         type={emptyStateType}
-        showAction={filter === "all" && !showArchived}
-        onAction={() => navigation.navigate("Connections")}
+        showAction={filter === "all"}
+        onAction={() => navigation.navigate("Friends")}
         actionLabel="Find Friends"
       />
     ),
-    [emptyStateType, filter, showArchived, navigation],
+    [emptyStateType, filter, navigation],
   );
 
   // =============================================================================
@@ -618,7 +594,7 @@ export default function ChatListScreen() {
   // =============================================================================
 
   if (loading) {
-    return <LoadingState message="Loading inbox..." />;
+    return <LoadingState message="Loading messages..." />;
   }
 
   if (error) {
@@ -642,26 +618,19 @@ export default function ChatListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <InboxHeader
-        onSearchPress={handleSearchPress}
-        onSettingsPress={handleSettingsPress}
-        showArchived={showArchived}
-        onArchiveToggle={() => setShowArchived(!showArchived)}
-      />
+      <InboxHeader onSearchPress={handleSearchPress} />
 
       {/* Tabs */}
-      {!showArchived && (
-        <InboxTabs
-          activeTab={filter}
-          onTabChange={setFilter}
-          unreadCount={totalUnread}
-          requestsCount={getUnifiedRequestsCount({
-            friendRequestsCount: friendRequests.length,
-            groupInvitesCount: groupInvites.length,
-            messageRequestsCount: messageRequests.length,
-          })}
-        />
-      )}
+      <InboxTabs
+        activeTab={filter}
+        onTabChange={setFilter}
+        unreadCount={totalUnread}
+        requestsCount={getUnifiedRequestsCount({
+          friendRequestsCount: friendRequests.length,
+          groupInvitesCount: groupInvites.length,
+          messageRequestsCount: messageRequests.length,
+        })}
+      />
 
       {/* Requests List (friend + group + message requests) */}
       {showRequestsTab ? (
@@ -678,7 +647,7 @@ export default function ChatListScreen() {
             <EmptyState
               type="noRequests"
               showAction={true}
-              onAction={() => navigation.navigate("Connections")}
+              onAction={() => navigation.navigate("Friends")}
               actionLabel="Find Friends"
             />
           </View>
@@ -701,7 +670,9 @@ export default function ChatListScreen() {
                   <FriendRequestItem
                     request={item.friendRequest}
                     onAccept={() => handleAcceptRequest(item.friendRequest.id)}
-                    onDecline={() => handleDeclineRequest(item.friendRequest.id)}
+                    onDecline={() =>
+                      handleDeclineRequest(item.friendRequest.id)
+                    }
                     onPress={() => handleRequestPress(item.friendRequest)}
                   />
                 );
@@ -710,7 +681,10 @@ export default function ChatListScreen() {
               const request = item.messageRequest;
               return (
                 <View
-                  style={[styles.requestRow, { backgroundColor: colors.surface }]}
+                  style={[
+                    styles.requestRow,
+                    { backgroundColor: colors.background },
+                  ]}
                 >
                   <View style={styles.requestRowContent}>
                     <Text style={[styles.requestTitle, { color: colors.text }]}>
@@ -737,7 +711,9 @@ export default function ChatListScreen() {
                     <Button
                       mode="outlined"
                       compact
-                      onPress={() => handleDeclineMessageRequest(request.chatId)}
+                      onPress={() =>
+                        handleDeclineMessageRequest(request.chatId)
+                      }
                     >
                       Decline
                     </Button>
@@ -770,7 +746,7 @@ export default function ChatListScreen() {
       )}
 
       {/* FAB */}
-      <InboxFAB visible={isFocused && !showArchived} />
+      <InboxFAB visible={isFocused} />
 
       {/* Context Menu */}
       {contextMenu.conversation && (
@@ -782,7 +758,6 @@ export default function ChatListScreen() {
           onPin={handleContextMenuPin}
           onMute={handleContextMenuMute}
           onMarkUnread={handleContextMenuMarkUnread}
-          onArchive={handleContextMenuArchive}
           onViewProfile={handleContextMenuViewProfile}
           onDelete={handleContextMenuDelete}
         />

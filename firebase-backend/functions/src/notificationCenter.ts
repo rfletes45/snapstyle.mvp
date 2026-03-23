@@ -1,6 +1,6 @@
+import { createHash } from "crypto";
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
-import { createHash } from "crypto";
 import { isDmChatMuted, isGroupChatMuted } from "./utils";
 
 const db = admin.firestore();
@@ -138,7 +138,9 @@ function removeUndefined<T>(value: T): T {
 
   if (value && typeof value === "object") {
     const next: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    for (const [key, entry] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
       if (entry === undefined) continue;
       next[key] = removeUndefined(entry);
     }
@@ -199,7 +201,7 @@ function isRecipientViewingEquivalentSurface(
     request.type === "friend_request" ||
     request.type === "friend_request_accepted"
   ) {
-    return session.currentScreen === "Connections";
+    return session.currentScreen === "Friends";
   }
 
   if (request.type === "achievement_unlocked") {
@@ -218,7 +220,8 @@ function isRecipientViewingEquivalentSurface(
 
   if (
     request.type === "message_request" &&
-    (session.currentScreen === "ChatList" || session.currentScreen === "Connections")
+    (session.currentScreen === "ChatList" ||
+      session.currentScreen === "Friends")
   ) {
     return true;
   }
@@ -412,7 +415,9 @@ async function chooseNotificationDecision(
   }
 
   const sessions = await getFreshNotificationSessions(request.recipientUid);
-  const activeSessions = sessions.filter((session) => session.appState === "active");
+  const activeSessions = sessions.filter(
+    (session) => session.appState === "active",
+  );
 
   if (
     activeSessions.some((session) =>
@@ -430,7 +435,9 @@ async function chooseNotificationDecision(
       };
     }
 
-    const targetSession = activeSessions.find((session) => session.inAppEnabled);
+    const targetSession = activeSessions.find(
+      (session) => session.inAppEnabled,
+    );
     if (!targetSession) {
       return {
         channel: "none",
@@ -504,7 +511,8 @@ function buildNotificationDoc(
     channel: decision.channel,
     deliveryReason: decision.reason,
     targetDeviceId: decision.targetDeviceId ?? null,
-    pushTargetDeviceIds: decision.pushDevices?.map((device) => device.deviceId) ?? [],
+    pushTargetDeviceIds:
+      decision.pushDevices?.map((device) => device.deviceId) ?? [],
     pushSentAt: null,
     presentedAt: null,
     readAt: null,
@@ -615,8 +623,7 @@ async function sendPushNotifications(
         route: removeUndefined(request.route),
         ...request.data,
       }),
-      channelId:
-        request.category === "games" ? "game-invites" : "default",
+      channelId: request.category === "games" ? "game-invites" : "default",
       collapseId: request.collapseKey ?? request.dedupeKey,
     }),
   );
@@ -676,7 +683,11 @@ export async function notifyUser(
     };
   }
 
-  const record = await createNotificationRecordIfNeeded(request, decision, prefs);
+  const record = await createNotificationRecordIfNeeded(
+    request,
+    decision,
+    prefs,
+  );
   if (!record.created) {
     return {
       channel: decision.channel,

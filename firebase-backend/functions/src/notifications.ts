@@ -42,7 +42,8 @@ async function getInboxSettings(uid: string): Promise<{
     const data = inboxDoc.data() ?? {};
     return {
       defaultNotifyLevel:
-        data.defaultNotifyLevel === "mentions" || data.defaultNotifyLevel === "none"
+        data.defaultNotifyLevel === "mentions" ||
+        data.defaultNotifyLevel === "none"
           ? data.defaultNotifyLevel
           : "all",
       notificationPreview:
@@ -59,7 +60,10 @@ async function getInboxSettings(uid: string): Promise<{
   }
 }
 
-async function getDmNotifyLevel(chatId: string, uid: string): Promise<NotifyLevel> {
+async function getDmNotifyLevel(
+  chatId: string,
+  uid: string,
+): Promise<NotifyLevel> {
   const memberDoc = await db
     .collection("Chats")
     .doc(chatId)
@@ -320,7 +324,8 @@ export const onMessageRequestCreatedNotification = functions.firestore
       collapseKey: `message_request:${recipientUid}`,
       title: "New message request",
       body:
-        typeof data.messagePreview === "string" && data.messagePreview.length > 0
+        typeof data.messagePreview === "string" &&
+        data.messagePreview.length > 0
           ? data.messagePreview
           : `${data.requesterName || "Someone"} wants to message you`,
       actorUid:
@@ -332,7 +337,7 @@ export const onMessageRequestCreatedNotification = functions.firestore
       route: {
         screen: "MainTabs",
         params: {
-          screen: "Inbox",
+          screen: "Messages",
           params: {
             screen: "ChatList",
             params: {

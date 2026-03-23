@@ -1,7 +1,8 @@
 /**
- * FriendPickerModal - Select a connection to share scorecard with
+ * FriendPickerModal - Select a friend to share scorecard with
  */
 
+import { BorderRadius, Mocha, Spacing } from "@/constants/theme";
 import { getFriendDetails, getFriends } from "@/services/friends";
 import { AvatarConfig } from "@/types/models";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -15,9 +16,7 @@ import {
   View,
 } from "react-native";
 import { Button, Searchbar, Text, useTheme } from "react-native-paper";
-import { BorderRadius, Mocha, Spacing } from "@/constants/theme";
 import { ProfilePictureWithDecoration } from "./profile/ProfilePicture";
-
 
 import { createLogger } from "@/utils/log";
 const logger = createLogger("components/FriendPickerModal");
@@ -51,7 +50,7 @@ export default function FriendPickerModal({
   onDismiss,
   onSelectFriend,
   currentUserId,
-  title = "Share with Connection",
+  title = "Share with Friend",
 }: FriendPickerModalProps) {
   const theme = useTheme();
   const [friends, setFriends] = useState<FriendItem[]>([]);
@@ -174,7 +173,7 @@ export default function FriendPickerModal({
           <Text
             style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}
           >
-            No connections yet
+            No friends yet
           </Text>
           <Text
             style={[
@@ -182,7 +181,7 @@ export default function FriendPickerModal({
               { color: theme.colors.onSurfaceDisabled },
             ]}
           >
-            Add connections to share your scores!
+            Add friends to share your scores!
           </Text>
         </View>
       );
@@ -238,7 +237,7 @@ export default function FriendPickerModal({
 
           {/* Search */}
           <Searchbar
-            placeholder="Search connections..."
+            placeholder="Search friends..."
             onChangeText={setSearchQuery}
             value={searchQuery}
             style={[
@@ -250,7 +249,7 @@ export default function FriendPickerModal({
             placeholderTextColor={theme.colors.onSurfaceDisabled}
           />
 
-          {/* Connections List */}
+          {/* Friends List */}
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -260,7 +259,7 @@ export default function FriendPickerModal({
                   { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                Loading connections...
+                Loading friends...
               </Text>
             </View>
           ) : (

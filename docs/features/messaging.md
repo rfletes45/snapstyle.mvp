@@ -1,10 +1,10 @@
 # Messaging System
 
-Last verified: 2026-03-18
+Last verified: 2026-03-22
 
 ## Scope
 
-This is the canonical reference for DM chat, group chat, inbox state, message requests, realtime subscriptions, and message-driven notifications.
+This is the canonical reference for DM chat, group chat, inbox state, message requests, message features (edit/delete, reactions, voice, scheduled, mentions, attachments), realtime subscriptions, and message-driven notifications.
 
 Historical migration notes still exist under `docs/chat-system-audit/`, but they are no longer the source of truth.
 
@@ -17,6 +17,16 @@ Primary screen orchestration:
 - `src/screens/chat/ChatScreen.tsx`
 - `src/screens/groups/GroupChatScreen.tsx`
 - `src/screens/chat/ThreadScreen.tsx`
+
+Supporting screens:
+
+- `src/screens/chat/ChatListScreenV2.tsx` (inbox)
+- `src/screens/chat/InboxSearchScreen.tsx` (conversation search)
+- `src/screens/chat/InboxSettingsScreen.tsx` (global inbox preferences)
+- `src/screens/chat/ChatSettingsScreen.tsx` (per-conversation notification overrides)
+- `src/screens/chat/ScheduledMessagesScreen.tsx` (manage scheduled messages)
+- `src/screens/groups/GroupChatInfoScreen.tsx` (group details and member management)
+- `src/screens/groups/GroupChatCreateScreen.tsx` (group creation wizard)
 
 Runtime ownership is now explicit:
 
@@ -105,9 +115,11 @@ Authoritative server guarantees in `sendMessageV2`:
 - DM or group membership enforcement
 - DM block checks
 - message request gating
-- rate limiting
+- rate limiting (global bucketed limiter defined but currently disabled via `ENABLE_GLOBAL_RATE_LIMIT=false`)
+- group settings enforcement (slow mode, announcement-only, media restrictions defined but currently disabled via `ENABLE_GROUP_SETTINGS_ENFORCEMENT=false`)
 - idempotency via `messageId` and `idempotencyKey`
-- canonical timestamps
+- canonical `serverReceivedAt` timestamps
+- staged attachment commit (staging → chat-media)
 - conversation preview updates
 - thread reply counter updates
 
@@ -192,12 +204,102 @@ Client consumers:
 
 There is no `CHAT_LEGACY_PUSH_ENABLED` environment contract in the current implementation.
 
+## Message Features
+
+Edit and delete:
+
+- client service: `src/services/messageActions.ts` (`editMessage`, `deleteMessage`)
+- server enforcement: `firebase-backend/functions/src/messaging.ts` (editMessage, deleteMessage callables)
+- edit window: 15 minutes from send time
+- delete modes: delete for self, delete for everyone
+- UI surface: `MessageActionsSheet` bottom sheet on message long-press
+
+Reactions:
+
+- type: `reactionsSummary` field on `MessageV2` (`Record<string, number>`)
+- UI: `ReactionBar` (picker) and `ReactionDetailSheet` (who reacted)
+
+Voice messages:
+
+- recorder hook: `src/hooks/useVoiceRecorder.ts`
+- playback component: `src/components/chat/VoiceMessagePlayer.tsx`
+- record button: `src/components/chat/VoiceRecordButton.tsx`
+- stored as audio attachment with duration and waveform metadata
+
+Mentions:
+
+- stored as `mentionUids: string[]` and `mentionSpans: MentionSpan[]` on `MessageV2`
+- `MentionSpan` defines `{ uid, start, end }` offsets into message text
+- UI: `src/components/chat/MentionAutocomplete.tsx` for `@name` suggestions while composing
+- separate unread mention counter from general unread in inbox
+
+Link previews:
+
+- type: `LinkPreviewV2` with Open Graph data
+- UI: `src/components/chat/LinkPreviewCard.tsx`
+
+Attachment pipeline:
+
+- two-phase upload model
+- Phase 1: client uploads to `chat-staging/{scope}/{conversationId}/{messageId}/` (public read, short-lived)
+- Phase 2: `sendMessageV2` Cloud Function moves staging → `chat-media/` (private)
+- orphan cleanup: `cleanupStagingOrphans` scheduled function removes abandoned files after 6 hours
+- server constraints: max 25 MB per file, max 10 attachments per message, MIME whitelist (image/_, video/_, audio/\*, PDF, Office docs, text)
+- backend service: `firebase-backend/functions/src/chatMedia.ts`
+- client hooks: `src/hooks/useAttachmentPicker.ts` (camera + gallery)
+- UI: `AttachmentTray` (send queue), `AttachmentGrid` (message display), `MediaViewerModal` (full-screen viewer)
+
+Scheduled messages:
+
+- client service: `src/services/scheduledMessages.ts`
+- backend: `firebase-backend/functions/src/scheduledMessages.ts` (legacy proxy to `processScheduledMessages`)
+- Firestore path: `Users/{uid}/scheduledMessages`
+- constraints: minimum 5 minutes, maximum 30 days in the future
+- management screen: `src/screens/chat/ScheduledMessagesScreen.tsx`
+- UI: `src/components/ScheduleMessageModal.tsx` (date/time picker)
+
+Per-chat settings:
+
+- type: `ChatSettingsV3` (global) and `EffectiveChatSettings` (resolved per-conversation)
+- resolver: `src/services/messaging/resolveChatSettings.ts`
+- global settings: `src/services/inboxSettings.ts` (Firestore path `Users/{uid}/settings/inbox`)
+- per-chat overrides managed through `src/screens/chat/ChatSettingsScreen.tsx`
+- settings include: mute duration, notification level, read receipt toggles, archive
+
+Group settings:
+
+- type: `GroupSettings` in `src/types/messaging.ts`
+- defined fields: `slowModeSeconds`, `announcementOnly`, `allowMediaFromMembers`, `allowMentionsAll`, `retentionMode`
+- server enforcement exists but is disabled (`ENABLE_GROUP_SETTINGS_ENFORCEMENT=false`)
+- no client UI currently renders or edits these settings
+
+Game invites:
+
+- both ChatScreen and GroupChatScreen support creating game invites (V4 Games)
+- UI: `GamePickerModal` for game selection, `createGameInvite` service for invite creation
+
+Group calls:
+
+- available in GroupChatScreen when `areNativeCallsAvailable=true`
+- excluded on web and Expo Go builds
+- lazy-loaded via `groupCallService`
+
+## Chat Composer and Input
+
+- unified hook: `src/hooks/useChatComposer.ts`
+- component: `src/components/chat/ChatComposer.tsx` (scope-aware for DM vs group)
+- features: text input, voice recording button, attachment picker, reply preview bar, mention autocomplete (groups), animal themes
+- keyboard tracking: `src/hooks/chat/useChatKeyboard.ts` (Reanimated animated values)
+- auto-scroll on new messages: `src/hooks/chat/useNewMessageAutoscroll.ts`
+
 ## Live Compatibility Debt
 
 - The web fallback path still relies on wrapper services that delegate into older `chatV2` and `messageList` modules.
 - Backend inbox aggregation is already live even though the client default reader is still fan-out.
 - `ThreadScreen` remains a separate local-thread implementation instead of sharing the full `useChat` stack.
 - `firebase-backend/functions/src/deleteAccount.ts` still contains explicit cleanup for legacy `Conversations`, root `Notifications`, and `InAppNotificationsV4` data so old documents can still be scrubbed safely.
+- Group settings types and server enforcement code exist but are gated behind a disabled feature flag with no client UI.
+- Scheduled messages backend is still a legacy proxy.
 
 ## Validation
 

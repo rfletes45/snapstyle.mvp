@@ -35,13 +35,13 @@ export const onNewFriendRequest = functions.firestore
       category: "social",
       dedupeKey: `friend_request:${requestId}`,
       collapseKey: "friend_request",
-      title: "New connection request",
-      body: `${senderName} wants to connect with you`,
+      title: "New friend request",
+      body: `${senderName} wants to be your friend`,
       actorUid: senderUid,
       actorName: senderName,
       requestId,
       route: {
-        screen: "Connections",
+        screen: "Friends",
         params: { tab: "requests" },
       },
       data: {
@@ -79,13 +79,13 @@ export const onFriendRequestAccepted = functions.firestore
       category: "social",
       dedupeKey: `friend_request_accepted:${requestId}`,
       collapseKey: "friend_request",
-      title: "Connection accepted",
+      title: "Friend request accepted",
       body: `${accepterName} accepted your request`,
       actorUid: accepterUid,
       actorName: accepterName,
       requestId,
       route: {
-        screen: "Connections",
+        screen: "Friends",
       },
       data: {
         requestId,

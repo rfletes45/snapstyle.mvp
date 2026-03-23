@@ -14,17 +14,16 @@
  * @module hooks/useConversationActions
  */
 
+import { CHAT_FEATURES } from "@/constants/featureFlags";
 import { useSnackbar } from "@/store/SnackbarContext";
 import { InboxConversation } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import { useCallback, useState } from "react";
-import { CHAT_FEATURES } from "@/constants/featureFlags";
 
 // DM services
 import {
   markDMAsRead,
   markAsUnread as markDMAsUnread,
-  setArchived as setDMArchived,
   setMuted as setDMMuted,
   setDMPinned,
   softDeleteDM,
@@ -35,14 +34,13 @@ import {
   leaveAndDeleteGroup,
   markGroupAsRead,
   markGroupAsUnread,
-  setGroupArchived,
   setGroupMuted,
   setGroupPinned,
 } from "@/services/groupMembers";
 
 // Settings service
-import { getInboxSettings } from "@/services/inboxSettings";
 import { markAggregatedInboxRead } from "@/services/chat/inboxAggregation";
+import { getInboxSettings } from "@/services/inboxSettings";
 
 const log = createLogger("useConversationActions");
 
@@ -63,9 +61,6 @@ export interface UseConversationActionsOptions {
 export interface UseConversationActionsResult {
   /** Pin or unpin a conversation */
   togglePin: (conversation: InboxConversation) => Promise<void>;
-
-  /** Archive or unarchive a conversation */
-  toggleArchive: (conversation: InboxConversation) => Promise<void>;
 
   /** Mute a conversation for a duration */
   mute: (
@@ -190,47 +185,6 @@ export function useConversationActions(
         }
 
         showSuccess(isPinned ? "Conversation unpinned" : "Conversation pinned");
-        log.info(`${action} conversation`, {
-          operation: action.toLowerCase(),
-          data: { conversationId: conversation.id, type: conversation.type },
-        });
-      } catch (error) {
-        log.error(`Failed to ${action.toLowerCase()} conversation`, { error });
-        showError(`Failed to ${action.toLowerCase()} conversation`);
-        throw error;
-      } finally {
-        setLoading(false);
-        setCurrentAction(null);
-        onActionComplete?.();
-      }
-    },
-    [uid, showSuccess, showError, onActionComplete],
-  );
-
-  // =============================================================================
-  // Archive/Unarchive
-  // =============================================================================
-
-  const toggleArchive = useCallback(
-    async (conversation: InboxConversation) => {
-      if (!uid) return;
-
-      const isArchived = conversation.memberState.archived;
-      const action = isArchived ? "Unarchiving" : "Archiving";
-
-      try {
-        setLoading(true);
-        setCurrentAction(action);
-
-        if (conversation.type === "dm") {
-          await setDMArchived(conversation.id, uid, !isArchived);
-        } else {
-          await setGroupArchived(conversation.id, uid, !isArchived);
-        }
-
-        showSuccess(
-          isArchived ? "Conversation unarchived" : "Conversation archived",
-        );
         log.info(`${action} conversation`, {
           operation: action.toLowerCase(),
           data: { conversationId: conversation.id, type: conversation.type },
@@ -444,7 +398,6 @@ export function useConversationActions(
 
   return {
     togglePin,
-    toggleArchive,
     mute,
     unmute,
     deleteConversation,

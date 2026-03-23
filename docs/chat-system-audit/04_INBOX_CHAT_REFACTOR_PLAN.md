@@ -57,7 +57,7 @@ References:
 ## S1 - Notification Migration Guardrails
 
 Owner: Backend notifications
-Priority: Medium
+Priority: Low (downgraded — `CHAT_LEGACY_PUSH_ENABLED` has no implementation)
 
 Objective:
 
@@ -66,22 +66,23 @@ Objective:
 Primary targets:
 
 - `firebase-backend/functions/src/notifications.ts`
+- `firebase-backend/functions/src/notificationCenter.ts`
 - release/deploy runbooks
 
 Actions:
 
-1. Enforce explicit environment intent for `CHAT_LEGACY_PUSH_ENABLED`.
+1. Note: `CHAT_LEGACY_PUSH_ENABLED` was documented as a gating flag but has no implementation in the codebase. If separate legacy push gating is needed, implement it before relying on it.
 2. Log active mode at cold start in functions runtime.
-3. Add deployment checklist item for migration flag verification.
+3. Notification center (`notificationCenter.ts`) already handles channel selection (in_app/push/none).
 
 Acceptance criteria:
 
-- each environment has an explicit flag value in config records
 - no duplicate user-visible notifications in staging smoke tests
+- notification center remains the single routing authority
 
 Rollback plan:
 
-- toggle `CHAT_LEGACY_PUSH_ENABLED` and redeploy triggers
+- revert notification trigger changes and redeploy
 
 ## S2 - High-Volume Merge Stress Testing
 

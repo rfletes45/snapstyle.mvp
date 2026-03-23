@@ -55,7 +55,7 @@ export default function WelcomeScreen({ navigation }: any) {
             variant="bodyLarge"
             style={[styles.tagline, { color: theme.colors.onSurfaceVariant }]}
           >
-            Moments • Connections • Play
+            Moments • Friends • Play
           </Text>
         </View>
 

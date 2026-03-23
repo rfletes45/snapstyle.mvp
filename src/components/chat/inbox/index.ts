@@ -1,11 +1,11 @@
 /**
- * Inbox Components Index
+ * Messages (Chat Inbox) Components Index
  *
- * Components for the redesigned inbox/chat list screen:
- * - InboxHeader: Top app bar with avatar, title, actions
+ * Components for the Snapchat-inspired Messages screen:
+ * - InboxHeader: Top bar with avatar, title ("Messages"), games, search, actions
  * - InboxTabs: Filter tabs (All/Unread/Groups/DMs/Requests)
  * - ConversationItem: Single conversation row
- * - SwipeableConversation: Swipe gesture wrapper
+ * - SwipeableConversation: Swipe gesture wrapper (pin, mute, delete)
  * - PinnedSection: Sticky pinned conversations header
  * - EmptyState: Empty state illustrations
  * - InboxFAB: Multi-action floating button
@@ -13,7 +13,6 @@
  * - MuteOptionsSheet: Mute duration picker bottom sheet
  * - DeleteConfirmDialog: Conversation delete confirmation
  * - FriendRequestItem: Friend request row with accept/decline
- * (ProfilePreviewModal removed — replaced by direct UserProfile navigation)
  */
 
 export { InboxHeader } from "./InboxHeader";
@@ -47,7 +46,7 @@ export type { MuteOptionsSheetProps } from "./MuteOptionsSheet";
 export { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 export type { DeleteConfirmDialogProps } from "./DeleteConfirmDialog";
 
-// Connections Components
+// Friends Components
 export { FriendRequestItem } from "./FriendRequestItem";
 export type { FriendRequestItemProps } from "./FriendRequestItem";
 

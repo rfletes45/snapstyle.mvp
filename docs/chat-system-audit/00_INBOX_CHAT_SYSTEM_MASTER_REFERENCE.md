@@ -1,6 +1,6 @@
 # Inbox and Chat System Master Reference
 
-Last verified: 2026-03-05
+Last verified: 2026-03-22
 Status: Consolidated Phase 3+ reference for the entire inbox/chat system
 
 > Historical checkpoint document. Use `docs/features/messaging.md` and the current code as the source of truth.
@@ -193,7 +193,7 @@ Canonical adapter used by both:
 Legacy backend triggers gating:
 
 - `firebase-backend/functions/src/notifications.ts`
-- env flag: `CHAT_LEGACY_PUSH_ENABLED`
+- Note: `CHAT_LEGACY_PUSH_ENABLED` was documented as an env flag but has no implementation in the codebase. Legacy push triggers are not separately gated.
 
 ## 8) End-to-End Flows
 
@@ -513,26 +513,35 @@ File:
 Responsibilities:
 
 - keep deployed trigger names stable
-- gate legacy push triggers using `CHAT_LEGACY_PUSH_ENABLED`
+- send push notifications on new/edited DM and group messages
+- check member mute and notification preferences before sending
+
+Note: `CHAT_LEGACY_PUSH_ENABLED` was previously documented as a gating flag but has no implementation. Legacy push triggers are not separately gated.
 
 ## 14) Feature Flags and Runtime Toggles
 
 Client/runtime flags:
 
-- `USE_LOCAL_STORAGE`
-- `CHAT_FEATURES.CHAT_INBOX_AGGREGATION`
-- `CHAT_FEATURES.CHAT_MESSAGE_REQUESTS`
-- `CHAT_FEATURES.CHAT_DELIVERY_ACKS`
+- `USE_LOCAL_STORAGE` (true on native, false on web)
+- `CHAT_FEATURES.CHAT_INBOX_AGGREGATION` (currently `false`)
+- `CHAT_FEATURES.CHAT_DELIVERY_ACKS` (currently `false`)
 
-Backend/env flag:
+Backend enforcement flags (in `firebase-backend/functions/src/messaging.ts`):
 
-- `CHAT_LEGACY_PUSH_ENABLED`
+- `ENABLE_GLOBAL_RATE_LIMIT` (currently `false`; global bucketed limiter defined but disabled)
+- `ENABLE_GROUP_SETTINGS_ENFORCEMENT` (currently `false`; slow mode, announcement-only, media restrictions defined but disabled)
+
+Removed / never implemented:
+
+- `CHAT_FEATURES.CHAT_MESSAGE_REQUESTS` — was planned but never implemented; message requests are always on
+- `CHAT_LEGACY_PUSH_ENABLED` — was documented as a backend env flag but has no implementation in the codebase
 
 Guidance:
 
 1. Any contract-affecting change must be tested in both relevant flag states.
 2. Toggle flips must not change unread semantics or row shape unexpectedly.
-3. Notification migrations must explicitly set legacy flag intent per environment.
+3. Message requests are always on; there is no client feature flag for them.
+4. Backend enforcement flags (`ENABLE_GLOBAL_RATE_LIMIT`, `ENABLE_GROUP_SETTINGS_ENFORCEMENT`) should be tested before enabling in production.
 
 ## 15) Findings and Discoveries (Consolidated)
 
@@ -585,15 +594,18 @@ Resolved on 2026-03-05:
 
 ## 16.2 Remaining Non-Blocking Risks
 
-1. Legacy push overlap if `CHAT_LEGACY_PUSH_ENABLED` is misconfigured.
-2. Whole-repo TypeScript baseline instability limits chat-only gate confidence.
-3. Aggregated inbox enrichments remain intentionally minimal.
+1. Whole-repo TypeScript baseline instability limits chat-only gate confidence.
+2. Aggregated inbox enrichments remain intentionally minimal.
+3. Group settings enforcement code exists but is disabled; no client UI surfaces these settings.
+4. Scheduled messages backend is still a legacy proxy.
 
 ## 16.3 Remaining Backlog Actions
 
-1. Add deploy-time safeguards and explicit logging for notification migration flag.
-2. Expand high-volume realtime plus pagination overlap stress tests.
-3. Add inbox parity telemetry for canary drift detection.
+1. Expand high-volume realtime plus pagination overlap stress tests.
+2. Add inbox parity telemetry for canary drift detection.
+3. Enable and test group settings enforcement (`ENABLE_GROUP_SETTINGS_ENFORCEMENT`).
+4. Build client UI for group settings (slow mode, announcement-only, media restrictions).
+5. Modernize scheduled messages backend away from legacy proxy.
 
 ## 17) Runtime Mode Parity Guarantees
 
@@ -711,7 +723,7 @@ Symptom: notification routes wrong or duplicates
 
 1. Inspect `src/services/notifications/normalizeNotification.ts`.
 2. Validate dedupe key behavior in both Auth and InApp contexts.
-3. Confirm `CHAT_LEGACY_PUSH_ENABLED` intent for environment.
+3. Confirm notification preferences for the target conversation.
 
 Symptom: group chat entry crash related to timestamps
 
@@ -720,17 +732,17 @@ Symptom: group chat entry crash related to timestamps
 
 ## 22) Checkpoint Timeline (Consolidated)
 
-| Checkpoint | Date | Theme | Status |
-| --- | --- | --- | --- |
-| C1 | 2026-03-04 | Thread listener and notification correctness | Complete |
-| C2 | 2026-03-04 | Requests tab integration and dead code cleanup | Complete |
-| C3 | 2026-03-04 | Local message lifecycle reset hardening | Complete |
-| C4 | 2026-03-04 | Merge and dedupe extraction | Complete |
-| C5 | 2026-03-05 | Canonical message normalization parity | Complete |
-| C6 | 2026-03-05 | Inbox normalization and unread parity | Complete |
-| C7 | 2026-03-05 | Unified inbox requests typed hook | Complete |
-| C8 | 2026-03-05 | Notification adapter and legacy gating | Complete |
-| C9 | 2026-03-05 | Timestamp crash and text-node warning fixes | Complete |
+| Checkpoint | Date       | Theme                                          | Status   |
+| ---------- | ---------- | ---------------------------------------------- | -------- |
+| C1         | 2026-03-04 | Thread listener and notification correctness   | Complete |
+| C2         | 2026-03-04 | Requests tab integration and dead code cleanup | Complete |
+| C3         | 2026-03-04 | Local message lifecycle reset hardening        | Complete |
+| C4         | 2026-03-04 | Merge and dedupe extraction                    | Complete |
+| C5         | 2026-03-05 | Canonical message normalization parity         | Complete |
+| C6         | 2026-03-05 | Inbox normalization and unread parity          | Complete |
+| C7         | 2026-03-05 | Unified inbox requests typed hook              | Complete |
+| C8         | 2026-03-05 | Notification adapter and legacy gating         | Complete |
+| C9         | 2026-03-05 | Timestamp crash and text-node warning fixes    | Complete |
 
 ## 23) Release and Change Governance
 
@@ -763,10 +775,17 @@ Escalation package should include:
 - `src/screens/chat/ChatScreen.tsx`
 - `src/screens/groups/GroupChatScreen.tsx`
 - `src/screens/chat/ThreadScreen.tsx`
+- `src/screens/chat/InboxSearchScreen.tsx`
+- `src/screens/chat/InboxSettingsScreen.tsx`
+- `src/screens/chat/ChatSettingsScreen.tsx`
+- `src/screens/chat/ScheduledMessagesScreen.tsx`
+- `src/screens/groups/GroupChatInfoScreen.tsx`
+- `src/screens/groups/GroupChatCreateScreen.tsx`
 
 ## 24.2 Hooks
 
 - `src/hooks/useChat.ts`
+- `src/hooks/useUnifiedChatScreen.ts`
 - `src/hooks/useLocalMessages.ts`
 - `src/hooks/useUnifiedMessages.ts`
 - `src/hooks/useInboxData.ts`
@@ -774,9 +793,19 @@ Escalation package should include:
 - `src/hooks/useConversationActions.ts`
 - `src/hooks/useMessageRequests.ts`
 - `src/hooks/useUnifiedInboxRequests.ts`
+- `src/hooks/useChatComposer.ts`
+- `src/hooks/useAttachmentPicker.ts`
+- `src/hooks/useVoiceRecorder.ts`
+- `src/hooks/useReadReceipts.ts`
+- `src/hooks/useChatDebugInfo.ts`
+- `src/hooks/chat/useNewMessageAutoscroll.ts`
+- `src/hooks/chat/useChatKeyboard.ts`
 
 ## 24.3 Chat Services and Helpers
 
+- `src/services/chat.ts`
+- `src/services/chatV2.ts`
+- `src/services/chatMembers.ts`
 - `src/services/chat/normalizeMessage.ts`
 - `src/services/chat/normalizeInboxRow.ts`
 - `src/services/chat/fanoutInboxNormalization.ts`
@@ -784,9 +813,18 @@ Escalation package should include:
 - `src/services/chat/messageRequestsContract.ts`
 - `src/services/chat/inboxAggregation.ts`
 - `src/services/chat/unifiedMessagesLifecycle.ts`
+- `src/services/messaging/index.ts`
 - `src/services/messaging/send.ts`
 - `src/services/messaging/subscribe.ts`
 - `src/services/messaging/messageMerge.ts`
+- `src/services/messaging/resolveChatSettings.ts`
+- `src/services/messaging/adapters/groupAdapter.ts`
+- `src/services/messageActions.ts`
+- `src/services/scheduledMessages.ts`
+- `src/services/inboxSettings.ts`
+- `src/services/messageList.ts`
+- `src/services/database/messageRepository.ts`
+- `src/services/database/conversationRepository.ts`
 
 ## 24.4 State and Notification Contexts
 
@@ -795,10 +833,49 @@ Escalation package should include:
 
 ## 24.5 UI Components
 
-- `src/components/chat/inbox/ConversationItem.tsx`
-- `src/components/chat/inbox/unreadBadge.ts`
+- `src/components/chat/ChatMessageList.tsx`
 - `src/components/chat/ChatComposer.tsx`
+- `src/components/chat/ChatHeader.tsx`
+- `src/components/chat/SwipeableMessage.tsx`
 - `src/components/chat/SwipeableMessageWrapper.tsx`
+- `src/components/chat/MessageActionsSheet.tsx`
+- `src/components/chat/ReactionBar.tsx`
+- `src/components/chat/ReactionDetailSheet.tsx`
+- `src/components/chat/SeenBySheet.tsx`
+- `src/components/chat/ReplyPreviewBar.tsx`
+- `src/components/chat/ReplyBubbleNew.tsx`
+- `src/components/chat/ThreadIndicator.tsx`
+- `src/components/chat/VoiceMessagePlayer.tsx`
+- `src/components/chat/VoiceRecordButton.tsx`
+- `src/components/chat/AttachmentTray.tsx`
+- `src/components/chat/AttachmentGrid.tsx`
+- `src/components/chat/MediaViewerModal.tsx`
+- `src/components/chat/LinkPreviewCard.tsx`
+- `src/components/chat/MentionAutocomplete.tsx`
+- `src/components/chat/CameraLongPressButton.tsx`
+- `src/components/chat/ReturnToBottomPill.tsx`
+- `src/components/chat/TypingIndicator.tsx`
+- `src/components/chat/MessageHighlightOverlay.tsx`
+- `src/components/chat/ChatSkeleton.tsx`
+- `src/components/chat/ChatDebugHUD.tsx`
+- `src/components/chat/NetworkBanner.tsx`
+- `src/components/chat/AnimalBubble.tsx`
+- `src/components/chat/inbox/ConversationItem.tsx`
+- `src/components/chat/inbox/SwipeableConversation.tsx`
+- `src/components/chat/inbox/ConversationContextMenu.tsx`
+- `src/components/chat/inbox/InboxTabs.tsx`
+- `src/components/chat/inbox/InboxHeader.tsx`
+- `src/components/chat/inbox/InboxFAB.tsx`
+- `src/components/chat/inbox/PinnedSection.tsx`
+- `src/components/chat/inbox/FriendRequestItem.tsx`
+- `src/components/chat/inbox/GroupInviteItem.tsx`
+- `src/components/chat/inbox/MuteOptionsSheet.tsx`
+- `src/components/chat/inbox/DeleteConfirmDialog.tsx`
+- `src/components/chat/inbox/ProfilePreviewModal.tsx`
+- `src/components/chat/inbox/EmptyState.tsx`
+- `src/components/chat/inbox/unreadBadge.ts`
+- `src/components/DMMessageItem.tsx`
+- `src/components/ScheduleMessageModal.tsx`
 
 ## 24.6 Backend Functions
 
@@ -806,10 +883,14 @@ Escalation package should include:
 - `firebase-backend/functions/src/inboxTriggers.ts`
 - `firebase-backend/functions/src/messageRequests.ts`
 - `firebase-backend/functions/src/notifications.ts`
+- `firebase-backend/functions/src/notificationCenter.ts`
+- `firebase-backend/functions/src/chatMedia.ts`
+- `firebase-backend/functions/src/scheduledMessages.ts`
 
 ## 24.7 Contracts and Types
 
 - `src/types/messaging.ts`
+- `src/types/database.ts`
 
 ## 24.8 Test Suites
 
@@ -823,6 +904,9 @@ Escalation package should include:
 - `__tests__/services/normalizeNotification.test.ts`
 - `__tests__/components/conversationItem.unreadBadge.test.ts`
 - `__tests__/screens/threadScreen.lifecycle.test.ts`
+- `__tests__/services/chatV3Client.test.ts`
+- `__tests__/services/resolveChatSettings.test.ts`
+- `__tests__/services/outboxErrorClassification.test.ts`
 
 ## 24.9 Related Documentation
 

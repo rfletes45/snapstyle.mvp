@@ -1,13 +1,14 @@
 /**
- * InboxHeader Component
+ * InboxHeader Component (Redesigned — Messages)
  *
- * Top app bar for the inbox screen with:
+ * Snapchat-inspired header for the Messages screen with:
  * - User avatar (tappable → Profile)
- * - Title ("Inbox" or "Archive")
- * - Archive toggle button
+ * - Title ("Messages")
  * - Search button
- * - Connections button (opens Connections screen)
- * - Settings button
+ * - Games button (navigates to GamesHub)
+ * - Friends button (opens Friends screen)
+ *
+ * Unified background color for visual cohesion with the rest of the Messages screen.
  *
  * @module components/chat/inbox/InboxHeader
  */
@@ -32,25 +33,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export interface InboxHeaderProps {
   /** Callback when search button is pressed */
   onSearchPress: () => void;
-  /** Callback when settings button is pressed */
-  onSettingsPress: () => void;
-  /** Whether we're showing archived conversations */
-  showArchived: boolean;
-  /** Callback to toggle archive view */
-  onArchiveToggle: () => void;
 }
 
 // =============================================================================
 // Component
 // =============================================================================
 
-export function InboxHeader({
-  onSearchPress,
-  onSettingsPress,
-  showArchived,
-  onArchiveToggle,
-}: InboxHeaderProps) {
-  const { colors } = useAppTheme();
+export function InboxHeader({ onSearchPress }: InboxHeaderProps) {
+  const { colors, isDark } = useAppTheme();
   const { profile } = useUser();
   const { currentFirebaseUser } = useAuth();
   const { picture, decoration } = useProfilePicture({
@@ -61,7 +51,6 @@ export function InboxHeader({
 
   const handleAvatarPress = useCallback(() => {
     haptics.buttonPress();
-    // Navigate to Profile tab using CommonActions to reach parent Tab Navigator
     navigation.dispatch(
       CommonActions.navigate({
         name: "Profile",
@@ -74,49 +63,47 @@ export function InboxHeader({
     onSearchPress();
   }, [onSearchPress]);
 
-  const handleSettingsPress = useCallback(() => {
+  const handleFriendsPress = useCallback(() => {
     haptics.buttonPress();
-    onSettingsPress();
-  }, [onSettingsPress]);
-
-  const handleArchiveToggle = useCallback(() => {
-    haptics.selection();
-    onArchiveToggle();
-  }, [onArchiveToggle]);
-
-  const handleConnectionsPress = useCallback(() => {
-    haptics.buttonPress();
-    // Navigate to Connections screen at root stack level
     navigation.dispatch(
       CommonActions.navigate({
-        name: "Connections",
+        name: "Friends",
       }),
     );
   }, [navigation]);
 
-  // Ensure at least 59 px for Dynamic Island devices (iPhone 14 Pro+)
+  const handleGamesPress = useCallback(() => {
+    haptics.buttonPress();
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: "GamesHub",
+      }),
+    );
+  }, [navigation]);
+
   const safeTop = Math.max(insets.top, 0);
   const headerContentHeight = 48;
+  const iconBtnBg = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)";
 
   return (
     <View
       style={[
         styles.header,
         {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.background,
           paddingTop: safeTop,
           height: headerContentHeight + safeTop,
           minHeight: headerContentHeight + safeTop,
         },
       ]}
     >
-      {/* Absolutely centered title — pinned to content area below safe-area inset */}
+      {/* Absolutely centered title */}
       <View
         style={[styles.titleOverlay, { top: safeTop + 8, bottom: 0 }]}
         pointerEvents="none"
       >
         <Appbar.Content
-          title={showArchived ? "Archive" : "Inbox"}
+          title="Messages"
           titleStyle={[styles.title, { color: colors.text }]}
           style={styles.titleContent}
         />
@@ -134,44 +121,42 @@ export function InboxHeader({
             pictureUrl={picture?.url || null}
             name={profile?.displayName || ""}
             decorationId={decoration?.decorationId || null}
-            size={32}
+            size={36}
           />
         </TouchableOpacity>
         <IconButton
           icon="magnify"
           iconColor={colors.textSecondary}
+          containerColor={iconBtnBg}
           size={24}
           onPress={handleSearchPress}
           accessibilityLabel="Search conversations"
-          style={styles.searchButton}
+          style={styles.iconButton}
         />
       </View>
 
       {/* Spacer */}
       <View style={styles.spacer} />
 
-      {/* Right: Actions */}
+      {/* Right: Games, Friends */}
       <View style={styles.rightContainer}>
+        <IconButton
+          icon="gamepad-variant-outline"
+          iconColor={colors.textSecondary}
+          containerColor={iconBtnBg}
+          size={24}
+          onPress={handleGamesPress}
+          accessibilityLabel="Games"
+          style={styles.headerBtn}
+        />
         <IconButton
           icon="account-group-outline"
           iconColor={colors.textSecondary}
+          containerColor={iconBtnBg}
           size={24}
-          onPress={handleConnectionsPress}
-          accessibilityLabel="Connections"
-        />
-        <IconButton
-          icon="cog"
-          iconColor={colors.textSecondary}
-          size={24}
-          onPress={handleSettingsPress}
-          accessibilityLabel="Inbox settings"
-        />
-        <IconButton
-          icon={showArchived ? "inbox" : "archive"}
-          iconColor={colors.textSecondary}
-          size={24}
-          onPress={handleArchiveToggle}
-          accessibilityLabel={showArchived ? "Show inbox" : "Show archive"}
+          onPress={handleFriendsPress}
+          accessibilityLabel="Friends"
+          style={styles.headerBtn}
         />
       </View>
     </View>
@@ -199,6 +184,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     zIndex: 1,
+    gap: 5,
+    marginRight: Spacing.sm,
   },
   spacer: {
     flex: 1,
@@ -207,8 +194,11 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.md,
     marginRight: Spacing.xs,
   },
-  searchButton: {
-    marginRight: 0,
+  iconButton: {
+    margin: 0,
+  },
+  headerBtn: {
+    margin: 0,
   },
   titleOverlay: {
     position: "absolute",
@@ -220,13 +210,9 @@ const styles = StyleSheet.create({
   titleContent: {
     alignItems: "center",
   },
-  avatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-  },
   title: {
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
 });

@@ -89,7 +89,7 @@ describe("normalizeNotificationPayload", () => {
       route: {
         screen: "MainTabs",
         params: {
-          screen: "Inbox",
+          screen: "Messages",
           params: {
             screen: "ChatList",
             params: { initialFilter: "requests" },
@@ -101,7 +101,7 @@ describe("normalizeNotificationPayload", () => {
     expect(normalized?.route).toEqual({
       screen: "MainTabs",
       params: {
-        screen: "Inbox",
+        screen: "Messages",
         params: {
           screen: "ChatList",
           params: { initialFilter: "requests" },
@@ -125,28 +125,13 @@ describe("normalizeNotificationPayload", () => {
     const key = "dm_message:chat-1";
 
     expect(
-      shouldHandleNotificationByDedupeKey(
-        dedupeMap,
-        key,
-        10_000,
-        1_500,
-      ),
+      shouldHandleNotificationByDedupeKey(dedupeMap, key, 10_000, 1_500),
     ).toBe(true);
     expect(
-      shouldHandleNotificationByDedupeKey(
-        dedupeMap,
-        key,
-        11_000,
-        1_500,
-      ),
+      shouldHandleNotificationByDedupeKey(dedupeMap, key, 11_000, 1_500),
     ).toBe(false);
     expect(
-      shouldHandleNotificationByDedupeKey(
-        dedupeMap,
-        key,
-        12_600,
-        1_500,
-      ),
+      shouldHandleNotificationByDedupeKey(dedupeMap, key, 12_600, 1_500),
     ).toBe(true);
   });
 });

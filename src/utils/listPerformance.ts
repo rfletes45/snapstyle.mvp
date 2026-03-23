@@ -7,7 +7,7 @@
 
 /**
  * Standard list performance props
- * Good for most lists (chats, connections, moments feed)
+ * Good for most lists (chats, friends, moments feed)
  */
 export const LIST_PERFORMANCE_PROPS = {
   /** Number of items to render outside visible area (above + below) */

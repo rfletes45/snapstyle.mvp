@@ -19,17 +19,17 @@ Use this as an evidence log for:
 
 ## 2) Checkpoint Timeline
 
-| Checkpoint | Date | Theme | Status |
-| --- | --- | --- | --- |
-| C1 | 2026-03-04 | Thread listener and notification correctness | Complete |
-| C2 | 2026-03-04 | Requests tab integration and dead code cleanup | Complete |
-| C3 | 2026-03-04 | Local message lifecycle reset hardening | Complete |
-| C4 | 2026-03-04 | Merge and dedupe helper extraction | Complete |
-| C5 | 2026-03-05 | Canonical message normalization parity | Complete |
-| C6 | 2026-03-05 | Inbox normalization and unread source-of-truth parity | Complete |
-| C7 | 2026-03-05 | Unified inbox requests typed hook | Complete |
-| C8 | 2026-03-05 | Notification payload adapter and legacy gating | Complete |
-| C9 | 2026-03-05 | Group chat runtime crash and text-node warning fixes | Complete |
+| Checkpoint | Date       | Theme                                                 | Status   |
+| ---------- | ---------- | ----------------------------------------------------- | -------- |
+| C1         | 2026-03-04 | Thread listener and notification correctness          | Complete |
+| C2         | 2026-03-04 | Requests tab integration and dead code cleanup        | Complete |
+| C3         | 2026-03-04 | Local message lifecycle reset hardening               | Complete |
+| C4         | 2026-03-04 | Merge and dedupe helper extraction                    | Complete |
+| C5         | 2026-03-05 | Canonical message normalization parity                | Complete |
+| C6         | 2026-03-05 | Inbox normalization and unread source-of-truth parity | Complete |
+| C7         | 2026-03-05 | Unified inbox requests typed hook                     | Complete |
+| C8         | 2026-03-05 | Notification payload adapter and legacy gating        | Complete |
+| C9         | 2026-03-05 | Group chat runtime crash and text-node warning fixes  | Complete |
 
 ## 3) Detailed Checkpoints
 
@@ -203,9 +203,13 @@ Primary suites now covering prior risk gaps:
 
 ## 5) Remaining Work (Non-Blocking)
 
-1. Notification migration safety checks in deployment process (`CHAT_LEGACY_PUSH_ENABLED`).
-2. Larger stress fixtures for repeated realtime and pagination overlap.
-3. Optional inbox parity telemetry in controlled canary runs.
+1. Larger stress fixtures for repeated realtime and pagination overlap.
+2. Optional inbox parity telemetry in controlled canary runs.
+3. Enable and test group settings enforcement (`ENABLE_GROUP_SETTINGS_ENFORCEMENT` in messaging.ts).
+4. Build client UI for group settings (slow mode, announcement-only, media restrictions).
+5. Modernize scheduled messages backend away from legacy proxy.
+
+Note: `CHAT_LEGACY_PUSH_ENABLED` was previously listed here but has no implementation in the codebase and has been removed.
 
 ## 6) Maintenance Rules
 

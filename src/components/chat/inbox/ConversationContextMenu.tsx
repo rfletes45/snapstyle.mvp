@@ -6,13 +6,13 @@
  * - Pin/Unpin
  * - Mute/Unmute
  * - Mark as Unread
- * - Archive/Unarchive
  * - View Profile (DM only)
  * - Delete/Leave & Delete (destructive)
  *
  * @module components/chat/inbox/ConversationContextMenu
  */
 
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { InboxConversation } from "@/types/messaging";
 import * as haptics from "@/utils/haptics";
@@ -27,7 +27,6 @@ import {
   View,
 } from "react-native";
 import { Divider, Text } from "react-native-paper";
-import { BorderRadius, Spacing } from "@/constants/theme";
 
 // =============================================================================
 // Types
@@ -53,8 +52,6 @@ export interface ConversationContextMenuProps {
   onPin: () => void;
   /** Called when mute is pressed */
   onMute: () => void;
-  /** Called when archive is pressed */
-  onArchive: () => void;
   /** Called when mark unread is pressed */
   onMarkUnread: () => void;
   /** Called when delete is pressed */
@@ -82,7 +79,6 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
   position,
   onPin,
   onMute,
-  onArchive,
   onMarkUnread,
   onDelete,
   onViewProfile,
@@ -109,11 +105,6 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
         label: "Mark as Unread",
         onPress: onMarkUnread,
       },
-      {
-        icon: conversation.memberState.archived ? "inbox" : "archive",
-        label: conversation.memberState.archived ? "Unarchive" : "Archive",
-        onPress: onArchive,
-      },
     ];
 
     // Add view profile for DMs
@@ -134,15 +125,7 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
     });
 
     return items;
-  }, [
-    conversation,
-    onPin,
-    onMute,
-    onMarkUnread,
-    onArchive,
-    onViewProfile,
-    onDelete,
-  ]);
+  }, [conversation, onPin, onMute, onMarkUnread, onViewProfile, onDelete]);
 
   // Calculate menu position to keep it on screen
   const menuPosition = useMemo(() => {
@@ -226,7 +209,9 @@ export const ConversationContextMenu = memo(function ConversationContextMenu({
                     accessibilityLabel={item.label}
                   >
                     <MaterialCommunityIcons
-                      name={item.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                      name={
+                        item.icon as keyof typeof MaterialCommunityIcons.glyphMap
+                      }
                       size={20}
                       color={item.destructive ? colors.error : colors.text}
                       style={styles.menuIcon}

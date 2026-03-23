@@ -289,7 +289,7 @@ export default function OwnProfileScreen({
             isOwnProfile={true}
             hiddenFromOthers={friendsHidden}
             enterIndex={0}
-            onPress={() => navigation.navigate("Connections")}
+            onPress={() => navigation.navigate("Friends")}
             onFriendPress={(friendUid) =>
               navigation.navigate("UserProfile", { userId: friendUid })
             }

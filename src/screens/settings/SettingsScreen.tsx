@@ -484,7 +484,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           left={(props) => <List.Icon {...props} icon="message" />}
           right={() => (
             <Switch
-              value={notificationSettings?.messageNotificationsEnabled !== false}
+              value={
+                notificationSettings?.messageNotificationsEnabled !== false
+              }
               onValueChange={(value) =>
                 toggleNotificationSetting(
                   "messageNotificationsEnabled",
@@ -640,6 +642,17 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         <List.Subheader style={styles.sectionHeader}>
           Privacy & Safety
         </List.Subheader>
+
+        <List.Item
+          title="Chat Settings"
+          description="Read receipts, typing indicators, online status"
+          left={(props) => <List.Icon {...props} icon="message-cog" />}
+          right={(props) => <List.Icon {...props} icon="chevron-right" />}
+          onPress={() => {
+            const tabNav = navigation.getParent();
+            tabNav?.navigate("Messages", { screen: "InboxSettings" });
+          }}
+        />
 
         <List.Item
           title="Privacy Settings"
