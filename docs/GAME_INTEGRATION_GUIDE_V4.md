@@ -1,6 +1,6 @@
 # Game Integration Guide V4 - Implementation Manual for New Games
 
-> Source of truth: the checked-out workspace on 2026-03-10.
+> Source of truth: the checked-out workspace on 2026-03-18.
 > This guide is for adding or auditing a game against the current V4 implementation, not an idealized design.
 > Companion: [GAMES_V4_SYSTEM.md](GAMES_V4_SYSTEM.md).
 
@@ -216,9 +216,9 @@ These have metadata only and should not be used as proof of an implemented patte
 
 | Area                    | Primary files                                        | Why it matters                           |
 | ----------------------- | ---------------------------------------------------- | ---------------------------------------- |
-| Realtime client service | `src/gamesV4/services/{game}Client.ts`               | room join, event handling, senders       |
+| Realtime client contract | `src/gamesV4/realtime/games/{game}Def.ts` and `src/gamesV4/realtime/useRealtimeRoom.ts` | room join, event handling, senders |
 | Settings helpers        | `src/gamesV4/data/{game}Settings.ts`                 | merged runtime settings and helper logic |
-| Room server             | `colyseus-server/src/rooms/{Room}.ts`                | live authority                           |
+| Room server             | `colyseus-server/src/games/{game}/Room.ts`           | live authority                           |
 | Realtime bridge         | `colyseus-server/src/bridge/firebaseBridge.ts`       | handoff into Firebase result pipeline    |
 | Trigger target          | `firebase-backend/functions/src/gamesV4/triggers.ts` | Firestore trigger into shared resolution |
 
@@ -456,7 +456,7 @@ Client side:
 - a client adapter, usually minimal, in `src/gamesV4/adapters/{game}.ts`
 - a gameplay screen in `src/gamesV4/screens/{Game}ScreenV4.tsx`
 - **NEW**: a `RealtimeClientDefinition` in `src/gamesV4/realtime/games/{game}Def.ts`
-- ~~a room client service in `src/gamesV4/services/{game}Client.ts`~~ → use `useRealtimeRoom` hook instead
+- optional shared realtime payload/state contracts in `src/gamesV4/realtime/games/{game}Types.ts`
 - dispatcher registration in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`
 - client achievement definitions in `src/gamesV4/data/achievementDefinitions.ts`
 
@@ -1210,7 +1210,8 @@ Usually required:
 - `src/gamesV4/adapters/{game}.ts`
 - `src/gamesV4/adapters/index.ts`
 - `src/gamesV4/data/{game}Settings.ts`
-- `src/gamesV4/services/{game}Client.ts`
+- `src/gamesV4/realtime/games/{game}Def.ts`
+- `src/gamesV4/realtime/useRealtimeRoom.ts`
 - `src/gamesV4/screens/{Game}ScreenV4.tsx`
 - `src/gamesV4/screens/GamePlayDispatcherV4.tsx`
 - `src/gamesV4/data/achievementDefinitions.ts`
@@ -1219,7 +1220,7 @@ Usually required:
 - `firebase-backend/functions/src/gamesV4/achievements.ts`
 - `firebase-backend/functions/src/gamesV4/triggers.ts` if a new bridge path is needed
 - `colyseus-server/src/index.ts`
-- `colyseus-server/src/rooms/{Room}.ts`
+- `colyseus-server/src/games/{game}/Room.ts`
 - `colyseus-server/src/bridge/firebaseBridge.ts` or equivalent bridge logic
 - client settings tests and any realtime integration tests you can add
 

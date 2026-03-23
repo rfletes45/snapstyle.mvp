@@ -31,11 +31,9 @@ exports.COLLECTIONS = {
     MOVES: "Moves",
     GAME_RESULTS: "GameResultsV4",
     GAME_PB: "GamePB",
-    NOTIFICATIONS: "Notifications",
     LEADERBOARDS: "LeaderboardsV4",
     LEADERBOARD_WEEKS: "Weeks",
     LEADERBOARD_ENTRIES: "Entries",
-    IN_APP_NOTIFICATIONS_V4: "InAppNotificationsV4",
 };
 exports.PINNED_INVITE_IDS_FIELD = "pinnedGameInviteIds";
 exports.MAX_PINNED_INVITES = 5;

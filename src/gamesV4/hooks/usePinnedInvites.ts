@@ -1,15 +1,13 @@
 /**
- * Games V4 — usePinnedInvites Hook
+ * Games V4 - usePinnedInvites Hook
  *
  * Subscribes to pinned game invite IDs on a conversation doc,
  * then resolves each invite into a live GameInviteV4 object.
  *
- * Used by the PinnedInviteBar component.
- *
- * ACCEPTED-RISK N5: The cleanup function at the bottom of the
- * inviteIds effect tears down ALL invite subscriptions on every
- * `inviteIds` change, then re-subscribes them. This causes a brief
- * UI flicker when pins change. Cosmetic only — no data loss.
+ * Listener ownership is incremental:
+ * - add listeners only for newly pinned IDs
+ * - remove listeners only for IDs that disappeared
+ * - clear everything only when the conversation changes or the hook unmounts
  *
  * @module gamesV4/hooks/usePinnedInvites
  */
@@ -39,16 +37,34 @@ export function usePinnedInvites(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Track individual invite subscriptions
   const inviteUnsubs = useRef<Record<string, () => void>>({});
+  const conversationKeyRef = useRef<string | null>(null);
 
-  // Subscribe to pinned invite IDs
+  useEffect(() => {
+    const nextKey = conversationId ? `${scope}:${conversationId}` : null;
+    if (
+      conversationKeyRef.current !== null &&
+      conversationKeyRef.current !== nextKey
+    ) {
+      Object.values(inviteUnsubs.current).forEach((unsub) => unsub());
+      inviteUnsubs.current = {};
+      setInviteIds([]);
+      setInviteMap({});
+      setError(null);
+      setLoading(nextKey !== null);
+    }
+    conversationKeyRef.current = nextKey;
+  }, [conversationId, scope]);
+
   useEffect(() => {
     if (!conversationId) {
       setInviteIds([]);
       setLoading(false);
       return;
     }
+
+    setLoading(true);
+    setError(null);
 
     const unsub = subscribeToPinnedInviteIds(
       conversationId,
@@ -66,12 +82,10 @@ export function usePinnedInvites(
     return unsub;
   }, [conversationId, scope]);
 
-  // Subscribe to individual invite docs when IDs change
   useEffect(() => {
     const currentIds = new Set(inviteIds);
     const existingIds = new Set(Object.keys(inviteUnsubs.current));
 
-    // Unsubscribe from removed IDs
     for (const id of existingIds) {
       if (!currentIds.has(id)) {
         inviteUnsubs.current[id]?.();
@@ -84,7 +98,6 @@ export function usePinnedInvites(
       }
     }
 
-    // Subscribe to new IDs
     for (const id of currentIds) {
       if (!existingIds.has(id)) {
         const unsub = subscribeToInvite(
@@ -92,17 +105,18 @@ export function usePinnedInvites(
           (invite) => {
             if (invite) {
               setInviteMap((prev) => ({ ...prev, [id]: invite }));
-            } else {
-              setInviteMap((prev) => {
-                const next = { ...prev };
-                delete next[id];
-                return next;
-              });
+              return;
             }
+
+            setInviteMap((prev) => {
+              const next = { ...prev };
+              delete next[id];
+              return next;
+            });
           },
-          (err) => {
-            // Gracefully handle permission-denied (e.g. deleted invite doc)
-            // by removing the invite from the map
+          () => {
+            // Gracefully handle deleted or no-longer-readable invite docs by
+            // removing them from the resolved map while keeping other pins live.
             setInviteMap((prev) => {
               const next = { ...prev };
               delete next[id];
@@ -113,15 +127,15 @@ export function usePinnedInvites(
         inviteUnsubs.current[id] = unsub;
       }
     }
+  }, [inviteIds]);
 
+  useEffect(() => {
     return () => {
-      // Cleanup all invite subscriptions
       Object.values(inviteUnsubs.current).forEach((unsub) => unsub());
       inviteUnsubs.current = {};
     };
-  }, [inviteIds]);
+  }, []);
 
-  // Build ordered invites array
   const invites = inviteIds
     .map((id) => inviteMap[id])
     .filter((inv): inv is GameInviteV4 => inv != null);

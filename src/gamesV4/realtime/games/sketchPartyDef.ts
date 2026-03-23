@@ -1,57 +1,18 @@
 /**
- * Games V4 — Sketch Party Client Definition
+ * Games V4 - Sketch Party Client Definition
  *
  * Game-specific RealtimeClientDefinition for Sketch Party.
  * Registers at import time so the generalized realtime layer
  * knows how to connect to and manage a Sketch Party room.
- *
- * This coexists with the existing sketchPartyClient.ts —
- * screens can migrate incrementally from the bespoke client
- * to useRealtimeRoom(SKETCH_PARTY_CLIENT_DEF, ...).
  *
  * @module gamesV4/realtime/games/sketchPartyDef
  */
 
 import { registerRealtimeClientDef } from "../registry";
 import type { RealtimeClientDefinition } from "../types";
+import type { SketchPartyRealtimeState } from "./sketchPartyTypes";
 
-// =============================================================================
-// State types (same shape as SketchPartyRoomState from sketchPartyClient.ts)
-// =============================================================================
-
-export interface SketchPartyRealtimeState {
-  phase: "waiting" | "choosing" | "drawing" | "turn_end" | "match_end";
-  currentRound: number;
-  totalRounds: number;
-  currentTurnIndex: number;
-  drawerId: string;
-  turnOrder: string[];
-  maskedWord: string;
-  wordLength: number;
-  secretWord: string;
-  scores: Record<string, number>;
-  correctGuessers: string[];
-  timeRemainingSec: number;
-  drawTimeSec: number;
-  hintsUsed: number;
-  maxHints: number;
-  wordChoices: string[];
-  players: Array<{
-    uid: string;
-    displayName: string;
-    connected: boolean;
-  }>;
-  effectiveSettings: {
-    maxPlayers: number;
-    rounds: number;
-    drawTimeSec: number;
-    turnChooseTimeSec: number;
-    wordChoices: number;
-    hints: number;
-    customWordsEnabled: boolean;
-    customWordsList: string;
-  };
-}
+export type { SketchPartyRealtimeState } from "./sketchPartyTypes";
 
 // =============================================================================
 // Server message types that the Sketch Party client listens to

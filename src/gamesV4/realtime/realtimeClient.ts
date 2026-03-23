@@ -2,8 +2,8 @@
  * Games V4 — Realtime Client Core
  *
  * Generalized Colyseus room connection, lifecycle management,
- * reconnection, and message dispatch. Replaces the bespoke
- * sketchPartyClient.ts singleton with a reusable class.
+ * reconnection, and message dispatch. Replaces legacy per-game
+ * Colyseus client helpers with a reusable class.
  *
  * Usage:
  *   const client = new RealtimeRoomClient(definition);

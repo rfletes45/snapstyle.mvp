@@ -18,5 +18,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
-  "exclude": ["firebase/**", "firebase-backend/**", "node_modules"]
+  "exclude": ["docs/**", "firebase/**", "firebase-backend/**", "node_modules"]
 }

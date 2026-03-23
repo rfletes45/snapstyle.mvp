@@ -3,12 +3,13 @@
  *
  * A lightweight alternative to useInboxData that reads from the
  * server-managed Users/{uid}/Inbox subcollection instead of
- * subscribing to every Chat + Group doc plus per-conversation
- * member-state lookups.
+ * subscribing to every Chat + Group doc directly.
  *
  * Activated by CHAT_FEATURES.CHAT_INBOX_AGGREGATION.
  *
- * Single Firestore snapshot listener, no per-conversation fan-out.
+ * The inbox feed itself is a single Firestore listener, but the current
+ * implementation still hydrates `MembersPrivate` per conversation so archive,
+ * mute, pin, and private read state stay aligned with the fan-out inbox path.
  *
  * @module hooks/useInboxAggregation
  */
@@ -71,7 +72,10 @@ export interface UseInboxAggregationResult {
   /** Force refresh */
   refresh: () => void;
   /** Optimistically mark a conversation as read in local state */
-  markConversationReadOptimistic: (conversationId: string) => void;
+  markConversationReadOptimistic: (
+    conversationId: string,
+    conversationType?: "dm" | "group",
+  ) => void;
 }
 
 // =============================================================================
@@ -259,31 +263,37 @@ export function useInboxAggregation(uid: string): UseInboxAggregationResult {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  const markConversationReadOptimistic = useCallback((conversationId: string) => {
-    recentlyReadRef.current.set(conversationId, Date.now());
+  const markConversationReadOptimistic = useCallback(
+    (conversationId: string, conversationType?: "dm" | "group") => {
+      recentlyReadRef.current.set(conversationId, Date.now());
 
-    const now = Date.now();
-    for (const [id, ts] of recentlyReadRef.current) {
-      if (now - ts > RECENTLY_READ_TTL_MS) {
-        recentlyReadRef.current.delete(id);
+      const now = Date.now();
+      for (const [id, ts] of recentlyReadRef.current) {
+        if (now - ts > RECENTLY_READ_TTL_MS) {
+          recentlyReadRef.current.delete(id);
+        }
       }
-    }
 
-    setEntries((prev) =>
-      prev.map((conversation) => {
-        if (conversation.id !== conversationId) return conversation;
-        return {
-          ...conversation,
-          unreadCount: 0,
-          memberState: {
-            ...conversation.memberState,
-            lastSeenAtPrivate: now,
-            lastMarkedUnreadAt: undefined,
-          },
-        };
-      }),
-    );
-  }, []);
+      setEntries((prev) =>
+        prev.map((conversation) => {
+          if (conversation.id !== conversationId) return conversation;
+          if (conversationType && conversation.type !== conversationType) {
+            return conversation;
+          }
+          return {
+            ...conversation,
+            unreadCount: 0,
+            memberState: {
+              ...conversation.memberState,
+              lastSeenAtPrivate: now,
+              lastMarkedUnreadAt: undefined,
+            },
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   return {
     conversations,

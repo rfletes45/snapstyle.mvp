@@ -302,14 +302,13 @@ describe("Error Taxonomy (Segment 8)", () => {
         CHAT_DELIVERY_ACKS: false,
         CHAT_SIGNED_MEDIA_URLS: false,
         CHAT_STAGED_UPLOADS: false,
-        CHAT_MESSAGE_REQUESTS: false,
         CHAT_GLOBAL_RATE_LIMIT: false,
         CHAT_INBOX_AGGREGATION: false,
         CHAT_PRIVACY_SERVER_ENFORCED: false,
         CHAT_DEBUG_HUD: true,
       };
 
-      expect(Object.keys(flags).length).toBe(9);
+      expect(Object.keys(flags).length).toBe(8);
     });
   });
 });

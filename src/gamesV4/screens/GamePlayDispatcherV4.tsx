@@ -25,17 +25,17 @@ import {
   View,
 } from "react-native";
 
-// Lazy imports to avoid pulling all game UIs into the initial bundle
+// Static screen imports. Each screen manages its own data subscriptions.
 import BattleshipScreenV4 from "./BattleshipScreenV4";
 import BrickBreakerScreenV4 from "./BrickBreakerScreenV4";
-import ChessScreenV4 from "./ChessScreenV4";
+import ChessScreenV4 from "./chess/ChessScreenV4";
 import ConnectFourScreenV4 from "./ConnectFourScreenV4";
 import CrazyEightsScreenV4 from "./CrazyEightsScreenV4";
 import DeadDropScreenV4 from "./DeadDropScreenV4";
 import DotsAndBoxesScreenV4 from "./DotsAndBoxesScreenV4";
 import HexScreenV4 from "./HexScreenV4";
 import KnockoutScreenV4 from "./KnockoutScreenV4";
-import MetroMagnateScreenV4 from "./MetroMagnateScreenV4";
+import MetroMagnateScreenV4 from "./metroMagnate/MetroMagnateScreenV4";
 import MinesweeperScreenV4 from "./MinesweeperScreenV4";
 import MinigolfScreenV4 from "./MinigolfScreenV4";
 import Play2048ScreenV4 from "./Play2048ScreenV4";

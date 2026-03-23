@@ -22,6 +22,7 @@ import {
   adminClearGame,
   updateLobbySettings,
 } from "@/gamesV4/services/gameServiceV4";
+import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
 import { markGameNotificationsRead } from "@/services/userNotifications";
 import { useAuth } from "@/store/AuthContext";
 import { useInAppNotifications } from "@/store/InAppNotificationsContext";
@@ -227,7 +228,7 @@ export default function GameLobbyScreenV4() {
       return;
     }
 
-    if (invite && invite.status === "resolved" && !invite.sessionId) {
+    if (invite && isCancelledInvite(invite)) {
       hasAutoNavigated.current = true;
       Alert.alert("Invite Cancelled", "This game invite was cancelled.", [
         { text: "OK", onPress: () => navigation.goBack() },

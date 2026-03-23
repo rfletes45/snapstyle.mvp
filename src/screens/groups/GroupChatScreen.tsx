@@ -100,12 +100,7 @@ import { ErrorState } from "@/components/ui";
 // Services
 import { getUserProfileByUid } from "@/services/friends";
 import { getGroupMemberPrivate } from "@/services/groupMembers";
-import {
-  getGroup,
-  getGroupMembers,
-  isGroupMember,
-  updateLastRead,
-} from "@/services/groups";
+import { getGroup, getGroupMembers, isGroupMember } from "@/services/groups";
 import { extractUrls, fetchPreview, hasUrls } from "@/services/linkPreview";
 import {
   extractMentionsExact,
@@ -491,18 +486,9 @@ export default function GroupChatScreen({ route, navigation }: Props) {
     loadGroup();
   }, [groupId, uid, navigation]);
 
-  // Update last read when messages change
-  useEffect(() => {
-    if (groupId && uid && messages.length > 0) {
-      updateLastRead(groupId, uid).catch((e) =>
-        logger.error("Failed to update last read:", e),
-      );
-    }
-  }, [groupId, uid, messages.length]);
-
   useEffect(() => {
     if (!uid || !groupId) return;
-    markConversationNotificationsRead(uid, groupId).catch((error) => {
+    markConversationNotificationsRead(uid, groupId, "group").catch((error) => {
       logger.warn("Failed to mark group notifications read:", error);
     });
   }, [uid, groupId]);
@@ -1761,7 +1747,7 @@ const styles = StyleSheet.create({
     borderRadius: 0,
   },
   voiceBubble: { padding: 8 },
-  messageText: { fontSize: 20, lineHeight: 29 },
+  messageText: { fontSize: 17, lineHeight: 25 },
   standaloneImage: { width: 200, height: 200, borderRadius: 16 },
   messageTime: { fontSize: 10 },
   timestampRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },

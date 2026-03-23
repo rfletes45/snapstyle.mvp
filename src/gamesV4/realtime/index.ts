@@ -38,9 +38,7 @@ export {
 } from "./registry";
 
 // ── Hooks ──────────────────────────────────────────────────────────
-export { useRealtimeMessages } from "./useRealtimeMessages";
-export type { MessageHandlerMap } from "./useRealtimeMessages";
-export { useRealtimeClient, useRealtimeRoom } from "./useRealtimeRoom";
+export { useRealtimeRoom } from "./useRealtimeRoom";
 export type { UseRealtimeRoomOptions } from "./useRealtimeRoom";
 
 // ── Errors ─────────────────────────────────────────────────────────

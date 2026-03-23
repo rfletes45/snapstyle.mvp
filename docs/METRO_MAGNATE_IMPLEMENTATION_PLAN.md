@@ -114,7 +114,7 @@
 | 3   | `src/gamesV4/adapters/metroMagnate/metroMagnateBoard.ts`   | Static board definition: the 40-space loop with district names, sector groupings, costs, rents, card draw spaces, special spaces. Equivalent of the board layout data.                              |
 | 4   | `src/gamesV4/adapters/metroMagnate/metroMagnateAdapter.ts` | Client `GameAdapterV4` implementation                                                                                                                                                               |
 | 5   | `src/gamesV4/adapters/metroMagnate/index.ts`               | Register + re-export                                                                                                                                                                                |
-| 6   | `src/gamesV4/screens/MetroMagnateScreenV4.tsx`             | Gameplay screen with board rendering, dice animation, player tokens, district cards, trade UI, etc.                                                                                                 |
+| 6   | `src/gamesV4/screens/metroMagnate/MetroMagnateScreenV4.tsx` | Gameplay screen with board rendering, dice animation, player tokens, district cards, trade UI, etc.                                                                                                |
 | 7   | `__tests__/gamesV4/adapters/metroMagnate.test.ts`          | Comprehensive adapter tests                                                                                                                                                                         |
 
 ### 3.3 Files that need NO changes (auto-integrate via metadata)
@@ -408,7 +408,7 @@ interface MetroMagnatePublicState {
 
 | File                                           | Size Est.   | Content                                                                                                                                                                                                                                                                                       |
 | ---------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/gamesV4/screens/MetroMagnateScreenV4.tsx` | ~1200 lines | Board rendering (loop layout), player token positions, dice animation, district cards overlay, buy/decline/auction UI, trade proposal modal, improvement build UI, mortgage controls, player stats panel, turn phase indicators. Uses `withGameV4Shell(MetroMagnateScreen, "metro_magnate")`. |
+| `src/gamesV4/screens/metroMagnate/MetroMagnateScreenV4.tsx` | ~1200 lines | Board rendering (loop layout), player token positions, dice animation, district cards overlay, buy/decline/auction UI, trade proposal modal, improvement build UI, mortgage controls, player stats panel, turn phase indicators. Uses `withGameV4Shell(MetroMagnateScreen, "metro_magnate")`. |
 
 #### Tests
 
@@ -578,7 +578,7 @@ interface MetroMagnatePublicState {
 
 **Deliverables**:
 
-1. Create `MetroMagnateScreenV4.tsx`:
+1. Create `src/gamesV4/screens/metroMagnate/MetroMagnateScreenV4.tsx`:
    - Board rendering: 40-space loop displayed as a rectangular perimeter (10×10 grid border like Monopoly) or a circular path
    - Player tokens with distinctive colors/icons (up to 6)
    - Dice display with animation

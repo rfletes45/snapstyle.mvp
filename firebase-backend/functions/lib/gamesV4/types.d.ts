@@ -224,11 +224,9 @@ export declare const COLLECTIONS: {
     readonly MOVES: "Moves";
     readonly GAME_RESULTS: "GameResultsV4";
     readonly GAME_PB: "GamePB";
-    readonly NOTIFICATIONS: "Notifications";
     readonly LEADERBOARDS: "LeaderboardsV4";
     readonly LEADERBOARD_WEEKS: "Weeks";
     readonly LEADERBOARD_ENTRIES: "Entries";
-    readonly IN_APP_NOTIFICATIONS_V4: "InAppNotificationsV4";
 };
 export declare const PINNED_INVITE_IDS_FIELD: "pinnedGameInviteIds";
 export declare const MAX_PINNED_INVITES = 5;

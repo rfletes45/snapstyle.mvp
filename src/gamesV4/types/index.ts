@@ -59,14 +59,3 @@ export type {
   SettingsFieldDef,
 } from "./adapter";
 
-// Notification types
-export { getGameNotifCollapseKey } from "./notification";
-export type {
-  GameInviteCreatedNotification,
-  GameNotificationBase,
-  GameNotificationPayload,
-  GameNotificationType,
-  GamePushData,
-  GameResolvedNotification,
-  GameTurnNotification,
-} from "./notification";

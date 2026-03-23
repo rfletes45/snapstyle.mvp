@@ -196,105 +196,49 @@ export async function createSoloSession(params: {
  * Resume an existing suspended solo session or create a new one.
  * This is the preferred entry point for launching solo games from the hub.
  *
- * Fallback: if resumeOrCreateSoloSessionV4 is not yet deployed,
- * falls back to createSoloSessionV4 (always creates a new session).
+ * This now requires the deployed resume-or-create callable.
  */
 export async function resumeOrCreateSoloSession(params: {
   gameId: GameId;
 }): Promise<{ sessionId: string; resumed: boolean }> {
-  try {
-    const fn = httpsCallable<
-      typeof params,
-      { sessionId: string; resumed: boolean }
-    >(getFunctionsInstance(), "resumeOrCreateSoloSessionV4");
-    const result = await fn(params);
-    return result.data;
-  } catch (err: unknown) {
-    // Fallback: callable not deployed yet → use legacy createSoloSessionV4
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: string }).code === "functions/not-found"
-    ) {
-      console.warn(
-        "[gameServiceV4] resumeOrCreateSoloSessionV4 not deployed, falling back to createSoloSessionV4",
-      );
-      const { sessionId } = await createSoloSession(params);
-      return { sessionId, resumed: false };
-    }
-    throw err;
-  }
+  const fn = httpsCallable<
+    typeof params,
+    { sessionId: string; resumed: boolean }
+  >(getFunctionsInstance(), "resumeOrCreateSoloSessionV4");
+  const result = await fn(params);
+  return result.data;
 }
 
 /**
  * Restart a solo game: resolves the current session and creates a fresh one.
  *
- * Fallback: if restartSoloSessionV4 is not yet deployed,
- * falls back to resignSessionV4 + createSoloSessionV4.
+ * This now requires the deployed restart callable.
  */
 export async function restartSoloSession(params: {
   sessionId: string;
-  gameId?: GameId;
 }): Promise<{ sessionId: string }> {
-  try {
-    const fn = httpsCallable<typeof params, { sessionId: string }>(
-      getFunctionsInstance(),
-      "restartSoloSessionV4",
-    );
-    const result = await fn(params);
-    return result.data;
-  } catch (err: unknown) {
-    // Fallback: callable not deployed yet → resign old + create new
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: string }).code === "functions/not-found" &&
-      params.gameId
-    ) {
-      console.warn(
-        "[gameServiceV4] restartSoloSessionV4 not deployed, falling back to resign + create",
-      );
-      await resignSession({ sessionId: params.sessionId });
-      const { sessionId } = await createSoloSession({ gameId: params.gameId });
-      return { sessionId };
-    }
-    throw err;
-  }
+  const fn = httpsCallable<typeof params, { sessionId: string }>(
+    getFunctionsInstance(),
+    "restartSoloSessionV4",
+  );
+  const result = await fn(params);
+  return result.data;
 }
 
 /**
  * Suspend a solo session (player leaving via back arrow without resigning).
  *
- * Fallback: if suspendSoloSessionV4 is not yet deployed,
- * silently succeeds (the session stays active, soloSuspendedAt won't be set).
+ * This now requires the deployed suspend callable.
  */
 export async function suspendSoloSession(params: {
   sessionId: string;
 }): Promise<{ success: boolean }> {
-  try {
-    const fn = httpsCallable<typeof params, { success: boolean }>(
-      getFunctionsInstance(),
-      "suspendSoloSessionV4",
-    );
-    const result = await fn(params);
-    return result.data;
-  } catch (err: unknown) {
-    // Fallback: callable not deployed yet → no-op (session stays active)
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: string }).code === "functions/not-found"
-    ) {
-      console.warn(
-        "[gameServiceV4] suspendSoloSessionV4 not deployed, skipping suspend",
-      );
-      return { success: true };
-    }
-    throw err;
-  }
+  const fn = httpsCallable<typeof params, { success: boolean }>(
+    getFunctionsInstance(),
+    "suspendSoloSessionV4",
+  );
+  const result = await fn(params);
+  return result.data;
 }
 
 /**

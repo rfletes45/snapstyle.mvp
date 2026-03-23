@@ -1,16 +1,15 @@
 /**
- * Tests — Sketch Party Screen Migration to Realtime Framework
+ * Tests - Sketch Party Realtime Contract
  *
- * Validates that the SketchPartyScreenV4 migration from the bespoke
- * sketchPartyClient.ts to useRealtimeRoom(SKETCH_PARTY_CLIENT_DEF, ...)
- * preserves all expected contracts and patterns.
+ * Validates that the generalized realtime definition still exposes
+ * the message and state contracts the Sketch Party screen expects.
  */
 
-import type { SketchPartyRealtimeState } from "@/gamesV4/realtime/games/sketchPartyDef";
 import {
   SKETCH_PARTY_CLIENT_DEF,
   SKETCH_PARTY_SERVER_MESSAGES,
 } from "@/gamesV4/realtime/games/sketchPartyDef";
+import type { SketchPartyRealtimeState } from "@/gamesV4/realtime/games/sketchPartyTypes";
 import type { RealtimeClientDefinition } from "@/gamesV4/realtime/types";
 
 // =============================================================================
@@ -51,24 +50,17 @@ describe("SKETCH_PARTY_CLIENT_DEF", () => {
 
 describe("Server message types", () => {
   const SCREEN_REQUIRED_MESSAGES = [
-    // State sync (handled by framework)
     "state_sync",
-    // Stroke relay
     "stroke_begin",
     "stroke_points",
     "stroke_end",
-    // Chat & reactions
     "chat",
     "reaction_event",
-    // Canvas control
     "clear_canvas",
     "undo_stroke",
     "board_snapshot",
-    // Word flow
     "word_reveal",
-    // Settings
     "settings_applied",
-    // Turn lifecycle
     "turn_scores",
   ] as const;
 
@@ -148,8 +140,7 @@ describe("Initial state completeness", () => {
 // 4. Client-to-server message contract matches what the screen sends
 // =============================================================================
 
-describe("Client → server message contracts", () => {
-  // These must match the message types the screen sends via send(type, payload)
+describe("Client to server message contracts", () => {
   const CLIENT_MESSAGES = [
     {
       type: "stroke_begin",
@@ -181,7 +172,6 @@ describe("Client → server message contracts", () => {
   it.each(CLIENT_MESSAGES)(
     "screen sends '$type' with expected payload shape",
     ({ type, samplePayload }) => {
-      // Validate the payload shape is non-empty and serializable
       expect(type).toBeTruthy();
       expect(JSON.stringify(samplePayload)).toBeTruthy();
     },
@@ -201,7 +191,6 @@ describe("SketchPartyRealtimeState type alignment", () => {
   it("initial state is a valid SketchPartyRealtimeState", () => {
     const state: SketchPartyRealtimeState =
       SKETCH_PARTY_CLIENT_DEF.initialState;
-    // Verify every field the screen destructures is present
     expect(state.phase).toBeDefined();
     expect(state.drawerId).toBeDefined();
     expect(state.players).toBeDefined();

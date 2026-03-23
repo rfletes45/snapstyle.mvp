@@ -26,15 +26,15 @@
 
 import type { GameShellProps } from "@/gamesV4/components/GameScreenShell";
 import { withGameV4Shell } from "@/gamesV4/components/GameScreenShell";
-import type { SketchPartyRealtimeState } from "@/gamesV4/realtime/games/sketchPartyDef";
 import { SKETCH_PARTY_CLIENT_DEF } from "@/gamesV4/realtime/games/sketchPartyDef";
-import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
 import type {
   ChatEntry,
   ReactionEvent,
   ReactionKind,
+  SketchPartyRealtimeState,
   StrokeData,
-} from "@/gamesV4/services/sketchPartyClient";
+} from "@/gamesV4/realtime/games/sketchPartyTypes";
+import { useRealtimeRoom } from "@/gamesV4/realtime/useRealtimeRoom";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import * as haptics from "@/utils/haptics";

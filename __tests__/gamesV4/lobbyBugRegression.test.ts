@@ -20,6 +20,7 @@ import {
 } from "@/gamesV4/constants";
 import type { ParticipantSummary } from "@/gamesV4/types/common";
 import type { GameInviteStatus, GameInviteV4 } from "@/gamesV4/types/invite";
+import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
 import {
   canTransitionInviteStatus,
   GAME_INVITE_STATUS_TRANSITIONS,
@@ -153,7 +154,7 @@ describe("Bug 2 — Cancel invite", () => {
     });
 
     // Client-side detection logic (from GameLobbyScreenV4 useEffect):
-    const isCancelled = invite.status === "resolved" && !invite.sessionId;
+    const isCancelled = isCancelledInvite(invite);
     expect(isCancelled).toBe(true);
   });
 
@@ -163,7 +164,7 @@ describe("Bug 2 — Cancel invite", () => {
       sessionId: "session_123",
     });
 
-    const isCancelled = invite.status === "resolved" && !invite.sessionId;
+    const isCancelled = isCancelledInvite(invite);
     expect(isCancelled).toBe(false);
   });
 
@@ -194,9 +195,7 @@ describe("Bug 2 — Cancel invite", () => {
       }),
     ];
 
-    const visibleInvites = invites.filter(
-      (inv) => !(inv.status === "resolved" && !inv.sessionId),
-    );
+    const visibleInvites = invites.filter((inv) => !isCancelledInvite(inv));
 
     expect(visibleInvites).toHaveLength(2);
     expect(visibleInvites.map((i) => i.inviteId)).toEqual([
@@ -211,16 +210,20 @@ describe("Bug 2 — Cancel invite", () => {
 // =============================================================================
 
 describe("Bug 3 — Start game gating", () => {
-  test("IMPLEMENTED_GAME_IDS contains exactly the 3 playable games", () => {
-    expect(IMPLEMENTED_GAME_IDS.size).toBe(3);
+  test("IMPLEMENTED_GAME_IDS reflects the current launched set", () => {
+    expect(IMPLEMENTED_GAME_IDS.size).toBeGreaterThanOrEqual(17);
     expect(IMPLEMENTED_GAME_IDS.has("tic_tac_toe")).toBe(true);
     expect(IMPLEMENTED_GAME_IDS.has("connect_four")).toBe(true);
     expect(IMPLEMENTED_GAME_IDS.has("play_2048")).toBe(true);
+    expect(IMPLEMENTED_GAME_IDS.has("chess")).toBe(true);
+    expect(IMPLEMENTED_GAME_IDS.has("sketch_party_game")).toBe(true);
+    expect(IMPLEMENTED_GAME_IDS.has("metro_magnate")).toBe(true);
+    expect(IMPLEMENTED_GAME_IDS.has("minigolf_duels")).toBe(false);
   });
 
-  test("non-implemented games are rejected by client-side canStart", () => {
+  test("deferred games are rejected by client-side canStart", () => {
     // Simulates canStart logic in GameLobbyScreenV4
-    const unimplemented = ["chess", "checkers", "gomoku"] as const;
+    const unimplemented = ["checkers", "gomoku", "minigolf_duels"] as const;
     for (const gameId of unimplemented) {
       const isGameImplemented = IMPLEMENTED_GAME_IDS.has(gameId);
       expect(isGameImplemented).toBe(false);

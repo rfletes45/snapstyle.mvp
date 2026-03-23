@@ -11,7 +11,6 @@ jest.mock("../../constants/featureFlags", () => ({
     CHAT_SETTINGS_V3: false,
     CHAT_SIGNED_MEDIA_URLS: false,
     CHAT_STAGED_UPLOADS: false,
-    CHAT_MESSAGE_REQUESTS: false,
     CHAT_GLOBAL_RATE_LIMIT: false,
     CHAT_INBOX_AGGREGATION: false,
     CHAT_DELIVERY_ACKS: false,

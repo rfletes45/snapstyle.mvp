@@ -150,7 +150,7 @@
 | `src/gamesV4/adapters/chess/chessEngine.ts`   | Pure rules engine  |
 | `src/gamesV4/adapters/chess/chessAdapter.ts`  | V4 adapter         |
 | `src/gamesV4/adapters/chess/index.ts`         | Barrel export      |
-| `src/gamesV4/screens/ChessScreenV4.tsx`       | Game UI            |
+| `src/gamesV4/screens/chess/ChessScreenV4.tsx` | Game UI            |
 | `__tests__/gamesV4/chess/chessEngine.test.ts` | Engine tests (48)  |
 | `__tests__/gamesV4/adapters/chess.test.ts`    | Adapter tests (22) |
 

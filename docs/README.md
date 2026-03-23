@@ -1,9 +1,9 @@
 # SnapStyle Documentation
 
-Last verified: 2026-03-05
+Last verified: 2026-03-18
 
-This is the canonical documentation set for how the app currently works in code.
-Historical plan/audit docs were removed and condensed; see `docs/archive/removed-docs-2026-02-22.md` if you need legacy context.
+This is the documentation map for how the app currently works in code.
+For messaging and notification work, prefer the canonical docs below over the older migration checkpoint docs.
 
 ## Read Order
 
@@ -21,19 +21,21 @@ If you are new to the repo, read in this order:
 - `docs/backend/firebase-and-functions.md`
   - Firestore/Storage contracts, callable + trigger topology, deploy and schema safety.
 - `docs/features/messaging.md`
-  - DM/group architecture, hybrid local-first migration, message pipeline contracts.
+  - Canonical DM/group architecture, inbox ownership, message requests, realtime runtime split, and notification routing.
+- `docs/operations/configuration-and-security.md`
+  - Current flag defaults, trust boundaries, and security-sensitive config notes.
 - `docs/chat-system-audit/00_INBOX_CHAT_SYSTEM_MASTER_REFERENCE.md`
-  - Single-document master reference for inbox/chat architecture, contracts, risks, tests, QA, and operations.
+  - Historical checkpoint document from the pre-2026-03-18 messaging migration. Not canonical.
 - `docs/chat-system-audit/01_INBOX_CHAT_TECHNICAL_OVERVIEW.md`
-  - Inbox/chat runtime architecture map, parity guarantees, and lifecycle flows.
+  - Historical checkpoint document. Not canonical.
 - `docs/chat-system-audit/02_INBOX_CHAT_DATA_CONTRACTS.md`
-  - Canonical message, inbox, unread, requests, and notification contracts.
+  - Historical contract snapshot. Validate against current code before reuse.
 - `docs/chat-system-audit/03_INBOX_CHAT_KNOWN_ISSUES_RISKS.md`
-  - Resolved risk ledger, remaining non-blocking risks, and ownership.
+  - Historical risk ledger. Not canonical.
 - `docs/chat-system-audit/04_INBOX_CHAT_REFACTOR_PLAN.md`
-  - Sustaining hardening plan with owners, gates, and escalation criteria.
+  - Historical refactor plan. Not canonical.
 - `docs/chat-system-audit/05_PHASE2_CHECKPOINTS.md`
-  - Historical checkpoint log covering Phase 2 through current Phase 3+.
+  - Historical checkpoint log. Not canonical.
 - `docs/features/profile-economy.md`
   - Profile data/privacy contracts, relationship/moderation flows, wallet/tasks/shop behavior.
 - `docs/PROFILE_SYSTEM.md`
@@ -42,8 +44,6 @@ If you are new to the repo, read in this order:
   - Local setup, startup sequence, health checks, deploy commands.
 - `docs/operations/testing.md`
   - Test matrix and required verification per subsystem.
-- `docs/operations/configuration-and-security.md`
-  - Feature flags, env/config surfaces, security boundaries and hygiene.
 - `docs/GAMES_V4_SYSTEM.md`
   - Canonical reference for the Games V4 system: adapter architecture, resolution pipeline, Firestore schemas, solo/1v1 flows.
 - `docs/GAMES_V4_RUNBOOK.md`

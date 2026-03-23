@@ -246,11 +246,16 @@ async function markNotificationsReadByConstraints(
 export async function markConversationNotificationsRead(
   uid: string,
   conversationId: string,
+  conversationScope?: "dm" | "group",
 ): Promise<void> {
-  await markNotificationsReadByConstraints(uid, [
+  const constraints: QueryConstraint[] = [
     where("conversationId", "==", conversationId),
     where("readAt", "==", null),
-  ]);
+  ];
+  if (conversationScope) {
+    constraints.splice(1, 0, where("conversationScope", "==", conversationScope));
+  }
+  await markNotificationsReadByConstraints(uid, constraints);
 }
 
 export async function markNotificationsReadByTypes(

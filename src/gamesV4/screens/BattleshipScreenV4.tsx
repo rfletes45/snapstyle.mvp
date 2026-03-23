@@ -19,6 +19,7 @@ import {
   GameShellProps,
   withGameV4Shell,
 } from "@/gamesV4/components/GameScreenShell";
+import { subscribeToPrivateState } from "@/gamesV4/services/gameServiceV4";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, {
   useCallback,
@@ -43,6 +44,7 @@ import {
   validateFleetPlacement,
 } from "../adapters/battleship/battleshipEngine";
 import type {
+  BattleshipPrivateState,
   BattleshipPublicState,
   Direction,
   PlayerStats,
@@ -77,6 +79,13 @@ function asState(
 ): BattleshipPublicState | null {
   if (!ps) return null;
   return ps as unknown as BattleshipPublicState;
+}
+
+function asPrivateState(
+  ps: Record<string, unknown> | null,
+): BattleshipPrivateState | null {
+  if (!ps) return null;
+  return ps as unknown as BattleshipPrivateState;
 }
 
 function cellKey(r: number, c: number): string {
@@ -348,8 +357,10 @@ function SetupPhase({
       return;
     }
     feedback.confirmFeedback();
-    await submitMove({ action: "place_fleet", placements });
-    onPlacementsConfirmed(placements);
+    const committed = await submitMove({ action: "place_fleet", placements });
+    if (committed) {
+      onPlacementsConfirmed(placements);
+    }
   }, [
     allPlaced,
     placements,
@@ -1223,9 +1234,43 @@ function BattleshipUI({
 }: GameShellProps) {
   const tokens = useBattleshipTheme();
   const state = asState(publicState);
+  const isSpectator = !turnOrder.includes(myUid);
 
-  // Persist placements across phase transitions
-  const [myPlacements, setMyPlacements] = useState<ShipPlacement[]>([]);
+  // Fleet placements belong to PrivateState. Keep a local fallback so the
+  // board stays populated between setup submission and the first private-state
+  // snapshot, then defer to Firestore as the authoritative source.
+  const [placementFallback, setPlacementFallback] = useState<ShipPlacement[]>(
+    [],
+  );
+  const [privateState, setPrivateState] =
+    useState<BattleshipPrivateState | null>(null);
+
+  useEffect(() => {
+    setPlacementFallback([]);
+    setPrivateState(null);
+  }, [sessionId, myUid]);
+
+  useEffect(() => {
+    if (!sessionId || !myUid || isSpectator) {
+      setPrivateState(null);
+      return;
+    }
+    const unsub = subscribeToPrivateState(
+      sessionId,
+      myUid,
+      (raw) => setPrivateState(asPrivateState(raw)),
+      (err) => console.warn("[Battleship] private state error:", err.message),
+    );
+    return unsub;
+  }, [sessionId, myUid, isSpectator]);
+
+  const myPlacements = useMemo(() => {
+    const authoritativePlacements = privateState?.placements;
+    if (authoritativePlacements && authoritativePlacements.length > 0) {
+      return authoritativePlacements;
+    }
+    return placementFallback;
+  }, [privateState, placementFallback]);
 
   if (!state) {
     return (
@@ -1234,8 +1279,6 @@ function BattleshipUI({
       </View>
     );
   }
-
-  const isSpectator = !turnOrder.includes(myUid);
 
   // Derive phase for header
   const headerPhase: BattlePhaseId = isSpectator
@@ -1263,7 +1306,7 @@ function BattleshipUI({
           submitMove={submitMove}
           actionLoading={actionLoading}
           tokens={tokens}
-          onPlacementsConfirmed={setMyPlacements}
+          onPlacementsConfirmed={setPlacementFallback}
         />
       ) : state.phase === "battle" || state.phase === "resolved" ? (
         <BattlePhase

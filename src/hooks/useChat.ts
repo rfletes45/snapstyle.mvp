@@ -50,6 +50,7 @@
 
 import { USE_LOCAL_STORAGE } from "@/constants/featureFlags";
 import type { SenderStyle } from "@/cosmetics/types";
+import { updateReadWatermark as updateDMReadWatermark } from "@/services/chatMembers";
 import {
   getOrCreateDMConversation,
   getOrCreateGroupConversation,
@@ -59,6 +60,7 @@ import {
   insertMessage,
   rowToMessageV2,
 } from "@/services/database/messageRepository";
+import { updateGroupReadWatermark } from "@/services/groupMembers";
 import { sendMessage as sendMessageService } from "@/services/messaging/send";
 import { syncPendingMessages } from "@/services/sync/syncEngine";
 import {
@@ -71,7 +73,7 @@ import {
 } from "@/types/messaging";
 import { createLogger } from "@/utils/log";
 import { dedupeAndSortMessages } from "@/services/chat/normalizeMessage";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FlatList } from "react-native";
 import { useAtBottom, type AtBottomState } from "./chat/useAtBottom";
 import {
@@ -266,6 +268,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // Refs
   // -------------------------------------------------------------------------
   const flatListRef = useRef<FlatList<MessageV2>>(null);
+  const lastLocalReadWatermarkRef = useRef(0);
 
   // -------------------------------------------------------------------------
   // State
@@ -292,6 +295,7 @@ export function useChat(config: UseChatConfig): UseChatReturn {
   // === FIRESTORE MODE (fallback) ===
   // Use Firestore subscription when USE_LOCAL_STORAGE is disabled
   const firestoreMessagesHook = useUnifiedMessages({
+    enabled: !USE_LOCAL_STORAGE,
     scope,
     conversationId,
     currentUid,
@@ -338,6 +342,52 @@ export function useChat(config: UseChatConfig): UseChatReturn {
     localMessagesHook.loadMore,
     localMessagesHook.refresh,
     firestoreMessagesHook,
+  ]);
+
+  useEffect(() => {
+    lastLocalReadWatermarkRef.current = 0;
+  }, [scope, conversationId, currentUid]);
+
+  useEffect(() => {
+    if (!USE_LOCAL_STORAGE || !autoMarkRead) return;
+    if (!conversationId || !currentUid) return;
+    if (messagesHook.messages.length === 0) return;
+
+    const latestTimestamp = messagesHook.messages.reduce((latest, message) => {
+      if (message.status === "failed") {
+        return latest;
+      }
+      const timestamp = message.serverReceivedAt || message.createdAt || 0;
+      return Math.max(latest, timestamp);
+    }, 0);
+
+    if (
+      !latestTimestamp ||
+      latestTimestamp <= lastLocalReadWatermarkRef.current
+    ) {
+      return;
+    }
+
+    lastLocalReadWatermarkRef.current = latestTimestamp;
+    const watermark = Math.max(latestTimestamp, Date.now());
+
+    const writeReadWatermark =
+      scope === "dm"
+        ? updateDMReadWatermark(conversationId, currentUid, watermark, {
+            sendPublicReceipt: sendReadReceipts ?? true,
+          })
+        : updateGroupReadWatermark(conversationId, currentUid, watermark);
+
+    writeReadWatermark.catch((error) => {
+      log.error("Failed to update local-first read watermark", error);
+    });
+  }, [
+    scope,
+    conversationId,
+    currentUid,
+    autoMarkRead,
+    sendReadReceipts,
+    messagesHook.messages,
   ]);
 
   // Keyboard animation

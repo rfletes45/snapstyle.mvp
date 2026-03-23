@@ -1,6 +1,6 @@
 # Firebase and Functions
 
-Last verified: 2026-02-22
+Last verified: 2026-03-18
 
 ## Backend Topology
 
@@ -12,29 +12,35 @@ Configured by `firebase.json`:
 - Realtime DB rules: `firebase-backend/database.rules.json`
 - Storage rules: `firebase-backend/storage.rules`
 
-Client bootstrap path:
+Client bootstrap:
 
-- Firebase SDK init: `src/services/firebase.ts`
-- Local config source: `src/services/firebaseConfig.local.ts`
+- `src/services/firebase.ts`
+- `src/services/firebaseConfig.local.ts`
 
-## Functions Runtime and Entry
+## Functions Entry And Build
 
-- Entry: `firebase-backend/functions/src/index.ts`
-- Runtime target: Node 20 (`firebase-backend/functions/package.json`)
-- Build script: `npm --prefix firebase-backend/functions run build`
+- entry: `firebase-backend/functions/src/index.ts`
+- runtime target: Node 20
+- build command:
 
-Function categories in use:
+```bash
+npm --prefix firebase-backend/functions run build
+```
 
-- Messaging and inbox:
-  - `messaging.ts`, `inboxTriggers.ts`, `messageRequests.ts`, `privacyPublish.ts`, `rateLimiter.ts`, `chatMedia.ts`
-- Economy/shop/IAP/gifting:
-  - `economy.ts`, `shop.ts`, `cosmeticEntitlements.ts`, `iap.ts`, `gifting.ts`, `dailyDeals.ts`
-- Calls/notifications/moderation/admin/scheduled:
-  - `calls.ts`, `notifications.ts`, `moderation.ts`, `admin.ts`, `scheduled*.ts`
+## Messaging Functions
 
-## High-Impact Callable APIs
+Primary callable and trigger files:
 
-Messaging:
+- `firebase-backend/functions/src/messaging.ts`
+- `firebase-backend/functions/src/messageRequests.ts`
+- `firebase-backend/functions/src/inboxTriggers.ts`
+- `firebase-backend/functions/src/notifications.ts`
+- `firebase-backend/functions/src/notificationCenter.ts`
+- `firebase-backend/functions/src/privacyPublish.ts`
+- `firebase-backend/functions/src/rateLimiter.ts`
+- `firebase-backend/functions/src/chatMedia.ts`
+
+Important callables:
 
 - `sendMessageV2`
 - `editMessageV2`
@@ -44,93 +50,109 @@ Messaging:
 - `publishTypingIndicator`
 - `publishReadReceipt`
 - `publishDeliveryReceipt`
-
-Economy/shop:
-
-- `claimTaskReward`
-- `purchaseWithTokens`
-- `purchaseCosmeticWithTokens`
-- `validateReceipt`
-- `verifyIAPPurchase` (compat alias)
-
-Requests/rate limits:
-
 - `acceptMessageRequest`
 - `declineMessageRequest`
 - `getRateLimitStatus`
 
-## Messaging Function Guarantees (Important)
+`markInboxRead` only updates the derived `Users/{uid}/Inbox/{threadId}` unread hint. It does not replace `MembersPrivate.lastSeenAtPrivate` as the canonical unread/read source of truth.
 
-`sendMessageV2` enforces key server-side safety checks:
+## Server Guarantees For Messaging
 
-1. Auth required and sender validated.
-2. Membership validation for DM/group context.
-3. Block checks for DM sends.
-4. Rate limiting (global limiter path exists but rollout-gated server-side).
-5. Idempotency by using `messageId` as doc ID and storing `idempotencyKey = clientId:messageId`.
-6. Server-authoritative timestamps.
-7. Optional staged attachment commit path (`chat-staging` -> `chat-media`).
+`sendMessageV2` is the authoritative write path for DM and group messages.
+
+It enforces:
+
+1. authenticated sender
+2. DM/group membership validation
+3. DM block checks
+4. DM request gating through `checkDmAcceptance`
+5. rate limiting
+6. idempotent writes using `messageId` and `clientId:messageId`
+7. canonical timestamps and conversation summary updates
+8. attachment staging/finalization when the staged media flow is used
+
+Message requests are always enforced server-side. They are not rollout-gated by a client flag anymore.
+
+## Notification Topology
+
+All modern app notifications route through the shared notification center:
+
+- selector and writer: `firebase-backend/functions/src/notificationCenter.ts`
+- chat event producers: `firebase-backend/functions/src/notifications.ts`
+- game event producers: `firebase-backend/functions/src/gamesV4/notifications.ts`
+- social, gifting, and other producers call the same `notifyUser(...)` surface
+
+Canonical notification collections:
+
+- `Users/{uid}/Notifications`
+- `Users/{uid}/NotificationDevices`
+- `Users/{uid}/NotificationSessions`
+
+Routing rules:
+
+1. read user inbox preferences
+2. suppress muted conversations where applicable
+3. inspect fresh active sessions
+4. suppress when the user is already viewing the target surface
+5. choose exactly one channel: `in_app`, `push`, or `none`
+6. persist a canonical notification document
+7. send Expo push only when the chosen channel is `push`
+
+Chat notification records carry both `conversationId` and `conversationScope`. Client read-marking should use both fields together rather than assuming `conversationId` alone is sufficient.
+
+There is no backend `CHAT_LEGACY_PUSH_ENABLED` contract in the current code.
 
 ## Firestore Contract Summary
 
-Use `firebase-backend/firestore.rules` as the definitive contract. Important collection families:
+Use `firebase-backend/firestore.rules` as the final client-access contract.
 
-- Identity/profile:
-  - `Users/{uid}`
-  - `Users/{uid}/settings/{settingId}`
-  - `Users/{uid}/blockedUsers/{blockedUid}`
-- Messaging:
-  - `Chats/{chatId}` and `Chats/{chatId}/Messages/{messageId}`
-  - `Groups/{groupId}`, `Members`, `Messages`
-  - Inbox and MessageRequests related structures
-- Economy and commerce:
-  - `Wallets`, `Transactions`, `Tasks`, `TaskProgress`, `ShopCatalog`, purchase collections
-- Calls and moderation:
-  - `Calls`, `CallSignaling`, `Reports`, `Bans`, warning/admin artifacts
+Important messaging families:
+
+- `Chats/{chatId}`
+- `Chats/{chatId}/Messages/{messageId}`
+- `Chats/{chatId}/Members/{uid}`
+- `Chats/{chatId}/MembersPrivate/{uid}`
+- `Groups/{groupId}`
+- `Groups/{groupId}/Messages/{messageId}`
+- `Groups/{groupId}/Members/{uid}`
+- `Groups/{groupId}/MembersPrivate/{uid}`
+- `Users/{uid}/Inbox/{threadId}`
+- `Users/{uid}/MessageRequests/{chatId}`
+- `Users/{uid}/Notifications/{notificationId}`
+- `Users/{uid}/NotificationDevices/{deviceId}`
+- `Users/{uid}/NotificationSessions/{deviceId}`
+
+Legacy note:
+
+- `deleteAccount.ts` still cleans up old `Conversations`, root `Notifications`, and `InAppNotificationsV4` data via the Admin SDK so older stored data can still be removed safely.
 
 ## Storage Contract Summary
 
-Defined by `firebase-backend/storage.rules`. Active path families:
+Defined by `firebase-backend/storage.rules`.
+
+Messaging-relevant path families:
 
 - DM media: `pictures/{chatId}/...`, `dm-voice/{chatId}/...`
-- Story/profile media: `stories/{authorId}/...`, `avatars/{userId}/...`, `users/{userId}/profile/...`
-- Group media: `groups/{groupId}/messages|attachments|voice/...`
-- Messaging media pipeline:
-  - Staging: `chat-staging/...`
-  - Finalized media (server/signed URL path): `chat-media/...`
+- group media: `groups/{groupId}/messages|attachments|voice/...`
+- staged uploads: `chat-staging/...`
+- finalized server-managed media: `chat-media/...`
 
-## Rules and Index Safety
+## Rules And Deployment Safety
 
-When query/write shapes change:
+When query or write shapes change:
 
-1. Update client service queries.
-2. Update `firestore.rules` if authorization/shape changed.
-3. Update `firestore.indexes.json` for new compound query needs.
-4. Build functions and run app tests before deploy.
+1. update the client service layer
+2. update `firestore.rules` if client access changed
+3. update indexes for new compound queries
+4. build functions before deploy
+5. update docs in the same change
 
-## Build and Deploy Commands
+## Deployment Commands
 
 ```bash
-# Build functions
-npm --prefix firebase-backend/functions run build
-
-# Deploy functions only
 firebase deploy --only functions
-
-# Deploy Firestore rules + indexes
 firebase deploy --only firestore:rules
 firebase deploy --only firestore:indexes
-
-# Deploy Storage rules
 firebase deploy --only storage
-
-# Deploy all configured Firebase resources
 firebase deploy
 ```
-
-## Change Checklist
-
-1. Keep client and server data contracts in sync.
-2. Preserve server-authoritative writes for money, moderation, and canonical message writes.
-3. Do not bypass callable guards with new direct client writes without rule analysis.
-4. Update this document when exported function names, storage paths, or key collections change.

@@ -3,6 +3,8 @@
 Last verified: 2026-03-05
 Status: Canonical contracts aligned across runtime modes
 
+> Historical checkpoint document. Validate against `src/types/messaging.ts`, backend functions, and `docs/features/messaging.md` before reuse.
+
 ## 1) Contract Sources
 
 Client contract authorities:

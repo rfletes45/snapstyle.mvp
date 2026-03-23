@@ -21,7 +21,7 @@ Primary runtime files:
 2. App running in dev or preview on two clients (device or simulator).
 3. Firestore access for verification.
 4. Feature flags configured for the environment under test.
-5. For migration tests: confirm explicit value of `CHAT_LEGACY_PUSH_ENABLED`.
+5. There is no legacy push env toggle in the current implementation. Validate behavior through the shared notification center and per-user notification records instead.
 
 ## Test A - DM Message In-App Notifications
 
@@ -139,7 +139,7 @@ Expected:
 
 Firestore check:
 
-- `Users/{uid}/InAppNotificationsV4/{notifId}` exists
+- `Users/{uid}/Notifications/{notificationId}` exists with `channel == "in_app"`
 - `type` is `game_turn`
 - `deliveredAt` gets set by client after handling
 
@@ -266,7 +266,7 @@ Expected canonical route:
 
 ## Test G - Security And Ownership Checks
 
-### G1) Client cannot create `InAppNotificationsV4` docs
+### G1) Client cannot create `Users/{uid}/Notifications` docs
 
 Expected:
 
@@ -294,8 +294,8 @@ Expected:
 
 ### H1) Confirm environment flag intent
 
-1. Check runtime configuration for `CHAT_LEGACY_PUSH_ENABLED`.
-2. Record expected behavior for this environment.
+1. Confirm notification delivery is flowing through `firebase-backend/functions/src/notificationCenter.ts`.
+2. Record whether the recipient had an active session, a push-capable device, or both.
 
 ### H2) Duplicate channel smoke
 

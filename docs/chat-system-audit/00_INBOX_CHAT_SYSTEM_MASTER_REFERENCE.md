@@ -3,6 +3,8 @@
 Last verified: 2026-03-05
 Status: Consolidated Phase 3+ reference for the entire inbox/chat system
 
+> Historical checkpoint document. Use `docs/features/messaging.md` and the current code as the source of truth.
+
 ## 1) Purpose
 
 This document consolidates all inbox/chat findings, discoveries, contracts, architecture notes, risk tracking, tests, and QA guidance into a single reference.

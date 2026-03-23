@@ -1659,47 +1659,8 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // LEGACY + AUXILIARY COLLECTIONS (rules parity with client usage)
+    // AUXILIARY COLLECTIONS
     // ============================================================
-
-    // Legacy conversation model used by snap chat flows.
-    match /Conversations/{conversationId} {
-      function participantList(data) {
-        return data.get('participantIds', data.get('members', data.get('participants', [])));
-      }
-
-      function isConversationParticipant() {
-        return isAuth() && request.auth.uid in participantList(resource.data);
-      }
-
-      function isConversationParticipantInNew() {
-        return isAuth() && request.auth.uid in participantList(request.resource.data);
-      }
-
-      allow read: if isConversationParticipant();
-      allow create: if isConversationParticipantInNew();
-      allow update: if isConversationParticipant();
-      allow delete: if false;
-
-      match /Messages/{messageId} {
-        function parentData() {
-          return get(/databases/$(database)/documents/Conversations/$(conversationId)).data;
-        }
-
-        function canAccessConversationMessages() {
-          return isAuth() &&
-            request.auth.uid in parentData().get('participantIds', parentData().get('members', parentData().get('participants', [])));
-        }
-
-        allow read: if canAccessConversationMessages();
-        allow create: if canAccessConversationMessages() &&
-                        request.resource.data.senderId == request.auth.uid;
-        allow update: if canAccessConversationMessages() &&
-                        resource.data.senderId == request.auth.uid;
-        allow delete: if canAccessConversationMessages() &&
-                        resource.data.senderId == request.auth.uid;
-      }
-    }
 
     // Picture-based snap documents.
     // NOTE: recipientIds is required for recipient-scoped access checks.
@@ -1737,21 +1698,6 @@ service cloud.firestore {
     match /Stories/{userId} {
       allow read: if isAuth();
       allow create, update, delete: if isAuth() && isOwner(userId);
-    }
-
-    // In-app notification feed.
-    match /Notifications/{notificationId} {
-      allow read: if isAuth() && resource.data.userId == request.auth.uid;
-      allow create: if isAuth() && (
-        request.resource.data.userId == request.auth.uid ||
-        request.resource.data.senderId == request.auth.uid ||
-        (request.resource.data.senderId == 'system' &&
-         request.resource.data.userId == request.auth.uid)
-      );
-      allow update: if isAuth() &&
-                      resource.data.userId == request.auth.uid &&
-                      request.resource.data.userId == resource.data.userId;
-      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
     }
 
     // IAP catalog and receipts.
@@ -1986,28 +1932,6 @@ service cloud.firestore {
       // Write: owner only. Must set uid == auth.uid.
       allow create, update: if isAuth() && isOwner(userId) &&
                               request.resource.data.uid == request.auth.uid;
-      allow delete: if isAuth() && isOwner(userId);
-    }
-
-    // IN-APP NOTIFICATIONS V4
-    // Server writes notification docs for foreground banner display.
-    // Client can only read (owner) and update deliveredAt/readAt fields.
-    match /Users/{userId}/InAppNotificationsV4/{notifId} {
-      // Read: owner only.
-      allow read: if isAuth() && isOwner(userId);
-
-      // Create: Cloud Functions only (server writes notifications).
-      allow create: if false;
-
-      // Update: owner can only set deliveredAt and readAt.
-      // Cannot modify type, payload, collapseKey, or createdAt.
-      allow update: if isAuth() && isOwner(userId) &&
-        request.resource.data.type == resource.data.type &&
-        request.resource.data.collapseKey == resource.data.collapseKey &&
-        request.resource.data.createdAt == resource.data.createdAt &&
-        request.resource.data.payload == resource.data.payload;
-
-      // Delete: owner can delete (cleanup).
       allow delete: if isAuth() && isOwner(userId);
     }
 

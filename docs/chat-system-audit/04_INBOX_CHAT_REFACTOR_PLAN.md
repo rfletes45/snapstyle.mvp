@@ -3,6 +3,8 @@
 Last verified: 2026-03-05
 Status: Phase 3 implementation complete, hardening plan active
 
+> Historical checkpoint document. The active implementation and current cleanup state are documented in `docs/features/messaging.md`.
+
 ## 1) Purpose
 
 This document tracks the inbox/chat hardening roadmap after the Phase 3 cleanup landed.

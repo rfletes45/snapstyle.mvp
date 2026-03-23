@@ -13,7 +13,6 @@ jest.mock("../../constants/featureFlags", () => ({
     CHAT_SETTINGS_V3: false,
     CHAT_SIGNED_MEDIA_URLS: false,
     CHAT_STAGED_UPLOADS: false,
-    CHAT_MESSAGE_REQUESTS: false,
     CHAT_GLOBAL_RATE_LIMIT: false,
     CHAT_INBOX_AGGREGATION: false,
     CHAT_DELIVERY_ACKS: false,
@@ -173,15 +172,12 @@ describe("Client Chat V3 Tests", () => {
       });
     });
 
-    describe("Flag gating", () => {
-      it("should return empty when CHAT_MESSAGE_REQUESTS is off", () => {
-        const flagOn = false;
-        const result = flagOn
-          ? { requests: [{ chatId: "c1" }], pendingCount: 1 }
-          : { requests: [], pendingCount: 0 };
+    describe("Backend parity", () => {
+      it("should treat message requests as always available to the inbox UI", () => {
+        const result = { requests: [{ chatId: "c1" }], pendingCount: 1 };
 
-        expect(result.requests.length).toBe(0);
-        expect(result.pendingCount).toBe(0);
+        expect(result.requests.length).toBe(1);
+        expect(result.pendingCount).toBe(1);
       });
     });
   });
@@ -277,20 +273,19 @@ describe("Client Chat V3 Tests", () => {
   });
 
   describe("Feature Flag Gating", () => {
-    it("should have all 9 CHAT_FEATURES flags defined", () => {
+    it("should have all 8 CHAT_FEATURES flags defined", () => {
       const flags = [
         "CHAT_SETTINGS_V3",
         "CHAT_DELIVERY_ACKS",
         "CHAT_SIGNED_MEDIA_URLS",
         "CHAT_STAGED_UPLOADS",
         "CHAT_INBOX_AGGREGATION",
-        "CHAT_MESSAGE_REQUESTS",
         "CHAT_GLOBAL_RATE_LIMIT",
         "CHAT_PRIVACY_SERVER_ENFORCED",
         "CHAT_DEBUG_HUD",
       ];
 
-      expect(flags.length).toBe(9);
+      expect(flags.length).toBe(8);
     });
 
     it("should default all flags to false except debug HUD", () => {
@@ -301,7 +296,6 @@ describe("Client Chat V3 Tests", () => {
         CHAT_SIGNED_MEDIA_URLS: false,
         CHAT_STAGED_UPLOADS: false,
         CHAT_INBOX_AGGREGATION: false,
-        CHAT_MESSAGE_REQUESTS: false,
         CHAT_GLOBAL_RATE_LIMIT: false,
         CHAT_PRIVACY_SERVER_ENFORCED: false,
       };

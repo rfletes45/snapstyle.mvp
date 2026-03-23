@@ -581,8 +581,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 6,
   },
   messageText: {
-    fontSize: 20,
-    lineHeight: 29,
+    fontSize: 17,
+    lineHeight: 26,
   },
   timestamp: {
     fontSize: 10,

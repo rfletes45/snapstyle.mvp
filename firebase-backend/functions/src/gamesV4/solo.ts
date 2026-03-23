@@ -6,7 +6,7 @@
  * - "persistent" — long-lived idle/incremental (no games currently use this)
  *
  * Persistent solo games:
- * - always save/suspend on exit (no resign, no resolve)
+ * - in-app shell exits attempt to suspend instead of resigning or resolving
  * - resume the same active session on re-entry
  * - support deterministic offline progression on resume
  * - finalize only via explicit archiveSoloSessionV4

@@ -85,7 +85,15 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
 
   // Suppressed error setter: ignores permission errors while resolving.
   const handleSnapshotError = useCallback((err: Error) => {
-    if (resolvingRef.current) {
+    const errWithCode = err as unknown as { code?: unknown };
+    const code =
+      typeof errWithCode.code === "string" ? errWithCode.code : "";
+    const isPermissionError =
+      code === "permission-denied" ||
+      code === "firestore/permission-denied" ||
+      /permission/i.test(err.message);
+
+    if (resolvingRef.current && isPermissionError) {
       console.warn(
         "[gamesV4] Suppressed snapshot error during resolution:",
         err.message,
@@ -143,6 +151,7 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
         session.status === "abandoned" ||
         session.status === "expired")
     ) {
+      resolvingRef.current = false;
       setSubscriptionError(null);
     }
   }, [session?.status]);
@@ -166,21 +175,6 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
       // Realtime games: all participants can act simultaneously
       session.runtimeType === "realtime")
   );
-
-  // DEBUG: Log every time session or isMyTurn changes
-  useEffect(() => {
-    if (__DEV__ && session) {
-      console.log(
-        `[gamesV4][DEBUG] useGameSessionV4: uid=${uid}, isMyTurn=${isMyTurn}, session.currentTurnPlayerId=${session.currentTurnPlayerId}, session.currentTurnIndex=${session.currentTurnIndex}, session.turnOrder=${JSON.stringify(session.turnOrder)}, session.status=${session.status}`,
-      );
-    }
-  }, [
-    session?.currentTurnPlayerId,
-    session?.currentTurnIndex,
-    isMyTurn,
-    uid,
-    session,
-  ]);
 
   const submitMove = useCallback(
     async (
@@ -223,6 +217,7 @@ export function useGameSessionV4(sessionId: string): UseGameSessionV4Result {
     try {
       await resignSession({ sessionId });
     } catch (err) {
+      resolvingRef.current = false;
       if (mountedRef.current) {
         setActionError(
           err instanceof Error ? err.message : "Failed to resign.",

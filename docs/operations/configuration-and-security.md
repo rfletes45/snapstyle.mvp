@@ -1,80 +1,68 @@
 # Configuration and Security
 
-Last verified: 2026-02-22
+Last verified: 2026-03-18
 
 ## Configuration Surfaces
 
 Primary runtime config files:
 
-- Feature flags: `constants/featureFlags.ts`
+- feature flags: `constants/featureFlags.ts`
 - Expo/native config: `app.config.ts`
-- Firebase project wiring: `firebase.json`
-- Client Firebase bootstrap config: `src/services/firebaseConfig.local.ts`
+- Firebase wiring: `firebase.json`
+- client Firebase config: `src/services/firebaseConfig.local.ts`
 
-## Feature Flag Groups
-
-Main groups in active use:
+## Active Feature Flag Groups
 
 - `USE_LOCAL_STORAGE`
 - `USE_VISION_CAMERA`
 - `PROFILE_V2_FEATURES`
-- `PLAY_SCREEN_FEATURES`
 - `CALL_FEATURES`
 - `CHAT_FEATURES`
 
-High-impact defaults (as of 2026-02-22):
+High-impact defaults:
 
 - `USE_LOCAL_STORAGE`: enabled on native, disabled on web
-- `USE_VISION_CAMERA`: false (Expo-safe default)
-- `CALL_FEATURES.CALLS_ENABLED`: true, rollout percentage set to `0`
-- `CHAT_FEATURES` major V3 rollout flags: mostly false
+- `USE_VISION_CAMERA`: true
+- `CALL_FEATURES.CALLS_ENABLED`: true with rollout percentage still `0`
+- `CHAT_FEATURES`: settings/media/rate-limit/inbox/delivery/privacy rollout flags remain mostly false
 
-## Environment Variables Used by App Code
+Important chat note:
 
-Current observed reads:
+- message requests are not a client feature flag anymore
+- the backend enforces DM request gating directly
 
-Any new env var should be documented here when introduced.
+## Environment Variables
 
-## Native Platform Config Notes
+Current app and backend code reviewed for this audit do not expose an active `CHAT_LEGACY_PUSH_ENABLED` environment contract.
 
-`app.config.ts` controls:
-
-- iOS/Android identifiers
-- camera/microphone permissions
-- call/background permissions
-- plugins (SQLite, orientation, Vision Camera)
-
-Permission and plugin changes should be treated as release-impacting.
+Any new env var must be documented here when introduced.
 
 ## Security Boundaries
 
-Firestore and Storage policy:
+Primary trust boundaries:
 
-- Firestore auth/data validation: `firebase-backend/firestore.rules`
-- Storage path/content limits: `firebase-backend/storage.rules`
+- Firestore rules: `firebase-backend/firestore.rules`
+- Storage rules: `firebase-backend/storage.rules`
+- Cloud Functions for canonical writes and moderation-sensitive operations
 
-Server-authoritative operations:
+Server-authoritative areas include:
 
-- Money-like state (wallet, purchases, rewards)
-- canonical messaging writes and moderation-sensitive actions
+- canonical messaging writes
+- notification channel selection
+- wallet, purchase, reward, and other money-like state
+- moderation-sensitive actions
 
-Function deployment safety:
+## Sensitive Files
 
-- `firebase.json` predeploy builds functions before deploy.
+- `src/services/firebaseConfig.local.ts`
+- backend package `.env` files
 
-## Sensitive Files and Secret Hygiene
-
-Do not commit real credentials or service account material.
-
-Paths that require care:
-
-- `src/services/firebaseConfig.local.ts` (public client config is okay; private keys are not)
-- local `.env` files in backend packages
+Do not commit private keys or service-account material.
 
 ## Secure Change Checklist
 
-1. Keep validation aligned across client types, functions, and rules.
-2. Avoid adding direct client writes to data currently guarded by callables.
-3. Sanitize logs for user content and PII-sensitive payloads.
-4. Re-run function build and relevant tests after auth/rule changes.
-5. Document new flags, env vars, and trust-boundary changes in this file.
+1. keep client types, backend contracts, and rules aligned
+2. do not bypass callable guards for canonical message or notification flows
+3. sanitize logs that could capture user content or PII
+4. rebuild functions after rule/auth/backend changes
+5. update this file when flags, env vars, or trust boundaries change

@@ -252,6 +252,15 @@ export default function ChatScreen({
   // Unified Hooks (UNI-04, UNI-05)
   // ==========================================================================
 
+  // Read receipts also drive whether the shared chat hook should publish
+  // public DM read watermarks in local-first mode.
+  const readReceipts = useReadReceipts({
+    chatId: chatId || "",
+    currentUid: uid || "",
+    otherUid: friendUid,
+    debug: DEBUG_CHAT,
+  });
+
   const screen = useUnifiedChatScreen({
     scope: "dm",
     conversationId: chatId || "",
@@ -263,6 +272,7 @@ export default function ChatScreen({
     enableMentions: false,
     enableScheduledMessages: true,
     onSchedulePress: () => setScheduleModalVisible(true),
+    sendReadReceipts: readReceipts.shouldSendReadReceipts,
     senderStyle,
     debug: DEBUG_CHAT,
   });
@@ -389,14 +399,6 @@ export default function ChatScreen({
   const presence = usePresence({
     userId: friendUid,
     currentUserId: uid,
-    debug: DEBUG_CHAT,
-  });
-
-  // Read receipts
-  const readReceipts = useReadReceipts({
-    chatId: chatId || "",
-    currentUid: uid || "",
-    otherUid: friendUid,
     debug: DEBUG_CHAT,
   });
 
@@ -551,7 +553,7 @@ export default function ChatScreen({
 
   useEffect(() => {
     if (!uid || !chatId) return;
-    markConversationNotificationsRead(uid, chatId).catch((error) => {
+    markConversationNotificationsRead(uid, chatId, "dm").catch((error) => {
       logger.warn("Failed to mark DM notifications read:", error);
     });
   }, [uid, chatId]);

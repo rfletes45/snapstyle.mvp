@@ -267,8 +267,15 @@ export default function InAppToast({ onNavigate }: InAppToastProps) {
   } = useInAppNotifications();
 
   const handlePress = (notification: InAppNotification) => {
-    if (notification.type === "dm_message" && notification.entityId) {
-      onMessageNotificationPressed(notification.entityId);
+    if (
+      (notification.type === "dm_message" ||
+        notification.type === "group_message") &&
+      notification.entityId
+    ) {
+      onMessageNotificationPressed(
+        notification.entityId,
+        notification.conversationScope ?? null,
+      );
     }
 
     markNotificationRead(notification.notificationId);

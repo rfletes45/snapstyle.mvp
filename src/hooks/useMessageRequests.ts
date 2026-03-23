@@ -4,13 +4,12 @@
  * Subscribes to the current user's MessageRequests subcollection and
  * provides helpers to accept / decline requests.
  *
- * Activated only when `CHAT_FEATURES.CHAT_MESSAGE_REQUESTS` is true.
- * When the flag is off, returns an empty list and no-op actions.
+ * This hook is always active because the backend enforces message requests
+ * unconditionally for DM acceptance checks.
  *
  * @module hooks/useMessageRequests
  */
 
-import { CHAT_FEATURES } from "@/constants/featureFlags";
 import { getFirestoreInstance } from "@/services/firebase";
 import {
   MessageRequest,
@@ -74,11 +73,11 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
   const [error, setError] = useState<Error | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const enabled = CHAT_FEATURES.CHAT_MESSAGE_REQUESTS;
-
   // Subscribe to Users/{uid}/MessageRequests where status == "pending"
   useEffect(() => {
-    if (!uid || !enabled) {
+    if (!uid) {
+      setRequests([]);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -121,7 +120,7 @@ export function useMessageRequests(uid: string): UseMessageRequestsResult {
     );
 
     return unsub;
-  }, [uid, enabled, refreshKey]);
+  }, [uid, refreshKey]);
 
   // Memoised pending count
   const pendingCount = useMemo(() => requests.length, [requests]);

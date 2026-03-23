@@ -8,14 +8,22 @@
  * @module gamesV4/utils/mapCallableError
  */
 
+interface MapCallableErrorOptions {
+  notFoundMessage?: string;
+}
+
 /**
  * Map a Firebase callable error to a user-friendly message string.
  *
  * Firebase JS SDK callable errors carry `code` like "functions/internal"
- * and an optional `message` / `details.traceId`.  This helper normalizes
+ * and an optional `message` / `details.traceId`. This helper normalizes
  * them into short, actionable sentences suitable for `Alert.alert()`.
  */
-export function mapCallableError(err: unknown, fallback: string): string {
+export function mapCallableError(
+  err: unknown,
+  fallback: string,
+  options: MapCallableErrorOptions = {},
+): string {
   if (err && typeof err === "object") {
     const e = err as {
       code?: string;
@@ -27,12 +35,26 @@ export function mapCallableError(err: unknown, fallback: string): string {
     switch (code) {
       case "resource-exhausted":
         return "Please wait a moment before trying again.";
-      case "failed-precondition":
-        return e.message ?? "Action not allowed right now.";
+      case "failed-precondition": {
+        const message = e.message ?? "";
+        if (
+          message.includes("status 'active'") ||
+          message.includes("already active")
+        ) {
+          return "This game has already started.";
+        }
+        if (message.includes("status 'resolved'")) {
+          return "This game invite has ended.";
+        }
+        return message || "Action not allowed right now.";
+      }
       case "permission-denied":
         return "You don't have permission for this action.";
       case "not-found":
-        return "This game session no longer exists.";
+        return (
+          options.notFoundMessage ??
+          "This game invite or session no longer exists."
+        );
       case "unauthenticated":
         return "Please sign in to continue.";
       case "invalid-argument":
@@ -57,5 +79,7 @@ export function mapCallableError(err: unknown, fallback: string): string {
  * Convenience wrapper for solo-game launch errors.
  */
 export function mapSoloLaunchError(err: unknown): string {
-  return mapCallableError(err, "Could not start game.");
+  return mapCallableError(err, "Could not start game.", {
+    notFoundMessage: "This game session no longer exists.",
+  });
 }

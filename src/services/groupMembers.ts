@@ -163,17 +163,6 @@ export async function updateGroupMemberRole(
   }
 }
 
-/**
- * Remove a member from a group
- */
-export async function removeGroupMember(
-  groupId: string,
-  uid: string,
-): Promise<void> {
-  // NOTE: Implement in H6 - requires batch delete of both docs
-  log.warn("removeGroupMember: Not yet implemented (H6)");
-}
-
 // =============================================================================
 // Private Member State
 // =============================================================================

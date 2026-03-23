@@ -1,26 +1,17 @@
 # SnapStyle MVP
 
-React Native (Expo) social app with messaging, profile/economy systems, and a multiplayer games platform backed by Firebase + Colyseus.
+React Native (Expo) social app with messaging, profile/economy systems, and a multiplayer games platform backed by Firebase and Colyseus.
 
-## Documentation
+## Start Here
 
-Start with `docs/README.md`.
+The canonical documentation entrypoint is `docs/README.md`.
 
-Canonical docs are now organized as:
+Game-system docs that match the current codebase:
 
-- `docs/architecture/system-overview.md`
-- `docs/backend/firebase-and-functions.md`
-- `docs/backend/colyseus.md`
-- `docs/features/messaging.md`
-- `docs/features/games.md`
-- `docs/features/profile-economy.md`
-- `docs/operations/runbook.md`
-- `docs/operations/testing.md`
-- `docs/operations/configuration-and-security.md`
-
-Historical/removed docs are tracked in:
-
-- `docs/archive/removed-docs-2026-02-22.md`
+- `docs/GAMES_V4_SYSTEM.md`
+- `docs/GAMES_V4_RUNBOOK.md`
+- `docs/GAME_INTEGRATION_GUIDE_V4.md`
+- `docs/REALTIME_FRAMEWORK.md`
 
 ## Quick Start
 
@@ -39,15 +30,13 @@ npm --prefix firebase-backend/functions install
 npm --prefix firebase-backend/functions run serve
 ```
 
-## Core Scripts
+## Verified Scripts
 
 ```bash
 # Root app
 npm run type-check
 npm run lint
 npm run test
-npm run verify:registry
-npm run smoke
 
 # Colyseus
 npm --prefix colyseus-server run lint
@@ -60,8 +49,8 @@ npm --prefix firebase-backend/functions run build
 
 ## Repository Layout
 
-- `src/` app screens, hooks, services, types
-- `constants/` feature flags and static config
-- `firebase-backend/` Firestore rules/indexes + Cloud Functions
-- `colyseus-server/` real-time multiplayer server
-- `starforge-viewer/` embedded web client for Starforge
+- `src/` app screens, hooks, services, shared game infrastructure, and UI
+- `firebase-backend/` Firestore rules/indexes and Cloud Functions
+- `colyseus-server/` realtime multiplayer server
+- `docs/` canonical technical and operational documentation
+- `__tests__/` Jest coverage for client/shared systems

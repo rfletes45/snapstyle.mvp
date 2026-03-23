@@ -13,7 +13,7 @@
  * Exit model by runtimeType:
  *   turnBased — back arrow (top-left) + resign (top-right) in header row, non-destructive leave
  *   solo      — overlay back arrow (top-left) + overlay menu button (top-right)
- *               back arrow suspends and exits without resigning
+ *               back arrow waits for suspend, then exits without resigning
  *               menu contains: Restart, Resign
  *   realtime  — resign/quit button (top-right), destructive exit required
  *
@@ -117,7 +117,7 @@ export interface GameShellProps {
    *   }, [registerSoloPause]);
    *
    * When the player taps the back arrow, the shell calls the registered
-   * callback, then suspends the session and navigates away.
+   * callback, waits for suspend to succeed, then navigates away.
    */
   registerSoloPause?: (pauseFn: () => void) => void;
   /**
@@ -161,7 +161,6 @@ export function withGameV4Shell<P extends GameShellProps>(
     const {
       session,
       publicState,
-      result,
       isTerminal,
       isMyTurn,
       submitMove: hookSubmitMove,
@@ -170,8 +169,6 @@ export function withGameV4Shell<P extends GameShellProps>(
       actionError,
     } = sessionHook;
 
-    const [resignVisible] = useState(false);
-    void resignVisible; // retained for API compat
     const hasNavigatedToResult = useRef(false);
 
     // ── Optimistic state overlay ────────────────────────────────────
@@ -258,28 +255,6 @@ export function withGameV4Shell<P extends GameShellProps>(
         ? isMyTurn
         : false;
 
-    // DEBUG: Log turn state on every render (dev only to reduce production overhead)
-    useEffect(() => {
-      if (!__DEV__) return;
-      const pubPhase = (publicState as Record<string, unknown> | null)?.phase;
-      const pubMoveCount = (publicState as Record<string, unknown> | null)
-        ?.moveCount;
-      console.log(
-        `[gamesV4][shellTrace] uid=${uid}, isMyTurn(hook)=${isMyTurn}, optimisticTurnAdvanced=${optimisticTurnAdvanced}, effectiveIsMyTurn=${effectiveIsMyTurn}, isSynced=${isSynced}, hasOptimisticState=${!!optimisticState}, session.currentTurnPlayerId=${session?.currentTurnPlayerId}, session.currentTurnIndex=${session?.currentTurnIndex}, pubPhase=${pubPhase}, pubTurnUid=${pubTurnUid}, pubMoveCount=${pubMoveCount}`,
-      );
-    }, [
-      isMyTurn,
-      optimisticTurnAdvanced,
-      effectiveIsMyTurn,
-      isSynced,
-      optimisticState,
-      session?.currentTurnPlayerId,
-      session?.currentTurnIndex,
-      publicState,
-      uid,
-      pubTurnUid,
-    ]);
-
     // ── Game Presence: Write presence doc for notification gating ────
     useEffect(() => {
       if (!uid || !sessionId) return;
@@ -316,7 +291,6 @@ export function withGameV4Shell<P extends GameShellProps>(
         // it cannot find the player's hand.  In that case we still submit
         // to the server — the server reads real private state inside its
         // Firestore transaction and is the authoritative validator.
-        let localValidationPassed = false;
         if (adapter?.validateMove && stateForValidation && session) {
           const localResult = adapter.validateMove(
             stateForValidation,
@@ -335,8 +309,6 @@ export function withGameV4Shell<P extends GameShellProps>(
               `[gamesV4] Local validation rejected move (submitting to server anyway): ${localResult.error}`,
             );
           } else {
-            localValidationPassed = true;
-
             if (__DEV__) {
               console.log(
                 `[gamesV4][DEBUG] submitMove local validated OK: action=${(movePayload as Record<string, unknown>).action}, turnAdvance=${localResult.turnAdvance}, nextTurnPlayerId=${localResult.nextTurnPlayerId}, nextPhase=${(localResult.nextPublicState as Record<string, unknown> | undefined)?.phase}, nextMoveCount=${(localResult.nextPublicState as Record<string, unknown> | undefined)?.moveCount}`,
@@ -444,7 +416,7 @@ export function withGameV4Shell<P extends GameShellProps>(
     // Exit behavior invariants:
     //   turnBased  → back arrow (left) + resign button (right) in header
     //   solo       → overlay back arrow (left) + overlay menu button (right)
-    //               back arrow suspends and exits without resigning
+    //               back arrow waits for suspend, then exits without resigning
     //   realtime   → resign/quit button (top-right) only
     //
     // Persistent solo overrides:
@@ -454,8 +426,6 @@ export function withGameV4Shell<P extends GameShellProps>(
     const lifecyclePolicy = getGameLifecyclePolicy(gameId);
     const isPersistent = isPersistentSoloGame(gameId);
 
-    const canNavigateBackWithoutResign =
-      runtimeType === "turnBased" || runtimeType === "solo";
     const showBackArrow =
       (runtimeType === "turnBased" || runtimeType === "solo") && !isTerminal;
     const showResignAction =
@@ -463,8 +433,18 @@ export function withGameV4Shell<P extends GameShellProps>(
 
     // Solo menu state
     const [soloMenuVisible, setSoloMenuVisible] = useState(false);
+    const [soloSuspendLoading, setSoloSuspendLoading] = useState(false);
     const soloOnPauseRef = useRef<(() => void) | undefined>(undefined);
     const soloOnResumeRef = useRef<(() => void) | undefined>(undefined);
+
+    const resumeSoloGameplay = useCallback(() => {
+      soloOnResumeRef.current?.();
+    }, []);
+
+    const closeSoloMenuAndResume = useCallback(() => {
+      resumeSoloGameplay();
+      setSoloMenuVisible(false);
+    }, [resumeSoloGameplay]);
 
     // ── Non-destructive leave (turn-based) ──────────────────────────
     const handleNonDestructiveLeave = useCallback(() => {
@@ -476,20 +456,36 @@ export function withGameV4Shell<P extends GameShellProps>(
     }, [navigation]);
 
     // ── Solo suspend & leave (non-destructive) ──────────────────────
-    const handleSoloSuspendAndLeave = useCallback(() => {
+    const handleSoloSuspendAndLeave = useCallback(async () => {
+      if (soloSuspendLoading) return;
+
+      setSoloMenuVisible(false);
+
       // 1. Call the game's pause callback (freezes animation loops)
       if (soloOnPauseRef.current) {
         soloOnPauseRef.current();
       }
-      // 2. Mark session as suspended server-side (fire-and-forget)
-      suspendSoloSession({ sessionId }).catch((err) =>
-        console.warn("[gamesV4] Failed to suspend solo session:", err),
-      );
+
+      // 2. Mark session as suspended server-side before leaving.
+      setSoloSuspendLoading(true);
+      try {
+        await suspendSoloSession({ sessionId });
+      } catch (err) {
+        setSoloSuspendLoading(false);
+        resumeSoloGameplay();
+        const msg =
+          err instanceof Error ? err.message : "Could not save your game.";
+        Alert.alert("Couldn't Save Game", msg);
+        return;
+      }
+
+      setSoloSuspendLoading(false);
+
       // 3. Navigate away
       if (navigation.canGoBack()) {
         navigation.goBack();
       }
-    }, [sessionId, navigation]);
+    }, [sessionId, navigation, soloSuspendLoading, resumeSoloGameplay]);
 
     // ── Resign with confirmation ────────────────────────────────────
     // Persistent solo games never expose resign. Guard here just in case.
@@ -509,11 +505,13 @@ export function withGameV4Shell<P extends GameShellProps>(
           style: "destructive",
           onPress: () => {
             setSoloMenuVisible(false);
-            hookResign();
+            hookResign().catch(() => {
+              resumeSoloGameplay();
+            });
           },
         },
       ]);
-    }, [hookResign, runtimeType, isPersistent]);
+    }, [hookResign, runtimeType, isPersistent, resumeSoloGameplay]);
 
     // ── Solo restart ────────────────────────────────────────────────
     const handleSoloRestart = useCallback(() => {
@@ -532,7 +530,6 @@ export function withGameV4Shell<P extends GameShellProps>(
             try {
               const { sessionId: newSessionId } = await restartSoloSession({
                 sessionId,
-                gameId,
               });
               // Replace the current screen with the new session
               navigation.replace("GamePlayV4", {
@@ -540,6 +537,7 @@ export function withGameV4Shell<P extends GameShellProps>(
                 gameId,
               });
             } catch (err) {
+              resumeSoloGameplay();
               const msg =
                 err instanceof Error ? err.message : "Could not restart game.";
               Alert.alert("Error", msg);
@@ -547,7 +545,7 @@ export function withGameV4Shell<P extends GameShellProps>(
           },
         },
       ]);
-    }, [sessionId, gameId, navigation, isPersistent]);
+    }, [sessionId, gameId, navigation, isPersistent, resumeSoloGameplay]);
 
     // ── Persistent solo: archive run ────────────────────────────────
     const handleArchiveRun = useCallback(() => {
@@ -568,6 +566,7 @@ export function withGameV4Shell<P extends GameShellProps>(
                 // Navigate to Game Over to show the final summary
                 navigation.replace("GameOverV4", { sessionId });
               } catch (err) {
+                resumeSoloGameplay();
                 const msg =
                   err instanceof Error ? err.message : "Could not archive run.";
                 Alert.alert("Error", msg);
@@ -576,7 +575,7 @@ export function withGameV4Shell<P extends GameShellProps>(
           },
         ],
       );
-    }, [isPersistent, sessionId, navigation]);
+    }, [isPersistent, sessionId, navigation, resumeSoloGameplay]);
 
     // ── Back handler (runtime-aware) ────────────────────────────────
     useEffect(() => {
@@ -585,7 +584,7 @@ export function withGameV4Shell<P extends GameShellProps>(
 
         if (runtimeType === "solo") {
           // Solo: non-destructive suspend & leave
-          handleSoloSuspendAndLeave();
+          void handleSoloSuspendAndLeave();
           return true;
         }
 
@@ -601,7 +600,7 @@ export function withGameV4Shell<P extends GameShellProps>(
           {
             text: "Leave & Resign",
             style: "destructive",
-            onPress: async () => {
+                onPress: async () => {
               // Await resign so the session is resolved server-side before
               // we tear down snapshot listeners via navigation. This prevents
               // the "Missing Firebase permissions" error that occurred when
@@ -728,7 +727,10 @@ export function withGameV4Shell<P extends GameShellProps>(
             >
               <TouchableOpacity
                 style={styles.soloOverlayBtn}
-                onPress={handleSoloSuspendAndLeave}
+                onPress={() => {
+                  void handleSoloSuspendAndLeave();
+                }}
+                disabled={soloSuspendLoading}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons
@@ -744,6 +746,7 @@ export function withGameV4Shell<P extends GameShellProps>(
                   if (soloOnPauseRef.current) soloOnPauseRef.current();
                   setSoloMenuVisible(true);
                 }}
+                disabled={soloSuspendLoading}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons name="ellipsis-vertical" size={22} color="#FFF" />
@@ -777,11 +780,11 @@ export function withGameV4Shell<P extends GameShellProps>(
             visible={soloMenuVisible}
             transparent
             animationType="fade"
-            onRequestClose={() => setSoloMenuVisible(false)}
+            onRequestClose={closeSoloMenuAndResume}
           >
             <Pressable
               style={styles.soloMenuOverlay}
-              onPress={() => setSoloMenuVisible(false)}
+              onPress={closeSoloMenuAndResume}
             >
               <View
                 style={[
@@ -862,8 +865,7 @@ export function withGameV4Shell<P extends GameShellProps>(
                       },
                     ]}
                     onPress={() => {
-                      setSoloMenuVisible(false);
-                      handleSoloSuspendAndLeave();
+                      void handleSoloSuspendAndLeave();
                     }}
                   >
                     <Ionicons
@@ -890,10 +892,7 @@ export function withGameV4Shell<P extends GameShellProps>(
                       backgroundColor: theme.isDark ? "#444" : "#E0E0E0",
                     },
                   ]}
-                  onPress={() => {
-                    soloOnResumeRef.current?.();
-                    setSoloMenuVisible(false);
-                  }}
+                  onPress={closeSoloMenuAndResume}
                 >
                   <Text
                     style={[

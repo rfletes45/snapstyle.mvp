@@ -3,6 +3,8 @@
 Last verified: 2026-03-05
 Status: Phase 3+ complete (contract parity fixes landed, tests expanded, docs consolidated)
 
+> Historical checkpoint document. Use `docs/features/messaging.md` and the current code as the source of truth.
+
 ## 1) Scope
 
 This document is the architecture reference for the production Inbox and Chat stack:

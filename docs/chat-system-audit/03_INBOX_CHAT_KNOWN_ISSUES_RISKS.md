@@ -3,6 +3,8 @@
 Last verified: 2026-03-05
 Status: Major Phase 3+ risk items resolved, sustaining risks tracked below
 
+> Historical checkpoint document. Some risks in this file were resolved after the 2026-03-18 audit cleanup.
+
 ## 1) Executive Status
 
 Resolved in this cycle:

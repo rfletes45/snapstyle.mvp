@@ -87,7 +87,7 @@ export default function ChatListScreen() {
 
   // In-app notifications context (for tracking last viewed chat)
   const {
-    consumeLastViewedChatId,
+    consumeLastViewedConversation,
     registerNotificationPressHandler,
     setCurrentScreen,
   } = useInAppNotifications();
@@ -174,12 +174,17 @@ export default function ChatListScreen() {
   // Register a handler to mark conversations as read when notification is clicked
   // This allows the inbox to update immediately when a notification is pressed
   React.useEffect(() => {
-    const unsubscribe = registerNotificationPressHandler((chatId: string) => {
-      log.debug("[Inbox] Notification pressed - optimistic read", {
-        data: { chatId },
-      });
-      markConversationReadOptimistic(chatId);
-    });
+    const unsubscribe = registerNotificationPressHandler(
+      (
+        conversationId: string,
+        scope: "dm" | "group" | null,
+      ) => {
+        log.debug("[Inbox] Notification pressed - optimistic read", {
+          data: { conversationId, scope },
+        });
+        markConversationReadOptimistic(conversationId, scope ?? undefined);
+      },
+    );
 
     return unsubscribe;
   }, [registerNotificationPressHandler, markConversationReadOptimistic]);
@@ -209,7 +214,7 @@ export default function ChatListScreen() {
   );
 
   // =============================================================================
-  // Mark Last Viewed Chat as Read (for notification navigation)
+  // Mark Last Viewed Conversation as Read (for notification navigation)
   // =============================================================================
 
   // When returning to inbox from a chat opened via notification,
@@ -218,14 +223,17 @@ export default function ChatListScreen() {
   // (not through handleConversationPress which already does this).
   useFocusEffect(
     useCallback(() => {
-      const lastChatId = consumeLastViewedChatId();
-      if (lastChatId) {
+      const lastViewedConversation = consumeLastViewedConversation();
+      if (lastViewedConversation) {
         log.debug("[Inbox] Focus returned - optimistic read", {
-          data: { chatId: lastChatId },
+          data: lastViewedConversation,
         });
-        markConversationReadOptimistic(lastChatId);
+        markConversationReadOptimistic(
+          lastViewedConversation.conversationId,
+          lastViewedConversation.scope ?? undefined,
+        );
       }
-    }, [consumeLastViewedChatId, markConversationReadOptimistic]),
+    }, [consumeLastViewedConversation, markConversationReadOptimistic]),
   );
 
   // =============================================================================
@@ -235,7 +243,7 @@ export default function ChatListScreen() {
   const handleConversationPress = useCallback(
     (conversation: InboxConversation) => {
       // Optimistically mark as read in local state (immediate UI update)
-      markConversationReadOptimistic(conversation.id);
+      markConversationReadOptimistic(conversation.id, conversation.type);
 
       // Also persist to Firestore (background operation)
       actions.markRead(conversation);

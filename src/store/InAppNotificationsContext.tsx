@@ -61,6 +61,7 @@ export interface InAppNotification {
   title: string;
   body: string;
   entityId: string;
+  conversationScope?: "dm" | "group" | null;
   fromUserId: string;
   fromDisplayName?: string;
   timestamp: number;
@@ -85,12 +86,24 @@ interface InAppNotificationsContextType {
   setCurrentGameSessionId: (sessionId: string | null) => void;
   setCurrentGameInviteId: (inviteId: string | null) => void;
   setActiveGameRuntimeType: (type: GameRuntimeType | null) => void;
-  lastViewedChatId: string | null;
-  consumeLastViewedChatId: () => string | null;
+  lastViewedConversation: {
+    conversationId: string;
+    scope: "dm" | "group" | null;
+  } | null;
+  consumeLastViewedConversation: () => {
+    conversationId: string;
+    scope: "dm" | "group" | null;
+  } | null;
   registerNotificationPressHandler: (
-    handler: (chatId: string) => void,
+    handler: (
+      conversationId: string,
+      scope: "dm" | "group" | null,
+    ) => void,
   ) => () => void;
-  onMessageNotificationPressed: (chatId: string) => void;
+  onMessageNotificationPressed: (
+    conversationId: string,
+    scope: "dm" | "group" | null,
+  ) => void;
 }
 
 const InAppNotificationsContext =
@@ -140,6 +153,7 @@ function buildToast(
       notification.giftId ||
       notification.sectionId ||
       notification.id,
+    conversationScope: notification.conversationScope ?? null,
     fromUserId: notification.actorUid || "",
     fromDisplayName: notification.actorName || undefined,
     timestamp: notification.createdAtMs || Date.now(),
@@ -169,7 +183,10 @@ export function InAppNotificationsProvider({
   >(null);
   const [activeGameRuntimeType, setActiveGameRuntimeType] =
     useState<GameRuntimeType | null>(null);
-  const [lastViewedChatId, setLastViewedChatId] = useState<string | null>(null);
+  const [lastViewedConversation, setLastViewedConversation] = useState<{
+    conversationId: string;
+    scope: "dm" | "group" | null;
+  } | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(
     AppState.currentState,
   );
@@ -178,9 +195,14 @@ export function InAppNotificationsProvider({
   const dismissTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
-  const notificationPressHandlers = useRef<Set<(chatId: string) => void>>(
-    new Set(),
-  );
+  const notificationPressHandlers = useRef<
+    Set<
+      (
+        conversationId: string,
+        scope: "dm" | "group" | null,
+      ) => void
+    >
+  >(new Set());
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const hasHydratedFeed = useRef(false);
   const syncSequence = useRef(0);
@@ -297,8 +319,11 @@ export function InAppNotificationsProvider({
   const setCurrentChatId = useCallback(
     (chatId: string | null, scope: "dm" | "group" | null = null) => {
       setCurrentChatIdState((previousChatId) => {
-        if (chatId === null && previousChatId !== null && currentConversationScope === "dm") {
-          setLastViewedChatId(previousChatId);
+        if (chatId === null && previousChatId !== null) {
+          setLastViewedConversation({
+            conversationId: previousChatId,
+            scope: currentConversationScope,
+          });
         }
         return chatId;
       });
@@ -307,14 +332,19 @@ export function InAppNotificationsProvider({
     [currentConversationScope],
   );
 
-  const consumeLastViewedChatId = useCallback(() => {
-    const chatId = lastViewedChatId;
-    setLastViewedChatId(null);
-    return chatId;
-  }, [lastViewedChatId]);
+  const consumeLastViewedConversation = useCallback(() => {
+    const conversation = lastViewedConversation;
+    setLastViewedConversation(null);
+    return conversation;
+  }, [lastViewedConversation]);
 
   const registerNotificationPressHandler = useCallback(
-    (handler: (chatId: string) => void) => {
+    (
+      handler: (
+        conversationId: string,
+        scope: "dm" | "group" | null,
+      ) => void,
+    ) => {
       notificationPressHandlers.current.add(handler);
       return () => {
         notificationPressHandlers.current.delete(handler);
@@ -323,15 +353,18 @@ export function InAppNotificationsProvider({
     [],
   );
 
-  const onMessageNotificationPressed = useCallback((chatId: string) => {
+  const onMessageNotificationPressed = useCallback(
+    (conversationId: string, scope: "dm" | "group" | null) => {
     notificationPressHandlers.current.forEach((handler) => {
       try {
-        handler(chatId);
+          handler(conversationId, scope);
       } catch (error) {
         log.error("Notification press handler failed", error);
       }
     });
-  }, []);
+    },
+    [],
+  );
 
   const syncSession = useCallback(async () => {
     if (!uid || !deviceId) return;
@@ -486,8 +519,8 @@ export function InAppNotificationsProvider({
       setCurrentGameSessionId: setCurrentGameSessionIdState,
       setCurrentGameInviteId: setCurrentGameInviteIdState,
       setActiveGameRuntimeType,
-      lastViewedChatId,
-      consumeLastViewedChatId,
+      lastViewedConversation,
+      consumeLastViewedConversation,
       registerNotificationPressHandler,
       onMessageNotificationPressed,
     }),
@@ -498,8 +531,8 @@ export function InAppNotificationsProvider({
       dismiss,
       clearAll,
       markNotificationRead,
-      lastViewedChatId,
-      consumeLastViewedChatId,
+      lastViewedConversation,
+      consumeLastViewedConversation,
       setCurrentChatId,
       registerNotificationPressHandler,
       onMessageNotificationPressed,

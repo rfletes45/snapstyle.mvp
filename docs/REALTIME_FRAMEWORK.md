@@ -2,7 +2,7 @@
 
 > **Status**: Production-ready framework. Sketch Party refactored as reference implementation.
 > **Owner**: Games V4 Team
-> **Last Updated**: Auto-generated during framework build
+> **Last Updated**: 2026-03-18 workspace audit
 
 ---
 
@@ -42,7 +42,7 @@ room implementations with a reusable `BaseRealtimeRoom` that handles:
 2. **Colyseus = live authority**: Real-time game state, input handling, simulation ticks
 3. **Resolution pipeline is THE chokepoint**: All games resolve through `resolveSessionV4Internal()`
 4. **Configuration over code**: Game behavior defined by `RealtimeGameDefinition`, not if-statements
-5. **Preserve backward compatibility**: Legacy rooms remain available; incremental migration
+5. **Retire superseded paths**: Remove legacy rooms and unused client helpers once the shared framework replaces them
 
 ---
 
@@ -112,8 +112,6 @@ colyseus-server/src/
 │       ├── Definition.ts           # RealtimeGameDefinition
 │       ├── Room.ts                 # SketchPartyRoomV2
 │       └── index.ts                # Auto-registration
-├── rooms/
-│   └── SketchPartyRoom.ts         # Legacy (preserved)
 ├── bridge/
 │   └── firebaseBridge.ts          # Firebase Admin init
 └── index.ts                        # Server entry point
@@ -209,7 +207,6 @@ src/gamesV4/realtime/
 ├── realtimeClient.ts         # RealtimeRoomClient class
 ├── registry.ts               # Client-side game definition registry
 ├── useRealtimeRoom.ts        # Primary React hook
-├── useRealtimeMessages.ts    # Message handler hook
 ├── errors.ts                 # Structured error types
 ├── index.ts                  # Barrel exports
 └── games/
@@ -247,18 +244,20 @@ function MyGameScreen({ sessionId }) {
 }
 ```
 
-### useRealtimeMessages Hook
+### Game-Specific Message Handlers
 
-For game-specific message handlers (e.g., canvas rendering):
+Use the room returned by `useRealtimeRoom()` for game-specific messages that
+should not flow through `state_sync`. The current screens register these
+handlers from a room-scoped effect and rely on the room instance changing on
+reconnect:
 
 ```typescript
-const client = useRealtimeClient<MyGameState>(MY_GAME_CLIENT_DEF);
+useEffect(() => {
+  if (!room) return;
 
-useRealtimeMessages(client, {
-  stroke_begin: (data) => addStroke(data),
-  chat: (data) => appendChat(data),
-  clear_canvas: () => clearCanvas(),
-});
+  room.onMessage("chat", (data) => appendChat(data));
+  room.onMessage("stroke_begin", (data) => addStroke(data));
+}, [room]);
 ```
 
 ### RealtimeClientDefinition
@@ -640,13 +639,11 @@ Returns:
 
 ### Legacy Rollback
 
-If the new framework room has issues, the legacy room is registered as:
+There is no longer an in-repo `sketch_party_legacy` room registration.
 
-```
-sketch_party_legacy
-```
-
-Point the client's `roomName` to `"sketch_party_legacy"` to revert.
+If a realtime regression requires rollback, deploy the previous known-good
+server build and matching client bundle instead of pointing new clients at a
+parallel legacy room name.
 
 ---
 

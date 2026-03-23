@@ -1,266 +1,127 @@
-# Sketch Party — Implementation Summary & QA Checklist
+# Sketch Party - Current Implementation Summary and QA Checklist
 
 ## Overview
 
-Sketch Party is a real-time multiplayer drawing + guessing game (skribbl.io-style) for 2-8 players, integrated into the SnapStyle Games V4 system. Players take turns drawing while others guess the word. Scoring rewards fast guesses and effective drawings.
+Sketch Party is a realtime multiplayer drawing and guessing game integrated into the Games V4 shell.
 
-**GameId**: `sketch_party_game`  
-**Runtime**: `realtime` (Colyseus WebSocket, not Firestore state machine)  
-**Players**: 2-8
+- `gameId`: `sketch_party_game`
+- runtime: `realtime`
+- transport: Colyseus WebSocket room plus Firebase-backed invite/session/result lifecycle
+- players: 2-8
 
----
+The current implementation no longer uses a bespoke client service or legacy room path. The canonical client path is `useRealtimeRoom(SKETCH_PARTY_CLIENT_DEF, ...)`, and the canonical server room is `colyseus-server/src/games/sketch_party/Room.ts`.
 
-## Files Created
+## Canonical Files
 
 ### Client
 
-| #   | File                                          | Purpose                                                                    |
-| --- | --------------------------------------------- | -------------------------------------------------------------------------- |
-| 1   | `src/gamesV4/adapters/sketchParty.ts`         | Client adapter (GameAdapterV4) — settings, initial state, outcome, metrics |
-| 2   | `src/gamesV4/screens/SketchPartyScreenV4.tsx` | Main game screen — canvas, tools, chat, word choice modal                  |
-| 3   | `src/gamesV4/services/sketchPartyClient.ts`   | Colyseus client service — join/leave/send messages                         |
-| 4   | `src/gamesV4/data/sketchPartyWords.ts`        | Word bank (100 words), masked word, guess detection                        |
-| 5   | `src/gamesV4/data/sketchPartyScoring.ts`      | Scoring functions (guesser, drawer, placements)                            |
+| File | Purpose |
+| --- | --- |
+| `src/gamesV4/adapters/sketchParty.ts` | V4 adapter metadata, settings schema, summaries, outcome helpers |
+| `src/gamesV4/realtime/games/sketchPartyDef.ts` | Realtime client definition for room name, initial state, reconnect policy |
+| `src/gamesV4/realtime/games/sketchPartyTypes.ts` | Shared Sketch Party state and message contracts used by the screen and tests |
+| `src/gamesV4/realtime/useRealtimeRoom.ts` | Shared room lifecycle hook used by realtime games |
+| `src/gamesV4/screens/SketchPartyScreenV4.tsx` | Gameplay UI: canvas, chat, word choice, reactions, room event handling |
 
-### Colyseus Server
+### Realtime server
 
-| #   | File                                           | Purpose                                                       |
-| --- | ---------------------------------------------- | ------------------------------------------------------------- |
-| 6   | `colyseus-server/package.json`                 | Server npm config (colyseus ^0.15.0, firebase-admin, express) |
-| 7   | `colyseus-server/tsconfig.json`                | TypeScript config (ES2020, commonjs, strict)                  |
-| 8   | `colyseus-server/src/index.ts`                 | Server entry point (express + monitor + room registration)    |
-| 9   | `colyseus-server/src/rooms/SketchPartyRoom.ts` | **Authoritative game room** — full match lifecycle            |
-| 10  | `colyseus-server/src/data/wordBank.ts`         | Server word bank (canonical copy)                             |
-| 11  | `colyseus-server/src/data/scoring.ts`          | Server scoring functions (canonical copy)                     |
-| 12  | `colyseus-server/src/bridge/firebaseBridge.ts` | Writes resolution request to Firestore for V4 pipeline        |
+| File | Purpose |
+| --- | --- |
+| `colyseus-server/src/index.ts` | Active room registration and `/health` endpoint |
+| `colyseus-server/src/core/BaseRealtimeRoom.ts` | Shared realtime lifecycle, auth, reconnect, resolution bridge plumbing |
+| `colyseus-server/src/games/sketch_party/Room.ts` | Authoritative Sketch Party room implementation |
+| `colyseus-server/src/data/wordBank.ts` | Server-side word selection |
+| `colyseus-server/src/data/scoring.ts` | Server-side scoring helpers |
+| `colyseus-server/src/bridge/firebaseBridge.ts` | Firebase Admin initialization and bridge helpers |
 
-### Backend (Firebase Cloud Functions)
+### Firebase backend
 
-| #   | File                                                                | Purpose                                                         |
-| --- | ------------------------------------------------------------------- | --------------------------------------------------------------- |
-| 13  | _Modified_ `firebase-backend/functions/src/gamesV4/types.ts`        | Added `sketch_party_game: "bestScore"` to `LEADERBOARD_METRICS` |
-| 14  | _Modified_ `firebase-backend/functions/src/gamesV4/adapters.ts`     | Registered `sketch_party_game` backend adapter                  |
-| 15  | _Modified_ `firebase-backend/functions/src/gamesV4/achievements.ts` | Added sketch_party section (12 achievements)                    |
-| 16  | _Modified_ `firebase-backend/functions/src/gamesV4/triggers.ts`     | Added `onRealtimeResolutionRequest` trigger                     |
-| 17  | _Modified_ `firebase-backend/functions/src/gamesV4/index.ts`        | Exported new trigger                                            |
+| File | Purpose |
+| --- | --- |
+| `firebase-backend/functions/src/gamesV4/triggers.ts` | Realtime resolution trigger handoff |
+| `firebase-backend/functions/src/gamesV4/sessions.ts` | Shared session writes and resolution integration |
+| `firebase-backend/functions/src/gamesV4/adapters.ts` | Backend adapter registration for post-match surfaces |
+| `firebase-backend/functions/src/gamesV4/achievements.ts` | Achievement evaluation after resolution |
+| `firebase-backend/functions/src/gamesV4/types.ts` | Leaderboard metric and shared backend constants |
 
-### Client Integration
+## Runtime Ownership
 
-| #   | File                                                      | Purpose                                                                     |
-| --- | --------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 18  | _Modified_ `src/gamesV4/constants.ts`                     | IMPLEMENTED_GAME_IDS, SCOREBOARD/LEADERBOARD descriptors, GAME_DESCRIPTIONS |
-| 19  | _Modified_ `src/gamesV4/adapters/index.ts`                | Side-effect import for auto-registration                                    |
-| 20  | _Modified_ `src/gamesV4/screens/GamePlayDispatcherV4.tsx` | Added GAME_SCREEN_MAP entry                                                 |
-| 21  | _Modified_ `src/gamesV4/data/achievementDefinitions.ts`   | Added sketch_party section + 12 achievement defs + isGameSection            |
+### Firebase owns
 
-### Tests
+- invite creation, pinning, lobby membership, and lobby settings
+- session creation in `GameSessionsV4`
+- result writes, rewards, XP, achievements, PBs, leaderboards, and notifications
+- Game Over navigation surfaces through the normal V4 pipeline
 
-| #   | File                                             | Purpose                                           |
-| --- | ------------------------------------------------ | ------------------------------------------------- |
-| 22  | `__tests__/gamesV4/adapters/sketchParty.test.ts` | 36 unit tests (scoring, words, adapter, outcomes) |
+### Colyseus owns
 
----
+- room join and reconnect handling
+- authenticated roster enforcement
+- round and drawer progression
+- word choice, hint timing, guess validation, and stroke relay
+- live score accumulation during the match
+- match-end scoreboard payload before handing off to Firebase
 
-## Environment / Setup
+### Source of truth
 
-### Colyseus Server
+- live room state: Colyseus room state/messages
+- invite and session lifecycle state: Firebase
+- terminal results and rewards: Firebase resolution pipeline
 
-```bash
-cd colyseus-server
-npm install
-npm run dev    # starts on port 2567
-```
+## Critical Flow Summary
 
-### Environment Variables
-
-- **`COLYSEUS_URL`**: Set in client config to point to the Colyseus server (e.g., `ws://localhost:2567` for dev)
-- **Firebase Admin**: The Colyseus server uses Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS` env var or GCP metadata)
-
-### Firestore Security Rules
-
-Add rules for the `gameSessions/{sessionId}/internal/{docId}` subcollection:
-
-```
-match /gameSessions/{sessionId}/internal/{docId} {
-  allow read, write: if false;  // Server-only via Admin SDK
-}
-```
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Client (React Native)                │
-│  ┌─────────────────┐  ┌──────────────────────────────┐  │
-│  │SketchPartyScreen│  │SketchPartyClient (Colyseus)  │  │
-│  │  Canvas + Chat   │←→│ joinRoom / sendMsg / listen  │  │
-│  └─────────────────┘  └─────────────┬────────────────┘  │
-└───────────────────────────────────────┼──────────────────┘
-                                        │ WebSocket
-┌───────────────────────────────────────┼──────────────────┐
-│               Colyseus Server         │                  │
-│  ┌────────────────────────────────────┴───────────────┐  │
-│  │            SketchPartyRoom                         │  │
-│  │  Turn lifecycle, draw relay, guess, scoring        │  │
-│  └───────────────────────────┬────────────────────────┘  │
-│                              │ Admin SDK write           │
-└──────────────────────────────┼───────────────────────────┘
-                               │
-┌──────────────────────────────┼───────────────────────────┐
-│          Firebase Cloud Functions                        │
-│  ┌───────────────────────────┴────────────────────────┐  │
-│  │  onRealtimeResolutionRequest (Firestore trigger)   │  │
-│  │  → resolveRealtimeSessionV4()                      │  │
-│  │  → resolveSessionV4Internal() (10-phase pipeline)  │  │
-│  │    Phase 1: Validate session                       │  │
-│  │    Phase 2: Update session status                  │  │
-│  │    Phase 3: Write GameResult                       │  │
-│  │    Phase 4: PB update                              │  │
-│  │    Phase 5: Achievement evaluation                 │  │
-│  │    Phase 6: Leaderboard update                     │  │
-│  │    Phase 7: XP award                               │  │
-│  │    Phase 8: Notifications                          │  │
-│  │    Phase 9: Invite status sync                     │  │
-│  │    Phase 10: Audit log                             │  │
-│  └────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
-```
-
----
-
-## Achievements (12 total)
-
-| Type                   | Name               | Difficulty | Tokens |
-| ---------------------- | ------------------ | ---------- | ------ |
-| sp_first_play          | Doodle Debut       | Easy       | 5      |
-| sp_first_win           | Top Artist         | Easy       | 10     |
-| sp_first_correct_guess | Sharp Eye          | Easy       | 5      |
-| sp_play_10             | Sketch Enthusiast  | Medium     | 15     |
-| sp_win_5               | Gallery Champion   | Medium     | 25     |
-| sp_score_500           | Point Collector    | Medium     | 20     |
-| sp_speed_guesser       | Quick Draw         | Hard       | 30     |
-| sp_all_guessed         | Master Illustrator | Hard       | 40     |
-| sp_score_1000          | Sketch Prodigy     | Hard       | 50     |
-| sp_win_10              | Sketch Legend      | Expert     | 50     |
-| sp_score_2000          | Canvas King        | Expert     | 75     |
-| sp_perfect_round       | Picasso            | Legendary  | 100    |
-
----
+1. Lobby is created and managed through Games V4 Firebase callables.
+2. Starting the invite creates an active realtime session in `GameSessionsV4`.
+3. `SketchPartyScreenV4` joins the `sketch_party` room using `useRealtimeRoom`.
+4. The room authenticates membership against Firebase session data.
+5. Live gameplay runs entirely through room messages and room-owned timers.
+6. Match end writes a resolution request that the Firebase trigger pipeline consumes.
+7. Standard V4 result/reward surfaces take over after the session resolves.
 
 ## QA Checklist
 
-### Lobby & Matchmaking
+### Lobby and start
 
-- [ ] Create a Sketch Party invite from the game selector
-- [ ] Invite appears in conversation with correct metadata (icon "draw", "Sketch Party")
-- [ ] 2nd player can join lobby; "Start" button appears for host when ≥ 2 players
-- [ ] Host can adjust settings (rounds, draw time, hints, word choices)
-- [ ] Settings are validated (clamped within ranges)
-- [ ] Starting the game transitions invite from "lobby" to "active"
+- [ ] Create a Sketch Party invite from the game selector.
+- [ ] Invite appears in the conversation with `sketch_party_game` metadata.
+- [ ] A second player can join the lobby.
+- [ ] Host settings edits are reflected in the eventual room settings.
+- [ ] Starting the lobby creates an active session and routes both players into gameplay.
 
-### Connection & State
+### Room connection and auth
 
-- [ ] Both players connect to Colyseus room on game start
-- [ ] Players see "waiting" state brief, then first turn begins
-- [ ] Drawer sees word choice modal with N words
-- [ ] Non-drawer players see "Waiting for [drawer] to choose a word…"
-- [ ] Auto-pick occurs after turnChooseTimeSec timeout
+- [ ] Both players connect to the `sketch_party` room successfully.
+- [ ] A non-participant cannot join the room for the same `sessionId`.
+- [ ] Reconnect uses the same session and returns the player to the current phase.
+- [ ] A reconnecting player receives the current board snapshot and scores.
 
-### Drawing Phase
+### Turn flow
 
-- [ ] Canvas supports finger/stylus drawing in pen mode
-- [ ] Color palette (8 colors) changes stroke color
-- [ ] Width selector (4 sizes) changes stroke width
-- [ ] Eraser tool works
-- [ ] Undo removes last stroke
-- [ ] Clear removes all strokes
-- [ ] Strokes appear on all other players' screens in real-time
-- [ ] Non-drawer cannot draw (touch events are no-ops)
-- [ ] Timer counts down from drawTimeSec
+- [ ] Drawer receives word choices during the `choosing` phase.
+- [ ] Auto-pick occurs if the drawer does not choose in time.
+- [ ] Only the current drawer can draw.
+- [ ] Non-drawers can guess during the drawing phase.
+- [ ] Correct guesses award points to the guesser and drawer.
+- [ ] Turn ends on timeout or when all eligible guessers answer correctly.
+- [ ] Word reveal and turn score broadcast happen at turn end.
 
-### Hints
+### Match end and resolution
 
-- [ ] Hints reveal letters at scheduled intervals during drawing
-- [ ] Masked word updates in real-time on non-drawer screens
-- [ ] Spaces are preserved in masked word
+- [ ] Final scoreboard is produced when all rounds complete.
+- [ ] Disconnect-end matches resolve with the expected resolution reason.
+- [ ] Firebase trigger processing creates a `GameResultsV4/{sessionId}` document.
+- [ ] PB, leaderboard, XP, and achievements are updated through the shared V4 pipeline.
+- [ ] Game Over surfaces reflect the resolved match correctly.
 
-### Guessing
+### Stability and regression checks
 
-- [ ] Non-drawers can type guesses in chat input
-- [ ] Correct guess shows green "guessed correctly!" message
-- [ ] Correct guess awards points to guesser AND drawer
-- [ ] Incorrect guess shows in chat as normal message
-- [ ] Drawer cannot type guesses
-- [ ] Already-correct guessers cannot guess again
-- [ ] When all non-drawers guess correctly, turn ends early
+- [ ] Match end does not trigger a reconnect loop on the client.
+- [ ] Disconnecting the drawer advances or terminates the match per room logic.
+- [ ] All timers are cleared on room disposal.
+- [ ] Room state changes remain invisible to Firestore-only readers during live play; no UI assumes otherwise.
 
-### Scoring
+## Known Constraints
 
-- [ ] Guesser points decrease as time passes
-- [ ] Guesser points decrease with more hints used
-- [ ] Drawer gets points proportional to guesser time bonus
-- [ ] Scores update in real-time on player strip
-
-### Turn & Round Flow
-
-- [ ] Turn ends when timer reaches 0 OR all guess correctly
-- [ ] Word is revealed at turn end
-- [ ] Turn scores summary is broadcast
-- [ ] Next player becomes drawer after delay
-- [ ] After all players draw once → next round
-- [ ] After all rounds → match end
-
-### Match End & Resolution
-
-- [ ] Match end phase shows final scoreboard
-- [ ] Winner(s) determined by highest score
-- [ ] Result flows through V4 resolution pipeline via Firestore trigger
-- [ ] PB doc updated (totalPlays, totalWins, bestScore)
-- [ ] Leaderboard doc updated (bestScore metric)
-- [ ] XP awarded to all participants
-- [ ] Achievements evaluated and unlocked appropriately
-
-### Reconnection
-
-- [ ] Reconnecting player receives board_snapshot with current strokes
-- [ ] Reconnecting player rejoins correct phase
-- [ ] Scores preserved on reconnect
-
-### Disconnect
-
-- [ ] Drawer disconnect skips turn immediately
-- [ ] Non-drawer disconnect does not end the game
-- [ ] All players disconnect → match ends with "disconnect" resolution
-- [ ] Disconnect shows system message in chat
-
-### Notifications
-
-- [ ] Game resolved notification sent to all non-resolver participants
-- [ ] In-app achievement notification when achievements unlock
-
-### Achievements
-
-- [ ] sp_first_play triggers on first Sketch Party game
-- [ ] sp_first_win triggers on first win
-- [ ] sp_score_500/1000/2000 trigger at correct thresholds
-- [ ] sp_win_5/10 trigger at correct cumulative win counts
-- [ ] Achievements are idempotent (no double-unlock)
-- [ ] Token rewards credited to wallet
-
-### Performance
-
-- [ ] Drawing feels smooth (40ms batching, normalized coords)
-- [ ] Chat messages appear instantly
-- [ ] Timer sync is accurate (server-authoritative 1s ticks)
-- [ ] No memory leaks (timers cleared on turn/match end)
-
-### Edge Cases
-
-- [ ] Game with exactly 2 players works correctly
-- [ ] Game with 8 players works correctly
-- [ ] Very fast guess (< 1 second) awards maximum points
-- [ ] Very long word is masked correctly
-- [ ] Empty guess is rejected
-- [ ] Case-insensitive guess matching works
+- Live room progress is not mirrored into Firestore in realtime.
+- Full-roster start gating can still stall if the expected roster never fully connects.
+- Realtime games still require per-title QA even though the client/server framework is now shared.

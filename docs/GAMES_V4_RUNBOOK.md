@@ -444,7 +444,7 @@ Quick queries to run in the Firebase Console > Firestore > Query builder:
 **Diagnosis (banner NOT showing):**
 
 ```
-1. Check Users/{uid}/InAppNotificationsV4 — does a doc exist with deliveredAt == null?
+1. Check `Users/{uid}/Notifications` — does a matching doc exist with `channel == "in_app"` and `presentedAt == null`?
 2. If doc missing: check Cloud Function logs for "[gamesV4] In-app notification written"
 3. If doc exists but deliveredAt is set: the client already processed it. Was user in Games area?
    - Check console logs for "[InAppNotifications] User in Games area"
@@ -659,13 +659,17 @@ You cannot directly invoke a scheduled function from the Firebase Console. Optio
 3. Output format: "Pass1(expired lobbies):N Pass2(deleted invites):N Pass3(retried rewards):N Pass4(auto-resolved):N"
 ```
 
-### Deletion guarantee
+### Deletion coverage
 
-Invite deletion is **guaranteed** via three mechanisms:
+Invite hard deletion is covered by three redundant mechanisms, but it is eventual rather than instantaneous:
 
 1. **Primary:** `deleteAt` TTL field + watchdog Pass 2 hard-deletes every 30 minutes
 2. **Backup:** Firestore-native TTL field override on `GameInvitesV4.deleteAt` (configured in `firestore.indexes.json` — see SYSTEM doc §14.5). Firestore will auto-delete docs where `deleteAt` has passed, even if the watchdog is down
 3. **Safety net:** `onGameInviteV4Deleted` trigger unpins from conversation after hard delete (by either mechanism)
+
+Expired invite docs can therefore persist briefly between `deleteAt` elapsing
+and the next watchdog or TTL deletion. Treat expiry as a business-state change
+first and a hard-delete later.
 
 ---
 
@@ -927,8 +931,8 @@ Client-side: Games tab will show "Game service is not available" errors (handled
 
 | Limitation               | Impact                             | Tracking             |
 | ------------------------ | ---------------------------------- | -------------------- |
-| 13 of 23 catalog games enabled | Remaining catalog entries still show `Coming Soon` | See current inventory in SYSTEM doc |
-| Realtime framework still bespoke | Only `sketch_party_game` is live; no generic Colyseus abstraction exists | See SYSTEM doc Sketch Party section |
+| 17 of 25 catalog games enabled | Remaining catalog entries still show `Coming Soon` | See current inventory in SYSTEM doc |
+| Realtime framework still evolving | Shared client/server abstractions exist, but docs and gameplay QA still need per-game verification for realtime titles | See `docs/REALTIME_FRAMEWORK.md` |
 | No emulator setup        | All dev testing hits production    | §2 above             |
 | No performance bonus XP  | Up to 10 bonus XP unused           | Gap G5               |
 | Metadata duplication remains | Client and backend game metadata can still drift if both are not updated | See SYSTEM doc known inconsistencies |

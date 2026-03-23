@@ -148,7 +148,10 @@ export interface UseInboxDataResult {
   refresh: () => void;
 
   /** Optimistically mark a conversation as read (updates local state immediately) */
-  markConversationReadOptimistic: (conversationId: string) => void;
+  markConversationReadOptimistic: (
+    conversationId: string,
+    conversationType?: "dm" | "group",
+  ) => void;
 }
 
 // =============================================================================
@@ -329,9 +332,12 @@ export function useInboxData(uid: string): UseInboxDataResult {
   // Optimistically mark a conversation as read in local state
   // This immediately updates the UI while the actual Firestore write happens in the background
   const markConversationReadOptimistic = useCallback(
-    (conversationId: string) => {
+    (conversationId: string, conversationType?: "dm" | "group") => {
       if (useAggregatedInbox) {
-        aggregation.markConversationReadOptimistic(conversationId);
+        aggregation.markConversationReadOptimistic(
+          conversationId,
+          conversationType,
+        );
         return;
       }
 
@@ -347,38 +353,42 @@ export function useInboxData(uid: string): UseInboxDataResult {
       }
 
       // Update DM conversations
-      setDmConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                unreadCount: 0,
-                memberState: {
-                  ...c.memberState,
-                  lastSeenAtPrivate: Date.now(),
-                  lastMarkedUnreadAt: undefined,
-                },
-              }
-            : c,
-        ),
-      );
+      if (!conversationType || conversationType === "dm") {
+        setDmConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? {
+                  ...c,
+                  unreadCount: 0,
+                  memberState: {
+                    ...c.memberState,
+                    lastSeenAtPrivate: Date.now(),
+                    lastMarkedUnreadAt: undefined,
+                  },
+                }
+              : c,
+          ),
+        );
+      }
 
       // Update Group conversations
-      setGroupConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                unreadCount: 0,
-                memberState: {
-                  ...c.memberState,
-                  lastSeenAtPrivate: Date.now(),
-                  lastMarkedUnreadAt: undefined,
-                },
-              }
-            : c,
-        ),
-      );
+      if (!conversationType || conversationType === "group") {
+        setGroupConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? {
+                  ...c,
+                  unreadCount: 0,
+                  memberState: {
+                    ...c.memberState,
+                    lastSeenAtPrivate: Date.now(),
+                    lastMarkedUnreadAt: undefined,
+                  },
+                }
+              : c,
+          ),
+        );
+      }
     },
     [aggregation, useAggregatedInbox],
   );

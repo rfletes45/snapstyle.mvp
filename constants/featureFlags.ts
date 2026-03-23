@@ -416,7 +416,6 @@ export const CALL_FEATURES = {
  * - Settings V3 (global + per-chat overrides + resolver)
  * - Signed media URLs (no long-lived tokens in Firestore)
  * - Staged uploads (client â†’ staging â†’ final)
- * - Message requests (anti-spam for DMs)
  * - Global rate limiting (bucketed)
  * - Inbox aggregation (single collection)
  * - Delivery acknowledgements (watermarks)
@@ -448,13 +447,6 @@ export const CHAT_FEATURES = {
 
   /** Upload attachments to staging path; server commits to final on send */
   CHAT_STAGED_UPLOADS: false,
-
-  // =========================================================================
-  // Phase 1 â€” Message Requests
-  // =========================================================================
-
-  /** Enforce dmAcceptance setting; unsolicited DMs go to requests queue */
-  CHAT_MESSAGE_REQUESTS: false,
 
   // =========================================================================
   // Phase 1 â€” Rate Limiting

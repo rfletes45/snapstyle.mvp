@@ -1,6 +1,6 @@
 # Games V4 System - Architecture, Lifecycle, and Operations Reference
 
-> Source of truth: the checked-out workspace on 2026-03-10.
+> Source of truth: the checked-out workspace on 2026-03-18.
 > This document describes the system that is implemented today, including active exceptions, duplicated metadata, dormant infrastructure, and realtime special cases.
 > Companion: [GAME_INTEGRATION_GUIDE_V4.md](GAME_INTEGRATION_GUIDE_V4.md).
 
@@ -40,7 +40,7 @@ Current snapshot in this workspace:
 - 17 games are enabled in `IMPLEMENTED_GAME_IDS` in `src/gamesV4/constants.ts`.
 - 17 client adapters are registered in `src/gamesV4/adapters/index.ts`.
 - 17 backend adapters are registered in `firebase-backend/functions/src/gamesV4/adapters.ts`.
-- 17 gameplay screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
+- 18 gameplay screens are mapped in `src/gamesV4/screens/GamePlayDispatcherV4.tsx`. That includes disabled `minigolf_duels`.
 - 16 user callables, 2 admin callables, 3 Firestore triggers, and 1 scheduled watchdog job are exported from `firebase-backend/functions/src/gamesV4/index.ts`.
 - 1 standalone realtime server package exists at `colyseus-server/`, and it currently hosts 3 rooms: `sketch_party`, `pong_game`, and `knockout_game`.
 - 19 achievement sections exist in the client mirror: 18 game sections plus the shared `milestones` section.
@@ -176,7 +176,7 @@ Game-specific or partially standardized:
 
 ## 3. Game Inventory and Classification
 
-`GAME_METADATA` contains all 23 catalog entries. That does not mean all 23 are playable.
+`GAME_METADATA` contains all 25 catalog entries. That does not mean all 25 are playable.
 
 ### 3.1 Enabled and wired in the current workspace
 
@@ -349,7 +349,7 @@ Primary files:
 - `src/gamesV4/types/session.ts`
 - `src/gamesV4/types/result.ts`
 - `src/gamesV4/types/invite.ts`
-- `src/gamesV4/types/notification.ts`
+- `src/services/userNotifications.ts`
 
 Important client contracts:
 
@@ -402,7 +402,7 @@ Responsibilities:
 Behavior future contributors often miss:
 
 - back behavior is runtime-specific, not uniform
-- solo exit suspends, multiplayer does not
+- in-app solo exit waits for `suspendSoloSessionV4()` before leaving; abrupt app/process death can still bypass that round-trip, so resumability is stronger than the suspend marker itself
 - optimistic local move application is only for public state, not private state
 - terminal navigation is delayed so the final move can be seen briefly
 
@@ -422,7 +422,7 @@ Responsibilities:
 Important behavior in the service layer:
 
 - nested array deserialization is client-side because Firestore rejects native nested arrays from the backend
-- some solo callables still have fallback behavior if a function is not deployed, so this layer contains compatibility behavior as well as normal runtime code
+- solo lifecycle callables are now required runtime dependencies; the client no longer carries fallback behavior for missing deployments
 - `subscribeToActiveSoloSessions()` currently selects the freshest active solo session per game by comparing `soloSuspendedAt`, `lastServerSaveAt`, `lastSimulatedAt`, `runStartedAt`, `startedAt`, and `createdAt`
 
 ### 5.6 Hooks that matter most
@@ -603,8 +603,9 @@ Responsibilities:
 - lobby-join pushes to the host
 - turn notifications for turn-based games only
 - resolved-game pushes
-- achievement in-app notifications
-- in-app notification document writes to `Users/{uid}/InAppNotificationsV4/{id}`
+- achievement notifications
+- all game notification delivery routes through `firebase-backend/functions/src/notificationCenter.ts`
+- canonical notification records are written to `Users/{uid}/Notifications/{notificationId}`
 
 Important gating behavior:
 
@@ -657,7 +658,7 @@ Important caveat:
 | `Users/{uid}/AchievementSections/{sectionId}`           | section-badge claim callable              | section completion badge claim state                                   |
 | `Users/{uid}/LevelRewardsV4/{level}`                    | XP pipeline + claim callable              | unlocked and claimed level rewards                                     |
 | `Users/{uid}/GamePresence/{sessionId}`                  | client shell                              | in-game foreground presence                                            |
-| `Users/{uid}/InAppNotificationsV4/{id}`                 | backend notification writers              | foreground banners and inbox-style notification data                   |
+| `Users/{uid}/Notifications/{notificationId}`            | shared notification center                | canonical in-app and push notification records                         |
 | `Wallets/{uid}`                                         | claim callables and economy backend       | token balance                                                          |
 | `Transactions/{txId}`                                   | claim callables and other economy writers | wallet audit ledger                                                    |
 
@@ -1224,13 +1225,16 @@ Client:
 
 - `src/gamesV4/adapters/sketchParty.ts`
 - `src/gamesV4/data/sketchPartySettings.ts`
-- `src/gamesV4/services/sketchPartyClient.ts`
+- `src/gamesV4/realtime/games/sketchPartyDef.ts`
+- `src/gamesV4/realtime/games/sketchPartyTypes.ts`
+- `src/gamesV4/realtime/useRealtimeRoom.ts`
 - `src/gamesV4/screens/SketchPartyScreenV4.tsx`
 
 Realtime server:
 
 - `colyseus-server/src/index.ts`
-- `colyseus-server/src/rooms/SketchPartyRoom.ts`
+- `colyseus-server/src/core/BaseRealtimeRoom.ts`
+- `colyseus-server/src/games/sketch_party/Room.ts`
 - `colyseus-server/src/data/scoring.ts`
 - `colyseus-server/src/data/wordBank.ts`
 - `colyseus-server/src/bridge/firebaseBridge.ts`
@@ -1507,7 +1511,7 @@ Reality:
 Files involved:
 
 - `src/gamesV4/screens/SketchPartyScreenV4.tsx`
-- `colyseus-server/src/rooms/SketchPartyRoom.ts`
+- `colyseus-server/src/games/sketch_party/Room.ts`
 
 Impact:
 
@@ -1524,13 +1528,21 @@ The room now starts more safely, but it still lacks:
 
 This is safer than partial starts but still an operational sharp edge.
 
-### 13.6 `usePinnedInvites()` still tears down all per-invite subscriptions on pin-list changes
+### 13.6 `usePinnedInvites()` is incremental now, but conversation changes still rebuild listener state
 
 File involved:
 
 - `src/gamesV4/hooks/usePinnedInvites.ts`
 
-The hook itself labels this as an accepted cosmetic risk. It can cause brief flicker when pins change.
+What changed:
+
+- pin-list deltas no longer tear down every per-invite listener
+- switching conversations still performs a full listener reset, intentionally
+
+Impact:
+
+- normal pin churn is cheaper and no longer causes avoidable resubscribe churn
+- conversation switches still incur one clean rebuild, which is acceptable because ownership changed
 
 ### 13.7 The codebase no longer supports a blanket animation rule
 

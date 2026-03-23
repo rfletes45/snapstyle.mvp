@@ -1,5 +1,5 @@
 /**
- * Games V4 — useGameLobbyV4 Hook
+ * Games V4 - useGameLobbyV4 Hook
  *
  * Manages the lobby lifecycle for a V4 game invite.
  * Provides:
@@ -20,60 +20,15 @@ import {
   subscribeToSession,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameInviteV4, GameSessionV4 } from "@/gamesV4/types";
+import { mapCallableError } from "@/gamesV4/utils/mapCallableError";
 import { startTrace } from "@/gamesV4/utils/perfTrace";
 import { useAuth } from "@/store/AuthContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// =============================================================================
-// Error mapping — Firebase callable errors → friendly messages
-// =============================================================================
-
-function mapCallableError(err: unknown, fallback: string): string {
-  if (err && typeof err === "object") {
-    const e = err as {
-      code?: string;
-      message?: string;
-      details?: { traceId?: string };
-    };
-    // Firebase JS SDK callable errors have code like "functions/resource-exhausted"
-    const code = (e.code ?? "").replace("functions/", "");
-    switch (code) {
-      case "resource-exhausted":
-        return "Please wait a moment before trying again.";
-      case "failed-precondition": {
-        const msg = e.message ?? "";
-        // Race condition: invite status changed between UI render and server call
-        if (msg.includes("status 'active'") || msg.includes("already active")) {
-          return "This game has already started.";
-        }
-        if (msg.includes("status 'resolved'")) {
-          return "This game invite has ended.";
-        }
-        return msg || "Action not allowed right now.";
-      }
-      case "permission-denied":
-        return "You don't have permission for this action.";
-      case "not-found":
-        return "This invite no longer exists.";
-      case "unauthenticated":
-        return "Please sign in to continue.";
-      case "invalid-argument":
-        return e.message ?? "Invalid request.";
-      case "internal": {
-        const traceId =
-          e.details && typeof e.details === "object"
-            ? (e.details as Record<string, unknown>).traceId
-            : undefined;
-        return traceId
-          ? `Unexpected server error (trace: ${String(traceId).slice(0, 8)}…)`
-          : "Unexpected server error. Please try again.";
-      }
-      default:
-        return e.message ?? fallback;
-    }
-  }
-  return fallback;
-}
+const mapLobbyError = (err: unknown, fallback: string) =>
+  mapCallableError(err, fallback, {
+    notFoundMessage: "This game invite no longer exists.",
+  });
 
 interface UseGameLobbyV4Result {
   /** Current invite document (live). */
@@ -82,7 +37,7 @@ interface UseGameLobbyV4Result {
   session: GameSessionV4 | null;
   /** Whether the current user is the host. */
   isHost: boolean;
-  /** Whether the game has started (invite → active). */
+  /** Whether the game has started (invite -> active). */
   isStarted: boolean;
   /** Whether the session is fully loaded and active. */
   navReady: boolean;
@@ -203,7 +158,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
   const joinAsPlayer = useCallback(async () => {
     setActionLoading(true);
     setActionError(null);
-    // PERF: Optimistic join — show "joining" state immediately
+    // PERF: Optimistic join - show "joining" state immediately
     setOptimisticRole("player");
     const trace = startTrace("lobby_join");
     trace.mark("callable_sent");
@@ -213,7 +168,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       trace.end();
     } catch (err) {
       setOptimisticRole(null); // Revert optimistic state on error
-      setActionError(mapCallableError(err, "Failed to join lobby."));
+      setActionError(mapLobbyError(err, "Failed to join lobby."));
       trace.mark("error");
       trace.end();
     } finally {
@@ -229,7 +184,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       await joinInviteLobby({ inviteId, asSpectator: true });
     } catch (err) {
       setOptimisticRole(null);
-      setActionError(mapCallableError(err, "Failed to join as spectator."));
+      setActionError(mapLobbyError(err, "Failed to join as spectator."));
     } finally {
       setActionLoading(false);
     }
@@ -242,7 +197,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       await leaveInviteLobby({ inviteId });
       return true;
     } catch (err) {
-      setActionError(mapCallableError(err, "Failed to leave lobby."));
+      setActionError(mapLobbyError(err, "Failed to leave lobby."));
       return false;
     } finally {
       setActionLoading(false);
@@ -256,7 +211,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
       await cancelGameInvite({ inviteId });
       return true;
     } catch (err) {
-      setActionError(mapCallableError(err, "Failed to cancel invite."));
+      setActionError(mapLobbyError(err, "Failed to cancel invite."));
       return false;
     } finally {
       setActionLoading(false);
@@ -273,7 +228,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
         const { sessionId } = await startGameFromInvite({ inviteId, settings });
         trace.mark("callable_returned");
 
-        // PERF: Fast-path — subscribe to the session immediately using the
+        // PERF: Fast-path - subscribe to the session immediately using the
         // callable-returned sessionId instead of waiting for the invite
         // listener to deliver it (~1-1.5s saved).
         earlySessionIdRef.current = sessionId;
@@ -281,7 +236,7 @@ export function useGameLobbyV4(inviteId: string): UseGameLobbyV4Result {
         trace.mark("session_sub_started");
         trace.end();
       } catch (err) {
-        setActionError(mapCallableError(err, "Failed to start game."));
+        setActionError(mapLobbyError(err, "Failed to start game."));
         trace.mark("error");
         trace.end();
       } finally {

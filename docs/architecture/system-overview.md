@@ -1,28 +1,26 @@
 # System Overview
 
-Last verified: 2026-02-27
+Last verified: 2026-03-18
 
 ## Scope
 
-SnapStyle is an Expo/React Native app with Firebase as the primary backend.
+SnapStyle is an Expo/React Native app backed by Firebase.
 
-Runtime components:
+Primary runtime surfaces:
 
-- App shell: `App.tsx`
-- Client code: `src/`
-- Firebase backend:
-  - Functions: `firebase-backend/functions/src/`
-  - Firestore rules/indexes: `firebase-backend/firestore.rules`, `firebase-backend/firestore.indexes.json`
-  - Storage rules: `firebase-backend/storage.rules`
+- app shell: `App.tsx`
+- client code: `src/`
+- backend functions: `firebase-backend/functions/src/`
+- security rules and indexes: `firebase-backend/firestore.rules`, `firebase-backend/firestore.indexes.json`, `firebase-backend/storage.rules`
 
-## App Bootstrap and Gating
+## Bootstrap And Provider Order
 
 Startup sequence in `App.tsx`:
 
-1. `initializeFirebase(firebaseConfig)` runs before render.
-2. App locks to portrait by default (`lockToPortrait()`).
-3. Fonts load, then app UI mounts.
-4. Provider stack initializes in this order:
+1. initialize Firebase before app render
+2. lock orientation
+3. load fonts and shell assets
+4. mount providers in this order:
    - `ThemeProvider`
    - `SnackbarProvider`
    - `AuthProvider`
@@ -30,77 +28,81 @@ Startup sequence in `App.tsx`:
    - `CallProvider`
    - `InAppNotificationsProvider`
    - `CameraProvider`
-5. `RootNavigator` handles auth/profile hydration state.
-6. `useOutboxProcessor()` runs once inside authenticated provider context.
+5. hand control to `RootNavigator`
 
-Hydration states in `RootNavigator`:
-
-- `auth` state -> `AuthStack`
-- `needs_profile` state -> profile setup flow
-- `ready` state -> full app (`MainStack`)
+`RootNavigator` chooses between auth flow, profile setup flow, and the main app.
 
 ## Navigation Topology
 
-Source: `src/navigation/RootNavigator.tsx`, `src/types/navigation/root.ts`.
+Core files:
 
-Core structure:
+- `src/navigation/RootNavigator.tsx`
+- `src/types/navigation/root.ts`
 
-- Root: `NavigationContainer`
-- Main tabs (`AppTabs`): `Shop`, `Inbox`, `Moments`, `Profile`
-- Overlay/full-screen stack (`MainStack`) for:
-  - Chat details and group chat flows
-  - Camera and call screens
-  - User profile + social/activity screens
+Important routes for the messaging ecosystem:
 
-Important design choice:
+- `ChatList`
+- `ChatDetail`
+- `GroupChat`
+- `Thread`
+- game and call overlays that can be reached from chats
 
-- Chat/call overlays are mounted at root stack level so they can animate over tabs and avoid tab-layout constraints.
+## Data Authority
 
-## Data Planes and Authority
+The app has three important authority planes:
 
-App data responsibilities are split across four planes:
+1. client read/cache plane
+   - Firebase SDK reads
+   - SQLite cache for native messaging
+   - local optimistic UI state
+2. backend authoritative plane
+   - Cloud Functions for canonical messaging writes, moderation-sensitive flows, and notification routing
+3. rules/storage plane
+   - Firestore and Storage rules define client trust boundaries
 
-1. Client Firebase SDK plane:
-   - Day-to-day reads and lightweight writes
-   - Real-time listeners for chats, groups, profile, wallet, etc.
-2. Cloud Functions authoritative plane:
-   - Messaging callable writes (idempotency, validation, moderation/rate checks)
-   - Economy/shop/task transaction safety
-   - Scheduled cleanup and maintenance jobs
+## Messaging And Notification Strategy
 
-## Storage and Sync Strategy
+Messaging is hybrid, but not symmetric:
 
-Messaging is currently hybrid:
+- native is local-first by default through SQLite plus `syncEngine`
+- web still uses the Firestore-first fallback path
+- `useChat` now disables the inactive Firestore-first hook on native, so one conversation screen has one active message owner at a time
+- `useChat` also owns native auto-read watermark writes, so screen-level DM/group read side effects should not fork that logic again
 
-- `USE_LOCAL_STORAGE = true` on native, false on web.
-- Native path:
-  - SQLite (`src/services/database/`)
-  - Sync engine (`src/services/sync/syncEngine.ts`)
-  - `useLocalMessages`
-- Fallback path:
-  - Firestore-first subscription (`useUnifiedMessages`)
+Notifications are unified:
 
-This means both paths are active contracts and must remain functional.
+- backend chooses `in_app`, `push`, or `none` in `notificationCenter.ts`
+- canonical notification records live under `Users/{uid}/Notifications`
+- session presence for notification suppression lives under `Users/{uid}/NotificationSessions`
+- client chat-notification consumers must preserve `conversationScope` instead of collapsing DM and group state onto a bare conversation ID
 
-## High-Value Source-of-Truth Files
+## High-Value Source Files
 
-- App shell: `App.tsx`
-- Navigation contracts: `src/navigation/RootNavigator.tsx`, `src/types/navigation/root.ts`
-- Feature flags: `constants/featureFlags.ts`
-- Messaging model: `src/types/messaging.ts`
-- Profile validation/hydration: `src/services/profile/profileContract.ts`
-- Firebase SDK init: `src/services/firebase.ts`
+- app shell: `App.tsx`
+- navigation: `src/navigation/RootNavigator.tsx`
+- feature flags: `constants/featureFlags.ts`
+- messaging contracts: `src/types/messaging.ts`
+- messaging runtime:
+  - `src/hooks/useChat.ts`
+  - `src/hooks/useLocalMessages.ts`
+  - `src/hooks/useUnifiedMessages.ts`
+  - `src/services/sync/syncEngine.ts`
+- notification runtime:
+  - `src/store/InAppNotificationsContext.tsx`
+  - `src/services/userNotifications.ts`
+  - `firebase-backend/functions/src/notificationCenter.ts`
 
 ## Critical Invariants
 
-1. Firebase must be initialized before any service call paths use `get*Instance()`.
-2. Route names in `root.ts` and `RootNavigator.tsx` must remain aligned.
-3. All context-dependent hooks must mount inside their provider boundaries.
-4. Cross-system trace IDs should be preserved for debugging (`createTraceId` paths).
+1. Firebase must be initialized before any service uses `get*Instance()`.
+2. Route names in `RootNavigator.tsx` and `src/types/navigation/root.ts` must stay aligned.
+3. Native messaging screens must not mount duplicate message runtimes.
+4. Canonical message writes stay server-authoritative.
+5. Canonical notification routing stays in the backend notification center, not in ad hoc client logic.
 
 ## Change-Safety Checklist
 
-1. If modifying navigation, update both route types and navigator wiring.
-2. If modifying initialization or providers, verify boot/hydration and auth transitions.
-3. If changing data flow authority (client vs function vs server), update docs and tests together.
-4. If touching hybrid messaging logic, test both local-first and fallback modes.
+1. If you modify messaging ownership, test both native local-first and web fallback behavior.
+2. If you change notification behavior, update both backend routing logic and client session consumers.
+3. If you add a new chat- or game-driven notification type, route it through `notificationCenter.ts`.
+4. If you change route names, update both type definitions and navigation wiring.

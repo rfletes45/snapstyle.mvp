@@ -1,327 +1,214 @@
 # Messaging System
 
-Last verified: 2026-03-05
+Last verified: 2026-03-18
 
 ## Scope
 
-This is the canonical feature-level reference for DM and group messaging in the app.
-It covers:
+This is the canonical reference for DM chat, group chat, inbox state, message requests, realtime subscriptions, and message-driven notifications.
 
-- message send/read/subscribe lifecycle
-- inbox row composition (fan-out and aggregated)
-- requests tab behavior
-- runtime mode parity (SQLite-first and Firestore fallback)
-- unread count source-of-truth
-- notification routing contracts
+Historical migration notes still exist under `docs/chat-system-audit/`, but they are no longer the source of truth.
 
-For exhaustive contract definitions, see:
+## Runtime Architecture
 
-- `docs/chat-system-audit/02_INBOX_CHAT_DATA_CONTRACTS.md`
-
-## 1) Runtime Architecture
-
-Primary orchestration hook:
+Primary screen orchestration:
 
 - `src/hooks/useChat.ts`
+- `src/hooks/useUnifiedChatScreen.ts`
+- `src/screens/chat/ChatScreen.tsx`
+- `src/screens/groups/GroupChatScreen.tsx`
+- `src/screens/chat/ThreadScreen.tsx`
+
+Runtime ownership is now explicit:
+
+- Native (`USE_LOCAL_STORAGE=true`):
+  - `useChat` uses `src/hooks/useLocalMessages.ts`
+  - SQLite is the immediate UI cache via `src/services/database/*`
+  - realtime and resync come from `src/services/sync/syncEngine.ts`
+  - `useUnifiedMessages` is mounted with `enabled: false`, so the Firestore-first runtime does not create duplicate listeners
+- Web (`USE_LOCAL_STORAGE=false`):
+  - `useChat` uses `src/hooks/useUnifiedMessages.ts`
+  - this path still depends on `src/services/messaging/send.ts`, `src/services/messaging/subscribe.ts`, `src/services/chatV2.ts`, and `src/services/messageList.ts`
+
+The local-first path is the primary native implementation. The Firestore-first path remains a compatibility runtime for web.
+
+## Source Of Truth By Concern
+
+- DM conversation identity:
+  - `src/services/chat.ts:getOrCreateChat`
+  - Firestore `Chats/{chatId}` where `chatId` is the sorted user pair
+- Group identity and membership:
+  - `src/services/groups.ts:createGroup`
+  - Firestore `Groups/{groupId}`, `Groups/{groupId}/Members`, `Groups/{groupId}/MembersPrivate`
+- Message persistence:
+  - server-authoritative write path: `firebase-backend/functions/src/messaging.ts`
+  - client-local cache on native: SQLite `messages` table via `src/services/database/messageRepository.ts`
+- Inbox membership state:
+  - primary read path today: `src/hooks/useInboxData.ts` fan-out reads from `Chats` and `Groups`
+  - backend also maintains `Users/{uid}/Inbox/*` through `firebase-backend/functions/src/inboxTriggers.ts`
+- Unread/read state:
+  - source of truth: `MembersPrivate.lastSeenAtPrivate` and related member-private watermarks
+  - aggregated inbox `unreadCount` is a derived hint, not the canonical authority
+- Notifications:
+  - source of truth: `Users/{uid}/Notifications/{notificationId}`
+  - delivery selection: `firebase-backend/functions/src/notificationCenter.ts`
+  - device/session coordination: `Users/{uid}/NotificationDevices`, `Users/{uid}/NotificationSessions`
 
-Runtime selection:
+## Conversation Lifecycle
 
-- `USE_LOCAL_STORAGE=true`:
-  - `src/hooks/useLocalMessages.ts`
-  - SQLite repositories under `src/services/database/*`
-  - sync bridge: `src/services/sync/syncEngine.ts`
-- `USE_LOCAL_STORAGE=false`:
-  - `src/hooks/useUnifiedMessages.ts`
-  - Firestore-first subscriptions via `src/services/messaging/subscribe.ts`
+DM creation and lookup:
 
-Shared parity layer:
+1. UI resolves the peer user.
+2. `getOrCreateChat()` builds the deterministic chat ID from the two UIDs.
+3. The service validates blocks before creating `Chats/{chatId}`.
+4. Membership, member-private state, and messages live under the `Chats/{chatId}` subtree.
 
-- `src/services/chat/normalizeMessage.ts`
+Group creation:
 
-The parity layer ensures both runtime paths produce stable `MessageV2` output and ordering.
+1. `createGroup()` writes `Groups/{groupId}`.
+2. The creator is inserted into `Members`.
+3. Group membership and per-user private state are stored under the group document.
+4. Group message writes flow through the same server messaging callable as DMs, but with group membership checks.
 
-## 2) Canonical Service Surfaces
+Thread replies:
 
-Messaging services:
+- `ThreadScreen` is still a separate local-thread surface.
+- It reads replies from SQLite and relies on `syncEngine.subscribeToConversation(...)` plus `syncPendingMessages()`.
+- It is not yet unified into `useChat`, so thread behavior should be treated as a specialized screen on top of the same local-first storage.
 
-- `src/services/messaging/send.ts`
-- `src/services/messaging/subscribe.ts`
-- `src/services/messaging/messageMerge.ts`
-- `src/services/messaging/memberState.ts`
+## Message Lifecycle
 
-Shared chat normalization helpers:
+Native local-first send flow:
 
-- `src/services/chat/normalizeMessage.ts`
-- `src/services/chat/normalizeInboxRow.ts`
-- `src/services/chat/fanoutInboxNormalization.ts`
-- `src/services/chat/unifiedInboxRequests.ts`
-- `src/services/chat/messageRequestsContract.ts`
+1. `useChat.sendMessage(...)` inserts an optimistic row into SQLite.
+2. Attachments and reply metadata are stored locally in the same transaction.
+3. `syncPendingMessages()` pushes pending rows through the sync engine.
+4. The authoritative backend write still lands through `sendMessageV2`.
+5. Realtime sync writes the canonical server message back into SQLite, and normalization reconciles optimistic versus authoritative state.
 
-Notification normalization:
+Native local-first read flow:
 
-- `src/services/notifications/normalizeNotification.ts`
+1. `useChat` now owns automatic read watermark writes for both DM and group screens.
+2. DM public read receipts still respect the effective setting supplied by `useReadReceipts`.
+3. Screen-specific fallback read effects should not fork this behavior anymore.
+4. Inbox optimistic read updates remain UI sugar; canonical unread state is still member-private.
 
-## 3) Core Data Contracts
+Web fallback send flow:
 
-Primary type file:
+1. `useChat.sendMessage(...)` delegates to `src/services/messaging/send.ts`.
+2. That wrapper still routes through `src/services/chatV2.ts`.
+3. The server callable `sendMessageV2` performs the same authoritative validation and write steps.
+4. `useUnifiedMessages` merges realtime snapshots with outbox items for optimistic state.
 
-- `src/types/messaging.ts`
+Authoritative server guarantees in `sendMessageV2`:
 
-Important contracts:
+- auth required
+- DM or group membership enforcement
+- DM block checks
+- message request gating
+- rate limiting
+- idempotency via `messageId` and `idempotencyKey`
+- canonical timestamps
+- conversation preview updates
+- thread reply counter updates
 
-- `MessageV2`
-- `InboxConversation`
-- `InboxEntry`
-- `MemberStatePrivate`
-- `MessageRequest`
-- `MessageRequestResponse`
+## Inbox And Unread Model
 
-Backend contract producers:
+Current client inbox ownership:
 
-- `firebase-backend/functions/src/messaging.ts`
-- `firebase-backend/functions/src/inboxTriggers.ts`
-- `firebase-backend/functions/src/messageRequests.ts`
+- `src/hooks/useInboxData.ts` is the active inbox reader because `CHAT_FEATURES.CHAT_INBOX_AGGREGATION` is still `false`
+- `src/hooks/useInboxAggregation.ts` exists for the aggregated inbox path but is not the default runtime today
+- the aggregated hook still hydrates `MembersPrivate` per conversation for archive, mute, pin, and private watermark parity, so it is not yet a pure single-listener client design
 
-## 4) Send Pipeline (DM + Group)
+Current backend inbox behavior:
 
-Client send flow:
+- `firebase-backend/functions/src/inboxTriggers.ts` always maintains aggregated inbox docs under `Users/{uid}/Inbox`
+- `markInboxRead` only resets the derived aggregated inbox unread hint
+- this means the codebase is in a partial migration state: backend aggregation writes are live, but the client still defaults to fan-out reads and member-private watermarks remain the canonical unread authority
 
-1. UI calls `chat.sendMessage(...)` from `useChat`.
-2. Runtime path:
-   - SQLite-first inserts locally and syncs pending writes.
-   - fallback path uses Firestore callable/subscription flow.
-3. Server callable `sendMessageV2` validates auth, membership, block/rate-limit, and request gating.
-4. Server writes message with authoritative timestamps and updates conversation summary fields.
-5. Realtime subscription and merge helpers reconcile optimistic and authoritative states.
+Unread semantics:
 
-Server file:
+- compute from member-private watermarks first
+- use `src/services/chat/normalizeInboxRow.ts` for normalization
+- treat aggregated unread fields as hints only
 
-- `firebase-backend/functions/src/messaging.ts`
+## Message Requests
 
-Idempotency invariants:
+Message requests are always on.
 
-- `messageId` and `idempotencyKey` prevent duplicate committed sends.
-- retried sends must resolve to one canonical message row.
+- backend enforcement: `firebase-backend/functions/src/messageRequests.ts`
+- client subscription: `src/hooks/useMessageRequests.ts`
+- inbox merge surface: `src/hooks/useUnifiedInboxRequests.ts`
+- request actions: `acceptMessageRequest`, `declineMessageRequest`
 
-## 5) Ordering, Dedupe, and Reconciliation
+There is no longer a client feature flag for message requests. The previous gating was removed because the backend already enforced requests, which could otherwise hide legitimate pending requests from the UI.
 
-Canonical ordering (newest first):
+## Realtime Ownership
 
-1. `serverReceivedAt`
-2. `createdAt`
-3. `id` (lexicographic tie-break)
+Native conversation screens:
 
-Canonical helpers:
+- realtime source: `src/services/sync/syncEngine.ts`
+- screen hook: `src/hooks/useLocalMessages.ts`
+- local cache reloads after sync notifications
 
-- `compareMessagesCanonicalDesc`
-- `dedupeAndSortMessages`
-- `mergeMessageCollections`
+Web fallback conversation screens:
 
-All defined in `src/services/chat/normalizeMessage.ts`.
+- realtime source: `src/services/messaging/subscribe.ts`
+- hook: `src/hooks/useUnifiedMessages.ts`
 
-Outbox merge behavior:
+Important invariant:
 
-- `src/services/messaging/messageMerge.ts`
-- optimistic rows are removed when server row with same `id` appears
-- failed outbox rows stay visible with `status="failed"`
+- only one message runtime should own a screen at a time
+- `useChat` now enforces that by disabling the Firestore-first hook whenever local-first mode is active
 
-Realtime lifecycle helper:
+## Notifications
 
-- `src/services/chat/unifiedMessagesLifecycle.ts`
+Notification event producers:
 
-## 6) Inbox Data Paths
+- chat and message request events: `firebase-backend/functions/src/notifications.ts`
+- game events: `firebase-backend/functions/src/gamesV4/notifications.ts`
+- social and gifting events also route into the same center
 
-Primary inbox hook:
+Notification routing center:
 
-- `src/hooks/useInboxData.ts`
+- `firebase-backend/functions/src/notificationCenter.ts`
 
-Fan-out mode (`CHAT_FEATURES.CHAT_INBOX_AGGREGATION=false`):
+Notification center behavior:
 
-- reads from `Chats` and `Groups`
-- merges with member private state
-- uses fan-out normalizers in `src/services/chat/fanoutInboxNormalization.ts`
+1. read inbox notification preferences from `Users/{uid}/settings/inbox`
+2. suppress if the conversation is muted
+3. inspect fresh `NotificationSessions`
+4. suppress if the user is already viewing the target surface
+5. choose one channel: `in_app`, `push`, or `none`
+6. write the canonical notification record to `Users/{uid}/Notifications/{notificationId}`
+7. send Expo push only when the selected channel is `push`
 
-Aggregated mode (`CHAT_FEATURES.CHAT_INBOX_AGGREGATION=true`):
+Client consumers:
 
-- `src/hooks/useInboxAggregation.ts`
-- reads `Users/{uid}/Inbox/*`
-- still fetches `MembersPrivate` to preserve unread and settings parity
+- feed and badge subscription: `src/services/userNotifications.ts`
+- foreground banners and session heartbeats: `src/store/InAppNotificationsContext.tsx`
+- push tap normalization and navigation: `src/store/AuthContext.tsx`
+- client conversation read-marking is scope-aware (`dm` vs `group`) when clearing notification records
+- in-app toast presses and “last viewed conversation” tracking now preserve conversation scope so group and DM notification flows use the same ownership model
 
-Canonical row helper for both modes:
+There is no `CHAT_LEGACY_PUSH_ENABLED` environment contract in the current implementation.
 
-- `src/services/chat/normalizeInboxRow.ts`
+## Live Compatibility Debt
 
-Server writer for aggregated docs:
+- The web fallback path still relies on wrapper services that delegate into older `chatV2` and `messageList` modules.
+- Backend inbox aggregation is already live even though the client default reader is still fan-out.
+- `ThreadScreen` remains a separate local-thread implementation instead of sharing the full `useChat` stack.
+- `firebase-backend/functions/src/deleteAccount.ts` still contains explicit cleanup for legacy `Conversations`, root `Notifications`, and `InAppNotificationsV4` data so old documents can still be scrubbed safely.
 
-- `firebase-backend/functions/src/inboxTriggers.ts`
+## Validation
 
-## 7) Unread Count Source Of Truth
-
-Authoritative unread inputs:
-
-- `MembersPrivate.lastSeenAtPrivate`
-- `MembersPrivate.lastMarkedUnreadAt`
-- conversation `lastActivityAt`
-
-Fallback input only if private watermark is missing:
-
-- aggregated inbox `unreadCount` hint
-
-Canonical function:
-
-- `computeUnreadCount` in `src/services/chat/normalizeInboxRow.ts`
-
-Rule order:
-
-1. recent optimistic read override (`recentlyReadAt`) returns unread `0`
-2. if `lastMarkedUnreadAt > lastSeenAtPrivate`, unread is `1`
-3. if `lastActivityAt > lastSeenAtPrivate + tolerance`, unread is `1`
-4. if no private watermark and unread hint exists, unread is `1`
-5. otherwise unread is `0`
-
-Unread badge formatting:
-
-- helper: `src/components/chat/inbox/unreadBadge.ts`
-- display: `""` for `<=0`, `1..99` exact, `99+` cap
-
-## 8) Runtime Mode Parity Guarantees
-
-The chat stack guarantees the following parity between runtime paths:
-
-1. Local and Firestore messages normalize to the same canonical `MessageV2` shape.
-2. Message ordering and dedupe are identical across runtime modes.
-3. Realtime and pagination overlap cannot create duplicate message IDs.
-4. Fan-out and aggregated inbox produce the same `InboxConversation` semantics.
-5. Unread computation is centralized and consistent across inbox modes.
-
-These guarantees are implemented by shared helpers, not by removing fallback paths.
-
-## 9) Requests Tab (Unified Source)
-
-Unified hook:
-
-- `src/hooks/useUnifiedInboxRequests.ts`
-
-Merged sources:
-
-- friend requests (`useFriendRequests`)
-- group invites (`subscribeToPendingInvites`)
-- message requests (`useMessageRequests`)
-
-Merge contract helper:
-
-- `src/services/chat/unifiedInboxRequests.ts`
-
-Screen integration:
-
-- `src/screens/chat/ChatListScreenV2.tsx`
-
-Message request callable contracts:
-
-- `acceptMessageRequest`
-- `declineMessageRequest`
-- server implementation: `firebase-backend/functions/src/messageRequests.ts`
-
-## 10) Notification Routing And Dedupe
-
-Canonical payload adapter:
-
-- `src/services/notifications/normalizeNotification.ts`
-
-Consumers:
-
-- push tap handler: `src/store/AuthContext.tsx`
-- in-app listeners: `src/store/InAppNotificationsContext.tsx`
-
-Legacy trigger overlap handling:
-
-- `firebase-backend/functions/src/notifications.ts`
-- env flag: `CHAT_LEGACY_PUSH_ENABLED` (legacy triggers enabled unless explicitly set to `false`)
-
-Dedupe helper:
-
-- `shouldHandleNotificationByDedupeKey(...)`
-
-## 11) Feature Flags That Affect Messaging
-
-Primary flags and toggles:
-
-- `USE_LOCAL_STORAGE`
-- `CHAT_FEATURES.CHAT_INBOX_AGGREGATION`
-- `CHAT_FEATURES.CHAT_MESSAGE_REQUESTS`
-- `CHAT_FEATURES.CHAT_DELIVERY_ACKS`
-- backend env: `CHAT_LEGACY_PUSH_ENABLED`
-
-Guidance:
-
-- Any behavior change behind these flags must be tested with both enabled and disabled states where applicable.
-
-## 12) Testing Matrix
-
-Primary behavior suites:
-
-- `__tests__/services/normalizeMessage.test.ts`
-- `__tests__/services/chatV2.mergeMessagesWithOutbox.test.ts`
-- `__tests__/integration/unifiedChat.test.ts`
-- `__tests__/services/normalizeInboxRow.test.ts`
-- `__tests__/hooks/inboxPathParity.test.ts`
-- `__tests__/hooks/useUnifiedInboxRequests.test.ts`
-- `__tests__/services/messageRequests.test.ts`
-- `__tests__/services/normalizeNotification.test.ts`
-- `__tests__/components/conversationItem.unreadBadge.test.ts`
-- `__tests__/screens/threadScreen.lifecycle.test.ts`
-
-Recommended commands:
+Targeted tests exercised during the 2026-03-18 cleanup:
 
 ```bash
-npx jest __tests__/services/normalizeMessage.test.ts --runInBand
-npx jest __tests__/services/chatV2.mergeMessagesWithOutbox.test.ts --runInBand
-npx jest __tests__/integration/unifiedChat.test.ts --runInBand
-npx jest __tests__/hooks/inboxPathParity.test.ts --runInBand
-npx jest __tests__/hooks/useUnifiedInboxRequests.test.ts --runInBand
-npx jest __tests__/services/messageRequests.test.ts --runInBand
-npx jest __tests__/services/normalizeNotification.test.ts --runInBand
-npx jest __tests__/components/conversationItem.unreadBadge.test.ts --runInBand
-npx jest __tests__/screens/threadScreen.lifecycle.test.ts --runInBand
+npm test -- --runInBand __tests__/services/chatV3Client.test.ts __tests__/services/resolveChatSettings.test.ts __tests__/services/outboxErrorClassification.test.ts
 ```
 
-If backend notification or inbox trigger code changes:
+Recommended follow-up checks for messaging work:
 
 ```bash
 npm --prefix firebase-backend/functions run build
 ```
-
-## 13) Manual Smoke Checklist
-
-1. Inbox tab switching works (`all`, `unread`, `groups`, `dms`, `requests`).
-2. Requests tab shows friend/group/message requests and refreshes all sources.
-3. DM and group sends reconcile optimistic and server state without duplicates.
-4. Pagination and realtime overlap does not duplicate or reorder unexpectedly.
-5. Opening/closing thread screens does not leak listeners.
-6. Notification tap routes to the correct chat/group/game/achievement screen.
-
-## 14) Troubleshooting
-
-Symptom: duplicate messages after pagination/realtime overlap
-
-- Check `src/services/chat/normalizeMessage.ts`
-- Check `src/services/messaging/messageMerge.ts`
-- run merge-related test suites
-
-Symptom: unread mismatch between inbox modes
-
-- Check `src/services/chat/normalizeInboxRow.ts`
-- Check `src/hooks/useInboxData.ts` and `src/hooks/useInboxAggregation.ts`
-- verify `MembersPrivate` watermarks
-
-Symptom: requests tab missing one source
-
-- Check `src/hooks/useUnifiedInboxRequests.ts`
-- Check source hooks (`useFriendRequests`, `useMessageRequests`, group invites)
-
-Symptom: notification routes to wrong destination or duplicates
-
-- Check `src/services/notifications/normalizeNotification.ts`
-- Check `src/store/AuthContext.tsx`
-- Check `src/store/InAppNotificationsContext.tsx`
-- verify `CHAT_LEGACY_PUSH_ENABLED` deployment intent

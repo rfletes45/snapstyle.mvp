@@ -17,6 +17,7 @@ import {
   cancelGameInvite,
 } from "@/gamesV4/services/gameServiceV4";
 import type { GameInviteV4 } from "@/gamesV4/types";
+import { isCancelledInvite } from "@/gamesV4/utils/inviteState";
 import { useAuth } from "@/store/AuthContext";
 import { useAppTheme } from "@/store/ThemeContext";
 import type { MainStackParamList } from "@/types/navigation/root";
@@ -60,8 +61,7 @@ function getDisplayStatus(
   uid: string | undefined,
 ): InviteDisplayStatus {
   if (invite.status === "resolved") {
-    // Resolved without sessionId = cancelled by host
-    return invite.sessionId ? "resolved" : "cancelled";
+    return isCancelledInvite(invite) ? "cancelled" : "resolved";
   }
   if (invite.status === "active") {
     if (invite.summary?.turnPlayerId && invite.summary.turnPlayerId === uid) {
@@ -203,7 +203,7 @@ export function PinnedInviteBar({
 
   // Filter out cancelled invites (resolved without sessionId)
   const visibleInvites = invites.filter(
-    (inv) => !(inv.status === "resolved" && !inv.sessionId),
+    (inv) => !isCancelledInvite(inv),
   );
 
   // Don't render if no invites or loading

@@ -175,7 +175,7 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
 
     doConnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoConnect, sessionId, uid, token]);
+  }, [autoConnect, joinOptions]);
 
   // ── Action callbacks ──
   const send = useCallback((type: string, payload?: unknown) => {
@@ -194,9 +194,9 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
     }
   }, []);
 
-  // ── Message subscriptions (pass-through to client) ──
-  // Exposed via getClient() for game-specific screens that need
-  // to register custom message handlers.
+  // Game-specific screens register room message handlers directly
+  // from the `room` instance returned by this hook.
+
 
   return {
     room,
@@ -212,35 +212,6 @@ export function useRealtimeRoom<TState = Record<string, unknown>>(
     leave,
   };
 }
-
-/**
- * Get the underlying RealtimeRoomClient from a ref.
- * Useful when game-specific code needs to register message handlers
- * outside of the hook (e.g., for canvas rendering callbacks).
- */
-export function useRealtimeClient<TState = Record<string, unknown>>(
-  definition: RealtimeClientDefinition<TState>,
-): RealtimeRoomClient<TState> {
-  const clientRef = useRef<RealtimeRoomClient<TState> | null>(null);
-
-  if (!clientRef.current) {
-    clientRef.current = new RealtimeRoomClient<TState>(definition);
-  }
-
-  useEffect(() => {
-    return () => {
-      clientRef.current?.destroy();
-      clientRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return clientRef.current;
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
 
 function mapStatusToPhase<TState>(
   status: ConnectionStatus,

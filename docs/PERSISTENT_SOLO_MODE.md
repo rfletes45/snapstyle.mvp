@@ -12,10 +12,15 @@ Persistent Solo extends the existing `runtimeType: "solo"` with a new
 Key difference from standard solo: the session is never implicitly ended,
 surviving app-close, sleep, and extended offline periods.
 
+The important caveat is that `soloSuspendedAt` is an in-app exit marker, not a
+process-death guarantee. The shell now waits for `suspendSoloSessionV4()` on
+explicit navigation away from the game, but abrupt termination can still leave
+a resumable session in an active-unsuspended state until the next explicit action.
+
 | Property              | Standard Solo              | Persistent Solo            |
 | --------------------- | -------------------------- | -------------------------- |
 | Session lifetime      | Minutes–hours              | Days–weeks                 |
-| Exit behavior         | Suspend                    | Suspend                    |
+| Exit behavior         | In-app exit suspends       | In-app exit suspends       |
 | Resume                | Auto-resume existing       | Auto-resume existing       |
 | Resign / Forfeit      | Allowed                    | **Disabled**               |
 | Archive (end run)     | N/A                        | Player-initiated           |

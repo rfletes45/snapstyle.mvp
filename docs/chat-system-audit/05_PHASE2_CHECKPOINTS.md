@@ -3,6 +3,8 @@
 Last verified: 2026-03-05
 Status: Phase 2 through Phase 3+ checkpoints consolidated
 
+> Historical checkpoint document. Keep for migration history only; do not treat it as the current architecture contract.
+
 ## 1) Purpose
 
 This document records concrete delivery checkpoints for the inbox/chat cleanup effort.

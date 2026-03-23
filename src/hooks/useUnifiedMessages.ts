@@ -74,6 +74,13 @@ const log = createLogger("useUnifiedMessages");
 // =============================================================================
 
 export interface UseUnifiedMessagesOptions {
+  /**
+   * Enable the Firestore-first runtime.
+   * When false, this hook stays inert so local-first screens do not mount
+   * duplicate subscriptions or settings listeners just to satisfy hook order.
+   * @default true
+   */
+  enabled?: boolean;
   /** Conversation scope ("dm" or "group") */
   scope: "dm" | "group";
   /** Chat ID (for DM) or Group ID (for group) */
@@ -136,6 +143,7 @@ export function useUnifiedMessages(
   options: UseUnifiedMessagesOptions,
 ): UseUnifiedMessagesReturn {
   const {
+    enabled = true,
     scope,
     conversationId,
     currentUid,
@@ -150,7 +158,7 @@ export function useUnifiedMessages(
   // State
   const [serverMessages, setServerMessages] = useState<MessageV2[]>([]);
   const [outboxItems, setOutboxItems] = useState<OutboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<Error | null>(null);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -184,6 +192,19 @@ export function useUnifiedMessages(
     };
   }, []);
 
+  useEffect(() => {
+    if (enabled) return;
+
+    subscriptionManagerRef.current.cleanup();
+    setServerMessages([]);
+    setOutboxItems([]);
+    setLoading(false);
+    setError(null);
+    setHasMoreOlder(false);
+    setIsLoadingOlder(false);
+    setInboxSettings(DEFAULT_INBOX_SETTINGS);
+  }, [enabled]);
+
   // Resolve effective settings via the V3 resolver
   const effectiveSettings = useMemo(
     () => resolveFromInboxSettings(inboxSettings),
@@ -198,7 +219,7 @@ export function useUnifiedMessages(
 
   // Subscribe to user's inbox settings for dynamic read receipt control
   useEffect(() => {
-    if (!currentUid || scope !== "dm") return;
+    if (!enabled || !currentUid || scope !== "dm") return;
 
     const unsubscribe = subscribeToInboxSettings(currentUid, (settings) => {
       setInboxSettings(settings);
@@ -211,7 +232,7 @@ export function useUnifiedMessages(
     });
 
     return unsubscribe;
-  }, [currentUid, scope, debug]);
+  }, [enabled, currentUid, scope, debug]);
 
   // Merge server messages with outbox items for optimistic UI
   const messages = useMemo(() => {
@@ -225,6 +246,12 @@ export function useUnifiedMessages(
 
   // Subscribe to messages
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     if (!conversationId || !currentUid) {
       setLoading(false);
       return;
@@ -314,6 +341,7 @@ export function useUnifiedMessages(
     // Note: loadOutboxItems is stable via useCallback with [conversationId] deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    enabled,
     scope,
     conversationId,
     currentUid,
@@ -330,7 +358,12 @@ export function useUnifiedMessages(
 
   // Load outbox items
   const loadOutboxItems = useCallback(async () => {
-    if (!conversationId) return;
+    if (!enabled || !conversationId) {
+      runIfMounted(isMountedRef, () => {
+        setOutboxItems([]);
+      });
+      return;
+    }
     try {
       const items = await getPendingForConversation(scope, conversationId);
       runIfMounted(isMountedRef, () => {
@@ -339,7 +372,7 @@ export function useUnifiedMessages(
     } catch (err) {
       log.error("Failed to load outbox items", err);
     }
-  }, [scope, conversationId]);
+  }, [enabled, scope, conversationId]);
 
   // Update read watermark
   const updateWatermark = useCallback(
@@ -399,7 +432,12 @@ export function useUnifiedMessages(
   // Load older messages (with debounce protection)
   const loadOlder = useCallback(async () => {
     // Guards
-    if (isLoadingOlder || !hasMoreOlder || serverMessages.length === 0) {
+    if (
+      !enabled ||
+      isLoadingOlder ||
+      !hasMoreOlder ||
+      serverMessages.length === 0
+    ) {
       return;
     }
 
@@ -460,6 +498,7 @@ export function useUnifiedMessages(
       });
     }
   }, [
+    enabled,
     scope,
     conversationId,
     serverMessages,
@@ -470,14 +509,14 @@ export function useUnifiedMessages(
 
   // Refresh (re-subscribe)
   const refresh = useCallback(() => {
-    if (!conversationId) return;
+    if (!enabled || !conversationId) return;
 
     subscriptionManagerRef.current.cleanup();
     setServerMessages([]);
     setLoading(true);
     resetPaginationCursor(scope, conversationId);
     setRefreshKey((k) => k + 1);
-  }, [scope, conversationId]);
+  }, [enabled, scope, conversationId]);
 
   return {
     messages,
